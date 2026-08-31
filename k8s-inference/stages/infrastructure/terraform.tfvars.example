@@ -12,6 +12,11 @@ source_commit = "0000000000000000000000000000000000000000"
 # acceptance can avoid public-IPv4 quota entirely with these two values:
 # public_edge_mode         = "internal-only"
 # public_edge_source_cidrs = []
+# port_forward_local_ports = {
+#   control_plane = 18080
+#   admin_console = 18081
+#   operator_proxy = 18082
+# }
 public_edge_mode = "public"
 
 # project_id selects one complete mapping from

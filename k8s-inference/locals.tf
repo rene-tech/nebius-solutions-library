@@ -140,6 +140,7 @@ locals {
     shared_cache                        = var.deployment.storage.shared_cache
     public_edge_mode                    = var.deployment.edge.mode
     public_edge_source_cidrs            = sort(tolist(var.deployment.edge.source_cidrs))
+    port_forward_local_ports            = var.deployment.edge.port_forward_ports
   }
 
   foundation_variables = {

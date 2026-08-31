@@ -15,6 +15,7 @@ output "effective_configuration" {
     accelerator_pool_overrides = local.accelerator_pool_capacity_overrides
     model_ids                  = local.deployment_contract.selected_model_ids
     edge_mode                  = var.deployment.edge.mode
+    port_forward_ports         = var.deployment.edge.port_forward_ports
     model_scaling_mode         = var.deployment.models.scaling.mode
     hot_model_ids              = sort(tolist(var.deployment.models.scaling.hot))
   }

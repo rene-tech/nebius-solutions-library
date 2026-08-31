@@ -433,6 +433,20 @@ def validate_public_edge_outputs(
     errors: list[str] = []
     port_forward = edge.get("port_forward")
     expected_ports = variable(document, "public_edge_service_ports")
+    expected_local_ports = variable(document, "port_forward_local_ports")
+    if (
+        not isinstance(expected_local_ports, dict)
+        or set(expected_local_ports)
+        != {"control_plane", "admin_console", "operator_proxy"}
+        or any(
+            isinstance(port, bool)
+            or not isinstance(port, int)
+            or not 1024 <= port <= 65535
+            for port in expected_local_ports.values()
+        )
+        or len(set(expected_local_ports.values())) != 3
+    ):
+        return ["planned port_forward_local_ports variable is invalid"]
     if (
         edge.get("schema") != "fs2-serve.nebius.ai/public-edge/v1"
         or edge.get("mode") != public_edge_mode
@@ -471,11 +485,16 @@ def validate_public_edge_outputs(
             or edge.get("security_group_destination_ports") != []
             or port_forward.get("enabled") is not True
             or port_forward.get("bind_address") != "127.0.0.1"
-            or port_forward.get("application_origin") != "http://localhost:18082"
-            or port_forward.get("operator_endpoint") != "http://127.0.0.1:18082"
-            or port_forward.get("operator_proxy_port") != 18082
-            or port_forward.get("control_plane_local_port") != 18080
-            or port_forward.get("admin_console_local_port") != 18081
+            or port_forward.get("application_origin")
+            != f"http://localhost:{expected_local_ports['operator_proxy']}"
+            or port_forward.get("operator_endpoint")
+            != f"http://127.0.0.1:{expected_local_ports['operator_proxy']}"
+            or port_forward.get("operator_proxy_port")
+            != expected_local_ports["operator_proxy"]
+            or port_forward.get("control_plane_local_port")
+            != expected_local_ports["control_plane"]
+            or port_forward.get("admin_console_local_port")
+            != expected_local_ports["admin_console"]
         ):
             errors.append("internal-only outputs contain a public identity or wrong loopback contract")
     elif mode == "noop":

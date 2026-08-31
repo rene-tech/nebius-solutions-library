@@ -88,6 +88,27 @@ are usable only while the run-scoped operator proxy from the workloads
 `port_forward_contract` is active. The wrapper reads only these two named
 outputs; it does not enumerate or print sensitive workload outputs.
 
+Each internal-only deployment may reserve its own loopback tuple in the same
+customer tfvars file. The defaults remain `18080`, `18081`, and `18082`; use a
+different tuple for another concurrently operated cluster:
+
+```hcl
+edge = {
+  mode = "internal-only"
+  port_forward_ports = {
+    control_plane = 28080
+    admin_console = 28081
+    operator_proxy = 28082
+  }
+}
+```
+
+The three values must be distinct whole non-privileged TCP ports. Terraform
+copies them into `port_forward_contract`; `mcp_endpoint_url` and
+`admin_web_interface_url` then use the configured same-origin operator-proxy
+port. No HCL or script edits are required to give another deployment a
+non-conflicting local endpoint tuple.
+
 The current public-edge fixture uses the disposable staging IP-ACME issuer, so
 its URL is an acceptance endpoint rather than a browser-trusted production
 hostname. `internal-only` does not start a permanent listener: start the
@@ -134,7 +155,7 @@ The top-level variable is `deployment`:
 | `models` | Profile or explicit selection, KEDA/static scaling, hot-model floor, and per-model scaling overrides. |
 | `storage.shared_cache` | Optional shared model-cache size/type/block-size override. |
 | `artifacts.external_registry_ids` | Same-tenant registries whose immutable images need run-scoped node-pull viewer access. Terraform creates a project-scoped reader group beside each registry, including registries in another project or region. |
-| `edge` | `internal-only` or bounded public ingress configuration. |
+| `edge` | `internal-only` or bounded public ingress configuration, including an optional per-cluster loopback port tuple. |
 | `observability` | DCGM cold-start campaign and optional external Grafana publication. |
 | `secrets` | Environment-variable names and Kubernetes Secret key references, never secret values. |
 | `acceptance` | Optional post-deployment probe job. |

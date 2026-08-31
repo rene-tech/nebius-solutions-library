@@ -127,6 +127,11 @@ variable "deployment" {
       mode         = optional(string, "internal-only")
       source_cidrs = optional(set(string), [])
       acme_email   = optional(string)
+      port_forward_ports = optional(object({
+        control_plane  = optional(number, 18080)
+        admin_console  = optional(number, 18081)
+        operator_proxy = optional(number, 18082)
+      }), {})
     }), {})
 
     observability = optional(object({
@@ -492,6 +497,17 @@ variable "deployment" {
       )
     )
     error_message = "Public edge mode requires one to eight IPv4 source CIDRs and an ACME email; internal-only mode requires neither."
+  }
+
+  validation {
+    condition = (
+      alltrue([
+        for port in values(var.deployment.edge.port_forward_ports) :
+        floor(port) == port && port >= 1024 && port <= 65535
+      ]) &&
+      length(toset(values(var.deployment.edge.port_forward_ports))) == 3
+    )
+    error_message = "edge.port_forward_ports must contain three distinct whole TCP ports from 1024 through 65535."
   }
 
   validation {

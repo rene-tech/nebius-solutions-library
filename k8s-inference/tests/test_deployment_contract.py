@@ -174,6 +174,14 @@ class DeploymentContractTests(unittest.TestCase):
             "minimal",
         )
         self.assertEqual(
+            contract["stages"]["infrastructure"]["port_forward_local_ports"],
+            {
+                "control_plane": 18080,
+                "admin_console": 18081,
+                "operator_proxy": 18082,
+            },
+        )
+        self.assertEqual(
             contract["stages"]["workloads"]["deployment_profile"], "minimal"
         )
         self.assertNotIn("nebius_profile", contract["stages"]["infrastructure"])
@@ -221,6 +229,64 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(
             outputs["effective_configuration"]["contract_sha256"], contract["sha256"]
         )
+        self.assertEqual(
+            outputs["effective_configuration"]["port_forward_ports"],
+            contract["stages"]["infrastructure"]["port_forward_local_ports"],
+        )
+
+    def test_internal_edge_ports_can_be_offset_per_cluster(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-port-offset-test",
+            "target": self.catalog_target(),
+            "edge": {
+                "mode": "internal-only",
+                "port_forward_ports": {
+                    "control_plane": 28080,
+                    "admin_console": 28081,
+                    "operator_proxy": 28082,
+                },
+            },
+        }
+        variable_file = self._write_configuration("port-offset", deployment)
+        outputs = self._planned_outputs(variable_file, "port-offset")
+
+        self.assertEqual(
+            outputs["deployment_contract"]["stages"]["infrastructure"]
+            ["port_forward_local_ports"],
+            deployment["edge"]["port_forward_ports"],
+        )
+        self.assertEqual(
+            outputs["effective_configuration"]["port_forward_ports"],
+            deployment["edge"]["port_forward_ports"],
+        )
+
+    def test_internal_edge_ports_must_be_distinct_non_privileged_ports(self) -> None:
+        invalid_ports = (
+            {"control_plane": 28080, "admin_console": 28080, "operator_proxy": 28082},
+            {"control_plane": 443, "admin_console": 28081, "operator_proxy": 28082},
+            {"control_plane": 28080.5, "admin_console": 28081, "operator_proxy": 28082},
+        )
+        for index, ports in enumerate(invalid_ports):
+            with self.subTest(ports=ports):
+                deployment = {
+                    "schema_version": 1,
+                    "name": f"fs2-invalid-ports-{index}",
+                    "target": self.catalog_target(),
+                    "edge": {
+                        "mode": "internal-only",
+                        "port_forward_ports": ports,
+                    },
+                }
+                variable_file = self._write_configuration(
+                    f"invalid-ports-{index}", deployment
+                )
+                result, _ = self._plan_file(variable_file, f"invalid-ports-{index}")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    "three distinct whole TCP ports",
+                    f"{result.stdout}\n{result.stderr}",
+                )
 
     def test_full_catalog_b300_can_have_zero_hot_nodes_and_models(self) -> None:
         deployment = {

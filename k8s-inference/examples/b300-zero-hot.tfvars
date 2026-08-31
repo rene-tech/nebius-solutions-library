@@ -63,6 +63,11 @@ deployment = {
 
   edge = {
     mode = "internal-only"
+    port_forward_ports = {
+      control_plane  = 18080
+      admin_console  = 18081
+      operator_proxy = 18082
+    }
   }
 
   applications = {

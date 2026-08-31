@@ -105,15 +105,15 @@ output "public_edge_contract" {
     port_forward = {
       enabled                  = var.public_edge_mode == "internal-only"
       bind_address             = var.public_edge_mode == "internal-only" ? "127.0.0.1" : null
-      application_origin       = var.public_edge_mode == "internal-only" ? "http://localhost:18082" : null
-      operator_endpoint        = var.public_edge_mode == "internal-only" ? "http://127.0.0.1:18082" : null
-      operator_proxy_port      = var.public_edge_mode == "internal-only" ? 18082 : null
+      application_origin       = var.public_edge_mode == "internal-only" ? format("http://localhost:%d", var.port_forward_local_ports.operator_proxy) : null
+      operator_endpoint        = var.public_edge_mode == "internal-only" ? format("http://127.0.0.1:%d", var.port_forward_local_ports.operator_proxy) : null
+      operator_proxy_port      = var.public_edge_mode == "internal-only" ? var.port_forward_local_ports.operator_proxy : null
       control_plane_service    = "fs2-serve-control-plane"
       control_plane_port       = 8080
-      control_plane_local_port = var.public_edge_mode == "internal-only" ? 18080 : null
+      control_plane_local_port = var.public_edge_mode == "internal-only" ? var.port_forward_local_ports.control_plane : null
       admin_console_service    = "fs2-serve-control-plane-admin-console"
       admin_console_port       = 8080
-      admin_console_local_port = var.public_edge_mode == "internal-only" ? 18081 : null
+      admin_console_local_port = var.public_edge_mode == "internal-only" ? var.port_forward_local_ports.admin_console : null
     }
     security_group_destination_ports = var.public_edge_mode == "public" ? [
       var.public_edge_service_ports.http.listener_port,

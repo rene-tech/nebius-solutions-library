@@ -420,6 +420,29 @@ variable "public_edge_contract" {
     )
     error_message = "public_edge_contract differs from the reviewed edge/service contract."
   }
+
+  validation {
+    condition = var.public_edge_contract.mode != "internal-only" || try(
+      var.public_edge_contract.port_forward.enabled &&
+      var.public_edge_contract.port_forward.bind_address == "127.0.0.1" &&
+      var.public_edge_contract.port_forward.application_origin == format("http://localhost:%d", var.public_edge_contract.port_forward.operator_proxy_port) &&
+      var.public_edge_contract.port_forward.operator_endpoint == format("http://127.0.0.1:%d", var.public_edge_contract.port_forward.operator_proxy_port) &&
+      alltrue([
+        for port in [
+          var.public_edge_contract.port_forward.control_plane_local_port,
+          var.public_edge_contract.port_forward.admin_console_local_port,
+          var.public_edge_contract.port_forward.operator_proxy_port,
+        ] : floor(port) == port && port >= 1024 && port <= 65535
+      ]) &&
+      length(toset([
+        var.public_edge_contract.port_forward.control_plane_local_port,
+        var.public_edge_contract.port_forward.admin_console_local_port,
+        var.public_edge_contract.port_forward.operator_proxy_port,
+      ])) == 3,
+      false,
+    )
+    error_message = "An internal-only public_edge_contract requires three distinct non-privileged loopback ports and origins derived from its operator-proxy port."
+  }
 }
 
 variable "acme_email" {

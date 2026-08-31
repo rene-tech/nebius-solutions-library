@@ -37,10 +37,16 @@ class InfrastructurePlanContractTests(unittest.TestCase):
         gpu_floor_profile: str = "zero",
         acceptance_mode: str = VERIFY.DEFAULT_ACCEPTANCE_MODE,
         public_edge_mode: str = "public",
+        port_forward_local_ports: dict[str, int] | None = None,
         topology_override: tuple[str, tuple[str, ...], object] | None = None,
         contract_override: tuple[tuple[str, ...], object] | None = None,
     ) -> tuple[Path, Path]:
         run_id = "rtest01"
+        local_ports = port_forward_local_ports or {
+            "control_plane": 18080,
+            "admin_console": 18081,
+            "operator_proxy": 18082,
+        }
         ownership_labels = {
             "environment": "fs2-disposable",
             "retention": "ephemeral",
@@ -175,6 +181,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 "public_edge_source_cidrs": {
                     "value": ["0.0.0.0/0"] if public_edge_mode == "public" else []
                 },
+                "port_forward_local_ports": {"value": local_ports},
                 "public_edge_service_ports": {
                     "value": {
                         "http": {"listener_port": 80, "target_port": 10080, "node_port": 31425},
@@ -215,27 +222,33 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                         "127.0.0.1" if public_edge_mode == "internal-only" else None
                     ),
                     "application_origin": (
-                        "http://localhost:18082"
+                        f"http://localhost:{local_ports['operator_proxy']}"
                         if public_edge_mode == "internal-only"
                         else None
                     ),
                     "operator_endpoint": (
-                        "http://127.0.0.1:18082"
+                        f"http://127.0.0.1:{local_ports['operator_proxy']}"
                         if public_edge_mode == "internal-only"
                         else None
                     ),
                     "operator_proxy_port": (
-                        18082 if public_edge_mode == "internal-only" else None
+                        local_ports["operator_proxy"]
+                        if public_edge_mode == "internal-only"
+                        else None
                     ),
                     "control_plane_service": "fs2-serve-control-plane",
                     "control_plane_port": 8080,
                     "control_plane_local_port": (
-                        18080 if public_edge_mode == "internal-only" else None
+                        local_ports["control_plane"]
+                        if public_edge_mode == "internal-only"
+                        else None
                     ),
                     "admin_console_service": "fs2-serve-control-plane-admin-console",
                     "admin_console_port": 8080,
                     "admin_console_local_port": (
-                        18081 if public_edge_mode == "internal-only" else None
+                        local_ports["admin_console"]
+                        if public_edge_mode == "internal-only"
+                        else None
                     ),
                 },
                 "security_group_destination_ports": (
@@ -346,6 +359,42 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("exactly 14 disposable managed resources", result.stdout)
                 self.assertIn("edge=internal-only", result.stdout)
+
+    def test_internal_only_accepts_a_distinct_second_cluster_port_tuple(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            os.chmod(root, 0o700)
+            local_ports = {
+                "control_plane": 28080,
+                "admin_console": 28081,
+                "operator_proxy": 28082,
+            }
+            fixture = self.fixture(
+                root,
+                public_edge_mode="internal-only",
+                port_forward_local_ports=local_ports,
+            )
+            result = self.invoke(*fixture, public_edge_mode="internal-only")
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_internal_only_rejects_an_invalid_local_port_tuple(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            os.chmod(root, 0o700)
+            fixture = self.fixture(
+                root,
+                public_edge_mode="internal-only",
+                port_forward_local_ports={
+                    "control_plane": 28080,
+                    "admin_console": 28080,
+                    "operator_proxy": 28082,
+                },
+            )
+            result = self.invoke(*fixture, public_edge_mode="internal-only")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("port_forward_local_ports variable is invalid", result.stdout)
 
     def test_internal_only_rejects_public_allocation_or_ingress(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -32,6 +32,13 @@ The wrapper derives this stage's variables from the top-level
 cache, edge, and accelerator-pool values are written to a private generated
 tfvars file under the selected run root.
 
+For internal-only deployments, `edge.port_forward_ports` selects three
+distinct non-privileged loopback ports for the control plane, admin console,
+and same-origin operator proxy. Its defaults are `18080`, `18081`, and `18082`.
+The wrapper carries an alternate tuple from the customer tfvars into the edge
+handoff, allowing multiple clusters to be operated concurrently without local
+listener collisions.
+
 Accelerator pools carry the Nebius platform and preset unchanged to the
 provider. The facade catalogs every current Nebius GPU platform and also
 permits future platform and preset identifiers. A live preflight verifies that

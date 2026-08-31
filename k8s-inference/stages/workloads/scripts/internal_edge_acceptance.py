@@ -22,10 +22,13 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 BIND_ADDRESS = "127.0.0.1"
-APPLICATION_ORIGIN = "http://localhost:18082"
-CONTROL_PORT = 18080
-ADMIN_PORT = 18081
-PROXY_PORT = 18082
+DEFAULT_CONTROL_PORT = 18080
+DEFAULT_ADMIN_PORT = 18081
+DEFAULT_PROXY_PORT = 18082
+CONTROL_PORT = DEFAULT_CONTROL_PORT
+ADMIN_PORT = DEFAULT_ADMIN_PORT
+PROXY_PORT = DEFAULT_PROXY_PORT
+APPLICATION_ORIGIN = f"http://localhost:{PROXY_PORT}"
 CONTROL_SERVICE = "fs2-serve-control-plane"
 ADMIN_SERVICE = "fs2-serve-control-plane-admin-console"
 SERVICE_PORT = 8080
@@ -57,6 +60,27 @@ HOP_BY_HOP = frozenset(
         "upgrade",
     }
 )
+
+
+def configure_local_ports(
+    control_plane: int,
+    admin_console: int,
+    operator_proxy: int,
+) -> None:
+    """Bind the process to one validated Terraform port-forward tuple."""
+    ports = (control_plane, admin_console, operator_proxy)
+    if any(isinstance(port, bool) or not 1024 <= port <= 65535 for port in ports):
+        raise ValueError("local ports must be whole TCP ports from 1024 through 65535")
+    if len(set(ports)) != len(ports):
+        raise ValueError(
+            "control-plane, admin-console, and operator-proxy ports must differ"
+        )
+
+    global APPLICATION_ORIGIN, CONTROL_PORT, ADMIN_PORT, PROXY_PORT
+    CONTROL_PORT = control_plane
+    ADMIN_PORT = admin_console
+    PROXY_PORT = operator_proxy
+    APPLICATION_ORIGIN = f"http://localhost:{PROXY_PORT}"
 
 
 def upstream_port(path: str) -> int:
@@ -757,6 +781,24 @@ def main() -> None:
     parser.add_argument("--admin-token-file", type=Path, required=True)
     parser.add_argument("--semantic-request-file", type=Path, required=True)
     parser.add_argument(
+        "--control-plane-local-port",
+        type=int,
+        default=DEFAULT_CONTROL_PORT,
+        help="port_forward_contract control_plane_local_port",
+    )
+    parser.add_argument(
+        "--admin-console-local-port",
+        type=int,
+        default=DEFAULT_ADMIN_PORT,
+        help="port_forward_contract admin_console_local_port",
+    )
+    parser.add_argument(
+        "--operator-proxy-port",
+        type=int,
+        default=DEFAULT_PROXY_PORT,
+        help="port_forward_contract operator_proxy_port",
+    )
+    parser.add_argument(
         "--timeout-seconds",
         type=int,
         default=ACCEPTANCE_TIMEOUT_SECONDS,
@@ -766,6 +808,11 @@ def main() -> None:
         raise ValueError("context must be the exact run-scoped disposable context")
     if not 300 <= args.timeout_seconds <= ACCEPTANCE_TIMEOUT_SECONDS:
         raise ValueError("timeout-seconds must be from 300 through 7200")
+    configure_local_ports(
+        args.control_plane_local_port,
+        args.admin_console_local_port,
+        args.operator_proxy_port,
+    )
     checked_private_file(args.kubeconfig, "kubeconfig")
     admin_token = checked_private_file(args.admin_token_file, "admin token file")
     semantic = semantic_request(

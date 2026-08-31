@@ -68,6 +68,12 @@ deployment = {
 
   edge = {
     mode = "internal-only"
+    # Offset this tuple when another cluster uses the default 1808x ports.
+    port_forward_ports = {
+      control_plane  = 28080
+      admin_console  = 28081
+      operator_proxy = 28082
+    }
   }
 
   applications = {

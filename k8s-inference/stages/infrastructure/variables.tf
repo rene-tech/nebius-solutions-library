@@ -108,6 +108,31 @@ variable "public_edge_source_cidrs" {
   }
 }
 
+variable "port_forward_local_ports" {
+  description = "Distinct non-privileged loopback ports for the internal-only control-plane, admin-console, and same-origin operator proxy."
+  type = object({
+    control_plane  = number
+    admin_console  = number
+    operator_proxy = number
+  })
+  default = {
+    control_plane  = 18080
+    admin_console  = 18081
+    operator_proxy = 18082
+  }
+
+  validation {
+    condition = (
+      alltrue([
+        for port in values(var.port_forward_local_ports) :
+        floor(port) == port && port >= 1024 && port <= 65535
+      ]) &&
+      length(toset(values(var.port_forward_local_ports))) == 3
+    )
+    error_message = "port_forward_local_ports must contain three distinct whole TCP ports from 1024 through 65535."
+  }
+}
+
 variable "public_edge_service_ports" {
   description = "Envoy listener, shifted target, and pinned NodePort contract shared with the control-plane chart."
   type = object({

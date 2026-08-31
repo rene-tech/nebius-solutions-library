@@ -92,11 +92,20 @@ resource "terraform_data" "cluster_contract" {
           var.public_edge_contract.public_ipv4_address == null &&
           var.public_edge_contract.port_forward.enabled &&
           var.public_edge_contract.port_forward.bind_address == "127.0.0.1" &&
-          var.public_edge_contract.port_forward.application_origin == "http://localhost:18082" &&
-          var.public_edge_contract.port_forward.operator_endpoint == "http://127.0.0.1:18082" &&
-          var.public_edge_contract.port_forward.operator_proxy_port == 18082 &&
-          var.public_edge_contract.port_forward.control_plane_local_port == 18080 &&
-          var.public_edge_contract.port_forward.admin_console_local_port == 18081 &&
+          var.public_edge_contract.port_forward.application_origin == format("http://localhost:%d", var.public_edge_contract.port_forward.operator_proxy_port) &&
+          var.public_edge_contract.port_forward.operator_endpoint == format("http://127.0.0.1:%d", var.public_edge_contract.port_forward.operator_proxy_port) &&
+          alltrue([
+            for port in [
+              var.public_edge_contract.port_forward.control_plane_local_port,
+              var.public_edge_contract.port_forward.admin_console_local_port,
+              var.public_edge_contract.port_forward.operator_proxy_port,
+            ] : floor(port) == port && port >= 1024 && port <= 65535
+          ]) &&
+          length(toset([
+            var.public_edge_contract.port_forward.control_plane_local_port,
+            var.public_edge_contract.port_forward.admin_console_local_port,
+            var.public_edge_contract.port_forward.operator_proxy_port,
+          ])) == 3 &&
           length(var.public_edge_contract.security_group_destination_ports) == 0 &&
           var.acme_email == null,
           false,
