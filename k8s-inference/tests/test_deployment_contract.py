@@ -11,6 +11,8 @@ import unittest
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 
 DEPLOY_ROOT = Path(__file__).resolve().parents[1]
 PROFILES_ROOT = DEPLOY_ROOT / "catalog" / "profiles"
@@ -45,6 +47,50 @@ TEST_APPLICATIONS = {
 }
 
 
+def ephemeral_storage_gib(quantity: object | None) -> float:
+    if quantity is None:
+        return 0.0
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)(Ki|Mi|Gi|Ti)?", str(quantity))
+    if match is None:
+        raise AssertionError(f"unsupported ephemeral-storage quantity: {quantity!r}")
+    value = float(match.group(1))
+    return value * {
+        None: 1 / 1073741824,
+        "Ki": 1 / 1048576,
+        "Mi": 1 / 1024,
+        "Gi": 1,
+        "Ti": 1024,
+    }[match.group(2)]
+
+
+def container_ephemeral_request_gib(container: dict[str, Any]) -> float:
+    resources = container.get("resources", {})
+    request = resources.get("requests", {}).get("ephemeral-storage")
+    if request is None:
+        request = resources.get("limits", {}).get("ephemeral-storage")
+    return ephemeral_storage_gib(request)
+
+
+def pod_ephemeral_request_gib(pod_spec: dict[str, Any]) -> float:
+    init_stages: list[float] = []
+    restartable_init = 0.0
+    for container in pod_spec.get("initContainers", []):
+        request = container_ephemeral_request_gib(container)
+        if container.get("restartPolicy") == "Always":
+            restartable_init += request
+            init_stages.append(restartable_init)
+        else:
+            init_stages.append(restartable_init + request)
+    application = restartable_init + sum(
+        container_ephemeral_request_gib(container)
+        for container in pod_spec.get("containers", [])
+    )
+    overhead = ephemeral_storage_gib(
+        pod_spec.get("overhead", {}).get("ephemeral-storage")
+    )
+    return max([application, *init_stages, 0.0]) + overhead
+
+
 class DeploymentContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -52,9 +98,10 @@ class DeploymentContractTests(unittest.TestCase):
         if cls.terraform is None:
             raise unittest.SkipTest("terraform is required for deployment-contract tests")
 
-        cls.model_profiles = json.loads(
+        cls.model_contract = json.loads(
             (PROFILES_ROOT / "model-profiles.json").read_text(encoding="utf-8")
-        )["profiles"]
+        )
+        cls.model_profiles = cls.model_contract["profiles"]
 
         cls.temporary = tempfile.TemporaryDirectory(prefix="fs2-deploy-tests-")
         cls.addClassCleanup(cls.temporary.cleanup)
@@ -334,6 +381,97 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(workloads["model_scaling_mode"], "keda")
         self.assertTrue(contract["secret_requirements"]["ngc_api_key"])
         self.assertTrue(contract["secret_requirements"]["nvcr_dockerconfig"])
+        storage = contract["scale_from_zero_storage"]
+        self.assertEqual(storage["model_effective_request_gib"]["glm-5-2-fp8"], 768)
+        budgets = storage["pool_synthetic_storage_budget_gib"]
+        self.assertEqual(
+            budgets["nebius-b300-preemptible-8x"],
+            1606,
+        )
+
+    def test_scale_from_zero_rejects_boot_disk_that_cannot_fit_glm(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-glm-storage-template",
+            "profiles": {
+                "capacity": "full_catalog",
+                "models": "full_catalog",
+            },
+            "target": self.catalog_target(),
+            "accelerator_pools": {
+                "b300-8x-local": {
+                    "platform": "gpu-b300-sxm",
+                    "preset": "8gpu-192vcpu-2768gb",
+                    "accelerator_class": "nvidia-b300-sxm6-288gb",
+                    "gpus_per_node": 8,
+                    "gpu_memory_gb": 288,
+                    "capacity_type": "preemptible",
+                    "min_nodes": 0,
+                    "max_nodes": 1,
+                    "driver": {"mode": "managed", "preset": "cuda13.0"},
+                    "boot_disk": {"type": "NETWORK_SSD", "size_gib": 320},
+                    "local_nvme": True,
+                    "local_nvme_mode": "kubelet-ephemeral",
+                }
+            },
+            "models": {
+                "selection": "explicit",
+                "enabled": ["glm-5-2-fp8"],
+                "pool_overrides": {"glm-5-2-fp8": "b300-8x-local"},
+                "scaling": {"mode": "static"},
+            },
+            "edge": {"mode": "internal-only"},
+        }
+        variable_file = self._write_configuration("glm-small-boot", deployment)
+        result, _ = self._plan_file(variable_file, "glm-small-boot")
+
+        self.assertNotEqual(result.returncode, 0)
+        diagnostics = f"{result.stdout}\n{result.stderr}"
+        self.assertIn("cannot trigger its zero-node pool", diagnostics)
+        self.assertIn("glm-5-2-fp8 requires 768.000 GiB", diagnostics)
+        self.assertIn("only 224 GiB", diagnostics)
+
+        deployment["accelerator_pools"]["b300-8x-local"]["boot_disk"][
+            "size_gib"
+        ] = 2048
+        variable_file = self._write_configuration("glm-large-boot", deployment)
+        contract = self._planned_outputs(variable_file, "glm-large-boot")[
+            "deployment_contract"
+        ]
+        budgets = contract["scale_from_zero_storage"][
+            "pool_synthetic_storage_budget_gib"
+        ]
+        self.assertEqual(
+            budgets["b300-8x-local"],
+            1606,
+        )
+
+    def test_catalog_ephemeral_requests_match_selected_deployments(self) -> None:
+        targets = self.model_contract["model_autoscaling_targets"]
+        for model_id, target in targets.items():
+            deployments: list[dict[str, Any]] = []
+            for relative_path in self.model_contract["model_artifacts"][model_id][
+                "manifest_paths"
+            ]:
+                deployments.extend(
+                    document
+                    for document in yaml.safe_load_all(
+                        (DEPLOY_ROOT / relative_path).read_text(encoding="utf-8")
+                    )
+                    if document is not None
+                    and document.get("kind") == "Deployment"
+                    and document["metadata"]["name"] == target["deployment"]
+                )
+            with self.subTest(model=model_id):
+                self.assertEqual(len(deployments), 1)
+                actual = pod_ephemeral_request_gib(
+                    deployments[0]["spec"]["template"]["spec"]
+                )
+                self.assertAlmostEqual(
+                    actual,
+                    target["ephemeral_storage_request_gib"],
+                    places=9,
+                )
 
     def test_pool_override_preserves_scale_from_zero_selector_contract(self) -> None:
         source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(

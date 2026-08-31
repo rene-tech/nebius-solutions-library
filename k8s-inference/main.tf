@@ -66,6 +66,11 @@ resource "terraform_data" "deployment_contract" {
     }
 
     precondition {
+      condition     = length(local.scale_from_zero_ephemeral_storage_violations) == 0
+      error_message = "A selected model cannot trigger its zero-node pool because the Nebius managed autoscaler derives synthetic ephemeral capacity from the boot disk, before local NVMe exists. Increase deployment.accelerator_pools.<pool>.boot_disk.size_gib or keep a node hot. ${join("; ", local.scale_from_zero_ephemeral_storage_violations)}."
+    }
+
+    precondition {
       condition = alltrue([
         for model_id in var.deployment.models.scaling.hot : anytrue([
           for pool_id in local.selected_model_placements[model_id].compatible_pool_ids :

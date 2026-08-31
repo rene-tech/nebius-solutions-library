@@ -345,6 +345,9 @@ variable "deployment" {
         contains(["amd64", "arm64"], pool.host_architecture) &&
         contains(["regular", "preemptible"], pool.capacity_type) &&
         contains(["raw", "kubelet-ephemeral"], pool.local_nvme_mode) &&
+        contains(["NETWORK_SSD", "NETWORK_SSD_IO_M3", "NETWORK_SSD_NON_REPLICATED"], pool.boot_disk.type) &&
+        floor(pool.boot_disk.size_gib) == pool.boot_disk.size_gib &&
+        pool.boot_disk.size_gib >= 32 && pool.boot_disk.size_gib <= 4096 &&
         floor(pool.min_nodes) == pool.min_nodes && pool.min_nodes >= 0 &&
         floor(pool.max_nodes) == pool.max_nodes && pool.max_nodes >= pool.min_nodes &&
         contains(["managed", "operator"], pool.driver.mode) &&
@@ -366,7 +369,7 @@ variable "deployment" {
         ))
       )
     ]), false)
-    error_message = "accelerator_pools must be structurally valid provider pools; platform and preset stay open-ended so current and future Nebius GPUs pass through to provider validation."
+    error_message = "accelerator_pools must be structurally valid provider pools, including a whole 32-4096 GiB supported boot disk; platform and preset stay open-ended so current and future Nebius GPUs pass through to provider validation."
   }
 
   validation {

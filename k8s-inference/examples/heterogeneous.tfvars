@@ -36,6 +36,7 @@ deployment = {
       min_nodes         = 0
       max_nodes         = 1
       driver            = { mode = "managed", preset = "cuda13.0" }
+      boot_disk         = { type = "NETWORK_SSD", size_gib = 2048 }
       local_nvme        = true
       local_nvme_mode   = "kubelet-ephemeral"
     }

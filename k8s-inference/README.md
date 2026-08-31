@@ -196,6 +196,19 @@ never the durable source of truth; models must still be recoverable from a
 pinned object store, shared filesystem, OCI artifact, or upstream model
 revision.
 
+For a pool with `min_nodes = 0`, the Nebius managed autoscaler evaluates a
+synthetic node before host-local NVMe exists and derives its schedulable
+ephemeral capacity from `boot_disk.size_gib`. The root Terraform plan derives
+each selected Deployment's cataloged effective `ephemeral-storage` request and
+rejects a pool whose conservative synthetic budget cannot fit it. A regression
+test derives that catalog value from the Pod spec, including init containers
+and restartable sidecars, so onboarding cannot leave it stale. The budget is
+80% of the configured boot disk minus 32 GiB for filesystem and system-workload
+headroom. This does not replace local NVMe or reduce the workload reservation:
+size the boot disk for the scale-from-zero decision and keep the full `emptyDir`
+request for the real node. The GLM-5.2 example uses a 2048 GiB boot disk for its
+768 GiB localization request and additional image/runtime margin.
+
 Kueue, the MCP route, and the admin console are bundled platform components in
 interface version 1. `terraform.tfvars` supplies immutable control-plane,
 admin-console, and selected model image digests; admin provenance is a typed

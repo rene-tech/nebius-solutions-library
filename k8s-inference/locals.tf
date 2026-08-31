@@ -57,6 +57,18 @@ locals {
     )
   ])))
 
+  # Nebius Managed Kubernetes builds the cluster-autoscaler template for a
+  # zero-node pool from its network boot disk. Host-local NVMe is visible only
+  # after a real node joins. The catalog's scheduling request is checked
+  # against every selected Deployment manifest by the deployment-contract test.
+  selected_model_effective_ephemeral_request_gib = {
+    for model_id in local.selected_model_ids :
+    model_id => local.model_profile_contract.model_autoscaling_targets[model_id].ephemeral_storage_request_gib
+  }
+
+  managed_autoscaler_boot_disk_allocatable_ratio = 0.80
+  managed_autoscaler_ephemeral_headroom_gib      = 32
+
   accelerator_pool_capacity_overrides = {
     for pool_id, bounds in var.deployment.accelerator_pool_capacity : pool_id => {
       min_nodes = bounds.min_nodes
@@ -79,13 +91,27 @@ locals {
       accelerator_class  = pool.accelerator_class
       gpus_per_node      = pool.gpus_per_node
       host_architectures = [pool.host_architecture]
+      boot_disk_gib      = pool.boot_disk.size_gib
+      scale_from_zero    = pool.min_nodes == 0 && pool.topology.mode != "nvlink_rack"
     }
     } : {
     for pool_id in keys(local.selected_pool_profile.pools) : pool_id => {
       accelerator_class  = local.accelerator_contract.pool_templates[pool_id].accelerator_class
       gpus_per_node      = local.accelerator_contract.pool_templates[pool_id].node.gpus_per_node
       host_architectures = local.accelerator_contract.pool_templates[pool_id].node.host_architectures
+      boot_disk_gib      = try(local.accelerator_contract.pool_templates[pool_id].node.boot_disk.size_gib, 0)
+      scale_from_zero = (
+        local.effective_pool_capacities[pool_id].min_nodes == 0 &&
+        local.accelerator_contract.pool_templates[pool_id].capacity.scale_from_zero &&
+        local.accelerator_contract.pool_templates[pool_id].node.topology != "nvlink_rack"
+      )
     }
+  }
+  effective_pool_synthetic_ephemeral_budget_gib = {
+    for pool_id, pool in local.effective_pool_facts : pool_id => max(
+      0,
+      floor(pool.boot_disk_gib * local.managed_autoscaler_boot_disk_allocatable_ratio) - local.managed_autoscaler_ephemeral_headroom_gib,
+    )
   }
   catalog_model_placements = {
     for model_id in local.selected_model_ids : model_id => try(
@@ -110,6 +136,20 @@ locals {
       }) : placement
     )
   }
+  scale_from_zero_ephemeral_storage_violations = flatten([
+    for model_id, placement in local.selected_model_placements : [
+      for pool_id in placement.compatible_pool_ids : format(
+        "%s requires %.3f GiB ephemeral storage but pool %s exposes only %.0f GiB in the conservative autoscaler template budget",
+        model_id,
+        local.selected_model_effective_ephemeral_request_gib[model_id],
+        pool_id,
+        local.effective_pool_synthetic_ephemeral_budget_gib[pool_id],
+        ) if contains(keys(local.effective_pool_facts), pool_id) ? (
+        local.effective_pool_facts[pool_id].scale_from_zero &&
+        local.selected_model_effective_ephemeral_request_gib[model_id] > local.effective_pool_synthetic_ephemeral_budget_gib[pool_id]
+      ) : false
+    ]
+  ])
   selected_model_replica_ceilings = {
     for model_id, placement in local.selected_model_placements : model_id => try(floor(
       sum([
@@ -207,6 +247,12 @@ locals {
     custom_accelerator_pools        = local.using_custom_accelerator_pools
     selected_model_ids              = local.selected_model_ids
     selected_model_replica_ceilings = local.selected_model_replica_ceilings
+    scale_from_zero_storage = {
+      boot_disk_allocatable_ratio       = local.managed_autoscaler_boot_disk_allocatable_ratio
+      fixed_headroom_gib                = local.managed_autoscaler_ephemeral_headroom_gib
+      model_effective_request_gib       = local.selected_model_effective_ephemeral_request_gib
+      pool_synthetic_storage_budget_gib = local.effective_pool_synthetic_ephemeral_budget_gib
+    }
     stages = {
       infrastructure = local.infrastructure_variables
       foundation     = local.foundation_variables

@@ -143,7 +143,7 @@
         "memory_gib": 2768,
         "host_architectures": ["amd64"],
         "topology": "single-node-multi-gpu",
-        "boot_disk": {"size_gib": 320, "type": "NETWORK_SSD"},
+        "boot_disk": {"size_gib": 2048, "type": "NETWORK_SSD"},
         "drain_timeout": "30m"
       },
       "capacity": {"allowed_modes": ["preemptible"], "default_mode": "preemptible", "scale_from_zero": true},
