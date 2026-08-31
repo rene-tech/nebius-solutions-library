@@ -333,9 +333,18 @@ locals {
             template = merge(document.manifest.spec.template, {
               spec = merge(document.manifest.spec.template.spec, {
                 nodeSelector = {
-                  "accelerator.fs2.nebius/class"   = local.selected_queue_pools[var.model_pool_overrides[document.model_id]].accelerator_class
-                  "accelerator.fs2.nebius/pool-id" = var.model_pool_overrides[document.model_id]
-                  "kubernetes.io/arch"             = local.selected_queue_pools[var.model_pool_overrides[document.model_id]].node.host_architectures[0]
+                  for key, value in {
+                    "accelerator.fs2.nebius/class"   = local.selected_queue_pools[var.model_pool_overrides[document.model_id]].accelerator_class
+                    "accelerator.fs2.nebius/pool-id" = var.model_pool_overrides[document.model_id]
+                    "kubernetes.io/arch"             = local.selected_queue_pools[var.model_pool_overrides[document.model_id]].node.host_architectures[0]
+                  } : key => value
+                  if !(
+                    local.selected_queue_pools[var.model_pool_overrides[document.model_id]].capacity.scale_from_zero &&
+                    contains(
+                      local.selected_queue_pools[var.model_pool_overrides[document.model_id]].scheduling.forbidden_scale_zero_selectors,
+                      key,
+                    )
+                  )
                 }
                 tolerations = local.selected_queue_pools[var.model_pool_overrides[document.model_id]].scheduling.tolerations
               })

@@ -269,6 +269,37 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertTrue(contract["secret_requirements"]["ngc_api_key"])
         self.assertTrue(contract["secret_requirements"]["nvcr_dockerconfig"])
 
+    def test_pool_override_preserves_scale_from_zero_selector_contract(self) -> None:
+        source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            '"accelerator.fs2.nebius/class"   = local.selected_queue_pools',
+            source,
+        )
+        self.assertIn(
+            '"accelerator.fs2.nebius/pool-id" = var.model_pool_overrides',
+            source,
+        )
+        self.assertIn(
+            '"kubernetes.io/arch"             = local.selected_queue_pools',
+            source,
+        )
+        self.assertIn(
+            "capacity.scale_from_zero &&\n"
+            "                    contains(\n"
+            "                      local.selected_queue_pools[var.model_pool_overrides[document.model_id]].scheduling.forbidden_scale_zero_selectors,\n"
+            "                      key,",
+            source,
+        )
+        self.assertIn(
+            "} : key => value\n"
+            "                  if !(\n"
+            "                    local.selected_queue_pools",
+            source,
+        )
+
     def test_replica_override_uses_compatible_accelerator_capacity(self) -> None:
         deployment = {
             "schema_version": 1,
