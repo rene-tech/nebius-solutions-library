@@ -268,6 +268,72 @@ class InferenceStackTests(unittest.TestCase):
             ],
         )
 
+    def test_infrastructure_outputs_accepts_omitted_legacy_contract(self) -> None:
+        configuration = contract()
+        required_outputs = {
+            "cluster_id": "mk8scluster-test",
+            "cluster_name": "fs2-wrapper-test",
+            "target_contract": {"schema": "target-test/v1"},
+            "accelerator_pool_contract": {"schema": "accelerators-test/v2"},
+            "public_edge_contract": {"mode": "internal-only"},
+        }
+        terraform_outputs = {
+            name: {"sensitive": False, "value": value}
+            for name, value in required_outputs.items()
+        }
+
+        with tempfile.TemporaryDirectory(prefix="inference-stack-contract-") as temporary:
+            run_root = Path(temporary)
+            with (
+                mock.patch.object(STACK, "terraform_init"),
+                mock.patch.object(
+                    STACK,
+                    "terraform_json_output",
+                    side_effect=lambda _terraform, _root, name, _environment: required_outputs[
+                        name
+                    ],
+                ),
+                mock.patch.object(
+                    STACK,
+                    "run",
+                    return_value=subprocess.CompletedProcess(
+                        [], 0, stdout=json.dumps(terraform_outputs), stderr=""
+                    ),
+                ) as terraform_output,
+                mock.patch.object(
+                    STACK,
+                    "ensure_kubeconfig",
+                    return_value=(
+                        run_root / "kubeconfig",
+                        "11111111-2222-3333-4444-555555555555",
+                    ),
+                ),
+            ):
+                outputs = STACK.infrastructure_outputs(
+                    "terraform-test",
+                    run_root,
+                    configuration,
+                    nebius="nebius-test",
+                    nebius_profile="sandbox",
+                    kubectl="kubectl-test",
+                )
+
+            self.assertIsNone(outputs["infrastructure_contract"])
+            self.assertEqual(
+                outputs["accelerator_pool_contract"],
+                required_outputs["accelerator_pool_contract"],
+            )
+            terraform_output.assert_called_once_with(
+                [
+                    "terraform-test",
+                    f"-chdir={STACK.INFRA_ROOT}",
+                    "output",
+                    "-json",
+                ],
+                env=mock.ANY,
+                capture=True,
+            )
+
     def test_stage_readiness_requires_completion_output(self) -> None:
         with tempfile.TemporaryDirectory(prefix="inference-stack-ready-") as temporary:
             run_root = Path(temporary)

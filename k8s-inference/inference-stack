@@ -176,6 +176,27 @@ def terraform_json_output(
     return json.loads(result.stdout)
 
 
+def terraform_optional_json_output(
+    terraform: str,
+    root: Path,
+    name: str,
+    environment: Mapping[str, str],
+) -> Any | None:
+    """Read an output that Terraform legitimately omits when its value is null."""
+    result = run(
+        [terraform, f"-chdir={root}", "output", "-json"],
+        env=environment,
+        capture=True,
+    )
+    outputs = json.loads(result.stdout)
+    output = outputs.get(name)
+    if output is None:
+        return None
+    if not isinstance(output, dict) or "value" not in output:
+        raise DeploymentError(f"Terraform returned malformed output {name!r}")
+    return output["value"]
+
+
 def state_addresses(
     terraform: str,
     root: Path,
@@ -606,7 +627,7 @@ def infrastructure_outputs(
         "target_contract": terraform_json_output(
             terraform, INFRA_ROOT, "target_contract", environment
         ),
-        "infrastructure_contract": terraform_json_output(
+        "infrastructure_contract": terraform_optional_json_output(
             terraform, INFRA_ROOT, "infrastructure_contract", environment
         ),
         "accelerator_pool_contract": terraform_json_output(
