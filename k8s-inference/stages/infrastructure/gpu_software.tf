@@ -42,7 +42,15 @@ module "device_plugin" {
   parent_id             = var.project_id
   dcgm_exporter_enabled = false
 
-  depends_on = [terraform_data.gpu_software_contract]
+  # Nebius application releases schedule controller pods while their create
+  # operation is in progress.  A fresh cluster therefore needs general-purpose
+  # capacity before the release starts; otherwise the release can remain in
+  # INSTALLING with its controllers Pending and prevent GPU pools from being
+  # reached by the apply graph.
+  depends_on = [
+    terraform_data.gpu_software_contract,
+    nebius_mk8s_v1_node_group.system,
+  ]
 }
 
 module "gpu_operator" {
@@ -56,7 +64,10 @@ module "gpu_operator" {
   mig_strategy                = coalesce(try(one(local.operator_mig_strategies), null), "none")
   cdi_enabled                 = true
 
-  depends_on = [terraform_data.gpu_software_contract]
+  depends_on = [
+    terraform_data.gpu_software_contract,
+    nebius_mk8s_v1_node_group.system,
+  ]
 }
 
 module "network_operator" {
@@ -66,5 +77,8 @@ module "network_operator" {
   cluster_id = nebius_mk8s_v1_cluster.validation.id
   parent_id  = var.project_id
 
-  depends_on = [terraform_data.gpu_software_contract]
+  depends_on = [
+    terraform_data.gpu_software_contract,
+    nebius_mk8s_v1_node_group.system,
+  ]
 }

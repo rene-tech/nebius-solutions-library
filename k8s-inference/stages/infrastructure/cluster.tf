@@ -191,7 +191,11 @@ resource "nebius_mk8s_v1_node_group" "gpu" {
     gpu_cluster = each.value.node.topology == "gpu_cluster" ? nebius_compute_v1_gpu_cluster.pool[each.key] : null
   }
 
-  depends_on = [nebius_mk8s_v1_node_group.system]
+  depends_on = [
+    module.device_plugin,
+    module.gpu_operator,
+    module.network_operator,
+  ]
 
   lifecycle {
     precondition {
@@ -320,5 +324,9 @@ resource "nebius_mk8s_v1_node_group" "nvlink_rack" {
     }
   }
 
-  depends_on = [nebius_mk8s_v1_node_group.system]
+  depends_on = [
+    module.device_plugin,
+    module.gpu_operator,
+    module.network_operator,
+  ]
 }

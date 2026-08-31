@@ -135,6 +135,30 @@ class GpuTopologyContractTests(unittest.TestCase):
             self.cluster,
         )
 
+    def test_gpu_bootstrap_dependency_chain_is_declared_for_every_driver_mode(
+        self,
+    ) -> None:
+        system_dependency = "nebius_mk8s_v1_node_group.system"
+        for module in ("device_plugin", "gpu_operator", "network_operator"):
+            with self.subTest(module=module):
+                block = self.software.split(f'module "{module}"', 1)[1].split(
+                    "\n}", 1
+                )[0]
+                self.assertIn(system_dependency, block)
+                self.assertIn("terraform_data.gpu_software_contract", block)
+
+        for node_group in ("gpu", "nvlink_rack"):
+            with self.subTest(node_group=node_group):
+                block = self.cluster.split(
+                    f'resource "nebius_mk8s_v1_node_group" "{node_group}"', 1
+                )[1].split("\n}", 1)[0]
+                for module in (
+                    "module.device_plugin",
+                    "module.gpu_operator",
+                    "module.network_operator",
+                ):
+                    self.assertIn(module, block)
+
 
 if __name__ == "__main__":
     unittest.main()
