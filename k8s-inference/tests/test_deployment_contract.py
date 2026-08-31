@@ -810,6 +810,14 @@ class DeploymentContractTests(unittest.TestCase):
             h100_contract["target"],
             {"project_id": TEST_PROJECT_ID, "region": "eu-north1"},
         )
+        self.assertEqual(
+            h100_contract["secret_requirements"],
+            {
+                "grafana_bootstrap": True,
+                "ngc_api_key": False,
+                "nvcr_dockerconfig": False,
+            },
+        )
 
     def test_pool_override_preserves_scale_from_zero_selector_contract(self) -> None:
         source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
