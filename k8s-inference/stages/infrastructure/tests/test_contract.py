@@ -150,13 +150,17 @@ class DisposableTerraformContractTests(unittest.TestCase):
             "targets": {},
         })
 
-    def test_project_local_registry_pull_and_public_edge_are_owned(self) -> None:
+    def test_tenant_scoped_registry_pull_and_public_edge_are_owned(self) -> None:
         iam = (ROOT / "iam.tf").read_text(encoding="utf-8")
         data = (ROOT / "data.tf").read_text(encoding="utf-8")
         network = (ROOT / "network.tf").read_text(encoding="utf-8")
         self.assertIn(
             'resource "nebius_iam_v1_group" "target_registry_readers" {\n'
-            "  parent_id = data.nebius_iam_v2_project.target.id",
+            "  # A project-scoped group can receive permits only for resources in that\n"
+            "  # project. Keep the run-scoped group at the target project's tenant so the\n"
+            "  # node identity can pull immutable images from any explicitly allowlisted\n"
+            "  # registry in the same tenant, including registries in another region.\n"
+            "  parent_id = data.nebius_iam_v2_project.target.parent_id",
             iam,
         )
         self.assertIn(
@@ -170,6 +174,18 @@ class DisposableTerraformContractTests(unittest.TestCase):
             "  parent_id   = nebius_iam_v1_group.target_registry_readers.id\n"
             "  resource_id = nebius_registry_v1_registry.images.id\n"
             '  role        = "viewer"',
+            iam,
+        )
+        self.assertIn(
+            'resource "nebius_iam_v1_access_permit" "nodepull_external_registry" {\n'
+            "  for_each = var.external_registry_ids\n\n"
+            "  parent_id   = nebius_iam_v1_group.target_registry_readers.id\n"
+            "  resource_id = each.value\n"
+            '  role        = "viewer"',
+            iam,
+        )
+        self.assertNotIn(
+            "parent_id = data.nebius_iam_v2_project.target.id",
             iam,
         )
         self.assertNotIn(

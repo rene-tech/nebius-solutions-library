@@ -8,7 +8,11 @@ resource "nebius_iam_v1_service_account" "nodepull" {
 }
 
 resource "nebius_iam_v1_group" "target_registry_readers" {
-  parent_id = data.nebius_iam_v2_project.target.id
+  # A project-scoped group can receive permits only for resources in that
+  # project. Keep the run-scoped group at the target project's tenant so the
+  # node identity can pull immutable images from any explicitly allowlisted
+  # registry in the same tenant, including registries in another region.
+  parent_id = data.nebius_iam_v2_project.target.parent_id
   name      = "${local.resource_name}-target-readers"
   labels    = merge(local.common_labels, { purpose = "target-registry-read" })
 

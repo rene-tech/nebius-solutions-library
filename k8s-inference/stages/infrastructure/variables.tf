@@ -448,7 +448,7 @@ variable "custom_accelerator_pools" {
 }
 
 variable "external_registry_ids" {
-  description = "Optional Nebius registries whose immutable application or model images are referenced by terraform.tfvars. The run-scoped node identity receives viewer only."
+  description = "Optional same-tenant Nebius registries whose immutable application or model images are referenced by terraform.tfvars. The run-scoped node identity receives viewer only."
   type        = set(string)
   default     = []
   nullable    = false
