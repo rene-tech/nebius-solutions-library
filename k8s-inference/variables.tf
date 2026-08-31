@@ -121,6 +121,10 @@ variable "deployment" {
 
     artifacts = optional(object({
       external_registry_ids = optional(set(string), [])
+      registry_policy = optional(object({
+        mode              = optional(string, "regional-mirror")
+        repository_prefix = optional(string, "")
+      }), {})
     }), {})
 
     edge = optional(object({
@@ -302,6 +306,31 @@ variable "deployment" {
       can(regex("^registry-[a-z0-9]+$", registry_id))
     ])
     error_message = "artifacts.external_registry_ids must contain only Nebius registry IDs."
+  }
+
+  validation {
+    condition = (
+      contains(
+        ["regional-mirror", "direct-source"],
+        var.deployment.artifacts.registry_policy.mode,
+      ) &&
+      can(regex(
+        "^(?:|[a-z0-9](?:[a-z0-9._-]{0,61}[a-z0-9])?)$",
+        var.deployment.artifacts.registry_policy.repository_prefix,
+      ))
+    )
+    error_message = "artifacts.registry_policy must select regional-mirror or direct-source and use a bounded OCI repository prefix."
+  }
+
+  validation {
+    condition = (
+      var.deployment.artifacts.registry_policy.mode != "regional-mirror" ||
+      alltrue([
+        for image in values(var.deployment.models.image_overrides) :
+        can(regex("@sha256:[0-9a-f]{64}$", image))
+      ])
+    )
+    error_message = "regional-mirror requires every models.image_overrides value to end in an immutable @sha256 digest."
   }
 
   validation {

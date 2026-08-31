@@ -486,6 +486,36 @@ variable "external_registry_ids" {
   }
 }
 
+variable "registry_delivery" {
+  description = "Non-secret artifact delivery policy and upstream hosts derived from the customer facade. Regional mirroring is executed by the wrapper after this stage creates the target registry."
+  type = object({
+    mode              = string
+    repository_prefix = string
+    source_hosts      = list(string)
+  })
+  default = {
+    mode              = "regional-mirror"
+    repository_prefix = ""
+    source_hosts      = []
+  }
+  nullable = false
+
+  validation {
+    condition = (
+      contains(["regional-mirror", "direct-source"], var.registry_delivery.mode) &&
+      can(regex(
+        "^(?:|[a-z0-9](?:[a-z0-9._-]{0,61}[a-z0-9])?)$",
+        var.registry_delivery.repository_prefix,
+      )) &&
+      alltrue([
+        for host in var.registry_delivery.source_hosts :
+        can(regex("^[a-zA-Z0-9.-]+(?::[0-9]+)?$", host))
+      ])
+    )
+    error_message = "registry_delivery must select regional-mirror or direct-source, use a bounded repository prefix, and contain valid source registry hosts."
+  }
+}
+
 variable "gpu_driver_preset" {
   description = "Deprecated B300 fixture guard. Generic GPU pools use their own provider.driver.preset from accelerator-pools.json."
   type        = string
@@ -751,6 +781,7 @@ locals {
       requested_overrides_sha256 = sha256(jsonencode(var.accelerator_pool_capacity_overrides))
     }
     artifact_source = {
+      deprecated = true
       registry = {
         id           = nebius_registry_v1_registry.images.id
         project_id   = nonsensitive(var.project_id)
@@ -758,9 +789,33 @@ locals {
         region       = local.selected_target.region
         fqdn         = nebius_registry_v1_registry.images.status.registry_fqdn
       }
-      closure_schema             = jsondecode(file("${path.module}/../../catalog/profiles/source-registry-closure.json")).schema
-      closure_sha256             = filesha256("${path.module}/../../catalog/profiles/source-registry-closure.json")
-      cross_region_pull_required = false
+      closure_schema = jsondecode(file("${path.module}/../../catalog/profiles/source-registry-closure.json")).schema
+      closure_sha256 = filesha256("${path.module}/../../catalog/profiles/source-registry-closure.json")
+      cross_region_pull_required = (
+        var.registry_delivery.mode == "direct-source" &&
+        length(local.cross_region_source_hosts) > 0
+      )
+    }
+    artifact_delivery = {
+      mode                  = var.registry_delivery.mode
+      repository_prefix     = var.registry_delivery.repository_prefix
+      upstream_registry_ids = sort(tolist(var.external_registry_ids))
+      source_hosts          = var.registry_delivery.source_hosts
+      target_registry = {
+        id           = nebius_registry_v1_registry.images.id
+        project_id   = nonsensitive(var.project_id)
+        project_name = data.nebius_iam_v2_project.target.name
+        region       = local.selected_target.region
+        fqdn         = nebius_registry_v1_registry.images.status.registry_fqdn
+      }
+      promotion_cross_region_required = (
+        var.registry_delivery.mode == "regional-mirror" &&
+        length(local.cross_region_source_hosts) > 0
+      )
+      runtime_cross_region_pull_required = (
+        var.registry_delivery.mode == "direct-source" &&
+        length(local.cross_region_source_hosts) > 0
+      )
     }
     pools = {
       for pool_id, pool in local.selected_gpu_pools : pool_id => {

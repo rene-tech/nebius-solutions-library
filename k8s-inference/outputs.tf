@@ -18,5 +18,6 @@ output "effective_configuration" {
     port_forward_ports         = var.deployment.edge.port_forward_ports
     model_scaling_mode         = var.deployment.models.scaling.mode
     hot_model_ids              = sort(tolist(var.deployment.models.scaling.hot))
+    registry_policy            = local.deployment_contract.artifact_delivery
   }
 }

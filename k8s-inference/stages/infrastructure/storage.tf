@@ -1,8 +1,8 @@
 resource "nebius_registry_v1_registry" "images" {
   parent_id   = var.project_id
   name        = local.resource_name
-  description = "Ephemeral images for fs2 Terraform lifecycle ${var.run_id}"
-  labels      = merge(local.common_labels, { purpose = "validation-images" })
+  description = "Cluster-regional runtime artifact mirror for ${local.resource_name}"
+  labels      = merge(local.common_labels, { purpose = "runtime-artifact-mirror" })
 
   depends_on = [terraform_data.target_contract]
 }

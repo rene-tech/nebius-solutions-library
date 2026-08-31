@@ -15,7 +15,7 @@ run-owned resources:
 - one node group for each selected accelerator pool or NVLink rack;
 - the node-pull service account and narrowly scoped, project-local
   registry-reader groups;
-- a solution registry, shared model-cache filesystem, and worker security
+- a cluster-regional runtime artifact mirror, shared model-cache filesystem, and worker security
   group; and
 - an optional public IPv4 allocation when public edge mode is selected.
 
@@ -63,8 +63,10 @@ terraform-provider.storage.eu-north1.nebius.cloud/nebius/nebius
 ## Handoff
 
 The stage emits the cluster identity, accelerator node-group IDs, the resolved
-accelerator-pool contract and digest, edge contract, capacity contract, and
-run-owned resource IDs. `inference-stack` writes only the required non-secret
+accelerator-pool contract and digest, canonical registry-delivery contract,
+edge contract, capacity contract, and run-owned resource IDs. The delivery
+contract distinguishes upstream sources and promotion traffic from the
+regional target registry and node runtime pulls. `inference-stack` writes only the required non-secret
 values into the next stage's private tfvars file. Later stages must match the
 accelerator contract digest before treating capacity as effective.
 

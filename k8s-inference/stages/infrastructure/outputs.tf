@@ -12,7 +12,7 @@ output "cluster_version" {
 }
 
 output "target_contract" {
-  description = "Non-secret reviewed target and source-registry identity used by downstream acceptance receipts."
+  description = "Non-secret reviewed target and legacy source_registry alias used by downstream acceptance receipts. New consumers should use registry_delivery_contract; source_registry names the cluster-local target registry for compatibility."
   value = {
     project_id                 = nonsensitive(var.project_id)
     project_name               = coalesce(local.selected_target.project_name, data.nebius_iam_v2_project.target.name)
@@ -31,6 +31,42 @@ output "target_contract" {
       project_id = nonsensitive(var.project_id)
       fqdn       = nebius_registry_v1_registry.images.status.registry_fqdn
     }
+  }
+}
+
+output "registry_delivery_contract" {
+  description = "Canonical non-secret distinction between upstream image sources, one Terraform-created regional target registry, promotion traffic, and node runtime pulls."
+  value = {
+    schema            = "fs2-serve.nebius.ai/registry-delivery/v1"
+    mode              = var.registry_delivery.mode
+    repository_prefix = var.registry_delivery.repository_prefix
+    target_registry = {
+      id              = nebius_registry_v1_registry.images.id
+      project_id      = nonsensitive(var.project_id)
+      region          = local.selected_target.region
+      fqdn            = nebius_registry_v1_registry.images.status.registry_fqdn
+      repository_root = "${nebius_registry_v1_registry.images.status.registry_fqdn}/${trimprefix(nebius_registry_v1_registry.images.id, "registry-")}"
+    }
+    upstream = {
+      source_hosts = var.registry_delivery.source_hosts
+      nebius_registries = {
+        for registry_id, registry in data.nebius_registry_v1_registry.external : registry_id => {
+          id         = registry.id
+          project_id = registry.parent_id
+          fqdn       = registry.status.registry_fqdn
+          region     = try(regex("^cr\\.([a-z0-9-]+)\\.nebius\\.cloud$", registry.status.registry_fqdn)[0], null)
+        }
+      }
+    }
+    promotion_cross_region_required = (
+      var.registry_delivery.mode == "regional-mirror" &&
+      length(local.cross_region_source_hosts) > 0
+    )
+    runtime_cross_region_pull_required = (
+      var.registry_delivery.mode == "direct-source" &&
+      length(local.cross_region_source_hosts) > 0
+    )
+    cross_region_source_hosts = local.cross_region_source_hosts
   }
 }
 

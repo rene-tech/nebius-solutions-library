@@ -8,10 +8,13 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
 
 
@@ -435,6 +438,7 @@ def preflight_accelerators(
 def require_deployable_images(contract: Mapping[str, Any]) -> None:
     """Fail before cloud mutation when source-build placeholders remain."""
     workloads = contract["stages"]["workloads"]
+    policy = contract["artifact_delivery"]["mode"]
     application_images = {
         "control plane": workloads["control_plane_image"],
         "admin console": workloads["admin_console"]["image"],
@@ -448,15 +452,382 @@ def require_deployable_images(contract: Mapping[str, Any]) -> None:
             )
         if digest == f"sha256:{'0' * 64}":
             raise DeploymentError(f"{label} image still uses the zero digest placeholder")
+        if policy == "regional-mirror":
+            split_digest_reference(
+                f"{repository}@{digest}", label=label
+            )
 
     selected_models = set(contract["selected_model_ids"])
     model_images = workloads.get("model_image_overrides", {})
     missing = sorted(selected_models - set(model_images))
     if missing:
         raise DeploymentError(
-            "selected models require deployment.models.image_overrides before apply: "
+            "selected models lack both a tfvars image override and a runtime-catalog image: "
             + ", ".join(missing)
         )
+    for model_id in sorted(selected_models):
+        image = model_images[model_id]
+        host = image.split("/", 1)[0]
+        if host.endswith(".invalid"):
+            raise DeploymentError(
+                f"selected model {model_id!r} still uses an unresolved .invalid runtime-catalog image"
+            )
+        if policy == "regional-mirror":
+            split_digest_reference(image, label=f"model {model_id}")
+
+
+def split_digest_reference(reference: str, *, label: str) -> tuple[str, str]:
+    """Split one immutable OCI reference without accepting a tag-only source."""
+    marker = "@sha256:"
+    if reference.count("@") != 1 or reference.count(marker) != 1:
+        raise DeploymentError(
+            f"{label} image must be pinned as repository@sha256:<64 hex>"
+        )
+    repository, hexadecimal = reference.rsplit(marker, 1)
+    if (
+        not repository
+        or "/" not in repository
+        or any(character in repository for character in ("?", "#"))
+        or any(character.isspace() for character in repository)
+        or ":" in repository.rsplit("/", 1)[-1]
+        or len(hexadecimal) != 64
+        or any(character not in "0123456789abcdef" for character in hexadecimal)
+    ):
+        raise DeploymentError(
+            f"{label} image must be pinned as repository@sha256:<64 hex>"
+        )
+    host, path = repository.split("/", 1)
+    host_without_port = host.split(":", 1)[0]
+    if (
+        "." not in host_without_port
+        or not re.fullmatch(r"[a-zA-Z0-9.-]+(?::[0-9]+)?", host)
+        or any(part in ("", ".", "..") for part in path.split("/"))
+        or not re.fullmatch(r"[a-z0-9._/-]+", path)
+    ):
+        raise DeploymentError(
+            f"{label} image must use a fully-qualified registry host and safe repository path"
+        )
+    return repository, f"sha256:{hexadecimal}"
+
+
+def source_repository_path(repository: str) -> str:
+    """Preserve an upstream repository path, excluding a Nebius registry ID."""
+    parts = repository.split("/")
+    if len(parts) < 2:
+        raise DeploymentError(f"OCI repository has no path: {repository!r}")
+    host, path = parts[0], parts[1:]
+    if host.startswith("cr.") and host.endswith(".nebius.cloud") and len(path) > 1:
+        path = path[1:]
+    if not path or any(part in ("", ".", "..") for part in path):
+        raise DeploymentError(f"OCI repository has an unsafe path: {repository!r}")
+    return "/".join(path)
+
+
+def selected_image_artifacts(
+    contract: Mapping[str, Any],
+    registry_delivery: Mapping[str, Any],
+) -> list[dict[str, str]]:
+    """Return the complete selected source-to-target image closure."""
+    expected_policy = contract["artifact_delivery"]
+    if (
+        registry_delivery.get("schema")
+        != "fs2-serve.nebius.ai/registry-delivery/v1"
+        or registry_delivery.get("mode") != expected_policy["mode"]
+        or registry_delivery.get("repository_prefix")
+        != expected_policy["repository_prefix"]
+    ):
+        raise DeploymentError(
+            "the infrastructure registry-delivery output differs from terraform.tfvars"
+        )
+    target = registry_delivery.get("target_registry")
+    if not isinstance(target, dict):
+        raise DeploymentError("the infrastructure registry-delivery output is malformed")
+    target_region = contract["target"]["region"]
+    target_registry_id = str(target.get("id", ""))
+    target_fqdn = str(target.get("fqdn", "")).rstrip("/")
+    target_root = str(target.get("repository_root", "")).rstrip("/")
+    expected_fqdn = f"cr.{target_region}.nebius.cloud"
+    expected_root = (
+        f"{expected_fqdn}/{target_registry_id.removeprefix('registry-')}"
+    )
+    if (
+        not re.fullmatch(r"registry-[a-z0-9]+", target_registry_id)
+        or target.get("project_id") != contract["target"]["project_id"]
+        or target.get("region") != target_region
+        or target_fqdn != expected_fqdn
+        or target_root != expected_root
+    ):
+        raise DeploymentError("the infrastructure target registry root is malformed")
+
+    workloads = contract["stages"]["workloads"]
+    sources: list[tuple[str, str]] = [
+        (
+            "application/control-plane",
+            f"{workloads['control_plane_image']['repository']}@{workloads['control_plane_image']['digest']}",
+        ),
+        (
+            "application/admin-console",
+            f"{workloads['admin_console']['image']['repository']}@{workloads['admin_console']['image']['digest']}",
+        ),
+    ]
+    sources.extend(
+        (f"model/{model_id}", workloads["model_image_overrides"][model_id])
+        for model_id in contract["selected_model_ids"]
+    )
+
+    prefix = str(registry_delivery.get("repository_prefix", "")).strip("/")
+    artifacts: list[dict[str, str]] = []
+    target_sources: dict[str, str] = {}
+    for name, source_reference in sources:
+        source_repository, digest = split_digest_reference(
+            source_reference, label=name
+        )
+        relative_repository = source_repository_path(source_repository)
+        target_repository = "/".join(
+            part for part in (target_root, prefix, relative_repository) if part
+        )
+        prior_source = target_sources.get(target_repository)
+        if prior_source is not None and prior_source != source_repository:
+            raise DeploymentError(
+                "two distinct upstream repositories collapse to the same target repository: "
+                f"{target_repository}"
+            )
+        target_sources[target_repository] = source_repository
+        target_tag = f"{target_repository}:mirror-sha256-{digest.removeprefix('sha256:')}"
+        artifacts.append(
+            {
+                "name": name,
+                "source_repository": source_repository,
+                "source_reference": source_reference,
+                "digest": digest,
+                "target_repository": target_repository,
+                "target_reference": f"{target_repository}@{digest}",
+                "target_tag": target_tag,
+            }
+        )
+    return artifacts
+
+
+def rewritten_workloads(
+    contract: Mapping[str, Any], dynamic: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Rewrite runtime pulls to the regional target without changing digests."""
+    workloads = dict(contract["stages"]["workloads"])
+    if contract["artifact_delivery"]["mode"] == "direct-source":
+        return workloads
+    artifacts = {
+        artifact["name"]: artifact
+        for artifact in selected_image_artifacts(
+            contract, dynamic["registry_delivery_contract"]
+        )
+    }
+    control_plane = dict(workloads["control_plane_image"])
+    control_plane["repository"] = artifacts["application/control-plane"][
+        "target_repository"
+    ]
+    workloads["control_plane_image"] = control_plane
+
+    admin_console = dict(workloads["admin_console"])
+    admin_image = dict(admin_console["image"])
+    admin_image["repository"] = artifacts["application/admin-console"][
+        "target_repository"
+    ]
+    admin_console["image"] = admin_image
+    workloads["admin_console"] = admin_console
+    workloads["model_image_overrides"] = {
+        model_id: artifacts[f"model/{model_id}"]["target_reference"]
+        for model_id in contract["selected_model_ids"]
+    }
+    return workloads
+
+
+def merge_docker_config(base: Any, extra: Any) -> dict[str, Any]:
+    """Merge Docker auth documents without logging or persisting credentials."""
+    if not isinstance(base, dict) or not isinstance(extra, dict):
+        raise DeploymentError("registry Docker configuration must be a JSON object")
+    merged = dict(base)
+    for key in ("auths", "credHelpers"):
+        base_values = merged.get(key, {})
+        extra_values = extra.get(key, {})
+        if not isinstance(base_values, dict) or not isinstance(extra_values, dict):
+            raise DeploymentError(f"registry Docker configuration {key} must be an object")
+        merged[key] = {**base_values, **extra_values}
+    for key, value in extra.items():
+        if key not in {"auths", "credHelpers"}:
+            merged[key] = value
+    return merged
+
+
+@contextmanager
+def registry_client_environment(
+    contract: Mapping[str, Any],
+    nebius_profile: str,
+) -> Iterator[dict[str, str]]:
+    """Materialize optional private registry auth only in an ephemeral directory."""
+    environment = clean_environment()
+    environment["NEBIUS_PROFILE"] = nebius_profile
+    secret_name = contract["secret_environment"]["nvcr_dockerconfig"]
+    encoded_extra = os.environ.get(secret_name)
+    if not encoded_extra:
+        yield environment
+        return
+    try:
+        extra = json.loads(encoded_extra)
+    except json.JSONDecodeError as exc:
+        raise DeploymentError(
+            f"the Docker configuration in environment reference {secret_name!r} is not valid JSON"
+        ) from exc
+
+    docker_config_root = Path(
+        environment.get("DOCKER_CONFIG", str(Path.home() / ".docker"))
+    )
+    base_path = docker_config_root / "config.json"
+    base: Any = {}
+    if base_path.is_file() and not base_path.is_symlink():
+        try:
+            base = json.loads(base_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise DeploymentError("the existing Docker configuration is not valid JSON") from exc
+
+    with tempfile.TemporaryDirectory(prefix="fs2-registry-auth-") as temporary:
+        temporary_root = Path(temporary)
+        temporary_root.chmod(0o700)
+        private_json(temporary_root / "config.json", merge_docker_config(base, extra))
+        environment["DOCKER_CONFIG"] = str(temporary_root)
+        yield environment
+
+
+def crane_digest(
+    crane: str,
+    reference: str,
+    environment: Mapping[str, str],
+    *,
+    missing_ok: bool = False,
+) -> str | None:
+    result = subprocess.run(
+        [crane, "digest", reference],
+        env=dict(environment),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        missing_markers = (
+            "manifest unknown",
+            "manifest_unknown",
+            "name unknown",
+            "name_unknown",
+            "not found",
+            "404",
+        )
+        diagnostic = f"{result.stdout}\n{result.stderr}".lower()
+        if missing_ok and any(marker in diagnostic for marker in missing_markers):
+            return None
+        raise DeploymentError(
+            "registry digest lookup failed; verify source existence and operator registry credentials"
+        )
+    digest = result.stdout.strip()
+    if not digest.startswith("sha256:") or len(digest) != 71:
+        raise DeploymentError("registry returned a malformed OCI digest")
+    return digest
+
+
+def crane_copy(
+    crane: str,
+    source: str,
+    target_tag: str,
+    environment: Mapping[str, str],
+) -> None:
+    result = subprocess.run(
+        [crane, "copy", "--no-clobber", source, target_tag],
+        env=dict(environment),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise DeploymentError(
+            "regional image copy failed; verify upstream pull and target push credentials"
+        )
+
+
+def mirror_selected_images(
+    args: argparse.Namespace,
+    run_root: Path,
+    contract: Mapping[str, Any],
+    dynamic: Mapping[str, Any],
+) -> Path | None:
+    """Copy and verify the complete selected image closure before workloads."""
+    if contract["artifact_delivery"]["mode"] == "direct-source":
+        return None
+    artifacts = selected_image_artifacts(
+        contract, dynamic["registry_delivery_contract"]
+    )
+    receipt_images: list[dict[str, str]] = []
+    completed_targets: dict[str, str] = {}
+    with registry_client_environment(contract, args.nebius_profile) as environment:
+        for artifact in artifacts:
+            expected = artifact["digest"]
+            target_reference = artifact["target_reference"]
+            status = completed_targets.get(target_reference)
+            if status is None:
+                existing = crane_digest(
+                    args.crane, artifact["target_tag"], environment, missing_ok=True
+                )
+                if existing is not None and existing != expected:
+                    raise DeploymentError(
+                        f"target mirror tag digest mismatch for {artifact['name']}; refusing to overwrite"
+                    )
+                if existing == expected:
+                    status = "existing"
+                else:
+                    source_digest = crane_digest(
+                        args.crane, artifact["source_reference"], environment
+                    )
+                    if source_digest != expected:
+                        raise DeploymentError(
+                            f"upstream digest mismatch for {artifact['name']}; refusing to deploy"
+                        )
+                    print(f"Mirroring {artifact['name']} into the regional registry.", file=sys.stderr)
+                    crane_copy(
+                        args.crane,
+                        artifact["source_reference"],
+                        artifact["target_tag"],
+                        environment,
+                    )
+                    status = "copied"
+                if crane_digest(args.crane, artifact["target_tag"], environment) != expected:
+                    raise DeploymentError(
+                        f"post-copy tag verification failed for {artifact['name']}"
+                    )
+                if (
+                    crane_digest(
+                        args.crane, artifact["target_reference"], environment
+                    )
+                    != expected
+                ):
+                    raise DeploymentError(
+                        f"post-copy digest-reference verification failed for {artifact['name']}"
+                    )
+                completed_targets[target_reference] = status
+            receipt_images.append(
+                {
+                    "name": artifact["name"],
+                    "source_host": artifact["source_repository"].split("/", 1)[0],
+                    "digest": expected,
+                    "target_reference": artifact["target_reference"],
+                    "status": status,
+                }
+            )
+    receipt = {
+        "schema": "fs2-serve.nebius.ai/registry-mirror-receipt/v1",
+        "mode": "regional-mirror",
+        "registry_id": dynamic["registry_delivery_contract"]["target_registry"]["id"],
+        "images": receipt_images,
+    }
+    path = run_root / "registry-mirror.receipt.json"
+    private_json(path, receipt)
+    return path
 
 
 def stage_paths(run_root: Path, stage: str) -> tuple[Path, Path, Path]:
@@ -594,6 +965,51 @@ def ensure_kubeconfig(
     return kubeconfig, uid
 
 
+def legacy_registry_delivery_contract(
+    contract: Mapping[str, Any], target_contract: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Upgrade an existing state whose target registry predates the v1 output."""
+    registry = target_contract.get("source_registry")
+    if not isinstance(registry, dict):
+        raise DeploymentError(
+            "the existing infrastructure state has neither a registry-delivery output nor a legacy target registry"
+        )
+    registry_id = str(registry.get("id", ""))
+    fqdn = str(registry.get("fqdn", "")).rstrip("/")
+    if not registry_id.startswith("registry-") or not fqdn:
+        raise DeploymentError("the legacy infrastructure target registry is malformed")
+    policy = contract["artifact_delivery"]
+    target_region = contract["target"]["region"]
+    cross_region_hosts = sorted(
+        host
+        for host in policy["source_hosts"]
+        if (match := re.fullmatch(r"cr\.([a-z0-9-]+)\.nebius\.cloud", host))
+        and match.group(1) != target_region
+    )
+    return {
+        "schema": "fs2-serve.nebius.ai/registry-delivery/v1",
+        "mode": policy["mode"],
+        "repository_prefix": policy["repository_prefix"],
+        "target_registry": {
+            "id": registry_id,
+            "project_id": registry.get("project_id", contract["target"]["project_id"]),
+            "region": target_region,
+            "fqdn": fqdn,
+            "repository_root": f"{fqdn}/{registry_id.removeprefix('registry-')}",
+        },
+        "upstream": {
+            "source_hosts": policy["source_hosts"],
+            "nebius_registries": {},
+        },
+        "promotion_cross_region_required": bool(cross_region_hosts)
+        and policy["mode"] == "regional-mirror",
+        "runtime_cross_region_pull_required": bool(cross_region_hosts)
+        and policy["mode"] == "direct-source",
+        "cross_region_source_hosts": cross_region_hosts,
+        "derived_from_legacy_state": True,
+    }
+
+
 def infrastructure_outputs(
     terraform: str,
     run_root: Path,
@@ -616,6 +1032,16 @@ def infrastructure_outputs(
         cluster_id=cluster_id,
         cluster_name=cluster_name,
     )
+    target_contract = terraform_json_output(
+        terraform, INFRA_ROOT, "target_contract", environment
+    )
+    registry_delivery = terraform_optional_json_output(
+        terraform, INFRA_ROOT, "registry_delivery_contract", environment
+    )
+    if registry_delivery is None:
+        registry_delivery = legacy_registry_delivery_contract(
+            contract, target_contract
+        )
     return {
         "run_root": str(run_root.resolve()),
         "kubeconfig_path": str(kubeconfig.resolve()),
@@ -625,15 +1051,14 @@ def infrastructure_outputs(
         "kube_context": cluster_name,
         "kube_system_uid": kube_system_uid,
         "project_id": contract["target"]["project_id"],
-        "target_contract": terraform_json_output(
-            terraform, INFRA_ROOT, "target_contract", environment
-        ),
+        "target_contract": target_contract,
         "infrastructure_contract": terraform_optional_json_output(
             terraform, INFRA_ROOT, "infrastructure_contract", environment
         ),
         "accelerator_pool_contract": terraform_json_output(
             terraform, INFRA_ROOT, "accelerator_pool_contract", environment
         ),
+        "registry_delivery_contract": registry_delivery,
         "public_edge_contract": terraform_json_output(
             terraform, INFRA_ROOT, "public_edge_contract", environment
         ),
@@ -661,7 +1086,7 @@ def write_downstream_variables(
     identity = {key: dynamic[key] for key in identity_keys}
     foundation = {**contract["stages"]["foundation"], **identity}
     workloads = {
-        **contract["stages"]["workloads"],
+        **rewritten_workloads(contract, dynamic),
         **identity,
         "public_edge_contract": dynamic["public_edge_contract"],
     }
@@ -842,6 +1267,7 @@ def apply_stack(
         nebius_profile=args.nebius_profile,
         kubectl=args.kubectl,
     )
+    mirror_selected_images(args, run_root, contract, dynamic)
     foundation_variables, workloads_variables = write_downstream_variables(
         run_root, contract, dynamic
     )
@@ -896,6 +1322,18 @@ def plan_stack(
         nebius_profile=args.nebius_profile,
         kubectl=args.kubectl,
     )
+    if "artifact_delivery" not in dynamic["accelerator_pool_contract"]:
+        plan_stage(
+            args.terraform,
+            run_root=run_root,
+            stage="infrastructure",
+            contract=contract,
+            variable_file=infrastructure_variables,
+        )
+        print(
+            "Planned the registry-delivery contract upgrade. Apply infrastructure before planning downstream stages."
+        )
+        return
     foundation_variables, workloads_variables = write_downstream_variables(
         run_root, contract, dynamic
     )
@@ -1197,6 +1635,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--terraform", default="terraform")
     parser.add_argument("--kubectl", default="kubectl")
     parser.add_argument("--nebius", default="nebius")
+    parser.add_argument(
+        "--crane",
+        default="crane",
+        help="OCI registry client used for digest-preserving regional mirrors",
+    )
     parser.add_argument(
         "--nebius-profile",
         default=os.environ.get("NEBIUS_PROFILE", "sandbox"),

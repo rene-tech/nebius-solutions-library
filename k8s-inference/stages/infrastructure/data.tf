@@ -21,6 +21,15 @@ data "nebius_vpc_v1_subnet" "target" {
 locals {
   resource_name = coalesce(var.cluster_name, "${var.name_prefix}-${var.run_id}")
 
+  source_registry_regions = {
+    for host in var.registry_delivery.source_hosts :
+    host => try(regex("^cr\\.([a-z0-9-]+)\\.nebius\\.cloud(?::[0-9]+)?$", host)[0], null)
+  }
+  cross_region_source_hosts = sort([
+    for host, region in local.source_registry_regions : host
+    if region != null && region != local.selected_target.region
+  ])
+
   # Provider 0.6.28 exposes the authoritative CIDRs as one list per private
   # pool. Normalize both the outer and inner collection types before comparing
   # them so a provider tuple cannot fail an otherwise exact CIDR match.

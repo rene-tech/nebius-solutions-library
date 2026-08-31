@@ -52,8 +52,9 @@ the operator instead of changing limits or broad project roles.
 
 ## Quick start
 
-Prerequisites are Terraform 1.10 or newer (but older than 2.0), `kubectl`, Git,
-and authenticated Nebius CLI access to the target project. Authentication is
+Prerequisites are Terraform 1.10 or newer (but older than 2.0), `kubectl`,
+[`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane),
+Git, and authenticated Nebius CLI access to the target project. Authentication is
 runtime context, not desired state, so select it with `NEBIUS_PROFILE` or
 `--nebius-profile` rather than putting credentials in Terraform variables.
 
@@ -135,6 +136,20 @@ new API server exists. Once a state exists, `plan` resumes at the first missing
 stage; with all three states present, it plans all stages. `apply` plans and
 applies infrastructure, foundation, and workloads in that order.
 
+The default `artifacts.registry_policy.mode = "regional-mirror"` makes the
+Terraform-created registry useful: after infrastructure apply, the wrapper
+copies the complete selected application/model image closure with `crane
+copy --no-clobber`, verifies each full OCI digest, rewrites workload references
+to the regional registry, and only then plans foundation and workloads. Model
+sources resolve from `models.image_overrides` first and otherwise from the
+checked-in runtime catalog. Every effective source must be digest-pinned and
+deployable; unresolved `.invalid` catalog sources fail before cloud mutation.
+The non-secret receipt is stored as `registry-mirror.receipt.json` in the
+private run root. Registry credentials are read from the selected Nebius
+profile and optional configured Docker-config environment reference; they are
+materialized only in a temporary directory and never written to Terraform
+inputs or state.
+
 The control plane currently uses an in-cluster CloudNativePG deployment. It
 does not create Nebius Managed PostgreSQL. Its database, admin bootstrap
 credential, encryption material, and PAT verifier state are therefore part of
@@ -184,6 +199,7 @@ The top-level variable is `deployment`:
 | `models` | Profile or explicit selection, KEDA/static scaling, hot-model floor, and per-model scaling overrides. |
 | `storage.shared_cache` | Optional shared model-cache size/type/block-size override. |
 | `artifacts.external_registry_ids` | Same-tenant registries whose immutable images need run-scoped node-pull viewer access. Terraform creates a project-scoped reader group beside each registry, including registries in another project or region. |
+| `artifacts.registry_policy` | Defaults to `regional-mirror`; optional prefix controls the target repository namespace. `direct-source` is an explicit opt-out that leaves runtime pulls pointed at upstream registries. |
 | `edge` | `internal-only` or bounded public ingress configuration, including an optional per-cluster loopback port tuple. |
 | `observability` | DCGM cold-start campaign and optional external Grafana publication. |
 | `secrets` | Environment-variable names and Kubernetes Secret key references, never secret values. |
@@ -269,7 +285,8 @@ limitations.
 
 Destroy uses the reverse dependency order: workloads, foundation, then
 infrastructure. It skips absent states and retains local evidence under the run
-directory.
+directory. Destroy never invokes `crane` or changes registry contents outside
+Terraform's removal of the run-owned target registry.
 
 ```bash
 NEBIUS_PROFILE=sandbox ./inference-stack destroy --var-file terraform.tfvars

@@ -103,6 +103,18 @@ deployment = {
     }
   }
 
+  # By default the wrapper copies every selected digest-pinned application and
+  # model image into the registry created beside this cluster. Workloads then
+  # pull only from that regional registry. Set mode = "direct-source" only when
+  # cross-region or third-party runtime pulls are intentional.
+  artifacts = {
+    external_registry_ids = []
+    registry_policy = {
+      mode              = "regional-mirror"
+      repository_prefix = ""
+    }
+  }
+
   # Build these two images from components/control-plane and
   # components/admin-console, push them to an accessible registry, then
   # replace the example repositories and digests before apply.

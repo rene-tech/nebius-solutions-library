@@ -40,6 +40,17 @@ resource "terraform_data" "deployment_contract" {
     }
 
     precondition {
+      condition = (
+        var.deployment.artifacts.registry_policy.mode != "regional-mirror" ||
+        alltrue([
+          for image in values(local.effective_model_images) :
+          can(regex("@sha256:[0-9a-f]{64}$", image))
+        ])
+      )
+      error_message = "Regional mirroring requires each effective selected-model image (tfvars override or runtime catalog default) to be digest pinned."
+    }
+
+    precondition {
       condition = alltrue([
         for model_id, placement in local.selected_model_placements : try(
           length(setintersection(

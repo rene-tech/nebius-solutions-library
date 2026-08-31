@@ -14,6 +14,7 @@ variable "accelerator_pool_contract" {
       requested_overrides_sha256 = string
     })
     artifact_source = object({
+      deprecated = optional(bool, true)
       registry = object({
         id           = string
         project_id   = string
@@ -25,6 +26,21 @@ variable "accelerator_pool_contract" {
       closure_sha256             = string
       cross_region_pull_required = bool
     })
+    artifact_delivery = optional(object({
+      mode                  = string
+      repository_prefix     = string
+      upstream_registry_ids = list(string)
+      source_hosts          = list(string)
+      target_registry = object({
+        id           = string
+        project_id   = string
+        project_name = string
+        region       = string
+        fqdn         = string
+      })
+      promotion_cross_region_required    = bool
+      runtime_cross_region_pull_required = bool
+    }))
     pools = map(object({
       id                = string
       accelerator_class = string
@@ -231,24 +247,49 @@ variable "accelerator_pool_contract" {
 
   validation {
     condition = try(
+      var.accelerator_pool_contract.artifact_source.deprecated &&
       can(regex("^registry-[a-z0-9]+$", var.accelerator_pool_contract.artifact_source.registry.id)) &&
       can(regex("^project-[a-z0-9]+$", var.accelerator_pool_contract.artifact_source.registry.project_id)) &&
       length(trimspace(var.accelerator_pool_contract.artifact_source.registry.project_name)) > 0 &&
       length(trimspace(var.accelerator_pool_contract.artifact_source.registry.region)) > 0 &&
       length(trimspace(var.accelerator_pool_contract.artifact_source.registry.fqdn)) > 0 &&
       can(regex("^[0-9a-f]{64}$", var.accelerator_pool_contract.artifact_source.closure_sha256)) &&
-      var.accelerator_pool_contract.artifact_source.cross_region_pull_required == (
-        var.accelerator_pool_contract.target_region != var.accelerator_pool_contract.artifact_source.registry.region
+      (var.accelerator_pool_contract.artifact_delivery == null ?
+        var.accelerator_pool_contract.artifact_source.cross_region_pull_required == (
+          var.accelerator_pool_contract.target_region != var.accelerator_pool_contract.artifact_source.registry.region
+        ) :
+        contains(["regional-mirror", "direct-source"], var.accelerator_pool_contract.artifact_delivery.mode) &&
+        var.accelerator_pool_contract.artifact_delivery.target_registry == var.accelerator_pool_contract.artifact_source.registry &&
+        var.accelerator_pool_contract.artifact_source.cross_region_pull_required == var.accelerator_pool_contract.artifact_delivery.runtime_cross_region_pull_required &&
+        (var.accelerator_pool_contract.artifact_delivery.mode == "regional-mirror" ? !var.accelerator_pool_contract.artifact_delivery.runtime_cross_region_pull_required : !var.accelerator_pool_contract.artifact_delivery.promotion_cross_region_required)
       ),
       false,
     )
-    error_message = "accelerator_pool_contract must bind a valid artifact registry, closure digest, and exact cross-region pull decision."
+    error_message = "accelerator_pool_contract must bind a valid regional target, a deprecated compatibility alias, and truthful promotion/runtime cross-region decisions."
   }
 }
 
 locals {
-  accelerator_pool_contract_sha256 = sha256(jsonencode(var.accelerator_pool_contract))
-  accelerator_pool_ids             = sort(keys(var.accelerator_pool_contract.pools))
+  # Keep cached pre-delivery contracts hash-stable during destroy; new
+  # contracts include the complete canonical artifact-delivery object.
+  legacy_accelerator_pool_contract_hash_input = merge(
+    {
+      for key, value in var.accelerator_pool_contract : key => value
+      if key != "artifact_delivery"
+    },
+    {
+      artifact_source = {
+        for key, value in var.accelerator_pool_contract.artifact_source : key => value
+        if key != "deprecated"
+      }
+    },
+  )
+  accelerator_pool_contract_sha256 = (
+    var.accelerator_pool_contract.artifact_delivery == null ?
+    sha256(jsonencode(local.legacy_accelerator_pool_contract_hash_input)) :
+    sha256(jsonencode(var.accelerator_pool_contract))
+  )
+  accelerator_pool_ids = sort(keys(var.accelerator_pool_contract.pools))
   accelerator_pool_capacity_view = {
     for pool_id, pool in var.accelerator_pool_contract.pools : pool_id => {
       accelerator_class = pool.accelerator_class

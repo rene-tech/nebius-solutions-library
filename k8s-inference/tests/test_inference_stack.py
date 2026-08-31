@@ -33,6 +33,7 @@ def arguments() -> Namespace:
         terraform="terraform-test",
         nebius="nebius-test",
         kubectl="kubectl-test",
+        crane="crane-test",
         nebius_profile="sandbox",
     )
 
@@ -42,6 +43,7 @@ def contract() -> dict:
         "schema_version": 1,
         "name": "fs2-wrapper-test",
         "run_id": "r0123456789",
+        "selected_model_ids": ["proteinmpnn"],
         "profiles": {
             "capacity": "full_catalog",
             "accelerators": "full_catalog",
@@ -50,6 +52,12 @@ def contract() -> dict:
         "target": {
             "project_id": "project-test",
             "region": "us-north1",
+        },
+        "artifact_delivery": {
+            "mode": "direct-source",
+            "repository_prefix": "",
+            "upstream_registry_ids": [],
+            "source_hosts": [],
         },
         "stages": {
             "infrastructure": {
@@ -98,9 +106,64 @@ def dynamic_outputs(run_root: Path) -> dict:
         "project_id": "project-test",
         "target_contract": {"schema": "target-test/v1"},
         "infrastructure_contract": {"schema": "infrastructure-test/v1"},
-        "accelerator_pool_contract": {"schema": "accelerators-test/v1"},
+        "accelerator_pool_contract": {
+            "schema": "accelerators-test/v1",
+            "artifact_delivery": {"mode": "direct-source"},
+        },
+        "registry_delivery_contract": {
+            "schema": "fs2-serve.nebius.ai/registry-delivery/v1",
+            "mode": "direct-source",
+            "repository_prefix": "",
+            "target_registry": {
+                "id": "registry-test",
+                "project_id": "project-test",
+                "region": "us-north1",
+                "fqdn": "cr.us-north1.nebius.cloud",
+                "repository_root": "cr.us-north1.nebius.cloud/test",
+            },
+        },
         "public_edge_contract": {"mode": "internal-only"},
     }
+
+
+def regional_contract() -> dict:
+    configuration = json.loads(json.dumps(contract()))
+    configuration["artifact_delivery"] = {
+        "mode": "regional-mirror",
+        "repository_prefix": "",
+        "upstream_registry_ids": ["registry-source"],
+        "source_hosts": ["cr.eu-north1.nebius.cloud"],
+    }
+    configuration["stages"]["workloads"].update(
+        {
+            "control_plane_image": {
+                "repository": "cr.eu-north1.nebius.cloud/source/fs2-platform/control-plane",
+                "digest": f"sha256:{'a' * 64}",
+            },
+            "admin_console": {
+                "image": {
+                    "repository": "cr.eu-north1.nebius.cloud/source/fs2-platform/admin-console",
+                    "digest": f"sha256:{'b' * 64}",
+                }
+            },
+            "model_image_overrides": {
+                "proteinmpnn": "cr.eu-north1.nebius.cloud/source/fs2-models/proteinmpnn@"
+                f"sha256:{'c' * 64}"
+            },
+        }
+    )
+    return configuration
+
+
+def regional_dynamic(run_root: Path) -> dict:
+    dynamic = dynamic_outputs(run_root)
+    dynamic["registry_delivery_contract"].update(
+        {
+            "mode": "regional-mirror",
+            "repository_prefix": "",
+        }
+    )
+    return dynamic
 
 
 class InferenceStackTests(unittest.TestCase):
@@ -273,7 +336,14 @@ class InferenceStackTests(unittest.TestCase):
         required_outputs = {
             "cluster_id": "mk8scluster-test",
             "cluster_name": "fs2-wrapper-test",
-            "target_contract": {"schema": "target-test/v1"},
+            "target_contract": {
+                "schema": "target-test/v1",
+                "source_registry": {
+                    "id": "registry-test",
+                    "project_id": "project-test",
+                    "fqdn": "cr.us-north1.nebius.cloud",
+                },
+            },
             "accelerator_pool_contract": {"schema": "accelerators-test/v2"},
             "public_edge_contract": {"mode": "internal-only"},
         }
@@ -323,16 +393,13 @@ class InferenceStackTests(unittest.TestCase):
                 outputs["accelerator_pool_contract"],
                 required_outputs["accelerator_pool_contract"],
             )
-            terraform_output.assert_called_once_with(
-                [
-                    "terraform-test",
-                    f"-chdir={STACK.INFRA_ROOT}",
-                    "output",
-                    "-json",
+            self.assertEqual(
+                outputs["registry_delivery_contract"]["target_registry"][
+                    "repository_root"
                 ],
-                env=mock.ANY,
-                capture=True,
+                "cr.us-north1.nebius.cloud/test",
             )
+            self.assertEqual(terraform_output.call_count, 2)
 
     def test_stage_readiness_requires_completion_output(self) -> None:
         with tempfile.TemporaryDirectory(prefix="inference-stack-ready-") as temporary:
@@ -408,6 +475,7 @@ class InferenceStackTests(unittest.TestCase):
                 "write_downstream_variables",
                 return_value=(Path("/foundation.json"), Path("/workloads.json")),
             ),
+            mock.patch.object(STACK, "mirror_selected_images") as mirror_images,
             mock.patch.object(
                 STACK,
                 "terraform_json_output",
@@ -427,6 +495,9 @@ class InferenceStackTests(unittest.TestCase):
         )
         self.assertEqual(
             json.loads(output.getvalue()), {"status": "applied", **endpoint_values}
+        )
+        mirror_images.assert_called_once_with(
+            mock.ANY, run_root, mock.ANY, dynamic_outputs(run_root)
         )
 
     def test_status_emits_only_the_two_non_secret_workload_endpoints(self) -> None:
@@ -653,6 +724,7 @@ class InferenceStackTests(unittest.TestCase):
                         ),
                     ),
                     mock.patch.object(STACK, "plan_stage") as plan_stage,
+                    mock.patch.object(STACK, "mirror_selected_images") as mirror_images,
                     redirect_stdout(io.StringIO()),
                 ):
                     STACK.plan_stack(arguments(), run_root, contract(), "d" * 40)
@@ -660,6 +732,7 @@ class InferenceStackTests(unittest.TestCase):
                     [call.kwargs["stage"] for call in plan_stage.call_args_list],
                     expected_stages,
                 )
+                mirror_images.assert_not_called()
 
     def test_destroy_plans_and_applies_in_reverse_dependency_order(self) -> None:
         run_root = Path("/private/test-run")
@@ -690,6 +763,7 @@ class InferenceStackTests(unittest.TestCase):
             ),
             mock.patch.object(STACK, "plan_stage", side_effect=fake_plan),
             mock.patch.object(STACK, "apply_plan") as apply_plan,
+            mock.patch.object(STACK, "mirror_selected_images") as mirror_images,
             redirect_stdout(io.StringIO()),
         ):
             STACK.destroy_stack(arguments(), run_root, contract(), "e" * 40)
@@ -702,6 +776,280 @@ class InferenceStackTests(unittest.TestCase):
             [call.args[1] for call in apply_plan.call_args_list],
             [STACK.WORKLOADS_ROOT, STACK.FOUNDATION_ROOT, STACK.INFRA_ROOT],
         )
+        mirror_images.assert_not_called()
+
+    def test_destroy_reuses_legacy_cached_downstream_inputs_without_mirroring(self) -> None:
+        planned_files: list[Path] = []
+
+        def fake_plan(*_args, **kwargs):
+            planned_files.append(kwargs["variable_file"])
+            return Path(f"/{kwargs['stage']}-destroy.tfplan"), {}, {}
+
+        with tempfile.TemporaryDirectory(prefix="fs2-legacy-destroy-") as temporary:
+            run_root = Path(temporary)
+            foundation = run_root / "foundation.tfvars.json"
+            workloads = run_root / "workloads.tfvars.json"
+            STACK.private_json(
+                foundation,
+                {"accelerator_pool_contract": {"artifact_source": {"legacy": True}}},
+            )
+            STACK.private_json(
+                workloads,
+                {"accelerator_pool_contract": {"artifact_source": {"legacy": True}}},
+            )
+            with (
+                mock.patch.object(
+                    STACK,
+                    "write_infrastructure_variables",
+                    return_value=run_root / "infrastructure.tfvars.json",
+                ),
+                mock.patch.object(STACK, "state_has_resources", return_value=True),
+                mock.patch.object(STACK, "state_ready") as readiness,
+                mock.patch.object(STACK, "infrastructure_outputs") as infrastructure,
+                mock.patch.object(STACK, "write_downstream_variables") as downstream,
+                mock.patch.object(STACK, "plan_stage", side_effect=fake_plan),
+                mock.patch.object(STACK, "apply_plan"),
+                mock.patch.object(STACK, "mirror_selected_images") as mirror_images,
+                redirect_stdout(io.StringIO()),
+            ):
+                STACK.destroy_stack(arguments(), run_root, contract(), "e" * 40)
+        self.assertEqual(
+            planned_files[:2],
+            [workloads, foundation],
+        )
+        readiness.assert_not_called()
+        infrastructure.assert_not_called()
+        downstream.assert_not_called()
+        mirror_images.assert_not_called()
+
+    def test_regional_mirror_rewrites_every_selected_image_without_changing_digest(
+        self,
+    ) -> None:
+        workloads = STACK.rewritten_workloads(
+            regional_contract(), regional_dynamic(Path("/private/test-run"))
+        )
+        target_root = "cr.us-north1.nebius.cloud/test"
+        self.assertEqual(
+            workloads["control_plane_image"],
+            {
+                "repository": f"{target_root}/fs2-platform/control-plane",
+                "digest": f"sha256:{'a' * 64}",
+            },
+        )
+        self.assertEqual(
+            workloads["model_image_overrides"]["proteinmpnn"],
+            f"{target_root}/fs2-models/proteinmpnn@sha256:{'c' * 64}",
+        )
+
+    def test_regional_mirror_rejects_tag_only_model_source(self) -> None:
+        configuration = regional_contract()
+        configuration["stages"]["workloads"]["model_image_overrides"][
+            "proteinmpnn"
+        ] = "nvcr.io/nim/ipd/proteinmpnn:latest"
+        with self.assertRaisesRegex(STACK.DeploymentError, "repository@sha256"):
+            STACK.require_deployable_images(configuration)
+
+    def test_existing_verified_mirrors_are_skipped_and_use_explicit_profile(
+        self,
+    ) -> None:
+        configuration = regional_contract()
+        expected_digests = {
+            f"sha256:{character * 64}" for character in ("a", "b", "c")
+        }
+
+        def digest_from_reference(_crane, reference, environment, **_kwargs):
+            self.assertEqual(environment["NEBIUS_PROFILE"], "explicit-profile")
+            digest = f"sha256:{reference[-64:]}"
+            self.assertIn(digest, expected_digests)
+            return digest
+
+        with tempfile.TemporaryDirectory(prefix="fs2-mirror-test-") as temporary:
+            with (
+                mock.patch.object(
+                    STACK, "crane_digest", side_effect=digest_from_reference
+                ) as digest_lookup,
+                mock.patch.object(STACK, "crane_copy") as copy_image,
+            ):
+                for _ in range(2):
+                    receipt = STACK.mirror_selected_images(
+                        Namespace(
+                            crane="crane-test", nebius_profile="explicit-profile"
+                        ),
+                        Path(temporary),
+                        configuration,
+                        regional_dynamic(Path(temporary)),
+                    )
+            self.assertIsNotNone(receipt)
+            payload = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertEqual(
+                {image["status"] for image in payload["images"]}, {"existing"}
+            )
+            copy_image.assert_not_called()
+            self.assertFalse(
+                any(
+                    call.args[1].startswith("cr.eu-north1.nebius.cloud/")
+                    for call in digest_lookup.call_args_list
+                )
+            )
+
+    def test_missing_images_are_copied_then_verified(self) -> None:
+        configuration = regional_contract()
+        configuration["selected_model_ids"] = []
+        tag_lookups: dict[str, int] = {}
+
+        def digest_result(_crane, reference, _environment, **_kwargs):
+            expected = f"sha256:{reference[-64:]}"
+            if ":mirror-sha256-" in reference:
+                count = tag_lookups.get(reference, 0)
+                tag_lookups[reference] = count + 1
+                return None if count == 0 else expected
+            return expected
+
+        with tempfile.TemporaryDirectory(prefix="fs2-mirror-copy-") as temporary:
+            receipt_path = Path(temporary) / "registry-mirror.receipt.json"
+            with (
+                mock.patch.object(STACK, "crane_digest", side_effect=digest_result),
+                mock.patch.object(STACK, "crane_copy") as copy_image,
+            ):
+                STACK.mirror_selected_images(
+                    Namespace(crane="crane-test", nebius_profile="explicit-profile"),
+                    Path(temporary),
+                    configuration,
+                    regional_dynamic(Path(temporary)),
+                )
+            self.assertEqual(copy_image.call_count, 2)
+            self.assertTrue(receipt_path.is_file())
+            payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                {image["status"] for image in payload["images"]}, {"copied"}
+            )
+
+    def test_post_copy_digest_mismatch_aborts_without_receipt_or_downstream_plan(
+        self,
+    ) -> None:
+        configuration = regional_contract()
+        configuration["selected_model_ids"] = []
+        tag_calls = 0
+
+        def mismatched_digest(_crane, reference, _environment, **_kwargs):
+            nonlocal tag_calls
+            if ":mirror-sha256-" in reference:
+                tag_calls += 1
+                return None if tag_calls == 1 else f"sha256:{'f' * 64}"
+            return f"sha256:{reference[-64:]}"
+
+        with tempfile.TemporaryDirectory(prefix="fs2-mirror-mismatch-") as temporary:
+            receipt_path = Path(temporary) / "registry-mirror.receipt.json"
+            with (
+                mock.patch.object(STACK, "crane_digest", side_effect=mismatched_digest),
+                mock.patch.object(STACK, "crane_copy") as copy_image,
+                self.assertRaisesRegex(STACK.DeploymentError, "post-copy"),
+            ):
+                STACK.mirror_selected_images(
+                    Namespace(crane="crane-test", nebius_profile="explicit-profile"),
+                    Path(temporary),
+                    configuration,
+                    regional_dynamic(Path(temporary)),
+                )
+            copy_image.assert_called_once()
+            self.assertFalse(receipt_path.exists())
+
+        with (
+            mock.patch.object(
+                STACK, "write_infrastructure_variables", return_value=Path("/infra.json")
+            ),
+            mock.patch.object(
+                STACK,
+                "plan_stage",
+                return_value=(Path("/infra.tfplan"), {}, {}),
+            ) as plan_stage,
+            mock.patch.object(STACK, "apply_plan"),
+            mock.patch.object(
+                STACK,
+                "infrastructure_outputs",
+                return_value=regional_dynamic(Path("/private/test-run")),
+            ),
+            mock.patch.object(
+                STACK,
+                "mirror_selected_images",
+                side_effect=STACK.DeploymentError("post-copy mismatch"),
+            ),
+            mock.patch.object(STACK, "write_downstream_variables") as downstream,
+            self.assertRaisesRegex(STACK.DeploymentError, "post-copy mismatch"),
+        ):
+            STACK.apply_stack(
+                arguments(), Path("/private/test-run"), configuration, "a" * 40
+            )
+        self.assertEqual(
+            [call.kwargs["stage"] for call in plan_stage.call_args_list],
+            ["infrastructure"],
+        )
+        downstream.assert_not_called()
+
+    def test_same_repository_accepts_multiple_digests_but_cross_host_collapse_fails(
+        self,
+    ) -> None:
+        configuration = regional_contract()
+        configuration["selected_model_ids"] = ["model-a", "model-b"]
+        images = configuration["stages"]["workloads"]["model_image_overrides"]
+        images.clear()
+        images.update(
+            {
+                "model-a": f"nvcr.io/acme/runtime@sha256:{'d' * 64}",
+                "model-b": f"nvcr.io/acme/runtime@sha256:{'e' * 64}",
+            }
+        )
+        artifacts = STACK.selected_image_artifacts(
+            configuration, regional_dynamic(Path("/private/test-run"))["registry_delivery_contract"]
+        )
+        model_targets = [
+            artifact["target_reference"]
+            for artifact in artifacts
+            if artifact["name"].startswith("model/")
+        ]
+        self.assertEqual(len(set(model_targets)), 2)
+
+        images["model-b"] = (
+            f"registry.example.com/acme/runtime@sha256:{'e' * 64}"
+        )
+        with self.assertRaisesRegex(STACK.DeploymentError, "collapse"):
+            STACK.selected_image_artifacts(
+                configuration,
+                regional_dynamic(Path("/private/test-run"))["registry_delivery_contract"],
+            )
+
+    def test_regional_target_must_match_terraform_project_region_and_registry(self) -> None:
+        dynamic = regional_dynamic(Path("/private/test-run"))
+        dynamic["registry_delivery_contract"]["target_registry"][
+            "project_id"
+        ] = "project-wrong"
+        with self.assertRaisesRegex(STACK.DeploymentError, "target registry root"):
+            STACK.selected_image_artifacts(
+                regional_contract(), dynamic["registry_delivery_contract"]
+            )
+
+    def test_legacy_accelerator_contract_plans_only_infrastructure_upgrade(self) -> None:
+        run_root = Path("/private/test-run")
+        dynamic = dynamic_outputs(run_root)
+        dynamic["accelerator_pool_contract"].pop("artifact_delivery")
+        with (
+            mock.patch.object(
+                STACK, "write_infrastructure_variables", return_value=Path("/infra.json")
+            ),
+            mock.patch.object(STACK, "state_ready", return_value=True),
+            mock.patch.object(STACK, "infrastructure_outputs", return_value=dynamic),
+            mock.patch.object(STACK, "write_downstream_variables") as downstream,
+            mock.patch.object(STACK, "plan_stage") as plan_stage,
+            mock.patch.object(STACK, "mirror_selected_images") as mirror_images,
+            redirect_stdout(io.StringIO()),
+        ):
+            STACK.plan_stack(arguments(), run_root, contract(), "f" * 40)
+        self.assertEqual(
+            [call.kwargs["stage"] for call in plan_stage.call_args_list],
+            ["infrastructure"],
+        )
+        downstream.assert_not_called()
+        mirror_images.assert_not_called()
 
     def test_facade_contains_no_quota_or_limit_raising_path(self) -> None:
         terraform_source = "\n".join(

@@ -50,12 +50,29 @@ locals {
     toset(local.selected_model_profile.canonical_routes) :
     var.deployment.models.enabled
   ))
+  selected_runtime_model_contracts = {
+    for model_id in local.selected_model_ids :
+    model_id => jsondecode(file("${path.module}/catalog/runtime/models/${model_id}.json"))
+  }
+  effective_model_images = {
+    for model_id, model in local.selected_runtime_model_contracts : model_id => try(
+      var.deployment.models.image_overrides[model_id],
+      model.runtime.image.reference,
+    )
+  }
   selected_model_required_secrets = toset(distinct(flatten([
     for model_id in local.selected_model_ids : try(
       local.model_profile_contract.model_artifacts[model_id].required_secrets,
       [],
     )
   ])))
+  selected_image_source_hosts = sort(distinct(concat(
+    [
+      split("/", var.deployment.applications.control_plane.repository)[0],
+      split("/", var.deployment.applications.admin_console.repository)[0],
+    ],
+    [for image in values(local.effective_model_images) : split("/", image)[0]],
+  )))
 
   # Nebius Managed Kubernetes builds the cluster-autoscaler template for a
   # zero-node pool from its network boot disk. Host-local NVMe is visible only
@@ -176,11 +193,16 @@ locals {
     accelerator_pool_capacity_overrides = local.accelerator_pool_capacity_overrides
     custom_accelerator_pools            = var.deployment.accelerator_pools
     external_registry_ids               = sort(tolist(var.deployment.artifacts.external_registry_ids))
-    system_pool                         = var.deployment.cluster.system_pool
-    shared_cache                        = var.deployment.storage.shared_cache
-    public_edge_mode                    = var.deployment.edge.mode
-    public_edge_source_cidrs            = sort(tolist(var.deployment.edge.source_cidrs))
-    port_forward_local_ports            = var.deployment.edge.port_forward_ports
+    registry_delivery = {
+      mode              = var.deployment.artifacts.registry_policy.mode
+      repository_prefix = var.deployment.artifacts.registry_policy.repository_prefix
+      source_hosts      = local.selected_image_source_hosts
+    }
+    system_pool              = var.deployment.cluster.system_pool
+    shared_cache             = var.deployment.storage.shared_cache
+    public_edge_mode         = var.deployment.edge.mode
+    public_edge_source_cidrs = sort(tolist(var.deployment.edge.source_cidrs))
+    port_forward_local_ports = var.deployment.edge.port_forward_ports
   }
 
   foundation_variables = {
@@ -194,7 +216,7 @@ locals {
   workloads_variables = {
     deployment_profile              = local.model_profile
     enabled_model_ids               = local.selected_model_ids
-    model_image_overrides           = var.deployment.models.image_overrides
+    model_image_overrides           = local.effective_model_images
     model_pool_overrides            = var.deployment.models.pool_overrides
     model_scaling_mode              = var.deployment.models.scaling.mode
     hot_model_ids                   = sort(tolist(var.deployment.models.scaling.hot))
@@ -247,6 +269,12 @@ locals {
     custom_accelerator_pools        = local.using_custom_accelerator_pools
     selected_model_ids              = local.selected_model_ids
     selected_model_replica_ceilings = local.selected_model_replica_ceilings
+    artifact_delivery = {
+      mode                  = var.deployment.artifacts.registry_policy.mode
+      repository_prefix     = var.deployment.artifacts.registry_policy.repository_prefix
+      upstream_registry_ids = sort(tolist(var.deployment.artifacts.external_registry_ids))
+      source_hosts          = local.selected_image_source_hosts
+    }
     scale_from_zero_storage = {
       boot_disk_allocatable_ratio       = local.managed_autoscaler_boot_disk_allocatable_ratio
       fixed_headroom_gib                = local.managed_autoscaler_ephemeral_headroom_gib

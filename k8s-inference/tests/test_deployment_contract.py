@@ -231,6 +231,20 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(
             contract["stages"]["workloads"]["deployment_profile"], "minimal"
         )
+        runtime_catalog = json.loads(
+            (DEPLOY_ROOT / "catalog/runtime/models/proteinmpnn.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            contract["stages"]["workloads"]["model_image_overrides"],
+            {"proteinmpnn": runtime_catalog["runtime"]["image"]["reference"]},
+        )
+        self.assertEqual(contract["artifact_delivery"]["mode"], "regional-mirror")
+        self.assertEqual(contract["artifact_delivery"]["repository_prefix"], "")
+        self.assertIn(
+            "nvcr.io", contract["stages"]["infrastructure"]["registry_delivery"]["source_hosts"]
+        )
         self.assertNotIn("nebius_profile", contract["stages"]["infrastructure"])
         self.assertEqual(
             contract["secret_environment"],
@@ -279,6 +293,27 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(
             outputs["effective_configuration"]["port_forward_ports"],
             contract["stages"]["infrastructure"]["port_forward_local_ports"],
+        )
+
+    def test_regional_mirror_rejects_tag_only_model_override(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-tag-only-rejected",
+            "target": self.catalog_target(),
+            "models": {
+                "selection": "explicit",
+                "enabled": ["proteinmpnn"],
+                "image_overrides": {
+                    "proteinmpnn": "nvcr.io/nim/ipd/proteinmpnn:latest"
+                },
+            },
+        }
+        variable_file = self._write_configuration("tag-only", deployment)
+        result, _ = self._plan_file(variable_file, "tag-only")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "regional-mirror requires every models.image_overrides value",
+            f"{result.stdout}\n{result.stderr}",
         )
 
     def test_internal_edge_ports_can_be_offset_per_cluster(self) -> None:
