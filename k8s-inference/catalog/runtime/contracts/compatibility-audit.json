@@ -1,0 +1,99 @@
+{
+  "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+  "audit_id": "manager-sm103-audit-2026-08-26",
+  "recorded_at": "2026-08-26T00:00:00Z",
+  "authority": "agent-task-deck-manager-input",
+  "gpu_architecture": "NVIDIA-SM103",
+  "records": {
+    "boltz2": {
+      "execution_identity_sha256": "6161e54b35e711b91017f06749db5140e4191199b4f94b22c113167ba76f50a6",
+      "b300_state": "historical-supported",
+      "route_backend_policy": "exact-live-backend-required",
+      "notes": "Historical B300 support is an audit input, not target-cluster qualification or route authority."
+    },
+    "diffdock": {
+      "execution_identity_sha256": "3712edfec38a4482c665dcd147fa4d679a87b593a19c241cba34d127cc02cdd4",
+      "b300_state": "incompatible-sm103",
+      "route_backend_policy": "h100-h200-or-qualified-alternative-only",
+      "notes": "This exact pinned runtime failed deterministically on SM103 and must never be promoted on B300."
+    },
+    "evo2-40b": {
+      "execution_identity_sha256": "0ca5941f1fab17b7fa643b4244ad2cd62d669f3768fd27e03a52f066e1bec99c",
+      "b300_state": "incompatible-sm103",
+      "route_backend_policy": "h100-h200-or-qualified-alternative-only",
+      "notes": "This exact pinned runtime failed deterministically on SM103 and must never be promoted on B300."
+    },
+    "genmol": {
+      "execution_identity_sha256": "808d82534673ddef9dab5f3a94e63fd253dc0ca2a7baa6f0096155866259ecfe",
+      "b300_state": "historical-supported",
+      "route_backend_policy": "exact-live-backend-required",
+      "notes": "Historical B300 support is an audit input, not target-cluster qualification or route authority."
+    },
+    "glm-5-2-fp8": {
+      "execution_identity_sha256": "38724bdbd0180e0f99350bb86095e07488b9dc4905ab0dd6a7da424b4e411199",
+      "b300_state": "unverified",
+      "route_backend_policy": "exact-live-backend-required",
+      "notes": "The exact selected CUDA 13 vLLM runtime passed two distinct TP8 semantic requests on the target B300 cluster; retained live evidence is recorded separately."
+    },
+    "molmim": {
+      "execution_identity_sha256": "1f3ef2c58f5168c954ea2cd12017c46f6e5973fc5d26ff2fc94b037f5292a706",
+      "b300_state": "incompatible-sm103",
+      "route_backend_policy": "h100-h200-or-qualified-alternative-only",
+      "notes": "This exact pinned runtime failed deterministically on SM103 and must never be promoted on B300."
+    },
+    "msa-search-pdb70": {
+      "execution_identity_sha256": "91dd451836348f491198b577c6eb8864edfddfa4d2728b8e1a374ae4b853276b",
+      "b300_state": "historical-supported",
+      "route_backend_policy": "exact-live-backend-required",
+      "notes": "Historical B300 support is an audit input, not target-cluster qualification or route authority."
+    },
+    "nv-reason-cxr-3b": {
+      "execution_identity_sha256": "87c25987f25843a4797745bd43c457c768771a7b471fdc245c16ab51ef74c83a",
+      "b300_state": "unverified",
+      "route_backend_policy": "exact-live-backend-required",
+      "notes": "The exact pinned Hugging Face/vLLM lane passed two distinct nonclinical chest-radiograph requests on B300; retained live evidence is recorded separately."
+    },
+    "nv-segment-ct": {
+      "execution_identity_sha256": "7cd5e4b04964d3365249d248307c30891a414cb8eb5b94714308b5756dba505b",
+      "b300_state": "unverified",
+      "route_backend_policy": "exact-live-backend-required",
+      "notes": "The independent exact pinned public Hugging Face runtime passed two distinct safe synthetic CT segmentations on B300; it does not rely on the unavailable NIM entitlement."
+    },
+    "openfold2": {
+      "execution_identity_sha256": "f83fc9f485ca3a0bf4a37d825bad791963de16b4acd0635708b70e3b8d7c8b8a",
+      "b300_state": "historical-supported",
+      "route_backend_policy": "exact-live-backend-required",
+      "notes": "Historical B300 support is an audit input, not target-cluster qualification or route authority."
+    },
+    "openfold3": {
+      "execution_identity_sha256": "e72f9780c3dd295d33f4e4162111f06561c4ee27daaed4b662f7aa8ef52ccfed",
+      "b300_state": "historical-supported",
+      "route_backend_policy": "exact-live-backend-required",
+      "notes": "Historical B300 support is an audit input, not target-cluster qualification or route authority."
+    },
+    "proteinmpnn": {
+      "execution_identity_sha256": "bae3f95a1acfd015c610275c1a33e165890f82e0a1e0f9011514f73c8a11045f",
+      "b300_state": "incompatible-sm103",
+      "route_backend_policy": "h100-h200-or-qualified-alternative-only",
+      "notes": "This exact pinned runtime failed deterministically on SM103 and must never be promoted on B300."
+    },
+    "qwen3-8b": {
+      "execution_identity_sha256": "8031f8d4e22f96d9c326eed80b99d64036eb7e6e0cc04f9332de64e48a5fb358",
+      "b300_state": "unverified",
+      "route_backend_policy": "exact-live-backend-required",
+      "notes": "The exact public revision, full retained artifact, and selected CUDA 13 vLLM runtime passed B300 readiness and semantic qualification; the historical H100 CUDA-CRIU snapshot remains excluded."
+    },
+    "rfdiffusion": {
+      "execution_identity_sha256": "5aa4218e2e508841b704a508eed0725a941f086efd4afa2cbfa1cc934f32c022",
+      "b300_state": "incompatible-sm103",
+      "route_backend_policy": "h100-h200-or-qualified-alternative-only",
+      "notes": "This exact pinned runtime failed deterministically on SM103 and must never be promoted on B300."
+    },
+    "sdxl": {
+      "execution_identity_sha256": "a92d974710e039def56ad1999bf073b175ac00851287a90f06c3398844213bc0",
+      "b300_state": "unverified",
+      "route_backend_policy": "exact-live-backend-required",
+      "notes": "The exact public revision passed two distinct retained image generations on B300; snapshot routing remains disabled."
+    }
+  }
+}

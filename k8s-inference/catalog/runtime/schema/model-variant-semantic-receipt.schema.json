@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-variant-semantic-receipt/v2",
+  "title": "Signed two-response real-gateway semantic result for one variant attempt",
+  "$comment": "Non-authoritative shape only; request fixtures, validator results, gateway and backend identity require executable signed joins.",
+  "x-fs2-authority": "non-authoritative-shape-only",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "variant_id", "variant_digest", "attempt_id", "observed_at", "runtime_tuple_digest", "artifact_manifest_digest", "semantic_contract_digest", "gateway", "operation", "protocol", "requests", "valid_until"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-variant-semantic-receipt/v2"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "PASS"},
+    "variant_id": {"$ref": "#/$defs/id"},
+    "variant_digest": {"$ref": "#/$defs/digest"},
+    "attempt_id": {"type": "string", "minLength": 1},
+    "observed_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "runtime_tuple_digest": {"$ref": "#/$defs/digest"},
+    "artifact_manifest_digest": {"$ref": "#/$defs/digest"},
+    "semantic_contract_digest": {"$ref": "#/$defs/digest"},
+    "gateway": {"$ref": "#/$defs/gateway"},
+    "operation": {"type": "string", "minLength": 1},
+    "protocol": {"enum": ["openai-chat", "openai-completions", "openai-embeddings", "openai-images", "native"]},
+    "requests": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["request_id", "request_sha256", "response_sha256", "validator_source_sha256", "validator_fixture_sha256", "validation_result_sha256", "semantic_valid"],
+        "properties": {
+          "request_id": {"type": "string", "minLength": 1},
+          "request_sha256": {"$ref": "#/$defs/digest"},
+          "response_sha256": {"$ref": "#/$defs/digest"},
+          "validator_source_sha256": {"$ref": "#/$defs/digest"},
+          "validator_fixture_sha256": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]},
+          "validation_result_sha256": {"$ref": "#/$defs/digest"},
+          "semantic_valid": {"const": true}
+        }
+      }
+    },
+    "valid_until": {"type": "string", "format": "date-time", "pattern": "Z$"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "k8sUid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gateway_class", "gateway_namespace", "gateway_service_name", "gateway_service_uid", "gateway_identity_sha256", "gateway_auth_class", "route_id", "backend_namespace", "backend_service_name", "backend_service_uid", "backend_port", "transport"],
+      "properties": {
+        "gateway_class": {"const": "fs2-serve-gateway"},
+        "gateway_namespace": {"const": "fs2-system"},
+        "gateway_service_name": {"const": "fs2-serve-control-plane"},
+        "gateway_service_uid": {"$ref": "#/$defs/k8sUid"},
+        "gateway_identity_sha256": {"$ref": "#/$defs/digest"},
+        "gateway_auth_class": {"const": "scoped-api-key"},
+        "route_id": {"$ref": "#/$defs/id"},
+        "backend_namespace": {"const": "fs2-models"},
+        "backend_service_name": {"$ref": "#/$defs/id"},
+        "backend_service_uid": {"$ref": "#/$defs/k8sUid"},
+        "backend_port": {"const": 8000},
+        "transport": {"const": "gateway-proxy"}
+      }
+    }
+  }
+}

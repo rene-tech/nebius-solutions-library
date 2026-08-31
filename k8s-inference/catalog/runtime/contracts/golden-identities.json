@@ -1,0 +1,925 @@
+{
+  "models": {
+    "boltz2": {
+      "acquisition_method": "ngc-target-node-nimcache",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "license-entitlement-and-live-qualification-required",
+      "acquisition_repository": "nvcr.io/nim/mit/boltz2",
+      "acquisition_revision": "sha256:0788c95c8b5b6c1a73a62c656b298ecc353a8187dc22b794f496ae40672c4c98",
+      "artifact_kind": "nim-cache",
+      "artifact_manifest_digest": null,
+      "b300_state": "historical-supported",
+      "compatibility_route_backend_policy": "exact-live-backend-required",
+      "endpoints": {
+        "native": "/biology/mit/boltz2/predict"
+      },
+      "execution_identity_sha256": "6161e54b35e711b91017f06749db5140e4191199b4f94b22c113167ba76f50a6",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "8b163175bc7861b38ae3cd8e8ee84c1c796f2aa065a6aeef322df4171487e6e9",
+      "runtime_image_digest": "sha256:0788c95c8b5b6c1a73a62c656b298ecc353a8187dc22b794f496ae40672c4c98",
+      "runtime_kind": "nim",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "06d6a826072ff60989797a3ad6632f2a8c9b68859324ee7c11974f08a1bcff6d",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "3e34fd2bc2da7c09d58638407814bef153af515a583d4ba2d1bb1c889b63fd36",
+      "semantic_contract": "two-distinct-boltz2-structure-responses/v1",
+      "semantic_fixture_sha256": null,
+      "semantic_identity_sha256": "c06197ea10f5346cf6ccb4c3bcb7ea0ada56e7137c2a2a827fcfd2c38cadc542",
+      "semantic_request_asset_set_sha256": "fa0c9c4c77af9f1a3173a8c6f298ace3b80494382dd458208fdde876a23cfd9f",
+      "semantic_request_contract_sha256": "40ecb9d1da5dc69182550cb60d2d209d1116c52499d3784831b609624b0a084e",
+      "semantic_request_ids": [
+        "fs2-semantic-a",
+        "fs2-semantic-b"
+      ],
+      "semantic_request_sha256": [
+        "378bf26b935c54ca8023273663b61fe8ac89608d536b3c51e9cd6b0b948d345c",
+        "370bd46c548395f5964e1e48c41e63fe0a412d323d3af611a27231fbc2e4f7c7"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "4b4e04b62cd8aff2027844f75002012439d7cb5d44f91f4ac514a99abf2217c8",
+      "source_kind": "ngc-nim",
+      "source_repository": "nvcr.io/nim/mit/boltz2",
+      "source_revision": "sha256:0788c95c8b5b6c1a73a62c656b298ecc353a8187dc22b794f496ae40672c4c98"
+    },
+    "diffdock": {
+      "acquisition_method": "ngc-target-node-nimcache",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "alternative-backend-only-sm103-incompatible",
+      "acquisition_repository": "nvcr.io/nim/mit/diffdock",
+      "acquisition_revision": "sha256:300696eb8331d78face40f84d835cc1e278c7d3c391c5aabbbee5884366da480",
+      "artifact_kind": "nim-cache",
+      "artifact_manifest_digest": null,
+      "b300_state": "incompatible-sm103",
+      "compatibility_route_backend_policy": "h100-h200-or-qualified-alternative-only",
+      "endpoints": {
+        "native": "/molecular-docking/diffdock/generate"
+      },
+      "execution_identity_sha256": "3712edfec38a4482c665dcd147fa4d679a87b593a19c241cba34d127cc02cdd4",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "8b163175bc7861b38ae3cd8e8ee84c1c796f2aa065a6aeef322df4171487e6e9",
+      "runtime_image_digest": "sha256:300696eb8331d78face40f84d835cc1e278c7d3c391c5aabbbee5884366da480",
+      "runtime_kind": "nim",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "8eaccbc41139fd57c88448306b32b155a0fe770bc63e30bc35ce56522a65fb28",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "f395bc47cef7177e6ee1e188af57e1e5c5eb4e2f2582d4acfca7061a1e4f8260",
+      "semantic_contract": "two-distinct-docking-responses/v1",
+      "semantic_fixture_sha256": "15d1ef9002112821f21554c3f2ec48fe123b0d6e4a8e0184bfbef74f15a08a62",
+      "semantic_identity_sha256": "a311acb2e8d1b613d414cdfc57f40f9571b57b9799481256991a6e366bf55d66",
+      "semantic_request_asset_set_sha256": "41b90bc9b842f779f02425459c1d2201b73ecca60883f0332cbe342a697cbec4",
+      "semantic_request_contract_sha256": "9e5c58697b7e5cc63561c942eab84e7b1a80071cc45ca9b5fa1e4ac927041a30",
+      "semantic_request_ids": [
+        "diffdock-butane-seed-1701",
+        "diffdock-pentane-seed-2303"
+      ],
+      "semantic_request_sha256": [
+        "6065706553b0c809327b326e5a15ee6db025600c66455e55863ebb644c910e09",
+        "c0c32f9bab422dbe85aec757b8bb76b4bbabc38bec390a1ab51a51a0bf7881d0"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "24a3551d4895643c29c3a57b1b2c85be1d3674d658d5b645609fb3d594c7c724",
+      "source_kind": "ngc-nim",
+      "source_repository": "nvcr.io/nim/mit/diffdock",
+      "source_revision": "sha256:300696eb8331d78face40f84d835cc1e278c7d3c391c5aabbbee5884366da480"
+    },
+    "evo2-40b": {
+      "acquisition_method": "ngc-target-node-nimcache",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "alternative-backend-only-sm103-incompatible",
+      "acquisition_repository": "nvcr.io/nim/arc/evo2-40b",
+      "acquisition_revision": "sha256:561886bab1d2d0da836ebf5bec403f9de2baf6e92deb7eedf1b316aa994b5dd2",
+      "artifact_kind": "nim-cache",
+      "artifact_manifest_digest": null,
+      "b300_state": "incompatible-sm103",
+      "compatibility_route_backend_policy": "h100-h200-or-qualified-alternative-only",
+      "endpoints": {
+        "native": "/biology/arc/evo2/generate"
+      },
+      "execution_identity_sha256": "0ca5941f1fab17b7fa643b4244ad2cd62d669f3768fd27e03a52f066e1bec99c",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "8b163175bc7861b38ae3cd8e8ee84c1c796f2aa065a6aeef322df4171487e6e9",
+      "runtime_image_digest": "sha256:561886bab1d2d0da836ebf5bec403f9de2baf6e92deb7eedf1b316aa994b5dd2",
+      "runtime_kind": "nim",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "5774f8b27d72fe0fc33e30611ab1669f902dba1fac826ac0c82dc660b520b722",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "36ddee7f292ff585a98c5a4e6cae88acf30079db7e4344dc3b683b898c2e4213",
+      "semantic_contract": "two-distinct-evo2-sequence-responses/v1",
+      "semantic_fixture_sha256": null,
+      "semantic_identity_sha256": "fdfcfdf5c64157189fcb9d2b010678e3f37090ad772a8d9c7bc25cc40c1140b3",
+      "semantic_request_asset_set_sha256": "fa0c9c4c77af9f1a3173a8c6f298ace3b80494382dd458208fdde876a23cfd9f",
+      "semantic_request_contract_sha256": "86ce917df7e69b21b6d2e0b49d47646109a5d101c7b4e143905aecea639b539b",
+      "semantic_request_ids": [
+        "fs2-semantic-a",
+        "fs2-semantic-b"
+      ],
+      "semantic_request_sha256": [
+        "a0443fcdeb6d0ed24c1cc835e8f28cb0071b62f8e8d1552880ac1cea580aa337",
+        "10f5b4b0e05e1214910e34aff36be770af2bcc1bbf0d48a5a4f0b369d49b590f"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "ef840ca71ca4fc138d139af2a3acc1e3a2b818b92f6258d1221605725cacc54c",
+      "source_kind": "ngc-nim",
+      "source_repository": "nvcr.io/nim/arc/evo2-40b",
+      "source_revision": "sha256:561886bab1d2d0da836ebf5bec403f9de2baf6e92deb7eedf1b316aa994b5dd2"
+    },
+    "genmol": {
+      "acquisition_method": "ngc-target-node-nimcache",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "license-entitlement-and-live-qualification-required",
+      "acquisition_repository": "nvcr.io/nim/nvidia/genmol",
+      "acquisition_revision": "sha256:139b909a450fe1fb81198214784a15f67e172e766a93a1569827ba5aa05b4541",
+      "artifact_kind": "nim-cache",
+      "artifact_manifest_digest": null,
+      "b300_state": "historical-supported",
+      "compatibility_route_backend_policy": "exact-live-backend-required",
+      "endpoints": {
+        "native": "/generate"
+      },
+      "execution_identity_sha256": "808d82534673ddef9dab5f3a94e63fd253dc0ca2a7baa6f0096155866259ecfe",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "8b163175bc7861b38ae3cd8e8ee84c1c796f2aa065a6aeef322df4171487e6e9",
+      "runtime_image_digest": "sha256:139b909a450fe1fb81198214784a15f67e172e766a93a1569827ba5aa05b4541",
+      "runtime_kind": "nim",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "9af2ac85babf963725b518db42332b075452fb2ddde09651776450d1dda33520",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "dd68acd59b1ec67c0df12132d5758e1e449e6935d27872e76073c88a5fd6e8ea",
+      "semantic_contract": "two-distinct-valid-molecule-responses/v1",
+      "semantic_fixture_sha256": "3065261de604f495a2fbae1e7fd92488546ee51f2729e5d40e9be5ee2c22f444",
+      "semantic_identity_sha256": "34cd76de2b5d34c6d838112f0ed8638ce81621225251adc73432675d047bded3",
+      "semantic_request_asset_set_sha256": "5fb680a0fd971c1b89cf7d1dd8eed4a11f360a62ce6645490d2197094918dae8",
+      "semantic_request_contract_sha256": "cdce723cadaf975d23c0890777075d806bc0ba92cc3f74f646518c74d93192a3",
+      "semantic_request_ids": [
+        "qed",
+        "logp"
+      ],
+      "semantic_request_sha256": [
+        "050d9d440d6f09573d68b35a0fc26d3119407a6be22896293062752d822cfc3b",
+        "c2ee9474d485d56430bdf3b6885c9bb0dfef4130eb080be9559e7eb372a462e1"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "f85da2029aaa459d687983e5ebeec6c69dffb19a66f34c084409fe2ccc2efad4",
+      "source_kind": "ngc-nim",
+      "source_repository": "nvcr.io/nim/nvidia/genmol",
+      "source_revision": "sha256:139b909a450fe1fb81198214784a15f67e172e766a93a1569827ba5aa05b4541"
+    },
+    "glm-5-2-fp8": {
+      "acquisition_method": "huggingface-public-snapshot",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/runtime-registry-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "license-review-and-live-qualification-required",
+      "acquisition_repository": "zai-org/GLM-5.2-FP8",
+      "acquisition_revision": "ba978f7d347eaf65d22f1a86833408afdb953541",
+      "artifact_kind": "weights",
+      "artifact_manifest_digest": "aef833e05e00dd0deb7509d582f3ae3ca209c7aee6215f0f57b7e5fd3f8887cc",
+      "b300_state": "qualified",
+      "compatibility_route_backend_policy": "exact-live-backend-required",
+      "endpoints": {
+        "openai-chat": "/v1/chat/completions"
+      },
+      "execution_identity_sha256": "38724bdbd0180e0f99350bb86095e07488b9dc4905ab0dd6a7da424b4e411199",
+      "execution_mode": "http",
+      "gpu_allocation_count": 8,
+      "gpu_allocation_topology": "single-node-multi-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "openai-chat"
+      ],
+      "resource_placement_identity_sha256": "cb062b9de85c31383e5a8ccd31006fd9f3e6c110f0eb8ba8d33b30b9af0b1be5",
+      "runtime_command_sha256": "6bbf9352f5099deb5037c7426773ca86095f4848315aa6ba93d2172ca94a2d89",
+      "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "runtime_kind": "vllm",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "80e9995101fb7db8934edf612a221701f270b6d293a24b0870ee3fba00e667dc",
+      "scale_resource_placement_identity_sha256": "cb062b9de85c31383e5a8ccd31006fd9f3e6c110f0eb8ba8d33b30b9af0b1be5",
+      "scale_target_template_sha256": "4be76e591734a902d3babcbcc4d8fa00ac919e7cbb04055cbc3e7aba37faa44e",
+      "semantic_contract": "glm52-exact-and-reasoning-two-response/v1",
+      "semantic_fixture_sha256": "0b6ec5006216a49c7cece4bb57752cc6211f2de22486db14b628ab7ac0c11818",
+      "semantic_identity_sha256": "346375ea4cd914b8482f11efcd6f2b540335402581d2eac3c58492c332520bef",
+      "semantic_request_asset_set_sha256": "af0c797ecc1b6c4d8144b2b0aaf6857855d0e9dbce8d5440f67ce8c68bec36ea",
+      "semantic_request_contract_sha256": "a5df61b7b16f4b372dc11a1d77fd747d354d8b9996afa195ac37835d89e1226d",
+      "semantic_request_ids": [
+        "glm52-nonthinking-exact",
+        "glm52-reasoning-distinct"
+      ],
+      "semantic_request_sha256": [
+        "1bb2644ffd7eb64c13eda0b86f6716e6198cd24405518c28187f89f463dd0ec7",
+        "cb13c05aa37bfc90fa22eb54adf1bff34ce7163c47d8a5037302c993e2e1f290"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "b504331d1979712af2fe4b64fa8f27a81ccc158b2afb55e91bddfd73748026bd",
+      "source_kind": "huggingface",
+      "source_repository": "zai-org/GLM-5.2-FP8",
+      "source_revision": "ba978f7d347eaf65d22f1a86833408afdb953541"
+    },
+    "molmim": {
+      "acquisition_method": "ngc-target-node-nimcache",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "alternative-backend-only-sm103-incompatible",
+      "acquisition_repository": "nvcr.io/nim/nvidia/molmim",
+      "acquisition_revision": "sha256:7700c5556935a93055bee5367d36acb6d3e55d22fd1ba28503f5447656fa63fa",
+      "artifact_kind": "nim-cache",
+      "artifact_manifest_digest": null,
+      "b300_state": "incompatible-sm103",
+      "compatibility_route_backend_policy": "h100-h200-or-qualified-alternative-only",
+      "endpoints": {
+        "native": "/generate"
+      },
+      "execution_identity_sha256": "1f3ef2c58f5168c954ea2cd12017c46f6e5973fc5d26ff2fc94b037f5292a706",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "3e313e5bfa514bb3d92587f52663ba586838d3f8f3934bc4fb9e66faa14b9694",
+      "runtime_image_digest": "sha256:7700c5556935a93055bee5367d36acb6d3e55d22fd1ba28503f5447656fa63fa",
+      "runtime_kind": "nim",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "3285c71db041a8a35e617e29daed41270978e300590af433e7f792b58b9ba5e3",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "ef30d26f8432706a98ab1a511efce8a7a4a0013bb5bb21be93dcdbfa8e50345d",
+      "semantic_contract": "two-distinct-molecule-optimization-responses/v1",
+      "semantic_fixture_sha256": "053e8a5befb020695e4d27200d21b296e7171f480075125cfa6f7b5a71dbc42d",
+      "semantic_identity_sha256": "48672603340091753aecd148a4e3541ff74c949e7473e73b2e4e4445706bfea9",
+      "semantic_request_asset_set_sha256": "b1ae7fe418662221cb2b644afc8d4f9c657abff45a025502a34ad280cabbddcd",
+      "semantic_request_contract_sha256": "1c06504d759714af14a8d148c601186c71e3645c33ef6cf80fb44cb6e383f6c4",
+      "semantic_request_ids": [
+        "caffeine",
+        "aspirin"
+      ],
+      "semantic_request_sha256": [
+        "3a59acaf04e18fc5a7ed37b27ffdeee05f2542f23734d204bf487cc5f172a55e",
+        "98ac4fccf35f4a9c3cbb3666b8d98218b24e7f2d5cff9cb174c76b2d242927da"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "0d87fd53b554a629b8fb83c5abc79b074220f223ea97f7c1d8802d48e4833bd7",
+      "source_kind": "ngc-nim",
+      "source_repository": "nvcr.io/nim/nvidia/molmim",
+      "source_revision": "sha256:7700c5556935a93055bee5367d36acb6d3e55d22fd1ba28503f5447656fa63fa"
+    },
+    "msa-search-pdb70": {
+      "acquisition_method": "ngc-target-node-nimcache",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "license-entitlement-and-live-qualification-required",
+      "acquisition_repository": "nvcr.io/nim/colabfold/msa-search",
+      "acquisition_revision": "sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c",
+      "artifact_kind": "nim-cache",
+      "artifact_manifest_digest": null,
+      "b300_state": "qualified",
+      "compatibility_route_backend_policy": "exact-live-backend-required",
+      "endpoints": {
+        "native": "/biology/colabfold/msa-search/predict"
+      },
+      "execution_identity_sha256": "91dd451836348f491198b577c6eb8864edfddfa4d2728b8e1a374ae4b853276b",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "8b163175bc7861b38ae3cd8e8ee84c1c796f2aa065a6aeef322df4171487e6e9",
+      "runtime_image_digest": "sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c",
+      "runtime_kind": "nim",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "6cb5ae16b92220b1da3b7fc91028b0468d8c47d6bda669b95e0b5b537fb12786",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "4c8f3cf955c381f21035f91a2d82e566ccc3d1282a61a256ad8db4e271d05dc6",
+      "semantic_contract": "two-distinct-msa-search-responses/v1",
+      "semantic_fixture_sha256": "874b0e5e3be9776ea289fb46444032e04b63875d9d4110f1560e5435de72686a",
+      "semantic_identity_sha256": "a29845b74bd9bbfc39659ec096084f0701a1ef72bf5c823f88d6843acf2ed590",
+      "semantic_request_asset_set_sha256": "1ba967b91d9453cc4e30b0a8e5db0c30149ff77a235620a45d688555e79068b4",
+      "semantic_request_contract_sha256": "509081995cfea952e1400d7bd23586392c5bf34c3037d79e4760dd16e23386d5",
+      "semantic_request_ids": [
+        "fs2-semantic-a",
+        "fs2-semantic-b"
+      ],
+      "semantic_request_sha256": [
+        "83f9faae601565ba28df7c62089e49f3dd1690003ae4576d3b5fab2cdfa9089f",
+        "791ca630ca19b80d2d76fa65956b44ec4c8dc9284d7150b5e9fbbd66cd43a963"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "20e8951ceaaa1b81e8129d86b787c6bb009cf2e207d55829cf13f4fa9489188b",
+      "source_kind": "ngc-nim",
+      "source_repository": "nvcr.io/nim/colabfold/msa-search",
+      "source_revision": "sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c"
+    },
+    "nv-reason-cxr-3b": {
+      "acquisition_method": "huggingface-public-snapshot",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/runtime-registry-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "noncommercial-nonclinical-live-qualification-required",
+      "acquisition_repository": "nvidia/NV-Reason-CXR-3B",
+      "acquisition_revision": "056bd0383b35226554da9dc5866e095df174ae19",
+      "artifact_kind": "weights",
+      "artifact_manifest_digest": "8570bdfe2269b6a28fcfdf9973d4876589757a6af55e991f6000e3e8f0827057",
+      "b300_state": "qualified",
+      "compatibility_route_backend_policy": "exact-live-backend-required",
+      "endpoints": {
+        "openai-chat": "/v1/chat/completions"
+      },
+      "execution_identity_sha256": "87c25987f25843a4797745bd43c457c768771a7b471fdc245c16ab51ef74c83a",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "openai-chat"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "7c16890b0608f9f22547ca83fa2b38f3f244fb0694c48907e263d143938d5bd0",
+      "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "runtime_kind": "vllm",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "4b326b26fbc5aabeb89ed9b7cbaddd560785a59e3365dfb0b097b1d09e8c48d1",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "4909393aaaa9109b037d9c879882ccdff483870785c96110611d2787525cedfd",
+      "semantic_contract": "two-distinct-cxr-benchmark-images-nonclinical/v1",
+      "semantic_fixture_sha256": "8256ba29b7cb77ccbd1e3e6188ac8d01b810e3183716b3ac7ea0e7c16f8e9589",
+      "semantic_identity_sha256": "e8f26ee4895ddd204b43033f36e0438353ee8c055ad46b885228f1de10c6426c",
+      "semantic_request_asset_set_sha256": "6fbe8f9dcc19d3a8cbf6f76989b22356eb640112b92cf97ea63ba32c7e557961",
+      "semantic_request_contract_sha256": "c2db11f3d8e55feb9b96bc5e81dd6c733fae727c8cd1bfee746ecd6af9e462cb",
+      "semantic_request_ids": [
+        "normal-pa",
+        "left-pneumothorax"
+      ],
+      "semantic_request_sha256": [
+        "f83d028f7b12122726f33e4048d35893bde1543f391a077f7b6cc7fa5f49a5ce",
+        "888958b85746f93f1bdea8e2f2e683ad1ea368b09157d9df3f3ec503d01753de"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "b504331d1979712af2fe4b64fa8f27a81ccc158b2afb55e91bddfd73748026bd",
+      "source_kind": "huggingface",
+      "source_repository": "nvidia/NV-Reason-CXR-3B",
+      "source_revision": "056bd0383b35226554da9dc5866e095df174ae19"
+    },
+    "nv-segment-ct": {
+      "acquisition_method": "huggingface-public-snapshot",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/runtime-registry-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "license-nonclinical-and-live-qualification-required",
+      "acquisition_repository": "nvidia/NV-Segment-CT",
+      "acquisition_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+      "artifact_kind": "weights",
+      "artifact_manifest_digest": "db63f463f5b7882b4bf99c235b8d96ca6cd22284ba3b72f0b4bef4be1ec645b0",
+      "b300_state": "qualified",
+      "compatibility_route_backend_policy": "exact-live-backend-required",
+      "endpoints": {
+        "native": "/segment"
+      },
+      "execution_identity_sha256": "7cd5e4b04964d3365249d248307c30891a414cb8eb5b94714308b5756dba505b",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "e804d8b5da64cf9ae614bbd08747670fa486d4a6606bc175d415adf46594beda",
+      "runtime_image_digest": "sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+      "runtime_kind": "custom",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "59f4879414c8261db55957d4e91bf11cd51e397fd56338eca93704ac26230803",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "3223a029c0f6dd068128c35c9781062569a59d10d92169b631529c1ae64f5982",
+      "semantic_contract": "two-distinct-synthetic-ct-segmentations-nonclinical/v1",
+      "semantic_fixture_sha256": "47fe531772361fb441a0a5a635ecc9108270d3e0b1475a1ebec2b11b6315f6be",
+      "semantic_identity_sha256": "c19e6f1ee90f31f255b4005e83cbb8ed8e2c51d82f936264a6be69fa7c0b2d98",
+      "semantic_request_asset_set_sha256": "9b50389fb999006f64b173561a7befb1cddb1f8c6cdaaa1291f21606693af4d0",
+      "semantic_request_contract_sha256": "7130141d107b8005a4a43db279cd183b01931438c573bbb48997ad24fee27507",
+      "semantic_request_ids": [
+        "centered-sphere-r20",
+        "centered-sphere-r24"
+      ],
+      "semantic_request_sha256": [
+        "22356103ec58e1155720440c8e328a01c3e2f8cae4e2bf3623138d228591ba43",
+        "ae71a66865a5033cce594bc8eb72d218fc5c0da5dfef79b3224cac289d08d480"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "26b0a5a2f35d567ea4b98ca525c614fee6489e20a663b38653088547e54f3d68",
+      "source_kind": "huggingface",
+      "source_repository": "nvidia/NV-Segment-CT",
+      "source_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a"
+    },
+    "openfold2": {
+      "acquisition_method": "ngc-target-node-nimcache",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "license-entitlement-and-live-qualification-required",
+      "acquisition_repository": "nvcr.io/nim/openfold/openfold2",
+      "acquisition_revision": "sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4",
+      "artifact_kind": "nim-cache",
+      "artifact_manifest_digest": null,
+      "b300_state": "qualified",
+      "compatibility_route_backend_policy": "exact-live-backend-required",
+      "endpoints": {
+        "native": "/biology/openfold/openfold2/predict-structure-from-msa-and-template"
+      },
+      "execution_identity_sha256": "f83fc9f485ca3a0bf4a37d825bad791963de16b4acd0635708b70e3b8d7c8b8a",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "8b163175bc7861b38ae3cd8e8ee84c1c796f2aa065a6aeef322df4171487e6e9",
+      "runtime_image_digest": "sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4",
+      "runtime_kind": "nim",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "bb1b9006a3aab4bda531f87bd3684bc15875b4bb70d1cea009fe1489cfa761ae",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "da923f1aedc74c4d7fc22ce653e0fc1e8667b395720e1bda8767f83c8b715caa",
+      "semantic_contract": "two-distinct-openfold2-fold-responses/v1",
+      "semantic_fixture_sha256": null,
+      "semantic_identity_sha256": "a46df0d7a7dace1020fd9c19327e2f2424d1a22d7d37b26ab48224731d43367e",
+      "semantic_request_asset_set_sha256": "fa0c9c4c77af9f1a3173a8c6f298ace3b80494382dd458208fdde876a23cfd9f",
+      "semantic_request_contract_sha256": "102db4eb5f93d8b17569179f46c8248f7eb8a9ed0d62469cf25ce762f993d383",
+      "semantic_request_ids": [
+        "fs2-semantic-a",
+        "fs2-semantic-b"
+      ],
+      "semantic_request_sha256": [
+        "b0c04625784e85cb4bcb718d9a715e4716758ec041cdf1b6acc88af65645979e",
+        "bca1105039bcda1fa9c5e318ca24458500ab932ade45df5bda24d4931a4510c5"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "66c75652e7f17b35ff569a59cc6a21bc09416329d9fbf30178041aed9006a9ed",
+      "source_kind": "ngc-nim",
+      "source_repository": "nvcr.io/nim/openfold/openfold2",
+      "source_revision": "sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4"
+    },
+    "openfold3": {
+      "acquisition_method": "ngc-target-node-nimcache",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "license-entitlement-and-live-qualification-required",
+      "acquisition_repository": "nvcr.io/nim/openfold/openfold3",
+      "acquisition_revision": "sha256:6286cc7c02247ed3efe42f0f1af6c2f6f6a680b1e5cae669512c44b636aa42d2",
+      "artifact_kind": "nim-cache",
+      "artifact_manifest_digest": null,
+      "b300_state": "qualified",
+      "compatibility_route_backend_policy": "exact-live-backend-required",
+      "endpoints": {
+        "native": "/biology/openfold/openfold3/predict"
+      },
+      "execution_identity_sha256": "e72f9780c3dd295d33f4e4162111f06561c4ee27daaed4b662f7aa8ef52ccfed",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "8b163175bc7861b38ae3cd8e8ee84c1c796f2aa065a6aeef322df4171487e6e9",
+      "runtime_image_digest": "sha256:6286cc7c02247ed3efe42f0f1af6c2f6f6a680b1e5cae669512c44b636aa42d2",
+      "runtime_kind": "nim",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "ea046fda67baa090015efea7b01f18618c7083dca1dd7c56fae7c3aabe518a9d",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "7cfce0e75f5d8efded71e62408743c29933e338da7b5137bd372656a32918aaf",
+      "semantic_contract": "two-distinct-openfold3-responses/v1",
+      "semantic_fixture_sha256": "09b30bf2132e3764f99d4f417b47713cd6350bd332fe3100cceb1be11589f8ae",
+      "semantic_identity_sha256": "c8fdff201e6d96801521db72bf01a75a9005e89d3abf1e396dcf4850c051965a",
+      "semantic_request_asset_set_sha256": "8a9c99d6d15d540fd4893dacab9ba2513c386df99e3891394a6c1c7a0c733182",
+      "semantic_request_contract_sha256": "4abc1378c2042b24404d317187e353ea2a8f845ff67cfceaaccdca1c0f18f002",
+      "semantic_request_ids": [
+        "fs2-semantic-a",
+        "fs2-semantic-b"
+      ],
+      "semantic_request_sha256": [
+        "4b75205c8ce050583953916201f70206f99c98cffde483dbaf4b80afa56f5529",
+        "76dcf05c114aed09b51e5f9a5663736885ce57ea806ebe0f27f4bf131c8931df"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "679b3e027b18e78b4646569e8c6395fb5f62c4647704bb5089aa2385a20d11f5",
+      "source_kind": "ngc-nim",
+      "source_repository": "nvcr.io/nim/openfold/openfold3",
+      "source_revision": "sha256:6286cc7c02247ed3efe42f0f1af6c2f6f6a680b1e5cae669512c44b636aa42d2"
+    },
+    "proteinmpnn": {
+      "acquisition_method": "ngc-target-node-nimcache",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "alternative-backend-only-sm103-incompatible",
+      "acquisition_repository": "nvcr.io/nim/ipd/proteinmpnn",
+      "acquisition_revision": "sha256:b55a0aa6733e267e6e6fe06434e98aea61eff14bc5545127555607fef6f38aa5",
+      "artifact_kind": "nim-cache",
+      "artifact_manifest_digest": null,
+      "b300_state": "incompatible-sm103",
+      "compatibility_route_backend_policy": "h100-h200-or-qualified-alternative-only",
+      "endpoints": {
+        "native": "/biology/ipd/proteinmpnn/predict"
+      },
+      "execution_identity_sha256": "bae3f95a1acfd015c610275c1a33e165890f82e0a1e0f9011514f73c8a11045f",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "8b163175bc7861b38ae3cd8e8ee84c1c796f2aa065a6aeef322df4171487e6e9",
+      "runtime_image_digest": "sha256:b55a0aa6733e267e6e6fe06434e98aea61eff14bc5545127555607fef6f38aa5",
+      "runtime_kind": "nim",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "b8dc023a53b78a007fff6d3dbf5f4f982960548101380208ccc4aa7f9362ca51",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "773e242a455bfdf16e9dcb180079a26a88987a3bef6a6cd61f5d196a608dcff3",
+      "semantic_contract": "two-distinct-protein-design-responses/v1",
+      "semantic_fixture_sha256": null,
+      "semantic_identity_sha256": "f2358e65ba006eb97b05b4783f9b97236b54d86f83b713c83c7dca02c038615e",
+      "semantic_request_asset_set_sha256": "fa0c9c4c77af9f1a3173a8c6f298ace3b80494382dd458208fdde876a23cfd9f",
+      "semantic_request_contract_sha256": "6934ffea50c3b902eae1a04ca3f0e0a4aa8d7195ac257c1a894fbdcd180d21aa",
+      "semantic_request_ids": [
+        "fs2-semantic-a",
+        "fs2-semantic-b"
+      ],
+      "semantic_request_sha256": [
+        "7a76bc93489bd4347d0f109084fe53d9b104c81f49d40953f9a606c0d3adf48d",
+        "96369e247d028e580812f12a859384d0bdf9d8d2301a8ff35949fa0be91a3e16"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "24a3551d4895643c29c3a57b1b2c85be1d3674d658d5b645609fb3d594c7c724",
+      "source_kind": "ngc-nim",
+      "source_repository": "nvcr.io/nim/ipd/proteinmpnn",
+      "source_revision": "sha256:b55a0aa6733e267e6e6fe06434e98aea61eff14bc5545127555607fef6f38aa5"
+    },
+    "qwen3-8b": {
+      "acquisition_method": "huggingface-public-snapshot",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/runtime-registry-secret"
+      ],
+      "acquisition_promotion_policy": "exact-hf-weight-manifest-provider-block-handoff-and-live-runtime-semantic-qualification-required",
+      "acquisition_repository": "Qwen/Qwen3-8B",
+      "acquisition_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "artifact_kind": "weights",
+      "artifact_manifest_digest": "2cf721c69d9e1b66860274de129f0dd486172ef1dad289483ea891dab5b80806",
+      "artifact_qualification_gate": "fs2-serve/exact-hf-weight-per-file-sha256-manifest/v1",
+      "b300_state": "qualified",
+      "compatibility_route_backend_policy": "exact-live-backend-required",
+      "endpoints": {
+        "openai-chat": "/v1/chat/completions"
+      },
+      "execution_identity_sha256": "8031f8d4e22f96d9c326eed80b99d64036eb7e6e0cc04f9332de64e48a5fb358",
+      "execution_mode": "http",
+      "expected_artifact_content_digest": "5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d",
+      "expected_artifact_expanded_bytes": 16397461266,
+      "expected_artifact_file_count": 15,
+      "expected_artifact_file_identity_set_sha256": "4aee875fca587417ab424e2edc5ca31d1b58ad176fd4ee808d49fe29020e4c09",
+      "expected_artifact_manifest_digest": "2cf721c69d9e1b66860274de129f0dd486172ef1dad289483ea891dab5b80806",
+      "expected_artifact_payload_policy": "scratch-to-clean-exact-allowlist-regular-files-only",
+      "expected_artifact_source_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "expected_artifact_source_url": "https://huggingface.co/api/models/Qwen/Qwen3-8B/tree/b968826d9c46dd6066d109eabc6255188de91218?recursive=true&expand=true",
+      "expected_artifact_state": "expected-only-unverified",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": {
+        "cache_capabilities": [
+          "provider-block-pvc-candidate"
+        ],
+        "capacity_type": "preemptible",
+        "local_pv_pvc": {
+          "activation_generation_recreation": true,
+          "contract": "fs2-serve.nebius.ai/local-pv-pvc-lifecycle/v1",
+          "host_path_forbidden": true,
+          "lost_node_fencing": "invalidate-and-recreate-next-activation-generation",
+          "model_pod_volume_type": "persistentVolumeClaim",
+          "node_affinity": "exact-serving-node-required",
+          "preemption_fencing": "pod-pvc-pv-node-uid",
+          "state": "gated-unimplemented",
+          "storage_class_name": "fs2-local-nvme",
+          "volume_binding_mode": "WaitForFirstConsumer"
+        },
+        "node_gpu_count": 8,
+        "node_preset": "b300-8x",
+        "node_selector": {
+          "capacity.fs2.nebius/gpu-count": "8",
+          "capacity.fs2.nebius/pool": "burst",
+          "capacity.fs2.nebius/preset": "b300-8x",
+          "capacity.fs2.nebius/type": "preemptible",
+          "workload.fs2.nebius/gpu": "true"
+        },
+        "pool": "b300-burst-8x",
+        "provider_block_pvc": {
+          "acquisition": {
+            "atomic_publication": "scratch-to-clean-payload-content-address",
+            "first_consumer": true,
+            "gpu_count": 0,
+            "placement_source": "resources.gpu.placement.node_selector+tolerations",
+            "sole_writer": true
+          },
+          "claim": {
+            "access_modes": [
+              "ReadWriteOnce"
+            ],
+            "fs_type": "ext4",
+            "name": "qwen3-8b-weights",
+            "namespace": "fs2-models",
+            "requested_bytes": 68719476736,
+            "volume_mode": "Filesystem"
+          },
+          "contract": "fs2-serve.nebius.ai/provider-block-pvc/v1",
+          "qualification_gates": [
+            "bound-after-targeted-acquirer",
+            "content-manifest-verified",
+            "detach-reattach-controlled-node-replacement",
+            "no-multi-attach",
+            "sole-writer-handoff-closed",
+            "two-distinct-semantic-responses",
+            "scale-one-to-zero-claim-retained"
+          ],
+          "runtime": {
+            "claim_reuse": "same-pvc-uid-and-volume-name",
+            "gpu_count": 1,
+            "read_only": true
+          },
+          "state": "candidate-unqualified",
+          "storage_class": {
+            "allow_volume_expansion": true,
+            "default_delete_class_policy": "canary-only-with-deletion-protection",
+            "name": "fs2-network-ssd-retain",
+            "owner": "fs2-serve-cluster",
+            "parameters": {
+              "csi.storage.k8s.io/fstype": "ext4",
+              "type": "NETWORK_SSD"
+            },
+            "provisioner": "compute.csi.nebius.com",
+            "reclaim_policy": "Retain",
+            "volume_binding_mode": "WaitForFirstConsumer"
+          }
+        },
+        "qualification_sequence": [
+          {
+            "cohort_binding": "provider-block-pvc-lifecycle",
+            "order": 1,
+            "qualification_gate": "fs2-serve/provider-block-pvc-handoff/v1",
+            "startup_mechanism": "conventional",
+            "state": "candidate-unqualified",
+            "storage_mode": "provider-block-pvc"
+          },
+          {
+            "cohort_binding": "replacement-node-rwx-canary",
+            "order": 2,
+            "qualification_gate": "fs2-serve/sfs-rwx-replacement-node-canary/v1",
+            "startup_mechanism": "conventional",
+            "state": "gated-unqualified",
+            "storage_mode": "sfs-pvc"
+          },
+          {
+            "cohort_binding": "activation-generation-pvc",
+            "order": 3,
+            "qualification_gate": "fs2-serve/local-pv-pvc-lifecycle/v1",
+            "startup_mechanism": "conventional",
+            "state": "gated-unqualified",
+            "storage_mode": "local-nvme"
+          }
+        ],
+        "tolerations": [
+          {
+            "effect": "NoSchedule",
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": "fs2-inference"
+          }
+        ]
+      },
+      "historical_weight_inventory_file_count": 15,
+      "historical_weight_inventory_identity_sha256": "1e89964f62cbba0c316f76db2e4ea56d2a79fcf5b8ec678bec48d53c457a30cc",
+      "historical_weight_inventory_logical_bytes": 16397461266,
+      "historical_weight_inventory_per_file_sha256_complete": false,
+      "protocols": [
+        "openai-chat"
+      ],
+      "qualification_priority_rank": 1,
+      "qualification_priority_startup_mechanism": "conventional",
+      "qualification_priority_state": "candidate-unroutable",
+      "resource_placement_identity_sha256": "03560d641fc4dbebce5d7dccf486e5efe3c692dad0ae1bf8cc0032cfbd2c69bc",
+      "runtime_command_sha256": "a804d167a4a70088622e2e9dadf2bde5ead72525e16ed2fd663117bd749a8eff",
+      "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "runtime_kind": "vllm",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "3ddd422fc441dee8089782c062510164c5a7e0dbcb8558c1d162445e411df8ab",
+      "scale_resource_placement_identity_sha256": "03560d641fc4dbebce5d7dccf486e5efe3c692dad0ae1bf8cc0032cfbd2c69bc",
+      "scale_target_template_sha256": "e39cdd5b062dca3821a835031c2e9b1a04a887cb99071edd1a7aa128ba9e9525",
+      "semantic_contract": "two-distinct-exact-content-prompts-qwen3/v1",
+      "semantic_fixture_sha256": "90a9af8e20e4bf8c3a8a9478f74296d4a981398a7422b3871b0327fd9afdc8a2",
+      "semantic_identity_sha256": "5ee23859499a44d7e14ba06b725c6bbe820671b77f9fb9fb33cd3203fd2da993",
+      "semantic_request_asset_set_sha256": "f670423d861be2f09e57471b85058b4494741b85f42fa7fc440ca0d126943775",
+      "semantic_request_contract_sha256": "c624dd6f590e146dce68767dbdc4901a4d173e7210bf5305b6c2fc6e0317eeaf",
+      "semantic_request_ids": [
+        "qwen3-fs2-first-exact",
+        "qwen3-fs2-second-exact"
+      ],
+      "semantic_request_sha256": [
+        "8e626ba27e7294ac8d4958b010fca73d3c2b0c94be9fc89e0a4d43e201739a5e",
+        "73daad209504822959186eef2ec4d559650aba1d6c20cc38377c134251a530d7"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "b504331d1979712af2fe4b64fa8f27a81ccc158b2afb55e91bddfd73748026bd",
+      "source_kind": "huggingface",
+      "source_license_artifact_sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+      "source_license_artifact_url": "https://huggingface.co/Qwen/Qwen3-8B/raw/b968826d9c46dd6066d109eabc6255188de91218/LICENSE",
+      "source_license_id": "apache-2.0",
+      "source_license_state": "verified",
+      "source_repository": "Qwen/Qwen3-8B",
+      "source_review_metadata_sha256": "c653272690ef3247479467a23d991f68c2ed0e7c78f4c90fe7bd2b2de17ba3e7",
+      "source_revision": "b968826d9c46dd6066d109eabc6255188de91218"
+    },
+    "rfdiffusion": {
+      "acquisition_method": "ngc-target-node-nimcache",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "alternative-backend-only-sm103-incompatible",
+      "acquisition_repository": "nvcr.io/nim/ipd/rfdiffusion",
+      "acquisition_revision": "sha256:15e40e466d8ebe9a53f1feea599373720428c9de65da750bf4271c96ec35ceb4",
+      "artifact_kind": "nim-cache",
+      "artifact_manifest_digest": null,
+      "b300_state": "incompatible-sm103",
+      "compatibility_route_backend_policy": "h100-h200-or-qualified-alternative-only",
+      "endpoints": {
+        "native": "/biology/ipd/rfdiffusion/generate"
+      },
+      "execution_identity_sha256": "5aa4218e2e508841b704a508eed0725a941f086efd4afa2cbfa1cc934f32c022",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "8b163175bc7861b38ae3cd8e8ee84c1c796f2aa065a6aeef322df4171487e6e9",
+      "runtime_image_digest": "sha256:15e40e466d8ebe9a53f1feea599373720428c9de65da750bf4271c96ec35ceb4",
+      "runtime_kind": "nim",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "17980db22179b23415f62422dd6d5b8909ef914f49553ff729af83f783e784f1",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "869393bd0352ddd128dc897f86f6869d9f273ba4d31b2efeb27ef755c75ec583",
+      "semantic_contract": "two-distinct-protein-backbone-responses/v1",
+      "semantic_fixture_sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+      "semantic_identity_sha256": "816a8437181bb10e637722416f1b3cec405015b8ee9c90d0a13679b0e4cfe11d",
+      "semantic_request_asset_set_sha256": "328571ddad23fae29296050e383e63ddbf58f6bd23b7c9c24df23ce2aaaf3e6f",
+      "semantic_request_contract_sha256": "faa01a4aa9e96c4a2bfff55b19e7b34c63159d6ce0de9232a28dc2661b33bcd9",
+      "semantic_request_ids": [
+        "fs2-semantic-a",
+        "fs2-semantic-b"
+      ],
+      "semantic_request_sha256": [
+        "da696caf8aba3511e63df5a293622e91b4c063f1593c60038bedca16d4865b2d",
+        "8fa20730e48a66c62fc5d095b4d26afac00cf7c4768e59300b95e447bc200c3c"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "691ee7d60aaf22f32cb05bb7c67fa0552b656f0d549015f3297516e1dd7b2317",
+      "source_kind": "ngc-nim",
+      "source_repository": "nvcr.io/nim/ipd/rfdiffusion",
+      "source_revision": "sha256:15e40e466d8ebe9a53f1feea599373720428c9de65da750bf4271c96ec35ceb4"
+    },
+    "sdxl": {
+      "acquisition_method": "huggingface-public-snapshot",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/runtime-registry-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "license-and-live-qualification-required",
+      "acquisition_repository": "stabilityai/stable-diffusion-xl-base-1.0",
+      "acquisition_revision": "462165984030d82259a11f4367a4eed129e94a7b",
+      "artifact_kind": "weights",
+      "artifact_manifest_digest": "09aab654299a9b9a97ae8daeadbc7a2353a74cf673134fcf6689e4306b40c5f0",
+      "b300_state": "qualified",
+      "compatibility_route_backend_policy": "exact-live-backend-required",
+      "endpoints": {
+        "native": "/generate"
+      },
+      "execution_identity_sha256": "a92d974710e039def56ad1999bf073b175ac00851287a90f06c3398844213bc0",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "613d32c898bd4be60ba7d70b7a080f254e4a9a4e865c4249cea9ef5479076374",
+      "runtime_image_digest": "sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+      "runtime_kind": "diffusers",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "1e4386dccee755cdc428ddf255f6905503999efa5ce90dede6d6e2a6dc48035f",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "3fb0bd9d959b3dc7b4222106c731a4190c155186160c6daf1520b5de5679b852",
+      "semantic_contract": "direct-png-and-b64-json-512x512/v1",
+      "semantic_fixture_sha256": "965126666caddea5dd5d1625390c93eff1eb0077840b16fc79616ec1c23e0b91",
+      "semantic_identity_sha256": "6b9aa65c6d4de4932e3789ff3b77e9fd1fe58b8b1153764c033236607152ecf0",
+      "semantic_request_asset_set_sha256": "09a20b5c01968a6ef7a0f02cd21c8a6f0ca82f849b2b4d107dec6b0a23357e06",
+      "semantic_request_contract_sha256": "3beb5a33f09102ca9f74e971ea427e2eafc7b6d5c32baa62fb4be77a869933ba",
+      "semantic_request_ids": [
+        "sdxl-phase1-green-mountain-seed-2407",
+        "sdxl-fs2-silver-moon-seed-2408"
+      ],
+      "semantic_request_sha256": [
+        "0b24e0074ae0814a7157afe5c26c51c31cb8d4b89c85a66f39f9b370421e685e",
+        "97d662a57345fbe5723cd6d6d9b791fe9faf05c7eed9e1100cf2c293dc6033da"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "f24a856fe110054f5e707744fe41910ce1864c27072e84d2a880f4db8c67239a",
+      "source_kind": "huggingface",
+      "source_repository": "stabilityai/stable-diffusion-xl-base-1.0",
+      "source_revision": "462165984030d82259a11f4367a4eed129e94a7b"
+    }
+  },
+  "schema": "fs2-serve.nebius.ai/golden-identities/v1"
+}

@@ -1,0 +1,80 @@
+{
+  "schema": "fs2-serve.nebius.ai/public-edge-artifact-observations/v1",
+  "release_authority": false,
+  "foundation_dependency": {
+    "independent_receipt_required": true,
+    "combined_render_required": true,
+    "default_deny_namespaces": [
+      "envoy-gateway-system",
+      "fs2-system"
+    ]
+  },
+  "gateway_api": {
+    "version": "v1.5.1",
+    "artifact_sha256": "751002b3b91a87f7ae3bd2517c79a47a8d7ed6702901808a1cf9bd97d284f9b8"
+  },
+  "envoy_gateway": {
+    "version": "v1.8.3",
+    "chart_sha256": "4bb4e46f4d13d234b0ce785bee691c821b39ebd6884d80bdd69205bea9939d71",
+    "oci_manifest_sha256": "cfb34ff4266c87a394cd6be5c13607a2dd47083aef771368302eaeaa99c4a0a9",
+    "source_commit": "94850d4323922cba7c67b5b5ad23de9c715f8048",
+    "source_tree": "f63106a5a9d3cdabb6b5c6a0ca601307e8875ec9",
+    "opened_source_sha256": {
+      "internal/gatewayapi/translator.go": "fd760fab13ba7808be5442e119fa5135bf60a1ad7b3782d6b48ab6b328780016",
+      "internal/gatewayapi/listener.go": "633b93ec722b39223382c61ab2dfe17c301e9e2b1621be65f73bd3bd5e4fda14",
+      "internal/infrastructure/kubernetes/proxy/testdata/gateway-namespace-mode/service.yaml": "cdc06af001d38fa2215edf931b8f3cf3fc3e70200413110de5cd480a49e9f403"
+    },
+    "deploy_type": "GatewayNamespace",
+    "observation_method": "opened-pinned-chart-render-and-disposable-controller-reconciliation",
+    "external_traffic_policy": "Cluster",
+    "proxy_selector": {
+      "app.kubernetes.io/component": "proxy",
+      "app.kubernetes.io/managed-by": "envoy-gateway",
+      "app.kubernetes.io/name": "envoy",
+      "gateway.envoyproxy.io/owning-gateway-name": "public",
+      "gateway.envoyproxy.io/owning-gateway-namespace": "fs2-system"
+    },
+    "listener_service_ports": [
+      {
+        "name": "http-80",
+        "port": 80,
+        "target_port": 10080,
+        "node_port": 31425
+      },
+      {
+        "name": "https-443",
+        "port": 443,
+        "target_port": 10443,
+        "node_port": 32633
+      }
+    ],
+    "controller_selector": {
+      "app.kubernetes.io/instance": "envoy-gateway",
+      "app.kubernetes.io/name": "gateway-helm",
+      "control-plane": "envoy-gateway"
+    },
+    "xds_port": 18000
+  },
+  "cert_manager": {
+    "version": "v1.21.1",
+    "chart_sha256": "c27101f3f3e2349fb4a9e704316105bf7b52ad73b8c8257d3498ef7f2f6a4adc",
+    "oci_manifest_sha256": "15c0b46d9006ce8eb9ff14d1bf54d1bbfcc587bb9e24cd9fe186fb8fec56af1f",
+    "source_commit": "24e33194fb39488eff2bbf10c6dc640f407cad44",
+    "source_tree": "2640b89e5f7f17ace93cc5878c11f54c82f63438",
+    "opened_source_sha256": {
+      "pkg/apis/acme/v1/types.go": "992581d6afd3c0305c4d27a2ddf1d7233467833f6a2c1af8a55b141f70bf10d7",
+      "pkg/issuer/acme/http/http.go": "1b2d7133decd068e210e1f539590b5a8171821a24c2986c03baba5ef5bcc7db5",
+      "pkg/issuer/acme/http/pod.go": "58543572c89c11360399aa3650a94327ef7e6e205db4c4185ca94224da3f1c1a",
+      "pkg/issuer/acme/http/httproute.go": "000e135e65796d9aa46b417c6580678e3cc8862de9e7ede7537bf5f2b92d8885"
+    },
+    "observation_method": "opened-pinned-chart-and-gateway-http01-controller-source",
+    "http01_solver_selector": {
+      "acme.cert-manager.io/http01-solver": "true"
+    },
+    "http01_solver_port": 8089,
+    "http01_route_match": {
+      "path_type": "Exact",
+      "path_prefix": "/.well-known/acme-challenge/"
+    }
+  }
+}

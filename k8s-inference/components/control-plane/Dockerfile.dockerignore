@@ -1,0 +1,65 @@
+# BuildKit selects this file (not control-plane/.dockerignore) when the
+# repository root is the context and this Dockerfile is passed with -f.
+# Start closed, admit only immutable build inputs, then re-exclude sensitive
+# names even if they are accidentally created inside an admitted source tree.
+**
+!k8s-inference/
+k8s-inference/*
+!k8s-inference/components/
+k8s-inference/components/*
+!k8s-inference/components/control-plane/
+k8s-inference/components/control-plane/*
+!k8s-inference/components/control-plane/pyproject.toml
+!k8s-inference/components/control-plane/uv.lock
+!k8s-inference/components/control-plane/README.md
+!k8s-inference/components/control-plane/src/
+!k8s-inference/components/control-plane/src/**
+!k8s-inference/components/control-plane/migrations/
+!k8s-inference/components/control-plane/migrations/**
+!k8s-inference/components/control-plane/contracts/
+!k8s-inference/components/control-plane/contracts/**
+!k8s-inference/catalog/
+k8s-inference/catalog/*
+!k8s-inference/catalog/runtime/
+k8s-inference/catalog/runtime/*
+!k8s-inference/catalog/runtime/fs2_serve_catalog/
+!k8s-inference/catalog/runtime/fs2_serve_catalog/**
+!k8s-inference/catalog/runtime/pyproject.toml
+!k8s-inference/catalog/runtime/uv.lock
+!k8s-inference/catalog/runtime/catalog.json
+!k8s-inference/catalog/runtime/contracts/
+!k8s-inference/catalog/runtime/contracts/**
+!k8s-inference/catalog/runtime/kubernetes/
+!k8s-inference/catalog/runtime/kubernetes/**
+!k8s-inference/catalog/runtime/models/
+!k8s-inference/catalog/runtime/models/**
+!k8s-inference/catalog/runtime/schema/
+!k8s-inference/catalog/runtime/schema/**
+!k8s-inference/catalog/runtime/sql/
+!k8s-inference/catalog/runtime/sql/**
+!k8s-inference/catalog/runtime/validators/
+!k8s-inference/catalog/runtime/validators/**
+!k8s-inference/catalog/runtime/packaged-repository/
+!k8s-inference/catalog/runtime/packaged-repository/**
+
+**/.git
+**/.git/**
+**/.env
+**/.env.*
+**/*credential*
+**/*secret*
+# These two committed JSON Schemas describe credential-resource contracts; they
+# contain no credential values and are required by the packaged catalog. Keep
+# the exact filenames visible after the broad sensitive-name exclusions above.
+!k8s-inference/catalog/runtime/schema/external-secrets-provider-build-eligibility-receipt.schema.json
+!k8s-inference/catalog/runtime/schema/ngc-credential-materialization.schema.json
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx
+**/*.untracked
+**/evidence
+**/evidence/**
+**/__pycache__
+**/__pycache__/**
+**/*.py[cod]

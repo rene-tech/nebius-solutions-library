@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/artifact-manifest/v1",
+  "title": "fs2-serve immutable model artifact manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "model_id", "kind", "source", "content", "license", "entitlement_state", "owner", "retention"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/artifact-manifest/v1"},
+    "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "kind": {"enum": ["weights", "nim-cache", "snapshot"]},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "revision"],
+      "properties": {
+        "uri": {"type": "string", "pattern": "^(sfs|nvme|ngc|hf|oci)://"},
+        "revision": {"type": "string", "minLength": 1}
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "expanded_bytes", "files"],
+      "properties": {
+        "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "expanded_bytes": {"type": "integer", "minimum": 1},
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "bytes", "sha256"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "bytes": {"type": "integer", "minimum": 0},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+            }
+          }
+        }
+      }
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "state": {"enum": ["verified", "unverified", "blocked"]}
+      }
+    },
+    "entitlement_state": {"enum": ["not-required", "verified", "unverified", "blocked"]},
+    "owner": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9./]*[a-z0-9])?$"},
+    "retention": {"enum": ["retained-platform", "ephemeral-test"]}
+  }
+}

@@ -1,0 +1,13 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 6 }}
+{{- end }}

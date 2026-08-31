@@ -1,0 +1,455 @@
+{
+  "schema": "fs2-serve.nebius.ai/model-accelerator-compatibility/v1",
+  "authority": "catalog-runtime-observation-only-not-placement-or-route-authority",
+  "rendering_enabled": false,
+  "binding_scope": "exact-runtime-variant-only",
+  "gpu_count_semantics": "workload-consumed-not-host-pool-shape",
+  "models": {
+    "boltz2": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/boltz2.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "historical-evidence-only",
+              "enabled": false,
+              "catalog_b300_state": "historical-supported",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "diffdock": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/diffdock.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "blocked",
+              "enabled": false,
+              "catalog_b300_state": "incompatible-sm103",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "evo2-40b": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/evo2-40b.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "blocked",
+              "enabled": false,
+              "catalog_b300_state": "incompatible-sm103",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "genmol": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/genmol.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "historical-evidence-only",
+              "enabled": false,
+              "catalog_b300_state": "historical-supported",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "glm-5-2-fp8": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/glm-5-2-fp8.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 8,
+            "topology": "single-node-multi-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-8x",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": "qualified",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "molmim": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/molmim.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "blocked",
+              "enabled": false,
+              "catalog_b300_state": "incompatible-sm103",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "msa-search-pdb70": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/msa-search-pdb70.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": "qualified",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "nv-reason-cxr-3b": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/nv-reason-cxr-3b.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": "qualified",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "nv-segment-ct": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/nv-segment-ct.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": "qualified",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "openfold2": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/openfold2.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": "qualified",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "openfold3": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/openfold3.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": "qualified",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "proteinmpnn": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/proteinmpnn.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "blocked",
+              "enabled": false,
+              "catalog_b300_state": "incompatible-sm103",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "qwen3-8b": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/qwen3-8b.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-8x",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": "qualified",
+              "evidence": "catalog resources.gpu.b300_state and exact reviewed placement"
+            }
+          ],
+          "qualification_candidates": [
+            {
+              "accelerator_class": "nvidia-h100-sxm-80gb",
+              "pool_template": "unbound-h100",
+              "state": "declared-unvalidated",
+              "enabled": false,
+              "catalog_b300_state": null,
+              "evidence": null
+            },
+            {
+              "accelerator_class": "nvidia-h200-sxm-141gb",
+              "pool_template": "unbound-h200",
+              "state": "declared-unvalidated",
+              "enabled": false,
+              "catalog_b300_state": null,
+              "evidence": null
+            },
+            {
+              "accelerator_class": "nvidia-b200-sxm-180gb",
+              "pool_template": "unbound-b200",
+              "state": "declared-unvalidated",
+              "enabled": false,
+              "catalog_b300_state": null,
+              "evidence": null
+            },
+            {
+              "accelerator_class": "nvidia-gb300-288gb",
+              "pool_template": "unbound-gb300",
+              "state": "declared-unvalidated",
+              "enabled": false,
+              "catalog_b300_state": null,
+              "evidence": null
+            },
+            {
+              "accelerator_class": "nvidia-rtx-pro-6000-blackwell-96gb",
+              "pool_template": "unbound-rtx-pro-6000-blackwell",
+              "state": "declared-unvalidated",
+              "enabled": false,
+              "catalog_b300_state": null,
+              "evidence": null
+            }
+          ]
+        }
+      }
+    },
+    "rfdiffusion": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/rfdiffusion.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "blocked",
+              "enabled": false,
+              "catalog_b300_state": "incompatible-sm103",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "sdxl": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/sdxl.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": "qualified",
+              "evidence": "catalog resources.gpu.b300_state"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    }
+  }
+}

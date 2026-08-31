@@ -1,0 +1,64 @@
+{{- if .Values.httpRoute.enabled }}
+{{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}
+{{- fail "httpRoute.authorityMode must equal config.publicAuthorityMode" }}
+{{- end }}
+{{- if ne .Values.httpRoute.authorityMode "ip" }}
+{{- fail "the chart-owned public HTTPRoute supports only the reviewed direct-IP authority" }}
+{{- end }}
+{{- if not .Values.publicGateway.enabled }}
+{{- fail "publicGateway.enabled is required for every public HTTPRoute" }}
+{{- end }}
+{{- if not .Values.publicTls.enabled }}
+{{- fail "publicTls.enabled is required for the public HTTPRoute" }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.publicGateway.gatewayName }}
+      sectionName: {{ .Values.publicGateway.httpsListenerName }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1
+        - path:
+            type: Exact
+            value: /mcp
+        - path:
+            type: PathPrefix
+            value: /admin/api/v1
+        - path:
+            type: Exact
+            value: /.well-known/oauth-protected-resource
+        - path:
+            type: Exact
+            value: /.well-known/oauth-protected-resource/mcp
+        - path:
+            type: Exact
+            value: /readyz
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - x-fs2-tenant
+              - x-fs2-principal
+              - x-fs2-token-id
+              - x-fs2-model-scope
+              - x-fs2-accounting-id
+      timeouts:
+        # The API permits a bounded 30-second synchronous wait before returning
+        # an asynchronous operation. Keep the edge/backend timeout above that
+        # contract so Envoy cannot replace a valid JSON response with a 504.
+        request: {{ .Values.httpRoute.requestTimeout | quote }}
+        backendRequest: {{ .Values.httpRoute.backendRequestTimeout | quote }}
+      backendRefs:
+        - name: {{ include "fs2-serve.fullname" . }}
+          port: {{ .Values.service.port }}
+{{- end }}

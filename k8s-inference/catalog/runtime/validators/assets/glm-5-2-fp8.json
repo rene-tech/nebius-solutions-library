@@ -1,0 +1,18 @@
+{
+  "schema": "fs2-serve.nebius.ai/semantic-contract/v1",
+  "contract": "glm52-exact-and-reasoning-two-response/v1",
+  "kind": "openai-text",
+  "source_commit": "3ea1130ef5d8d3254227cc1d14c8399d84ba45fd",
+  "requests": [
+    {
+      "id": "glm52-nonthinking-exact",
+      "request": {"model": "glm-5-2-fp8", "messages": [{"role": "user", "content": "Return exactly GLM52_FS2_FIRST_OK and no other text."}], "temperature": 0, "max_tokens": 32, "stream": false, "chat_template_kwargs": {"enable_thinking": false}},
+      "oracle": {"type": "exact-content", "expected": "GLM52_FS2_FIRST_OK"}
+    },
+    {
+      "id": "glm52-reasoning-distinct",
+      "request": {"model": "glm-5-2-fp8", "messages": [{"role": "user", "content": "Compute 19 + 23, then put GLM52_FS2_SECOND_OK_42 in the final answer."}], "temperature": 0, "max_tokens": 128, "stream": false, "chat_template_kwargs": {"enable_thinking": true, "reasoning_effort": "high"}},
+      "oracle": {"type": "content-contains", "expected": "GLM52_FS2_SECOND_OK_42"}
+    }
+  ]
+}

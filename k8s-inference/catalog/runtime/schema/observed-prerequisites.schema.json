@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/observed-prerequisites/v4",
+  "title": "fs2-serve value-suppressed observed Kubernetes prerequisites",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "values_suppressed", "legacy_ngc_secret_copied", "legacy_plaintext_rotation_source_used", "legacy_phase_7c_hmac_reused", "exposed_evo_bearer_reused", "ngc_credential_materialization", "resources"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/observed-prerequisites/v4"},
+    "values_suppressed": {"const": true},
+    "legacy_ngc_secret_copied": {"const": false},
+    "legacy_plaintext_rotation_source_used": {"const": false},
+    "legacy_phase_7c_hmac_reused": {"const": false},
+    "exposed_evo_bearer_reused": {"const": false},
+    "ngc_credential_materialization": {
+      "oneOf": [
+        {"$ref": "ngc-credential-materialization.schema.json"},
+        {"type": "null"}
+      ]
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "api_version", "kind", "namespace", "name", "uid", "resource_version", "state", "secret_type", "data_keys", "access_modes", "capacity_bytes"],
+        "properties": {
+          "id": {"type": "string"},
+          "api_version": {"const": "v1"},
+          "kind": {"enum": ["Secret", "ServiceAccount", "PersistentVolumeClaim"]},
+          "namespace": {"enum": ["fs2-models", "fs2-faststart"]},
+          "name": {"type": "string"},
+          "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+          "resource_version": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+          "state": {"enum": ["present", "Bound"]},
+          "secret_type": {"type": ["string", "null"]},
+          "data_keys": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+          "access_modes": {"type": "array", "uniqueItems": true, "items": {"enum": ["ReadWriteMany"]}},
+          "capacity_bytes": {"type": ["integer", "null"], "minimum": 1}
+        }
+      }
+    }
+  }
+}

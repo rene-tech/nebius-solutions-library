@@ -1,0 +1,89 @@
+{
+  "schema": "fs2-serve.nebius.ai/provenance-lock/v1",
+  "entries": [
+    {
+      "commit": "307e4ff86ff3fe2fe2d27ef44b3acfaebe5e6c55",
+      "tree": "22520482a19e362ef1594937661fbedfab2fe69a",
+      "path": "nim-fast-start/faststart-v2/sdxl-faststart/model-snapshot-inventory.json",
+      "classification": "measured-handoff",
+      "content_sha256": "2c9d4804da0787fec318534da3bbe01727d505dd552855520fe20afb527361e2"
+    },
+    {
+      "commit": "36ce5207e3d7e9ab3b431c4bc35f69ad617c4872",
+      "tree": "681b7d4290e9c456e09c1530f695b229dfe1d19f",
+      "path": "nim-fast-start/faststart-v2/evo2-deep-optimization/profile.json",
+      "classification": "negative-evidence",
+      "content_sha256": "8dd95731277be14ef6ec7a58ae62d045e1b6ea610a21cbaf5fb0594ef91a493a"
+    },
+    {
+      "commit": "3ea1130ef5d8d3254227cc1d14c8399d84ba45fd",
+      "tree": "4cd0efeeb30158dcf02eedf968bcc09a629dc5a2",
+      "path": "nim-fast-start/faststart-v2/glm52-deep-optimization/campaign.json",
+      "classification": "measured-handoff",
+      "content_sha256": "524258475598a7d35a8d876d9f2229f002b4f4833f611a4e8aff78d0cb9cc667"
+    },
+    {
+      "commit": "3f20fa12b1e82a46eade6822839615b0de347612",
+      "tree": "ec6ab01b42be481dc7b9bfa467e65e9ef9f13a4a",
+      "path": "docs/fs2/fs2-product-switch/results.json",
+      "classification": "measured-handoff",
+      "content_sha256": "46ae64a2ff8c62a82821833409c30ac03612a75f6e1dba8a13a4076d408b85bc"
+    },
+    {
+      "commit": "7e3c84f1f7e5f3df4b04e17f9846d49b321f504b",
+      "tree": "d34e55849c14507e13811f685ca45322d6fe09ae",
+      "path": "nim-fast-start/faststart-v2/conventional-baselines/catalog.json",
+      "classification": "measured-handoff",
+      "content_sha256": "cdcb9c0286009323e377329e4b312aefeca6e70fb41c4e238a89e411b725dcbd"
+    },
+    {
+      "commit": "897e7c7aef499d8a1e5a96bf419ec97e9ff95f88",
+      "tree": "7ae9dace8f193c031586b7eed5c0ceb8168e4aa2",
+      "path": "docs/fs2/fs2-medical-imaging-nims/RESULTS.md",
+      "classification": "negative-evidence",
+      "content_sha256": "2fde96765b1b9089067eea8fcc5cfc8db21dd3be69bc4fa11876ec2d08cb57c5"
+    },
+    {
+      "commit": "897e7c7aef499d8a1e5a96bf419ec97e9ff95f88",
+      "tree": "7ae9dace8f193c031586b7eed5c0ceb8168e4aa2",
+      "path": "nim-fast-start/faststart-v2/nv-reason-cxr-vllm/profile.json",
+      "classification": "measured-handoff",
+      "content_sha256": "aa70e9307e8c065256f800e3a33197b2aa280e682d7e999c7058aac87576a77c"
+    },
+    {
+      "commit": "a5a2ab50724ab9114aa94dc6234beaa92c4f079a",
+      "tree": "98a0ee9a3e2dc8c70070ee79f794c618fad32ef6",
+      "path": "docs/fs2/fs2-evo2-blackwell/results.json",
+      "classification": "negative-evidence",
+      "content_sha256": "65d54bae6c05d8d45bcbe4b0a638ef8f5734f1c67544c9c6637d8b27b26c598c"
+    },
+    {
+      "commit": "bc4e152900168eac7e3dac7b376aaa12e362701b",
+      "tree": "3e0b4ca2d51d9dfdcc5b01c83bc5373485b4317c",
+      "path": "docs/fs2/fs2-bio-nims-snapshots/preliminary-results.json",
+      "classification": "negative-evidence",
+      "content_sha256": "879929b9650ed81c9570507856b54154b008ac0ae80c6a002265dfc61137d88f"
+    },
+    {
+      "commit": "bc4e152900168eac7e3dac7b376aaa12e362701b",
+      "tree": "3e0b4ca2d51d9dfdcc5b01c83bc5373485b4317c",
+      "path": "nim-fast-start/faststart-v2/bio_nims_snapshots/artifact-inventory.json",
+      "classification": "negative-evidence",
+      "content_sha256": "902cfd6160f35f7732a92f4a237296c5ba71a7a93d0e5549f7c3eee8dc2d9ebc"
+    },
+    {
+      "commit": "bc4e152900168eac7e3dac7b376aaa12e362701b",
+      "tree": "3e0b4ca2d51d9dfdcc5b01c83bc5373485b4317c",
+      "path": "nim-fast-start/faststart-v2/bio_nims_snapshots/artifact-inventory.json",
+      "classification": "reviewed-input",
+      "content_sha256": "902cfd6160f35f7732a92f4a237296c5ba71a7a93d0e5549f7c3eee8dc2d9ebc"
+    },
+    {
+      "commit": "ce3daebc291f4b35807989959cf24068cdf500a7",
+      "tree": "e98ab16eaa01d3f00d44db739b59403ac42d2b9f",
+      "path": "nim-fast-start/faststart-v2/qwen3-faststart/campaign-contract.json",
+      "classification": "measured-handoff",
+      "content_sha256": "5b32e8b2995fb381efe657e0def1880b011d4797cf68e2164983ed92432d8d52"
+    }
+  ]
+}

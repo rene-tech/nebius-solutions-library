@@ -1,0 +1,42 @@
+schema: fs2-serve.nebius.ai/dcgm-cadence-profiles/v1
+campaignMetrics:
+  - DCGM_FI_DEV_GPU_UTIL
+  - DCGM_FI_DEV_FB_USED
+profiles:
+  standard:
+    attributionMetricCollectionInterval: 30s
+    minimumNominalWindowSeconds: 60
+    helmValues:
+      config:
+        enabled: false
+      serviceMonitor:
+        interval: 30s
+        scrapeTimeout: 25s
+        metricRelabelings: []
+  coldStartCampaign:
+    attributionMetricCollectionInterval: 1s
+    minimumNominalWindowSeconds: 2
+    helmValues:
+      config:
+        enabled: true
+        create: true
+        data: |
+          version: 1
+          metrics:
+            file: /etc/dcgm-exporter/default-counters.csv
+          collection:
+            interval: 30s
+            watchGroups:
+              - name: cold-start-attribution
+                interval: 1s
+                fields:
+                  - DCGM_FI_DEV_GPU_UTIL
+                  - DCGM_FI_DEV_FB_USED
+      serviceMonitor:
+        interval: 1s
+        scrapeTimeout: 900ms
+        metricRelabelings:
+          - action: keep
+            sourceLabels:
+              - __name__
+            regex: DCGM_FI_DEV_(GPU_UTIL|FB_USED)

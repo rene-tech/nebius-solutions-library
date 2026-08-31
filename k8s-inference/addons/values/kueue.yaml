@@ -1,0 +1,15 @@
+enableCertManager: true
+enableKueueViz: false
+enablePrometheus: false
+controllerManager:
+  replicas: 2
+  nodeSelector:
+    workload.fs2.nebius/system: "true"
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  manager:
+    image:
+      repository: registry.k8s.io/kueue/kueue
+      tag: v0.17.8@sha256:cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6
+      pullPolicy: IfNotPresent

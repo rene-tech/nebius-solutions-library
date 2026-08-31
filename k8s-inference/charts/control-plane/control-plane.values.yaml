@@ -1,0 +1,61 @@
+replicaCount: 2
+
+catalog:
+  delivery: image
+  imagePath: /opt/fs2/catalog
+  leanRoutes:
+    enabled: true
+
+config:
+  otlpEndpoint: http://fs2-otel-gateway.fs2-observability.svc.cluster.local:4318
+  syncWaitSeconds: "30"
+  maxSyncWaitSeconds: "30"
+
+serviceMonitor:
+  enabled: true
+
+prometheusRule:
+  enabled: true
+
+grafanaDashboard:
+  # Disabled until the observability lane installs its dashboard CRDs.
+  enabled: false
+
+httpRoute:
+  enabled: true
+  authorityMode: ip
+
+publicGateway:
+  enabled: true
+
+publicLoadBalancer:
+  enabled: true
+
+publicTls:
+  enabled: true
+  issuerRef:
+    name: fs2-serve-ip-acme
+  acmeIssuer:
+    enabled: true
+    name: fs2-serve-ip-acme
+
+networkPolicy:
+  runtime:
+    namespaceLabels:
+      kubernetes.io/metadata.name: fs2-models
+    podLabels:
+      app.kubernetes.io/component: model-runtime
+      app.kubernetes.io/part-of: fs2-serve
+    ports: [8000]
+  otlp:
+    namespaceLabels:
+      kubernetes.io/metadata.name: fs2-observability
+    podLabels:
+      app.kubernetes.io/instance: fs2-otel-gateway
+      app.kubernetes.io/name: opentelemetry-collector
+    port: 4318
+
+nodeSelector:
+  workload.fs2.nebius/system: "true"
+  capacity.fs2.nebius/type: regular
+  capacity.fs2.nebius/pool: system

@@ -1,0 +1,8 @@
+# Merge these non-secret settings into the run-scoped private tfvars file.
+# The profile plans 6 one-B300 plus 2 eight-B300 preemptible workers (22 GPUs)
+# and a 2 TiB shared artifact/cache filesystem. The zero floor remains elastic.
+capacity_profile  = "full_catalog"
+gpu_floor_profile = "zero"
+
+# Merge with terraform.tfvars.example and select one exact project mapping
+# from terraform-platform/profiles/approved-targets.json.

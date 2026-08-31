@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools==68.1.2", "wheel==0.41.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fs2-serve-catalog"
+version = "0.1.0"
+description = "Fail-closed typed model catalog, evidence validators, and Kubernetes adapters for fs2-serve"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["cryptography==41.0.7"]
+
+[project.optional-dependencies]
+test = ["jsonschema==4.25.1"]
+
+[project.scripts]
+fs2-serve-catalog = "fs2_serve_catalog.cli:main"
+fs2-serve-validate-response = "fs2_serve_catalog.validators.validate_response:main"
+
+[tool.setuptools]
+packages = ["fs2_serve_catalog", "fs2_serve_catalog.validators", "fs2_serve_catalog.validators.assets"]
+include-package-data = true
+
+[tool.setuptools.package-dir]
+fs2_serve_catalog = "fs2_serve_catalog"
+"fs2_serve_catalog.validators" = "validators"
+"fs2_serve_catalog.validators.assets" = "validators/assets"
+
+[tool.setuptools.package-data]
+"fs2_serve_catalog.validators.assets" = ["*.json"]
+
+[tool.setuptools.data-files]
+"share/fs2-serve/catalog" = ["catalog.json", "README.md", "pyproject.toml", "uv.lock"]
+"share/fs2-serve/catalog/contracts" = ["contracts/*.json"]
+"share/fs2-serve/catalog/kubernetes" = ["kubernetes/*.json"]
+"share/fs2-serve/catalog/models" = ["models/*.json"]
+"share/fs2-serve/catalog/schema" = ["schema/*.json"]
+"share/fs2-serve/catalog/sql" = ["sql/*.sql"]
+"share/fs2-serve/catalog/validators" = ["validators/validate_response.py"]
+"share/fs2-serve/catalog/validators/assets" = ["validators/assets/*.json"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2" = ["packaged-repository/nim-fast-start/faststart-v2/validate_openfold2.py"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/boltz2-native" = ["packaged-repository/nim-fast-start/faststart-v2/boltz2-native/validate_boltz2.py"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/diffdock-native" = ["packaged-repository/nim-fast-start/faststart-v2/diffdock-native/validate_diffdock.py"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/diffdock-native/fixtures" = ["packaged-repository/nim-fast-start/faststart-v2/diffdock-native/fixtures/1ubq-aspirin-request.json"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/evo2-native" = ["packaged-repository/nim-fast-start/faststart-v2/evo2-native/validate_evo2.py"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/genmol-native" = ["packaged-repository/nim-fast-start/faststart-v2/genmol-native/validate_genmol.py"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/genmol-native/fixtures" = ["packaged-repository/nim-fast-start/faststart-v2/genmol-native/fixtures/requests-qed-logp.json"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/molmim-native" = ["packaged-repository/nim-fast-start/faststart-v2/molmim-native/validate_molmim.py"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/molmim-native/fixtures" = ["packaged-repository/nim-fast-start/faststart-v2/molmim-native/fixtures/request-cmaes-qed.json"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/msa-search-native" = ["packaged-repository/nim-fast-start/faststart-v2/msa-search-native/validate_msa_search.py"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/msa-search-native/fixtures" = ["packaged-repository/nim-fast-start/faststart-v2/msa-search-native/fixtures/request-pdb70.json"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/openfold3-native" = ["packaged-repository/nim-fast-start/faststart-v2/openfold3-native/validate_openfold3.py"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/openfold3-native/fixtures" = ["packaged-repository/nim-fast-start/faststart-v2/openfold3-native/fixtures/request-20aa.json"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/proteinmpnn-native" = ["packaged-repository/nim-fast-start/faststart-v2/proteinmpnn-native/validate_proteinmpnn.py"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/proteinmpnn-native/fixtures" = ["packaged-repository/nim-fast-start/faststart-v2/proteinmpnn-native/fixtures/1ubq-request.json"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/rfdiffusion-native" = ["packaged-repository/nim-fast-start/faststart-v2/rfdiffusion-native/validate_rfdiffusion.py"]
+"share/fs2-serve/catalog/repository/nim-fast-start/faststart-v2/rfdiffusion-native/fixtures" = ["packaged-repository/nim-fast-start/faststart-v2/rfdiffusion-native/fixtures/1UBQ.pdb"]

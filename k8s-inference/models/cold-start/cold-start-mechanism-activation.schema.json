@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/cold-start-mechanism-activation/v1",
+  "title": "FS2 cold-start candidate mechanism activation receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "experiment_id",
+    "model_id",
+    "mechanism",
+    "source_commit",
+    "workload_contract_digest",
+    "compatibility_tuple_digest",
+    "terraform_plan_sha256",
+    "applied"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/cold-start-mechanism-activation/v1"},
+    "experiment_id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{5,47}$"},
+    "model_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "mechanism": {
+      "enum": [
+        "shared-cache",
+        "local-nvme",
+        "oci-image-volume",
+        "oci-modelcar",
+        "cuda-criu-snapshot",
+        "dynamo-snapshot"
+      ]
+    },
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "workload_contract_digest": {"$ref": "#/$defs/digest"},
+    "compatibility_tuple_digest": {"$ref": "#/$defs/digest"},
+    "terraform_plan_sha256": {"$ref": "#/$defs/digest"},
+    "applied": {"const": true}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

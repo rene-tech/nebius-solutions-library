@@ -1,0 +1,6 @@
+{
+  "schema": "fs2-serve.nebius.ai/source-registry-closure/v1",
+  "registry_id": null,
+  "references": [],
+  "policy": "The deployment creates a project-local registry. Build and mirror the selected application and model images into it before enabling those workloads."
+}

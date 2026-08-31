@@ -1,0 +1,160 @@
+fullnameOverride: fs2-otel-gateway
+mode: deployment
+replicaCount: 2
+
+image:
+  repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+  tag: 0.159.0
+command:
+  name: otelcol-contrib
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+nodeSelector:
+  workload.fs2.nebius/system: "true"
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+serviceMonitor:
+  enabled: true
+  metricsEndpoints:
+    - port: metrics
+      interval: 30s
+    - port: prometheus
+      interval: 30s
+
+ports:
+  jaeger-compact:
+    enabled: false
+  jaeger-grpc:
+    enabled: false
+  jaeger-thrift:
+    enabled: false
+  zipkin:
+    enabled: false
+  otlp:
+    enabled: true
+    containerPort: 4317
+    servicePort: 4317
+    protocol: TCP
+  otlp-http:
+    enabled: true
+    containerPort: 4318
+    servicePort: 4318
+    protocol: TCP
+  metrics:
+    enabled: true
+    containerPort: 8888
+    servicePort: 8888
+    protocol: TCP
+  prometheus:
+    enabled: true
+    containerPort: 8889
+    servicePort: 8889
+    protocol: TCP
+
+config:
+  extensions:
+    health_check:
+      endpoint: ${env:MY_POD_IP}:13133
+  receivers:
+    jaeger: null
+    prometheus: null
+    zipkin: null
+    otlp:
+      protocols:
+        grpc:
+          endpoint: ${env:MY_POD_IP}:4317
+        http:
+          endpoint: ${env:MY_POD_IP}:4318
+  processors:
+    memory_limiter:
+      check_interval: 5s
+      limit_percentage: 75
+      spike_limit_percentage: 20
+    resource/sanitize:
+      attributes:
+        - key: enduser.id
+          action: delete
+        - key: user.id
+          action: delete
+        - key: tenant.id
+          action: delete
+        - key: api.key.id
+          action: delete
+        - key: http.request.header.authorization
+          action: delete
+        - key: http.response.header.set-cookie
+          action: delete
+    batch:
+      send_batch_size: 1024
+      timeout: 5s
+  connectors:
+    span_metrics:
+      histogram:
+        explicit:
+          buckets: [100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 30s, 60s]
+      aggregation_cardinality_limit: 1000
+      aggregation_temporality: AGGREGATION_TEMPORALITY_CUMULATIVE
+  exporters:
+    debug: null
+    prometheus:
+      endpoint: ${env:MY_POD_IP}:8889
+      enable_open_metrics: true
+      resource_to_telemetry_conversion:
+        enabled: true
+    otlp_http/loki:
+      endpoint: http://fs2-loki.fs2-observability.svc.cluster.local:3100/otlp
+      compression: gzip
+      sending_queue:
+        enabled: true
+        queue_size: 2048
+      retry_on_failure:
+        enabled: true
+        initial_interval: 1s
+        max_interval: 10s
+        max_elapsed_time: 60s
+  service:
+    extensions: [health_check]
+    telemetry:
+      metrics:
+        readers:
+          - pull:
+              exporter:
+                prometheus:
+                  host: ${env:MY_POD_IP}
+                  port: 8888
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [memory_limiter, resource/sanitize, batch]
+        exporters: [span_metrics]
+      metrics:
+        receivers: [otlp, span_metrics]
+        processors: [memory_limiter, resource/sanitize, batch]
+        exporters: [prometheus]
+      logs:
+        receivers: [otlp]
+        processors: [memory_limiter, resource/sanitize, batch]
+        exporters: [otlp_http/loki]

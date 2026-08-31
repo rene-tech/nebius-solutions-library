@@ -1,0 +1,64 @@
+{{- if .Values.publicGateway.enabled }}
+{{- if ne .Values.config.publicAuthorityMode "ip" }}
+{{- fail "publicGateway is the direct-IP edge and requires config.publicAuthorityMode=ip" }}
+{{- end }}
+{{- if not .Values.publicLoadBalancer.enabled }}
+{{- fail "publicGateway requires publicLoadBalancer.enabled" }}
+{{- end }}
+{{- if not .Values.publicTls.enabled }}
+{{- fail "publicGateway requires publicTls.enabled" }}
+{{- end }}
+{{- if not .Values.publicTls.acmeIssuer.enabled }}
+{{- fail "publicGateway requires the chart-owned namespaced ACME Issuer" }}
+{{- end }}
+{{- if not .Values.networkPolicy.enabled }}
+{{- fail "publicGateway requires release-owned NetworkPolicies" }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: {{ .Values.publicGateway.gatewayClassName }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  controllerName: {{ .Values.publicGateway.controllerName }}
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: {{ include "fs2-serve.fullname" . }}-public
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.publicGateway.gatewayName }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  gatewayClassName: {{ .Values.publicGateway.gatewayClassName }}
+  listeners:
+    - name: {{ .Values.publicGateway.httpListenerName }}
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+        kinds:
+          - group: gateway.networking.k8s.io
+            kind: HTTPRoute
+    - name: {{ .Values.publicGateway.httpsListenerName }}
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: {{ .Values.publicTls.secretName }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+        kinds:
+          - group: gateway.networking.k8s.io
+            kind: HTTPRoute
+{{- end }}

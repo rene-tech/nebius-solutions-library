@@ -1,0 +1,19 @@
+{
+  "schema": "fs2-serve.nebius.ai/semantic-contract/v1",
+  "contract": "direct-png-and-b64-json-512x512/v1",
+  "kind": "png-and-b64-json",
+  "model": {"id": "sdxl", "repository": "stabilityai/stable-diffusion-xl-base-1.0", "revision": "462165984030d82259a11f4367a4eed129e94a7b"},
+  "source_commit": "307e4ff86ff3fe2fe2d27ef44b3acfaebe5e6c55",
+  "requests": [
+    {
+      "id": "sdxl-phase1-green-mountain-seed-2407",
+      "request": {"guidance_scale": 0, "height": 512, "prompt": "A green mountain under a purple sky", "response_format": "image/png", "seed": 2407, "steps": 2, "width": 512},
+      "oracle": {"width": 512, "height": 512, "nonconstant": true, "expected_bytes": 450688, "expected_sha256": "c701764f9ffba3a3bedf8e9ef2ec459de18ab44beb2c3b4c0b6e12e8c88eeeeb"}
+    },
+    {
+      "id": "sdxl-fs2-silver-moon-seed-2408",
+      "request": {"guidance": 0.0, "height": 512, "negative_prompt": "text, watermark, low quality", "prompt": "A silver moon over a glassy alpine lake, dramatic cinematic lighting, high detail", "response_format": "b64_json", "seed": 2408, "steps": 1, "width": 512},
+      "oracle": {"width": 512, "height": 512, "nonconstant": true, "expected_bytes": 518049, "expected_sha256": "bcd8777f8574a130dec6093dfb4dfe13c7c161edb3fab1be06c0ae4e3d0fa7a4"}
+    }
+  ]
+}

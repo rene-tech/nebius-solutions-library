@@ -1,0 +1,32 @@
+# Copy to a mode-0600 run directory outside Git. Never put secret values here.
+kubeconfig_path = "/absolute/run-scoped/path/kubeconfig"
+run_root        = "/absolute/run-scoped/path"
+run_id           = "rreplace01"
+cluster_id       = "mk8scluster-REPLACE"
+cluster_name     = "fs2-disposable-rreplace01"
+kube_context     = "fs2-disposable-rreplace01"
+kube_system_uid  = "00000000-0000-0000-0000-000000000000"
+project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
+
+# Pass the exact infra-disposable `target_contract` output. It is required and
+# authoritative for project, region, network, tenant, and source-registry
+# identity; the deployment workflow renders it automatically.
+# Pass the exact `accelerator_pool_contract` output. It is the required,
+# authoritative v2 accelerator identity/capacity input. The deployment workflow
+# renders it automatically; do not retype it. `infrastructure_contract` is an
+# optional B300-only v1 compatibility proof; if supplied, pass the exact
+# infra-disposable output documented by the legacy profile example.
+
+# This is a reference to an externally created Secret, never credential data.
+grafana_admin_secret_ref = {
+  name         = "fs2-grafana-admin"
+  user_key     = "admin-user"
+  password_key = "admin-password"
+}
+
+# Fresh disposable bootstrap only. Supply through a separate mode-0600 tfvars
+# file; values enter local Terraform state and are destroyed with the run.
+# bootstrap_grafana_credentials = {
+#   username = "admin"
+#   password = "replace-with-a-long-random-value"
+# }

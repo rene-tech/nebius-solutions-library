@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/accelerator-pool-profiles/v1",
+  "title": "FS2 accelerator pool capacity and queue profiles",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "authority", "profiles"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/accelerator-pool-profiles/v1"},
+    "authority": {"const": "capacity-selection-not-hardware-or-runtime-support"},
+    "profiles": {
+      "type": "object",
+      "minProperties": 3,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {"$ref": "#/$defs/profile"}
+    }
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9](?:[-_a-z0-9]*[a-z0-9])?$"},
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "state", "queue", "pool_order", "pools", "notes"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "state": {"enum": ["hardware-validated", "declared-unvalidated", "blocked"]},
+        "queue": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cluster_queue_name", "local_queue_name", "queueing_strategy", "acceptance_pool_id"],
+          "properties": {
+            "cluster_queue_name": {"$ref": "#/$defs/id"},
+            "local_queue_name": {"$ref": "#/$defs/id"},
+            "queueing_strategy": {"enum": ["BestEffortFIFO", "StrictFIFO"]},
+            "acceptance_pool_id": {"$ref": "#/$defs/id"}
+          }
+        },
+        "pool_order": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "pools": {
+          "type": "object",
+          "minProperties": 2,
+          "propertyNames": {"$ref": "#/$defs/id"},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["max_nodes", "floor_nodes"],
+            "properties": {
+              "max_nodes": {"type": "integer", "minimum": 0},
+              "floor_nodes": {
+                "type": "object",
+                "minProperties": 1,
+                "propertyNames": {"$ref": "#/$defs/id"},
+                "additionalProperties": {"type": "integer", "minimum": 0}
+              }
+            }
+          }
+        },
+        "notes": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

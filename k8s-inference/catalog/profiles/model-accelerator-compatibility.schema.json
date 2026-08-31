@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-accelerator-compatibility/v1",
+  "title": "FS2 model runtime to accelerator compatibility",
+  "$comment": "This v1 document records observations about exact runtime variants. It is not placement or route authority, and a blocked binding applies only to the enclosing runtime variant. The runtimes map permits independent NIM, Hugging Face, or other variants without changing the schema shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "authority", "rendering_enabled", "binding_scope", "gpu_count_semantics", "models"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-accelerator-compatibility/v1"},
+    "authority": {"const": "catalog-runtime-observation-only-not-placement-or-route-authority"},
+    "rendering_enabled": {"const": false},
+    "binding_scope": {"const": "exact-runtime-variant-only"},
+    "gpu_count_semantics": {"const": "workload-consumed-not-host-pool-shape"},
+    "models": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {"$ref": "#/$defs/modelCompatibility"}
+    }
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accelerator_class",
+        "pool_template",
+        "state",
+        "enabled",
+        "catalog_b300_state",
+        "evidence"
+      ],
+      "properties": {
+        "accelerator_class": {"$ref": "#/$defs/id"},
+        "pool_template": {"$ref": "#/$defs/id"},
+        "state": {"enum": ["declared-unvalidated", "hardware-validated", "historical-evidence-only", "blocked"]},
+        "enabled": {"type": "boolean"},
+        "catalog_b300_state": {"type": ["string", "null"]},
+        "evidence": {"type": ["string", "null"]}
+      }
+    },
+    "runtimeCompatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime_variant", "runtime_ref", "runtime_ref_kind", "requirements", "bindings", "qualification_candidates"],
+      "properties": {
+        "runtime_variant": {"$ref": "#/$defs/id"},
+        "runtime_ref": {"type": "string", "minLength": 1},
+        "runtime_ref_kind": {
+          "enum": ["catalog-entry-observation", "container-image-digest", "model-artifact-digest"]
+        },
+        "requirements": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["gpu_count", "topology", "host_architectures"],
+          "properties": {
+            "gpu_count": {"type": "integer", "minimum": 1},
+            "topology": {"enum": ["single-gpu", "single-node-multi-gpu", "multi-node-multi-gpu"]},
+            "host_architectures": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"enum": ["amd64", "arm64"]}
+            }
+          }
+        },
+        "bindings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/binding"}},
+        "qualification_candidates": {"type": "array", "items": {"$ref": "#/$defs/binding"}}
+      }
+    },
+    "modelCompatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtimes"],
+      "properties": {
+        "runtimes": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"$ref": "#/$defs/id"},
+          "additionalProperties": {"$ref": "#/$defs/runtimeCompatibility"}
+        }
+      }
+    }
+  }
+}

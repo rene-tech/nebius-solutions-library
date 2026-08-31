@@ -1,0 +1,70 @@
+# Copy to a run-scoped mode-0600 file outside Git.
+project_id = "project-REPLACE-WITH-EXACT-APPROVED-ID"
+run_id     = "r20260827a"
+source_commit = "0000000000000000000000000000000000000000"
+
+# Optional wrapper-owned naming/authentication inputs. The legacy defaults are
+# cluster_name=null and nebius_profile="sandbox". Credentials are never tfvars.
+# cluster_name   = "customer-inference"
+# nebius_profile = "customer-profile"
+
+# The public default preserves the retained/full edge behavior. Disposable
+# acceptance can avoid public-IPv4 quota entirely with these two values:
+# public_edge_mode         = "internal-only"
+# public_edge_source_cidrs = []
+public_edge_mode = "public"
+
+# project_id selects one complete mapping from
+# terraform-platform/profiles/approved-targets.json. Region, network, subnet,
+# CIDR, tenant, and source registry cannot be overridden independently.
+# Replace source_commit with `git rev-parse HEAD` from the exact clean source
+# tree before planning. The saved-plan verifier binds it byte-for-byte.
+
+# For a project not present in approved-targets.json, the wrapper must generate
+# the complete provider-verifiable binding below. This binds target identity;
+# it does not assert GPU qualification.
+# target_binding = {
+#   project_id          = "project-REPLACE"
+#   project_name        = "optional-expected-name"
+#   region              = "region-REPLACE"
+#   network_name        = "network-REPLACE"
+#   subnet_name         = "subnet-REPLACE"
+#   private_subnet_cidr = "10.0.0.0/16"
+#   system_update_strategy = {
+#     max_surge       = 1
+#     max_unavailable = 0
+#   }
+# }
+
+# The cheap default keeps both preemptible GPU pools at zero. For the original
+# one-GPU smoke use gpu_floor_profile="representative". For the all-model gate
+# select capacity_profile="full_catalog"; use gpu_floor_profile="full_catalog"
+# only when the complete 6x1-B300 + 2x8-B300 topology should remain hot.
+capacity_profile  = "minimal"
+gpu_floor_profile = "zero"
+
+# Capacity and accelerator topology can be selected independently. Only an
+# enabled, hardware-validated checked-in profile can pass planning.
+# accelerator_pool_profile = "full_catalog"
+# accelerator_pool_capacity_overrides = {
+#   nebius-b300-preemptible-1x = { min_nodes = 0, max_nodes = 2 }
+# }
+
+# Optional typed infrastructure overrides; null preserves legacy defaults.
+# system_pool = {
+#   capacity        = "regular"
+#   platform        = "cpu-d3"
+#   preset          = "8vcpu-32gb"
+#   node_count      = 2
+#   boot_disk_type  = "NETWORK_SSD"
+#   boot_disk_gib   = 160
+#   max_surge       = 1
+#   max_unavailable = 0
+#   drain_timeout   = "15m"
+# }
+# shared_cache = {
+#   size_gib         = 512
+#   type             = "NETWORK_SSD"
+#   block_size_bytes = 4096
+#   forbid_deletion  = false
+# }

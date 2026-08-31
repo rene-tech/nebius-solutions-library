@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/b300-runtime-tuple/v5",
+  "title": "Exact B300 node-placement/workload-allocation/runtime/artifact tuple v5",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "captured_at", "model_id", "model_digest", "project_id_sha256", "project_alias", "region", "cluster_id_sha256", "cluster_alias", "worker", "runtime", "artifact"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/b300-runtime-tuple/v5"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "verified"},
+    "captured_at": {"$ref": "#/$defs/timestamp"},
+    "model_id": {"type": "string", "minLength": 1},
+    "model_digest": {"$ref": "#/$defs/digest"},
+    "project_id_sha256": {"$ref": "#/$defs/digest"},
+    "project_alias": {"const": "rene-us-north"},
+    "region": {"const": "us-north1"},
+    "cluster_id_sha256": {"$ref": "#/$defs/digest"},
+    "cluster_alias": {"type": "string", "minLength": 1},
+    "worker": {
+      "type": "object", "additionalProperties": false,
+      "required": ["image_reference", "image_digest", "nvidia_driver_version", "nvidia_smi_sha256", "cuda_version", "device_plugin", "gpu", "node", "node_selector", "nvme_inventory_sha256"],
+      "properties": {
+        "image_reference": {"type": "string", "minLength": 1}, "image_digest": {"$ref": "#/$defs/imageDigest"},
+        "nvidia_driver_version": {"type": "string", "pattern": "^[0-9]{3}\\.[0-9]{2,3}\\.[0-9]{2}$"}, "nvidia_smi_sha256": {"$ref": "#/$defs/digest"},
+        "cuda_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$"},
+        "device_plugin": {"type": "object"}, "gpu": {"$ref": "#/$defs/gpu"}, "node": {"$ref": "#/$defs/node"},
+        "node_selector": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "minLength": 1}},
+        "nvme_inventory_sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "runtime": {
+      "type": "object", "additionalProperties": false,
+      "required": ["image_digest", "model_revision", "startup_mechanism", "command_sha256", "execution_identity_sha256", "checkpoint"],
+      "properties": {"image_digest": {"$ref": "#/$defs/imageDigest"}, "model_revision": {"type": "string", "minLength": 1}, "startup_mechanism": {"enum": ["conventional", "custom-runtime", "sleep-wake", "snapshot"]}, "command_sha256": {"$ref": "#/$defs/digest"}, "execution_identity_sha256": {"$ref": "#/$defs/digest"}, "checkpoint": {"type": ["object", "null"]}}
+    },
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["manifest_digest", "content_uri", "placement_receipt_digest"],
+      "properties": {"manifest_digest": {"$ref": "#/$defs/digest"}, "content_uri": {"type": "string", "minLength": 1}, "placement_receipt_digest": {"$ref": "#/$defs/digest"}}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "imageDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "timestamp": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "node": {"type": "object", "additionalProperties": false, "required": ["name", "uid", "provider_id_sha256"], "properties": {"name": {"type": "string", "minLength": 1}, "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"}, "provider_id_sha256": {"$ref": "#/$defs/digest"}}},
+    "gpu": {"type": "object", "additionalProperties": false, "required": ["class", "node_preset", "node_count", "node_topology", "workload_count", "workload_topology", "allocated_uuids", "node_inventory_sha256"], "properties": {"class": {"type": "string", "minLength": 1}, "node_preset": {"enum": ["b300-1x", "b300-8x"]}, "node_count": {"enum": [1, 8]}, "node_topology": {"enum": ["single-gpu", "eight-gpu-nvlink"]}, "workload_count": {"type": "integer", "minimum": 1, "maximum": 8}, "workload_topology": {"enum": ["single-gpu", "single-node-multi-gpu"]}, "allocated_uuids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^GPU-"}}, "node_inventory_sha256": {"$ref": "#/$defs/digest"}}}
+  }
+}

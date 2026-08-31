@@ -1,0 +1,65 @@
+{{- if .Values.publicTls.acmeIssuer.enabled }}
+{{- if not .Values.publicGateway.enabled }}
+{{- fail "publicTls.acmeIssuer requires the chart-owned publicGateway" }}
+{{- end }}
+{{- if ne .Values.publicTls.issuerRef.kind "Issuer" }}
+{{- fail "publicTls.acmeIssuer requires publicTls.issuerRef.kind=Issuer" }}
+{{- end }}
+{{- if ne .Values.publicTls.issuerRef.name .Values.publicTls.acmeIssuer.name }}
+{{- fail "publicTls.issuerRef.name must equal publicTls.acmeIssuer.name" }}
+{{- end }}
+{{- if eq .Values.publicTls.secretName .Values.publicTls.acmeIssuer.accountPrivateKeySecretName }}
+{{- fail "the ACME account key Secret and serving TLS Secret must be distinct" }}
+{{- end }}
+{{- $server := "https://acme-staging-v02.api.letsencrypt.org/directory" }}
+{{- if eq .Values.publicTls.acmeIssuer.environment "production" }}
+{{- $promotion := .Values.publicTls.acmeIssuer.productionPromotion }}
+{{- if not $promotion.approved }}
+{{- fail "production ACME issuer requires explicit staging promotion approval" }}
+{{- end }}
+{{- if not $promotion.stagingCertificateReady }}
+{{- fail "production ACME issuer requires a Ready staging IP certificate receipt" }}
+{{- end }}
+{{- if not $promotion.stagingSolverReachabilityReady }}
+{{- fail "production ACME issuer requires live staging HTTP-01 solver reachability" }}
+{{- end }}
+{{- if not $promotion.stagingExternalHttpsReady }}
+{{- fail "production ACME issuer requires a successful external staging HTTPS probe" }}
+{{- end }}
+{{- if ne $promotion.stagingIpAddress .Values.publicTls.ipAddress }}
+{{- fail "production ACME staging receipt must cover the exact publicTls.ipAddress" }}
+{{- end }}
+{{- if not (regexMatch "^(?i:[a-f0-9]{64})$" $promotion.stagingReceiptSha256) }}
+{{- fail "production ACME issuer requires an exact staging receipt SHA-256" }}
+{{- end }}
+{{- if regexMatch "^0{64}$" $promotion.stagingReceiptSha256 }}
+{{- fail "production ACME staging receipt SHA-256 cannot be the zero digest" }}
+{{- end }}
+{{- $server = "https://acme-v02.api.letsencrypt.org/directory" }}
+{{- end }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ .Values.publicTls.acmeIssuer.name }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  acme:
+    server: {{ $server }}
+    profile: {{ .Values.publicTls.acmeIssuer.profile }}
+    {{- with .Values.publicTls.acmeIssuer.email }}
+    email: {{ . | quote }}
+    {{- end }}
+    privateKeySecretRef:
+      name: {{ .Values.publicTls.acmeIssuer.accountPrivateKeySecretName }}
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            serviceType: ClusterIP
+            parentRefs:
+              - group: gateway.networking.k8s.io
+                kind: Gateway
+                name: {{ .Values.publicGateway.gatewayName }}
+                namespace: {{ .Release.Namespace }}
+                sectionName: {{ .Values.publicGateway.httpListenerName }}
+{{- end }}

@@ -1,0 +1,43 @@
+{
+  "attestor_policy_schema": "fs2-serve.nebius.ai/model-variant-attestor-policy/v1",
+  "backend_readiness_receipt_schema": "fs2-serve.nebius.ai/model-variant-backend-readiness-receipt/v2",
+  "cohort_schema": "fs2-serve.nebius.ai/model-variant-cohort/v3",
+  "cold_boundary_receipt_schema": "fs2-serve.nebius.ai/model-variant-cold-boundary-receipt/v1",
+  "cross_lane_identity": "explicit-candidate-id-plus-runtime-profile-to-full-variant-id",
+  "independent_review_schema": "fs2-serve.nebius.ai/model-variant-review-receipt/v4",
+  "kubernetes_observation_schema": "fs2-serve.nebius.ai/model-variant-kubernetes-observation/v1",
+  "license_artifact_schema": "fs2-serve.nebius.ai/model-variant-license-artifact/v1",
+  "lifecycle_receipt_schema": "fs2-serve.nebius.ai/model-variant-lifecycle-receipt/v1",
+  "loader": "fs2_serve_catalog.variant_promotions.load_variant_gateway_catalog",
+  "preemption_receipt_schema": "fs2-serve.nebius.ai/model-variant-preemption-receipt/v1",
+  "promotion_overlay_schema": "fs2-serve.nebius.ai/model-variant-promotions/v4",
+  "public_projection_omits": [
+    "activation",
+    "backend_service_uid",
+    "evidence_session_id",
+    "service_origin"
+  ],
+  "qualification_receipt_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+  "route_intersection": [
+    "canonical-base-model-digest",
+    "normal-serving-binding-digest",
+    "enabled-ready-fresh-serving-binding",
+    "api-observed-backend-readiness",
+    "raw-key-derived-one-principal-per-role-and-group-policy",
+    "raw-cosign-dsse-slsa-spdx-scan-object-verification",
+    "single-descriptor-root-dirfd-no-follow-filesystem-custody",
+    "service-endpointslice-pod-node-gpu-probe-api-chain",
+    "per-attempt-cold-zero-new-process-cache-boundary",
+    "api-event-backed-preemption-replacement-fence",
+    "immutable-scale-contract-digest",
+    "signed-live-variant-promotion"
+  ],
+  "runtime_tuple_schema": "fs2-serve.nebius.ai/model-variant-runtime-tuple/v1",
+  "schema": "fs2-serve.nebius.ai/model-variant-consumer/v4",
+  "semantic_receipt_schema": "fs2-serve.nebius.ai/model-variant-semantic-receipt/v2",
+  "shape_schemas_authoritative": false,
+  "static_route_authority": false,
+  "static_schema": "fs2-serve.nebius.ai/model-variants/v4",
+  "supply_object_schema": "fs2-serve.nebius.ai/model-variant-supply-object/v1",
+  "supply_receipt_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5"
+}

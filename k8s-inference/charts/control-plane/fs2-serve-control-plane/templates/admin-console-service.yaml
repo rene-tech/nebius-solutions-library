@@ -1,0 +1,18 @@
+{{- if .Values.adminConsole.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fs2-serve.adminConsoleFullname" . }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin-console
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fs2-serve.adminConsoleSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.adminConsole.service.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

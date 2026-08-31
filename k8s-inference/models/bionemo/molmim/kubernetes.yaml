@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: molmim-b300
+  namespace: fs2-models
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: molmim-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: molmim
+    app.kubernetes.io/instance: molmim-b300
+    fs2-serve.nebius.ai/model-id: molmim
+  annotations:
+    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/model-content-digest: sha256:10522c9db6018c355313f9f01a0edea2b021ddc0a5a22ae4540cbf5bdafbd1f5
+    fs2.nebius/runtime-image-digest: sha256:b51c758f2785accb2121db2dd322f81ed6ebb6142bd7a9988714867c5fe51641
+    fs2-serve.nebius.ai/source-revision: 9ba9b2c337917fc815ffbd5d99f78d9db7904493
+    fs2-serve.nebius.ai/nemo-sha256: 10522c9db6018c355313f9f01a0edea2b021ddc0a5a22ae4540cbf5bdafbd1f5
+    fs2-serve.nebius.ai/runtime-relationship: exact-weights-independent-blackwell-port
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: molmim-b300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: molmim
+        app.kubernetes.io/instance: molmim-b300
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/part-of: fs2-serve
+        fs2-serve.nebius.ai/model-id: molmim
+      annotations:
+        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/model-content-digest: sha256:10522c9db6018c355313f9f01a0edea2b021ddc0a5a22ae4540cbf5bdafbd1f5
+        fs2.nebius/runtime-image-digest: sha256:b51c758f2785accb2121db2dd322f81ed6ebb6142bd7a9988714867c5fe51641
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: molmim-b300
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: accelerator.fs2.nebius/class
+                    operator: In
+                    values: [nvidia-b300-sxm6-288gb]
+                  - key: capacity.fs2.nebius/pool
+                    operator: In
+                    values: [burst, burst-single]
+      containers:
+        - name: molmim
+          image: registry.example.invalid/k8s-inference/models/molmim-blackwell@sha256:b51c758f2785accb2121db2dd322f81ed6ebb6142bd7a9988714867c5fe51641
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: "8"
+              memory: 24Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "16"
+              memory: 64Gi
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 180
+          livenessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            initialDelaySeconds: 300
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: molmim
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/model-id: molmim
+spec:
+  selector:
+    app.kubernetes.io/instance: molmim-b300
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

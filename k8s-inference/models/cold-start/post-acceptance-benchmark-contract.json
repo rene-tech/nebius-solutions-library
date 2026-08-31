@@ -1,0 +1,395 @@
+{
+  "api_version": "fs2-serve.nebius.ai/v1alpha1",
+  "kind": "PostAcceptanceColdStartBenchmark",
+  "metadata": {
+    "name": "post-acceptance-cold-start-v1",
+    "authority": "planning-only",
+    "hardware_support_authority": false,
+    "receipt_schema": "post-acceptance-benchmark-receipt.schema.json",
+    "receipt_validator": "validate_post_acceptance_receipt.py"
+  },
+  "spec": {
+    "admission": {
+      "requires_model_route_acceptance": true,
+      "requires_exact_runtime_variant": true,
+      "requires_semantic_oracle": true,
+      "fail_closed_on_tuple_mismatch": true,
+      "production_fallback": "conventional",
+      "extends_existing_signed_evidence": "fs2-serve.nebius.ai/qualification-cohort/v4",
+      "does_not_create_route_authority": true
+    },
+    "capacity_states": [
+      {
+        "id": "ready-pod-warm",
+        "cold_start_class": false,
+        "node_present": true,
+        "pod_present": true,
+        "local_cache_may_be_present": true
+      },
+      {
+        "id": "resident-sleep",
+        "cold_start_class": false,
+        "node_present": true,
+        "pod_present": true,
+        "local_cache_may_be_present": true
+      },
+      {
+        "id": "prepared-node-zero-pod",
+        "cold_start_class": true,
+        "node_present": true,
+        "pod_present": false,
+        "local_cache_may_be_present": true
+      },
+      {
+        "id": "fresh-node-zero-pod",
+        "cold_start_class": true,
+        "node_present": false,
+        "pod_present": false,
+        "local_cache_may_be_present": false
+      },
+      {
+        "id": "preemption-replacement",
+        "cold_start_class": true,
+        "node_present": false,
+        "pod_present": false,
+        "local_cache_may_be_present": false
+      },
+      {
+        "id": "durable-cache-loss-fallback",
+        "cold_start_class": true,
+        "node_present": false,
+        "pod_present": false,
+        "local_cache_may_be_present": false
+      }
+    ],
+    "clock": {
+      "t0": "durable-activation-request-accepted",
+      "t1": "first-unretried-semantic-response-accepted",
+      "product_latency_metric": "t0-to-call1",
+      "promotion_qualification_metric": "t0-to-call2",
+      "both_semantic_calls_required_for_success": true,
+      "required_events": [
+        "activation-accepted",
+        "capacity-requested",
+        "provider-instance-created",
+        "node-ready",
+        "workload-admitted",
+        "pod-scheduled",
+        "storage-attached",
+        "image-or-image-volume-pull-start",
+        "image-or-image-volume-pull-end",
+        "artifact-localization-start",
+        "artifact-localization-verified",
+        "runtime-process-start",
+        "weight-load-start",
+        "weight-load-end",
+        "engine-build-or-compile-start",
+        "engine-build-or-compile-end",
+        "checkpoint-restore-start",
+        "checkpoint-restore-end",
+        "readiness-accepted",
+        "semantic-call1-accepted",
+        "semantic-call2-accepted",
+        "return-to-zero-accepted"
+      ],
+      "not_applicable_events_must_be_explicit": true,
+      "retries_are_separate_attempts": true
+    },
+    "existing_evidence_mapping": {
+      "base_schema": "fs2-serve.nebius.ai/qualification-cohort/v4",
+      "prepared-node-zero-pod": "prepared-node",
+      "fresh-node-zero-pod": "new-node",
+      "preemption-replacement": "new-node-plus-preemption-receipt",
+      "ready-pod-warm": "supplemental-warm-reference-not-a-cold-qualification",
+      "resident-sleep": "supplemental-resident-tier-not-a-cold-qualification",
+      "durable-cache-loss-fallback": "supplemental-fallback-cell",
+      "signed_prepared_and_new_node_receipts_remain_required": true
+    },
+    "cohorts": {
+      "exploratory_minimum_attempts_per_cell": 3,
+      "promotion_minimum_attempts_per_cell": 20,
+      "attempt_deadline_seconds_must_be_preregistered": true,
+      "attempt_order": "strict-control-candidate-alternation",
+      "retain_every_failure": true,
+      "raw_attempt_receipt_required": true,
+      "percentile_estimator": "nearest-rank",
+      "failure_ordering": "failures-rank-after-all-successful-durations",
+      "p95_withheld_below_attempts": 20,
+      "dispersion_statistic": "median-absolute-deviation",
+      "minimum_effect_policy": {
+        "minimum_absolute_p95_improvement_seconds": "required-positive-number-in-receipt",
+        "minimum_relative_p95_improvement_fraction": "required-positive-number-in-receipt",
+        "rule": "meet-both-absolute-and-relative-thresholds"
+      },
+      "report": [
+        "attempted",
+        "passed",
+        "failed",
+        "p50",
+        "p95",
+        "median_absolute_deviation",
+        "artifact_bytes",
+        "gpu_memory_bytes",
+        "host_memory_bytes",
+        "preparation_seconds",
+        "restore_seconds",
+        "t0_to_call1_seconds",
+        "t0_to_call2_seconds",
+        "compatibility_tuple_digest",
+        "raw_attempt_receipt_digest"
+      ]
+    },
+    "compatibility_tuple": {
+      "required_fields": [
+        "model_id",
+        "model_content_digest",
+        "tokenizer_or_preprocessor_digest",
+        "semantic_oracle_digest",
+        "semantic_request_contract_digest",
+        "runtime_variant",
+        "runtime_source_identity_digest",
+        "runtime_image_digest",
+        "runtime_argv_digest",
+        "runtime_environment_digest",
+        "execution_identity_digest",
+        "loader_or_engine_format",
+        "host_cpu_architecture",
+        "host_os_release_digest",
+        "accelerator_pool_id",
+        "accelerator_pool_receipt_digest",
+        "gpu_vendor",
+        "gpu_product",
+        "gpu_chip_type",
+        "gpu_compute_capability",
+        "gpu_memory_bytes",
+        "workload_gpu_count",
+        "gpu_topology",
+        "gpu_topology_inventory_digest",
+        "allocated_gpu_uuids",
+        "mig_mode",
+        "mig_profile",
+        "driver_version",
+        "cuda_version",
+        "kernel_release",
+        "container_runtime_name",
+        "container_runtime_version",
+        "checkpoint_tool_digest",
+        "criu_version",
+        "artifact_manifest_digest",
+        "artifact_content_digest",
+        "artifact_bytes",
+        "storage_class",
+        "storage_mode",
+        "node_identity_digest",
+        "pvc_identity_digest",
+        "compile_cache_abi",
+        "capacity_state"
+      ],
+      "gpu_uuid_mapping_is_bounded_receipt_only": true,
+      "cross_chip_restore_default": "denied",
+      "cross_driver_restore_default": "denied",
+      "cross_topology_restore_default": "denied",
+      "cross_mig_profile_restore_default": "denied"
+    },
+    "mechanisms": [
+      {
+        "id": "conventional",
+        "category": "runtime-start",
+        "render_enabled_by_default": true,
+        "production_candidate": true,
+        "elasticity": {
+          "zero_hot_nodes": "supported",
+          "node_local_state_retained_after_replacement": false,
+          "replacement_recovery": "restart-from-durable-source"
+        },
+        "qualification": "current-fallback"
+      },
+      {
+        "id": "persistent-artifact-cache",
+        "category": "artifact-delivery",
+        "render_enabled_by_default": false,
+        "production_candidate": true,
+        "elasticity": {
+          "zero_hot_nodes": "conditional",
+          "node_local_state_retained_after_replacement": false,
+          "replacement_recovery": "requires-durable-cache-access-from-replacement-zone"
+        },
+        "qualification": "runtime-owner-specific"
+      },
+      {
+        "id": "local-nvme-localization",
+        "category": "artifact-delivery",
+        "render_enabled_by_default": false,
+        "production_candidate": true,
+        "elasticity": {
+          "zero_hot_nodes": "supported-with-relocalization-after-node-ready",
+          "node_local_state_retained_after_replacement": false,
+          "replacement_recovery": "relocalize-from-durable-source"
+        },
+        "qualification": "pilot-required"
+      },
+      {
+        "id": "oci-image-volume",
+        "category": "artifact-delivery",
+        "render_enabled_by_default": false,
+        "production_candidate": true,
+        "elasticity": {
+          "zero_hot_nodes": "supported-with-registry-pull-inside-t0",
+          "node_local_state_retained_after_replacement": false,
+          "replacement_recovery": "repull-exact-oci-digest"
+        },
+        "qualification": "pilot-required"
+      },
+      {
+        "id": "runtime-native-fast-loader",
+        "category": "weight-load",
+        "render_enabled_by_default": false,
+        "production_candidate": true,
+        "elasticity": {
+          "zero_hot_nodes": "conditional-on-durable-format-access",
+          "node_local_state_retained_after_replacement": false,
+          "replacement_recovery": "reload-from-qualified-durable-format"
+        },
+        "qualification": "exact-runtime-format-pilot-required"
+      },
+      {
+        "id": "vllm-sleep-level-1",
+        "category": "resident-process",
+        "render_enabled_by_default": false,
+        "production_candidate": false,
+        "elasticity": {
+          "zero_hot_nodes": "not-supported",
+          "node_local_state_retained_after_replacement": false,
+          "replacement_recovery": "conventional-fallback-only"
+        },
+        "qualification": "experimental-non-production-resident-tier-only"
+      },
+      {
+        "id": "cuda-criu-snapshot",
+        "category": "process-checkpoint",
+        "render_enabled_by_default": false,
+        "production_candidate": false,
+        "elasticity": {
+          "zero_hot_nodes": "conditional-on-durable-checkpoint-access",
+          "node_local_state_retained_after_replacement": false,
+          "replacement_recovery": "must-pass-same-class-replacement-cell"
+        },
+        "qualification": "exact-single-gpu-tuple-experiment-only"
+      },
+      {
+        "id": "dynamo-snapshot",
+        "category": "process-checkpoint",
+        "render_enabled_by_default": false,
+        "production_candidate": false,
+        "elasticity": {
+          "zero_hot_nodes": "conditional-on-durable-checkpoint-access",
+          "node_local_state_retained_after_replacement": false,
+          "replacement_recovery": "must-pass-same-class-replacement-cell"
+        },
+        "qualification": "isolated-llm-preview-pilot-only"
+      },
+      {
+        "id": "dynamo-gpu-memory-service",
+        "category": "resident-gpu-memory",
+        "render_enabled_by_default": false,
+        "production_candidate": false,
+        "elasticity": {
+          "zero_hot_nodes": "not-supported",
+          "node_local_state_retained_after_replacement": false,
+          "replacement_recovery": "not-supported"
+        },
+        "qualification": "same-node-preview-pilot-only",
+        "incompatible_with": [
+          "dynamo-snapshot"
+        ]
+      }
+    ],
+    "adjacent_non_cold_start_features": [
+      {
+        "id": "dynamo-kv-cache-offload",
+        "reason": "reuses request KV blocks; it does not localize or restore model weights"
+      },
+      {
+        "id": "kubernetes-kubelet-checkpoint-api",
+        "reason": "delegates a container checkpoint to CRI; it does not capture NVIDIA GPU state by itself"
+      }
+    ],
+    "platform_prerequisites": {
+      "native_oci_image_volume": {
+        "current_fs2_kubernetes_version": "1.35",
+        "current_feature_state": "beta-enabled-by-default",
+        "current_container_runtime_support_must_be_observed": true,
+        "containerd_minimum_for_kubernetes_1_35": "2.1",
+        "kubernetes_1_36_feature_state": "stable",
+        "production_pilot_requires_exact_api_server_kubelet_and_runtime_receipt": true
+      },
+      "dynamo_snapshot": {
+        "maturity": "preview",
+        "node_architecture": "amd64",
+        "minimum_driver_single_gpu": "580.xx",
+        "minimum_driver_multi_gpu_experimental": "590.xx",
+        "b300_cuda_major": "13",
+        "supported_single_gpu_backends": ["vllm", "sglang"],
+        "tensorrt_llm_scope": "experimental-single-gpu-aggregated-text-worker-only",
+        "checkpoint_storage": "qualified-rwx-or-sequential-rwo",
+        "container_runtime_socket_must_match_chart": true,
+        "snapshot_agent_privileged": true,
+        "multi_gpu": "disabled",
+        "multinode": "disabled",
+        "specialized_workers": "disabled",
+        "gms_plus_snapshot": "disabled"
+      }
+    },
+    "acceptance": {
+      "same_capacity_state_control_required": true,
+      "same_storage_state_control_required": true,
+      "semantic_equivalence_required": true,
+      "p95_t0_to_call1_must_meet_preregistered_minimum_effect": true,
+      "p95_t0_to_call2_must_not_regress": true,
+      "failure_ranked_percentiles_required": true,
+      "attempt_deadline_and_timeout_failure_required": true,
+      "raw_attempt_receipts_required": true,
+      "failure_rate_must_not_regress": true,
+      "conventional_fallback_must_pass": true,
+      "preemption_replacement_cell_required": true,
+      "return_to_zero_required": true,
+      "artifact_creation_cost_reported_separately": true,
+      "no_promotion_from_historical_or_different_hardware": true
+    },
+    "deferred_snapshot_custody_acceptance": {
+      "implementation_task": "fs2-snapshot-artifact-custody-hardening",
+      "blocks_snapshot_production_promotion": true,
+      "does_not_block_offline_architecture_or_isolated_experiment": true,
+      "requirements": [
+        "credentialless-pre-traffic-donor",
+        "namespace-and-tenant-isolation",
+        "least-privilege-rbac-and-privileged-agent-review",
+        "encrypted-checkpoint-storage",
+        "resourcequota-and-pvc-byte-limits",
+        "retention-ttl-and-deletion-receipts",
+        "default-deny-network-policy"
+      ]
+    },
+    "rendering": {
+      "terraform": {
+        "feature_flags_default_false": true,
+        "separate_infrastructure_foundation_workload_states": true,
+        "typed_accelerator_pool_contract_required": true,
+        "fresh_create_noop_upgrade_rollback_destroy_checks": true
+      },
+      "helm": {
+        "exact_chart_version_and_render_digest_required": true,
+        "single_crd_owner_required": true,
+        "secrets_by_reference_only": true,
+        "server_side_dry_run_before_apply": true
+      },
+      "observability": {
+        "opentelemetry_phase_spans": true,
+        "prometheus_phase_histograms": true,
+        "dcgm_gpu_metrics": true,
+        "gpu_uuid_in_metric_labels": false,
+        "secret_material_in_receipts": false
+      }
+    }
+  }
+}

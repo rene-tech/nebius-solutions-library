@@ -1,0 +1,56 @@
+{{- if .Values.publicLoadBalancer.enabled }}
+{{- if not .Values.publicGateway.enabled }}
+{{- fail "publicLoadBalancer requires the chart-owned publicGateway" }}
+{{- end }}
+{{- $placeholderPattern := "(?i)(placeholder|replace[-_]?me|example|dummy|change[-_]?me|unitfixture|unittarget|todo)" }}
+{{- $allocationId := required "publicLoadBalancer.allocationId is required" .Values.publicLoadBalancer.allocationId }}
+{{- if or (regexMatch $placeholderPattern .Values.publicLoadBalancer.targetProjectId) (regexMatch $placeholderPattern .Values.publicLoadBalancer.allocationProjectId) (regexMatch $placeholderPattern $allocationId) }}
+{{- fail "publicLoadBalancer project and allocation values must be exact provider identities, not placeholders" }}
+{{- end }}
+{{- if ne .Values.publicLoadBalancer.allocationProjectId .Values.publicLoadBalancer.targetProjectId }}
+{{- fail "publicLoadBalancer allocation project must match the target project" }}
+{{- end }}
+{{- if ne .Values.publicLoadBalancer.allocationType "public-ipv4" }}
+{{- fail "publicLoadBalancer allocation must be a public IPv4 allocation" }}
+{{- end }}
+{{- $http := .Values.publicLoadBalancer.servicePorts.http }}
+{{- $https := .Values.publicLoadBalancer.servicePorts.https }}
+{{- if eq (int $http.nodePort) (int $https.nodePort) }}
+{{- fail "publicLoadBalancer HTTP and HTTPS NodePorts must be distinct" }}
+{{- end }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-public
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: LoadBalancer
+        # Nebius CCM rejects Local for this managed LoadBalancer path. Cluster
+        # also lets any provider target forward to the Ready Envoy endpoint.
+        externalTrafficPolicy: {{ .Values.publicLoadBalancer.externalTrafficPolicy }}
+        annotations:
+          nebius.com/load-balancer-allocation-id: {{ $allocationId | quote }}
+        # Keep provider backends stable across Envoy Gateway reconciliation.
+        # The worker security group must admit every listener, targetPort, and
+        # nodePort rendered here; Nebius may enforce at each of those layers.
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              ports:
+                - name: {{ $http.name | quote }}
+                  protocol: TCP
+                  port: {{ $http.port }}
+                  targetPort: {{ $http.targetPort }}
+                  nodePort: {{ $http.nodePort }}
+                - name: {{ $https.name | quote }}
+                  protocol: TCP
+                  port: {{ $https.port }}
+                  targetPort: {{ $https.targetPort }}
+                  nodePort: {{ $https.nodePort }}
+{{- end }}

@@ -19,6 +19,7 @@
 # control as they are data points which are potentially sensitive and subject
 # to change depending on the environment.
 #*.tfvars
+/k8s-inference/terraform.tfvars
 
 # Ignore override files as they are usually used to override resources locally and so
 # are not checked in
@@ -41,6 +42,11 @@ terraform.rc
 
 # IDE
 .idea
+
+# Python bytecode and local test caches
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
 
 # Ignore Soperator installations in commits to this repo.
 # It's added to the root .gitignore because they shouldn't be ignored if commited to other repos.

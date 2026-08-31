@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rfdiffusion-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: rfdiffusion
+    app.kubernetes.io/instance: rfdiffusion-b300
+    app.kubernetes.io/part-of: fs2-serve
+    fs2.nebius.ai/model-id: rfdiffusion
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: rfdiffusion-b300
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rfdiffusion-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: rfdiffusion
+    app.kubernetes.io/instance: rfdiffusion-b300
+    app.kubernetes.io/part-of: fs2-serve
+    fs2.nebius.ai/model-id: rfdiffusion
+  annotations:
+    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/model-content-digest: sha256:0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca
+    fs2.nebius/runtime-image-digest: sha256:c715c5ec39e1f62761039f07867fe30ae08c60442dbdc05e700084becc456409
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: rfdiffusion-b300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rfdiffusion
+        app.kubernetes.io/instance: rfdiffusion-b300
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/part-of: fs2-serve
+        fs2.nebius.ai/model-id: rfdiffusion
+      annotations:
+        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/model-content-digest: sha256:0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca
+        fs2.nebius/runtime-image-digest: sha256:c715c5ec39e1f62761039f07867fe30ae08c60442dbdc05e700084becc456409
+        fs2.nebius.ai/source-revision: 86507b6538f51fce57b5a72477165f03999ed7ae
+        fs2.nebius.ai/checkpoint-sha256: 0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca
+        fs2.nebius.ai/vendor-nim-negative: NIMProfileIDNotFound-sm103
+        fs2.nebius.ai/sm103-compatibility: warp-init-eager-se3
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        capacity.fs2.nebius/pool: burst
+        capacity.fs2.nebius/type: preemptible
+        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: runtime
+          image: registry.example.invalid/k8s-inference/models/rfdiffusion-upstream@sha256:c715c5ec39e1f62761039f07867fe30ae08c60442dbdc05e700084becc456409
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: FS2_PORT
+              value: "8000"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "8"
+              memory: 64Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "24"
+              memory: 200Gi
+              nvidia.com/gpu: "1"
+          startupProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 360
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /v1/health/live
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Gi

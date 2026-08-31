@@ -1,0 +1,35 @@
+{
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "model_id": "nv-segment-ct",
+  "kind": "weights",
+  "source": {"uri": "hf://nvidia/NV-Segment-CT", "revision": "afb51518689f71e6abb367ee6301b2cd0225c66a"},
+  "content": {
+    "digest": "08e8ed72f8bb0702dc9a8c0c3b0edefc23a6e538e6955357da62c0c2ccfede89",
+    "expanded_bytes": 2616027239,
+    "files": [
+      {"path": ".gitattributes", "bytes": 1519, "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361"},
+      {"path": "LICENSE", "bytes": 12786, "sha256": "f3929a4d10b3918310d171d625fc40afb54122a394493797ec5b24fac34b12d9"},
+      {"path": "README.md", "bytes": 10431, "sha256": "bbc0cca5951f289869ac3242eea6d3078adf3f6c55a95bae1624d4c5627860ea"},
+      {"path": "config.json", "bytes": 111, "sha256": "3bd26d84f40c46b88e0d7d56e5f8622c132e5308b33f12f87e9314352f8432fa"},
+      {"path": "data_license.txt", "bytes": 232, "sha256": "590f0866b9561554a3fbb857ddcea9835eb7b80f104a5d926c2502fd86790163"},
+      {"path": "hugging_face_pipeline.py", "bytes": 1308, "sha256": "19bb2db5088ff267b10295846a7d35cfc47f3147d1a772969cf5f696db2c8596"},
+      {"path": "metadata.json", "bytes": 8083, "sha256": "7554d8b015426e7034df9504e8407d413ff469114345999bb9ac58340d814149"},
+      {"path": "scripts/__init__.py", "bytes": 821, "sha256": "8b64d77b9ce7c98bb90dfe785e90c8ef24417b8cc3598ef0ce546f640809368c"},
+      {"path": "scripts/early_stop_score_function.py", "bytes": 454, "sha256": "e5c77b011847941aedfc7aa5c0e07a72988ed676ffb0356e211aa61c24f9d7d3"},
+      {"path": "scripts/evaluator.py", "bytes": 16160, "sha256": "2487b2ef2777ac4442f903268be10dfe83244b232edd39db45a2f870e76ce424"},
+      {"path": "scripts/inferer.py", "bytes": 4759, "sha256": "e775bc457aa98d57628eb677098ed9942f6a43e5d36e1e5b8ad2f5267c5f4bc3"},
+      {"path": "scripts/trainer.py", "bytes": 11134, "sha256": "4e16d734f3f48aedfdb2126449009c2f5532b2a47266a3de0896785ddae38dbd"},
+      {"path": "vista3d_config.py", "bytes": 601, "sha256": "8a7dfd4848b8c96fc9929a04e30fb8286ccf4af0b186d4d1580ddab04c74330d"},
+      {"path": "vista3d_model.py", "bytes": 1279, "sha256": "ec8b54546eef644a62fe5068a75a52868b014c8377a2a568d05176ec48ab0ffb"},
+      {"path": "vista3d_pipeline.py", "bytes": 18541, "sha256": "c5393907c4b406beb3684bc2c1959fc869b51012c0482df86927a43a1757ffb2"},
+      {"path": "vista3d_pretrained_model/config.json", "bytes": 189, "sha256": "25ad98d47193765a9feea723935b468dcfe6411c7f3ebcacfd135af7d0261669"},
+      {"path": "vista3d_pretrained_model/model.pt", "bytes": 871970895, "sha256": "c92bab26d00b4a5d89fa8a383900cdeb88302fd318e5e816df0bbec7106d9a1b"},
+      {"path": "vista3d_pretrained_model/model.safetensors", "bytes": 871894112, "sha256": "120ed013722a22780cc01b75cb5c18e4658d69879a983885abf8fa411c9f8f42"},
+      {"path": "vista3d_pretrained_model/model_monai1.3.pt", "bytes": 872073824, "sha256": "889042ab37dbb9f9b2467e4a91654fb3b56482b74b98d315fc89026ab1570af8"}
+    ]
+  },
+  "license": {"id": "NVIDIA-Open-Model-License", "state": "verified"},
+  "entitlement_state": "not-required",
+  "owner": "fs2-serve-localizer",
+  "retention": "retained-platform"
+}

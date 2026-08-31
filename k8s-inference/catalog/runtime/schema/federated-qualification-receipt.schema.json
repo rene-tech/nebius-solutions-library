@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/federated-qualification-receipt/v2",
+  "title": "fs2-serve signed federated SM90 qualification receipt v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "checked_at", "model_id", "model_digest", "backend_evidence_digest", "artifact", "runtime", "readiness", "semantic"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/federated-qualification-receipt/v2"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "PASS"},
+    "checked_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "model_id": {"$ref": "#/$defs/modelId"},
+    "model_digest": {"$ref": "#/$defs/digest"},
+    "backend_evidence_digest": {"$ref": "#/$defs/digest"},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_digest", "content_digest", "content_uri", "staging_state"],
+      "properties": {
+        "manifest_digest": {"$ref": "#/$defs/digest"},
+        "content_digest": {"$ref": "#/$defs/digest"},
+        "content_uri": {"type": "string", "pattern": "^federated://[0-9a-f]{64}/models/[a-z0-9](?:[-a-z0-9]*[a-z0-9])?/sha256/[0-9a-f]{64}$"},
+        "staging_state": {"const": "ready-on-exact-federated-backend"}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image_digest", "model_revision", "execution_identity_sha256"],
+      "properties": {
+        "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "model_revision": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "execution_identity_sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "path", "expected_status", "observed_status", "observed_at"],
+      "properties": {
+        "method": {"enum": ["GET", "POST"]},
+        "path": {"type": "string", "pattern": "^/(?!/)(?!.*(?:/\\.\\.?/|//|%))[A-Za-z0-9._~!$&'()*+,;=:@/-]*$"},
+        "expected_status": {"type": "integer", "minimum": 100, "maximum": 599},
+        "observed_status": {"type": "integer", "minimum": 100, "maximum": 599},
+        "observed_at": {"type": "string", "format": "date-time", "pattern": "Z$"}
+      }
+    },
+    "semantic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt_id", "observed_at", "request_contract_sha256", "request_asset_set_sha256", "validator", "responses", "distinct_requests", "distinct_responses", "gateway_path", "validator_result_digest"],
+      "properties": {
+        "attempt_id": {"const": "gateway-smoke"},
+        "observed_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+        "request_contract_sha256": {"$ref": "#/$defs/digest"},
+        "request_asset_set_sha256": {"$ref": "#/$defs/digest"},
+        "validator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contract", "source_path", "source_sha256", "fixture_path", "fixture_sha256"],
+          "properties": {
+            "contract": {"type": "string", "minLength": 1},
+            "source_path": {"type": "string", "minLength": 1},
+            "source_sha256": {"$ref": "#/$defs/digest"},
+            "fixture_path": {"type": ["string", "null"]},
+            "fixture_sha256": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]}
+          }
+        },
+        "responses": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["request_id", "request_sha256", "response_sha256", "semantic_valid"],
+            "properties": {
+              "request_id": {"type": "string", "minLength": 1},
+              "request_sha256": {"$ref": "#/$defs/digest"},
+              "response_sha256": {"$ref": "#/$defs/digest"},
+              "semantic_valid": {"const": true}
+            }
+          }
+        },
+        "distinct_requests": {"const": true},
+        "distinct_responses": {"const": true},
+        "validator_result_digest": {"$ref": "#/$defs/digest"},
+        "gateway_path": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["gateway", "operation", "transport", "route", "backend", "readiness"],
+          "properties": {
+            "gateway": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["class", "namespace", "service_name", "service_uid", "port", "identity_sha256", "auth_class", "route_id"],
+              "properties": {
+                "class": {"const": "fs2-serve-gateway"},
+                "namespace": {"const": "fs2-system"},
+                "service_name": {"const": "fs2-serve-control-plane"},
+                "service_uid": {"type": "string", "minLength": 36},
+                "port": {"const": 8080},
+                "identity_sha256": {"$ref": "#/$defs/digest"},
+                "auth_class": {"const": "scoped-api-key"},
+                "route_id": {"$ref": "#/$defs/modelId"}
+              }
+            },
+            "operation": {"type": "string", "minLength": 1, "maxLength": 64},
+            "transport": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "protocol", "method", "endpoint", "gateway_service_uid", "backend_service_uid"],
+              "properties": {
+                "mode": {"const": "gateway-service-proxy"},
+                "protocol": {"type": "string", "minLength": 1},
+                "method": {"const": "POST"},
+                "endpoint": {"type": "string", "pattern": "^/"},
+                "gateway_service_uid": {"type": "string", "minLength": 36},
+                "backend_service_uid": {"type": "string", "minLength": 36}
+              }
+            },
+            "route": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["model_id", "protocols", "endpoints"],
+              "properties": {
+                "model_id": {"$ref": "#/$defs/modelId"},
+                "protocols": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+                "endpoints": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "pattern": "^/"}}
+              }
+            },
+            "backend": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["class", "region", "namespace", "service_name", "service_uid", "port", "origin", "endpoint_identity_sha256", "trust_bundle_sha256"],
+              "properties": {
+                "class": {"type": "string", "minLength": 1},
+                "region": {"type": ["string", "null"]},
+                "namespace": {"type": "string", "minLength": 1},
+                "service_name": {"type": "string", "minLength": 1},
+                "service_uid": {"type": "string", "minLength": 36},
+                "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+                "origin": {"type": "string", "minLength": 1},
+                "endpoint_identity_sha256": {"$ref": "#/$defs/digest"},
+                "trust_bundle_sha256": {"$ref": "#/$defs/digest"}
+              }
+            },
+            "readiness": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["evidence_kind", "evidence_digest", "service_uid", "observed_generation", "contract_sha256", "observation_sha256", "identity_sha256"],
+              "properties": {
+                "evidence_kind": {"enum": ["signed-readiness-receipt", "embedded-federated-readiness"]},
+                "evidence_digest": {"$ref": "#/$defs/digest"},
+                "service_uid": {"type": "string", "minLength": 36},
+                "observed_generation": {"type": ["integer", "null"], "minimum": 1},
+                "contract_sha256": {"$ref": "#/$defs/digest"},
+                "observation_sha256": {"$ref": "#/$defs/digest"},
+                "identity_sha256": {"$ref": "#/$defs/digest"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "modelId": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"}
+  }
+}

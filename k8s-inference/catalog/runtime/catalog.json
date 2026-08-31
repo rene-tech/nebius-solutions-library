@@ -1,0 +1,73 @@
+{
+  "artifact_acquisition": {
+    "path": "contracts/artifact-acquisition.json",
+    "sha256": "790fd5e772f9639db7ebc0d0dd10fcce0f8897e9b8e85705606f9e1140129772"
+  },
+  "blocked_candidate_ids": [],
+  "catalog_version": "2026-08-27",
+  "compatibility_audit": {
+    "path": "contracts/compatibility-audit.json",
+    "sha256": "34f435dd4f880dcf1422779d042dcb538447d3ee5167834d9bad8704d288c64c"
+  },
+  "federated_backends": {
+    "path": "contracts/federated-backends.json",
+    "sha256": "0367374a757f8e9141b5325454c063d7c53b184263cbf1010c8ca3bfa7a94bc5"
+  },
+  "loader_contract": "fs2-serve.nebius.ai/catalog-loader/v1",
+  "model_files": [
+    "boltz2.json",
+    "diffdock.json",
+    "evo2-40b.json",
+    "genmol.json",
+    "glm-5-2-fp8.json",
+    "molmim.json",
+    "msa-search-pdb70.json",
+    "nv-reason-cxr-3b.json",
+    "nv-segment-ct.json",
+    "openfold2.json",
+    "openfold3.json",
+    "proteinmpnn.json",
+    "qwen3-8b.json",
+    "rfdiffusion.json",
+    "sdxl.json"
+  ],
+  "model_schema": "fs2-serve.nebius.ai/model/v1",
+  "model_variants": {
+    "path": "contracts/model-variants.json",
+    "sha256": "40151c510aae733bb287ad2910c23ccd2fec0a4455e7f4ec20fc10c569e3ae12"
+  },
+  "provenance_lock": {
+    "path": "contracts/provenance-lock.json",
+    "sha256": "9f12cf6c3876e29667b62fa0a379b4c25ccfb06d06d6f1effc3055d42d45643f"
+  },
+  "runtime_prerequisites": {
+    "path": "contracts/runtime-prerequisites.json",
+    "sha256": "c7f9ea8d6c9051be00288563d8d97eda357dccab7f2fd36b6c9256622c937f08"
+  },
+  "scale_contracts": {
+    "path": "contracts/scale-contracts.json",
+    "sha256": "8f399d1caa25d96deba17dfd9eb5db00854f8d4694d3c1ed490320b75e2b769e"
+  },
+  "schema": "fs2-serve.nebius.ai/catalog/v1",
+  "semantic_requests": {
+    "path": "contracts/semantic-requests.json",
+    "sha256": "47449f99ed49255a755c21d61f87c8ceb2d1eaab5923c76eae9beaf635ca7fe1"
+  },
+  "tested_model_ids": [
+    "boltz2",
+    "diffdock",
+    "evo2-40b",
+    "genmol",
+    "glm-5-2-fp8",
+    "molmim",
+    "msa-search-pdb70",
+    "nv-reason-cxr-3b",
+    "nv-segment-ct",
+    "openfold2",
+    "openfold3",
+    "proteinmpnn",
+    "qwen3-8b",
+    "rfdiffusion",
+    "sdxl"
+  ]
+}

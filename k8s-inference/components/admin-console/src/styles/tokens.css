@@ -1,0 +1,29 @@
+:root {
+  --fs2-surface-canvas: #eef1f3;
+  --fs2-surface-default: #ffffff;
+  --fs2-surface-raised: #f7f9f9;
+  --fs2-surface-inverse: #151b18;
+  --fs2-surface-inverse-hover: #26312b;
+  --fs2-text-primary: #17201c;
+  --fs2-text-muted: #5c6862;
+  --fs2-text-inverse: #f5faf6;
+  --fs2-border: #d8dedb;
+  --fs2-border-strong: #abb6b0;
+  --fs2-accent: #267a49;
+  --fs2-accent-soft: #dff3e6;
+  --fs2-focus: #1766cf;
+  --fs2-danger: #a02a33;
+  --fs2-danger-soft: #fbe5e7;
+  --fs2-warning: #805d00;
+  --fs2-warning-soft: #fff2c8;
+  --fs2-info: #255b91;
+  --fs2-info-soft: #e2effb;
+  --fs2-unknown: #5f6670;
+  --fs2-unknown-soft: #eceff2;
+  --fs2-shadow: 0 1px 2px rgb(24 34 29 / 8%), 0 8px 24px rgb(24 34 29 / 4%);
+  --fs2-radius-sm: 6px;
+  --fs2-radius-md: 10px;
+  --fs2-radius-lg: 14px;
+  --fs2-font: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --fs2-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}

@@ -1,0 +1,9 @@
+nodeSelector:
+  workload.fs2.nebius/gpu: "true"
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: fs2-inference
+    effect: NoSchedule
+serviceMonitor:
+  enabled: true

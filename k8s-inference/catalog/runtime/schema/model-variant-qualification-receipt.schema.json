@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-variant-qualification-receipt/v5",
+  "title": "Typed B300 qualification aggregate for one model variant",
+  "$comment": "Non-authoritative shape only; executable signed subject joins, freshness, replay protection and metric recomputation are mandatory.",
+  "x-fs2-authority": "non-authoritative-shape-only",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "variant_id", "variant_digest", "supply_receipt_digest", "runtime_tuple_digest", "artifact_manifest_digest", "semantic_contract_digest", "cold_cohort_digest", "warm_cohort_digest", "backend_readiness_receipt_digest", "preemption_receipt_digest", "measurement", "quality", "lifecycle", "gateway", "vendor_baseline", "valid_until"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "PASS"},
+    "variant_id": {"$ref": "#/$defs/id"},
+    "variant_digest": {"$ref": "#/$defs/digest"},
+    "supply_receipt_digest": {"$ref": "#/$defs/digest"},
+    "runtime_tuple_digest": {"$ref": "#/$defs/digest"},
+    "artifact_manifest_digest": {"$ref": "#/$defs/digest"},
+    "semantic_contract_digest": {"$ref": "#/$defs/digest"},
+    "cold_cohort_digest": {"$ref": "#/$defs/digest"},
+    "warm_cohort_digest": {"$ref": "#/$defs/digest"},
+    "backend_readiness_receipt_digest": {"$ref": "#/$defs/digest"},
+    "preemption_receipt_digest": {"$ref": "#/$defs/digest"},
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compute_capability", "gpu_architecture", "warm_attempts_total", "warm_failures_total", "warm_failure_rate", "max_warm_failure_rate", "cold_attempts_total", "cold_failures_total", "cold_failure_rate", "max_cold_failure_rate", "failures_in_denominator", "determinism_attempt_ids", "kernel_dispatch_attempt_ids", "semantic_responses_per_success"],
+      "properties": {
+        "compute_capability": {"const": "10.3"},
+        "gpu_architecture": {"const": "sm_103"},
+        "warm_attempts_total": {"type": "integer", "minimum": 10},
+        "warm_failures_total": {"type": "integer", "minimum": 0},
+        "warm_failure_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "max_warm_failure_rate": {"const": 0.1},
+        "cold_attempts_total": {"type": "integer", "minimum": 3},
+        "cold_failures_total": {"type": "integer", "minimum": 0},
+        "cold_failure_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "max_cold_failure_rate": {"const": 0.1},
+        "failures_in_denominator": {"const": true},
+        "determinism_attempt_ids": {"type": "array", "minItems": 3, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "kernel_dispatch_attempt_ids": {"type": "array", "minItems": 3, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "semantic_responses_per_success": {"const": 2}
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "comparator_model_id", "comparator_execution_identity_sha256", "dataset_sha256", "metric", "candidate_value", "baseline_value", "allowed_regression"],
+      "properties": {
+        "status": {"const": "PASS"},
+        "comparator_model_id": {"$ref": "#/$defs/id"},
+        "comparator_execution_identity_sha256": {"$ref": "#/$defs/digest"},
+        "dataset_sha256": {"$ref": "#/$defs/digest"},
+        "metric": {"enum": ["exact-match-rate", "success-rate", "task-score"]},
+        "candidate_value": {"type": "number", "minimum": 0, "maximum": 1},
+        "baseline_value": {"type": "number", "minimum": 0, "maximum": 1},
+        "allowed_regression": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "zero_to_ready_operation_id", "return_to_zero_operation_id", "zero_to_ready_receipt_sha256", "return_to_zero_receipt_sha256", "initial_replicas", "ready_replicas", "final_replicas", "activation_fencing_token", "deactivation_fencing_token", "artifact_retained"],
+      "properties": {
+        "status": {"const": "PASS"},
+        "zero_to_ready_operation_id": {"type": "string", "minLength": 1},
+        "return_to_zero_operation_id": {"type": "string", "minLength": 1},
+        "zero_to_ready_receipt_sha256": {"$ref": "#/$defs/digest"},
+        "return_to_zero_receipt_sha256": {"$ref": "#/$defs/digest"},
+        "initial_replicas": {"const": 0},
+        "ready_replicas": {"type": "integer", "minimum": 1},
+        "final_replicas": {"const": 0},
+        "activation_fencing_token": {"type": "integer", "minimum": 1},
+        "deactivation_fencing_token": {"type": "integer", "minimum": 2},
+        "artifact_retained": {"const": true}
+      }
+    },
+    "gateway": {"$ref": "#/$defs/gateway"},
+    "vendor_baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "schema", "model_id", "record_sha256", "execution_identity_sha256", "b300_state"],
+      "properties": {
+        "mode": {"const": "canonical-compatibility-audit-delegation"},
+        "schema": {"const": "fs2-serve.nebius.ai/compatibility-audit/v1"},
+        "model_id": {"$ref": "#/$defs/id"},
+        "record_sha256": {"$ref": "#/$defs/digest"},
+        "execution_identity_sha256": {"$ref": "#/$defs/digest"},
+        "b300_state": {"enum": ["historical-supported", "incompatible-sm103", "unverified", "blocked"]}
+      }
+    },
+    "valid_until": {"type": "string", "format": "date-time", "pattern": "Z$"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "k8sUid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gateway_class", "gateway_namespace", "gateway_service_name", "gateway_service_uid", "gateway_identity_sha256", "gateway_auth_class", "route_id", "backend_namespace", "backend_service_name", "backend_service_uid", "backend_port", "transport"],
+      "properties": {
+        "gateway_class": {"const": "fs2-serve-gateway"},
+        "gateway_namespace": {"const": "fs2-system"},
+        "gateway_service_name": {"const": "fs2-serve-control-plane"},
+        "gateway_service_uid": {"$ref": "#/$defs/k8sUid"},
+        "gateway_identity_sha256": {"$ref": "#/$defs/digest"},
+        "gateway_auth_class": {"const": "scoped-api-key"},
+        "route_id": {"$ref": "#/$defs/id"},
+        "backend_namespace": {"const": "fs2-models"},
+        "backend_service_name": {"$ref": "#/$defs/id"},
+        "backend_service_uid": {"$ref": "#/$defs/k8sUid"},
+        "backend_port": {"const": 8000},
+        "transport": {"const": "gateway-proxy"}
+      }
+    }
+  }
+}

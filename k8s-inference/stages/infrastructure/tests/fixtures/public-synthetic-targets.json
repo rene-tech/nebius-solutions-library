@@ -1,0 +1,25 @@
+{
+  "schema": "fs2-serve.nebius.ai/terraform-approved-targets/v1",
+  "targets": {
+    "project-syntheticlocal": {
+      "project_name": "synthetic-local-project",
+      "region": "us-north1",
+      "network_name": "synthetic-network",
+      "subnet_name": "synthetic-subnet",
+      "private_subnet_cidr": "10.104.0.0/13",
+      "source_registry_project_id": "project-syntheticlocal",
+      "system_update_strategy": {
+        "max_surge": 1,
+        "max_unavailable": 0
+      }
+    }
+  },
+  "tenant_id": "tenant-syntheticlocal",
+  "source_registry": {
+    "id": "registry-syntheticlocal",
+    "project_id": "project-syntheticlocal",
+    "project_name": "synthetic-local-project",
+    "region": "us-north1",
+    "fqdn": "cr.us-north1.nebius.cloud/synthetic-local"
+  }
+}

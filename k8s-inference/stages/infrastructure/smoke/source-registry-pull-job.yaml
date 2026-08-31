@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: source-registry-pull-smoke
+  namespace: fs2-disposable-smoke
+  labels:
+    app.kubernetes.io/name: source-registry-pull-smoke
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: source-registry-pull-smoke
+        app.kubernetes.io/part-of: fs2-serve
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        workload.fs2.nebius/system: "true"
+        capacity.fs2.nebius/type: regular
+      containers:
+        - name: canary
+          image: registry.example.invalid/k8s-inference/control-plane@sha256:b307083e08ed2e1f556ba97b9beaadb6fcadd1949edb7d2d3ec805d2769c19e8
+          imagePullPolicy: Always
+          command:
+            - python
+            - -c
+            - |
+              import json
+
+              print(json.dumps({
+                  "schema": "fs2-serve.nebius.ai/source-registry-pull-smoke/v1",
+                  "result": "PASS",
+              }, sort_keys=True))
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault

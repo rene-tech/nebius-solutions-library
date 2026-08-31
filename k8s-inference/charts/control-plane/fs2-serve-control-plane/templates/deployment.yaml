@@ -1,0 +1,227 @@
+{{- if lt (.Values.config.maxSyncWaiters | int) (.Values.config.workerConcurrency | int) }}
+{{- fail "config.maxSyncWaiters must be greater than or equal to config.workerConcurrency" }}
+{{- end }}
+{{- if .Values.adminConfiguration.enabled }}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" .Values.adminConfiguration.configMapName) }}
+{{- fail "adminConfiguration.configMapName is required when enabled" }}
+{{- end }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" .Values.adminConfiguration.sha256) }}
+{{- fail "adminConfiguration.sha256 is required when enabled" }}
+{{- end }}
+{{- if and .Values.adminConfiguration.receiptKey (eq .Values.adminConfiguration.receiptKey .Values.adminConfiguration.key) }}
+{{- fail "adminConfiguration.receiptKey must differ from key" }}
+{{- end }}
+{{- end }}
+{{- if hasKey .Values "activationController" }}
+{{- fail "activationController is owned by the separate activation child and is not accepted by this chart" }}
+{{- end }}
+{{- if gt (.Values.config.syncWaitSeconds | float64) (.Values.config.maxSyncWaitSeconds | float64) }}
+{{- fail "config.syncWaitSeconds must be less than or equal to config.maxSyncWaitSeconds" }}
+{{- end }}
+{{- if gt (.Values.config.waitPollInitialSeconds | float64) (.Values.config.waitPollMaxSeconds | float64) }}
+{{- fail "config.waitPollInitialSeconds must be less than or equal to config.waitPollMaxSeconds" }}
+{{- end }}
+{{- if .Values.config.activationTimeoutSeconds }}
+{{- if or (lt (.Values.config.activationTimeoutSeconds | int) 1) (gt (.Values.config.activationTimeoutSeconds | int) 7200) }}
+{{- fail "config.activationTimeoutSeconds must be between 1 and 7200 seconds" }}
+{{- end }}
+{{- end }}
+{{- if ne .Release.Namespace "fs2-system" }}
+{{- fail "the PostgreSQL release contract requires control-plane credential Secrets in fs2-system" }}
+{{- end }}
+{{- if ne (index .Values.networkPolicy.database.namespaceLabels "kubernetes.io/metadata.name") "fs2-data" }}
+{{- fail "the PostgreSQL release contract requires the database Cluster in fs2-data" }}
+{{- end }}
+{{- if ne (index .Values.networkPolicy.database.podLabels "cnpg.io/cluster") "fs2-control-db" }}
+{{- fail "the PostgreSQL release contract requires Cluster fs2-data/fs2-control-db" }}
+{{- end }}
+{{- if eq .Values.secrets.database.name .Values.secrets.migrationsDatabase.name }}
+{{- fail "secrets.database and secrets.migrationsDatabase must reference distinct DML and DDL credentials" }}
+{{- end }}
+{{- if and (eq .Values.catalog.delivery "pvc") (eq .Values.catalog.persistentVolumeClaimName .Values.catalog.evidencePersistentVolumeClaimName) }}
+{{- fail "catalog and qualification evidence require distinct read-only PVCs" }}
+{{- end }}
+{{- if or (ne .Values.secrets.database.name "fs2-serve-database") (ne .Values.secrets.database.key "url") (ne .Values.secrets.migrationsDatabase.name "fs2-serve-database-migrations") (ne .Values.secrets.migrationsDatabase.key "url") (ne .Values.secrets.maintenanceDatabase.name "fs2-serve-database-maintenance") (ne .Values.secrets.maintenanceDatabase.key "url") }}
+{{- fail "database Secret names and keys must match the canonical PostgreSQL release contract" }}
+{{- end }}
+{{- if or (ne .Values.secrets.database.caKey "ca.crt") (ne .Values.secrets.migrationsDatabase.caKey "ca.crt") (ne .Values.secrets.maintenanceDatabase.caKey "ca.crt") }}
+{{- fail "database Secret CA keys must match the canonical PostgreSQL release contract" }}
+{{- end }}
+{{- if and (eq .Values.catalog.delivery "image") (ne .Values.catalog.imagePath "/opt/fs2/catalog") }}
+{{- fail "image-delivered catalog path must be /opt/fs2/catalog" }}
+{{- end }}
+{{- $databaseRoles := list .Values.migration.runtimeDatabaseRole .Values.migration.reportingDatabaseRole .Values.migration.maintenanceDatabaseRole .Values.migration.activationDatabaseRole }}
+{{- if ne (len $databaseRoles) (len (uniq $databaseRoles)) }}
+{{- fail "migration runtime, reporting, maintenance, and activation database roles must differ" }}
+{{- end }}
+{{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
+{{- fail "database group roles must match the canonical PostgreSQL release contract" }}
+{{- end }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "6bc458b18a85dfa260b20a175bcca730f0238ba19caa53f8312e550fe9ededdd") (ne .Values.migration.releaseContract.migrationSetSha256 "25581efdc1a2cb52d4cfb2c05711ce993dee3310e669dd30348b820ae2a41b37") (ne (int .Values.migration.releaseContract.migrationCount) 11) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0011_admin_configuration.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
+{{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
+{{- end }}
+{{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}
+{{- fail "httpRoute.authorityMode must equal config.publicAuthorityMode" }}
+{{- end }}
+{{- if and (eq .Values.config.publicAuthorityMode "ip") (not (regexMatch "^https://([0-9]{1,3}\\.){3}[0-9]{1,3}(:443)?/?$" .Values.config.publicBaseUrl)) }}
+{{- fail "config.publicBaseUrl must use an exact HTTPS IPv4 authority in ip mode" }}
+{{- end }}
+{{- if and .Values.config.allowNonClusterUrls .Values.publicGateway.enabled }}
+{{- fail "config.allowNonClusterUrls is forbidden when the public Gateway is enabled" }}
+{{- end }}
+{{- if and .Values.config.allowNonClusterUrls (ne .Values.config.publicBaseUrl "http://localhost:18082") }}
+{{- fail "config.allowNonClusterUrls requires an explicit loopback operator-proxy origin" }}
+{{- end }}
+{{- $secretNames := list .Values.secrets.database.name .Values.secrets.migrationsDatabase.name .Values.secrets.maintenanceDatabase.name .Values.secrets.payloadKeyring.name .Values.secrets.ledgerHmacKeyring.name .Values.secrets.tokenPepper.name .Values.secrets.routeAttestors.name .Values.secrets.admin.name .Values.federation.secretName }}
+{{- if ne (len $secretNames) (len (uniq $secretNames)) }}
+{{- fail "runtime, migration, maintenance, cryptographic, admin, and federation credentials must use distinct Secret objects" }}
+{{- end }}
+{{- $runtimeServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
+{{- $maintenanceServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "maintenance") }}
+{{- $migrationServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "migration") }}
+{{- if or (eq $runtimeServiceAccount $maintenanceServiceAccount) (eq $runtimeServiceAccount $migrationServiceAccount) (eq $maintenanceServiceAccount $migrationServiceAccount) }}
+{{- fail "runtime, maintenance, and migration must use distinct service accounts" }}
+{{- end }}
+{{- range .Values.networkPolicy.federationCidrs }}
+{{- if not (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$|^[0-9A-Fa-f:]+/128$" .) }}
+{{- fail "networkPolicy.federationCidrs accepts only exact /32 or /128 destinations" }}
+{{- end }}
+{{- end }}
+{{- if and (or .Values.adminReadAdapters.capacity.enabled .Values.adminReadAdapters.observability.enabled) (not .Values.networkPolicy.enabled) }}
+{{- fail "adminReadAdapters require networkPolicy.enabled=true" }}
+{{- end }}
+{{- if and .Values.adminReadAdapters.capacity.enabled (eq (len .Values.networkPolicy.kubernetesApiCidrs) 0) }}
+{{- fail "adminReadAdapters.capacity requires at least one exact networkPolicy.kubernetesApiCidrs destination" }}
+{{- end }}
+{{- if or (lt (.Values.adminReadAdapters.adapterTimeoutSeconds | float64) 0.1) (gt (.Values.adminReadAdapters.adapterTimeoutSeconds | float64) 10.0) }}
+{{- fail "adminReadAdapters.adapterTimeoutSeconds must be between 0.1 and 10 seconds" }}
+{{- end }}
+{{- if or (lt (.Values.adminReadAdapters.sourceMaxAgeSeconds | float64) 1.0) (gt (.Values.adminReadAdapters.sourceMaxAgeSeconds | float64) 3600.0) }}
+{{- fail "adminReadAdapters.sourceMaxAgeSeconds must be between 1 and 3600 seconds" }}
+{{- end }}
+{{- range .Values.networkPolicy.kubernetesApiCidrs }}
+{{- if not (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$|^[0-9A-Fa-f:]+/128$" .) }}
+{{- fail "networkPolicy.kubernetesApiCidrs accepts only exact /32 or /128 destinations" }}
+{{- end }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 8 }}
+      annotations:
+        fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+        fs2.nebius.ai/catalog-rollout-digest: {{ .Values.catalog.rolloutDigest | quote }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ add (.Values.config.shutdownGraceSeconds | int) 10 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      initContainers:
+        - name: wait-schema
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["wait-schema"]
+          env:
+            {{- include "fs2-serve.schemaWaitEnv" . | nindent 12 }}
+          volumeMounts:
+            {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: control-plane
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            {{- include "fs2-serve.runtimeEnv" . | nindent 12 }}
+          volumeMounts:
+            {{- include "fs2-serve.runtimeVolumeMounts" . | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        {{- include "fs2-serve.runtimeVolumes" . | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

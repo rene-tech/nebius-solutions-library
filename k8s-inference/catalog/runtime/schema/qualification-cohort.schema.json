@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/qualification-cohort/v4",
+  "title": "External-T0 placement-bound exploratory qualification cohort v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "cohort", "model_id", "model_digest", "startup_mechanism", "runtime_tuple_digest", "placement_receipt_digest", "attempt_count", "success_count", "failure_count", "attempts", "p50_t0_to_call2_seconds", "p95_t0_to_call2_seconds"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/qualification-cohort/v4"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "exploratory-pass"},
+    "cohort": {"enum": ["prepared-node", "new-node"]},
+    "model_id": {"type": "string", "minLength": 1},
+    "model_digest": {"$ref": "#/$defs/digest"},
+    "startup_mechanism": {"enum": ["conventional", "custom-runtime", "sleep-wake", "snapshot"]},
+    "runtime_tuple_digest": {"$ref": "#/$defs/digest"},
+    "placement_receipt_digest": {"$ref": "#/$defs/digest"},
+    "attempt_count": {"type": "integer", "minimum": 3},
+    "success_count": {"type": "integer", "minimum": 0},
+    "failure_count": {"type": "integer", "minimum": 0},
+    "attempts": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/attempt"}},
+    "p50_t0_to_call2_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "p95_t0_to_call2_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "timestamp": {"type": ["string", "null"], "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "resource": {"type": "object", "additionalProperties": false, "required": ["api_version", "kind", "namespace", "name", "uid"], "properties": {"api_version": {"type": "string"}, "kind": {"type": "string"}, "namespace": {"type": "string"}, "name": {"type": "string"}, "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"}}},
+    "attempt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attempt_id", "status", "t0_utc", "completion_utc", "t0_to_call2_seconds", "semantic_receipt_digest", "cleanup_receipt_digest", "expected_resource_uids"],
+      "properties": {"attempt_id": {"type": "string", "minLength": 1}, "status": {"enum": ["PASS", "FAIL"]}, "t0_utc": {"$ref": "#/$defs/timestamp"}, "completion_utc": {"$ref": "#/$defs/timestamp"}, "t0_to_call2_seconds": {"type": ["number", "null"]}, "semantic_receipt_digest": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}, "cleanup_receipt_digest": {"$ref": "#/$defs/digest"}, "expected_resource_uids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/resource"}}}
+    }
+  }
+}

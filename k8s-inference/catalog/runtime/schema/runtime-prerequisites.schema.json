@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/runtime-prerequisites/v4",
+  "title": "fs2-serve value-suppressed runtime prerequisite contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "credential_policy", "ngc_credential_contract", "resources"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/runtime-prerequisites/v4"},
+    "credential_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["values", "materialization", "fresh_platform_ngc_key", "legacy_ngc_secret_copy", "legacy_plaintext_rotation_source", "legacy_phase_7c_hmac_reuse", "exposed_evo_bearer_reuse"],
+      "properties": {
+        "values": {"const": "suppressed"},
+        "materialization": {"const": "pre-created-secret-observation-default"},
+        "fresh_platform_ngc_key": {"const": "required"},
+        "legacy_ngc_secret_copy": {"const": "forbidden"},
+        "legacy_plaintext_rotation_source": {"const": "forbidden"},
+        "legacy_phase_7c_hmac_reuse": {"const": "forbidden"},
+        "exposed_evo_bearer_reuse": {"const": "forbidden"}
+      }
+    },
+    "ngc_credential_contract": {"$ref": "#/$defs/ngcCredentialContract"},
+    "resources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/resource"}}
+  },
+  "$defs": {
+    "ngcCredentialContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "platform_owner", "default_secret_delivery", "optional_secret_backends", "freshness_evidence", "legacy_secret_audit", "secret_requirement_ids", "required_downstream_evidence", "values", "route_state_without_receipt"],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/ngc-credential-materialization/v3"},
+        "platform_owner": {"const": "fs2-serve-platform"},
+        "default_secret_delivery": {"$ref": "#/$defs/defaultSecretDelivery"},
+        "optional_secret_backends": {"type": "array", "prefixItems": [{"$ref": "#/$defs/disabledEsoBackend"}], "items": false, "minItems": 1, "maxItems": 1},
+        "freshness_evidence": {"const": "signed-issuance-validity-noncompromise"},
+        "legacy_secret_audit": {"const": "all-legacy-copies-no-go"},
+        "secret_requirement_ids": {"const": ["fs2-models/ngc-pull-secret", "fs2-models/ngc-runtime-secret"]},
+        "required_downstream_evidence": {"const": ["exact-digest-b300-target-node-pull-canary", "nimcache-auth-readiness", "two-distinct-semantic-requests"]},
+        "values": {"const": "suppressed"},
+        "route_state_without_receipt": {"const": "disabled"}
+      }
+    },
+    "defaultSecretDelivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "mode", "namespace", "outputs", "helm_and_git_content", "required_observation", "sole_authority"],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/precreated-ngc-secret-delivery/v1"},
+        "mode": {"const": "securely-pre-created-existing-kubernetes-secrets"},
+        "namespace": {"const": "fs2-models"},
+        "outputs": {"type": "array", "prefixItems": [{"$ref": "#/$defs/ngcPullOutput"}, {"$ref": "#/$defs/ngcRuntimeOutput"}], "items": false, "minItems": 2, "maxItems": 2},
+        "helm_and_git_content": {"const": "names-and-keys-only-values-forbidden"},
+        "required_observation": {"const": "server-observed-uid-resourceVersion-type-key-set"},
+        "sole_authority": {"const": "signed-runtime-prerequisite-receipt"}
+      }
+    },
+    "ngcOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement_id", "secret_name", "secret_type", "required_keys"],
+      "properties": {
+        "requirement_id": {"type": "string"},
+        "secret_name": {"type": "string"},
+        "secret_type": {"enum": ["Opaque", "kubernetes.io/dockerconfigjson"]},
+        "required_keys": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "ngcPullOutput": {"allOf": [{"$ref": "#/$defs/ngcOutput"}, {"properties": {"requirement_id": {"const": "fs2-models/ngc-pull-secret"}, "secret_name": {"const": "fs2-ngc-pull"}, "secret_type": {"const": "kubernetes.io/dockerconfigjson"}, "required_keys": {"const": [".dockerconfigjson"]}}}]},
+    "ngcRuntimeOutput": {"allOf": [{"$ref": "#/$defs/ngcOutput"}, {"properties": {"requirement_id": {"const": "fs2-models/ngc-runtime-secret"}, "secret_name": {"const": "fs2-ngc-runtime"}, "secret_type": {"const": "Opaque"}, "required_keys": {"const": ["NGC_API_KEY"]}}}]},
+    "disabledEsoBackend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "operator", "version", "provider", "foundation_crd_state", "status", "required_receipt_schema", "rendering", "cluster_secret_store", "static_service_account_keys", "default_service_account"],
+      "properties": {
+        "id": {"const": "external-secrets-nebius-mysterybox"},
+        "operator": {"const": "external-secrets"},
+        "version": {"const": "2.5.0"},
+        "provider": {"const": "nebiusmysterybox"},
+        "foundation_crd_state": {"const": "ineligible"},
+        "status": {"const": "disabled-until-separately-reviewed-eligible-provider-build-receipt"},
+        "required_receipt_schema": {"const": "fs2-serve.nebius.ai/external-secrets-provider-build-eligibility-receipt/v1"},
+        "rendering": {"const": "disabled"},
+        "cluster_secret_store": {"const": "forbidden"},
+        "static_service_account_keys": {"const": "forbidden"},
+        "default_service_account": {"const": "forbidden"}
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "api_version", "kind", "namespace", "name", "secret_type", "required_keys", "access_modes", "minimum_capacity_bytes", "required_state", "value_policy", "owner"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^fs2-(?:models|faststart)/[a-z0-9-]+$"},
+        "api_version": {"const": "v1"},
+        "kind": {"enum": ["Secret", "ServiceAccount", "PersistentVolumeClaim"]},
+        "namespace": {"enum": ["fs2-models", "fs2-faststart"]},
+        "name": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+        "secret_type": {"type": ["string", "null"]},
+        "required_keys": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "access_modes": {"type": "array", "uniqueItems": true, "items": {"enum": ["ReadWriteMany"]}},
+        "minimum_capacity_bytes": {"type": ["integer", "null"], "minimum": 1},
+        "required_state": {"enum": ["present", "Bound"]},
+        "value_policy": {"enum": ["metadata-only-values-suppressed", "not-applicable"]},
+        "owner": {"enum": ["platform-bootstrap", "platform-security-bootstrap"]}
+      }
+    }
+  }
+}

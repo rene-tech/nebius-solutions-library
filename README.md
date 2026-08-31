@@ -14,6 +14,17 @@ This repository is a curated collection of Terraform and Helm solutions designed
 
 ## Solutions
 
+### Inference
+
+[Kubernetes prepared for Inference](./k8s-inference/README.md)
+
+Deploys a staged inference platform on Nebius Managed Kubernetes from one
+Terraform configuration, with model-aware placement, scale-to-zero,
+observability, and authenticated HTTP and MCP endpoints. Its accelerator
+catalog documents every current Nebius GPU platform, while custom pool entries
+carry current or future platform and preset identifiers to live provider
+validation without a facade rewrite.
+
 ### Training
 
 [Kubernetes prepared for Training](./k8s-training/README.md)

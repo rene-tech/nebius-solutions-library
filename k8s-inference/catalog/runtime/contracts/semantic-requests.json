@@ -1,0 +1,173 @@
+{
+  "schema": "fs2-serve.nebius.ai/semantic-request-contracts/v1",
+  "contracts": {
+    "boltz2": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-newline/v1",
+      "invocation": {"operation": "predict", "protocol": "native", "method": "POST", "endpoint": "/biology/mit/boltz2/predict"},
+      "requests": [
+        {"id": "fs2-semantic-a", "payload_sha256": "378bf26b935c54ca8023273663b61fe8ac89608d536b3c51e9cd6b0b948d345c"},
+        {"id": "fs2-semantic-b", "payload_sha256": "370bd46c548395f5964e1e48c41e63fe0a412d323d3af611a27231fbc2e4f7c7"}
+      ],
+      "assets": []
+    },
+    "diffdock": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {"operation": "dock", "protocol": "native", "method": "POST", "endpoint": "/molecular-docking/diffdock/generate"},
+      "requests": [
+        {"id": "diffdock-butane-seed-1701", "payload_sha256": "6065706553b0c809327b326e5a15ee6db025600c66455e55863ebb644c910e09"},
+        {"id": "diffdock-pentane-seed-2303", "payload_sha256": "c0c32f9bab422dbe85aec757b8bb76b4bbabc38bec390a1ab51a51a0bf7881d0"}
+      ],
+      "assets": []
+    },
+    "evo2-40b": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-newline/v1",
+      "invocation": {"operation": "generate-sequence", "protocol": "native", "method": "POST", "endpoint": "/biology/arc/evo2/generate"},
+      "requests": [
+        {"id": "fs2-semantic-a", "payload_sha256": "a0443fcdeb6d0ed24c1cc835e8f28cb0071b62f8e8d1552880ac1cea580aa337"},
+        {"id": "fs2-semantic-b", "payload_sha256": "10f5b4b0e05e1214910e34aff36be770af2bcc1bbf0d48a5a4f0b369d49b590f"}
+      ],
+      "assets": []
+    },
+    "genmol": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {"operation": "generate-molecule", "protocol": "native", "method": "POST", "endpoint": "/generate"},
+      "requests": [
+        {"id": "qed", "payload_sha256": "050d9d440d6f09573d68b35a0fc26d3119407a6be22896293062752d822cfc3b"},
+        {"id": "logp", "payload_sha256": "c2ee9474d485d56430bdf3b6885c9bb0dfef4130eb080be9559e7eb372a462e1"}
+      ],
+      "assets": []
+    },
+    "glm-5-2-fp8": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {"operation": "chat", "protocol": "openai-chat", "method": "POST", "endpoint": "/v1/chat/completions"},
+      "requests": [
+        {"id": "glm52-nonthinking-exact", "payload_sha256": "1bb2644ffd7eb64c13eda0b86f6716e6198cd24405518c28187f89f463dd0ec7"},
+        {"id": "glm52-reasoning-distinct", "payload_sha256": "cb13c05aa37bfc90fa22eb54adf1bff34ce7163c47d8a5037302c993e2e1f290"}
+      ],
+      "assets": []
+    },
+    "molmim": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {"operation": "generate-molecule", "protocol": "native", "method": "POST", "endpoint": "/generate"},
+      "requests": [
+        {"id": "caffeine", "payload_sha256": "3a59acaf04e18fc5a7ed37b27ffdeee05f2542f23734d204bf487cc5f172a55e"},
+        {"id": "aspirin", "payload_sha256": "98ac4fccf35f4a9c3cbb3666b8d98218b24e7f2d5cff9cb174c76b2d242927da"}
+      ],
+      "assets": []
+    },
+    "msa-search-pdb70": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {"operation": "search-msa", "protocol": "native", "method": "POST", "endpoint": "/biology/colabfold/msa-search/predict"},
+      "requests": [
+        {"id": "fs2-semantic-a", "payload_sha256": "83f9faae601565ba28df7c62089e49f3dd1690003ae4576d3b5fab2cdfa9089f"},
+        {"id": "fs2-semantic-b", "payload_sha256": "791ca630ca19b80d2d76fa65956b44ec4c8dc9284d7150b5e9fbbd66cd43a963"}
+      ],
+      "assets": []
+    },
+    "nv-reason-cxr-3b": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {"operation": "analyze-image", "protocol": "openai-chat", "method": "POST", "endpoint": "/v1/chat/completions"},
+      "requests": [
+        {"id": "normal-pa", "payload_sha256": "f83d028f7b12122726f33e4048d35893bde1543f391a077f7b6cc7fa5f49a5ce"},
+        {"id": "left-pneumothorax", "payload_sha256": "888958b85746f93f1bdea8e2f2e683ad1ea368b09157d9df3f3ec503d01753de"}
+      ],
+      "assets": [
+        {"request_id": "normal-pa", "kind": "licensed-image", "uri": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Normal_posteroanterior_%28PA%29_chest_radiograph_%28X-ray%29.jpg", "content_sha256": "4cbbcf805291db949e4ff085ca3c7258b2823de21b2857ae684e6c91ff9a38a4", "bytes": 906335, "license": "CC0-1.0"},
+        {"request_id": "left-pneumothorax", "kind": "licensed-image", "uri": "https://upload.wikimedia.org/wikipedia/commons/2/2f/Pneumothorax_CXR.jpg", "content_sha256": "f36d1809cc50c920818d577041963d8d6ec0036ab3928db92264ffce80053f35", "bytes": 144679, "license": "CC-BY-SA-2.5"}
+      ]
+    },
+    "nv-segment-ct": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {"operation": "segment-ct", "protocol": "native", "method": "POST", "endpoint": "/segment"},
+      "requests": [
+        {"id": "centered-sphere-r20", "payload_sha256": "22356103ec58e1155720440c8e328a01c3e2f8cae4e2bf3623138d228591ba43"},
+        {"id": "centered-sphere-r24", "payload_sha256": "ae71a66865a5033cce594bc8eb72d218fc5c0da5dfef79b3224cac289d08d480"}
+      ],
+      "assets": []
+    },
+    "openfold2": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-newline/v1",
+      "invocation": {"operation": "predict", "protocol": "native", "method": "POST", "endpoint": "/biology/openfold/openfold2/predict-structure-from-msa-and-template"},
+      "requests": [
+        {"id": "fs2-semantic-a", "payload_sha256": "b0c04625784e85cb4bcb718d9a715e4716758ec041cdf1b6acc88af65645979e"},
+        {"id": "fs2-semantic-b", "payload_sha256": "bca1105039bcda1fa9c5e318ca24458500ab932ade45df5bda24d4931a4510c5"}
+      ],
+      "assets": []
+    },
+    "openfold3": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {"operation": "predict", "protocol": "native", "method": "POST", "endpoint": "/biology/openfold/openfold3/predict"},
+      "requests": [
+        {"id": "fs2-semantic-a", "payload_sha256": "4b75205c8ce050583953916201f70206f99c98cffde483dbaf4b80afa56f5529"},
+        {"id": "fs2-semantic-b", "payload_sha256": "76dcf05c114aed09b51e5f9a5663736885ce57ea806ebe0f27f4bf131c8931df"}
+      ],
+      "assets": []
+    },
+    "proteinmpnn": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {"operation": "design-protein", "protocol": "native", "method": "POST", "endpoint": "/biology/ipd/proteinmpnn/predict"},
+      "requests": [
+        {"id": "fs2-semantic-a", "payload_sha256": "7a76bc93489bd4347d0f109084fe53d9b104c81f49d40953f9a606c0d3adf48d"},
+        {"id": "fs2-semantic-b", "payload_sha256": "96369e247d028e580812f12a859384d0bdf9d8d2301a8ff35949fa0be91a3e16"}
+      ],
+      "assets": []
+    },
+    "qwen3-8b": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {"operation": "chat", "protocol": "openai-chat", "method": "POST", "endpoint": "/v1/chat/completions"},
+      "requests": [
+        {"id": "qwen3-fs2-first-exact", "payload_sha256": "8e626ba27e7294ac8d4958b010fca73d3c2b0c94be9fc89e0a4d43e201739a5e"},
+        {"id": "qwen3-fs2-second-exact", "payload_sha256": "73daad209504822959186eef2ec4d559650aba1d6c20cc38377c134251a530d7"}
+      ],
+      "assets": []
+    },
+    "rfdiffusion": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {"operation": "generate-backbone", "protocol": "native", "method": "POST", "endpoint": "/biology/ipd/rfdiffusion/generate"},
+      "requests": [
+        {"id": "fs2-semantic-a", "payload_sha256": "da696caf8aba3511e63df5a293622e91b4c063f1593c60038bedca16d4865b2d"},
+        {"id": "fs2-semantic-b", "payload_sha256": "8fa20730e48a66c62fc5d095b4d26afac00cf7c4768e59300b95e447bc200c3c"}
+      ],
+      "assets": []
+    },
+    "sdxl": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {"operation": "generate-image", "protocol": "native", "method": "POST", "endpoint": "/generate"},
+      "requests": [
+        {"id": "sdxl-phase1-green-mountain-seed-2407", "payload_sha256": "0b24e0074ae0814a7157afe5c26c51c31cb8d4b89c85a66f39f9b370421e685e"},
+        {"id": "sdxl-fs2-silver-moon-seed-2408", "payload_sha256": "97d662a57345fbe5723cd6d6d9b791fe9faf05c7eed9e1100cf2c293dc6033da"}
+      ],
+      "assets": []
+    }
+  }
+}

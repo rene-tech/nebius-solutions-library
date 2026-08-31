@@ -1,0 +1,649 @@
+{
+  "contracts": {
+    "boltz2": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "6161e54b35e711b91017f06749db5140e4191199b4f94b22c113167ba76f50a6",
+      "model_digest": "22514901fdf361788135fb593a027d9a4574d3073b9aa3637432faaeb954a54e",
+      "policy_profile": "http-nim-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "timeout_seconds": 1800
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps.nvidia.com/v1alpha1",
+        "kind": "NIMService",
+        "name": "boltz2",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "boltz2"
+        },
+        "template_identity_sha256": "3e34fd2bc2da7c09d58638407814bef153af515a583d4ba2d1bb1c889b63fd36",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "diffdock": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "3712edfec38a4482c665dcd147fa4d679a87b593a19c241cba34d127cc02cdd4",
+      "model_digest": "ddaa06d5f7042f6a1c2d9f0ee27f37f172bdaafe8758c74e991accd52ffc0ced",
+      "policy_profile": "http-nim-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/readyz",
+        "timeout_seconds": 900
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps.nvidia.com/v1alpha1",
+        "kind": "NIMService",
+        "name": "diffdock",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "diffdock"
+        },
+        "template_identity_sha256": "f395bc47cef7177e6ee1e188af57e1e5c5eb4e2f2582d4acfca7061a1e4f8260",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "evo2-40b": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "0ca5941f1fab17b7fa643b4244ad2cd62d669f3768fd27e03a52f066e1bec99c",
+      "model_digest": "f0981c1d42b4b42712eb32173296ad81f8f8fb94a7d031596b6f7b048e13fed0",
+      "policy_profile": "http-nim-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "timeout_seconds": 1800
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps.nvidia.com/v1alpha1",
+        "kind": "NIMService",
+        "name": "evo2-40b",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "evo2-40b"
+        },
+        "template_identity_sha256": "36ddee7f292ff585a98c5a4e6cae88acf30079db7e4344dc3b683b898c2e4213",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "genmol": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "808d82534673ddef9dab5f3a94e63fd253dc0ca2a7baa6f0096155866259ecfe",
+      "model_digest": "854d5899772d8aa7588a6ba8396de2cb57ecc59e5b2d21c50b4994d690938470",
+      "policy_profile": "http-nim-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "timeout_seconds": 900
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps.nvidia.com/v1alpha1",
+        "kind": "NIMService",
+        "name": "genmol",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "genmol"
+        },
+        "template_identity_sha256": "dd68acd59b1ec67c0df12132d5758e1e449e6935d27872e76073c88a5fd6e8ea",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "glm-5-2-fp8": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "38724bdbd0180e0f99350bb86095e07488b9dc4905ab0dd6a7da424b4e411199",
+      "model_digest": "6f594bbbe1b27c6ee2a6606207972385a6317c9dcadf21cc3211bd46bf6eaa11",
+      "policy_profile": "http-deployment-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/health",
+        "timeout_seconds": 3600
+      },
+      "resource_placement_identity_sha256": "cb062b9de85c31383e5a8ccd31006fd9f3e6c110f0eb8ba8d33b30b9af0b1be5",
+      "target": {
+        "api_version": "apps/v1",
+        "kind": "Deployment",
+        "name": "glm-5-2-fp8",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "glm-5-2-fp8"
+        },
+        "template_identity_sha256": "4be76e591734a902d3babcbcc4d8fa00ac919e7cbb04055cbc3e7aba37faa44e",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "molmim": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "1f3ef2c58f5168c954ea2cd12017c46f6e5973fc5d26ff2fc94b037f5292a706",
+      "model_digest": "76e8a6af25df64e431146e31d289ac4a9fb723802fcc923bca3380a57bfef3e5",
+      "policy_profile": "http-nim-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "timeout_seconds": 900
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps.nvidia.com/v1alpha1",
+        "kind": "NIMService",
+        "name": "molmim",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "molmim"
+        },
+        "template_identity_sha256": "ef30d26f8432706a98ab1a511efce8a7a4a0013bb5bb21be93dcdbfa8e50345d",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "msa-search-pdb70": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "91dd451836348f491198b577c6eb8864edfddfa4d2728b8e1a374ae4b853276b",
+      "model_digest": "10bc5d9a60beff27dc9c034d97adf1173b08f3c01d99237d441f3b83c2b52338",
+      "policy_profile": "http-nim-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "timeout_seconds": 1800
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps.nvidia.com/v1alpha1",
+        "kind": "NIMService",
+        "name": "msa-search-pdb70",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "msa-search-pdb70"
+        },
+        "template_identity_sha256": "4c8f3cf955c381f21035f91a2d82e566ccc3d1282a61a256ad8db4e271d05dc6",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "nv-reason-cxr-3b": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "87c25987f25843a4797745bd43c457c768771a7b471fdc245c16ab51ef74c83a",
+      "model_digest": "d4602f7c0b69b9fc31d8517d5ab3f3e84802c9cbcaaf99f7457d03b8e3df8e5f",
+      "policy_profile": "http-deployment-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/health",
+        "timeout_seconds": 1200
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps/v1",
+        "kind": "Deployment",
+        "name": "nv-reason-cxr-3b",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "nv-reason-cxr-3b"
+        },
+        "template_identity_sha256": "4909393aaaa9109b037d9c879882ccdff483870785c96110611d2787525cedfd",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "nv-segment-ct": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "7cd5e4b04964d3365249d248307c30891a414cb8eb5b94714308b5756dba505b",
+      "model_digest": "da9e19460a6d71249787102798583b874305e9a75cff8eb76c161f411cc5bcc3",
+      "policy_profile": "http-deployment-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/readyz",
+        "timeout_seconds": 1200
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps/v1",
+        "kind": "Deployment",
+        "name": "nv-segment-ct",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "nv-segment-ct"
+        },
+        "template_identity_sha256": "3223a029c0f6dd068128c35c9781062569a59d10d92169b631529c1ae64f5982",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "openfold2": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "f83fc9f485ca3a0bf4a37d825bad791963de16b4acd0635708b70e3b8d7c8b8a",
+      "model_digest": "3252ba846263f156ab270156c668c261bacfb68579f037e60f2196d010179160",
+      "policy_profile": "http-nim-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "timeout_seconds": 1800
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps.nvidia.com/v1alpha1",
+        "kind": "NIMService",
+        "name": "openfold2",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "openfold2"
+        },
+        "template_identity_sha256": "da923f1aedc74c4d7fc22ce653e0fc1e8667b395720e1bda8767f83c8b715caa",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "openfold3": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "e72f9780c3dd295d33f4e4162111f06561c4ee27daaed4b662f7aa8ef52ccfed",
+      "model_digest": "3566c058aa794ac7291966292d5eb9ad7242a39f82c7028dde7cb49506c82527",
+      "policy_profile": "http-nim-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "timeout_seconds": 900
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps.nvidia.com/v1alpha1",
+        "kind": "NIMService",
+        "name": "openfold3",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "openfold3"
+        },
+        "template_identity_sha256": "7cfce0e75f5d8efded71e62408743c29933e338da7b5137bd372656a32918aaf",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "proteinmpnn": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "bae3f95a1acfd015c610275c1a33e165890f82e0a1e0f9011514f73c8a11045f",
+      "model_digest": "4d7e3d1e517e490f735e88f6428e6c1589ad8212616f963051444f5098fea9fd",
+      "policy_profile": "http-nim-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/readyz",
+        "timeout_seconds": 900
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps.nvidia.com/v1alpha1",
+        "kind": "NIMService",
+        "name": "proteinmpnn",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "proteinmpnn"
+        },
+        "template_identity_sha256": "773e242a455bfdf16e9dcb180079a26a88987a3bef6a6cd61f5d196a608dcff3",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "qwen3-8b": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "8031f8d4e22f96d9c326eed80b99d64036eb7e6e0cc04f9332de64e48a5fb358",
+      "model_digest": "432ed4156b6018d3b1937ce5ea96d1ab47956fc4b8dcd660190c4bc647d5713b",
+      "policy_profile": "http-deployment-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/health",
+        "timeout_seconds": 900
+      },
+      "resource_placement_identity_sha256": "03560d641fc4dbebce5d7dccf486e5efe3c692dad0ae1bf8cc0032cfbd2c69bc",
+      "target": {
+        "api_version": "apps/v1",
+        "kind": "Deployment",
+        "name": "qwen3-8b",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "qwen3-8b"
+        },
+        "template_identity_sha256": "e39cdd5b062dca3821a835031c2e9b1a04a887cb99071edd1a7aa128ba9e9525",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "rfdiffusion": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "5aa4218e2e508841b704a508eed0725a941f086efd4afa2cbfa1cc934f32c022",
+      "model_digest": "940df8e3dc345d17b3de2e8081cc966c84e8674536d140af022fa93ee239fcd1",
+      "policy_profile": "http-nim-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "timeout_seconds": 900
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps.nvidia.com/v1alpha1",
+        "kind": "NIMService",
+        "name": "rfdiffusion",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "rfdiffusion"
+        },
+        "template_identity_sha256": "869393bd0352ddd128dc897f86f6869d9f273ba4d31b2efeb27ef755c75ec583",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
+    "sdxl": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "a92d974710e039def56ad1999bf073b175ac00851287a90f06c3398844213bc0",
+      "model_digest": "0c4b9eeecb4e74b25e708d97abca6315b359ae005da175b90c7f5c66fc9bb114",
+      "policy_profile": "http-deployment-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/readyz",
+        "timeout_seconds": 1200
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps/v1",
+        "kind": "Deployment",
+        "name": "sdxl",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "sdxl"
+        },
+        "template_identity_sha256": "3fb0bd9d959b3dc7b4222106c731a4190c155186160c6daf1520b5de5679b852",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    }
+  },
+  "controller_boundary": {
+    "activation_controller": {
+      "deployment_name": "fs2-serve-control-plane-activation",
+      "leader_lease_name": "fs2-serve-activation-controller",
+      "leader_role_name": "fs2-serve-control-plane-activation-leader",
+      "leader_role_namespace": "fs2-system",
+      "namespace": "fs2-system",
+      "service_account_name": "fs2-model-activation-controller",
+      "target_role_name": "fs2-serve-control-plane-activation-targets",
+      "target_role_namespace": "fs2-models"
+    },
+    "activation_intent_interface": {
+      "activation_subject_fields": [
+        "intent_id",
+        "operation_id",
+        "operation_attempt",
+        "model_id",
+        "model_revision",
+        "binding_digest",
+        "action",
+        "subject_sha256",
+        "store_contract_sha256"
+      ],
+      "claim_fence_fields": [
+        "fence_operation_id",
+        "controller_id",
+        "previous_fencing_token",
+        "fencing_token",
+        "database_now",
+        "claim_started_at",
+        "claim_lease_expires_at",
+        "leader_lease_uid",
+        "leader_lease_resource_version",
+        "leader_lease_holder_identity",
+        "submitter_service_account_uid",
+        "claim_owner_service_account_uid"
+      ],
+      "claim_owner": "fs2-system/fs2-model-activation-controller",
+      "completion_subject_fields": [
+        "scale_contract_digest",
+        "target_uid",
+        "target_resource_version",
+        "target_observed_generation",
+        "target_template_digest",
+        "target_active"
+      ],
+      "database_principals": {
+        "claim_owner": {
+          "database_role": "fs2_activation_claim_owner",
+          "denied_grants": [
+            "DELETE:fs2_activation_intents",
+            "DDL:*"
+          ],
+          "grants": [
+            "EXECUTE:fs2_claim_activation_intent",
+            "EXECUTE:fs2_complete_activation_intent",
+            "INSERT:fs2_activation_events",
+            "SELECT:fs2_activation_intents",
+            "SELECT:fs2_activation_target_state"
+          ],
+          "kubernetes_subject": "system:serviceaccount:fs2-system:fs2-model-activation-controller"
+        },
+        "submitter": {
+          "database_role": "fs2_activation_submitter",
+          "denied_grants": [
+            "CLAIM:fs2_activation_intents",
+            "DELETE:fs2_activation_intents",
+            "DDL:*",
+            "UPDATE:fs2_activation_target_state"
+          ],
+          "grants": [
+            "EXECUTE:fs2_submit_activation_intent",
+            "SELECT_STATUS_ONLY:fs2_activation_intents"
+          ],
+          "kubernetes_subject": "system:serviceaccount:fs2-system:fs2-serve-control-plane"
+        }
+      },
+      "event_table": "fs2_activation_events",
+      "intent_table": "fs2_activation_intents",
+      "leader_lease_fields": [
+        "leader_lease_uid",
+        "leader_lease_resource_version",
+        "leader_lease_holder_identity",
+        "leader_lease_renew_time",
+        "leader_lease_duration_seconds"
+      ],
+      "model_lock": "postgres-advisory-xact-lock-plus-target-state-cas",
+      "schema": "fs2-serve.nebius.ai/postgres-activation-intent/v3",
+      "submission_owner": "fs2-system/fs2-serve-control-plane",
+      "target_state_table": "fs2_activation_target_state",
+      "transport": "postgresql-durable-row"
+    },
+    "activation_store": {
+      "credential_delivery": {
+        "eso": "disabled-until-reviewed-eligible-provider-build-receipt",
+        "mode": "observed-pre-created-kubernetes-secrets",
+        "secrets": {
+          "claim_owner": {
+            "database_role": "fs2_activation_claim_owner",
+            "name": "fs2-activation-claim-owner-db",
+            "namespace": "fs2-system",
+            "required_keys": [
+              "dsn"
+            ],
+            "service_account_name": "fs2-model-activation-controller",
+            "type": "Opaque"
+          },
+          "submitter": {
+            "database_role": "fs2_activation_submitter",
+            "name": "fs2-activation-submitter-db",
+            "namespace": "fs2-system",
+            "required_keys": [
+              "dsn"
+            ],
+            "service_account_name": "fs2-serve-control-plane",
+            "type": "Opaque"
+          }
+        },
+        "values": "suppressed"
+      },
+      "database_clock": "clock_timestamp",
+      "ddl": {
+        "path": "sql/0001_activation_store.sql",
+        "sha256": "b90fa9b5317b1abe40350b55fab0c8aeb35d7a0d6364454f19eda7c0475e5053"
+      },
+      "fencing": {
+        "allocation": "target-state-row-cas-plus-advisory-xact-lock",
+        "claim_lease_clock": "database",
+        "completion": "db-clock-token-controller-lease-cas",
+        "idempotent_replay": "same-intent-and-subject-or-reject",
+        "scope": "monotonic-per-model",
+        "stale_token_action": "reject"
+      },
+      "functions": {
+        "claim": "fs2_claim_activation_intent",
+        "complete": "fs2_complete_activation_intent",
+        "submit": "fs2_submit_activation_intent"
+      },
+      "pod_identity": {
+        "claim_owner_deployment": "fs2-serve-control-plane-activation",
+        "namespace": "fs2-system",
+        "source": "api-server-observed-pod-uid-owner-uid-service-account-uid",
+        "submitter_deployment": "fs2-serve-control-plane"
+      },
+      "schema": "fs2-serve.nebius.ai/postgres-activation-store/v1"
+    },
+    "authorization": "postgres-role-grants-plus-projected-ksa-lease-operation-fence",
+    "batch_controller": {
+      "namespace": "fs2-models",
+      "service_account_name": "batch-service-account"
+    },
+    "gateway_api": {
+      "namespace": "fs2-system",
+      "service_account_name": "fs2-serve-control-plane"
+    },
+    "gateway_kubernetes_mutation": "forbidden",
+    "scope": "namespaced-exact-subject-only"
+  },
+  "policy_profiles": {
+    "batch-job-v1": {
+      "cleanup": {
+        "expected_resource_kinds": [
+          "Job",
+          "Pod"
+        ],
+        "expected_resource_uids_required": true,
+        "foreign_uid_action": "forbidden",
+        "retained_cache_action": "preserve-content-addressed",
+        "uid_fence_required": true,
+        "zero_active_assignments_required": true,
+        "zero_gpu_clients_required": true
+      },
+      "cleanup_timeout_seconds": 600,
+      "cooldown_seconds": 300,
+      "desired_floor": 0,
+      "desired_max": 1,
+      "drain_timeout_seconds": 60,
+      "node_scaler_owner": "nebius-managed-node-group-autoscaler",
+      "preemption": {
+        "new_admissions": "stop",
+        "notice_action": "mark-unready-and-drain",
+        "retain_all_attempts": true,
+        "retry_policy": "idempotent-only-within-deadline"
+      },
+      "replica_scaler_owner": "fs2-model-batch-controller",
+      "scale_to_zero": true
+    },
+    "disabled-v1": {
+      "cleanup": {
+        "expected_resource_kinds": [],
+        "expected_resource_uids_required": true,
+        "foreign_uid_action": "forbidden",
+        "retained_cache_action": "preserve-content-addressed",
+        "uid_fence_required": true,
+        "zero_active_assignments_required": true,
+        "zero_gpu_clients_required": true
+      },
+      "cleanup_timeout_seconds": 0,
+      "cooldown_seconds": 0,
+      "desired_floor": 0,
+      "desired_max": 0,
+      "drain_timeout_seconds": 0,
+      "node_scaler_owner": "nebius-managed-node-group-autoscaler",
+      "preemption": {
+        "new_admissions": "stop",
+        "notice_action": "mark-unready-and-drain",
+        "retain_all_attempts": true,
+        "retry_policy": "idempotent-only-within-deadline"
+      },
+      "replica_scaler_owner": "none",
+      "scale_to_zero": false
+    },
+    "http-deployment-zero-to-one-v1": {
+      "cleanup": {
+        "expected_resource_kinds": [
+          "Deployment",
+          "Pod"
+        ],
+        "expected_resource_uids_required": true,
+        "foreign_uid_action": "forbidden",
+        "retained_cache_action": "preserve-content-addressed",
+        "uid_fence_required": true,
+        "zero_active_assignments_required": true,
+        "zero_gpu_clients_required": true
+      },
+      "cleanup_timeout_seconds": 600,
+      "cooldown_seconds": 300,
+      "desired_floor": 0,
+      "desired_max": 1,
+      "drain_timeout_seconds": 60,
+      "node_scaler_owner": "nebius-managed-node-group-autoscaler",
+      "preemption": {
+        "new_admissions": "stop",
+        "notice_action": "mark-unready-and-drain",
+        "retain_all_attempts": true,
+        "retry_policy": "idempotent-only-within-deadline"
+      },
+      "replica_scaler_owner": "fs2-model-activation-controller",
+      "scale_to_zero": true
+    },
+    "http-nim-zero-to-one-v1": {
+      "cleanup": {
+        "expected_resource_kinds": [
+          "NIMService",
+          "Pod"
+        ],
+        "expected_resource_uids_required": true,
+        "foreign_uid_action": "forbidden",
+        "retained_cache_action": "preserve-content-addressed",
+        "uid_fence_required": true,
+        "zero_active_assignments_required": true,
+        "zero_gpu_clients_required": true
+      },
+      "cleanup_timeout_seconds": 600,
+      "cooldown_seconds": 300,
+      "desired_floor": 0,
+      "desired_max": 1,
+      "drain_timeout_seconds": 60,
+      "node_scaler_owner": "nebius-managed-node-group-autoscaler",
+      "preemption": {
+        "new_admissions": "stop",
+        "notice_action": "mark-unready-and-drain",
+        "retain_all_attempts": true,
+        "retry_policy": "idempotent-only-within-deadline"
+      },
+      "replica_scaler_owner": "fs2-model-activation-controller",
+      "scale_to_zero": true
+    }
+  },
+  "schema": "fs2-serve.nebius.ai/scale-contracts/v6"
+}

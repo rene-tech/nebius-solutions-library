@@ -1,0 +1,93 @@
+command:
+  name: otelcol-contrib
+config:
+  connectors:
+    spanmetrics:
+      aggregation_cardinality_limit: 1000
+      aggregation_temporality: AGGREGATION_TEMPORALITY_CUMULATIVE
+      histogram:
+        explicit:
+          buckets: [100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 30s, 60s]
+  exporters:
+    debug: null
+    otlphttp/loki:
+      compression: gzip
+      endpoint: http://fs2-loki.fs2-observability.svc.cluster.local:3100/otlp
+      retry_on_failure: {enabled: true, initial_interval: 1s, max_elapsed_time: 60s, max_interval: 10s}
+      sending_queue: {enabled: true, queue_size: 2048}
+    prometheus:
+      enable_open_metrics: true
+      endpoint: "${env:MY_POD_IP}:8889"
+      resource_to_telemetry_conversion: {enabled: true}
+  extensions:
+    health_check: {endpoint: "${env:MY_POD_IP}:13133"}
+  processors:
+    batch: {send_batch_size: 1024, timeout: 5s}
+    memory_limiter: {check_interval: 5s, limit_percentage: 75, spike_limit_percentage: 20}
+    resource/sanitize:
+      attributes:
+        - {action: delete, key: enduser.id}
+        - {action: delete, key: user.id}
+        - {action: delete, key: tenant.id}
+        - {action: delete, key: api.key.id}
+        - {action: delete, key: http.request.header.authorization}
+        - {action: delete, key: http.response.header.set-cookie}
+  receivers:
+    jaeger: null
+    otlp:
+      protocols:
+        grpc: {endpoint: "${env:MY_POD_IP}:4317"}
+        http: {endpoint: "${env:MY_POD_IP}:4318"}
+    prometheus: null
+    zipkin: null
+  service:
+    extensions: [health_check]
+    pipelines:
+      logs:
+        exporters: [otlphttp/loki]
+        processors: [memory_limiter, resource/sanitize, batch]
+        receivers: [otlp]
+      metrics:
+        exporters: [prometheus]
+        processors: [memory_limiter, resource/sanitize, batch]
+        receivers: [otlp, spanmetrics]
+      traces:
+        exporters: [spanmetrics]
+        processors: [memory_limiter, resource/sanitize, batch]
+        receivers: [otlp]
+fullnameOverride: fs2-otel-gateway
+image:
+  repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+  tag: 0.159.0
+mode: deployment
+nodeSelector:
+  workload.fs2.nebius/system: "true"
+podDisruptionBudget: {enabled: true, minAvailable: 1}
+podSecurityContext:
+  fsGroup: 10001
+  runAsGroup: 10001
+  runAsNonRoot: true
+  runAsUser: 10001
+  seccompProfile: {type: RuntimeDefault}
+ports:
+  jaeger-compact: {enabled: false}
+  jaeger-grpc: {enabled: false}
+  jaeger-thrift: {enabled: false}
+  metrics: {containerPort: 8888, enabled: true, protocol: TCP, servicePort: 8888}
+  otlp: {containerPort: 4317, enabled: true, protocol: TCP, servicePort: 4317}
+  otlp-http: {containerPort: 4318, enabled: true, protocol: TCP, servicePort: 4318}
+  prometheus: {containerPort: 8889, enabled: true, protocol: TCP, servicePort: 8889}
+  zipkin: {enabled: false}
+replicaCount: 2
+resources:
+  limits: {cpu: "1", memory: 1Gi}
+  requests: {cpu: 100m, memory: 256Mi}
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities: {drop: [ALL]}
+  readOnlyRootFilesystem: true
+serviceMonitor:
+  enabled: true
+  metricsEndpoints:
+    - {interval: 30s, port: metrics}
+    - {interval: 30s, port: prometheus}

@@ -1,0 +1,22 @@
+{
+  "schema": "fs2-serve.nebius.ai/full-catalog-runtime-log-marker-contract/v1",
+  "default": "discovery-only-no-phase-admission",
+  "source_contracts": {
+    "matrix": "cold-start-optimization-matrix.json",
+    "routes": "../../components/control-plane/contracts/all-models-live-services.json"
+  },
+  "models": {
+    "evo2-40b": {
+      "runtime_image_digest": "sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c",
+      "parser": "exact-json-event-after-kubernetes-rfc3339-prefix",
+      "rules": [
+        {"container": "materialize-checkpoint", "event": "artifact-localization-start"},
+        {"container": "materialize-checkpoint", "event": "artifact-localization-verified"},
+        {"container": "model", "event": "weight-load-start"},
+        {"container": "model", "event": "weight-load-end"},
+        {"container": "model", "event": "engine-build-or-compile-start"},
+        {"container": "model", "event": "engine-build-or-compile-end"}
+      ]
+    }
+  }
+}

@@ -1,0 +1,131 @@
+{{- if and .Values.adminConsole.httpRoute.enabled (not .Values.adminConsole.enabled) }}
+{{- fail "adminConsole.enabled is required when adminConsole.httpRoute.enabled=true" }}
+{{- end }}
+{{- if .Values.adminConsole.enabled }}
+{{- if not .Values.adminConsole.image.repository }}
+{{- fail "adminConsole.image.repository is required when adminConsole.enabled=true" }}
+{{- end }}
+{{- if or (contains "@" .Values.adminConsole.image.repository) (regexMatch ":[^/]+$" .Values.adminConsole.image.repository) }}
+{{- fail "adminConsole.image.repository must not contain a tag or digest" }}
+{{- end }}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .Values.adminConsole.image.digest) }}
+{{- fail "adminConsole.image.digest must be a non-empty sha256 digest" }}
+{{- end }}
+{{- if not (regexMatch "^[a-f0-9]{40}$" .Values.adminConsole.provenance.sourceCommit) }}
+{{- fail "adminConsole.provenance.sourceCommit must be a full Git commit" }}
+{{- end }}
+{{- if not (regexMatch "^[a-f0-9]{40}$" .Values.adminConsole.provenance.sourceTree) }}
+{{- fail "adminConsole.provenance.sourceTree must be a full Git tree" }}
+{{- end }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" .Values.adminConsole.provenance.sbomSha256) }}
+{{- fail "adminConsole.provenance.sbomSha256 must be a SHA-256 value" }}
+{{- end }}
+{{- if gt (.Values.adminConsole.podDisruptionBudget.minAvailable | int) (.Values.adminConsole.replicaCount | int) }}
+{{- fail "adminConsole.podDisruptionBudget.minAvailable cannot exceed replicaCount" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fs2-serve.adminConsoleFullname" . }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin-console
+spec:
+  replicas: {{ .Values.adminConsole.replicaCount }}
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.adminConsoleSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.adminConsoleSelectorLabels" . | nindent 8 }}
+      annotations:
+        {{- with .Values.adminConsole.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        fs2.nebius.ai/admin-image-digest: {{ .Values.adminConsole.image.digest | quote }}
+        fs2.nebius.ai/admin-source-commit: {{ .Values.adminConsole.provenance.sourceCommit | quote }}
+        fs2.nebius.ai/admin-source-tree: {{ .Values.adminConsole.provenance.sourceTree | quote }}
+        fs2.nebius.ai/admin-sbom-sha256: {{ .Values.adminConsole.provenance.sbomSha256 | quote }}
+        fs2.nebius.ai/admin-sbom-format: {{ .Values.adminConsole.provenance.sbomFormat | quote }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.adminConsole.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: admin-console
+          image: {{ include "fs2-serve.adminConsoleImage" . }}
+          imagePullPolicy: {{ .Values.adminConsole.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.adminConsole.service.port }}
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.adminConsole.resources | nindent 12 }}
+          volumeMounts:
+            - name: runtime-tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: runtime-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+      {{- with .Values.adminConsole.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.adminConsole.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.adminConsole.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

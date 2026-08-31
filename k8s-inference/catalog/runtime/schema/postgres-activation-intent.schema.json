@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/postgres-activation-intent/v3",
+  "title": "fs2-serve durable PostgreSQL activation intent claim v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "intent_id", "operation_id", "operation_attempt", "fence_operation_id", "model_id", "model_revision", "binding_digest", "action", "subject_sha256", "store_contract_sha256", "submitter_service_account_uid", "submitter_database_role", "claim_owner_service_account_uid", "claim_owner_database_role", "controller_id", "previous_fencing_token", "fencing_token", "database_now", "claim_started_at", "leader_lease_uid", "leader_lease_resource_version", "leader_lease_holder_identity", "claim_lease_expires_at"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/postgres-activation-intent/v3"},
+    "intent_id": {"type": "string", "format": "uuid"},
+    "operation_id": {"type": ["string", "null"], "format": "uuid"},
+    "operation_attempt": {"type": "integer", "minimum": 0, "maximum": 10},
+    "fence_operation_id": {"type": "string", "format": "uuid"},
+    "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "model_revision": {"type": "string", "minLength": 1, "maxLength": 256},
+    "binding_digest": {"$ref": "#/$defs/digest"},
+    "action": {"enum": ["activate", "deactivate"]},
+    "subject_sha256": {"$ref": "#/$defs/digest"},
+    "store_contract_sha256": {"$ref": "#/$defs/digest"},
+    "submitter_service_account_uid": {"$ref": "#/$defs/uid"},
+    "submitter_database_role": {"const": "fs2_activation_submitter"},
+    "claim_owner_service_account_uid": {"$ref": "#/$defs/uid"},
+    "claim_owner_database_role": {"const": "fs2_activation_claim_owner"},
+    "controller_id": {"type": "string", "minLength": 1, "maxLength": 200},
+    "previous_fencing_token": {"type": "integer", "minimum": 0},
+    "fencing_token": {"type": "integer", "minimum": 1},
+    "database_now": {"$ref": "#/$defs/time"},
+    "claim_started_at": {"$ref": "#/$defs/time"},
+    "leader_lease_uid": {"$ref": "#/$defs/uid"},
+    "leader_lease_resource_version": {"type": "string", "minLength": 1},
+    "leader_lease_holder_identity": {"type": "string", "minLength": 1, "maxLength": 200},
+    "claim_lease_expires_at": {"$ref": "#/$defs/time"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+    "time": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"}
+  },
+  "allOf": [
+    {"if": {"properties": {"action": {"const": "activate"}}}, "then": {"properties": {"operation_id": {"type": "string", "format": "uuid"}}}},
+    {"if": {"properties": {"action": {"const": "deactivate"}}}, "then": {"properties": {"operation_id": {"type": "null"}, "operation_attempt": {"const": 0}}}}
+  ]
+}

@@ -1,0 +1,182 @@
+fullnameOverride: fs2-monitoring
+
+commonLabels:
+  app.kubernetes.io/part-of: fs2-serve
+  observability.fs2.nebius/owner: fs2-serve-lean-observability-live
+
+alertmanager:
+  enabled: false
+
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheusOperator:
+  admissionWebhooks:
+    enabled: true
+    patch:
+      nodeSelector:
+        workload.fs2.nebius/system: "true"
+  nodeSelector:
+    workload.fs2.nebius/system: "true"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  prometheusConfigReloader:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 32Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+prometheus:
+  service:
+    type: ClusterIP
+  prometheusSpec:
+    replicas: 1
+    retention: 15d
+    retentionSize: 45GB
+    nodeSelector:
+      workload.fs2.nebius/system: "true"
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: "4"
+        memory: 8Gi
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 2000
+      fsGroup: 2000
+      seccompProfile:
+        type: RuntimeDefault
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - fs2-observability
+            - fs2-system
+            - fs2-models
+            - fs2-data
+            - cnpg-system
+            - kube-system
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - fs2-observability
+            - fs2-system
+            - fs2-models
+            - fs2-data
+            - cnpg-system
+            - kube-system
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector: {}
+    ruleNamespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - fs2-observability
+            - fs2-system
+            - fs2-data
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: compute-csi-default-sc
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 50Gi
+
+grafana:
+  replicas: 1
+  admin:
+    existingSecret: fs2-grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  service:
+    type: ClusterIP
+  nodeSelector:
+    workload.fs2.nebius/system: "true"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  persistence:
+    enabled: true
+    storageClassName: compute-csi-default-sc
+    accessModes: [ReadWriteOnce]
+    size: 10Gi
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+      label: grafana_dashboard
+      labelValue: "1"
+    datasources:
+      enabled: true
+      searchNamespace: ALL
+      label: grafana_datasource
+      labelValue: "1"
+  additionalDataSources:
+    - name: Loki
+      uid: loki
+      type: loki
+      access: proxy
+      url: http://fs2-loki.fs2-observability.svc.cluster.local:3100
+      isDefault: false
+      editable: false
+
+kube-state-metrics:
+  nodeSelector:
+    workload.fs2.nebius/system: "true"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+prometheus-node-exporter:
+  tolerations:
+    - operator: Exists
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeProxy: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false

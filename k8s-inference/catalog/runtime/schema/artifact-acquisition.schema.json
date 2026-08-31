@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/artifact-acquisition/v5",
+  "title": "fs2-serve exact artifact acquisition plans",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "network_policy", "legal_reviews", "qualification_priority", "plans", "helper_images"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/artifact-acquisition/v5"},
+    "network_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runner_ngc_access", "ngc_validation_scope", "hf_access"],
+      "properties": {
+        "runner_ngc_access": {"const": "waf-blocked"},
+        "ngc_validation_scope": {"const": "target-node-only"},
+        "hf_access": {"const": "public-exact-revision-only"}
+      }
+    },
+    "legal_reviews": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+      "additionalProperties": {"$ref": "#/$defs/legalReview"}
+    },
+    "qualification_priority": {"$ref": "#/$defs/qualificationPriority"},
+    "plans": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+      "additionalProperties": {"$ref": "#/$defs/plan"}
+    },
+    "helper_images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fs2-acquisition-helper"],
+      "properties": {
+        "fs2-acquisition-helper": {"$ref": "#/$defs/helperImage"}
+      }
+    }
+  },
+  "$defs": {
+    "legalReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["review_state", "repository", "revision", "license_id", "source_url", "model_card_url", "license_file_url", "license_file_sha256", "observed_at", "metadata", "metadata_sha256"],
+      "properties": {
+        "review_state": {"const": "reviewed"},
+        "repository": {"type": "string", "minLength": 1},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "license_id": {"type": "string", "minLength": 1},
+        "source_url": {"type": "string", "pattern": "^https://huggingface\\.co/api/models/"},
+        "model_card_url": {"type": "string", "pattern": "^https://huggingface\\.co/"},
+        "license_file_url": {"type": "string", "pattern": "^https://huggingface\\.co/.+/raw/[0-9a-f]{40}/LICENSE$"},
+        "license_file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "sha", "private", "gated", "disabled", "license"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "private": {"type": "boolean"},
+            "gated": {"type": "boolean"},
+            "disabled": {"type": "boolean"},
+            "license": {"type": "string", "minLength": 1}
+          }
+        },
+        "metadata_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "qualificationPriority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rank", "model_id", "backend_class", "startup_mechanism", "state", "remaining_gates"],
+      "properties": {
+        "rank": {"const": 1},
+        "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+        "backend_class": {"const": "local-b300"},
+        "startup_mechanism": {"const": "conventional"},
+        "state": {"const": "candidate-unroutable"},
+        "remaining_gates": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["exact-hf-weight-per-file-sha256-manifest", "protected-retain-provider-block-pvc", "targeted-zero-gpu-acquisition-and-writer-handoff", "detach-reattach-no-multi-attach", "immutable-platform-runtime-image", "exact-b300-runtime-qualification", "two-distinct-gateway-semantic-responses", "scale-one-to-zero-claim-retained", "ready-unexpired-serving-binding"]}
+        }
+      }
+    },
+    "helperImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "state", "repository_suffix", "platform", "build_source", "entrypoint", "security_context", "required_attestations", "admission_receipt_schema", "caller_image_override", "job_uid_binding", "pod_uid_binding", "cleanup_contract"],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/acquisition-helper-image-contract/v1"},
+        "state": {"const": "requires-signed-runtime-image-admission"},
+        "repository_suffix": {"const": "/fs2-serve/acquisition-helper"},
+        "platform": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os", "architecture"],
+          "properties": {"os": {"const": "linux"}, "architecture": {"const": "amd64"}}
+        },
+        "build_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "path", "package", "package_version", "pyproject_sha256", "uv_lock_sha256"],
+          "properties": {
+            "repository": {"const": "https://github.com/rene-tech/nebius-solutions-library"},
+            "path": {"const": "k8s-inference/catalog/runtime"},
+            "package": {"const": "fs2-serve-catalog"},
+            "package_version": {"const": "0.1.0"},
+            "pyproject_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "uv_lock_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
+        "entrypoint": {"const": ["python3", "-m", "fs2_serve_catalog.cli", "acquire-hf"]},
+        "security_context": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["run_as_non_root", "run_as_uid", "run_as_gid", "fs_group", "supplemental_groups_policy", "seccomp_profile"],
+          "properties": {
+            "run_as_non_root": {"const": true},
+            "run_as_uid": {"const": 10001},
+            "run_as_gid": {"const": 10001},
+            "fs_group": {"const": 10001},
+            "supplemental_groups_policy": {"const": "Strict"},
+            "seccomp_profile": {"const": "RuntimeDefault"}
+          }
+        },
+        "required_attestations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["signature", "signature_registry_identity", "provenance_predicate", "provenance_materials", "provenance_builder", "base_images", "sbom_predicate", "sbom_subject", "subjects"],
+          "properties": {
+            "signature": {"const": "verified"},
+            "signature_registry_identity": {"const": "exact-registry-subject"},
+            "provenance_predicate": {"const": "https://slsa.dev/provenance/v1"},
+            "provenance_materials": {"const": "exact-git-commit-tree-build-and-helper-contract"},
+            "provenance_builder": {"const": "exact-builder-identity-and-build-type"},
+            "base_images": {"const": "all-container-materials-digest-pinned"},
+            "sbom_predicate": {"const": "https://spdx.dev/Document"},
+            "sbom_subject": {"const": "exact-package-version-and-wheel"},
+            "subjects": {"const": "exact-oci-manifest-digest"}
+          }
+        },
+        "admission_receipt_schema": {"const": "fs2-serve.nebius.ai/acquisition-helper-image-admission/v1"},
+        "caller_image_override": {"const": "forbidden"},
+        "job_uid_binding": {"const": "server-observed-and-patched-before-unsuspend"},
+        "pod_uid_binding": {"const": "downward-api-metadata-uid"},
+        "cleanup_contract": {"const": "uid-precondition-plus-replacement-observation"}
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "source_kind", "repository", "revision", "artifact_kind", "destination_prefix", "required_prerequisites", "pull_canary", "publication", "promotion_policy", "helper_image_id"],
+      "properties": {
+        "method": {"enum": ["huggingface-public-snapshot", "ngc-target-node-nimcache", "blocked"]},
+        "source_kind": {"enum": ["huggingface", "ngc-nim"]},
+        "repository": {"type": ["string", "null"]},
+        "revision": {"type": ["string", "null"]},
+        "artifact_kind": {"enum": ["weights", "nim-cache", null]},
+        "destination_prefix": {"type": "string", "pattern": "^/mnt/(?:fs2-serve-cache|fs2-provider-block)/models/[a-z0-9-]+$"},
+        "required_prerequisites": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^fs2-(?:models|faststart)/[a-z0-9-]+$"}},
+        "pull_canary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required", "execution_scope", "output_policy", "receipt_schema"],
+          "properties": {
+            "required": {"type": "boolean"},
+            "execution_scope": {"enum": ["target-gpu-node", "not-required", "blocked"]},
+            "output_policy": {"const": "values-suppressed"},
+            "receipt_schema": {"type": ["string", "null"]}
+          }
+        },
+        "publication": {"enum": ["atomic-content-addressed-sfs", "atomic-content-addressed-provider-block-pvc", "blocked"]},
+        "promotion_policy": {"type": "string", "minLength": 1},
+        "storage_contract": {"const": "fs2-serve.nebius.ai/provider-block-pvc/v1"},
+        "helper_image_id": {"enum": ["fs2-acquisition-helper", null]}
+      }
+    }
+  }
+}

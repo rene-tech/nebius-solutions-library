@@ -1,0 +1,39 @@
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: nebius.com/gpu-name
+              operator: DoesNotExist
+config:
+  clusterWide: true
+  create: true
+  name: cnpg-controller-manager-config
+  secret: false
+crds:
+  create: true
+image:
+  pullPolicy: IfNotPresent
+  repository: ghcr.io/cloudnative-pg/cloudnative-pg
+  tag: 1.30.0
+monitoring:
+  grafanaDashboard:
+    create: false
+  podMonitorEnabled: false
+rbac:
+  aggregateClusterRoles: false
+  create: true
+replicaCount: 1
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+webhook:
+  mutating:
+    create: true
+    failurePolicy: Fail
+  validating:
+    create: true
+    failurePolicy: Fail

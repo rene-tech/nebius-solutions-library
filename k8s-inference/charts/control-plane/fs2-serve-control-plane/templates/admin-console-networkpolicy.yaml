@@ -1,0 +1,26 @@
+{{- if and .Values.adminConsole.enabled .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.adminConsoleFullname" . }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin-console
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fs2-serve.adminConsoleSelectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.gateway.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.gateway.podLabels | nindent 14 }}
+      ports:
+        - port: {{ .Values.adminConsole.service.port }}
+          protocol: TCP
+  egress: []
+{{- end }}

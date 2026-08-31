@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/target-node-pull-canary/v2",
+  "title": "fs2-serve value-suppressed NGC target-node pull/runtime canary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "checked_at", "model_id", "model_digest", "acquisition_plan_sha256", "acquisition_receipt_digest", "prerequisite_receipt_digest", "runtime_identity_digest", "semantic_receipt_digest", "readiness_receipt_digest", "nim_cache_receipt_digest", "credential_materialization_sha256", "image", "worker", "secret_requirement_ids", "values_suppressed", "readiness"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/target-node-pull-canary/v2"},
+    "receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "status": {"const": "PASS"},
+    "checked_at": {"type": "string", "format": "date-time"},
+    "model_id": {"type": "string"},
+    "model_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "acquisition_plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "acquisition_receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "prerequisite_receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "runtime_identity_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "semantic_receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "readiness_receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nim_cache_receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "credential_materialization_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "image": {"type": "object", "additionalProperties": false, "required": ["reference", "digest"], "properties": {"reference": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}, "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}},
+    "worker": {"type": "object", "additionalProperties": false, "required": ["node_uid", "node_image_id", "worker_image_digest", "driver_version", "cuda_version", "device_plugin_image_digest", "gpu_tuple_sha256"], "properties": {"node_uid": {"type": "string"}, "node_image_id": {"type": "string"}, "worker_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "driver_version": {"type": "string"}, "cuda_version": {"type": "string"}, "device_plugin_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "gpu_tuple_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "secret_requirement_ids": {"const": ["fs2-models/ngc-pull-secret", "fs2-models/ngc-runtime-secret"]},
+    "values_suppressed": {"const": true},
+    "readiness": {"type": "object", "additionalProperties": false, "required": ["path", "http_status"], "properties": {"path": {"type": "string", "pattern": "^/"}, "http_status": {"type": "integer", "minimum": 100, "maximum": 599}}}
+  }
+}

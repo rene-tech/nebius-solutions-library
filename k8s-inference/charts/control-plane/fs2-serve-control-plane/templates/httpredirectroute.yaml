@@ -1,0 +1,29 @@
+{{- if .Values.httpRoute.enabled }}
+{{- if not .Values.publicGateway.enabled }}
+{{- fail "the HTTP redirect route requires publicGateway.enabled" }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-http-redirect
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: public-http-redirect
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.publicGateway.gatewayName }}
+      sectionName: {{ .Values.publicGateway.httpListenerName }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            port: 443
+            statusCode: 308
+{{- end }}

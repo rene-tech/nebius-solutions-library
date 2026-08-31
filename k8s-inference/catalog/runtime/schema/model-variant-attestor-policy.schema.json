@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-variant-attestor-policy/v1",
+  "title": "Exact-role model-variant attestor policy",
+  "$comment": "Shape only; the executable verifier derives every raw Ed25519 key ID and enforces one enabled, cross-role-separated principal and group per exact role.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "principals", "separation"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-variant-attestor-policy/v1"},
+    "principals": {"type": "object", "minProperties": 16, "maxProperties": 16, "additionalProperties": {"$ref": "#/$defs/principal"}},
+    "separation": {"type": "object", "additionalProperties": false, "required": ["unique_key_per_role", "unique_group_per_role"], "properties": {"unique_key_per_role": {"const": true}, "unique_group_per_role": {"const": true}}}
+  },
+  "$defs": {
+    "principal": {"type": "object", "additionalProperties": false, "required": ["role", "group", "enabled", "key_id", "public_key"], "properties": {"role": {"type": "string", "minLength": 1}, "group": {"type": "string", "minLength": 1}, "enabled": {"const": true}, "key_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "public_key": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"}}}
+  }
+}

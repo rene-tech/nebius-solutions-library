@@ -1,0 +1,382 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/post-acceptance-cold-start-benchmark-receipt/v1alpha1",
+  "title": "FS2 post-acceptance cold-start benchmark receipt",
+  "description": "Closed planning receipt that extends, but never replaces, the signed FS2 qualification-cohort evidence model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "receipt_digest",
+    "status",
+    "benchmark_contract_digest",
+    "existing_evidence",
+    "compatibility_tuple",
+    "control",
+    "candidate",
+    "statistics_policy",
+    "attempts",
+    "aggregates",
+    "decision",
+    "observed_at",
+    "valid_until"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/post-acceptance-cold-start-benchmark-receipt/v1alpha1"
+    },
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"enum": ["PASS", "FAIL"]},
+    "benchmark_contract_digest": {"$ref": "#/$defs/digest"},
+    "existing_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base_schema",
+        "prepared_node_qualification_receipt_digest",
+        "new_node_qualification_receipt_digest",
+        "preemption_receipt_digest",
+        "return_to_zero_receipt_digest"
+      ],
+      "properties": {
+        "base_schema": {"const": "fs2-serve.nebius.ai/qualification-cohort/v4"},
+        "prepared_node_qualification_receipt_digest": {"$ref": "#/$defs/digest"},
+        "new_node_qualification_receipt_digest": {"$ref": "#/$defs/digest"},
+        "preemption_receipt_digest": {"$ref": "#/$defs/digest"},
+        "return_to_zero_receipt_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "compatibility_tuple": {"$ref": "#/$defs/compatibilityTuple"},
+    "control": {"$ref": "#/$defs/arm"},
+    "candidate": {"$ref": "#/$defs/arm"},
+    "statistics_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt_deadline_seconds",
+        "minimum_attempts_per_arm",
+        "attempt_order",
+        "percentile_estimator",
+        "failure_ordering",
+        "p95_minimum_attempts",
+        "dispersion_statistic",
+        "minimum_absolute_p95_improvement_seconds",
+        "minimum_relative_p95_improvement_fraction",
+        "minimum_effect_rule"
+      ],
+      "properties": {
+        "attempt_deadline_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "minimum_attempts_per_arm": {"type": "integer", "minimum": 20},
+        "attempt_order": {"const": "strict-control-candidate-alternation"},
+        "percentile_estimator": {"const": "nearest-rank"},
+        "failure_ordering": {"const": "failures-rank-after-all-successful-durations"},
+        "p95_minimum_attempts": {"const": 20},
+        "dispersion_statistic": {"const": "median-absolute-deviation"},
+        "minimum_absolute_p95_improvement_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "minimum_relative_p95_improvement_fraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "minimum_effect_rule": {"const": "meet-both-absolute-and-relative-thresholds"}
+      }
+    },
+    "attempts": {
+      "type": "array",
+      "minItems": 40,
+      "items": {"$ref": "#/$defs/attempt"}
+    },
+    "aggregates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["control", "candidate"],
+      "properties": {
+        "control": {"$ref": "#/$defs/aggregate"},
+        "candidate": {"$ref": "#/$defs/aggregate"}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "semantic_equivalence_passed",
+        "failure_rate_non_regression_passed",
+        "absolute_effect_passed",
+        "relative_effect_passed",
+        "call2_latency_non_regression_passed",
+        "conventional_fallback_passed",
+        "preemption_replacement_passed",
+        "return_to_zero_passed",
+        "accepted"
+      ],
+      "properties": {
+        "semantic_equivalence_passed": {"type": "boolean"},
+        "failure_rate_non_regression_passed": {"type": "boolean"},
+        "absolute_effect_passed": {"type": "boolean"},
+        "relative_effect_passed": {"type": "boolean"},
+        "call2_latency_non_regression_passed": {"type": "boolean"},
+        "conventional_fallback_passed": {"type": "boolean"},
+        "preemption_replacement_passed": {"type": "boolean"},
+        "return_to_zero_passed": {"type": "boolean"},
+        "accepted": {"type": "boolean"}
+      }
+    },
+    "observed_at": {"$ref": "#/$defs/timestamp"},
+    "valid_until": {"$ref": "#/$defs/timestamp"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "imageDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "timestamp": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "compatibilityTuple": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_id",
+        "model_content_digest",
+        "tokenizer_or_preprocessor_digest",
+        "semantic_oracle_digest",
+        "semantic_request_contract_digest",
+        "runtime_variant",
+        "runtime_source_identity_digest",
+        "runtime_image_digest",
+        "runtime_argv_digest",
+        "runtime_environment_digest",
+        "execution_identity_digest",
+        "loader_or_engine_format",
+        "host_cpu_architecture",
+        "host_os_release_digest",
+        "accelerator_pool_id",
+        "accelerator_pool_receipt_digest",
+        "gpu_vendor",
+        "gpu_product",
+        "gpu_chip_type",
+        "gpu_compute_capability",
+        "gpu_memory_bytes",
+        "workload_gpu_count",
+        "gpu_topology",
+        "gpu_topology_inventory_digest",
+        "allocated_gpu_uuids",
+        "mig_mode",
+        "mig_profile",
+        "driver_version",
+        "cuda_version",
+        "kernel_release",
+        "container_runtime_name",
+        "container_runtime_version",
+        "checkpoint_tool_digest",
+        "criu_version",
+        "artifact_manifest_digest",
+        "artifact_content_digest",
+        "artifact_bytes",
+        "storage_class",
+        "storage_mode",
+        "node_identity_digest",
+        "pvc_identity_digest",
+        "compile_cache_abi",
+        "capacity_state"
+      ],
+      "properties": {
+        "model_id": {"type": "string", "minLength": 1},
+        "model_content_digest": {"$ref": "#/$defs/digest"},
+        "tokenizer_or_preprocessor_digest": {"$ref": "#/$defs/digest"},
+        "semantic_oracle_digest": {"$ref": "#/$defs/digest"},
+        "semantic_request_contract_digest": {"$ref": "#/$defs/digest"},
+        "runtime_variant": {"type": "string", "minLength": 1},
+        "runtime_source_identity_digest": {"$ref": "#/$defs/digest"},
+        "runtime_image_digest": {"$ref": "#/$defs/imageDigest"},
+        "runtime_argv_digest": {"$ref": "#/$defs/digest"},
+        "runtime_environment_digest": {"$ref": "#/$defs/digest"},
+        "execution_identity_digest": {"$ref": "#/$defs/digest"},
+        "loader_or_engine_format": {"type": "string", "minLength": 1},
+        "host_cpu_architecture": {"enum": ["amd64", "arm64"]},
+        "host_os_release_digest": {"$ref": "#/$defs/digest"},
+        "accelerator_pool_id": {"type": "string", "minLength": 1},
+        "accelerator_pool_receipt_digest": {"$ref": "#/$defs/digest"},
+        "gpu_vendor": {"const": "nvidia"},
+        "gpu_product": {"type": "string", "minLength": 1},
+        "gpu_chip_type": {"type": "string", "minLength": 1},
+        "gpu_compute_capability": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+        "gpu_memory_bytes": {"type": "integer", "minimum": 1},
+        "workload_gpu_count": {"type": "integer", "minimum": 1},
+        "gpu_topology": {"type": "string", "minLength": 1},
+        "gpu_topology_inventory_digest": {"$ref": "#/$defs/digest"},
+        "allocated_gpu_uuids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^GPU-[A-Za-z0-9-]+$"}
+        },
+        "mig_mode": {"enum": ["disabled", "enabled"]},
+        "mig_profile": {"type": ["string", "null"], "minLength": 1},
+        "driver_version": {"type": "string", "minLength": 1},
+        "cuda_version": {"type": "string", "minLength": 1},
+        "kernel_release": {"type": "string", "minLength": 1},
+        "container_runtime_name": {"enum": ["containerd", "cri-o"]},
+        "container_runtime_version": {"type": "string", "minLength": 1},
+        "checkpoint_tool_digest": {"$ref": "#/$defs/digest"},
+        "criu_version": {"type": "string", "minLength": 1},
+        "artifact_manifest_digest": {"$ref": "#/$defs/digest"},
+        "artifact_content_digest": {"$ref": "#/$defs/digest"},
+        "artifact_bytes": {"type": "integer", "minimum": 1},
+        "storage_class": {"type": "string", "minLength": 1},
+        "storage_mode": {"enum": ["ReadWriteOnce", "ReadWriteMany", "ReadOnlyMany", "ephemeral-local"]},
+        "node_identity_digest": {"$ref": "#/$defs/digest"},
+        "pvc_identity_digest": {"$ref": "#/$defs/digest"},
+        "compile_cache_abi": {"type": "string", "minLength": 1},
+        "capacity_state": {
+          "enum": [
+            "prepared-node-zero-pod",
+            "fresh-node-zero-pod",
+            "preemption-replacement"
+          ]
+        }
+      }
+    },
+    "arm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mechanism", "runtime_tuple_receipt_digest", "artifact_manifest_digest"],
+      "properties": {
+        "mechanism": {
+          "enum": [
+            "conventional",
+            "persistent-artifact-cache",
+            "local-nvme-localization",
+            "oci-image-volume",
+            "runtime-native-fast-loader",
+            "vllm-sleep-level-1",
+            "cuda-criu-snapshot",
+            "dynamo-snapshot"
+          ]
+        },
+        "runtime_tuple_receipt_digest": {"$ref": "#/$defs/digest"},
+        "artifact_manifest_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "state", "timestamp"],
+      "properties": {
+        "name": {
+          "enum": [
+            "activation-accepted",
+            "capacity-requested",
+            "provider-instance-created",
+            "node-ready",
+            "workload-admitted",
+            "pod-scheduled",
+            "storage-attached",
+            "image-or-image-volume-pull-start",
+            "image-or-image-volume-pull-end",
+            "artifact-localization-start",
+            "artifact-localization-verified",
+            "runtime-process-start",
+            "weight-load-start",
+            "weight-load-end",
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end",
+            "checkpoint-restore-start",
+            "checkpoint-restore-end",
+            "readiness-accepted",
+            "semantic-call1-accepted",
+            "semantic-call2-accepted",
+            "return-to-zero-accepted"
+          ]
+        },
+        "state": {"enum": ["observed", "not-applicable"]},
+        "timestamp": {"anyOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]}
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt_id",
+        "arm",
+        "capacity_state",
+        "existing_cohort",
+        "status",
+        "failure_code",
+        "t0_utc",
+        "deadline_utc",
+        "call1_utc",
+        "call2_utc",
+        "t0_to_call1_seconds",
+        "t0_to_call2_seconds",
+        "events",
+        "compatibility_tuple_digest",
+        "semantic_receipt_digest",
+        "cleanup_receipt_digest",
+        "raw_attempt_receipt_digest"
+      ],
+      "properties": {
+        "attempt_id": {"type": "string", "minLength": 1},
+        "arm": {"enum": ["control", "candidate"]},
+        "capacity_state": {
+          "enum": [
+            "prepared-node-zero-pod",
+            "fresh-node-zero-pod",
+            "preemption-replacement"
+          ]
+        },
+        "existing_cohort": {"enum": ["prepared-node", "new-node"]},
+        "status": {"enum": ["PASS", "FAIL"]},
+        "failure_code": {"type": ["string", "null"], "minLength": 1},
+        "t0_utc": {"$ref": "#/$defs/timestamp"},
+        "deadline_utc": {"$ref": "#/$defs/timestamp"},
+        "call1_utc": {"anyOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]},
+        "call2_utc": {"anyOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]},
+        "t0_to_call1_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "t0_to_call2_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "events": {
+          "type": "array",
+          "minItems": 22,
+          "maxItems": 22,
+          "items": {"$ref": "#/$defs/event"}
+        },
+        "compatibility_tuple_digest": {"$ref": "#/$defs/digest"},
+        "semantic_receipt_digest": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]},
+        "cleanup_receipt_digest": {"$ref": "#/$defs/digest"},
+        "raw_attempt_receipt_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "aggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt_count",
+        "success_count",
+        "failure_count",
+        "failure_ranked_p50_t0_to_call1_seconds",
+        "failure_ranked_p95_t0_to_call1_seconds",
+        "failure_ranked_p50_t0_to_call2_seconds",
+        "failure_ranked_p95_t0_to_call2_seconds",
+        "call1_median_absolute_deviation_seconds",
+        "call2_median_absolute_deviation_seconds",
+        "artifact_bytes",
+        "peak_gpu_memory_bytes",
+        "peak_host_memory_bytes",
+        "preparation_seconds",
+        "restore_seconds"
+      ],
+      "properties": {
+        "attempt_count": {"type": "integer", "minimum": 20},
+        "success_count": {"type": "integer", "minimum": 0},
+        "failure_count": {"type": "integer", "minimum": 0},
+        "failure_ranked_p50_t0_to_call1_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "failure_ranked_p95_t0_to_call1_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "failure_ranked_p50_t0_to_call2_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "failure_ranked_p95_t0_to_call2_seconds": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "call1_median_absolute_deviation_seconds": {"type": ["number", "null"], "minimum": 0},
+        "call2_median_absolute_deviation_seconds": {"type": ["number", "null"], "minimum": 0},
+        "artifact_bytes": {"type": "integer", "minimum": 1},
+        "peak_gpu_memory_bytes": {"type": "integer", "minimum": 0},
+        "peak_host_memory_bytes": {"type": "integer", "minimum": 0},
+        "preparation_seconds": {"type": "number", "minimum": 0},
+        "restore_seconds": {"type": ["number", "null"], "minimum": 0}
+      }
+    }
+  }
+}

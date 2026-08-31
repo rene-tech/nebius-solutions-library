@@ -1,0 +1,404 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://k8s-inference.nebius.ai/schemas/gpu-platforms/v1",
+  "title": "Nebius Managed Kubernetes GPU platform catalog",
+  "$comment": "This is an informational discovery snapshot, not a Terraform allowlist. The platformSelection definition intentionally accepts any non-empty future platform and preset IDs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "snapshot",
+    "selection_contract",
+    "source_metadata",
+    "platforms"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./gpu-platforms.schema.json"
+    },
+    "schema_version": {
+      "const": "k8s-inference.nebius.ai/gpu-platforms/v1"
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "as_of",
+        "nebius_cli_version",
+        "managed_kubernetes_version_checked",
+        "scope"
+      ],
+      "properties": {
+        "as_of": {
+          "type": "string",
+          "format": "date"
+        },
+        "nebius_cli_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "managed_kubernetes_version_checked": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "selection_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalog_role",
+        "catalog_membership_required",
+        "unknown_platform_policy",
+        "unknown_preset_policy",
+        "terraform_allowlist",
+        "live_validation_required",
+        "compatibility_claim"
+      ],
+      "properties": {
+        "catalog_role": {
+          "const": "informational-snapshot"
+        },
+        "catalog_membership_required": {
+          "const": false
+        },
+        "unknown_platform_policy": {
+          "const": "passthrough"
+        },
+        "unknown_preset_policy": {
+          "const": "passthrough"
+        },
+        "terraform_allowlist": {
+          "const": false
+        },
+        "live_validation_required": {
+          "const": true
+        },
+        "compatibility_claim": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "source_metadata": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/nonEmptyString"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "platforms": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/nonEmptyString"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/platform"
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": ".*\\S.*"
+    },
+    "platformSelection": {
+      "$comment": "No enum or catalog-membership constraint is permitted here: unknown future provider IDs pass through to live validation.",
+      "type": "object",
+      "required": [
+        "platform",
+        "preset"
+      ],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": ".*\\S.*"
+        },
+        "preset": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": ".*\\S.*"
+        }
+      },
+      "additionalProperties": true
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "url",
+        "retrieved_at",
+        "description"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "retrieved_at": {
+          "type": "string",
+          "format": "date"
+        },
+        "description": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "cli_version": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "repository_revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform_id",
+        "gpu",
+        "host",
+        "regions",
+        "presets",
+        "topology",
+        "capacity",
+        "driverfull",
+        "mig",
+        "source_ids"
+      ],
+      "properties": {
+        "platform_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model",
+            "architecture"
+          ],
+          "properties": {
+            "model": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "architecture": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          }
+        },
+        "host": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "architecture",
+            "cpu"
+          ],
+          "properties": {
+            "architecture": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "cpu": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          }
+        },
+        "regions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "presets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/preset"
+          }
+        },
+        "topology": {
+          "$ref": "#/$defs/topology"
+        },
+        "capacity": {
+          "$ref": "#/$defs/capacity"
+        },
+        "driverfull": {
+          "$ref": "#/$defs/driverfull"
+        },
+        "mig": {
+          "$ref": "#/$defs/mig"
+        },
+        "source_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        }
+      }
+    },
+    "preset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preset_id",
+        "gpu_count",
+        "vcpu_count",
+        "memory_gib",
+        "gpu_cluster_compatible"
+      ],
+      "properties": {
+        "preset_id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gpu_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "vcpu_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memory_gib": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "gpu_cluster_compatible": {
+          "type": "boolean"
+        }
+      }
+    },
+    "topology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deployment_class",
+        "intra_node_interconnect",
+        "gpu_cluster_supported",
+        "gpu_cluster_presets",
+        "nvlink_instance_group_required",
+        "nodes_per_nvlink_group"
+      ],
+      "properties": {
+        "deployment_class": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "intra_node_interconnect": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "gpu_cluster_supported": {
+          "type": "boolean"
+        },
+        "gpu_cluster_presets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyString"
+          }
+        },
+        "nvlink_instance_group_required": {
+          "type": "boolean"
+        },
+        "nodes_per_nvlink_group": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      }
+    },
+    "capacity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "regular_supported",
+        "preemptible_supported",
+        "availability_scope"
+      ],
+      "properties": {
+        "regular_supported": {
+          "type": "boolean"
+        },
+        "preemptible_supported": {
+          "type": "boolean"
+        },
+        "availability_scope": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "driverfull": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "whole_gpu_status",
+        "os_checked",
+        "drivers_preset_checked",
+        "compatibility_must_be_queried",
+        "custom_driver_mode"
+      ],
+      "properties": {
+        "whole_gpu_status": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "os_checked": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "drivers_preset_checked": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "compatibility_must_be_queried": {
+          "const": true
+        },
+        "custom_driver_mode": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "mig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "managed_driver_image_compatible",
+        "note"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "managed_driver_image_compatible": {
+          "type": "boolean"
+        },
+        "note": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    }
+  }
+}

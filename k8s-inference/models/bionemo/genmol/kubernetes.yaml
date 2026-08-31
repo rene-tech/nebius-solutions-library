@@ -1,0 +1,201 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: genmol-b300
+  namespace: fs2-models
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: genmol-model-cache
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/model-id: genmol
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 16Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genmol-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: genmol
+    app.kubernetes.io/instance: genmol-b300
+    fs2-serve.nebius.ai/model-id: genmol
+  annotations:
+    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/model-content-digest: sha256:7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a
+    fs2.nebius/runtime-image-digest: sha256:c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f
+    fs2-serve.nebius.ai/source-revision: add09fc83b7255bd09c797e527c0f4b51f5fb7c1
+    fs2-serve.nebius.ai/model-revision: 2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80
+    fs2-serve.nebius.ai/model-sha256: 7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: genmol-b300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: genmol
+        app.kubernetes.io/instance: genmol-b300
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/part-of: fs2-serve
+        fs2-serve.nebius.ai/model-id: genmol
+      annotations:
+        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/model-content-digest: sha256:7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a
+        fs2.nebius/runtime-image-digest: sha256:c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: genmol-b300
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: accelerator.fs2.nebius/class
+                    operator: In
+                    values: [nvidia-b300-sxm6-288gb]
+                  - key: capacity.fs2.nebius/pool
+                    operator: In
+                    values: [burst, burst-single]
+      initContainers:
+        - name: prepare-runtime-cache
+          image: registry.example.invalid/k8s-inference/models/genmol-blackwell@sha256:c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              for directory in home cuda torch-extensions torchinductor triton xdg; do
+                mkdir -p "${FS2_RUNTIME_CACHE_ROOT}/${directory}"
+              done
+              test -w "${FS2_RUNTIME_CACHE_ROOT}"
+          env:
+            - name: FS2_RUNTIME_CACHE_ROOT
+              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103
+          resources:
+            limits:
+              cpu: "1"
+              ephemeral-storage: 128Mi
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              ephemeral-storage: 16Mi
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /models
+              name: model-cache
+      containers:
+        - name: genmol
+          image: registry.example.invalid/k8s-inference/models/genmol-blackwell@sha256:c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: CUDA_CACHE_PATH
+              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103/cuda
+            - name: MODEL_CACHE
+              value: /models
+            - name: HOME
+              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103/home
+            - name: HF_HOME
+              value: /models/huggingface
+            - name: HF_HUB_CACHE
+              value: /models/huggingface/hub
+            - name: HF_HUB_DISABLE_XET
+              value: "1"
+            - name: TORCH_EXTENSIONS_DIR
+              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103/torch-extensions
+            - name: TORCHINDUCTOR_CACHE_DIR
+              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103/torchinductor
+            - name: TRITON_CACHE_DIR
+              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103/triton
+            - name: XDG_CACHE_HOME
+              value: /models/.fs2/runtime/c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f/7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a/driver-580.173.02-sm103/xdg
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: "8"
+              memory: 48Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "16"
+              memory: 96Gi
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 360
+          livenessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            initialDelaySeconds: 300
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: model-cache
+              mountPath: /models
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: genmol-model-cache
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: genmol
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/model-id: genmol
+spec:
+  selector:
+    app.kubernetes.io/instance: genmol-b300
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

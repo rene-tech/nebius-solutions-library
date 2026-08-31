@@ -1,0 +1,18 @@
+{
+  "schema": "fs2-serve.nebius.ai/semantic-contract/v1",
+  "contract": "two-distinct-exact-content-prompts-qwen3/v1",
+  "kind": "openai-text",
+  "source_commit": "ce3daebc291f4b35807989959cf24068cdf500a7",
+  "requests": [
+    {
+      "id": "qwen3-fs2-first-exact",
+      "request": {"chat_template_kwargs": {"enable_thinking": false}, "max_tokens": 32, "messages": [{"content": "Return exactly QWEN3_FS2_FIRST_OK and no other text.", "role": "user"}], "model": "qwen3-8b", "stream": false, "temperature": 0},
+      "oracle": {"type": "exact-content", "expected": "QWEN3_FS2_FIRST_OK"}
+    },
+    {
+      "id": "qwen3-fs2-second-exact",
+      "request": {"chat_template_kwargs": {"enable_thinking": false}, "max_tokens": 32, "messages": [{"content": "Return exactly QWEN3_FS2_SECOND_OK and no other text.", "role": "user"}], "model": "qwen3-8b", "stream": false, "temperature": 0},
+      "oracle": {"type": "exact-content", "expected": "QWEN3_FS2_SECOND_OK"}
+    }
+  ]
+}

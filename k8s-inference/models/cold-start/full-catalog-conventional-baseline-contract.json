@@ -1,0 +1,230 @@
+{
+  "api_version": "fs2-serve.nebius.ai/v1alpha1",
+  "kind": "FullCatalogConventionalBaseline",
+  "metadata": {
+    "name": "full-catalog-conventional-baseline-v2",
+    "authority": "evidence-only",
+    "challenger_execution_authorized": false,
+    "production_mutation_authorized": false
+  },
+  "spec": {
+    "scope": {
+      "profile": "full_catalog",
+      "canonical_route_count": 15,
+      "rendered_backend_count": 16,
+      "mechanism": "conventional",
+      "matrix": "cold-start-optimization-matrix.json",
+      "profile_contract": "../../catalog/profiles/model-profiles.json",
+      "route_contract": "../../components/control-plane/contracts/all-models-live-services.json",
+      "semantic_contract": "../../catalog/runtime/contracts/semantic-requests.json",
+      "unrouted_backend": {
+        "backend_id": "msa-search-pdb70-fallback",
+        "model_id": "msa-search-pdb70",
+        "deployment": "msa-search-pdb70",
+        "service": "msa-search-pdb70",
+        "resource_class": "cpu",
+        "admitted_capacity_states": [
+          "ready-pod-warm"
+        ],
+        "excluded_capacity_state_reason": "no-durable-route-activation-boundary"
+      }
+    },
+    "prerequisites": {
+      "all_model_semantic_acceptance": "required-current-source-pass",
+      "zero_floor_convergence": "required-before-cold-cells",
+      "exact_model_content_identity": "required-per-admitted-attempt",
+      "terraform_plan_and_apply_provenance": "required",
+      "replica_owner": "keda",
+      "retained_cluster_mutation": "forbidden"
+    },
+    "capacity_states": [
+      {
+        "id": "ready-pod-warm",
+        "node_present_at_t0": true,
+        "pod_present_at_t0": true,
+        "provider_capacity_phase": "not-applicable",
+        "cold_start_class": false
+      },
+      {
+        "id": "prepared-node-zero-pod",
+        "node_present_at_t0": true,
+        "pod_present_at_t0": false,
+        "provider_capacity_phase": "not-applicable",
+        "cold_start_class": true
+      },
+      {
+        "id": "fresh-node-zero-pod",
+        "node_present_at_t0": false,
+        "pod_present_at_t0": false,
+        "provider_capacity_phase": "required",
+        "cold_start_class": true
+      },
+      {
+        "id": "preemption-replacement",
+        "node_present_at_t0": false,
+        "pod_present_at_t0": false,
+        "provider_capacity_phase": "required",
+        "cold_start_class": true
+      }
+    ],
+    "clock": {
+      "t0": "durable-activation-request-accepted",
+      "t1": "first-unretried-semantically-valid-response-accepted",
+      "success_requires_distinct_second_semantic_call": true,
+      "recorder": "external-client-linux-monotonic",
+      "utc_is_diagnostic": true,
+      "retries_are_distinct_attempts": true
+    },
+    "phases": [
+      "provider-capacity",
+      "node-ready",
+      "queue-admission",
+      "pod-scheduling",
+      "storage-attach",
+      "image-pull",
+      "artifact-localization",
+      "runtime-start",
+      "weight-load",
+      "engine-or-ptx-compile",
+      "readiness",
+      "semantic-call-1",
+      "semantic-call-2",
+      "cleanup",
+      "return-to-zero"
+    ],
+    "phase_states": [
+      "observed",
+      "not-applicable",
+      "missing"
+    ],
+    "statistics": {
+      "minimum_attempts_per_admitted_cell": 3,
+      "blocked_cell_slot_policy": "reserve-three-non-attempt-slots-until-identity-admission",
+      "percentile_estimator": "nearest-rank-on-successful-raw-attempts",
+      "failure_ordering": "failures-rank-after-successes",
+      "p50_minimum_attempts": 2,
+      "p95_minimum_attempts": 20,
+      "dispersion": "median-absolute-deviation",
+      "retain_every_failure": true,
+      "best-run-only_reporting": false
+    },
+    "identity": {
+      "deployment_compatibility_tuple": "post-acceptance-benchmark-receipt.schema.json#/$defs/compatibilityTuple",
+      "required_additional_bindings": [
+        "release-commit-and-tree",
+        "terraform-contract-and-plan-hashes",
+        "runtime-image-leaf-digests",
+        "semantic-oracle-and-request-digests",
+        "keda-scaledobject-and-replica-owner-state",
+        "kueue-boundary",
+        "provider-node-autoscaler-state",
+        "storage-state",
+        "dcgm-attribution"
+      ],
+      "opaque_nim_content_policy": "block-until-real-immutable-cache-manifest"
+    },
+    "observability": {
+      "metrics_source": "prometheus-dcgm-exporter",
+      "required_metrics": [
+        "DCGM_FI_DEV_GPU_UTIL",
+        "DCGM_FI_DEV_FB_USED"
+      ],
+      "attribution_labels": [
+        "namespace",
+        "pod",
+        "pod_uid",
+        "container"
+      ],
+      "raw_gpu_uuid_policy": "private-bounded-receipt-only",
+      "prometheus_query_mode": "instant-query-range-vector-at-attempt-t1",
+      "sample_timestamp_policy": "raw-range-vector-prometheus-scrape-timestamps-filtered-to-inclusive-attempt-t0-t1-and-conservative-nominal-proxy-floor",
+      "proxy_classification": "NOMINAL_SCRAPE_PROXY",
+      "hardware_source_timestamp_state": "UNOBSERVED_HARDWARE_SOURCE_TIMESTAMP",
+      "instrumentation_gap": "DCGM_SOURCE_TIMESTAMP_UNOBSERVED",
+      "standard_terraform_bound_scrape_interval_seconds": 30,
+      "standard_terraform_bound_collection_interval_seconds": 30,
+      "standard_minimum_nominal_window_seconds": 60,
+      "exporter_cache_semantics": "Prometheus scrapes the latest cached DCGM value; dcgm-exporter drops the DCGM hardware-source timestamp, so a post-floor scrape may still repeat a stalled pre-T0 hardware value",
+      "nominal_proxy_filter_formula": "prometheus_sample_timestamp >= attempt_t0 + terraform_bound_collection_interval_seconds + terraform_bound_scrape_interval_seconds",
+      "cadence_binding": {
+        "source": "exact campaign commit and tree",
+        "terraform": "saved-plan SHA-256 plus exact dcgm_attribution_contract and digest",
+        "observed": "ConfigMap and ServiceMonitor identities plus converged dcgm-exporter DaemonSet rollout identity",
+        "mismatch_policy": "fail-closed"
+      },
+      "campaign_cadence": {
+        "terraform_flag": "enable_dcgm_cold_start_campaign",
+        "default_enabled": false,
+        "exporter_watch_interval_seconds": 1,
+        "prometheus_scrape_interval_seconds": 1,
+        "minimum_nominal_window_seconds": 2,
+        "required_metrics": [
+          "DCGM_FI_DEV_GPU_UTIL",
+          "DCGM_FI_DEV_FB_USED"
+        ]
+      },
+      "short_attempt_policy": "fail closed when T1-T0 is shorter than collection plus scrape; otherwise still require a nominally eligible raw proxy sample and never extend, estimate, or claim exact hardware freshness",
+      "required_summaries": [
+        "sample-count",
+        "mean-gpu-utilization-percent",
+        "peak-gpu-utilization-percent",
+        "peak-framebuffer-bytes"
+      ]
+    },
+    "terraform": {
+      "feature_flags": "conventional-only",
+      "challenger_flags": "off",
+      "fresh-plan": "required",
+      "dcgm-campaign-transitions": "saved-plan on before baseline, saved-plan off after baseline, exact Helm and readable ConfigMap cadence content verified",
+      "no-op-plan": "required after standard-profile restoration",
+      "rollback-and-zero-floor": "required",
+      "unrelated-replacement": "forbidden"
+    },
+    "historical_tool_audit": [
+      {
+        "task": "request-slo",
+        "commit": "676ef18481f36ac72c30089290140950fb7d3756",
+        "path": "nim-fast-start/faststart-v2/performance/request_slo/cold_start_report.py",
+        "source_sha256": "24b94e36a74d03b38f2139830c6b9603c05e45d37262e4889e425f16726c64a8",
+        "adopted": [
+          "external-monotonic-product-clock",
+          "typed-not-applicable-phases",
+          "first-complete-semantic-response-boundary"
+        ]
+      },
+      {
+        "task": "fs2-snapshot-pipeline",
+        "commit": "f01f4027967704387b510e8cfc2c853d0741ac41",
+        "path": "nim-fast-start/faststart-v2/snapshot_pipeline/contract.py",
+        "source_sha256": "f890e1a77348694f7839ba2cbf96554b6e628619880279f9a4357088391e5683",
+        "adopted": [
+          "canonical-json-receipt-digests",
+          "exclusive-mode-0600-writes",
+          "failure-retaining-nearest-rank-aggregation"
+        ]
+      },
+      {
+        "task": "fs2-storage-tiers",
+        "commit": "22dea8ab5c4f09bb143bf465e3eddcce171d4c30",
+        "path": "modules/fs2-storage/scripts/benchmark_local_nvme.py",
+        "source_sha256": "6ffcf40aefcf835a075f6ce30744dbbb7a400c79e867fc29cefd5c2264509e37",
+        "adopted": [
+          "byte-accounted-localization-phases",
+          "cache-state-separation",
+          "raw-attempt-retention"
+        ]
+      },
+      {
+        "task": "fs2-node-local-bench",
+        "commit": "7749f681a648419d0a73e7793d1ca48b614c4dce",
+        "path": "nim-fast-start/faststart-v2/node-local-bench/node_local_bench/contract.py",
+        "source_sha256": "e53512e4d9863eef1ccbfe1f4e477767e412c037d19621bd5c132dd575960351",
+        "adopted": [
+          "prepared-versus-fresh-node-partition",
+          "boot-clock-domain-binding",
+          "cleanup-and-resource-absence-receipts"
+        ]
+      }
+    ]
+  }
+}

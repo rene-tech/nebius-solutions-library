@@ -1,0 +1,248 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: qwen3-8b-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: qwen3-8b
+    app.kubernetes.io/part-of: fs2-serve
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qwen3-8b-cache
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: qwen3-8b
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 64Gi
+  storageClassName: compute-csi-default-sc
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qwen3-8b-b300-contract
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: qwen3-8b
+    app.kubernetes.io/part-of: fs2-serve
+data:
+  localize.py: |
+    import hashlib, json, os
+    from pathlib import Path
+    from huggingface_hub import snapshot_download
+
+    lock = json.loads(Path("/contract/model.lock.json").read_text())
+    model = lock["model"]
+    target = Path("/models/qwen3-8b")
+    target.mkdir(parents=True, exist_ok=True)
+    snapshot_download(
+        repo_id=model["repo_id"],
+        revision=model["revision"],
+        local_dir=target,
+        allow_patterns=[item["path"] for item in model["files"]],
+    )
+    actual = {
+        p.relative_to(target).as_posix()
+        for p in target.rglob("*")
+        if p.is_file()
+        and ".cache" not in p.parts
+        and p.name != "localization-receipt.json"
+    }
+    expected = {item["path"] for item in model["files"]}
+    if actual != expected:
+        raise RuntimeError(f"inventory mismatch: missing={sorted(expected-actual)} unexpected={sorted(actual-expected)}")
+    total = 0
+    for item in model["files"]:
+        path = target / item["path"]
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        if path.stat().st_size != item["size"] or digest != item["sha256"]:
+            raise RuntimeError(f"artifact mismatch: {item['path']}")
+        total += path.stat().st_size
+    if total != model["total_size_bytes"]:
+        raise RuntimeError("total artifact size mismatch")
+    Path("/models/localization-receipt.json").write_text(json.dumps({"revision": model["revision"], "total_size_bytes": total}, sort_keys=True))
+  model.lock.json: |
+    {
+      "schema_version": 1,
+      "model": {
+        "repo_id": "Qwen/Qwen3-8B",
+        "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "total_size_bytes": 16397461266,
+        "files": [
+          {"path":".gitattributes","size":1570,"sha256":"34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930"},
+          {"path":"LICENSE","size":11343,"sha256":"832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"},
+          {"path":"README.md","size":16660,"sha256":"0f36caaff9c2516411a7738db384606263ba653c1e63e61d72f511606164d5a6"},
+          {"path":"config.json","size":728,"sha256":"f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30"},
+          {"path":"generation_config.json","size":239,"sha256":"2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"},
+          {"path":"merges.txt","size":1671853,"sha256":"8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"},
+          {"path":"model-00001-of-00005.safetensors","size":3996250744,"sha256":"31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f"},
+          {"path":"model-00002-of-00005.safetensors","size":3993160032,"sha256":"5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282"},
+          {"path":"model-00003-of-00005.safetensors","size":3959604768,"sha256":"c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836"},
+          {"path":"model-00004-of-00005.safetensors","size":3187841392,"sha256":"b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a"},
+          {"path":"model-00005-of-00005.safetensors","size":1244659840,"sha256":"20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff"},
+          {"path":"model.safetensors.index.json","size":32878,"sha256":"f9fdbcb91c23971c13ec5d5f2573d2349e8f61f2f049371ec699281748fdb1bc"},
+          {"path":"tokenizer.json","size":11422654,"sha256":"aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"},
+          {"path":"tokenizer_config.json","size":9732,"sha256":"d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"},
+          {"path":"vocab.json","size":2776833,"sha256":"ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"}
+        ]
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen3-8b-b300
+  namespace: fs2-models
+  labels: &labels
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/instance: qwen3-8b-b300
+    app.kubernetes.io/managed-by: fs2-serve-models
+    app.kubernetes.io/name: qwen3-8b
+    app.kubernetes.io/part-of: fs2-serve
+    app.kubernetes.io/version: b968826d9c46dd6066d109eabc6255188de91218
+  annotations:
+    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/model-content-digest: sha256:5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d
+    fs2.nebius/runtime-image-digest: sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy: {type: Recreate}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: qwen3-8b-b300
+  template:
+    metadata:
+      labels: *labels
+      annotations:
+        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/model-content-digest: sha256:5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d
+        fs2.nebius/model-revision: b968826d9c46dd6066d109eabc6255188de91218
+        fs2.nebius/runtime-image-digest: sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+    spec:
+      serviceAccountName: qwen3-8b-b300
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      nodeSelector:
+        capacity.fs2.nebius/pool: burst
+        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
+        accelerator.fs2.nebius/pool-id: nebius-b300-preemptible-8x
+        capacity.fs2.nebius/type: preemptible
+        workload.fs2.nebius/gpu: "true"
+      tolerations:
+        - {key: dedicated, operator: Equal, value: fs2-inference, effect: NoSchedule}
+      initContainers:
+        - name: localize-model
+          image: registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+          command: [python3, /contract/localize.py]
+          env:
+            - {name: HF_HUB_DISABLE_TELEMETRY, value: "1"}
+            - {name: HF_HOME, value: /models/.cache/huggingface}
+          resources:
+            requests: {cpu: "4", memory: 8Gi, ephemeral-storage: 4Gi}
+            limits: {cpu: "16", memory: 32Gi, ephemeral-storage: 16Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: contract, mountPath: /contract, readOnly: true}
+            - {name: model, mountPath: /models}
+      containers:
+        - name: vllm
+          image: registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+          args: [/models/qwen3-8b, --served-model-name, qwen3-8b, Qwen/Qwen3-8B, --host, 0.0.0.0, --port, "8000", --dtype, bfloat16, --tensor-parallel-size, "1", --max-model-len, "32768", --gpu-memory-utilization, "0.80", --generation-config, vllm, --enable-prefix-caching]
+          env:
+            - {name: HF_HUB_OFFLINE, value: "1"}
+            - {name: TRANSFORMERS_OFFLINE, value: "1"}
+            - {name: VLLM_NO_USAGE_STATS, value: "1"}
+            - {name: VLLM_CACHE_ROOT, value: /runtime-cache/vllm}
+            - {name: TRITON_CACHE_DIR, value: /runtime-cache/triton}
+          ports:
+            - {name: http, containerPort: 8000, protocol: TCP}
+          resources:
+            requests: {cpu: "8", memory: 64Gi, ephemeral-storage: 4Gi, nvidia.com/gpu: "1"}
+            limits: {cpu: "24", memory: 160Gi, ephemeral-storage: 32Gi, nvidia.com/gpu: "1"}
+          startupProbe: {httpGet: {path: /health, port: http}, periodSeconds: 10, failureThreshold: 180}
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 5, failureThreshold: 3}
+          livenessProbe: {tcpSocket: {port: http}, periodSeconds: 15, failureThreshold: 4}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: model, mountPath: /models, readOnly: true}
+            - {name: runtime-cache, mountPath: /runtime-cache}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: contract
+          configMap: {name: qwen3-8b-b300-contract, defaultMode: 292}
+        - name: model
+          persistentVolumeClaim: {claimName: qwen3-8b-cache}
+        - name: runtime-cache
+          emptyDir: {sizeLimit: 16Gi}
+        - name: tmp
+          emptyDir: {sizeLimit: 8Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen3-8b-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/instance: qwen3-8b-b300
+    app.kubernetes.io/managed-by: fs2-serve-models
+    app.kubernetes.io/name: qwen3-8b
+    app.kubernetes.io/part-of: fs2-serve
+    app.kubernetes.io/version: b968826d9c46dd6066d109eabc6255188de91218
+spec:
+  selector:
+    app.kubernetes.io/instance: qwen3-8b-b300
+  ports:
+    - {name: http, port: 8000, targetPort: http, protocol: TCP}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qwen3-8b-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: qwen3-8b
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: qwen3-8b-b300
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: fs2-system
+      ports:
+        - {port: 8000, protocol: TCP}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    - to:
+        - ipBlock: {cidr: 0.0.0.0/0}
+      ports:
+        - {port: 443, protocol: TCP}

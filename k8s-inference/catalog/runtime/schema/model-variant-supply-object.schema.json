@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-variant-supply-object/v1",
+  "title": "Immutable raw model-variant supply-chain object",
+  "$comment": "The file's exact byte SHA-256 is its identity; the executable verifier opens and parses DSSE/Cosign, SLSA v1, SPDX 2.3, and scan contents.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "object_kind", "variant_id", "variant_digest", "observed_at", "payload", "valid_until"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-variant-supply-object/v1"},
+    "object_kind": {"enum": ["signature", "provenance", "sbom", "scan"]},
+    "variant_id": {"$ref": "#/$defs/id"},
+    "variant_digest": {"$ref": "#/$defs/digest"},
+    "observed_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "payload": {"type": "object"},
+    "valid_until": {"type": "string", "format": "date-time", "pattern": "Z$"}
+  },
+  "$defs": {"digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"}}
+}

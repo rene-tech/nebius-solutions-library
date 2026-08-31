@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fs2-image-cache-boltz2-b300-1x
+  namespace: fs2-models
+  labels: &labels
+    app.kubernetes.io/name: fs2-image-cache
+    app.kubernetes.io/instance: boltz2-b300-1x
+    app.kubernetes.io/part-of: fs2-serve
+    app.kubernetes.io/managed-by: fs2-serve-models
+  annotations:
+    fs2-serve.nebius.ai/runtime-image-digest: sha256:ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46
+    fs2-serve.nebius.ai/runtime-image-amd64-digest: sha256:4e12144fbffc85e5239eadfe723265e282325a72f7946942897a08a7bf635c44
+    fs2-serve.nebius.ai/models: boltz2
+    fs2-serve.nebius.ai/scheduling: explicit-image-opt-in-does-not-scale-from-zero
+spec:
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fs2-image-cache
+      app.kubernetes.io/instance: boltz2-b300-1x
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 1}
+  template:
+    metadata:
+      labels: *labels
+      annotations:
+        fs2-serve.nebius.ai/runtime-image-digest: sha256:ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46
+        fs2-serve.nebius.ai/runtime-image-amd64-digest: sha256:4e12144fbffc85e5239eadfe723265e282325a72f7946942897a08a7bf635c44
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        cache.fs2.nebius/image-boltz2: ec4ccb67476f0783d1b7569593623186
+        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
+        accelerator.fs2.nebius/pool-id: nebius-b300-preemptible-1x
+        kubernetes.io/arch: amd64
+        workload.fs2.nebius/gpu: "true"
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      serviceAccountName: fs2-image-cache
+      terminationGracePeriodSeconds: 10
+      tolerations:
+        - {effect: NoSchedule, key: dedicated, operator: Equal, value: fs2-inference}
+      containers:
+        - name: image-holder
+          image: registry.example.invalid/k8s-inference/models/boltz2-blackwell@sha256:ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, -ec]
+          args:
+            - trap 'exit 0' TERM INT; while :; do sleep 3600 & wait $!; done
+          resources:
+            requests: {cpu: 5m, ephemeral-storage: 16Mi, memory: 16Mi}
+            limits: {cpu: 100m, ephemeral-storage: 128Mi, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+            runAsGroup: 1000
+            runAsUser: 1000

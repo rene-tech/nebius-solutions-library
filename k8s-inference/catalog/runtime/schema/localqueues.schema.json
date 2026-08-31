@@ -1,0 +1,88 @@
+{
+  "$id": "https://fs2-serve.nebius.ai/schema/localqueues.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "v1"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "apiVersion": {
+            "const": "kueue.x-k8s.io/v1beta2"
+          },
+          "kind": {
+            "const": "LocalQueue"
+          },
+          "metadata": {
+            "additionalProperties": false,
+            "properties": {
+              "labels": {
+                "additionalProperties": false,
+                "properties": {
+                  "app.kubernetes.io/managed-by": {
+                    "const": "fs2-serve-models"
+                  },
+                  "app.kubernetes.io/part-of": {
+                    "const": "fs2-serve"
+                  }
+                },
+                "required": [
+                  "app.kubernetes.io/managed-by",
+                  "app.kubernetes.io/part-of"
+                ],
+                "type": "object"
+              },
+              "name": {
+                "const": "fs2-models-async"
+              },
+              "namespace": {
+                "const": "fs2-models"
+              }
+            },
+            "required": [
+              "labels",
+              "name",
+              "namespace"
+            ],
+            "type": "object"
+          },
+          "spec": {
+            "additionalProperties": false,
+            "properties": {
+              "clusterQueue": {
+                "const": "fs2-b300-async"
+              }
+            },
+            "required": [
+              "clusterQueue"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "apiVersion",
+          "kind",
+          "metadata",
+          "spec"
+        ],
+        "type": "object"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "type": "array"
+    },
+    "kind": {
+      "const": "List"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "items",
+    "kind"
+  ],
+  "title": "fs2-serve catalog-owned Kueue LocalQueue bundle",
+  "type": "object"
+}

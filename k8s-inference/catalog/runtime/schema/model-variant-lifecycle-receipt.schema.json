@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-variant-lifecycle-receipt/v1",
+  "title": "Reopened fenced zero-ready-zero lifecycle observation",
+  "$comment": "Non-authoritative shape only; executable verification joins operations, monotonic fences, replica transitions, runtime Node/GPU and backend readiness.",
+  "x-fs2-authority": "non-authoritative-shape-only",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "action", "observed_at", "variant_id", "variant_digest", "serving_binding_digest", "scale_contract_digest", "runtime_tuple_digest", "artifact_manifest_digest", "backend_readiness_receipt_digest", "operation_id", "previous_fencing_token", "fencing_token", "replicas", "backend_service_uid", "node_uid", "gpu_uuid", "artifact_retained", "valid_until"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-variant-lifecycle-receipt/v1"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "PASS"},
+    "action": {"enum": ["activate", "deactivate"]},
+    "observed_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "variant_id": {"$ref": "#/$defs/id"},
+    "variant_digest": {"$ref": "#/$defs/digest"},
+    "serving_binding_digest": {"$ref": "#/$defs/digest"},
+    "scale_contract_digest": {"$ref": "#/$defs/digest"},
+    "runtime_tuple_digest": {"$ref": "#/$defs/digest"},
+    "artifact_manifest_digest": {"$ref": "#/$defs/digest"},
+    "backend_readiness_receipt_digest": {"$ref": "#/$defs/digest"},
+    "operation_id": {"type": "string", "minLength": 1},
+    "previous_fencing_token": {"type": "integer", "minimum": 0},
+    "fencing_token": {"type": "integer", "minimum": 1},
+    "replicas": {"type": "object"},
+    "backend_service_uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+    "node_uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+    "gpu_uuid": {"type": "string", "pattern": "^GPU-[A-Za-z0-9-]+$"},
+    "artifact_retained": {"const": true},
+    "valid_until": {"type": "string", "format": "date-time", "pattern": "Z$"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"}
+  }
+}

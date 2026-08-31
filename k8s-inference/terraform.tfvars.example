@@ -1,0 +1,128 @@
+# Complete inference catalog on preemptible B300 capacity. Both GPU pools start at
+# zero nodes and are added on demand. Secret values do not belong in this file;
+# export the environment variables named in deployment.secrets before apply.
+
+deployment = {
+  schema_version = 1
+  name           = "k8s-inference-demo"
+
+  target = {
+    project_id   = "project-yourprojectid"
+    project_name = "my-inference-project"
+    region       = "us-north1"
+    network = {
+      network_name        = "default-network"
+      subnet_name         = "default-subnet"
+      private_subnet_cidr = "10.0.0.0/16"
+    }
+    system_update_strategy = {
+      max_surge       = 1
+      max_unavailable = 0
+    }
+  }
+
+  profiles = {
+    capacity     = "full_catalog"
+    accelerators = "full_catalog"
+    models       = "full_catalog"
+  }
+
+  cluster = {
+    kubernetes_version          = "1.35"
+    control_plane_allowed_cidrs = []
+  }
+
+  accelerator_pools = {
+    "nebius-b300-preemptible-1x" = {
+      platform          = "gpu-b300-sxm"
+      preset            = "1gpu-24vcpu-346gb"
+      accelerator_class = "nvidia-b300-sxm6-288gb"
+      gpus_per_node     = 1
+      gpu_memory_gb     = 288
+      capacity_type     = "preemptible"
+      min_nodes         = 0
+      max_nodes         = 6
+      driver = {
+        mode   = "managed"
+        preset = "cuda13.0"
+      }
+    }
+    "nebius-b300-preemptible-8x" = {
+      platform          = "gpu-b300-sxm"
+      preset            = "8gpu-192vcpu-2768gb"
+      accelerator_class = "nvidia-b300-sxm6-288gb"
+      gpus_per_node     = 8
+      gpu_memory_gb     = 288
+      capacity_type     = "preemptible"
+      min_nodes         = 0
+      max_nodes         = 2
+      driver = {
+        mode   = "managed"
+        preset = "cuda13.0"
+      }
+      local_nvme      = true
+      local_nvme_mode = "kubelet-ephemeral"
+      topology = {
+        mode = "standalone"
+      }
+    }
+  }
+
+  models = {
+    selection = "profile"
+    enabled   = []
+    scaling = {
+      mode                       = "keda"
+      hot                        = []
+      polling_interval_seconds   = 5
+      cooldown_period_seconds    = 300
+      fallback_failure_threshold = 3
+      overrides                  = {}
+    }
+    cold_start_keepers = true
+  }
+
+  edge = {
+    mode         = "internal-only"
+    source_cidrs = []
+  }
+
+  observability = {
+    dcgm_cold_start_campaign = false
+    grafana = {
+      publish_external = false
+    }
+  }
+
+  # Build these two images from components/control-plane and
+  # components/admin-console, push them to an accessible registry, then
+  # replace the example repositories and digests before apply.
+  applications = {
+    control_plane = {
+      repository             = "registry.example.invalid/k8s-inference/control-plane"
+      digest                 = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      catalog_rollout_digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+    admin_console = {
+      repository = "registry.example.invalid/k8s-inference/admin-console"
+      digest     = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      provenance = {
+        source_commit = "1111111111111111111111111111111111111111"
+        source_tree   = "2222222222222222222222222222222222222222"
+        sbom_sha256   = "3333333333333333333333333333333333333333333333333333333333333333"
+        sbom_format   = "cyclonedx-json"
+      }
+    }
+  }
+
+  secrets = {
+    grafana_username_env  = "FS2_GRAFANA_ADMIN_USERNAME"
+    grafana_password_env  = "FS2_GRAFANA_ADMIN_PASSWORD"
+    ngc_api_key_env       = "FS2_NGC_API_KEY"
+    nvcr_dockerconfig_env = "FS2_NVCR_DOCKERCONFIGJSON"
+  }
+
+  acceptance = {
+    create_probe_job = false
+  }
+}

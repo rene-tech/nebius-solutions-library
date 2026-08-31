@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/replica-field-ownership-receipt/v1",
+  "title": "fs2-serve activation-only replica managedFields receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "api_server_identity_sha256", "target_uid", "target_resource_version", "managed_fields_resource_version", "managed_fields_observed_at", "replica_field_manager", "replica_field_path", "fields_v1_sha256", "gitops_manager", "gitops_owns_replicas", "foreign_replica_managers", "ownership_annotation_sha256"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/replica-field-ownership-receipt/v1"},
+    "api_server_identity_sha256": {"$ref": "#/$defs/digest"},
+    "target_uid": {"$ref": "#/$defs/uid"},
+    "target_resource_version": {"type": "string", "minLength": 1},
+    "managed_fields_resource_version": {"type": "string", "minLength": 1},
+    "managed_fields_observed_at": {"$ref": "#/$defs/time"},
+    "replica_field_manager": {"const": "fs2-model-activation-controller"},
+    "replica_field_path": {"const": "f:spec/f:replicas"},
+    "fields_v1_sha256": {"$ref": "#/$defs/digest"},
+    "gitops_manager": {"const": "argocd-application-controller"},
+    "gitops_owns_replicas": {"const": false},
+    "foreign_replica_managers": {"const": []},
+    "ownership_annotation_sha256": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+    "time": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"}
+  }
+}

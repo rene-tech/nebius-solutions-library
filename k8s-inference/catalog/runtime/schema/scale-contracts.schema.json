@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/scale-contracts/v6",
+  "title": "fs2-serve immutable per-model scale and executable activation contracts v6",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "controller_boundary", "policy_profiles", "contracts"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/scale-contracts/v6"},
+    "controller_boundary": {"$ref": "#/$defs/controllerBoundary"},
+    "policy_profiles": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/policyProfile"}
+    },
+    "contracts": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+      "additionalProperties": {"$ref": "#/$defs/modelContract"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "probe": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["method", "path", "expected_status", "timeout_seconds"],
+      "properties": {
+        "method": {"enum": ["GET", "POST"]},
+        "path": {"type": "string", "pattern": "^/"},
+        "expected_status": {"type": "integer", "minimum": 100, "maximum": 599},
+        "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 3600}
+      }
+    },
+    "controllerSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace", "service_account_name"],
+      "properties": {
+        "namespace": {"enum": ["fs2-models", "fs2-system"]},
+        "service_account_name": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"}
+      }
+    },
+    "activationControllerSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace", "deployment_name", "service_account_name", "leader_lease_name", "leader_role_namespace", "leader_role_name", "target_role_namespace", "target_role_name"],
+      "properties": {
+        "namespace": {"const": "fs2-system"},
+        "deployment_name": {"const": "fs2-serve-control-plane-activation"},
+        "service_account_name": {"const": "fs2-model-activation-controller"},
+        "leader_lease_name": {"const": "fs2-serve-activation-controller"},
+        "leader_role_namespace": {"const": "fs2-system"},
+        "leader_role_name": {"const": "fs2-serve-control-plane-activation-leader"},
+        "target_role_namespace": {"const": "fs2-models"},
+        "target_role_name": {"const": "fs2-serve-control-plane-activation-targets"}
+      }
+    },
+    "activationIntentInterface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "transport", "intent_table", "event_table", "target_state_table", "submission_owner", "claim_owner", "database_principals", "activation_subject_fields", "claim_fence_fields", "leader_lease_fields", "completion_subject_fields", "model_lock"],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/postgres-activation-intent/v3"},
+        "transport": {"const": "postgresql-durable-row"},
+        "intent_table": {"const": "fs2_activation_intents"},
+        "event_table": {"const": "fs2_activation_events"},
+        "target_state_table": {"const": "fs2_activation_target_state"},
+        "submission_owner": {"const": "fs2-system/fs2-serve-control-plane"},
+        "claim_owner": {"const": "fs2-system/fs2-model-activation-controller"},
+        "database_principals": {
+          "const": {
+            "claim_owner": {
+              "database_role": "fs2_activation_claim_owner",
+              "denied_grants": ["DELETE:fs2_activation_intents", "DDL:*"],
+              "grants": ["EXECUTE:fs2_claim_activation_intent", "EXECUTE:fs2_complete_activation_intent", "INSERT:fs2_activation_events", "SELECT:fs2_activation_intents", "SELECT:fs2_activation_target_state"],
+              "kubernetes_subject": "system:serviceaccount:fs2-system:fs2-model-activation-controller"
+            },
+            "submitter": {
+              "database_role": "fs2_activation_submitter",
+              "denied_grants": ["CLAIM:fs2_activation_intents", "DELETE:fs2_activation_intents", "DDL:*", "UPDATE:fs2_activation_target_state"],
+              "grants": ["EXECUTE:fs2_submit_activation_intent", "SELECT_STATUS_ONLY:fs2_activation_intents"],
+              "kubernetes_subject": "system:serviceaccount:fs2-system:fs2-serve-control-plane"
+            }
+          }
+        },
+        "activation_subject_fields": {"const": ["intent_id", "operation_id", "operation_attempt", "model_id", "model_revision", "binding_digest", "action", "subject_sha256", "store_contract_sha256"]},
+        "claim_fence_fields": {"const": ["fence_operation_id", "controller_id", "previous_fencing_token", "fencing_token", "database_now", "claim_started_at", "claim_lease_expires_at", "leader_lease_uid", "leader_lease_resource_version", "leader_lease_holder_identity", "submitter_service_account_uid", "claim_owner_service_account_uid"]},
+        "leader_lease_fields": {"const": ["leader_lease_uid", "leader_lease_resource_version", "leader_lease_holder_identity", "leader_lease_renew_time", "leader_lease_duration_seconds"]},
+        "completion_subject_fields": {"const": ["scale_contract_digest", "target_uid", "target_resource_version", "target_observed_generation", "target_template_digest", "target_active"]},
+        "model_lock": {"const": "postgres-advisory-xact-lock-plus-target-state-cas"}
+      }
+    },
+    "activationStore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "ddl", "database_clock", "functions", "fencing", "credential_delivery", "pod_identity"],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/postgres-activation-store/v1"},
+        "ddl": {"const": {"path": "sql/0001_activation_store.sql", "sha256": "b90fa9b5317b1abe40350b55fab0c8aeb35d7a0d6364454f19eda7c0475e5053"}},
+        "database_clock": {"const": "clock_timestamp"},
+        "functions": {"const": {"submit": "fs2_submit_activation_intent", "claim": "fs2_claim_activation_intent", "complete": "fs2_complete_activation_intent"}},
+        "fencing": {"const": {"scope": "monotonic-per-model", "allocation": "target-state-row-cas-plus-advisory-xact-lock", "claim_lease_clock": "database", "completion": "db-clock-token-controller-lease-cas", "idempotent_replay": "same-intent-and-subject-or-reject", "stale_token_action": "reject"}},
+        "credential_delivery": {
+          "const": {
+            "mode": "observed-pre-created-kubernetes-secrets",
+            "values": "suppressed",
+            "eso": "disabled-until-reviewed-eligible-provider-build-receipt",
+            "secrets": {
+              "claim_owner": {"namespace": "fs2-system", "name": "fs2-activation-claim-owner-db", "type": "Opaque", "required_keys": ["dsn"], "service_account_name": "fs2-model-activation-controller", "database_role": "fs2_activation_claim_owner"},
+              "submitter": {"namespace": "fs2-system", "name": "fs2-activation-submitter-db", "type": "Opaque", "required_keys": ["dsn"], "service_account_name": "fs2-serve-control-plane", "database_role": "fs2_activation_submitter"}
+            }
+          }
+        },
+        "pod_identity": {"const": {"submitter_deployment": "fs2-serve-control-plane", "claim_owner_deployment": "fs2-serve-control-plane-activation", "namespace": "fs2-system", "source": "api-server-observed-pod-uid-owner-uid-service-account-uid"}}
+      }
+    },
+    "controllerBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["activation_controller", "activation_intent_interface", "activation_store", "batch_controller", "gateway_api", "gateway_kubernetes_mutation", "authorization", "scope"],
+      "properties": {
+        "activation_controller": {"$ref": "#/$defs/activationControllerSubject"},
+        "activation_intent_interface": {"$ref": "#/$defs/activationIntentInterface"},
+        "activation_store": {"$ref": "#/$defs/activationStore"},
+        "batch_controller": {"$ref": "#/$defs/controllerSubject"},
+        "gateway_api": {"$ref": "#/$defs/controllerSubject"},
+        "gateway_kubernetes_mutation": {"const": "forbidden"},
+        "authorization": {"const": "postgres-role-grants-plus-projected-ksa-lease-operation-fence"},
+        "scope": {"const": "namespaced-exact-subject-only"}
+      }
+    },
+    "preemption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["notice_action", "new_admissions", "retry_policy", "retain_all_attempts"],
+      "properties": {
+        "notice_action": {"const": "mark-unready-and-drain"},
+        "new_admissions": {"const": "stop"},
+        "retry_policy": {"const": "idempotent-only-within-deadline"},
+        "retain_all_attempts": {"const": true}
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid_fence_required", "expected_resource_uids_required", "foreign_uid_action", "zero_active_assignments_required", "zero_gpu_clients_required", "retained_cache_action", "expected_resource_kinds"],
+      "properties": {
+        "uid_fence_required": {"const": true},
+        "expected_resource_uids_required": {"const": true},
+        "foreign_uid_action": {"const": "forbidden"},
+        "zero_active_assignments_required": {"const": true},
+        "zero_gpu_clients_required": {"const": true},
+        "retained_cache_action": {"const": "preserve-content-addressed"},
+        "expected_resource_kinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["Deployment", "Job", "NIMService", "Pod"]}
+        }
+      }
+    },
+    "policyProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["desired_floor", "desired_max", "scale_to_zero", "node_scaler_owner", "replica_scaler_owner", "cooldown_seconds", "drain_timeout_seconds", "cleanup_timeout_seconds", "preemption", "cleanup"],
+      "properties": {
+        "desired_floor": {"type": "integer", "minimum": 0, "maximum": 1},
+        "desired_max": {"type": "integer", "minimum": 0, "maximum": 1},
+        "scale_to_zero": {"type": "boolean"},
+        "node_scaler_owner": {"const": "nebius-managed-node-group-autoscaler"},
+        "replica_scaler_owner": {"enum": ["fs2-model-activation-controller", "fs2-model-batch-controller", "none"]},
+        "cooldown_seconds": {"type": "integer", "minimum": 0},
+        "drain_timeout_seconds": {"type": "integer", "minimum": 0},
+        "cleanup_timeout_seconds": {"type": "integer", "minimum": 0},
+        "preemption": {"$ref": "#/$defs/preemption"},
+        "cleanup": {"$ref": "#/$defs/cleanup"}
+      }
+    },
+    "target": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["api_version", "kind", "namespace", "name", "uid_source", "selector", "template_identity_sha256"],
+      "properties": {
+        "api_version": {"enum": ["apps/v1", "apps.nvidia.com/v1alpha1", "batch/v1"]},
+        "kind": {"enum": ["Deployment", "Job", "NIMService"]},
+        "namespace": {"const": "fs2-models"},
+        "name": {"type": ["string", "null"], "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+        "uid_source": {"enum": ["signed-serving-binding", "signed-activation-receipt"]},
+        "selector": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"type": "string", "minLength": 1}
+        },
+        "template_identity_sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "modelContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_digest", "execution_identity_sha256", "resource_placement_identity_sha256", "activation_mode", "policy_profile", "target", "readiness", "warmup"],
+      "properties": {
+        "model_digest": {"$ref": "#/$defs/digest"},
+        "execution_identity_sha256": {"$ref": "#/$defs/digest"},
+        "resource_placement_identity_sha256": {"$ref": "#/$defs/digest"},
+        "activation_mode": {"enum": ["replica-scale", "batch-job", "disabled"]},
+        "policy_profile": {"enum": ["http-deployment-zero-to-one-v1", "http-nim-zero-to-one-v1", "batch-job-v1", "disabled-v1"]},
+        "target": {"$ref": "#/$defs/target"},
+        "readiness": {"$ref": "#/$defs/probe"},
+        "warmup": {"$ref": "#/$defs/probe"}
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "model_id": "diffdock",
+  "kind": "weights",
+  "source": {
+    "uri": "oci://registry.example.invalid/k8s-inference/fs2-models/diffdock@sha256:cb3875f7d66b8d170d0e3f16d3d9a63aee8d63fbb23fdf65ec7ea0214d849529",
+    "revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284"
+  },
+  "content": {
+    "digest": "fe05bca0521f77e120fe135021f555269b0128e929e60f201542d4c17483329c",
+    "expanded_bytes": 2744924511,
+    "files": [
+      {
+        "path": "confidence_model/best_model_epoch75.pt",
+        "bytes": 19312669,
+        "sha256": "18d0fcc97fc55436786db02305ac61c734ad682aa5f8dee601555369c8461a57"
+      },
+      {
+        "path": "confidence_model/model_parameters.yml",
+        "bytes": 2604,
+        "sha256": "2fe8d3db566c5758fc2551d9fb3b1605256f72762998574bb893609298d4dd97"
+      },
+      {
+        "path": "esm2_t33_650M_UR50D-contact-regression.pt",
+        "bytes": 3687,
+        "sha256": "8ffe6edbd4173dc8d45c2cd5cb27d43aad77ec26b4c768200c58ae1f96693575"
+      },
+      {
+        "path": "esm2_t33_650M_UR50D.pt",
+        "bytes": 2604537549,
+        "sha256": "ea9d0522b335a8778dea6535a65301f10208dece28cd5865482b0b1fc446168c"
+      },
+      {
+        "path": "score_model/best_ema_inference_epoch_model.pt",
+        "bytes": 121063553,
+        "sha256": "64afbdc97f6c700df0309162eb533ee6f2754c71412aca7a3a534a7239667260"
+      },
+      {
+        "path": "score_model/model_parameters.yml",
+        "bytes": 4449,
+        "sha256": "58c3d2a5da4194fe4ba968363a3f16ccb3c11f2c0898c9d27e62f4b06893f943"
+      }
+    ]
+  },
+  "license": {
+    "id": "MIT",
+    "state": "verified"
+  },
+  "entitlement_state": "not-required",
+  "owner": "fs2-serve-open-runtime",
+  "retention": "retained-platform"
+}

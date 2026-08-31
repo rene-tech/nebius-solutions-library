@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-variant-preemption-receipt/v1",
+  "title": "API-backed exact preemption transition",
+  "$comment": "Non-authoritative shape; executable verification joins old and replacement Pod/Node/GPU, Event, old fence, exact attempt/semantic pair, and monotonic fencing tokens.",
+  "type": "object",
+  "required": ["schema", "receipt_digest", "status", "variant_id", "variant_digest", "attempt_id", "semantic_receipt_digest", "runtime_tuple_digest", "artifact_manifest_digest", "backend_readiness_receipt_digest", "observations", "old_identity", "replacement_identity", "old_fencing_token", "replacement_fencing_token", "observed_at", "valid_until"],
+  "properties": {"schema": {"const": "fs2-serve.nebius.ai/model-variant-preemption-receipt/v1"}, "receipt_digest": {"$ref": "#/$defs/digest"}, "status": {"const": "PASS"}, "variant_id": {"type": "string"}, "variant_digest": {"$ref": "#/$defs/digest"}, "attempt_id": {"type": "string"}, "semantic_receipt_digest": {"$ref": "#/$defs/digest"}, "runtime_tuple_digest": {"$ref": "#/$defs/digest"}, "artifact_manifest_digest": {"$ref": "#/$defs/digest"}, "backend_readiness_receipt_digest": {"$ref": "#/$defs/digest"}, "observations": {"type": "object"}, "old_identity": {"type": "object"}, "replacement_identity": {"type": "object"}, "old_fencing_token": {"type": "integer", "minimum": 0}, "replacement_fencing_token": {"type": "integer", "minimum": 1}, "observed_at": {"type": "string"}, "valid_until": {"type": "string"}},
+  "additionalProperties": false,
+  "$defs": {"digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

@@ -1,0 +1,14 @@
+{{- if and .Values.adminConsole.enabled .Values.adminConsole.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "fs2-serve.adminConsoleFullname" . }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin-console
+spec:
+  minAvailable: {{ .Values.adminConsole.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.adminConsoleSelectorLabels" . | nindent 6 }}
+{{- end }}

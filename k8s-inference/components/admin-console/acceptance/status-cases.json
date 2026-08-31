@@ -1,0 +1,106 @@
+[
+  {
+    "name": "explicit compatibility rejection wins",
+    "input": {
+      "catalog_supported": false,
+      "sources_fresh": true,
+      "health_failure": false,
+      "activation_phase": "none",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "queued_operations": 0
+    },
+    "expected": "unsupported"
+  },
+  {
+    "name": "stale required adapter is unknown not cold",
+    "input": {
+      "catalog_supported": true,
+      "sources_fresh": false,
+      "health_failure": false,
+      "activation_phase": "none",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "queued_operations": 0
+    },
+    "expected": "unknown"
+  },
+  {
+    "name": "health failure wins over ready replica",
+    "input": {
+      "catalog_supported": true,
+      "sources_fresh": true,
+      "health_failure": true,
+      "activation_phase": "none",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "queued_operations": 0
+    },
+    "expected": "unhealthy"
+  },
+  {
+    "name": "claimed activation is loading",
+    "input": {
+      "catalog_supported": true,
+      "sources_fresh": true,
+      "health_failure": false,
+      "activation_phase": "claimed",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "queued_operations": 1
+    },
+    "expected": "loading"
+  },
+  {
+    "name": "replica startup gap is loading",
+    "input": {
+      "catalog_supported": true,
+      "sources_fresh": true,
+      "health_failure": false,
+      "activation_phase": "none",
+      "desired_replicas": 2,
+      "ready_replicas": 1,
+      "queued_operations": 0
+    },
+    "expected": "loading"
+  },
+  {
+    "name": "healthy ready replica is hot",
+    "input": {
+      "catalog_supported": true,
+      "sources_fresh": true,
+      "health_failure": false,
+      "activation_phase": "none",
+      "desired_replicas": 2,
+      "ready_replicas": 2,
+      "queued_operations": 3
+    },
+    "expected": "hot"
+  },
+  {
+    "name": "waiting demand without replica is queued",
+    "input": {
+      "catalog_supported": true,
+      "sources_fresh": true,
+      "health_failure": false,
+      "activation_phase": "queued",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "queued_operations": 1
+    },
+    "expected": "queued"
+  },
+  {
+    "name": "supported idle scale to zero is cold",
+    "input": {
+      "catalog_supported": true,
+      "sources_fresh": true,
+      "health_failure": false,
+      "activation_phase": "none",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "queued_operations": 0
+    },
+    "expected": "cold"
+  }
+]

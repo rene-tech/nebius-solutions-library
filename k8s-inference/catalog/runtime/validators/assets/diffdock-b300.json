@@ -1,0 +1,14 @@
+{
+  "schema": "fs2-serve.nebius.ai/semantic-contract/v1",
+  "contract": "two-distinct-docking-responses/v1",
+  "requests": [
+    {
+      "id": "diffdock-butane-seed-1701",
+      "payload_sha256": "6065706553b0c809327b326e5a15ee6db025600c66455e55863ebb644c910e09"
+    },
+    {
+      "id": "diffdock-pentane-seed-2303",
+      "payload_sha256": "c0c32f9bab422dbe85aec757b8bb76b4bbabc38bec390a1ab51a51a0bf7881d0"
+    }
+  ]
+}

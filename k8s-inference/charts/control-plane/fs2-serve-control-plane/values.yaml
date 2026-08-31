@@ -1,0 +1,433 @@
+replicaCount: 2
+
+image:
+  # Required immutable production repository and digest; empty defaults fail validation.
+  repository: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# Optional static operator UI. It has no Kubernetes identity and reaches the
+# typed BFF only through the browser's same-origin /admin/api route.
+adminConsole:
+  enabled: false
+  replicaCount: 2
+  image:
+    repository: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+  provenance:
+    sourceCommit: ""
+    sourceTree: ""
+    sbomSha256: ""
+    sbomFormat: cyclonedx-json
+  service:
+    port: 8080
+  httpRoute:
+    enabled: false
+    requestTimeout: 30s
+    backendRequestTimeout: 30s
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Immutable desired-state bootstrap for the admin configuration service. The
+# Terraform-owned ConfigMap name includes the canonical configuration digest.
+adminConfiguration:
+  enabled: false
+  configMapName: ""
+  key: admin-configuration.json
+  receiptKey: ""
+  sha256: ""
+
+serviceAccounts:
+  runtime:
+    create: true
+    name: ""
+    annotations: {}
+  maintenance:
+    create: true
+    name: ""
+    annotations: {}
+  migration:
+    create: true
+    name: ""
+    annotations: {}
+
+service:
+  port: 8080
+
+catalog:
+  # Models-lane read-only filesystem tree. A ConfigMap cannot preserve the
+  # canonical nested models/contracts/validators layout. Production either
+  # mounts the exact published tree from a PVC or packages it into the immutable
+  # application image; both bind rollout to the catalog digest.
+  delivery: pvc
+  imagePath: /opt/fs2/catalog
+  persistentVolumeClaimName: fs2-serve-catalog
+  bindingsConfigMapName: fs2-serve-serving-bindings
+  bindingsKey: serving-bindings.json
+  variantPromotionsKey: model-variant-promotions.json
+  evidencePersistentVolumeClaimName: fs2-serve-model-evidence
+  rolloutDigest: ""
+  leanRoutes:
+    enabled: false
+    configMapName: fs2-serve-lean-routes
+    key: lean-routes.json
+
+federation:
+  secretName: fs2-serve-federation
+  routesKey: routes.json
+  externalSecret:
+    enabled: false
+    refreshInterval: 5m
+    secretStoreRef:
+      name: ""
+      kind: ClusterSecretStore
+    remoteKey: ""
+
+secrets:
+  database:
+    name: fs2-serve-database
+    key: url
+    caKey: ca.crt
+  migrationsDatabase:
+    name: fs2-serve-database-migrations
+    key: url
+    caKey: ca.crt
+  maintenanceDatabase:
+    name: fs2-serve-database-maintenance
+    key: url
+    caKey: ca.crt
+  payloadKeyring:
+    name: fs2-serve-payload-keyring
+    key: keyring.json
+  ledgerHmacKeyring:
+    name: fs2-serve-ledger-hmac-keyring
+    key: keyring.json
+  tokenPepper:
+    name: fs2-serve-token-pepper
+    key: keyring.json
+  routeAttestors:
+    name: fs2-serve-route-attestors
+    key: attestors.json
+  admin:
+    name: fs2-serve-admin
+    key: token
+
+config:
+  # Required public HTTPS origins; empty defaults fail validation.
+  publicBaseUrl: ""
+  # The retained primary endpoint is a directly allocated public IPv4. A DNS
+  # release must opt in explicitly and provide httpRoute.hostnames.
+  publicAuthorityMode: ip
+  authorizationServerUrl: ""
+  # Internal-only disposable acceptance may advertise a loopback HTTP origin
+  # through a bounded operator proxy. Public releases must leave this false.
+  allowNonClusterUrls: false
+  otlpEndpoint: ""
+  maxRequestBytes: "16777216"
+  maxResponseBytes: "134217728"
+  payloadTtlSeconds: "86400"
+  operationRetentionSeconds: "604800"
+  patRetentionSeconds: "604800"
+  auditRetentionSeconds: "2592000"
+  usageRetentionSeconds: "7776000"
+  # Opaque browser operator session lifetime; bounded to 5 minutes..24 hours.
+  adminSessionTtlSeconds: "28800"
+  syncWaitSeconds: "2"
+  maxSyncWaitSeconds: "30"
+  maxSyncWaiters: "32"
+  waitPollInitialSeconds: "0.05"
+  waitPollMaxSeconds: "0.5"
+  # Empty preserves the application default. Elastic model loading sets this
+  # explicitly because large B300 models can take longer than 30 minutes.
+  activationTimeoutSeconds: ""
+  workerConcurrency: "4"
+  workerPollSeconds: "0.25"
+  workerLeaseSeconds: "30"
+  routeRevalidationIntervalSeconds: "15"
+  shutdownGraceSeconds: "30"
+  maxAttempts: "3"
+  maxGpuSecondsPerAttempt: "3600"
+  schemaWaitSeconds: "300"
+
+migration:
+  activeDeadlineSeconds: 300
+  reportingDatabaseRole: fs2_serve_reporting
+  runtimeDatabaseRole: fs2_serve_runtime
+  maintenanceDatabaseRole: fs2_serve_maintenance
+  activationDatabaseRole: fs2_serve_activation
+  # Exact value-suppressed inputs emitted by `fs2-serve
+  # postgresql-release-contract`. The migration Job publishes these annotations
+  # for the final PostgreSQL release receipt; chart validation rejects drift.
+  releaseContract:
+    schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
+    contractPayloadSha256: 6bc458b18a85dfa260b20a175bcca730f0238ba19caa53f8312e550fe9ededdd
+    migrationSetSha256: 25581efdc1a2cb52d4cfb2c05711ce993dee3310e669dd30348b820ae2a41b37
+    migrationCount: 11
+    firstMigrationVersion: 0001_initial.sql
+    lastMigrationVersion: 0011_admin_configuration.sql
+    namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+
+networkPolicy:
+  enabled: true
+  dns:
+    namespaceLabels:
+      kubernetes.io/metadata.name: kube-system
+    podLabels:
+      k8s-app: kube-dns
+    port: 53
+  gateway:
+    namespaceLabels:
+      kubernetes.io/metadata.name: envoy-gateway-system
+    podLabels:
+      app.kubernetes.io/component: proxy
+      app.kubernetes.io/managed-by: envoy-gateway
+      app.kubernetes.io/name: envoy
+      gateway.envoyproxy.io/owning-gateway-name: public
+      gateway.envoyproxy.io/owning-gateway-namespace: fs2-system
+  envoyController:
+    namespaceLabels:
+      kubernetes.io/metadata.name: envoy-gateway-system
+    podLabels:
+      app.kubernetes.io/instance: envoy-gateway
+      app.kubernetes.io/name: gateway-helm
+      control-plane: envoy-gateway
+    port: 18000
+  solver:
+    namespaceLabels:
+      kubernetes.io/metadata.name: fs2-system
+    podLabels:
+      acme.cert-manager.io/http01-solver: "true"
+    port: 8089
+  # Pinned Envoy Gateway v1.8.3 reconciles Gateway listeners 80/443 to these
+  # exact data-plane target ports. The source receipt is committed alongside
+  # the serving chart contract tests.
+  publicListenerPorts: [10080, 10443]
+  metrics:
+    namespaceLabels:
+      kubernetes.io/metadata.name: fs2-observability
+    podLabels:
+      app.kubernetes.io/name: prometheus
+  # Read-only admin observability uses Prometheus's HTTP query API. Keep this
+  # peer separate from the ingress-only metrics scraper contract above.
+  prometheus:
+    namespaceLabels:
+      kubernetes.io/metadata.name: fs2-observability
+    podLabels:
+      app.kubernetes.io/name: prometheus
+    port: 9090
+  database:
+    namespaceLabels:
+      kubernetes.io/metadata.name: fs2-data
+    podLabels:
+      cnpg.io/cluster: fs2-control-db
+    port: 5432
+  runtime:
+    namespaceLabels:
+      kubernetes.io/metadata.name: fs2-models
+    podLabels:
+      app.kubernetes.io/part-of: fs2-serve
+    ports: [8000, 8080]
+  otlp:
+    namespaceLabels:
+      kubernetes.io/metadata.name: fs2-observability
+    podLabels:
+      app.kubernetes.io/instance: otel-gateway
+      app.kubernetes.io/name: opentelemetry-collector
+    port: 4318
+  # Exact /32 or /128 addresses from the private federation route secret.
+  # Broad Internet CIDRs are rejected by the chart.
+  federationCidrs: []
+  federationPorts: [443]
+  # Exact /32 or /128 private Kubernetes API endpoint addresses. Empty means
+  # the controller has no API-server egress and cannot mutate workloads.
+  kubernetesApiCidrs: []
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+
+# Optional read-only admin data sources. Both adapters are disabled by default,
+# so a normal release receives neither Kubernetes API credentials nor an
+# outbound Prometheus connection. Deployments must opt in explicitly.
+adminReadAdapters:
+  adapterTimeoutSeconds: "2"
+  sourceMaxAgeSeconds: "90"
+  capacity:
+    enabled: false
+    kubernetesApiUrl: https://kubernetes.default.svc
+    tokenExpirationSeconds: 600
+    modelNamespace: fs2-models
+    systemNamespace: fs2-system
+    kueueApiVersion: v1beta2
+  observability:
+    enabled: false
+    prometheusUrl: http://fs2-monitoring-prometheus.fs2-observability.svc:9090
+    # Only explicit absences are configured. Installed/health/data for active
+    # components still require successful bounded Prometheus probes.
+    installed:
+      alertmanager: false
+      tempo: false
+    # Links are emitted only after a deployer attests that the corresponding
+    # external HTTPS route exists. The intended retained topology exposes
+    # authenticated Grafana as the pane for Prometheus, Loki, and DCGM; raw
+    # Prometheus and Loki remain private.
+    links:
+      allowedHosts: []
+      grafana:
+        url: ""
+        verifiedExternalRoute: false
+      prometheus:
+        url: ""
+        verifiedExternalRoute: false
+      loki:
+        url: ""
+        verifiedExternalRoute: false
+
+prometheusRule:
+  enabled: false
+  maxQueueAgeSeconds: 300
+  maxQueueDepth: 100
+  maxSyncWaitSaturations: 10
+  maxAuthenticationFailures: 50
+
+maintenance:
+  enabled: true
+  schedule: "*/1 * * * *"
+
+httpRoute:
+  enabled: false
+  authorityMode: ip
+  # Must remain above config.maxSyncWaitSeconds (30 seconds).
+  requestTimeout: 40s
+  backendRequestTimeout: 40s
+
+# The application release owns the complete direct-IP Gateway API edge. The
+# cluster lane installs the pinned Gateway API/Envoy Gateway controllers and
+# CRDs, but no other source owns these concrete resources.
+publicGateway:
+  enabled: false
+  gatewayClassName: fs2-serve-public
+  gatewayName: public
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  httpListenerName: acme-http
+  httpsListenerName: public-https
+
+# Every public HTTPRoute requires these private deploy-time values. The cluster
+# lane supplies them from the exact Terraform-retained allocation only after a
+# read-only provider check proves the public IPv4 allocation belongs to
+# targetProjectId. The allocation ID is never committed in a values file.
+publicLoadBalancer:
+  enabled: false
+  # Deployment must override this unit-only value after provider ownership
+  # verification; no live project identity belongs in the source chart.
+  targetProjectId: project-unittarget
+  allocationProjectId: ""
+  allocationType: public-ipv4
+  allocationId: ""
+  # Nebius CCM does not support Local for this managed LoadBalancer path.
+  externalTrafficPolicy: Cluster
+  # Envoy Gateway v1.8.3 shifts privileged listener ports by 10000. Listener
+  # and target ports are fixed by that reviewed contract; NodePorts may be
+  # changed within Kubernetes's default range only when Terraform ingress is
+  # changed in the same release.
+  servicePorts:
+    http:
+      name: http-80
+      port: 80
+      targetPort: 10080
+      nodePort: 31425
+    https:
+      name: https-443
+      port: 443
+      targetPort: 10443
+      nodePort: 32633
+
+publicTls:
+  enabled: false
+  ipAddress: ""
+  secretName: fs2-serve-public-tls
+  duration: 160h
+  renewBeforePercentage: 40
+  issuerRef:
+    name: ""
+    kind: Issuer
+    group: cert-manager.io
+  # Optional chart-owned, namespaced ACME Issuer. The account key is generated
+  # by cert-manager in the referenced Secret; no key value is a Helm input.
+  acmeIssuer:
+    enabled: false
+    name: fs2-serve-ip-acme
+    environment: staging
+    email: ""
+    accountPrivateKeySecretName: fs2-serve-ip-acme-account
+    profile: shortlived
+    productionPromotion:
+      approved: false
+      stagingCertificateReady: false
+      stagingSolverReachabilityReady: false
+      stagingExternalHttpsReady: false
+      stagingIpAddress: ""
+      stagingReceiptSha256: ""
+
+# Lightweight per-Envoy abuse protection. Durable per-token budgets and
+# concurrency remain authoritative in PostgreSQL.
+edgeRateLimit:
+  enabled: true
+  requests: 200
+  unit: Second
+
+grafanaDashboard:
+  enabled: true
+  namespace: fs2-observability
+  label: grafana_dashboard
+  labelValue: "1"
+  reportingDatasourceUid: fs2-serve-reporting
+  reportingDatasourceSecretName: fs2-serve-postgres-grafana-datasource
+  reportingDatasourceSecretKey: datasource.yaml
+  reportingDatasourceLabel: grafana_datasource
+  reportingDatasourceLabelValue: "1"
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

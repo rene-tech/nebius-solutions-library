@@ -1,0 +1,363 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: glm-5-2-fp8
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: glm-5-2-fp8
+    app.kubernetes.io/part-of: fs2-serve
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: glm-5-2-fp8-cache
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: glm-5-2-fp8
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Ti
+  storageClassName: compute-csi-default-sc
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: glm-5-2-fp8-localizer
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: glm-5-2-fp8
+    app.kubernetes.io/part-of: fs2-serve
+data:
+  localize.py: |
+    import json
+    import os
+    import shutil
+    from concurrent.futures import ThreadPoolExecutor
+    from pathlib import Path
+
+    from huggingface_hub import snapshot_download
+
+    REPOSITORY = "zai-org/GLM-5.2-FP8"
+    REVISION = "ba978f7d347eaf65d22f1a86833408afdb953541"
+    EXPECTED_BYTES = 755_663_676_164
+
+    cold_root = Path("/cold-cache/huggingface")
+    local_root = Path("/model-cache")
+    runtime_root = Path(os.environ["FS2_RUNTIME_CACHE_ROOT"])
+    workers = int(os.environ.get("FS2_LOCALIZE_WORKERS", "32"))
+
+    snapshot = Path(
+        snapshot_download(
+            repo_id=REPOSITORY,
+            revision=REVISION,
+            cache_dir=cold_root,
+            max_workers=workers,
+        )
+    )
+    files = sorted(path for path in snapshot.rglob("*") if path.is_file())
+    source_bytes = sum(path.stat().st_size for path in files)
+    if source_bytes != EXPECTED_BYTES:
+        raise RuntimeError(
+            f"snapshot size mismatch: expected {EXPECTED_BYTES}, got {source_bytes}"
+        )
+
+    def stage(path: Path) -> int:
+        relative = path.relative_to(snapshot)
+        destination = local_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        source = path.resolve(strict=True)
+        if destination.exists() and destination.stat().st_size == source.stat().st_size:
+            return source.stat().st_size
+        temporary = destination.with_name(f".{destination.name}.partial")
+        shutil.copy2(source, temporary, follow_symlinks=True)
+        os.replace(temporary, destination)
+        return source.stat().st_size
+
+    local_root.mkdir(parents=True, exist_ok=True)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        staged_bytes = sum(executor.map(stage, files))
+    if staged_bytes != EXPECTED_BYTES:
+        raise RuntimeError(
+            f"localized size mismatch: expected {EXPECTED_BYTES}, got {staged_bytes}"
+        )
+
+    for directory in ("cuda", "torch-extensions", "torchinductor", "triton", "vllm"):
+        (runtime_root / directory).mkdir(parents=True, exist_ok=True)
+    receipt = {
+        "repository": REPOSITORY,
+        "revision": REVISION,
+        "source": "durable-network-pvc",
+        "target": "kubelet-ephemeral-local-nvme",
+        "bytes": staged_bytes,
+        "workers": workers,
+    }
+    (runtime_root / "localization-receipt.json").write_text(
+        json.dumps(receipt, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: glm-5-2-fp8
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/instance: glm-5-2-fp8
+    app.kubernetes.io/name: glm-5-2-fp8
+    app.kubernetes.io/part-of: fs2-serve
+    app.kubernetes.io/version: ba978f7d347eaf65d22f1a86833408afdb953541
+  annotations:
+    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/model-content-digest: sha256:20fe040f62612ae480971f0cf3433004062a186ff01af6d69127e6dd888bd795
+    fs2.nebius/model-repository: zai-org/GLM-5.2-FP8
+    fs2.nebius/model-revision: ba978f7d347eaf65d22f1a86833408afdb953541
+    fs2.nebius/runtime-image-digest: sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+    fs2.nebius/task: fs2-serve-all-models-general-media-wave
+spec:
+  progressDeadlineSeconds: 7200
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: glm-5-2-fp8
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/instance: glm-5-2-fp8
+        app.kubernetes.io/name: glm-5-2-fp8
+        app.kubernetes.io/part-of: fs2-serve
+        app.kubernetes.io/version: ba978f7d347eaf65d22f1a86833408afdb953541
+      annotations:
+        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/model-content-digest: sha256:20fe040f62612ae480971f0cf3433004062a186ff01af6d69127e6dd888bd795
+        fs2.nebius/model-repository: zai-org/GLM-5.2-FP8
+        fs2.nebius/model-revision: ba978f7d347eaf65d22f1a86833408afdb953541
+        fs2.nebius/runtime-image-digest: sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
+        accelerator.fs2.nebius/pool-id: nebius-b300-preemptible-8x
+        capacity.fs2.nebius/pool: burst
+        capacity.fs2.nebius/type: preemptible
+        workload.fs2.nebius/gpu: "true"
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: glm-5-2-fp8
+      terminationGracePeriodSeconds: 300
+      tolerations:
+        - effect: NoSchedule
+          key: dedicated
+          operator: Equal
+          value: fs2-inference
+      initContainers:
+        - name: localize-model
+          image: registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+          imagePullPolicy: IfNotPresent
+          command:
+            - python3
+            - /opt/fs2-localizer/localize.py
+          env:
+            - name: DO_NOT_TRACK
+              value: "1"
+            - name: FS2_RUNTIME_CACHE_ROOT
+              value: /runtime-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/20fe040f62612ae480971f0cf3433004062a186ff01af6d69127e6dd888bd795/driver-580.173.02-sm103
+            - name: FS2_LOCALIZE_WORKERS
+              value: "32"
+            - name: HF_HOME
+              value: /cold-cache/huggingface
+            - name: HF_HUB_DISABLE_TELEMETRY
+              value: "1"
+            - name: HF_HUB_DOWNLOAD_TIMEOUT
+              value: "3600"
+            - name: HF_XET_CACHE
+              value: /cold-cache/xet
+          resources:
+            limits:
+              cpu: "96"
+              ephemeral-storage: 1Ti
+              memory: 128Gi
+            requests:
+              cpu: "32"
+              ephemeral-storage: 768Gi
+              memory: 32Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /cold-cache
+              name: cold-cache
+            - mountPath: /model-cache
+              name: model-cache
+            - mountPath: /opt/fs2-localizer
+              name: localizer
+              readOnly: true
+            - mountPath: /runtime-cache
+              name: runtime-cache
+      containers:
+        - name: vllm
+          image: registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+          imagePullPolicy: IfNotPresent
+          args:
+            - /model-cache
+            - --served-model-name
+            - glm-5-2-fp8
+            - zai-org/GLM-5.2-FP8
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            - --tensor-parallel-size
+            - "8"
+            - --max-model-len
+            - "8192"
+            - --max-num-seqs
+            - "4"
+            - --gpu-memory-utilization
+            - "0.90"
+            - --generation-config
+            - vllm
+            - --reasoning-parser
+            - glm45
+            - --tool-call-parser
+            - glm47
+            - --enable-auto-tool-choice
+            - --enforce-eager
+          env:
+            - name: DO_NOT_TRACK
+              value: "1"
+            - name: HF_HUB_DISABLE_TELEMETRY
+              value: "1"
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: HF_HOME
+              value: /runtime-cache/huggingface
+            - name: HOME
+              value: /runtime-cache/home
+            - name: CUDA_CACHE_PATH
+              value: /runtime-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/20fe040f62612ae480971f0cf3433004062a186ff01af6d69127e6dd888bd795/driver-580.173.02-sm103/cuda
+            - name: NCCL_DEBUG
+              value: WARN
+            - name: TORCH_EXTENSIONS_DIR
+              value: /runtime-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/20fe040f62612ae480971f0cf3433004062a186ff01af6d69127e6dd888bd795/driver-580.173.02-sm103/torch-extensions
+            - name: TORCHINDUCTOR_CACHE_DIR
+              value: /runtime-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/20fe040f62612ae480971f0cf3433004062a186ff01af6d69127e6dd888bd795/driver-580.173.02-sm103/torchinductor
+            - name: TRITON_CACHE_DIR
+              value: /runtime-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/20fe040f62612ae480971f0cf3433004062a186ff01af6d69127e6dd888bd795/driver-580.173.02-sm103/triton
+            - name: VLLM_CACHE_ROOT
+              value: /runtime-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/20fe040f62612ae480971f0cf3433004062a186ff01af6d69127e6dd888bd795/driver-580.173.02-sm103/vllm
+            - name: VLLM_NO_USAGE_STATS
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
+              value: "1"
+            - name: XDG_CACHE_HOME
+              value: /runtime-cache/xdg
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "180"
+              ephemeral-storage: 64Gi
+              memory: 2Ti
+              nvidia.com/gpu: "8"
+            requests:
+              cpu: "128"
+              ephemeral-storage: 16Gi
+              memory: 1Ti
+              nvidia.com/gpu: "8"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            failureThreshold: 240
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            failureThreshold: 4
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+            timeoutSeconds: 3
+          volumeMounts:
+            - mountPath: /dev/shm
+              name: shared-memory
+            - mountPath: /model-cache
+              name: model-cache
+              readOnly: true
+            - mountPath: /runtime-cache
+              name: runtime-cache
+            - mountPath: /tmp
+              name: tmp
+      volumes:
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+          name: shared-memory
+        - name: cold-cache
+          persistentVolumeClaim:
+            claimName: glm-5-2-fp8-cache
+        - emptyDir:
+            sizeLimit: 1Ti
+          name: model-cache
+        - configMap:
+            defaultMode: 292
+            name: glm-5-2-fp8-localizer
+          name: localizer
+        - emptyDir:
+            sizeLimit: 256Gi
+          name: runtime-cache
+        - emptyDir:
+            sizeLimit: 16Gi
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: glm-5-2-fp8
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/instance: glm-5-2-fp8
+    app.kubernetes.io/name: glm-5-2-fp8
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  ports:
+    - name: http
+      port: 8000
+      protocol: TCP
+      targetPort: http
+  selector:
+    app.kubernetes.io/instance: glm-5-2-fp8
+  type: ClusterIP

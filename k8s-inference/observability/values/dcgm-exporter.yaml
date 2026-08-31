@@ -1,0 +1,58 @@
+fullnameOverride: fs2-dcgm-exporter
+
+image:
+  repository: nvcr.io/nvidia/k8s/dcgm-exporter
+  tag: 4.6.0-4.8.3-distroless
+
+runtimeClassName: ""
+hostNetwork: false
+
+nodeSelector:
+  workload.fs2.nebius/gpu: "true"
+  nebius.com/gpu-name: B300
+
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: fs2-inference
+    effect: NoSchedule
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 1Gi
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 25s
+  honorLabels: false
+  additionalLabels:
+    app.kubernetes.io/part-of: fs2-serve
+    observability.fs2.nebius/owner: fs2-serve-lean-observability-live
+  relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_node_name]
+      targetLabel: node
+      action: replace
+  metricRelabelings:
+    - action: labeldrop
+      regex: "(?i:authorization|api_?key|token|tenant(_?id)?|user(_?id)?|subject|request(_?id)?)"
+
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    add: [SYS_ADMIN]
+    drop: [ALL]
+
+extraConfigMapVolumes:
+  - name: tmp
+    emptyDir:
+      medium: Memory
+      sizeLimit: 128Mi
+    mountPath: /tmp

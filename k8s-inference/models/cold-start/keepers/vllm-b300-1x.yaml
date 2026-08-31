@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fs2-image-cache-vllm-b300-1x
+  namespace: fs2-models
+  labels: &labels
+    app.kubernetes.io/name: fs2-image-cache
+    app.kubernetes.io/instance: vllm-b300-1x
+    app.kubernetes.io/part-of: fs2-serve
+    app.kubernetes.io/managed-by: fs2-serve-models
+  annotations:
+    fs2-serve.nebius.ai/runtime-image-digest: sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+    fs2-serve.nebius.ai/runtime-image-amd64-digest: sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+    fs2-serve.nebius.ai/models: nv-reason-cxr-3b
+    fs2-serve.nebius.ai/scheduling: explicit-image-opt-in-does-not-scale-from-zero
+spec:
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fs2-image-cache
+      app.kubernetes.io/instance: vllm-b300-1x
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels: *labels
+      annotations:
+        fs2-serve.nebius.ai/runtime-image-digest: sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+        fs2-serve.nebius.ai/runtime-image-amd64-digest: sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        cache.fs2.nebius/image-vllm: 2286e8533ca8b6bc777594bae30524f1
+        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
+        accelerator.fs2.nebius/pool-id: nebius-b300-preemptible-1x
+        kubernetes.io/arch: amd64
+        workload.fs2.nebius/gpu: "true"
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      serviceAccountName: fs2-image-cache
+      terminationGracePeriodSeconds: 10
+      tolerations:
+        - {effect: NoSchedule, key: dedicated, operator: Equal, value: fs2-inference}
+      containers:
+        - name: image-holder
+          image: registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, -ec]
+          args:
+            - trap 'exit 0' TERM INT; while :; do sleep 3600 & wait $!; done
+          resources:
+            requests: {cpu: 5m, ephemeral-storage: 16Mi, memory: 16Mi}
+            limits: {cpu: 100m, ephemeral-storage: 128Mi, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+            runAsGroup: 1000
+            runAsUser: 1000

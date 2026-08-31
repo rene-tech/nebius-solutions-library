@@ -1,0 +1,33 @@
+{
+  "schema": "fs2-serve.nebius.ai/semantic-contract/v1",
+  "contract": "two-distinct-cxr-benchmark-images-nonclinical/v1",
+  "kind": "medical-nonclinical",
+  "source_commit": "897e7c7aef499d8a1e5a96bf419ec97e9ff95f88",
+  "non_clinical": true,
+  "commercial_use": "prohibited",
+  "oracle": {
+    "minimum_output_characters": 240,
+    "minimum_thinking_characters": 100,
+    "minimum_answer_characters": 8,
+    "minimum_medical_term_count": 4,
+    "medical_terms": ["cardiomediastinal", "heart", "left", "lung", "mediastinal", "pleural", "pneumothorax", "right", "tracheal"],
+    "reasoning_tags": ["thinking", "think"],
+    "forbidden_phrases": ["i cannot view", "unable to view", "cannot analyze the image", "as a language model"]
+  },
+  "requests": [
+    {
+      "id": "normal-pa",
+      "payload_sha256": "f83d028f7b12122726f33e4048d35893bde1543f391a077f7b6cc7fa5f49a5ce",
+      "wire_request": {"model": "nv-reason-cxr-3b", "messages": [{"role": "user", "content": [{"type": "text", "text": "Interpret this frontal chest radiograph. Find abnormalities and support devices. Return exactly one complete reasoning section using <thinking>...</thinking> or <think>...</think>, immediately followed by exactly one <answer>...</answer> section, with no text outside those sections."}, {"type": "image_url", "image_url": {"url": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Normal_posteroanterior_%28PA%29_chest_radiograph_%28X-ray%29.jpg"}}]}], "max_tokens": 2048, "temperature": 0.0},
+      "request": {"image": {"url": "https://upload.wikimedia.org/wikipedia/commons/a/a1/Normal_posteroanterior_%28PA%29_chest_radiograph_%28X-ray%29.jpg", "sha256": "4cbbcf805291db949e4ff085ca3c7258b2823de21b2857ae684e6c91ff9a38a4", "bytes": 906335, "license": "CC0-1.0"}, "prompt": "Interpret this frontal chest radiograph. Find abnormalities and support devices. Return exactly one complete reasoning section using <thinking>...</thinking> or <think>...</think>, immediately followed by exactly one <answer>...</answer> section, with no text outside those sections."},
+      "expected_any_groups": [["no acute", "no finding", "no findings", "normal", "unremarkable", "clear lungs", "no focal"], ["lung", "cardiomediastinal", "heart", "pleural"]]
+    },
+    {
+      "id": "left-pneumothorax",
+      "payload_sha256": "888958b85746f93f1bdea8e2f2e683ad1ea368b09157d9df3f3ec503d01753de",
+      "wire_request": {"model": "nv-reason-cxr-3b", "messages": [{"role": "user", "content": [{"type": "text", "text": "Systematically interpret this frontal chest radiograph, including laterality, pleural spaces, cardiomediastinal position, and support devices. Pay particular attention to pneumothorax, and state whether the mediastinum and trachea remain midline or are shifted, displaced, or deviated. Return exactly one complete reasoning section using <thinking>...</thinking> or <think>...</think>, immediately followed by exactly one <answer>...</answer> section, with no text outside those sections."}, {"type": "image_url", "image_url": {"url": "https://upload.wikimedia.org/wikipedia/commons/2/2f/Pneumothorax_CXR.jpg"}}]}], "max_tokens": 2048, "temperature": 0.0},
+      "request": {"image": {"url": "https://upload.wikimedia.org/wikipedia/commons/2/2f/Pneumothorax_CXR.jpg", "sha256": "f36d1809cc50c920818d577041963d8d6ec0036ab3928db92264ffce80053f35", "bytes": 144679, "license": "CC-BY-SA-2.5"}, "prompt": "Systematically interpret this frontal chest radiograph, including laterality, pleural spaces, cardiomediastinal position, and support devices. Pay particular attention to pneumothorax, and state whether the mediastinum and trachea remain midline or are shifted, displaced, or deviated. Return exactly one complete reasoning section using <thinking>...</thinking> or <think>...</think>, immediately followed by exactly one <answer>...</answer> section, with no text outside those sections."},
+      "expected_any_groups": [["pneumothorax"], ["left", "left-sided"], ["mediastinal shift", "tracheal deviation", "tension", "shifted", "displaced", "deviated", "midline"]]
+    }
+  ]
+}

@@ -1,0 +1,786 @@
+{
+  "$schema": "./gpu-platforms.schema.json",
+  "schema_version": "k8s-inference.nebius.ai/gpu-platforms/v1",
+  "snapshot": {
+    "as_of": "2026-08-31",
+    "nebius_cli_version": "0.12.206",
+    "managed_kubernetes_version_checked": "1.35",
+    "scope": "Nebius Compute GPU platforms accepted by the Managed Kubernetes compatibility API"
+  },
+  "selection_contract": {
+    "catalog_role": "informational-snapshot",
+    "catalog_membership_required": false,
+    "unknown_platform_policy": "passthrough",
+    "unknown_preset_policy": "passthrough",
+    "terraform_allowlist": false,
+    "live_validation_required": true,
+    "compatibility_claim": "A catalog entry describes infrastructure availability only; it does not claim that any model or container image runs on that GPU."
+  },
+  "source_metadata": {
+    "nebius-compute-types": {
+      "kind": "official-documentation",
+      "url": "https://docs.nebius.com/compute/virtual-machines/types",
+      "retrieved_at": "2026-08-31",
+      "description": "Published GPU families, platform IDs, regions, presets, CPU hosts, and GPU-cluster eligibility."
+    },
+    "nebius-live-platform-api": {
+      "kind": "official-live-api",
+      "url": "https://docs.nebius.com/compute/virtual-machines/list-platforms",
+      "retrieved_at": "2026-08-31",
+      "description": "Project-scoped live source for platform, preset, GPU-cluster, and allowed_for_preemptibles fields; representative authorized projects were queried without retaining project identifiers.",
+      "commands": [
+        "nebius compute platform list --parent-id <project-id> --all --format json"
+      ],
+      "cli_version": "0.12.206"
+    },
+    "nebius-mk8s-gpu": {
+      "kind": "official-documentation",
+      "url": "https://docs.nebius.com/kubernetes/gpu/set-up",
+      "retrieved_at": "2026-08-31",
+      "description": "Managed GPU image, driver preset, manual GPU Operator, MIG, Network Operator, and node-replacement guidance."
+    },
+    "nebius-mk8s-compatibility-api": {
+      "kind": "official-live-api",
+      "url": "https://docs.nebius.com/cli/reference/mk8s/node-group/get-compatibility-matrix",
+      "retrieved_at": "2026-08-31",
+      "description": "Live Managed Kubernetes platform, operating-system, and driver-preset compatibility source.",
+      "commands": [
+        "nebius mk8s node-group get-compatibility-matrix --cluster-kubernetes-version 1.35 --format json"
+      ],
+      "cli_version": "0.12.206"
+    },
+    "nebius-capacity-advisor": {
+      "kind": "official-documentation",
+      "url": "https://docs.nebius.com/compute/virtual-machines/capacity-advisor",
+      "retrieved_at": "2026-08-31",
+      "description": "Runtime availability source by region, platform, preset, fabric, and regular, preemptible, or reserved capacity type; not supported by the Terraform provider."
+    },
+    "solutions-library-platforms": {
+      "kind": "official-source-code",
+      "url": "https://github.com/nebius/nebius-solutions-library/blob/2491f885fa77e7b2a43eb9210a7b32674d38ff44/soperator/modules/available_resources/platform.tf#L1-L61",
+      "retrieved_at": "2026-08-31",
+      "description": "Pinned Solutions Library platform-to-host-architecture and region mapping, including Grace-based GB300.",
+      "repository_revision": "2491f885fa77e7b2a43eb9210a7b32674d38ff44"
+    },
+    "solutions-library-presets": {
+      "kind": "official-source-code",
+      "url": "https://github.com/nebius/nebius-solutions-library/blob/2491f885fa77e7b2a43eb9210a7b32674d38ff44/soperator/modules/available_resources/preset.tf#L362-L389",
+      "retrieved_at": "2026-08-31",
+      "description": "Pinned Solutions Library platform-to-preset mapping, including the GB300 node shape.",
+      "repository_revision": "2491f885fa77e7b2a43eb9210a7b32674d38ff44"
+    },
+    "solutions-library-gb300": {
+      "kind": "official-source-code",
+      "url": "https://github.com/nebius/nebius-solutions-library/blob/2491f885fa77e7b2a43eb9210a7b32674d38ff44/k8s-training/gb300.tf#L1-L154",
+      "retrieved_at": "2026-08-31",
+      "description": "Pinned Managed Kubernetes GB300 rack, NVLink instance-group, driverfull, fixed-capacity, and MIG guardrails.",
+      "repository_revision": "2491f885fa77e7b2a43eb9210a7b32674d38ff44"
+    },
+    "solutions-library-mig": {
+      "kind": "official-source-code",
+      "url": "https://github.com/nebius/nebius-solutions-library/blob/2491f885fa77e7b2a43eb9210a7b32674d38ff44/k8s-training/locals.tf#L178-L185",
+      "retrieved_at": "2026-08-31",
+      "description": "Pinned k8s-training MIG declarations; declarations are not treated as proof of runtime support."
+    },
+    "nvidia-mig-supported-gpus": {
+      "kind": "official-vendor-documentation",
+      "url": "https://docs.nvidia.com/datacenter/tesla/mig-user-guide/supported-gpus.html",
+      "retrieved_at": "2026-08-31",
+      "description": "NVIDIA hardware support list used to separate supported MIG products from unverified platform declarations."
+    }
+  },
+  "platforms": {
+    "gpu-l40s-a": {
+      "platform_id": "gpu-l40s-a",
+      "gpu": {
+        "model": "NVIDIA L40S",
+        "architecture": "ada-lovelace"
+      },
+      "host": {
+        "architecture": "amd64",
+        "cpu": "Intel Xeon Gold 6338 (Ice Lake)"
+      },
+      "regions": [
+        "eu-north1"
+      ],
+      "presets": [
+        {
+          "preset_id": "1gpu-8vcpu-32gb",
+          "gpu_count": 1,
+          "vcpu_count": 8,
+          "memory_gib": 32,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "1gpu-16vcpu-64gb",
+          "gpu_count": 1,
+          "vcpu_count": 16,
+          "memory_gib": 64,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "1gpu-24vcpu-96gb",
+          "gpu_count": 1,
+          "vcpu_count": 24,
+          "memory_gib": 96,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "1gpu-32vcpu-128gb",
+          "gpu_count": 1,
+          "vcpu_count": 32,
+          "memory_gib": 128,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "1gpu-40vcpu-160gb",
+          "gpu_count": 1,
+          "vcpu_count": 40,
+          "memory_gib": 160,
+          "gpu_cluster_compatible": false
+        }
+      ],
+      "topology": {
+        "deployment_class": "standard-node-group",
+        "intra_node_interconnect": "pcie",
+        "gpu_cluster_supported": false,
+        "gpu_cluster_presets": [],
+        "nvlink_instance_group_required": false,
+        "nodes_per_nvlink_group": null
+      },
+      "capacity": {
+        "regular_supported": true,
+        "preemptible_supported": true,
+        "availability_scope": "region-project-quota-and-capacity-dependent"
+      },
+      "driverfull": {
+        "whole_gpu_status": "supported",
+        "os_checked": "ubuntu24.04",
+        "drivers_preset_checked": "cuda13.0",
+        "compatibility_must_be_queried": true,
+        "custom_driver_mode": "omit-managed-preset-and-install-gpu-operator"
+      },
+      "mig": {
+        "status": "unsupported",
+        "managed_driver_image_compatible": false,
+        "note": "L40S is not listed in NVIDIA's current supported-MIG product table."
+      },
+      "source_ids": [
+        "nebius-compute-types",
+        "nebius-live-platform-api",
+        "nebius-mk8s-gpu",
+        "nebius-mk8s-compatibility-api",
+        "nvidia-mig-supported-gpus"
+      ]
+    },
+    "gpu-l40s-d": {
+      "platform_id": "gpu-l40s-d",
+      "gpu": {
+        "model": "NVIDIA L40S",
+        "architecture": "ada-lovelace"
+      },
+      "host": {
+        "architecture": "amd64",
+        "cpu": "AMD EPYC 9654 (Genoa)"
+      },
+      "regions": [
+        "eu-north1"
+      ],
+      "presets": [
+        {
+          "preset_id": "1gpu-16vcpu-96gb",
+          "gpu_count": 1,
+          "vcpu_count": 16,
+          "memory_gib": 96,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "1gpu-32vcpu-192gb",
+          "gpu_count": 1,
+          "vcpu_count": 32,
+          "memory_gib": 192,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "1gpu-48vcpu-288gb",
+          "gpu_count": 1,
+          "vcpu_count": 48,
+          "memory_gib": 288,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "2gpu-64vcpu-384gb",
+          "gpu_count": 2,
+          "vcpu_count": 64,
+          "memory_gib": 384,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "2gpu-96vcpu-576gb",
+          "gpu_count": 2,
+          "vcpu_count": 96,
+          "memory_gib": 576,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "4gpu-128vcpu-768gb",
+          "gpu_count": 4,
+          "vcpu_count": 128,
+          "memory_gib": 768,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "4gpu-192vcpu-1152gb",
+          "gpu_count": 4,
+          "vcpu_count": 192,
+          "memory_gib": 1152,
+          "gpu_cluster_compatible": false
+        }
+      ],
+      "topology": {
+        "deployment_class": "standard-node-group",
+        "intra_node_interconnect": "pcie",
+        "gpu_cluster_supported": false,
+        "gpu_cluster_presets": [],
+        "nvlink_instance_group_required": false,
+        "nodes_per_nvlink_group": null
+      },
+      "capacity": {
+        "regular_supported": true,
+        "preemptible_supported": true,
+        "availability_scope": "region-project-quota-and-capacity-dependent"
+      },
+      "driverfull": {
+        "whole_gpu_status": "supported",
+        "os_checked": "ubuntu24.04",
+        "drivers_preset_checked": "cuda13.0",
+        "compatibility_must_be_queried": true,
+        "custom_driver_mode": "omit-managed-preset-and-install-gpu-operator"
+      },
+      "mig": {
+        "status": "unsupported",
+        "managed_driver_image_compatible": false,
+        "note": "L40S is not listed in NVIDIA's current supported-MIG product table."
+      },
+      "source_ids": [
+        "nebius-compute-types",
+        "nebius-live-platform-api",
+        "nebius-mk8s-gpu",
+        "nebius-mk8s-compatibility-api",
+        "nvidia-mig-supported-gpus"
+      ]
+    },
+    "gpu-h100-sxm": {
+      "platform_id": "gpu-h100-sxm",
+      "gpu": {
+        "model": "NVIDIA H100 SXM",
+        "architecture": "hopper"
+      },
+      "host": {
+        "architecture": "amd64",
+        "cpu": "Intel Xeon Platinum 8468 (Sapphire Rapids)"
+      },
+      "regions": [
+        "eu-north1"
+      ],
+      "presets": [
+        {
+          "preset_id": "1gpu-16vcpu-200gb",
+          "gpu_count": 1,
+          "vcpu_count": 16,
+          "memory_gib": 200,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "8gpu-128vcpu-1600gb",
+          "gpu_count": 8,
+          "vcpu_count": 128,
+          "memory_gib": 1600,
+          "gpu_cluster_compatible": true
+        }
+      ],
+      "topology": {
+        "deployment_class": "standard-node-group",
+        "intra_node_interconnect": "nvlink",
+        "gpu_cluster_supported": true,
+        "gpu_cluster_presets": [
+          "8gpu-128vcpu-1600gb"
+        ],
+        "nvlink_instance_group_required": false,
+        "nodes_per_nvlink_group": null
+      },
+      "capacity": {
+        "regular_supported": true,
+        "preemptible_supported": true,
+        "availability_scope": "region-project-quota-and-capacity-dependent"
+      },
+      "driverfull": {
+        "whole_gpu_status": "supported",
+        "os_checked": "ubuntu24.04",
+        "drivers_preset_checked": "cuda13.0",
+        "compatibility_must_be_queried": true,
+        "custom_driver_mode": "omit-managed-preset-and-install-gpu-operator"
+      },
+      "mig": {
+        "status": "supported-manual-operator",
+        "managed_driver_image_compatible": false,
+        "note": "NVIDIA lists H100 as MIG-capable; Nebius requires a manually managed GPU Operator when customizing the device plugin for MIG."
+      },
+      "source_ids": [
+        "nebius-compute-types",
+        "nebius-live-platform-api",
+        "nebius-mk8s-gpu",
+        "nebius-mk8s-compatibility-api",
+        "solutions-library-mig",
+        "nvidia-mig-supported-gpus"
+      ]
+    },
+    "gpu-h200-sxm": {
+      "platform_id": "gpu-h200-sxm",
+      "gpu": {
+        "model": "NVIDIA H200 SXM",
+        "architecture": "hopper"
+      },
+      "host": {
+        "architecture": "amd64",
+        "cpu": "Intel Xeon Platinum 8468 (Sapphire Rapids)"
+      },
+      "regions": [
+        "eu-north1",
+        "eu-north2",
+        "eu-west1",
+        "us-central1"
+      ],
+      "presets": [
+        {
+          "preset_id": "1gpu-16vcpu-200gb",
+          "gpu_count": 1,
+          "vcpu_count": 16,
+          "memory_gib": 200,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "8gpu-128vcpu-1600gb",
+          "gpu_count": 8,
+          "vcpu_count": 128,
+          "memory_gib": 1600,
+          "gpu_cluster_compatible": true
+        }
+      ],
+      "topology": {
+        "deployment_class": "standard-node-group",
+        "intra_node_interconnect": "nvlink",
+        "gpu_cluster_supported": true,
+        "gpu_cluster_presets": [
+          "8gpu-128vcpu-1600gb"
+        ],
+        "nvlink_instance_group_required": false,
+        "nodes_per_nvlink_group": null
+      },
+      "capacity": {
+        "regular_supported": true,
+        "preemptible_supported": true,
+        "availability_scope": "region-project-quota-and-capacity-dependent"
+      },
+      "driverfull": {
+        "whole_gpu_status": "supported",
+        "os_checked": "ubuntu24.04",
+        "drivers_preset_checked": "cuda13.0",
+        "compatibility_must_be_queried": true,
+        "custom_driver_mode": "omit-managed-preset-and-install-gpu-operator"
+      },
+      "mig": {
+        "status": "supported-manual-operator",
+        "managed_driver_image_compatible": false,
+        "note": "NVIDIA lists H200 as MIG-capable; Nebius requires a manually managed GPU Operator when customizing the device plugin for MIG."
+      },
+      "source_ids": [
+        "nebius-compute-types",
+        "nebius-live-platform-api",
+        "nebius-mk8s-gpu",
+        "nebius-mk8s-compatibility-api",
+        "solutions-library-mig",
+        "nvidia-mig-supported-gpus"
+      ]
+    },
+    "gpu-b200-sxm": {
+      "platform_id": "gpu-b200-sxm",
+      "gpu": {
+        "model": "NVIDIA B200 SXM",
+        "architecture": "blackwell"
+      },
+      "host": {
+        "architecture": "amd64",
+        "cpu": "Intel Xeon Platinum 8580 (Emerald Rapids)"
+      },
+      "regions": [
+        "us-central1"
+      ],
+      "presets": [
+        {
+          "preset_id": "1gpu-20vcpu-224gb",
+          "gpu_count": 1,
+          "vcpu_count": 20,
+          "memory_gib": 224,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "8gpu-160vcpu-1792gb",
+          "gpu_count": 8,
+          "vcpu_count": 160,
+          "memory_gib": 1792,
+          "gpu_cluster_compatible": true
+        }
+      ],
+      "topology": {
+        "deployment_class": "standard-node-group",
+        "intra_node_interconnect": "nvlink",
+        "gpu_cluster_supported": true,
+        "gpu_cluster_presets": [
+          "8gpu-160vcpu-1792gb"
+        ],
+        "nvlink_instance_group_required": false,
+        "nodes_per_nvlink_group": null
+      },
+      "capacity": {
+        "regular_supported": true,
+        "preemptible_supported": true,
+        "availability_scope": "region-project-quota-and-capacity-dependent"
+      },
+      "driverfull": {
+        "whole_gpu_status": "supported",
+        "os_checked": "ubuntu24.04",
+        "drivers_preset_checked": "cuda13.0",
+        "compatibility_must_be_queried": true,
+        "custom_driver_mode": "omit-managed-preset-and-install-gpu-operator"
+      },
+      "mig": {
+        "status": "supported-manual-operator",
+        "managed_driver_image_compatible": false,
+        "note": "NVIDIA lists B200 as MIG-capable; Nebius requires a manually managed GPU Operator when customizing the device plugin for MIG."
+      },
+      "source_ids": [
+        "nebius-compute-types",
+        "nebius-live-platform-api",
+        "nebius-mk8s-gpu",
+        "nebius-mk8s-compatibility-api",
+        "solutions-library-mig",
+        "nvidia-mig-supported-gpus"
+      ]
+    },
+    "gpu-b200-sxm-a": {
+      "platform_id": "gpu-b200-sxm-a",
+      "gpu": {
+        "model": "NVIDIA B200 SXM",
+        "architecture": "blackwell"
+      },
+      "host": {
+        "architecture": "amd64",
+        "cpu": "Intel Xeon Platinum 8570 (Emerald Rapids)"
+      },
+      "regions": [
+        "me-west1"
+      ],
+      "presets": [
+        {
+          "preset_id": "1gpu-20vcpu-224gb",
+          "gpu_count": 1,
+          "vcpu_count": 20,
+          "memory_gib": 224,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "8gpu-160vcpu-1792gb",
+          "gpu_count": 8,
+          "vcpu_count": 160,
+          "memory_gib": 1792,
+          "gpu_cluster_compatible": true
+        }
+      ],
+      "topology": {
+        "deployment_class": "standard-node-group",
+        "intra_node_interconnect": "nvlink",
+        "gpu_cluster_supported": true,
+        "gpu_cluster_presets": [
+          "8gpu-160vcpu-1792gb"
+        ],
+        "nvlink_instance_group_required": false,
+        "nodes_per_nvlink_group": null
+      },
+      "capacity": {
+        "regular_supported": true,
+        "preemptible_supported": true,
+        "availability_scope": "region-project-quota-and-capacity-dependent"
+      },
+      "driverfull": {
+        "whole_gpu_status": "supported",
+        "os_checked": "ubuntu24.04",
+        "drivers_preset_checked": "cuda13.0",
+        "compatibility_must_be_queried": true,
+        "custom_driver_mode": "omit-managed-preset-and-install-gpu-operator"
+      },
+      "mig": {
+        "status": "supported-manual-operator",
+        "managed_driver_image_compatible": false,
+        "note": "NVIDIA lists B200 as MIG-capable; Nebius requires a manually managed GPU Operator when customizing the device plugin for MIG."
+      },
+      "source_ids": [
+        "nebius-compute-types",
+        "nebius-live-platform-api",
+        "nebius-mk8s-gpu",
+        "nebius-mk8s-compatibility-api",
+        "solutions-library-mig",
+        "nvidia-mig-supported-gpus"
+      ]
+    },
+    "gpu-b300-sxm": {
+      "platform_id": "gpu-b300-sxm",
+      "gpu": {
+        "model": "NVIDIA B300 SXM",
+        "architecture": "blackwell-ultra"
+      },
+      "host": {
+        "architecture": "amd64",
+        "cpu": "Intel Xeon 6776P (Granite Rapids)"
+      },
+      "regions": [
+        "eu-west2",
+        "uk-south1",
+        "us-north1"
+      ],
+      "presets": [
+        {
+          "preset_id": "1gpu-24vcpu-346gb",
+          "gpu_count": 1,
+          "vcpu_count": 24,
+          "memory_gib": 346,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "8gpu-192vcpu-2768gb",
+          "gpu_count": 8,
+          "vcpu_count": 192,
+          "memory_gib": 2768,
+          "gpu_cluster_compatible": true
+        }
+      ],
+      "topology": {
+        "deployment_class": "standard-node-group",
+        "intra_node_interconnect": "nvlink",
+        "gpu_cluster_supported": true,
+        "gpu_cluster_presets": [
+          "8gpu-192vcpu-2768gb"
+        ],
+        "nvlink_instance_group_required": false,
+        "nodes_per_nvlink_group": null
+      },
+      "capacity": {
+        "regular_supported": true,
+        "preemptible_supported": true,
+        "availability_scope": "region-project-quota-and-capacity-dependent"
+      },
+      "driverfull": {
+        "whole_gpu_status": "supported",
+        "os_checked": "ubuntu24.04",
+        "drivers_preset_checked": "cuda13.0",
+        "compatibility_must_be_queried": true,
+        "custom_driver_mode": "omit-managed-preset-and-install-gpu-operator"
+      },
+      "mig": {
+        "status": "declared-unverified",
+        "managed_driver_image_compatible": false,
+        "note": "k8s-training declares B300 MIG configurations, but NVIDIA's current supported-GPU table does not list B300; no runtime support is claimed here."
+      },
+      "source_ids": [
+        "nebius-compute-types",
+        "nebius-live-platform-api",
+        "nebius-mk8s-gpu",
+        "nebius-mk8s-compatibility-api",
+        "solutions-library-mig",
+        "nvidia-mig-supported-gpus"
+      ]
+    },
+    "gpu-rtx6000": {
+      "platform_id": "gpu-rtx6000",
+      "gpu": {
+        "model": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "architecture": "blackwell"
+      },
+      "host": {
+        "architecture": "amd64",
+        "cpu": "Intel Xeon 6776P (Granite Rapids)"
+      },
+      "regions": [
+        "us-central1"
+      ],
+      "presets": [
+        {
+          "preset_id": "1gpu-24vcpu-218gb",
+          "gpu_count": 1,
+          "vcpu_count": 24,
+          "memory_gib": 218,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "8gpu-192vcpu-1744gb",
+          "gpu_count": 8,
+          "vcpu_count": 192,
+          "memory_gib": 1744,
+          "gpu_cluster_compatible": false
+        }
+      ],
+      "topology": {
+        "deployment_class": "standard-node-group",
+        "intra_node_interconnect": "pcie",
+        "gpu_cluster_supported": false,
+        "gpu_cluster_presets": [],
+        "nvlink_instance_group_required": false,
+        "nodes_per_nvlink_group": null
+      },
+      "capacity": {
+        "regular_supported": true,
+        "preemptible_supported": true,
+        "availability_scope": "region-project-quota-and-capacity-dependent"
+      },
+      "driverfull": {
+        "whole_gpu_status": "supported",
+        "os_checked": "ubuntu24.04",
+        "drivers_preset_checked": "cuda13.0",
+        "compatibility_must_be_queried": true,
+        "custom_driver_mode": "omit-managed-preset-and-install-gpu-operator"
+      },
+      "mig": {
+        "status": "supported-manual-operator",
+        "managed_driver_image_compatible": false,
+        "note": "NVIDIA lists RTX PRO 6000 Blackwell Server Edition as MIG-capable; Nebius requires a manually managed GPU Operator when customizing the device plugin for MIG."
+      },
+      "source_ids": [
+        "nebius-compute-types",
+        "nebius-live-platform-api",
+        "nebius-mk8s-gpu",
+        "nebius-mk8s-compatibility-api",
+        "solutions-library-mig",
+        "nvidia-mig-supported-gpus"
+      ]
+    },
+    "gpu-rtx6000-a": {
+      "platform_id": "gpu-rtx6000-a",
+      "gpu": {
+        "model": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "architecture": "blackwell"
+      },
+      "host": {
+        "architecture": "amd64",
+        "cpu": "Intel Xeon 6776P (Granite Rapids)"
+      },
+      "regions": [
+        "eu-south1"
+      ],
+      "presets": [
+        {
+          "preset_id": "1gpu-24vcpu-218gb",
+          "gpu_count": 1,
+          "vcpu_count": 24,
+          "memory_gib": 218,
+          "gpu_cluster_compatible": false
+        },
+        {
+          "preset_id": "8gpu-192vcpu-1744gb",
+          "gpu_count": 8,
+          "vcpu_count": 192,
+          "memory_gib": 1744,
+          "gpu_cluster_compatible": false
+        }
+      ],
+      "topology": {
+        "deployment_class": "standard-node-group",
+        "intra_node_interconnect": "pcie",
+        "gpu_cluster_supported": false,
+        "gpu_cluster_presets": [],
+        "nvlink_instance_group_required": false,
+        "nodes_per_nvlink_group": null
+      },
+      "capacity": {
+        "regular_supported": true,
+        "preemptible_supported": false,
+        "availability_scope": "region-project-quota-and-capacity-dependent"
+      },
+      "driverfull": {
+        "whole_gpu_status": "supported",
+        "os_checked": "ubuntu24.04",
+        "drivers_preset_checked": "cuda13.0",
+        "compatibility_must_be_queried": true,
+        "custom_driver_mode": "omit-managed-preset-and-install-gpu-operator"
+      },
+      "mig": {
+        "status": "supported-manual-operator",
+        "managed_driver_image_compatible": false,
+        "note": "The live API identifies the same RTX PRO 6000 Server Edition product that NVIDIA lists as MIG-capable; this region variant still requires live Nebius validation."
+      },
+      "source_ids": [
+        "nebius-live-platform-api",
+        "nebius-mk8s-gpu",
+        "nebius-mk8s-compatibility-api",
+        "nvidia-mig-supported-gpus"
+      ]
+    },
+    "gpu-gb300": {
+      "platform_id": "gpu-gb300",
+      "gpu": {
+        "model": "NVIDIA GB300 NVL72",
+        "architecture": "blackwell-ultra"
+      },
+      "host": {
+        "architecture": "arm64",
+        "cpu": "NVIDIA Grace"
+      },
+      "regions": [
+        "eu-north1"
+      ],
+      "presets": [
+        {
+          "preset_id": "4gpu-112vcpu-800gb",
+          "gpu_count": 4,
+          "vcpu_count": 112,
+          "memory_gib": 800,
+          "gpu_cluster_compatible": true
+        }
+      ],
+      "topology": {
+        "deployment_class": "gb300-nvlink-rack",
+        "intra_node_interconnect": "nvlink-nvl72",
+        "gpu_cluster_supported": true,
+        "gpu_cluster_presets": [
+          "4gpu-112vcpu-800gb"
+        ],
+        "nvlink_instance_group_required": true,
+        "nodes_per_nvlink_group": 18
+      },
+      "capacity": {
+        "regular_supported": true,
+        "preemptible_supported": false,
+        "availability_scope": "region-project-quota-reservation-and-rack-capacity-dependent"
+      },
+      "driverfull": {
+        "whole_gpu_status": "required-by-current-solution",
+        "os_checked": "ubuntu24.04",
+        "drivers_preset_checked": "cuda13.0",
+        "compatibility_must_be_queried": true,
+        "custom_driver_mode": "blocked-by-current-solution"
+      },
+      "mig": {
+        "status": "blocked-current-solution",
+        "managed_driver_image_compatible": false,
+        "note": "The current k8s-training GB300 rack path explicitly rejects MIG and custom drivers."
+      },
+      "source_ids": [
+        "nebius-live-platform-api",
+        "nebius-mk8s-compatibility-api",
+        "solutions-library-platforms",
+        "solutions-library-presets",
+        "solutions-library-gb300",
+        "nvidia-mig-supported-gpus"
+      ]
+    }
+  }
+}

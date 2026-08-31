@@ -1,0 +1,491 @@
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+import pytest
+
+from fs2_serve.admin import (
+    AdminContextConfig,
+    AdminObservabilityQueryTemplates,
+    AdminReadService,
+    CapacityAdminAdapter,
+)
+from fs2_serve.admin_adapters import (
+    KubernetesCapacityAdminAdapter,
+    KubernetesCapacityConfig,
+    KubernetesResourceNotFoundError,
+    ObservabilityLinkConfig,
+    PrometheusObservabilityAdminAdapter,
+    PrometheusObservabilityConfig,
+)
+from fs2_serve.admin_models import (
+    AdminCapabilityHealth,
+    AdminCapacitySnapshot,
+    AdminContext,
+    AdminContextOption,
+    AdminSourceState,
+    AdminValueState,
+)
+from fs2_serve.memory_store import MemoryStore
+
+FIXED_NOW = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
+GPU_CLASSES = ("H100", "H200", "B200", "B300", "GB300", "RTX PRO 6000 Blackwell")
+
+
+def _metadata(name: str, *, namespace: str | None = None, labels: dict[str, str] | None = None) -> dict[str, Any]:
+    value: dict[str, Any] = {"name": name, "labels": labels or {}}
+    if namespace is not None:
+        value["namespace"] = namespace
+    return value
+
+
+def _node(ordinal: int, gpu_class: str, capacity_type: str, gpu_count: int) -> dict[str, Any]:
+    return {
+        "metadata": {
+            "name": f"fixture-node-{ordinal}",
+            "labels": {
+                "node.kubernetes.io/instance-type": f"fixture-gpu-{ordinal}",
+                "capacity.fs2.nebius/pool": f"pool-{ordinal}",
+                "capacity.fs2.nebius/type": capacity_type,
+                "nebius.com/gpu-name": gpu_class,
+            },
+        },
+        "spec": {"unschedulable": ordinal == 5},
+        "status": {
+            "capacity": {"nvidia.com/gpu": str(gpu_count)},
+            "allocatable": {"nvidia.com/gpu": str(gpu_count)},
+            "conditions": [{"type": "Ready", "status": "False" if ordinal == 5 else "True"}],
+        },
+    }
+
+
+def _pod(ordinal: int) -> dict[str, Any]:
+    return {
+        "metadata": _metadata(f"fixture-pod-{ordinal}", namespace="fs2-models"),
+        "spec": {
+            "nodeName": f"fixture-node-{ordinal}",
+            "containers": [
+                {
+                    "resources": {
+                        "requests": {"nvidia.com/gpu": "1"},
+                        "limits": {"nvidia.com/gpu": "1"},
+                    }
+                }
+            ],
+        },
+        "status": {"phase": "Running"},
+    }
+
+
+class FakeKubernetesReader:
+    def __init__(self, values: dict[str, list[dict[str, Any]] | BaseException]) -> None:
+        self.values = values
+        self.paths: list[str] = []
+
+    async def list(self, path: str) -> list[dict[str, Any]]:
+        self.paths.append(path)
+        value = self.values[path]
+        if isinstance(value, BaseException):
+            raise value
+        return value
+
+
+def _kubernetes_values() -> dict[str, list[dict[str, Any]] | BaseException]:
+    nodes = [
+        _node(index, gpu_class, "preemptible" if index % 2 else "regular", 8 if index < 5 else 1)
+        for index, gpu_class in enumerate(GPU_CLASSES)
+    ]
+    cluster_queue = {
+        "metadata": _metadata("fixture-cluster-queue"),
+        "spec": {
+            "queueingStrategy": "BestEffortFIFO",
+            "resourceGroups": [
+                {
+                    "flavors": [
+                        {
+                            "name": "fixture-preemptible",
+                            "resources": [{"name": "nvidia.com/gpu", "nominalQuota": "16"}],
+                        }
+                    ]
+                }
+            ],
+        },
+        "status": {
+            "pendingWorkloads": 0,
+            "reservingWorkloads": 0,
+            "admittedWorkloads": 0,
+            "flavorsReservation": [
+                {
+                    "name": "fixture-preemptible",
+                    "resources": [{"name": "nvidia.com/gpu", "total": "0", "borrowed": "0"}],
+                }
+            ],
+            # flavorsUsage is intentionally absent: zero must not be invented.
+            "conditions": [{"type": "Active", "status": "True"}],
+        },
+    }
+    local_queue = {
+        "metadata": _metadata("fixture-local-queue", namespace="fs2-models"),
+        "spec": {"clusterQueue": "fixture-cluster-queue"},
+        "status": {"pendingWorkloads": 0, "reservingWorkloads": 0, "admittedWorkloads": 0},
+    }
+    prefix = "/apis/kueue.x-k8s.io/v1beta2"
+    return {
+        "/api/v1/nodes": nodes,
+        "/api/v1/namespaces/fs2-models/pods": [_pod(index) for index in range(len(nodes))],
+        f"{prefix}/resourceflavors": [
+            {
+                "metadata": _metadata("fixture-preemptible"),
+                "spec": {
+                    "nodeLabels": {
+                        "capacity.fs2.nebius/type": "preemptible",
+                        "nebius.com/gpu-name": "H200",
+                    }
+                },
+            }
+        ],
+        f"{prefix}/clusterqueues": [cluster_queue],
+        f"{prefix}/namespaces/fs2-models/localqueues": [local_queue],
+        f"{prefix}/namespaces/fs2-models/workloads": [],
+        f"{prefix}/cohorts": KubernetesResourceNotFoundError("fixture Cohort API absent"),
+        "/apis/autoscaling/v2/namespaces/fs2-models/horizontalpodautoscalers": [
+            {
+                "metadata": _metadata("fixture-model", namespace="fs2-models"),
+                "spec": {
+                    "scaleTargetRef": {"kind": "Deployment", "name": "fixture-model"},
+                    "minReplicas": 0,
+                    "maxReplicas": 8,
+                },
+                "status": {
+                    "desiredReplicas": 0,
+                    # currentReplicas is intentionally absent.
+                    "conditions": [{"type": "AbleToScale", "status": "True"}],
+                },
+            }
+        ],
+        "/apis/autoscaling/v2/namespaces/fs2-system/horizontalpodautoscalers": [],
+        "/apis/keda.sh/v1alpha1/namespaces/fs2-models/scaledobjects": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_mixed_gpu_capacity_is_dynamic_estimated_and_never_infers_health() -> None:
+    reader = FakeKubernetesReader(_kubernetes_values())
+    snapshot = await KubernetesCapacityAdminAdapter(
+        reader,
+        config=KubernetesCapacityConfig(),
+        clock=lambda: FIXED_NOW,
+    ).snapshot()
+
+    pools = snapshot.data.node_pools
+    assert pools.state == AdminSourceState.AVAILABLE
+    assert {item.gpu_class for item in pools.items} == set(GPU_CLASSES)
+    assert {item.capacity_type.value for item in pools.items} == {"regular", "preemptible"}
+    for pool in pools.items:
+        gpu = pool.gpu_resources[0]
+        assert gpu.resource_name == "nvidia.com/gpu"
+        assert gpu.allocated.value == 1
+        assert gpu.allocated.state == AdminValueState.ESTIMATED
+        assert "Pod requests" in (gpu.allocated.reason or "")
+        assert gpu.healthy.value is None
+        assert gpu.healthy.state == AdminValueState.UNAVAILABLE
+        assert "health evidence" in (gpu.healthy.reason or "")
+        assert "fixture-node" not in pool.model_dump_json()
+
+    quota = snapshot.data.kueue.cluster_queues[0].resources[0]
+    assert quota.nominal_quota.value == "16"
+    assert quota.reservation.value == "0"
+    assert quota.borrowed.value == "0"
+    assert quota.usage.value is None
+    assert quota.usage.state == AdminValueState.UNAVAILABLE
+    assert snapshot.data.kueue.cohorts_state == AdminSourceState.UNAVAILABLE
+    assert snapshot.data.autoscaling.keda.state == AdminSourceState.AVAILABLE
+    assert snapshot.data.autoscaling.keda.keda_scaled_objects == []
+    hpa = snapshot.data.autoscaling.hpa.horizontal_pod_autoscalers[0]
+    assert hpa.min_replicas.value == 0
+    assert hpa.desired_replicas.value == 0
+    assert hpa.current_replicas.value is None
+    assert snapshot.data.node_scaler.state == AdminSourceState.UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_pod_list_failure_preserves_capacity_but_allocation_is_unavailable() -> None:
+    values = _kubernetes_values()
+    values["/api/v1/namespaces/fs2-models/pods"] = RuntimeError("sensitive transport detail")
+    snapshot = await KubernetesCapacityAdminAdapter(FakeKubernetesReader(values), clock=lambda: FIXED_NOW).snapshot()
+    assert snapshot.data.node_pools.state == AdminSourceState.AVAILABLE
+    assert all(
+        resource.allocated.value is None for pool in snapshot.data.node_pools.items for resource in pool.gpu_resources
+    )
+
+
+@pytest.mark.asyncio
+async def test_missing_node_capacity_field_is_unavailable_not_invented_zero() -> None:
+    values = _kubernetes_values()
+    nodes = values["/api/v1/nodes"]
+    assert isinstance(nodes, list)
+    nodes[0]["status"]["capacity"].pop("nvidia.com/gpu")
+
+    snapshot = await KubernetesCapacityAdminAdapter(FakeKubernetesReader(values), clock=lambda: FIXED_NOW).snapshot()
+    pool = next(item for item in snapshot.data.node_pools.items if item.gpu_class == "H100")
+    gpu = pool.gpu_resources[0]
+    assert gpu.capacity.state == AdminValueState.UNAVAILABLE
+    assert gpu.capacity.value is None
+    assert gpu.allocatable.state == AdminValueState.AVAILABLE
+    assert gpu.allocatable.value == 8
+
+
+class SlowCapacityAdapter(CapacityAdminAdapter):
+    async def snapshot(self) -> AdminCapacitySnapshot:
+        await asyncio.sleep(1)
+        raise AssertionError("adapter timeout did not cancel the call")
+
+
+@pytest.mark.asyncio
+async def test_capacity_timeout_is_partial_unavailable_not_empty_success(
+    registry: Any,
+    cipher: Any,
+    hasher: Any,
+) -> None:
+    service = AdminReadService(
+        registry=registry,
+        store=MemoryStore(cipher, hasher),
+        capacity=SlowCapacityAdapter(),
+        contexts=AdminContextConfig(
+            options=(
+                AdminContextOption(
+                    project="project-test",
+                    cluster="cluster-test",
+                    region="region-test",
+                    label="Test cluster",
+                ),
+            )
+        ),
+        clock=lambda: FIXED_NOW,
+        adapter_timeout_seconds=0.1,
+    )
+    context = service.resolve_context(
+        project=None,
+        cluster=None,
+        region=None,
+        from_at=None,
+        to_at=None,
+        timezone="UTC",
+    )
+    result = await service.capacity(context)
+    assert result.meta.sources[0].state == AdminSourceState.UNAVAILABLE
+    assert result.data.node_pools.state == AdminSourceState.UNAVAILABLE
+    assert result.data.node_pools.items == []
+    assert result.data.node_pools.reason
+
+
+@pytest.mark.asyncio
+async def test_capacity_and_observability_staleness_fail_closed(
+    registry: Any,
+    cipher: Any,
+    hasher: Any,
+) -> None:
+    stale_at = FIXED_NOW - timedelta(minutes=5)
+    service = AdminReadService(
+        registry=registry,
+        store=MemoryStore(cipher, hasher),
+        capacity=KubernetesCapacityAdminAdapter(
+            FakeKubernetesReader(_kubernetes_values()),
+            clock=lambda: stale_at,
+        ),
+        observability=PrometheusObservabilityAdminAdapter(
+            FakePrometheusReader(),
+            clock=lambda: stale_at,
+        ),
+        clock=lambda: FIXED_NOW,
+        source_max_age_seconds=90,
+    )
+    context = service.resolve_context(
+        project=None,
+        cluster=None,
+        region=None,
+        from_at=None,
+        to_at=None,
+        timezone="UTC",
+    )
+
+    capacity = await service.capacity(context)
+    assert capacity.meta.sources[0].state == AdminSourceState.STALE
+    assert capacity.data.node_pools.state == AdminSourceState.STALE
+    assert capacity.data.node_pools.items == []
+
+    observability = await service.observability(context, model_id=None, operation_id=None)
+    assert observability.meta.sources[0].state == AdminSourceState.STALE
+    assert all(component.health == AdminCapabilityHealth.UNKNOWN for component in observability.data.components)
+    assert all(component.launch.enabled is False for component in observability.data.components)
+
+
+class FakePrometheusReader:
+    def __init__(self, *, fail_component: str | None = None) -> None:
+        self.fail_component = fail_component
+        self.queries: list[str] = []
+
+    async def scalar(self, query: str, *, at: datetime) -> float | None:
+        assert at == FIXED_NOW
+        self.queries.append(query)
+        if self.fail_component and self.fail_component in query:
+            raise RuntimeError("SENSITIVE_PROMETHEUS_DETAIL")
+        if "rate(" in query:
+            return 0
+        if "grafana" in query or "prometheus" in query or "loki" in query or "otel" in query:
+            return 1
+        if "alertmanager" in query or "tempo" in query or "dcgm" in query.lower():
+            return 0
+        if "kueue" in query or "keda" in query:
+            return 0
+        if "DCGM_FI_" in query:
+            return 0
+        return 0
+
+
+def _context() -> AdminContext:
+    return AdminContext(
+        project="project-test",
+        cluster="cluster-test",
+        region="region-test",
+        from_at=FIXED_NOW - timedelta(hours=1),
+        to_at=FIXED_NOW,
+        timezone="UTC",
+    )
+
+
+@pytest.mark.asyncio
+async def test_observability_preserves_four_way_state_and_sanitized_context_links() -> None:
+    reader = FakePrometheusReader()
+    links = ObservabilityLinkConfig(
+        component_urls={
+            "grafana": "https://observe.example.invalid/d/fs2",
+            "prometheus": "https://observe.example.invalid/prometheus/graph",
+            "loki": "https://observe.example.invalid/explore",
+        },
+        allowed_hosts=frozenset({"observe.example.invalid"}),
+    )
+    adapter = PrometheusObservabilityAdminAdapter(
+        reader,
+        config=PrometheusObservabilityConfig(
+            links=links,
+            installed_overrides={"alertmanager": False, "tempo": False, "dcgm": True},
+            versions={"grafana": "13.2.0", "otel": "0.158.0"},
+        ),
+        clock=lambda: FIXED_NOW,
+    )
+    operation_id = uuid4()
+    snapshot = await adapter.snapshot(context=_context(), model_id="qwen3-8b", operation_id=operation_id)
+    components = {component.id: component for component in snapshot.data.components}
+
+    assert components["grafana"].installed is True
+    assert components["grafana"].health == AdminCapabilityHealth.HEALTHY
+    assert components["grafana"].data_present is True
+    assert components["grafana"].launch.enabled is True
+    assert components["grafana"].launch.url is not None
+    assert "var-model=qwen3-8b" in components["grafana"].launch.url
+    assert f"var-operation={operation_id}" in components["grafana"].launch.url
+    assert components["prometheus"].installed is True
+    assert components["prometheus"].health == AdminCapabilityHealth.HEALTHY
+    assert components["prometheus"].data_present is True
+    assert components["prometheus"].launch.enabled is True
+    assert components["dcgm"].installed is True
+    assert components["dcgm"].health == AdminCapabilityHealth.UNKNOWN
+    assert components["dcgm"].data_present is False
+    assert components["dcgm"].launch.enabled is False
+    assert components["alertmanager"].installed is False
+    assert components["tempo"].installed is False
+    assert snapshot.data.signals.gpu_utilization_ratio.value is None
+    assert snapshot.data.signals.otel_refused_items_per_second.value == 0
+
+    forbidden = ("tenant", "principal", "token", "operation_id", "model_id")
+    assert all(not any(value in query.casefold() for value in forbidden) for query in reader.queries)
+
+
+@pytest.mark.asyncio
+async def test_one_observability_probe_failure_is_partial_and_sanitized() -> None:
+    adapter = PrometheusObservabilityAdminAdapter(
+        FakePrometheusReader(fail_component="kueue"),
+        config=PrometheusObservabilityConfig(installed_overrides={"alertmanager": False, "tempo": False}),
+        clock=lambda: FIXED_NOW,
+    )
+    snapshot = await adapter.snapshot(context=_context(), model_id=None, operation_id=None)
+    components = {component.id: component for component in snapshot.data.components}
+    assert components["grafana"].health == AdminCapabilityHealth.HEALTHY
+    assert components["kueue"].health == AdminCapabilityHealth.UNKNOWN
+    assert components["kueue"].data_present is None
+    assert "SENSITIVE_PROMETHEUS_DETAIL" not in snapshot.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_all_prometheus_probes_failing_is_unknown_and_never_launchable() -> None:
+    class FailingPrometheusReader:
+        async def scalar(self, query: str, *, at: datetime) -> float | None:
+            raise RuntimeError("SENSITIVE_ALL_PROBES_FAILED")
+
+    links = ObservabilityLinkConfig(
+        component_urls={"prometheus": "https://observe.example.invalid/prometheus/graph"},
+        allowed_hosts=frozenset({"observe.example.invalid"}),
+    )
+    adapter = PrometheusObservabilityAdminAdapter(
+        FailingPrometheusReader(),
+        config=PrometheusObservabilityConfig(links=links),
+        clock=lambda: FIXED_NOW,
+    )
+    snapshot = await adapter.snapshot(context=_context(), model_id=None, operation_id=None)
+    components = {component.id: component for component in snapshot.data.components}
+
+    assert all(component.health == AdminCapabilityHealth.UNKNOWN for component in components.values())
+    assert all(component.data_present is None for component in components.values())
+    assert all(component.launch.enabled is False for component in components.values())
+    assert components["prometheus"].installed is None
+    assert components["prometheus"].launch.url is None
+    assert snapshot.data.signals.gpu_utilization_ratio.value is None
+    assert "SENSITIVE_ALL_PROBES_FAILED" not in snapshot.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    ("url", "hosts"),
+    [
+        ("http://observe.example.invalid", frozenset({"observe.example.invalid"})),
+        ("https://user:secret@observe.example.invalid", frozenset({"observe.example.invalid"})),
+        ("https://other.example.invalid", frozenset({"observe.example.invalid"})),
+        ("https://observe.example.invalid/path?token=secret", frozenset({"observe.example.invalid"})),
+        ("https://observe.example.invalid", frozenset({"*.example.invalid"})),
+    ],
+)
+def test_observability_link_configuration_rejects_unsafe_urls(url: str, hosts: frozenset[str]) -> None:
+    with pytest.raises(ValueError, match="allow-listed HTTPS|allowed host is invalid"):
+        ObservabilityLinkConfig(component_urls={"grafana": url}, allowed_hosts=hosts)
+
+
+@pytest.mark.parametrize("installed", [True, False])
+def test_prometheus_installation_override_is_rejected(installed: bool) -> None:
+    with pytest.raises(ValueError, match="self-probe"):
+        PrometheusObservabilityConfig(installed_overrides={"prometheus": installed})
+
+
+def test_observability_promql_is_fixed_bounded_and_identity_free() -> None:
+    queries = AdminObservabilityQueryTemplates.for_window(300)
+    assert set(queries) == {
+        "gpu_utilization_ratio",
+        "gpu_memory_utilization_ratio",
+        "otel_refused_items_per_second",
+        "otel_export_failures_per_second",
+    }
+    encoded = "\n".join(queries.values()).casefold()
+    for forbidden in ("tenant", "principal", "token", "api_key", "operation_id", "model_id", "pod_uid", "uuid"):
+        assert forbidden not in encoded
+    with pytest.raises(ValueError, match="range"):
+        AdminObservabilityQueryTemplates.for_window(59)
+
+
+def test_no_gpu_family_or_region_is_hard_coded_in_adapter_source() -> None:
+    source = Path(__file__).resolve().parents[1] / "src" / "fs2_serve" / "admin_adapters.py"
+    encoded = source.read_text(encoding="utf-8")
+    for value in (*GPU_CLASSES, "us-north1", "mk8snodegroup-"):
+        assert value not in encoded

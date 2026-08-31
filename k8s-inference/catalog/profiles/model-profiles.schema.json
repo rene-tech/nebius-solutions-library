@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-profiles/v2",
+  "title": "FS2 model render, autoscaling, and placement profiles",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "placement_authority", "workload_placements", "model_autoscaling_targets", "common_keeper_paths", "model_artifacts", "profiles"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "placement_authority": {"const": "checked-in-b300-fixture-only-not-runtime-support"},
+    "workload_placements": {
+      "type": "object",
+      "minProperties": 15,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {"$ref": "#/$defs/placement"}
+    },
+    "model_autoscaling_targets": {
+      "type": "object",
+      "minProperties": 15,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["deployment", "gpu_count"],
+        "properties": {
+          "deployment": {"$ref": "#/$defs/id"},
+          "gpu_count": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "common_keeper_paths": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/manifest_path"}
+    },
+    "model_artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boltz2",
+        "diffdock",
+        "evo2-40b",
+        "genmol",
+        "glm-5-2-fp8",
+        "molmim",
+        "msa-search-pdb70",
+        "nv-reason-cxr-3b",
+        "nv-segment-ct",
+        "openfold2",
+        "openfold3",
+        "proteinmpnn",
+        "qwen3-8b",
+        "rfdiffusion",
+        "sdxl"
+      ],
+      "properties": {
+        "boltz2": {"$ref": "#/$defs/model_artifact"},
+        "diffdock": {"$ref": "#/$defs/model_artifact"},
+        "evo2-40b": {"$ref": "#/$defs/model_artifact"},
+        "genmol": {"$ref": "#/$defs/model_artifact"},
+        "glm-5-2-fp8": {"$ref": "#/$defs/model_artifact"},
+        "molmim": {"$ref": "#/$defs/model_artifact"},
+        "msa-search-pdb70": {"$ref": "#/$defs/model_artifact"},
+        "nv-reason-cxr-3b": {"$ref": "#/$defs/model_artifact"},
+        "nv-segment-ct": {"$ref": "#/$defs/model_artifact"},
+        "openfold2": {"$ref": "#/$defs/model_artifact"},
+        "openfold3": {"$ref": "#/$defs/model_artifact"},
+        "proteinmpnn": {"$ref": "#/$defs/model_artifact"},
+        "qwen3-8b": {"$ref": "#/$defs/model_artifact"},
+        "rfdiffusion": {"$ref": "#/$defs/model_artifact"},
+        "sdxl": {"$ref": "#/$defs/model_artifact"}
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "minProperties": 2,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["canonical_routes", "manifest_paths", "keeper_paths"],
+        "properties": {
+          "canonical_routes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+          "manifest_paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/manifest_path"}},
+          "keeper_paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/manifest_path"}}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$"},
+    "manifest_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.ya?ml$"
+    },
+    "model_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_paths", "keeper_paths"],
+      "properties": {
+        "manifest_paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/manifest_path"}
+        },
+        "keeper_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/manifest_path"}
+        },
+        "required_secrets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["ngc_api_key", "nvcr_dockerconfigjson"]}
+        }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_id", "runtime_variant", "state", "gpu_request", "workload_topology", "host_architectures", "selection_mode", "compatible_pool_ids", "required_node_labels"],
+      "properties": {
+        "model_id": {"$ref": "#/$defs/id"},
+        "runtime_variant": {"type": "string", "pattern": "^deployment/[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"},
+        "state": {"const": "fixture-only"},
+        "gpu_request": {"type": "integer", "minimum": 1},
+        "workload_topology": {"enum": ["single-gpu", "single-node-multi-gpu", "multi-node"]},
+        "host_architectures": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["amd64", "arm64"]}},
+        "selection_mode": {"enum": ["accelerator-class", "exact-pool"]},
+        "compatible_pool_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "required_node_labels": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"type": "string", "minLength": 1},
+          "additionalProperties": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

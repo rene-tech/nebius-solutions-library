@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/signed-attestation/v1",
+  "title": "fs2-serve signed live-evidence attestation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "algorithm",
+    "key_id",
+    "session_id",
+    "nonce",
+    "issued_at",
+    "expires_at",
+    "subject",
+    "claims",
+    "signature"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/signed-attestation/v1"},
+    "algorithm": {"const": "ed25519"},
+    "key_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "session_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nonce": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "issued_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "expires_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "schema", "digest", "model_id"],
+      "properties": {
+        "kind": {"enum": ["acquisition", "acquisition-helper-images", "artifacts", "backends", "cleanup", "faststart-admissions", "federated-qualifications", "nim-cache", "prerequisites", "qualifications", "readiness", "runtime-tuples", "semantic", "semantic-validations", "staging", "target-node-canaries", "variant-backend-readiness", "variant-cold-boundaries", "variant-cohorts", "variant-kubernetes-observations", "variant-license-artifacts", "variant-lifecycles", "variant-preemptions", "variant-qualifications", "variant-reviews", "variant-runtime-tuples", "variant-semantics", "variant-supplies", "variant-supply-objects"]},
+        "schema": {"type": "string", "pattern": "^fs2-serve\\.nebius\\.ai/[a-z0-9-]+/v[1-9][0-9]*$"},
+        "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"}
+      }
+    },
+    "claims": {"type": "object", "minProperties": 1},
+    "signature": {"type": "string", "pattern": "^[A-Za-z0-9_-]{86}$"}
+  }
+}

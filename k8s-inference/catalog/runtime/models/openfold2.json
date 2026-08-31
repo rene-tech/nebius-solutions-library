@@ -1,0 +1,36 @@
+{
+  "schema": "fs2-serve.nebius.ai/model/v1",
+  "model": {
+    "id": "openfold2",
+    "display_name": "OpenFold2",
+    "family": "bionemo-nim",
+    "tested_lane": true,
+    "source": {
+      "kind": "ngc-nim",
+      "repository": "nvcr.io/nim/openfold/openfold2",
+      "revision": "sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4",
+      "license": {"id": "UNVERIFIED", "state": "unverified", "notes": "NIM and model terms require platform-owner review before exposure."},
+      "entitlement": {"required": true, "state": "unverified", "credential_contract": "platform-managed-ngc-credential/v1", "notes": "No historical credential is reuse authority."}
+    }
+  },
+  "runtime": {
+    "kind": "nim",
+    "version": null,
+    "image": {"reference": "nvcr.io/nim/openfold/openfold2@sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4", "digest": "sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4", "state": "resolved"},
+    "command": ["/bin/bash", "/opt/nim/start_server.sh"]
+  },
+  "resources": {"cpu_millis": 14000, "memory_bytes": 137438953472, "host_ram_min_bytes": null, "scaler_owner": "nebius-managed-node-group-autoscaler", "gpu": {"class": "NVIDIA-B300-SXM6-288GB", "count": 1, "topology": "single-gpu", "placement": null, "b300_state": "qualified", "alternatives": []}},
+  "interface": {"execution_mode": "http", "protocols": ["native"], "endpoints": {"native": "/biology/openfold/openfold2/predict-structure-from-msa-and-template"}, "readiness": {"method": "GET", "path": "/v1/health/ready", "expected_status": 200, "timeout_seconds": 1800}, "warmup": null, "policy": {"operations": ["predict"], "license_enforced": true, "non_clinical": false, "commercial_use": "license-dependent"}, "mcp": {"discoverable": true, "invocable": false}},
+  "startup": {
+    "default": "conventional",
+    "fallback": "conventional",
+    "enabled_mechanisms": ["conventional"],
+    "experiments": [{"mechanism": "snapshot", "state": "gated", "gate": "fs2-serve/exact-b300-single-gpu-runtime-tuple/v1", "artifact_kind": "snapshot", "artifact_manifest_digest": null, "reason": "Historical H100 prepared-node evidence is promising, but a donor and restore are not portable across GPU, driver, worker-image, runtime, or artifact identity."}],
+    "multi_gpu_criu": "unproven-disabled"
+  },
+  "cache": {"owner": "nim-operator-nimcache", "shared_path": "/mnt/fs2-serve-cache/models/openfold2", "local_path": "/var/lib/fs2-serve/cache/models/openfold2", "pre_pull_image": true, "artifact": {"state": "unresolved", "kind": "nim-cache", "manifest_digest": null, "expanded_bytes": null, "minimum_bytes": null, "capacity_bound_bytes": 107374182400, "staged": false}},
+  "semantic_validator": {"kind": "repository-command", "contract": "two-distinct-openfold2-fold-responses/v1", "source_path": "nim-fast-start/faststart-v2/validate_openfold2.py", "source_sha256": "66c75652e7f17b35ff569a59cc6a21bc09416329d9fbf30178041aed9006a9ed", "fixture_path": null, "fixture_sha256": null, "request_count": 2, "distinct_requests": true, "distinct_responses": true},
+  "support": {"state": "qualified", "route_exposed": false, "non_clinical": false, "limitations": ["The exact digest passed two distinct OpenFold2 semantic requests on B300; public route exposure is owned by the shared lean-route release gate.", "NGC entitlement remains an operator-managed deployment prerequisite and no snapshot acceleration is claimed."]},
+  "evidence": [{"classification": "measured-historical", "hardware": "NVIDIA H100 80GB HBM3", "outcome": "conventional-fallback", "source_commit": "7e3c84f1f7e5f3df4b04e17f9846d49b321f504b", "summary": "The reviewed lane supplies the immutable conventional image and semantic oracle."}, {"classification": "unverified", "hardware": "NVIDIA H100 80GB HBM3", "outcome": "snapshot-candidate", "source_commit": "bc4e152900168eac7e3dac7b376aaa12e362701b", "summary": "The Bio snapshot inventory retains only the native source manifest and explicitly reports no packaged pipeline artifact; a new B300-native single-GPU donor remains gated."}, {"classification": "measured-platform", "hardware": "NVIDIA B300 SXM6 288GB (SM103)", "outcome": "live-qualified", "source_commit": "7f5f90213e3cfbe20ff622062a4cb6c0ff9f531a", "summary": "The exact NIM digest passed readiness and two distinct semantic requests in fs2-serve-usn1; retained receipt SHA-256 is 81c1380565e7759e1a3348e384ca080bcdb643bd582ca18a2df3dcb0edd182d3."}],
+  "provenance": [{"commit": "7e3c84f1f7e5f3df4b04e17f9846d49b321f504b", "tree": "d34e55849c14507e13811f685ca45322d6fe09ae", "path": "nim-fast-start/faststart-v2/conventional-baselines/catalog.json", "classification": "measured-handoff"}, {"commit": "bc4e152900168eac7e3dac7b376aaa12e362701b", "tree": "3e0b4ca2d51d9dfdcc5b01c83bc5373485b4317c", "path": "nim-fast-start/faststart-v2/bio_nims_snapshots/artifact-inventory.json", "classification": "reviewed-input"}]
+}

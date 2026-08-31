@@ -1,0 +1,510 @@
+{
+  "schema_version": "fs2.admin-console.plan/v1",
+  "product_name": "FS2 Serve",
+  "api_prefix": "/admin/api/v1",
+  "brand_basis": {
+    "official_nebius_asset_embedded": false,
+    "wordmark": "FS2 Serve",
+    "asset_gate": "A Nebius logo may be added only from a repository-owned licensed asset after written-use approval is recorded.",
+    "sources": [
+      "https://nebius.com/brand-assets/trademark-usage-guidelines",
+      "https://docs.nebius.com/observability/dashboards",
+      "https://docs.nebius.com/iam/authorization/roles"
+    ]
+  },
+  "browser_boundary": {
+    "same_origin_bff_only": true,
+    "forbidden_direct_sources": [
+      "kubernetes",
+      "postgresql",
+      "prometheus",
+      "loki",
+      "opentelemetry",
+      "nebius-cloud-api"
+    ],
+    "browser_cluster_credentials": false,
+    "browser_database_credentials": false,
+    "browser_raw_api_keys": false,
+    "one_time_secret_response_cache_policy": "no-store"
+  },
+  "context_contract": {
+    "url_query_keys": [
+      "project",
+      "cluster",
+      "region",
+      "from",
+      "to",
+      "timezone"
+    ],
+    "default_timezone": "UTC",
+    "preserve_across_navigation": true,
+    "server_authoritative_options": true
+  },
+  "status_contract": {
+    "values": [
+      "hot",
+      "loading",
+      "queued",
+      "cold",
+      "unhealthy",
+      "unsupported",
+      "unknown"
+    ],
+    "precedence": [
+      "unsupported",
+      "unknown",
+      "unhealthy",
+      "loading",
+      "hot",
+      "queued",
+      "cold"
+    ],
+    "unknown_is_not_zero": true,
+    "inputs": [
+      "catalog compatibility",
+      "adapter freshness",
+      "semantic health",
+      "activation intent",
+      "desired and ready replicas",
+      "durable queued operation count"
+    ]
+  },
+  "routes": [
+    {
+      "id": "overview",
+      "path": "/admin",
+      "label": "Overview",
+      "page": "OverviewPage",
+      "components": [
+        "FleetHealthTiles",
+        "ModelStateSummary",
+        "DemandAndLatencyChart",
+        "QueueCapacityPanel",
+        "AlertAndChangeFeed"
+      ],
+      "bff": [
+        "/admin/api/v1/overview"
+      ],
+      "vertical_slice": true
+    },
+    {
+      "id": "models",
+      "path": "/admin/models",
+      "label": "Models",
+      "page": "ModelListPage",
+      "components": [
+        "ModelFilters",
+        "ModelResourceTable",
+        "HotnessChip",
+        "FreshnessBadge"
+      ],
+      "bff": [
+        "/admin/api/v1/models"
+      ],
+      "vertical_slice": true
+    },
+    {
+      "id": "model-detail",
+      "path": "/admin/models/:modelId",
+      "label": "Model detail",
+      "page": "ModelDetailPage",
+      "components": [
+        "ModelIdentityHeader",
+        "RuntimeStatePanel",
+        "PerformancePanel",
+        "ReplicaAndPlacementTable",
+        "SnapshotCachePanel",
+        "SemanticHealthPanel"
+      ],
+      "bff": [
+        "/admin/api/v1/models/{model_id}"
+      ],
+      "vertical_slice": true
+    },
+    {
+      "id": "operations",
+      "path": "/admin/operations",
+      "label": "Operations",
+      "page": "OperationListPage",
+      "components": [
+        "OperationFilters",
+        "OperationResourceTable",
+        "TimingBreakdown",
+        "ErrorClassChip"
+      ],
+      "bff": [
+        "/admin/api/v1/operations"
+      ],
+      "vertical_slice": false
+    },
+    {
+      "id": "operation-detail",
+      "path": "/admin/operations/:operationId",
+      "label": "Operation detail",
+      "page": "OperationDetailPage",
+      "components": [
+        "OperationIdentityHeader",
+        "OperationTimeline",
+        "AttemptTable",
+        "ContextualObservabilityLinks"
+      ],
+      "bff": [
+        "/admin/api/v1/operations/{operation_id}"
+      ],
+      "vertical_slice": false
+    },
+    {
+      "id": "access",
+      "path": "/admin/access",
+      "label": "Users & API keys",
+      "page": "AccessPage",
+      "components": [
+        "PrincipalTable",
+        "ApiKeyTable",
+        "ScopeSummary",
+        "UsageAttributionPanel"
+      ],
+      "bff": [
+        "/admin/api/v1/principals",
+        "/admin/api/v1/keys"
+      ],
+      "vertical_slice": false
+    },
+    {
+      "id": "capacity",
+      "path": "/admin/capacity",
+      "label": "Capacity & queues",
+      "page": "CapacityPage",
+      "components": [
+        "GpuPoolTable",
+        "CapacityTypeChip",
+        "QueueTable",
+        "PendingWorkloadTable",
+        "AutoscalerStatePanel"
+      ],
+      "bff": [
+        "/admin/api/v1/capacity",
+        "/admin/api/v1/queues"
+      ],
+      "vertical_slice": false
+    },
+    {
+      "id": "observability",
+      "path": "/admin/observability",
+      "label": "Observability",
+      "page": "ObservabilityPage",
+      "components": [
+        "ComponentHealthGrid",
+        "ContextualLaunchCard",
+        "UnavailableCapabilityNotice"
+      ],
+      "bff": [
+        "/admin/api/v1/observability/capabilities"
+      ],
+      "vertical_slice": false
+    },
+    {
+      "id": "configuration",
+      "path": "/admin/configuration",
+      "label": "Configuration",
+      "page": "ConfigurationPage",
+      "components": [
+        "ConfigurationResourceTable",
+        "ProposedDiff",
+        "ValidationResults",
+        "ReconciliationTimeline",
+        "RollbackTarget"
+      ],
+      "bff": [
+        "/admin/api/v1/configuration"
+      ],
+      "vertical_slice": false
+    },
+    {
+      "id": "audit",
+      "path": "/admin/audit",
+      "label": "Audit",
+      "page": "AuditPage",
+      "components": [
+        "AuditFilters",
+        "AuditEventTable",
+        "AuditDetailDrawer"
+      ],
+      "bff": [
+        "/admin/api/v1/audit"
+      ],
+      "vertical_slice": false
+    }
+  ],
+  "data_sources": [
+    {
+      "id": "catalog",
+      "authority": "identity, compatibility, runtime variants, endpoints and MCP exposure",
+      "adapter": "catalog package",
+      "live_state": "available",
+      "browser_direct": false
+    },
+    {
+      "id": "postgresql",
+      "authority": "operations, terminal accounting, tokens, audit and activation intent",
+      "adapter": "least-privilege reporting queries",
+      "live_state": "healthy",
+      "browser_direct": false
+    },
+    {
+      "id": "kubernetes",
+      "authority": "desired and observed replicas, pods, nodes and autoscaler state",
+      "adapter": "allow-listed read-only informer/cache",
+      "live_state": "healthy",
+      "browser_direct": false
+    },
+    {
+      "id": "kueue",
+      "authority": "flavors, cluster/local queues, quotas and workloads",
+      "adapter": "allow-listed read-only Kubernetes adapter",
+      "live_state": "healthy-no-prometheus-ingestion",
+      "browser_direct": false
+    },
+    {
+      "id": "prometheus",
+      "authority": "bounded operational rates, latency histograms, queue gauges and error series",
+      "adapter": "server-side PromQL templates",
+      "live_state": "healthy",
+      "browser_direct": false
+    },
+    {
+      "id": "loki",
+      "authority": "bounded logs by namespace, workload and operation correlation ID",
+      "adapter": "signed context-preserving deep link or server-side query proxy",
+      "live_state": "healthy",
+      "browser_direct": false
+    },
+    {
+      "id": "grafana",
+      "authority": "curated visualization and Explore launch points",
+      "adapter": "runtime-configured authenticated deep links",
+      "live_state": "healthy",
+      "browser_direct": false
+    },
+    {
+      "id": "opentelemetry",
+      "authority": "collection pipeline health and correlation propagation",
+      "adapter": "collector health projection",
+      "live_state": "healthy-no-ui",
+      "browser_direct": false
+    },
+    {
+      "id": "dcgm",
+      "authority": "measured GPU device utilization and health",
+      "adapter": "Prometheus after scrape acceptance",
+      "live_state": "deployed-not-ingested",
+      "browser_direct": false
+    },
+    {
+      "id": "alertmanager",
+      "authority": "active and silenced alerts",
+      "adapter": "capability-discovered API/deep link",
+      "live_state": "absent",
+      "browser_direct": false
+    },
+    {
+      "id": "tempo",
+      "authority": "trace search and operation trace drill-down",
+      "adapter": "capability-discovered API/deep link",
+      "live_state": "absent",
+      "browser_direct": false
+    }
+  ],
+  "field_matrix": [
+    {
+      "id": "model.hotness",
+      "page": "overview,models,model-detail",
+      "sources": ["catalog", "postgresql", "kubernetes"],
+      "availability": "adapter-required",
+      "semantics": "derived status with reason, evidence timestamp and freshness"
+    },
+    {
+      "id": "request.throughput",
+      "page": "overview,models,model-detail",
+      "sources": ["prometheus", "postgresql"],
+      "availability": "available",
+      "semantics": "request/s from bounded metric; durable total reconciled to terminal facts"
+    },
+    {
+      "id": "token.throughput",
+      "page": "overview,model-detail,operations",
+      "sources": ["postgresql"],
+      "availability": "missing-schema",
+      "semantics": "unavailable, never inferred from requests"
+    },
+    {
+      "id": "latency.end_to_end",
+      "page": "overview,model-detail,operations",
+      "sources": ["prometheus", "postgresql"],
+      "availability": "available-aggregate-only",
+      "semantics": "histogram quantiles operationally; per-operation duration durably"
+    },
+    {
+      "id": "latency.ttft",
+      "page": "overview,model-detail,operations",
+      "sources": ["prometheus", "postgresql"],
+      "availability": "missing-instrumentation",
+      "semantics": "unavailable until first-output timestamp and histogram exist"
+    },
+    {
+      "id": "latency.cold_start",
+      "page": "overview,model-detail,operations",
+      "sources": ["prometheus", "postgresql"],
+      "availability": "available-total-only",
+      "semantics": "total cold-start seconds; phase breakdown unavailable"
+    },
+    {
+      "id": "request.errors",
+      "page": "overview,models,operations",
+      "sources": ["prometheus", "postgresql"],
+      "availability": "available",
+      "semantics": "bounded aggregate outcome/error class plus durable operation error"
+    },
+    {
+      "id": "operations.history",
+      "page": "operations",
+      "sources": ["postgresql"],
+      "availability": "missing-list-api",
+      "semantics": "durable rows exist; add cursor-paginated reporting projection"
+    },
+    {
+      "id": "principal.inventory",
+      "page": "access",
+      "sources": ["postgresql"],
+      "availability": "missing-schema",
+      "semantics": "token principal strings are not a principal directory"
+    },
+    {
+      "id": "api_keys",
+      "page": "access",
+      "sources": ["postgresql"],
+      "availability": "partial",
+      "semantics": "issue/list/revoke exist; name, last-use, rotation lineage and rate windows do not"
+    },
+    {
+      "id": "usage.attribution",
+      "page": "access,models,operations",
+      "sources": ["postgresql"],
+      "availability": "available-estimated-gpu",
+      "semantics": "terminal facts by principal/model; GPU seconds explicitly estimated"
+    },
+    {
+      "id": "queue.depth_age",
+      "page": "overview,models,capacity",
+      "sources": ["postgresql", "prometheus"],
+      "availability": "available",
+      "semantics": "durable operation queue plus bounded gauges"
+    },
+    {
+      "id": "queue.kueue",
+      "page": "capacity",
+      "sources": ["kueue"],
+      "availability": "available-via-kubernetes-adapter",
+      "semantics": "spec quota and observed reservation shown separately"
+    },
+    {
+      "id": "capacity.gpu_inventory",
+      "page": "overview,capacity,model-detail",
+      "sources": ["kubernetes"],
+      "availability": "available",
+      "semantics": "dynamic gpu_class and capacity_type dimensions; no hard-coded GPU family"
+    },
+    {
+      "id": "capacity.gpu_utilization",
+      "page": "overview,capacity,model-detail",
+      "sources": ["dcgm", "prometheus"],
+      "availability": "blocked-on-scrape",
+      "semantics": "unavailable until DCGM series are ingested; never replace with estimate"
+    },
+    {
+      "id": "autoscaling",
+      "page": "capacity,model-detail",
+      "sources": ["kubernetes"],
+      "availability": "partial",
+      "semantics": "HPA available; KEDA installed but no ScaledObjects; node autoscaler state not verified"
+    },
+    {
+      "id": "audit",
+      "page": "overview,audit,access,configuration",
+      "sources": ["postgresql"],
+      "availability": "available",
+      "semantics": "append-only durable audit events; inference operations remain separate"
+    },
+    {
+      "id": "logs",
+      "page": "observability,operation-detail,model-detail",
+      "sources": ["loki", "grafana"],
+      "availability": "available",
+      "semantics": "context-bound deep links; exclude prompt, response and raw credential data"
+    },
+    {
+      "id": "traces",
+      "page": "observability,operation-detail",
+      "sources": ["opentelemetry", "tempo"],
+      "availability": "collector-only-no-backend",
+      "semantics": "correlation propagation may exist; no trace launch point until Tempo or equivalent is verified"
+    },
+    {
+      "id": "alerts",
+      "page": "overview,observability",
+      "sources": ["prometheus", "alertmanager"],
+      "availability": "rules-only-no-alertmanager",
+      "semantics": "show rule evaluation health only; active/silenced alert workflow unavailable"
+    }
+  ],
+  "observability_launches": [
+    {"id": "grafana", "enabled": true, "context": ["cluster", "model", "from", "to"]},
+    {"id": "prometheus", "enabled": true, "context": ["cluster", "model", "from", "to"]},
+    {"id": "loki", "enabled": true, "context": ["cluster", "model", "operation", "from", "to"]},
+    {"id": "opentelemetry", "enabled": false, "reason": "collector has no operator UI"},
+    {"id": "dcgm", "enabled": false, "reason": "no DCGM series observed in Prometheus"},
+    {"id": "kueue", "enabled": false, "reason": "no verified operator UI; render BFF data instead"},
+    {"id": "alertmanager", "enabled": false, "reason": "not deployed"},
+    {"id": "tempo", "enabled": false, "reason": "not deployed"}
+  ],
+  "vertical_slice": {
+    "read_only": true,
+    "route_ids": ["overview", "models", "model-detail"],
+    "shared_components": [
+      "AppShell",
+      "ProductRail",
+      "ContextBar",
+      "TimeRangePicker",
+      "DataBoundary",
+      "ResourceTable",
+      "StatusChip",
+      "FreshnessBadge"
+    ],
+    "bff_endpoints": [
+      "GET /admin/api/v1/context",
+      "GET /admin/api/v1/overview",
+      "GET /admin/api/v1/models",
+      "GET /admin/api/v1/models/{model_id}",
+      "GET /admin/api/v1/observability/capabilities"
+    ],
+    "excluded_until_owned": [
+      "frontend framework and build pipeline",
+      "browser session and operator RBAC",
+      "mutating key lifecycle",
+      "configuration mutation",
+      "cluster deployment"
+    ]
+  },
+  "acceptance_cases": [
+    "contract-shape",
+    "unique-routes",
+    "same-origin-bff-boundary",
+    "no-browser-infrastructure-credentials",
+    "status-precedence-fixtures",
+    "unknown-never-rendered-as-zero",
+    "absent-observability-not-launchable",
+    "gpu-class-not-hard-coded-in-component-contract",
+    "one-time-secret-no-store",
+    "no-protected-resource-identifiers"
+  ]
+}

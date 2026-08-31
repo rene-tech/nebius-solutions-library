@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/cold-start-optimization-matrix/v1alpha1",
+  "title": "FS2 cold-start optimization matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "catalog_contract",
+    "benchmark_policy",
+    "floor_policies",
+    "capability_contract",
+    "deployment_identity_contract",
+    "runtime_marker_contract",
+    "snapshot_eligibility",
+    "baseline_evidence",
+    "models"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/cold-start-optimization-matrix/v1alpha1"
+    },
+    "catalog_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "canonical_model_count", "model_profile_path", "route_inventory_path", "semantic_contract_path"],
+      "properties": {
+        "profile": {"const": "full_catalog"},
+        "canonical_model_count": {"const": 15},
+        "model_profile_path": {"type": "string", "minLength": 1},
+        "route_inventory_path": {"type": "string", "minLength": 1},
+        "semantic_contract_path": {"type": "string", "minLength": 1}
+      }
+    },
+    "benchmark_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["semantic_call_count", "exploratory_repetitions_per_arm", "promotion_repetitions_per_arm", "required_transition", "attempt_order", "output_mode"],
+      "properties": {
+        "semantic_call_count": {"const": 2},
+        "exploratory_repetitions_per_arm": {"type": "integer", "minimum": 3},
+        "promotion_repetitions_per_arm": {"type": "integer", "minimum": 20},
+        "required_transition": {"const": "zero-to-ready-to-call1-to-call2-to-zero"},
+        "attempt_order": {"const": "strict-control-candidate-alternation"},
+        "output_mode": {"const": "mode-0600-token-free-receipts"}
+      }
+    },
+    "floor_policies": {
+      "type": "object",
+      "minProperties": 3,
+      "additionalProperties": {"$ref": "#/$defs/floorPolicy"}
+    },
+    "capability_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["states", "mechanisms", "default_mechanism"],
+      "properties": {
+        "states": {
+          "type": "array",
+          "const": ["active", "eligible-experiment", "blocked", "not-applicable"]
+        },
+        "mechanisms": {
+          "type": "array",
+          "const": ["conventional", "shared-cache", "local-nvme", "oci-image-volume", "oci-modelcar", "cuda-criu-snapshot", "dynamo-snapshot"]
+        },
+        "default_mechanism": {"const": "conventional"}
+      }
+    },
+    "deployment_identity_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default", "required_annotations", "compile_cache_abi", "compile_cache_abi_source", "models"],
+      "properties": {
+        "default": {"const": "denied"},
+        "required_annotations": {
+          "const": [
+            "fs2.nebius/model-content-digest",
+            "fs2.nebius/runtime-image-digest",
+            "fs2.nebius/compile-cache-abi"
+          ]
+        },
+        "compile_cache_abi": {"type": "string", "minLength": 1},
+        "compile_cache_abi_source": {"type": "string", "minLength": 1},
+        "models": {
+          "type": "object",
+          "minProperties": 15,
+          "maxProperties": 15,
+          "additionalProperties": {"$ref": "#/$defs/deploymentIdentity"}
+        }
+      }
+    },
+    "runtime_marker_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default", "accepted_events", "source_instrumented_models", "unqualified_models"],
+      "properties": {
+        "default": {"const": "denied"},
+        "accepted_events": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "source_instrumented_models": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["state", "sources"],
+            "properties": {
+              "state": {"const": "source-instrumented-observation-required"},
+              "sources": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {"type": "string", "minLength": 1}
+              }
+            }
+          }
+        },
+        "unqualified_models": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+        }
+      }
+    },
+    "snapshot_eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default", "exact_match_fields", "full_gpu", "mig"],
+      "properties": {
+        "default": {"const": "denied"},
+        "exact_match_fields": {
+          "type": "array",
+          "minItems": 20,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "full_gpu": {"$ref": "#/$defs/snapshotPartition"},
+        "mig": {"$ref": "#/$defs/snapshotPartition"}
+      }
+    },
+    "baseline_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_sha256", "source_commit", "source_tree", "result", "observations"],
+      "properties": {
+        "receipt_sha256": {"$ref": "#/$defs/digest"},
+        "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "source_tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "result": {"const": "PASS"},
+        "observations": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["model_id", "pod_created_to_ready_seconds", "dominant_observed_phase", "experiment_priority"],
+            "properties": {
+              "model_id": {"type": "string", "minLength": 1},
+              "pod_created_to_ready_seconds": {"type": "number", "exclusiveMinimum": 0},
+              "dominant_observed_phase": {"type": "string", "minLength": 1},
+              "experiment_priority": {"type": "integer", "minimum": 1}
+            }
+          }
+        }
+      }
+    },
+    "models": {
+      "type": "array",
+      "minItems": 15,
+      "maxItems": 15,
+      "items": {"$ref": "#/$defs/model"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "identityAnnotations": {
+      "type": "object",
+      "minProperties": 2,
+      "maxProperties": 3,
+      "additionalProperties": false,
+      "required": ["fs2.nebius/runtime-image-digest", "fs2.nebius/compile-cache-abi"],
+      "properties": {
+        "fs2.nebius/model-content-digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "fs2.nebius/runtime-image-digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "fs2.nebius/compile-cache-abi": {"type": "string", "minLength": 1}
+      }
+    },
+    "deploymentIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "annotations", "model_content_source", "missing_annotations", "blocker", "blocker_source"],
+      "properties": {
+        "state": {"enum": ["complete", "blocked"]},
+        "annotations": {"$ref": "#/$defs/identityAnnotations"},
+        "model_content_source": {"type": ["string", "null"]},
+        "missing_annotations": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {"const": "fs2.nebius/model-content-digest"}
+        },
+        "blocker": {"type": ["string", "null"]},
+        "blocker_source": {"type": ["string", "null"]}
+      }
+    },
+    "floorPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum_ready_replicas", "minimum_gpu_nodes", "scale_to_zero_required", "use"],
+      "properties": {
+        "minimum_ready_replicas": {"type": "integer", "minimum": 0},
+        "minimum_gpu_nodes": {"type": "integer", "minimum": 0},
+        "scale_to_zero_required": {"type": "boolean"},
+        "use": {"type": "string", "minLength": 1}
+      }
+    },
+    "snapshotPartition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_mig_mode", "qualification_scope", "resource_identity_required", "cross_partition_restore"],
+      "properties": {
+        "required_mig_mode": {"enum": ["disabled", "enabled"]},
+        "qualification_scope": {"enum": ["full-gpu", "mig"]},
+        "resource_identity_required": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "cross_partition_restore": {"const": "denied"}
+      }
+    },
+    "phaseSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "names", "promotion_required"],
+      "properties": {
+        "source": {"enum": ["kubernetes-condition", "kubernetes-event", "init-container-status", "container-status", "runtime-log-marker", "external-receipt", "not-applicable"]},
+        "names": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "promotion_required": {"type": "boolean"}
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "prerequisites", "claim"],
+      "properties": {
+        "state": {"enum": ["active", "eligible-experiment", "blocked", "not-applicable"]},
+        "prerequisites": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "claim": {"type": "string", "minLength": 1}
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_id", "deployment", "service", "gpu_count", "floor_policy", "primary_containers", "artifact_init_containers", "identity_sources", "phase_sources", "capabilities", "next_experiment"],
+      "properties": {
+        "model_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "deployment": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "service": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "gpu_count": {"type": "integer", "minimum": 1},
+        "floor_policy": {"type": "string", "minLength": 1},
+        "primary_containers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "artifact_init_containers": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "identity_sources": {
+          "type": "array",
+          "minItems": 6,
+          "uniqueItems": true,
+          "items": {"enum": ["deployment-annotations", "pod-image-ids", "artifact-manifest-receipt", "runtime-argv", "runtime-environment-digest", "node-labels", "cuda-in-container-receipt", "topology-inventory-receipt", "allocated-device-receipt", "storage-identity-receipt"]}
+        },
+        "phase_sources": {
+          "type": "object",
+          "minProperties": 8,
+          "additionalProperties": {"$ref": "#/$defs/phaseSource"}
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["conventional", "shared-cache", "local-nvme", "oci-image-volume", "oci-modelcar", "cuda-criu-snapshot", "dynamo-snapshot"],
+          "properties": {
+            "conventional": {"$ref": "#/$defs/capability"},
+            "shared-cache": {"$ref": "#/$defs/capability"},
+            "local-nvme": {"$ref": "#/$defs/capability"},
+            "oci-image-volume": {"$ref": "#/$defs/capability"},
+            "oci-modelcar": {"$ref": "#/$defs/capability"},
+            "cuda-criu-snapshot": {"$ref": "#/$defs/capability"},
+            "dynamo-snapshot": {"$ref": "#/$defs/capability"}
+          }
+        },
+        "next_experiment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mechanism", "control", "candidate", "success_gate"],
+          "properties": {
+            "mechanism": {"type": "string", "minLength": 1},
+            "control": {"type": "string", "minLength": 1},
+            "candidate": {"type": "string", "minLength": 1},
+            "success_gate": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

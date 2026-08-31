@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-variant-kubernetes-observation/v1",
+  "title": "Signed raw Kubernetes API observation",
+  "$comment": "Exact raw bytes are content-addressed and executable verification joins Service, EndpointSlice, Pod, Node, PodResources, Event, probe, fence, and cold-boundary objects.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "object_kind", "observed_at", "valid_until", "observer", "object"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-variant-kubernetes-observation/v1"},
+    "object_kind": {"type": "string", "minLength": 1},
+    "observed_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "valid_until": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "observer": {"type": "object"},
+    "object": {"type": "object"}
+  }
+}

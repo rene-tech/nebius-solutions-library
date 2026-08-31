@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-variant-promotions/v4",
+  "title": "Signed live model-variant promotion overlay",
+  "$comment": "Non-authoritative shape only; load_model_variant_promotions is the exclusive route verifier.",
+  "x-fs2-authority": "non-authoritative-shape-only",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "route_authority", "catalog_digest", "attestor_policy_sha256", "promotions"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-variant-promotions/v4"},
+    "route_authority": {"const": "signed-live-evidence-only"},
+    "catalog_digest": {"$ref": "#/$defs/digest"},
+    "attestor_policy_sha256": {"$ref": "#/$defs/nullableDigest"},
+    "promotions": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {"$ref": "#/$defs/promotion"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nullableDigest": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]},
+    "id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variant_id", "candidate_id", "candidate_digest", "runtime_profile", "variant_digest", "base_model_id", "exposed_model_id", "canonical_model_digest", "serving_binding_digest", "scale_contract_digest", "enabled", "valid_until", "backend_service_uid", "evidence_session_id", "artifact_manifest_digest", "supply_receipt_digest", "runtime_tuple_digest", "cold_cohort_digest", "warm_cohort_digest", "qualification_receipt_digest", "backend_readiness_receipt_digest", "preemption_receipt_digest", "zero_to_ready_receipt_digest", "return_to_zero_receipt_digest", "independent_review_receipt_digest"],
+      "properties": {
+        "variant_id": {"$ref": "#/$defs/id"},
+        "candidate_id": {"$ref": "#/$defs/id"},
+        "candidate_digest": {"$ref": "#/$defs/digest"},
+        "runtime_profile": {"enum": ["portable", "blackwell-sm103"]},
+        "variant_digest": {"$ref": "#/$defs/digest"},
+        "base_model_id": {"$ref": "#/$defs/id"},
+        "exposed_model_id": {"$ref": "#/$defs/id"},
+        "canonical_model_digest": {"$ref": "#/$defs/digest"},
+        "serving_binding_digest": {"$ref": "#/$defs/digest"},
+        "scale_contract_digest": {"$ref": "#/$defs/digest"},
+        "enabled": {"type": "boolean"},
+        "valid_until": {"type": ["string", "null"], "format": "date-time"},
+        "backend_service_uid": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+        "evidence_session_id": {"$ref": "#/$defs/nullableDigest"},
+        "artifact_manifest_digest": {"$ref": "#/$defs/nullableDigest"},
+        "supply_receipt_digest": {"$ref": "#/$defs/nullableDigest"},
+        "runtime_tuple_digest": {"$ref": "#/$defs/nullableDigest"},
+        "cold_cohort_digest": {"$ref": "#/$defs/nullableDigest"},
+        "warm_cohort_digest": {"$ref": "#/$defs/nullableDigest"},
+        "qualification_receipt_digest": {"$ref": "#/$defs/nullableDigest"},
+        "backend_readiness_receipt_digest": {"$ref": "#/$defs/nullableDigest"},
+        "preemption_receipt_digest": {"$ref": "#/$defs/nullableDigest"},
+        "zero_to_ready_receipt_digest": {"$ref": "#/$defs/nullableDigest"},
+        "return_to_zero_receipt_digest": {"$ref": "#/$defs/nullableDigest"},
+        "independent_review_receipt_digest": {"$ref": "#/$defs/nullableDigest"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"enabled": {"const": false}}, "required": ["enabled"]},
+          "then": {
+            "properties": {
+              "valid_until": {"const": null},
+              "backend_service_uid": {"const": null},
+              "evidence_session_id": {"const": null},
+              "artifact_manifest_digest": {"const": null},
+              "supply_receipt_digest": {"const": null},
+              "runtime_tuple_digest": {"const": null},
+              "cold_cohort_digest": {"const": null},
+              "warm_cohort_digest": {"const": null},
+              "qualification_receipt_digest": {"const": null},
+              "backend_readiness_receipt_digest": {"const": null},
+              "preemption_receipt_digest": {"const": null},
+              "zero_to_ready_receipt_digest": {"const": null},
+              "return_to_zero_receipt_digest": {"const": null},
+              "independent_review_receipt_digest": {"const": null}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"enabled": {"const": true}}, "required": ["enabled"]},
+          "then": {
+            "properties": {
+              "valid_until": {"type": "string", "format": "date-time", "pattern": "Z$"},
+              "backend_service_uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+              "evidence_session_id": {"$ref": "#/$defs/digest"},
+              "artifact_manifest_digest": {"$ref": "#/$defs/digest"},
+              "supply_receipt_digest": {"$ref": "#/$defs/digest"},
+              "runtime_tuple_digest": {"$ref": "#/$defs/digest"},
+              "cold_cohort_digest": {"$ref": "#/$defs/digest"},
+              "warm_cohort_digest": {"$ref": "#/$defs/digest"},
+              "qualification_receipt_digest": {"$ref": "#/$defs/digest"},
+              "backend_readiness_receipt_digest": {"$ref": "#/$defs/digest"},
+              "preemption_receipt_digest": {"$ref": "#/$defs/digest"},
+              "zero_to_ready_receipt_digest": {"$ref": "#/$defs/digest"},
+              "return_to_zero_receipt_digest": {"$ref": "#/$defs/digest"},
+              "independent_review_receipt_digest": {"$ref": "#/$defs/digest"}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

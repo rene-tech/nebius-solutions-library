@@ -1,0 +1,320 @@
+"""Process entry point for the gateway and independent maintenance job."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import logging
+import sys
+
+import uvicorn
+from fastapi import FastAPI
+from fs2_serve_catalog.loader import load_catalog
+
+from .admin import AdminReadService
+from .admin_adapters import (
+    HttpKubernetesListReader,
+    HttpPrometheusScalarReader,
+    KubernetesCapacityAdminAdapter,
+    KubernetesCapacityConfig,
+    PrometheusObservabilityAdminAdapter,
+    PrometheusObservabilityConfig,
+)
+from .admission import AdmissionService
+from .api import AppRuntime, create_app
+from .auth import OperatorSessionService, PepperRing, TokenService
+from .configuration import (
+    ConfigurationService,
+    StaticCatalogConfigurationAdapter,
+    StoreConfigurationAuditSink,
+    StoreConfigurationRepository,
+    catalog_configuration_contracts,
+    configuration_etag,
+    load_platform_configuration,
+    load_terraform_apply_receipt,
+)
+from .crypto import KeyedHasher, PayloadCipher
+from .federation import FederationRouter
+from .mcp_server import mount_mcp
+from .postgres import PostgresMaintenanceStore, PostgresStore
+from .postgresql_release import render_postgresql_release_contract
+from .registry import Registry
+from .route_revalidation import RouteRevalidator
+from .runtime import RuntimeClient
+from .settings import Settings
+from .store import ConflictError
+from .telemetry import Metrics, configure_tracing
+
+
+def _keys(settings: Settings) -> tuple[PayloadCipher, KeyedHasher]:
+    return (
+        PayloadCipher.from_file(settings.payload_keyring_file),
+        KeyedHasher.from_file(settings.ledger_hmac_keyring_file),
+    )
+
+
+async def _store(settings: Settings) -> PostgresStore:
+    cipher, hasher = _keys(settings)
+    return await PostgresStore.connect(
+        settings.database_url,
+        settings.migrations_dir,
+        cipher,
+        hasher,
+        settings.payload_ttl_seconds,
+    )
+
+
+async def build_runtime(settings: Settings) -> AppRuntime:
+    registry = Registry.load(
+        settings.catalog_dir,
+        settings.bindings_file,
+        variant_promotions_file=settings.variant_promotions_file,
+        lean_routes_file=settings.lean_routes_file,
+        repo_root=settings.repo_root,
+        evidence_root=settings.evidence_root,
+        trusted_attestors_loader=settings.trusted_route_attestors,
+        max_attempts=settings.max_attempts,
+        max_gpu_seconds_per_attempt=settings.max_gpu_seconds_per_attempt,
+        retry_base_seconds=settings.retry_base_seconds,
+    )
+    route_revalidator = RouteRevalidator(
+        registry,
+        interval_seconds=settings.route_revalidation_interval_seconds,
+    )
+    federation = FederationRouter.load(
+        settings.federation_routes_file,
+        registry.list(),
+        secret_root=settings.federation_secret_dir,
+    )
+    store = await _store(settings)
+    peppers = PepperRing.from_file(settings.token_pepper_file)
+    tokens = TokenService(store, peppers)
+    # Canonical catalog metadata remains observable when promotion deliberately
+    # leaves zero routable models. Request and queue series are still populated
+    # only from durable admitted operations.
+    metrics = Metrics(registry.list())
+    runtime_client = RuntimeClient(
+        activation_timeout_seconds=settings.activation_timeout_seconds,
+        runtime_timeout_seconds=settings.runtime_timeout_seconds,
+        max_response_bytes=settings.max_response_bytes,
+        federation=federation,
+    )
+    admission = AdmissionService(
+        registry=registry,
+        store=store,
+        runtime=runtime_client,
+        metrics=metrics,
+        worker_concurrency=settings.worker_concurrency,
+        poll_seconds=settings.worker_poll_seconds,
+        lease_seconds=settings.worker_lease_seconds,
+        maintenance_interval_seconds=settings.maintenance_interval_seconds,
+        shutdown_grace_seconds=settings.shutdown_grace_seconds,
+        max_sync_waiters=settings.max_sync_waiters,
+        wait_poll_initial_seconds=settings.wait_poll_initial_seconds,
+        wait_poll_max_seconds=settings.wait_poll_max_seconds,
+        route_refresh=route_revalidator.refresh,
+    )
+    capacity = None
+    if settings.admin_capacity_enabled:
+        capacity = KubernetesCapacityAdminAdapter(
+            HttpKubernetesListReader(
+                base_url=settings.admin_kubernetes_api_url,
+                token_file=settings.admin_kubernetes_token_file,
+                ca_file=settings.admin_kubernetes_ca_file,
+                timeout_seconds=settings.admin_adapter_timeout_seconds,
+            ),
+            config=KubernetesCapacityConfig(
+                model_namespace=settings.admin_kubernetes_model_namespace,
+                system_namespace=settings.admin_kubernetes_system_namespace,
+                kueue_api_version=settings.admin_kueue_api_version,
+            ),
+        )
+    observability = None
+    if settings.admin_prometheus_url is not None:
+        observability_config = (
+            PrometheusObservabilityConfig.from_file(settings.admin_observability_config_file)
+            if settings.admin_observability_config_file is not None
+            else PrometheusObservabilityConfig()
+        )
+        observability = PrometheusObservabilityAdminAdapter(
+            HttpPrometheusScalarReader(
+                base_url=settings.admin_prometheus_url,
+                timeout_seconds=settings.admin_adapter_timeout_seconds,
+            ),
+            config=observability_config,
+        )
+    admin_read = AdminReadService(
+        registry=registry,
+        store=store,
+        capacity=capacity,
+        observability=observability,
+        source_max_age_seconds=settings.admin_source_max_age_seconds,
+        adapter_timeout_seconds=settings.admin_adapter_timeout_seconds,
+    )
+    configure_tracing(settings.otlp_endpoint)
+    configuration_service: ConfigurationService | None = None
+    configuration_sync_error: str | None = None
+    if settings.admin_configuration_file is not None:
+        initial_configuration = load_platform_configuration(settings.admin_configuration_file)
+        canonical_catalog = load_catalog(settings.catalog_dir, repo_root=settings.repo_root)
+        configuration_repository = StoreConfigurationRepository(store)
+        configuration_service = ConfigurationService(
+            repository=configuration_repository,
+            catalog=StaticCatalogConfigurationAdapter(catalog_configuration_contracts(canonical_catalog)),
+            audit=StoreConfigurationAuditSink(store),
+        )
+        validation = await configuration_service.validate_bootstrap(initial_configuration)
+        if not validation.valid:
+            raise RuntimeError("initial admin configuration does not match the canonical catalog")
+        current = await store.configuration_current()
+        if current is None:
+            await configuration_repository.ensure_initial(initial_configuration, actor="terraform-bootstrap")
+        elif settings.admin_configuration_receipt_file is not None:
+            try:
+                receipt = load_terraform_apply_receipt(settings.admin_configuration_receipt_file)
+                await configuration_repository.accept_terraform_applied(
+                    initial_configuration,
+                    receipt,
+                    actor="terraform-applied",
+                )
+            except (ConflictError, ValueError):
+                logging.getLogger("fs2_serve.configuration").exception(
+                    "Terraform-applied configuration receipt validation failed"
+                )
+                configuration_sync_error = "configuration_apply_receipt_invalid"
+        elif current.etag != configuration_etag(initial_configuration):
+            logging.getLogger("fs2_serve.configuration").error(
+                "changed Terraform configuration is missing its apply receipt"
+            )
+            configuration_sync_error = "configuration_apply_receipt_missing"
+    return AppRuntime(
+        settings=settings,
+        registry=registry,
+        store=store,
+        tokens=tokens,
+        admission=admission,
+        metrics=metrics,
+        admin_token=settings.admin_token(),
+        operator_sessions=OperatorSessionService(
+            store,
+            peppers,
+            ttl_seconds=settings.admin_session_ttl_seconds,
+        ),
+        route_revalidator=route_revalidator,
+        admin_read=admin_read,
+        configuration=configuration_service,
+        configuration_sync_error=configuration_sync_error,
+    )
+
+
+async def build_app(settings: Settings) -> FastAPI:
+    """Build the exact composed HTTP/MCP application used by Uvicorn."""
+
+    runtime = await build_runtime(settings)
+    app = create_app(runtime)
+    mount_mcp(app, runtime)
+    return app
+
+
+async def serve(settings: Settings) -> None:
+    app = await build_app(settings)
+    server = uvicorn.Server(
+        uvicorn.Config(app, host=settings.host, port=settings.port, log_level=settings.log_level.lower())
+    )
+    await server.serve()
+
+
+async def maintain(settings: Settings) -> None:
+    store = await PostgresMaintenanceStore.connect(settings.database_url)
+    try:
+        await store.purge_expired_payloads()
+        await store.delete_expired_rows(
+            operation_retention_seconds=settings.operation_retention_seconds,
+            token_retention_seconds=settings.pat_retention_seconds,
+            audit_retention_seconds=settings.audit_retention_seconds,
+            usage_retention_seconds=settings.usage_retention_seconds,
+        )
+    finally:
+        await store.close()
+
+
+async def migrate(settings: Settings) -> None:
+    await PostgresStore.migrate_database(
+        settings.database_url,
+        settings.migrations_dir,
+        settings.reporting_database_role,
+        settings.runtime_database_role,
+        settings.maintenance_database_role,
+        settings.activation_database_role,
+    )
+
+
+async def wait_schema(settings: Settings) -> None:
+    await PostgresStore.wait_for_schema(
+        settings.database_url,
+        settings.migrations_dir,
+        settings.schema_wait_seconds,
+    )
+
+
+def validate(settings: Settings) -> None:
+    registry = Registry.load(
+        settings.catalog_dir,
+        settings.bindings_file,
+        variant_promotions_file=settings.variant_promotions_file,
+        lean_routes_file=settings.lean_routes_file,
+        repo_root=settings.repo_root,
+        evidence_root=settings.evidence_root,
+        trusted_attestors_loader=settings.trusted_route_attestors,
+        max_attempts=settings.max_attempts,
+        max_gpu_seconds_per_attempt=settings.max_gpu_seconds_per_attempt,
+        retry_base_seconds=settings.retry_base_seconds,
+    )
+    federation = FederationRouter.load(
+        settings.federation_routes_file,
+        registry.list(),
+        secret_root=settings.federation_secret_dir,
+    )
+    asyncio.run(federation.close())
+
+
+def emit_postgresql_release_contract(settings: Settings) -> None:
+    """Write the exact value-suppressed PostgreSQL receipt inputs to stdout."""
+
+    sys.stdout.buffer.write(render_postgresql_release_contract(settings.migrations_dir))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="fs2-serve")
+    parser.add_argument(
+        "command",
+        choices=(
+            "serve",
+            "maintenance",
+            "migrate",
+            "wait-schema",
+            "validate",
+            "postgresql-release-contract",
+        ),
+        nargs="?",
+        default="serve",
+    )
+    args = parser.parse_args()
+    settings = Settings()
+    logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    if args.command == "validate":
+        validate(settings)
+    elif args.command == "postgresql-release-contract":
+        emit_postgresql_release_contract(settings)
+    else:
+        action = {
+            "serve": serve,
+            "maintenance": maintain,
+            "migrate": migrate,
+            "wait-schema": wait_schema,
+        }[args.command]
+        asyncio.run(action(settings))
+
+
+if __name__ == "__main__":
+    main()

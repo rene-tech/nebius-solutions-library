@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/backend-identity-receipt/v1",
+  "title": "fs2-serve signed backend identity receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "checked_at", "model_id", "model_digest", "backend", "credential"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/backend-identity-receipt/v1"},
+    "receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "status": {"const": "PASS"},
+    "checked_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "model_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "inventory_model_id", "region", "gpu_class", "runtime_image_digest", "namespace", "service_name", "service_uid", "port", "origin", "endpoint_identity_sha256", "trust_bundle_sha256", "credential_requirement_id"],
+      "properties": {
+        "class": {"enum": ["local-kubernetes", "federated-kserve-nim", "federated-serverless"]},
+        "inventory_model_id": {"type": ["string", "null"]},
+        "region": {"type": ["string", "null"]},
+        "gpu_class": {"type": "string", "minLength": 1},
+        "runtime_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "namespace": {"enum": ["fs2-models", "fs2-system"]},
+        "service_name": {"type": "string", "minLength": 1},
+        "service_uid": {"type": "string", "minLength": 36},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "origin": {"type": "string", "minLength": 1},
+        "endpoint_identity_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "trust_bundle_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "credential_requirement_id": {"type": ["string", "null"]}
+      }
+    },
+    "credential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement_id", "secret_uid", "resource_version", "rotated_at", "values_suppressed"],
+      "properties": {
+        "requirement_id": {"type": ["string", "null"]},
+        "secret_uid": {"type": ["string", "null"]},
+        "resource_version": {"type": ["string", "null"]},
+        "rotated_at": {"type": ["string", "null"]},
+        "values_suppressed": {"const": true}
+      }
+    }
+  }
+}

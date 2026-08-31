@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/serving-bindings/v16",
+  "title": "fs2-serve executable-store gateway serving-binding overlay v16",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "catalog_digest", "bindings"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/serving-bindings/v16"},
+    "catalog_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "bindings": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+      "additionalProperties": {"$ref": "#/$defs/binding"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "databaseSecret": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["namespace", "name", "uid", "resource_version", "type", "key_set"],
+      "properties": {
+        "namespace": {"const": "fs2-system"},
+        "name": {"enum": ["fs2-activation-submitter-db", "fs2-activation-claim-owner-db"]},
+        "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+        "resource_version": {"type": "string", "minLength": 1},
+        "type": {"const": "Opaque"},
+        "key_set": {"const": ["dsn"]}
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_digest", "enabled", "ready", "valid_until", "service", "backend", "gateway", "activation", "policy", "mcp", "qualification"],
+      "properties": {
+        "model_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "enabled": {"type": "boolean"},
+        "ready": {"type": "boolean"},
+        "valid_until": {
+          "type": ["string", "null"],
+          "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["execution_mode", "namespace", "name", "port", "origin", "protocols", "endpoints"],
+          "properties": {
+            "execution_mode": {"enum": ["http", "batch"]},
+            "namespace": {"enum": ["fs2-models", "fs2-system"]},
+            "name": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "origin": {"type": "string", "pattern": "^http://[a-z0-9](?:[-a-z0-9]*[a-z0-9])?\\.(?:fs2-models|fs2-system)\\.svc\\.cluster\\.local:[0-9]+$"},
+            "protocols": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["openai-chat", "openai-completions", "openai-embeddings", "openai-images", "native"]}},
+            "endpoints": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "pattern": "^/"}}
+          }
+        },
+        "backend": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["class", "inventory_model_id", "region", "gpu_class", "runtime_image_digest", "endpoint_identity_sha256", "trust_bundle_sha256", "credential_requirement_id"],
+          "properties": {
+            "class": {"enum": ["local-kubernetes", "federated-kserve-nim", "federated-serverless"]},
+            "inventory_model_id": {"type": ["string", "null"], "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+            "region": {"type": ["string", "null"], "pattern": "^[a-z]+-[a-z]+[0-9]+$"},
+            "gpu_class": {"type": "string", "minLength": 1},
+            "runtime_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "endpoint_identity_sha256": {"$ref": "#/$defs/digest"},
+            "trust_bundle_sha256": {"$ref": "#/$defs/digest"},
+            "credential_requirement_id": {"type": ["string", "null"], "pattern": "^fs2-models/[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"}
+          }
+        },
+        "gateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["class", "namespace", "service_name", "service_uid", "port", "identity_sha256", "auth_class", "route_id"],
+          "properties": {
+            "class": {"const": "fs2-serve-gateway"},
+            "namespace": {"const": "fs2-system"},
+            "service_name": {"const": "fs2-serve-control-plane"},
+            "service_uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+            "port": {"const": 8080},
+            "identity_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "auth_class": {"const": "scoped-api-key"},
+            "route_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"}
+          }
+        },
+        "activation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "scale_contract_digest", "controller", "target", "zero_to_ready_receipt_digest", "return_to_zero_receipt_digest"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "scale_contract_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "controller": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["class", "namespace", "deployment_name", "deployment_uid", "pod_name", "pod_uid", "pod_owner_deployment_uid", "service_account_name", "service_account_uid", "leader_lease_name", "leader_lease_uid", "leader_lease_resource_version", "leader_lease_holder_identity", "leader_lease_renew_time", "leader_lease_duration_seconds", "leader_role_namespace", "leader_role_name", "target_role_namespace", "target_role_name", "submitter_service_account_name", "submitter_service_account_uid", "submitter_deployment_name", "submitter_deployment_uid", "submitter_pod_name", "submitter_pod_uid", "submitter_pod_owner_deployment_uid", "submitter_database_role", "claim_owner_database_role", "submitter_database_secret", "claim_owner_database_secret", "database_grants_sha256", "activation_store_sha256", "activation_store_ddl_sha256", "identity_sha256", "auth_class", "intent_interface_sha256"],
+              "properties": {
+                "class": {"const": "fs2-model-activation-controller"},
+                "namespace": {"const": "fs2-system"},
+                "deployment_name": {"const": "fs2-serve-control-plane-activation"},
+                "deployment_uid": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                "pod_name": {"type": ["string", "null"], "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+                "pod_uid": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                "pod_owner_deployment_uid": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                "service_account_name": {"const": "fs2-model-activation-controller"},
+                "service_account_uid": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                "leader_lease_name": {"const": "fs2-serve-activation-controller"},
+                "leader_lease_uid": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                "leader_lease_resource_version": {"type": ["string", "null"], "minLength": 1},
+                "leader_lease_holder_identity": {"type": ["string", "null"], "minLength": 1},
+                "leader_lease_renew_time": {"type": ["string", "null"], "format": "date-time"},
+                "leader_lease_duration_seconds": {"oneOf": [{"const": 30}, {"type": "null"}]},
+                "leader_role_namespace": {"const": "fs2-system"},
+                "leader_role_name": {"const": "fs2-serve-control-plane-activation-leader"},
+                "target_role_namespace": {"const": "fs2-models"},
+                "target_role_name": {"const": "fs2-serve-control-plane-activation-targets"},
+                "submitter_service_account_name": {"const": "fs2-serve-control-plane"},
+                "submitter_service_account_uid": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                "submitter_deployment_name": {"const": "fs2-serve-control-plane"},
+                "submitter_deployment_uid": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                "submitter_pod_name": {"type": ["string", "null"], "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+                "submitter_pod_uid": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                "submitter_pod_owner_deployment_uid": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                "submitter_database_role": {"const": "fs2_activation_submitter"},
+                "claim_owner_database_role": {"const": "fs2_activation_claim_owner"},
+                "submitter_database_secret": {"$ref": "#/$defs/databaseSecret"},
+                "claim_owner_database_secret": {"$ref": "#/$defs/databaseSecret"},
+                "database_grants_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "activation_store_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "activation_store_ddl_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "identity_sha256": {"$ref": "#/$defs/digest"},
+                "auth_class": {"const": "postgres-role-grants-plus-projected-ksa-lease-operation-fence"},
+                "intent_interface_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+              }
+            },
+            "target": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "required": ["api_version", "kind", "namespace", "name", "uid", "resource_version", "observed_generation", "template_identity_sha256"],
+              "properties": {
+                "api_version": {"enum": ["apps/v1", "apps.nvidia.com/v1alpha1", "batch/v1"]},
+                "kind": {"enum": ["Deployment", "Job", "NIMService"]},
+                "namespace": {"const": "fs2-models"},
+                "name": {"type": ["string", "null"], "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+                "uid": {"type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                "resource_version": {"type": ["string", "null"], "minLength": 1},
+                "observed_generation": {"type": ["integer", "null"], "minimum": 1},
+                "template_identity_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+              }
+            },
+            "zero_to_ready_receipt_digest": {"$ref": "#/$defs/digest"},
+            "return_to_zero_receipt_digest": {"$ref": "#/$defs/digest"}
+          }
+        },
+        "policy": {"type": "object", "additionalProperties": false, "required": ["operations"], "properties": {"operations": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 64}}}},
+        "mcp": {"type": "object", "additionalProperties": false, "required": ["enabled", "tool_name", "description"], "properties": {"enabled": {"type": "boolean"}, "tool_name": {"type": "string", "minLength": 2, "maxLength": 64}, "description": {"type": "string", "minLength": 1, "maxLength": 512}}},
+        "qualification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["storage_mode", "artifact_manifest_digest", "artifact_uri", "acquisition_receipt_digest", "prerequisite_receipt_digest", "target_node_canary_digest", "placement_receipt_digest", "runtime_tuple_digest", "prepared_qualification_digest", "new_node_qualification_digest", "semantic_evidence_digest", "readiness_evidence_digest", "backend_evidence_digest", "federated_qualification_digest", "evidence_session_id"],
+          "properties": {
+            "storage_mode": {"type": ["string", "null"], "enum": ["provider-block-pvc", "sfs-pvc", "local-nvme", "nimcache-pvc", null]},
+            "artifact_manifest_digest": {"$ref": "#/$defs/digest"},
+            "artifact_uri": {"type": ["string", "null"]},
+            "acquisition_receipt_digest": {"$ref": "#/$defs/digest"},
+            "prerequisite_receipt_digest": {"$ref": "#/$defs/digest"},
+            "target_node_canary_digest": {"$ref": "#/$defs/digest"},
+            "placement_receipt_digest": {"$ref": "#/$defs/digest"},
+            "runtime_tuple_digest": {"$ref": "#/$defs/digest"},
+            "prepared_qualification_digest": {"$ref": "#/$defs/digest"},
+            "new_node_qualification_digest": {"$ref": "#/$defs/digest"},
+            "semantic_evidence_digest": {"$ref": "#/$defs/digest"},
+            "readiness_evidence_digest": {"$ref": "#/$defs/digest"},
+            "backend_evidence_digest": {"$ref": "#/$defs/digest"},
+            "federated_qualification_digest": {"$ref": "#/$defs/digest"},
+            "evidence_session_id": {"$ref": "#/$defs/digest"}
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/replica-field-ownership/v1",
+  "title": "fs2-serve activation-owned replica field contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "target", "field", "bootstrap_value", "field_manager", "replica_scaler_owner", "ordinary_api_mutation", "gitops"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/replica-field-ownership/v1"},
+    "target": {
+      "oneOf": [
+        {"const": {"api_version": "apps/v1", "group": "apps", "kind": "Deployment"}},
+        {"const": {"api_version": "apps.nvidia.com/v1alpha1", "group": "apps.nvidia.com", "kind": "NIMService"}}
+      ]
+    },
+    "field": {"const": "/spec/replicas"},
+    "bootstrap_value": {"const": 0},
+    "field_manager": {"const": "fs2-model-activation-controller"},
+    "replica_scaler_owner": {"const": "fs2-model-activation-controller"},
+    "ordinary_api_mutation": {"const": "forbidden"},
+    "gitops": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ignore_differences_json_pointers", "respect_ignore_differences", "post_bootstrap_desired_field", "force_apply_conflicts"],
+      "properties": {
+        "ignore_differences_json_pointers": {"const": ["/spec/replicas"]},
+        "respect_ignore_differences": {"const": true},
+        "post_bootstrap_desired_field": {"const": "omitted-or-ignored"},
+        "force_apply_conflicts": {"const": "forbidden"}
+      }
+    }
+  }
+}

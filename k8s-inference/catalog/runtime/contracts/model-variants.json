@@ -1,0 +1,1551 @@
+{
+  "schema": "fs2-serve.nebius.ai/model-variants/v4",
+  "shape_authority": "non-authoritative-discovery-only",
+  "route_authority": false,
+  "receipt_contracts": {
+    "supply": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+    "qualification": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5"
+  },
+  "fallback_candidates": {
+    "boltz2-hf": {
+      "candidate_id": "boltz2-hf",
+      "lane_id": "boltz2",
+      "state": "mapped-source-only",
+      "relationship": "exact-model",
+      "profile_variants": {"portable": "boltz2-hf-portable", "blackwell-sm103": "boltz2-hf-blackwell-sm103"},
+      "secondary_non_alias_alternative": null,
+      "notes": ["The exact public Boltz-2 checkpoint revision is retained as an independent runtime; NIM package parity remains unverified."]
+    },
+    "diffdock-upstream-v1-1": {
+      "candidate_id": "diffdock-upstream-v1-1",
+      "lane_id": "diffdock",
+      "state": "mapped-source-only",
+      "relationship": "exact-model",
+      "profile_variants": {"portable": "diffdock-upstream-portable", "blackwell-sm103": "diffdock-upstream-blackwell-sm103"},
+      "secondary_non_alias_alternative": null,
+      "notes": ["Exact full variant IDs are explicit; string concatenation is never identity authority."]
+    },
+    "evo2-40b-hf": {
+      "candidate_id": "evo2-40b-hf",
+      "lane_id": "evo2-40b",
+      "state": "mapped-source-only",
+      "relationship": "exact-model",
+      "profile_variants": {"portable": "evo2-40b-upstream-portable", "blackwell-sm103": "evo2-40b-upstream-blackwell-sm103"},
+      "secondary_non_alias_alternative": null,
+      "notes": ["Exact upstream Evo2 identity; NIM parity remains unverified."]
+    },
+    "genmol-hf-v2": {
+      "candidate_id": "genmol-hf-v2",
+      "lane_id": "genmol",
+      "state": "mapped-source-only",
+      "relationship": "exact-model",
+      "profile_variants": {"portable": "nv-genmol-89m-v2-portable", "blackwell-sm103": "nv-genmol-89m-v2-blackwell-sm103"},
+      "secondary_non_alias_alternative": {"reference_model_id": "molmim", "relationship": "capability-equivalent", "alias_allowed": false},
+      "notes": ["GenMol is the primary exact canonical identity; MolMIM is only a secondary non-alias capability relation."]
+    },
+    "molmim-ngc-70m-v24-3": {
+      "candidate_id": "molmim-ngc-70m-v24-3",
+      "lane_id": "molmim",
+      "state": "mapped-source-only",
+      "relationship": "exact-model",
+      "profile_variants": {"portable": "molmim-exact-weights-portable", "blackwell-sm103": "molmim-exact-weights-blackwell-sm103"},
+      "secondary_non_alias_alternative": null,
+      "notes": ["The independently served runtime embeds the exact NGC MolMIM 70M v24.03 artifact and separately binds the upstream BioNeMo source revision; NIM numerical parity remains unverified."]
+    },
+    "msa-search-pdb70-colabfold": {
+      "candidate_id": "msa-search-pdb70-colabfold",
+      "lane_id": "msa-search-pdb70",
+      "state": "blocked-license",
+      "relationship": "capability-equivalent-non-alias",
+      "profile_variants": {"portable": null, "blackwell-sm103": null},
+      "secondary_non_alias_alternative": null,
+      "notes": ["ColabFold/MMseqs PDB70 is a distinct capability alternative; license and database provenance remain blocked."]
+    },
+    "nv-segment-ct-hf": {
+      "candidate_id": "nv-segment-ct-hf",
+      "lane_id": "nv-segment-ct",
+      "state": "mapped-source-only",
+      "relationship": "exact-model",
+      "profile_variants": {"portable": "nv-segment-ct-upstream-portable", "blackwell-sm103": "nv-segment-ct-upstream-blackwell-sm103"},
+      "secondary_non_alias_alternative": null,
+      "notes": ["The reviewed live Blackwell profile is explicit and remains non-clinical; the portable profile is still unqualified."]
+    },
+    "openfold2-hf-mirror": {
+      "candidate_id": "openfold2-hf-mirror",
+      "lane_id": "openfold2",
+      "state": "deferred-source-reconciliation",
+      "relationship": "exact-model",
+      "profile_variants": {"portable": null, "blackwell-sm103": null},
+      "secondary_non_alias_alternative": null,
+      "notes": ["The HF mirror and runtime conversion are not yet reconciled with the tested OpenFold2 package."]
+    },
+    "openfold3-preview2-hf": {
+      "candidate_id": "openfold3-preview2-hf",
+      "lane_id": "openfold3",
+      "state": "blocked-access",
+      "relationship": "exact-model",
+      "profile_variants": {"portable": null, "blackwell-sm103": null},
+      "secondary_non_alias_alternative": null,
+      "notes": ["OpenFold3 Preview 2 access and NIM identity reconciliation remain blocked."]
+    },
+    "proteinmpnn-upstream-2023-06": {
+      "candidate_id": "proteinmpnn-upstream-2023-06",
+      "lane_id": "proteinmpnn",
+      "state": "mapped-source-only",
+      "relationship": "exact-model",
+      "profile_variants": {"portable": "proteinmpnn-upstream-portable", "blackwell-sm103": "proteinmpnn-upstream-blackwell-sm103"},
+      "secondary_non_alias_alternative": null,
+      "notes": ["Authoritative ProteinMPNN checkpoint family; tested NIM package parity remains unverified."]
+    },
+    "rfdiffusion-upstream": {
+      "candidate_id": "rfdiffusion-upstream",
+      "lane_id": "rfdiffusion",
+      "state": "mapped-source-only",
+      "relationship": "exact-model",
+      "profile_variants": {"portable": "rfdiffusion-upstream-portable", "blackwell-sm103": "rfdiffusion-upstream-blackwell-sm103"},
+      "secondary_non_alias_alternative": null,
+      "notes": ["Authoritative RFdiffusion family; tested NIM package parity remains unverified."]
+    }
+  },
+  "variants": {
+    "boltz2-hf-blackwell-sm103": {
+      "variant_id": "boltz2-hf-blackwell-sm103",
+      "base_model_id": "boltz2",
+      "exposed_model_id": "boltz2",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "boltz2",
+        "subject_model_id": "boltz2",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact public Boltz-2 checkpoint identity served by the pinned upstream implementation; NIM package parity remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "boltz2",
+          "execution_identity_sha256": "6161e54b35e711b91017f06749db5140e4191199b4f94b22c113167ba76f50a6",
+          "b300_state": "historical-supported",
+          "record_sha256": "6c3f41fa27dc26b10d10d05986ba5ff6804c618e2acf80aeaf96870357eb323b"
+        }
+      },
+      "source": {
+        "kind": "huggingface",
+        "repository": "boltz-community/boltz-2",
+        "revision": "6fdef46d763fee7fbb83ca5501ccceff43b85607",
+        "revision_url": "https://huggingface.co/boltz-community/boltz-2/tree/6fdef46d763fee7fbb83ca5501ccceff43b85607",
+        "artifact": {
+          "kind": "checkpoint-set",
+          "uri": "https://huggingface.co/boltz-community/boltz-2/tree/6fdef46d763fee7fbb83ca5501ccceff43b85607",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 3,
+          "expected_bytes": 6204362719,
+          "expected_content_sha256": [
+            "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+            "dcc5cd3722b1c9eaa34267e4ae32f55cbbf1963f4c19319381ccfa30fdd2ca9e",
+            "39e076d96dbec6b4e86982bbda16f3a53a2a60c9bdc17828d88f6f9a0c7d1fd7"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "MIT",
+          "state": "metadata-reviewed-artifact-unbound",
+          "source_url": "https://huggingface.co/boltz-community/boltz-2/tree/6fdef46d763fee7fbb83ca5501ccceff43b85607",
+          "artifact_sha256": null,
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "blackwell-sm103",
+        "build_state": "built-attested",
+        "image_digest": "sha256:ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46",
+        "device_capability": "sm103-qualified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": ["artifact-manifest", "build-materials", "builder", "immutable-image", "license-artifact", "provenance", "sbom", "scan", "signature", "source-repository-revision"],
+        "qualification_claims": ["cold-and-warm-cohorts-separate", "compute-capability-10.3", "determinism-and-kernel-dispatch-repeated", "exact-worker-gpu-runtime-tuple", "failures-in-denominator", "network-denied-mounted-artifact-startup", "preemption-recovery", "quality-comparator-identity", "scale-zero-ready-zero", "two-semantic-gateway-responses", "vendor-nim-baseline-evidence", "warm-attempts-at-least-10"]
+      },
+      "promotion": {"state": "candidate-unqualified", "route_exposed": false, "supply_receipt_digest": null, "qualification_receipt_digest": null, "independent_review_receipt_digest": null},
+      "notes": ["Retained B300 evidence qualifies this digest only for the reviewed lean live overlay; the static variant remains non-authoritative."]
+    },
+    "boltz2-hf-portable": {
+      "variant_id": "boltz2-hf-portable",
+      "base_model_id": "boltz2",
+      "exposed_model_id": "boltz2",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "boltz2",
+        "subject_model_id": "boltz2",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact public Boltz-2 checkpoint identity served by the pinned upstream implementation; NIM package parity remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "boltz2",
+          "execution_identity_sha256": "6161e54b35e711b91017f06749db5140e4191199b4f94b22c113167ba76f50a6",
+          "b300_state": "historical-supported",
+          "record_sha256": "6c3f41fa27dc26b10d10d05986ba5ff6804c618e2acf80aeaf96870357eb323b"
+        }
+      },
+      "source": {
+        "kind": "huggingface",
+        "repository": "boltz-community/boltz-2",
+        "revision": "6fdef46d763fee7fbb83ca5501ccceff43b85607",
+        "revision_url": "https://huggingface.co/boltz-community/boltz-2/tree/6fdef46d763fee7fbb83ca5501ccceff43b85607",
+        "artifact": {
+          "kind": "checkpoint-set",
+          "uri": "https://huggingface.co/boltz-community/boltz-2/tree/6fdef46d763fee7fbb83ca5501ccceff43b85607",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 3,
+          "expected_bytes": 6204362719,
+          "expected_content_sha256": [
+            "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+            "dcc5cd3722b1c9eaa34267e4ae32f55cbbf1963f4c19319381ccfa30fdd2ca9e",
+            "39e076d96dbec6b4e86982bbda16f3a53a2a60c9bdc17828d88f6f9a0c7d1fd7"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "MIT",
+          "state": "metadata-reviewed-artifact-unbound",
+          "source_url": "https://huggingface.co/boltz-community/boltz-2/tree/6fdef46d763fee7fbb83ca5501ccceff43b85607",
+          "artifact_sha256": null,
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "portable",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "portable-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": ["artifact-manifest", "build-materials", "builder", "immutable-image", "license-artifact", "provenance", "sbom", "scan", "signature", "source-repository-revision"],
+        "qualification_claims": ["cold-and-warm-cohorts-separate", "compute-capability-10.3", "determinism-and-kernel-dispatch-repeated", "exact-worker-gpu-runtime-tuple", "failures-in-denominator", "network-denied-mounted-artifact-startup", "preemption-recovery", "quality-comparator-identity", "scale-zero-ready-zero", "two-semantic-gateway-responses", "vendor-nim-baseline-evidence", "warm-attempts-at-least-10"]
+      },
+      "promotion": {"state": "candidate-unqualified", "route_exposed": false, "supply_receipt_digest": null, "qualification_receipt_digest": null, "independent_review_receipt_digest": null},
+      "notes": ["Portable means architecture-neutral build intent, not proven B300 support."]
+    },
+    "diffdock-upstream-blackwell-sm103": {
+      "variant_id": "diffdock-upstream-blackwell-sm103",
+      "base_model_id": "diffdock",
+      "exposed_model_id": "diffdock",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "diffdock",
+        "subject_model_id": "diffdock",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Authoritative DiffDock-L upstream identity; byte and API parity with the tested NIM remain unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "diffdock",
+          "execution_identity_sha256": "3712edfec38a4482c665dcd147fa4d679a87b593a19c241cba34d127cc02cdd4",
+          "b300_state": "incompatible-sm103",
+          "record_sha256": "266ea78072d03feab00b0922f97739552f62d8044e6d5cbedd801b07630010d1"
+        }
+      },
+      "source": {
+        "kind": "git",
+        "repository": "github.com/gcorso/DiffDock",
+        "revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+        "revision_url": "https://github.com/gcorso/DiffDock/tree/85c49b60d3e0b0182a59ee43a34a6d7036981284",
+        "artifact": {
+          "kind": "release-archive",
+          "uri": "https://github.com/gcorso/DiffDock/releases/download/v1.1/diffdock_models.zip",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 1,
+          "expected_bytes": 129825226,
+          "expected_content_sha256": [
+            "5a95b6a1555be47ab1d6f0a8ffd25152f7fe32f5956005bb821e13e7a37d4a3d"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "MIT",
+          "state": "verified-artifact",
+          "source_url": "https://github.com/gcorso/DiffDock/tree/85c49b60d3e0b0182a59ee43a34a6d7036981284",
+          "artifact_sha256": "8efe3b8dac5c278ba290a66887e46261056f71dec75c2815c7da75451856cf1f",
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "blackwell-sm103",
+        "build_state": "built-attested",
+        "image_digest": "sha256:cb3875f7d66b8d170d0e3f16d3d9a63aee8d63fbb23fdf65ec7ea0214d849529",
+        "device_capability": "sm103-qualified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "The 2026-08-27 threaded-health B300 qualification receipt sha256:3f3763f6cd7d2cad56e88d99c33c982ff1016022b775654e894744fd36bc7222 and 15/15 HTTP plus 15/15 MCP regression qualify this digest only for the reviewed lean live overlay; the static variant remains non-authoritative."
+      ]
+    },
+    "diffdock-upstream-portable": {
+      "variant_id": "diffdock-upstream-portable",
+      "base_model_id": "diffdock",
+      "exposed_model_id": "diffdock",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "diffdock",
+        "subject_model_id": "diffdock",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Authoritative DiffDock-L upstream identity; byte and API parity with the tested NIM remain unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "diffdock",
+          "execution_identity_sha256": "3712edfec38a4482c665dcd147fa4d679a87b593a19c241cba34d127cc02cdd4",
+          "b300_state": "incompatible-sm103",
+          "record_sha256": "266ea78072d03feab00b0922f97739552f62d8044e6d5cbedd801b07630010d1"
+        }
+      },
+      "source": {
+        "kind": "git",
+        "repository": "github.com/gcorso/DiffDock",
+        "revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+        "revision_url": "https://github.com/gcorso/DiffDock/tree/85c49b60d3e0b0182a59ee43a34a6d7036981284",
+        "artifact": {
+          "kind": "release-archive",
+          "uri": "https://github.com/gcorso/DiffDock/releases/download/v1.1/diffdock_models.zip",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 1,
+          "expected_bytes": 129825226,
+          "expected_content_sha256": [
+            "5a95b6a1555be47ab1d6f0a8ffd25152f7fe32f5956005bb821e13e7a37d4a3d"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "MIT",
+          "state": "metadata-reviewed-artifact-unbound",
+          "source_url": "https://github.com/gcorso/DiffDock/tree/85c49b60d3e0b0182a59ee43a34a6d7036981284",
+          "artifact_sha256": null,
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "portable",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "portable-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "Portable means architecture-neutral build intent, not proven B300 support."
+      ]
+    },
+    "evo2-40b-upstream-blackwell-sm103": {
+      "variant_id": "evo2-40b-upstream-blackwell-sm103",
+      "base_model_id": "evo2-40b",
+      "exposed_model_id": "evo2-40b",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "evo2-40b",
+        "subject_model_id": "evo2-40b",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact public Evo2-40B upstream revision; the tested NIM checkpoint/package parity remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "evo2-40b",
+          "execution_identity_sha256": "0ca5941f1fab17b7fa643b4244ad2cd62d669f3768fd27e03a52f066e1bec99c",
+          "b300_state": "incompatible-sm103",
+          "record_sha256": "c5e03e9f798c8f446dfebecc27aaf0b04fe11321ba3c7b6bd3730398c7dda7ee"
+        }
+      },
+      "source": {
+        "kind": "huggingface",
+        "repository": "arcinstitute/evo2_40b",
+        "revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+        "revision_url": "https://huggingface.co/arcinstitute/evo2_40b/tree/d529aa57c30771814217ad89baaeaf6e2315c7d7",
+        "artifact": {
+          "kind": "checkpoint-set",
+          "uri": "https://huggingface.co/arcinstitute/evo2_40b/tree/d529aa57c30771814217ad89baaeaf6e2315c7d7",
+          "identity_state": "verified-full-per-file-manifest",
+          "expected_file_count": 2,
+          "expected_bytes": 82253491694,
+          "expected_content_sha256": [],
+          "manifest_sha256": "a03fef9dd4a53bdc80f318ab4eea829b540a7fbe919c314b764327681192d409",
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "Apache-2.0",
+          "state": "verified-artifact",
+          "source_url": "https://huggingface.co/arcinstitute/evo2_40b/raw/d529aa57c30771814217ad89baaeaf6e2315c7d7/README.md",
+          "artifact_sha256": "b39cc7f28cca98b868aa2e9a8bcb93b11c13937e45f330f616070d8a2545e180",
+          "commercial_use": "allowed",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "blackwell-sm103",
+        "build_state": "built-attested",
+        "image_digest": "sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c",
+        "device_capability": "sm103-qualified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "The prior 72-SM103-cubin prototype is superseded by the exact CUDA 13 image and retained B300 qualification evidence in the live overlay."
+      ]
+    },
+    "evo2-40b-upstream-portable": {
+      "variant_id": "evo2-40b-upstream-portable",
+      "base_model_id": "evo2-40b",
+      "exposed_model_id": "evo2-40b",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "evo2-40b",
+        "subject_model_id": "evo2-40b",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact public Evo2-40B upstream revision; the tested NIM checkpoint/package parity remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "evo2-40b",
+          "execution_identity_sha256": "0ca5941f1fab17b7fa643b4244ad2cd62d669f3768fd27e03a52f066e1bec99c",
+          "b300_state": "incompatible-sm103",
+          "record_sha256": "c5e03e9f798c8f446dfebecc27aaf0b04fe11321ba3c7b6bd3730398c7dda7ee"
+        }
+      },
+      "source": {
+        "kind": "huggingface",
+        "repository": "arcinstitute/evo2_40b",
+        "revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+        "revision_url": "https://huggingface.co/arcinstitute/evo2_40b/tree/d529aa57c30771814217ad89baaeaf6e2315c7d7",
+        "artifact": {
+          "kind": "checkpoint-set",
+          "uri": "https://huggingface.co/arcinstitute/evo2_40b/tree/d529aa57c30771814217ad89baaeaf6e2315c7d7",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 2,
+          "expected_bytes": 82253491694,
+          "expected_content_sha256": [
+            "3b74fa4e6158d49265e3e270ba8869390d064358f8bf3d2af0b3e1772728f485",
+            "bdc4a76e0f23f8295e7061c2f0deff24f723bd916dc4cdc4d9216cac9c2d49d5"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "Apache-2.0",
+          "state": "metadata-reviewed-artifact-unbound",
+          "source_url": "https://huggingface.co/arcinstitute/evo2_40b/tree/d529aa57c30771814217ad89baaeaf6e2315c7d7",
+          "artifact_sha256": null,
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "portable",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "portable-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "No portable image exists yet."
+      ]
+    },
+    "molmim-exact-weights-blackwell-sm103": {
+      "variant_id": "molmim-exact-weights-blackwell-sm103",
+      "base_model_id": "molmim",
+      "exposed_model_id": "molmim",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "molmim",
+        "subject_model_id": "molmim",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact MolMIM 70M v24.03 artifact served by an independent BioNeMo-derived Blackwell runtime; NIM numerical parity remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "molmim",
+          "execution_identity_sha256": "1f3ef2c58f5168c954ea2cd12017c46f6e5973fc5d26ff2fc94b037f5292a706",
+          "b300_state": "incompatible-sm103",
+          "record_sha256": "8db525530f650de477087cec46a05ea3c5a47beceefb4f04689b9269add5ec7b"
+        }
+      },
+      "source": {
+        "kind": "git",
+        "repository": "github.com/NVIDIA/bionemo-framework",
+        "revision": "9ba9b2c337917fc815ffbd5d99f78d9db7904493",
+        "revision_url": "https://github.com/NVIDIA/bionemo-framework/tree/9ba9b2c337917fc815ffbd5d99f78d9db7904493",
+        "artifact": {
+          "kind": "weights",
+          "uri": "https://api.ngc.nvidia.com/v2/models/nvidia/molmim/versions/24.03/files/molmim_70m_24_3.nemo",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 1,
+          "expected_bytes": 281589760,
+          "expected_content_sha256": ["10522c9db6018c355313f9f01a0edea2b021ddc0a5a22ae4540cbf5bdafbd1f5"],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "Apache-2.0",
+          "state": "verified-artifact",
+          "source_url": "https://github.com/NVIDIA/bionemo-framework/blob/9ba9b2c337917fc815ffbd5d99f78d9db7904493/LICENSE/license.txt",
+          "artifact_sha256": "179b6b794ed53f462503a95026c081997c8d6116b7c852ed244292b7d9a24447",
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "fresh-platform-ngc-required"
+      },
+      "runtime": {
+        "architecture": "blackwell-sm103",
+        "build_state": "built-attested",
+        "image_digest": "sha256:b51c758f2785accb2121db2dd322f81ed6ebb6142bd7a9988714867c5fe51641",
+        "device_capability": "sm103-qualified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": ["artifact-manifest", "build-materials", "builder", "immutable-image", "license-artifact", "provenance", "sbom", "scan", "signature", "source-repository-revision"],
+        "qualification_claims": ["cold-and-warm-cohorts-separate", "compute-capability-10.3", "determinism-and-kernel-dispatch-repeated", "exact-worker-gpu-runtime-tuple", "failures-in-denominator", "network-denied-mounted-artifact-startup", "preemption-recovery", "quality-comparator-identity", "scale-zero-ready-zero", "two-semantic-gateway-responses", "vendor-nim-baseline-evidence", "warm-attempts-at-least-10"]
+      },
+      "promotion": {"state": "candidate-unqualified", "route_exposed": false, "supply_receipt_digest": null, "qualification_receipt_digest": null, "independent_review_receipt_digest": null},
+      "notes": ["The retained image embeds and verifies the exact NGC artifact before serving; the static variant remains non-authoritative."]
+    },
+    "molmim-exact-weights-portable": {
+      "variant_id": "molmim-exact-weights-portable",
+      "base_model_id": "molmim",
+      "exposed_model_id": "molmim",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "molmim",
+        "subject_model_id": "molmim",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact MolMIM 70M v24.03 artifact served by an independent BioNeMo-derived runtime; NIM numerical parity remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "molmim",
+          "execution_identity_sha256": "1f3ef2c58f5168c954ea2cd12017c46f6e5973fc5d26ff2fc94b037f5292a706",
+          "b300_state": "incompatible-sm103",
+          "record_sha256": "8db525530f650de477087cec46a05ea3c5a47beceefb4f04689b9269add5ec7b"
+        }
+      },
+      "source": {
+        "kind": "git",
+        "repository": "github.com/NVIDIA/bionemo-framework",
+        "revision": "9ba9b2c337917fc815ffbd5d99f78d9db7904493",
+        "revision_url": "https://github.com/NVIDIA/bionemo-framework/tree/9ba9b2c337917fc815ffbd5d99f78d9db7904493",
+        "artifact": {
+          "kind": "weights",
+          "uri": "https://api.ngc.nvidia.com/v2/models/nvidia/molmim/versions/24.03/files/molmim_70m_24_3.nemo",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 1,
+          "expected_bytes": 281589760,
+          "expected_content_sha256": ["10522c9db6018c355313f9f01a0edea2b021ddc0a5a22ae4540cbf5bdafbd1f5"],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "Apache-2.0",
+          "state": "verified-artifact",
+          "source_url": "https://github.com/NVIDIA/bionemo-framework/blob/9ba9b2c337917fc815ffbd5d99f78d9db7904493/LICENSE/license.txt",
+          "artifact_sha256": "179b6b794ed53f462503a95026c081997c8d6116b7c852ed244292b7d9a24447",
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "fresh-platform-ngc-required"
+      },
+      "runtime": {
+        "architecture": "portable",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "portable-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": ["artifact-manifest", "build-materials", "builder", "immutable-image", "license-artifact", "provenance", "sbom", "scan", "signature", "source-repository-revision"],
+        "qualification_claims": ["cold-and-warm-cohorts-separate", "compute-capability-10.3", "determinism-and-kernel-dispatch-repeated", "exact-worker-gpu-runtime-tuple", "failures-in-denominator", "network-denied-mounted-artifact-startup", "preemption-recovery", "quality-comparator-identity", "scale-zero-ready-zero", "two-semantic-gateway-responses", "vendor-nim-baseline-evidence", "warm-attempts-at-least-10"]
+      },
+      "promotion": {"state": "candidate-unqualified", "route_exposed": false, "supply_receipt_digest": null, "qualification_receipt_digest": null, "independent_review_receipt_digest": null},
+      "notes": ["Portable means architecture-neutral build intent, not proven B300 support."]
+    },
+    "nv-genmol-89m-v2-blackwell-sm103": {
+      "variant_id": "nv-genmol-89m-v2-blackwell-sm103",
+      "base_model_id": "genmol",
+      "exposed_model_id": "genmol",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "genmol",
+        "subject_model_id": "genmol",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "This is the exact canonical GenMol lane identity; parity with the separately packaged GenMol NIM remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "genmol",
+          "execution_identity_sha256": "808d82534673ddef9dab5f3a94e63fd253dc0ca2a7baa6f0096155866259ecfe",
+          "b300_state": "historical-supported",
+          "record_sha256": "e0d2eac4d7042fb775e0bb274a4f6f0315bdc90aab2b298f8f61da35aa21b5d3"
+        }
+      },
+      "source": {
+        "kind": "huggingface",
+        "repository": "nvidia/NV-GenMol-89M-v2",
+        "revision": "2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+        "revision_url": "https://huggingface.co/nvidia/NV-GenMol-89M-v2/tree/2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+        "artifact": {
+          "kind": "weights",
+          "uri": "https://huggingface.co/nvidia/NV-GenMol-89M-v2/blob/2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80/model_v2.ckpt",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 1,
+          "expected_bytes": 1397023575,
+          "expected_content_sha256": [
+            "7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "NVIDIA-Open-Model-License",
+          "state": "verified-artifact",
+          "source_url": "https://huggingface.co/nvidia/NV-GenMol-89M-v2/tree/2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+          "artifact_sha256": "1dc7d3bf639a7527a0063fb035d824e0cb6e49b83694b2c877b125f1dbdb0dbb",
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "blackwell-sm103",
+        "build_state": "built-attested",
+        "image_digest": "sha256:c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f",
+        "device_capability": "sm103-qualified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "Retained B300 semantic evidence qualifies this exact GenMol digest for the reviewed lean live overlay; GenMol remains distinct from MolMIM."
+      ]
+    },
+    "nv-genmol-89m-v2-portable": {
+      "variant_id": "nv-genmol-89m-v2-portable",
+      "base_model_id": "genmol",
+      "exposed_model_id": "genmol",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "genmol",
+        "subject_model_id": "genmol",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "This is the exact canonical GenMol lane identity; parity with the separately packaged GenMol NIM remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "genmol",
+          "execution_identity_sha256": "808d82534673ddef9dab5f3a94e63fd253dc0ca2a7baa6f0096155866259ecfe",
+          "b300_state": "historical-supported",
+          "record_sha256": "e0d2eac4d7042fb775e0bb274a4f6f0315bdc90aab2b298f8f61da35aa21b5d3"
+        }
+      },
+      "source": {
+        "kind": "huggingface",
+        "repository": "nvidia/NV-GenMol-89M-v2",
+        "revision": "2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+        "revision_url": "https://huggingface.co/nvidia/NV-GenMol-89M-v2/tree/2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+        "artifact": {
+          "kind": "weights",
+          "uri": "https://huggingface.co/nvidia/NV-GenMol-89M-v2/blob/2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80/model_v2.ckpt",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 1,
+          "expected_bytes": 1397023575,
+          "expected_content_sha256": [
+            "7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "NVIDIA-Open-Model-License",
+          "state": "metadata-reviewed-artifact-unbound",
+          "source_url": "https://huggingface.co/nvidia/NV-GenMol-89M-v2/tree/2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+          "artifact_sha256": null,
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "portable",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "portable-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "GenMol remains distinct from MolMIM; the fallback identity map preserves only a secondary non-alias capability edge."
+      ]
+    },
+    "nv-segment-ct-upstream-blackwell-sm103": {
+      "variant_id": "nv-segment-ct-upstream-blackwell-sm103",
+      "base_model_id": "nv-segment-ct",
+      "exposed_model_id": "nv-segment-ct",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "nv-segment-ct",
+        "subject_model_id": "nv-segment-ct",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact public NV-Segment-CT upstream revision; no substitution with CXR or a Health-AI NIM is allowed.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "nv-segment-ct",
+          "execution_identity_sha256": "7cd5e4b04964d3365249d248307c30891a414cb8eb5b94714308b5756dba505b",
+          "b300_state": "unverified",
+          "record_sha256": "82217470b7d0f9c4fbeaf49b9184a5090c1156f2bf584ca16af7dc9d986cc9aa"
+        }
+      },
+      "source": {
+        "kind": "huggingface",
+        "repository": "nvidia/NV-Segment-CT",
+        "revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+        "revision_url": "https://huggingface.co/nvidia/NV-Segment-CT/tree/afb51518689f71e6abb367ee6301b2cd0225c66a",
+        "artifact": {
+          "kind": "weights",
+          "uri": "https://huggingface.co/nvidia/NV-Segment-CT/tree/afb51518689f71e6abb367ee6301b2cd0225c66a",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 1,
+          "expected_bytes": 871894112,
+          "expected_content_sha256": [
+            "120ed013722a22780cc01b75cb5c18e4658d69879a983885abf8fa411c9f8f42"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "NVIDIA-Open-Model-License",
+          "state": "metadata-reviewed-artifact-unbound",
+          "source_url": "https://huggingface.co/nvidia/NV-Segment-CT/tree/afb51518689f71e6abb367ee6301b2cd0225c66a",
+          "artifact_sha256": null,
+          "commercial_use": "license-dependent",
+          "non_clinical": true
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "blackwell-sm103",
+        "build_state": "built-attested",
+        "image_digest": "sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+        "device_capability": "sm103-qualified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "The retained exact public revision and immutable MONAI runtime passed reviewed B300 semantic and HTTP/MCP evidence; this runtime is not an NVIDIA NIM package and research/non-clinical restrictions remain mandatory."
+      ]
+    },
+    "nv-segment-ct-upstream-portable": {
+      "variant_id": "nv-segment-ct-upstream-portable",
+      "base_model_id": "nv-segment-ct",
+      "exposed_model_id": "nv-segment-ct",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "nv-segment-ct",
+        "subject_model_id": "nv-segment-ct",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Exact public NV-Segment-CT upstream revision; no substitution with CXR or a Health-AI NIM is allowed.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "nv-segment-ct",
+          "execution_identity_sha256": "7cd5e4b04964d3365249d248307c30891a414cb8eb5b94714308b5756dba505b",
+          "b300_state": "unverified",
+          "record_sha256": "82217470b7d0f9c4fbeaf49b9184a5090c1156f2bf584ca16af7dc9d986cc9aa"
+        }
+      },
+      "source": {
+        "kind": "huggingface",
+        "repository": "nvidia/NV-Segment-CT",
+        "revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+        "revision_url": "https://huggingface.co/nvidia/NV-Segment-CT/tree/afb51518689f71e6abb367ee6301b2cd0225c66a",
+        "artifact": {
+          "kind": "weights",
+          "uri": "https://huggingface.co/nvidia/NV-Segment-CT/tree/afb51518689f71e6abb367ee6301b2cd0225c66a",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 1,
+          "expected_bytes": 871894112,
+          "expected_content_sha256": [
+            "120ed013722a22780cc01b75cb5c18e4658d69879a983885abf8fa411c9f8f42"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "NVIDIA-Open-Model-License",
+          "state": "metadata-reviewed-artifact-unbound",
+          "source_url": "https://huggingface.co/nvidia/NV-Segment-CT/tree/afb51518689f71e6abb367ee6301b2cd0225c66a",
+          "artifact_sha256": null,
+          "commercial_use": "license-dependent",
+          "non_clinical": true
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "portable",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "portable-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "Research/non-clinical restrictions remain mandatory."
+      ]
+    },
+    "proteinmpnn-upstream-blackwell-sm103": {
+      "variant_id": "proteinmpnn-upstream-blackwell-sm103",
+      "base_model_id": "proteinmpnn",
+      "exposed_model_id": "proteinmpnn",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "proteinmpnn",
+        "subject_model_id": "proteinmpnn",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Authoritative ProteinMPNN code and repository-owned checkpoint set; tested NIM byte parity remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "proteinmpnn",
+          "execution_identity_sha256": "bae3f95a1acfd015c610275c1a33e165890f82e0a1e0f9011514f73c8a11045f",
+          "b300_state": "incompatible-sm103",
+          "record_sha256": "905368cf1ebd70176334b583dbe7f746bd5aa35bae9ee6eb7d13d4caac9358b4"
+        }
+      },
+      "source": {
+        "kind": "git",
+        "repository": "github.com/dauparas/ProteinMPNN",
+        "revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+        "revision_url": "https://github.com/dauparas/ProteinMPNN/tree/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+        "artifact": {
+          "kind": "checkpoint-set",
+          "uri": "https://github.com/dauparas/ProteinMPNN/tree/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57/vanilla_model_weights",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 11,
+          "expected_bytes": null,
+          "expected_content_sha256": [
+            "ec038b44a987d7c8351b6ed887c82a2370d54e45e55a6bdaf508a729cef0340e",
+            "cdb50498d45578d20b271fa7817b8cd8bfde3875ad69dbd3f5e4b5dd3e588301",
+            "f28f40170e21858c5ff31ef50b6e63414ff76dc331b19f85aa8586a12031744a",
+            "0877f840978fe770be6fcec025784d8f50c438571db3260c05e41aa207a7c448",
+            "79562f7444f72c84595a1c96010713864865a616f4f3967633493041e169fa6e",
+            "7af52d090172c230c7f0e9d21e02203f6b3a38b16db58d3c7a3960e0a9a6e31a",
+            "1dd63f1e9fc68a133cc9ef859edf43b489e5ac581cb5624e0b9ec848ff062421",
+            "925f2ca1007bf9b02e0e7f420ff00eb91f50fcc2722f64b42e644ae95adaa131",
+            "db866fae956a28661f926053d630610c55e9fc4bc03922f2aeeb98a37435ccce",
+            "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+            "c34b7bfb38418ea30989fda3314f4781ac4e3920f9825731cf555f1fed44ac66"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "MIT",
+          "state": "verified-artifact",
+          "source_url": "https://github.com/dauparas/ProteinMPNN/tree/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+          "artifact_sha256": "82009d25ce585631f452b2b24589bdb29c559ccfefa2f200ef312ed5b501a586",
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "blackwell-sm103",
+        "build_state": "built-attested",
+        "image_digest": "sha256:13d195ac5e24ca9d75de058f08141ece37e60962dcdffb50b6d24ea474313d47",
+        "device_capability": "sm103-qualified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "The exact NIM remains SM103-incompatible; retained B300 evidence 5223f9da qualifies this independent digest only for the reviewed lean live overlay."
+      ]
+    },
+    "proteinmpnn-upstream-portable": {
+      "variant_id": "proteinmpnn-upstream-portable",
+      "base_model_id": "proteinmpnn",
+      "exposed_model_id": "proteinmpnn",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "proteinmpnn",
+        "subject_model_id": "proteinmpnn",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Authoritative ProteinMPNN code and repository-owned checkpoint set; tested NIM byte parity remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "proteinmpnn",
+          "execution_identity_sha256": "bae3f95a1acfd015c610275c1a33e165890f82e0a1e0f9011514f73c8a11045f",
+          "b300_state": "incompatible-sm103",
+          "record_sha256": "905368cf1ebd70176334b583dbe7f746bd5aa35bae9ee6eb7d13d4caac9358b4"
+        }
+      },
+      "source": {
+        "kind": "git",
+        "repository": "github.com/dauparas/ProteinMPNN",
+        "revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+        "revision_url": "https://github.com/dauparas/ProteinMPNN/tree/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+        "artifact": {
+          "kind": "checkpoint-set",
+          "uri": "https://github.com/dauparas/ProteinMPNN/tree/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57/vanilla_model_weights",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 11,
+          "expected_bytes": null,
+          "expected_content_sha256": [
+            "ec038b44a987d7c8351b6ed887c82a2370d54e45e55a6bdaf508a729cef0340e",
+            "cdb50498d45578d20b271fa7817b8cd8bfde3875ad69dbd3f5e4b5dd3e588301",
+            "f28f40170e21858c5ff31ef50b6e63414ff76dc331b19f85aa8586a12031744a",
+            "0877f840978fe770be6fcec025784d8f50c438571db3260c05e41aa207a7c448",
+            "79562f7444f72c84595a1c96010713864865a616f4f3967633493041e169fa6e",
+            "7af52d090172c230c7f0e9d21e02203f6b3a38b16db58d3c7a3960e0a9a6e31a",
+            "1dd63f1e9fc68a133cc9ef859edf43b489e5ac581cb5624e0b9ec848ff062421",
+            "925f2ca1007bf9b02e0e7f420ff00eb91f50fcc2722f64b42e644ae95adaa131",
+            "db866fae956a28661f926053d630610c55e9fc4bc03922f2aeeb98a37435ccce",
+            "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+            "c34b7bfb38418ea30989fda3314f4781ac4e3920f9825731cf555f1fed44ac66"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "MIT",
+          "state": "metadata-reviewed-artifact-unbound",
+          "source_url": "https://github.com/dauparas/ProteinMPNN/tree/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+          "artifact_sha256": null,
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "portable",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "portable-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "Portable means architecture-neutral build intent, not proven B300 support."
+      ]
+    },
+    "rfdiffusion-upstream-blackwell-sm103": {
+      "variant_id": "rfdiffusion-upstream-blackwell-sm103",
+      "base_model_id": "rfdiffusion",
+      "exposed_model_id": "rfdiffusion",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "rfdiffusion",
+        "subject_model_id": "rfdiffusion",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Authoritative RFdiffusion code/checkpoint set; tested NIM byte parity remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "rfdiffusion",
+          "execution_identity_sha256": "5aa4218e2e508841b704a508eed0725a941f086efd4afa2cbfa1cc934f32c022",
+          "b300_state": "incompatible-sm103",
+          "record_sha256": "b30c3c86a2d78d18d09914da8c3a0a2f379af5e352ab14b7519ddfbaa6276f47"
+        }
+      },
+      "source": {
+        "kind": "git",
+        "repository": "github.com/RosettaCommons/RFdiffusion",
+        "revision": "86507b6538f51fce57b5a72477165f03999ed7ae",
+        "revision_url": "https://github.com/RosettaCommons/RFdiffusion/tree/86507b6538f51fce57b5a72477165f03999ed7ae",
+        "artifact": {
+          "kind": "checkpoint-set",
+          "uri": "https://github.com/RosettaCommons/RFdiffusion/tree/86507b6538f51fce57b5a72477165f03999ed7ae/models",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 7,
+          "expected_bytes": null,
+          "expected_content_sha256": [
+            "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+            "76e4e260aefee3b582bd76b77ab95d2592e64f00c51bf344968ab9239f3250bc",
+            "0ac3b4024aea811078cec41482528291d6d7d7084bf8190ec118f54642fb81a1",
+            "3b71b2b954e87d46b75a88ba64e0420fbf27f592604b10b6c3561b8c8ab70ab6",
+            "51849c9fe64c16a38fe41c75db76abe044e4d3493926f6cfd29a5bde0331b7cc",
+            "beca1f672049161df0bc6a2d2523828f19fd9c8a2b449988e246dde42e7ea986",
+            "b8e5d57f0b8a8f8cb30779c106b75210b46a914a4d19fb180676ae647f5ae23d"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "BSD-3-Clause",
+          "state": "verified-artifact",
+          "source_url": "https://github.com/RosettaCommons/RFdiffusion/tree/86507b6538f51fce57b5a72477165f03999ed7ae",
+          "artifact_sha256": "eefc2ae77cb92b1414a6ac76b246642fae2189747b1b07747e92e5ddc696ec24",
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "blackwell-sm103",
+        "build_state": "built-attested",
+        "image_digest": "sha256:c715c5ec39e1f62761039f07867fe30ae08c60442dbdc05e700084becc456409",
+        "device_capability": "sm103-qualified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "The exact NIM remains SM103-incompatible; retained B300 evidence fc976cfe qualifies this independent digest only for the reviewed lean live overlay."
+      ]
+    },
+    "rfdiffusion-upstream-portable": {
+      "variant_id": "rfdiffusion-upstream-portable",
+      "base_model_id": "rfdiffusion",
+      "exposed_model_id": "rfdiffusion",
+      "variant_kind": "independent-runtime",
+      "relationship": {
+        "kind": "exact-model",
+        "reference_model_id": "rfdiffusion",
+        "subject_model_id": "rfdiffusion",
+        "nim_artifact_parity": "unverified",
+        "distinct_base_record_required": false,
+        "notes": "Authoritative RFdiffusion code/checkpoint set; tested NIM byte parity remains unverified.",
+        "vendor_baseline": {
+          "mode": "canonical-compatibility-audit-delegation",
+          "schema": "fs2-serve.nebius.ai/compatibility-audit/v1",
+          "model_id": "rfdiffusion",
+          "execution_identity_sha256": "5aa4218e2e508841b704a508eed0725a941f086efd4afa2cbfa1cc934f32c022",
+          "b300_state": "incompatible-sm103",
+          "record_sha256": "b30c3c86a2d78d18d09914da8c3a0a2f379af5e352ab14b7519ddfbaa6276f47"
+        }
+      },
+      "source": {
+        "kind": "git",
+        "repository": "github.com/RosettaCommons/RFdiffusion",
+        "revision": "86507b6538f51fce57b5a72477165f03999ed7ae",
+        "revision_url": "https://github.com/RosettaCommons/RFdiffusion/tree/86507b6538f51fce57b5a72477165f03999ed7ae",
+        "artifact": {
+          "kind": "checkpoint-set",
+          "uri": "https://github.com/RosettaCommons/RFdiffusion/tree/86507b6538f51fce57b5a72477165f03999ed7ae/models",
+          "identity_state": "expected-only-incomplete-manifest",
+          "expected_file_count": 7,
+          "expected_bytes": null,
+          "expected_content_sha256": [
+            "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+            "76e4e260aefee3b582bd76b77ab95d2592e64f00c51bf344968ab9239f3250bc",
+            "0ac3b4024aea811078cec41482528291d6d7d7084bf8190ec118f54642fb81a1",
+            "3b71b2b954e87d46b75a88ba64e0420fbf27f592604b10b6c3561b8c8ab70ab6",
+            "51849c9fe64c16a38fe41c75db76abe044e4d3493926f6cfd29a5bde0331b7cc",
+            "beca1f672049161df0bc6a2d2523828f19fd9c8a2b449988e246dde42e7ea986",
+            "b8e5d57f0b8a8f8cb30779c106b75210b46a914a4d19fb180676ae647f5ae23d"
+          ],
+          "manifest_sha256": null,
+          "manifest_schema": "fs2-serve.nebius.ai/artifact-manifest/v1"
+        },
+        "license": {
+          "id": "BSD-3-Clause",
+          "state": "metadata-reviewed-artifact-unbound",
+          "source_url": "https://github.com/RosettaCommons/RFdiffusion/tree/86507b6538f51fce57b5a72477165f03999ed7ae",
+          "artifact_sha256": null,
+          "commercial_use": "license-dependent",
+          "non_clinical": false
+        },
+        "entitlement": "not-required"
+      },
+      "runtime": {
+        "architecture": "portable",
+        "build_state": "source-only-candidate",
+        "image_digest": null,
+        "device_capability": "portable-unverified",
+        "network_startup": "deny-until-exact-mounted-artifact-ready"
+      },
+      "receipt_requirements": {
+        "supply_schema": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5",
+        "qualification_schema": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5",
+        "supply_claims": [
+          "artifact-manifest",
+          "build-materials",
+          "builder",
+          "immutable-image",
+          "license-artifact",
+          "provenance",
+          "sbom",
+          "scan",
+          "signature",
+          "source-repository-revision"
+        ],
+        "qualification_claims": [
+          "cold-and-warm-cohorts-separate",
+          "compute-capability-10.3",
+          "determinism-and-kernel-dispatch-repeated",
+          "exact-worker-gpu-runtime-tuple",
+          "failures-in-denominator",
+          "network-denied-mounted-artifact-startup",
+          "preemption-recovery",
+          "quality-comparator-identity",
+          "scale-zero-ready-zero",
+          "two-semantic-gateway-responses",
+          "vendor-nim-baseline-evidence",
+          "warm-attempts-at-least-10"
+        ]
+      },
+      "promotion": {
+        "state": "candidate-unqualified",
+        "route_exposed": false,
+        "supply_receipt_digest": null,
+        "qualification_receipt_digest": null,
+        "independent_review_receipt_digest": null
+      },
+      "notes": [
+        "Portable means architecture-neutral build intent, not proven B300 support."
+      ]
+    }
+  }
+}

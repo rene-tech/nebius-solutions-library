@@ -1,0 +1,62 @@
+# Copy to a mode-0600 file under run_root. Never commit populated values.
+run_root        = "/absolute/run-scoped/path"
+kubeconfig_path = "/absolute/run-scoped/path/kubeconfig"
+run_id           = "rreplace01"
+cluster_id       = "mk8scluster-REPLACE"
+cluster_name     = "fs2-disposable-rreplace01"
+kube_context     = "fs2-disposable-rreplace01"
+kube_system_uid  = "00000000-0000-0000-0000-000000000000"
+project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
+
+# Pass the exact infra-disposable `target_contract` output used by foundation.
+# It is required and authoritative for project, region, network, tenant, and
+# source-registry identity; the deployment workflow renders it automatically.
+# Pass the exact `accelerator_pool_contract` output used by foundation. It is
+# required and authoritative for the independent accelerator profile, exact
+# effective pools, capacity, scheduling, target, and source identity. The
+# deployment workflow renders this value automatically; do not retype it.
+# `infrastructure_contract` is an optional legacy B300 compatibility view. If
+# supplied, pass the same value used by foundation; it must agree with v2.
+
+# This chooses models only; it does not select accelerator pools.
+deployment_profile = "minimal"
+# Pass the exact infra-disposable public_edge_contract output through a private
+# JSON var-file. Never invent an allocation ID or public IP. In public mode set
+# an ACME contact; in internal-only mode leave acme_email null/omitted.
+# acme_email = "operator@example.com"
+
+# Static is backward-compatible and creates no ScaledObjects. For an elastic
+# run set keda and choose zero or more canonical models for the loaded floor.
+model_scaling_mode = "static"
+hot_model_ids      = []
+# keda_polling_interval_seconds      = 5
+# keda_cooldown_period_seconds       = 300
+# keda_fallback_failure_threshold    = 3
+
+# Terraform discovers the canonical in-cluster API endpoint from
+# default/kubernetes.spec.clusterIP and renders its exact /32 or /128. This
+# optional value is only a fail-closed equality assertion; never derive it from
+# the kubeconfig server hostname, external DNS, a subnet, or an Internet CIDR.
+# admin_kubernetes_api_cidrs = ["10.96.0.1/32"]
+
+# The admin API always reads Prometheus over the private ClusterIP. Launch links
+# stay disabled until the external route is deployed and independently verified.
+# Prefer authenticated Grafana as the sole pane; keep raw Prometheus/Loki private.
+# admin_observability_links = {
+#   allowed_hosts = ["inference.example.com"]
+#   grafana = {
+#     url                     = "https://inference.example.com/observability/grafana/"
+#     verified_external_route = true
+#   }
+#   prometheus = { url = "", verified_external_route = false }
+#   loki       = { url = "", verified_external_route = false }
+# }
+
+# NVCR is required by the full-catalog DCGM exporter. NGC is additionally
+# required only when enabled_model_ids includes an NGC-backed NIM.
+# ngc_api_key               = "REPLACE"
+# nvcrio_dockerconfigjson   = "{...}"
+
+# Initial verified create requires false. After all 15 routes/16 backends are
+# Ready, change only this value to true for the verified acceptance augmentation.
+run_acceptance_job = false

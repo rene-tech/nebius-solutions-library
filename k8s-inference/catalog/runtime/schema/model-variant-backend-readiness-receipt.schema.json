@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-variant-backend-readiness-receipt/v2",
+  "title": "API-observed ready backend for one exact model variant",
+  "$comment": "Non-authoritative shape only; executable verification binds API observer, Service/EndpointSlice UIDs, runtime Pod, Node/GPU and probe chronology.",
+  "x-fs2-authority": "non-authoritative-shape-only",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "observed_at", "variant_id", "variant_digest", "serving_binding_digest", "runtime_tuple_digest", "artifact_manifest_digest", "observation_digests", "valid_until"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-variant-backend-readiness-receipt/v2"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "PASS"},
+    "observed_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "variant_id": {"$ref": "#/$defs/id"},
+    "variant_digest": {"$ref": "#/$defs/digest"},
+    "serving_binding_digest": {"$ref": "#/$defs/digest"},
+    "runtime_tuple_digest": {"$ref": "#/$defs/digest"},
+    "artifact_manifest_digest": {"$ref": "#/$defs/digest"},
+    "observation_digests": {"type": "object", "additionalProperties": false, "required": ["service", "endpoint_slice", "pod", "node", "pod_resources", "probe"], "properties": {"service": {"$ref": "#/$defs/digest"}, "endpoint_slice": {"$ref": "#/$defs/digest"}, "pod": {"$ref": "#/$defs/digest"}, "node": {"$ref": "#/$defs/digest"}, "pod_resources": {"$ref": "#/$defs/digest"}, "probe": {"$ref": "#/$defs/digest"}}},
+    "valid_until": {"type": "string", "format": "date-time", "pattern": "Z$"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"}
+  }
+}

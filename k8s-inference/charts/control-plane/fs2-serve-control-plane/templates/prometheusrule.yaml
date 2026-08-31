@@ -1,0 +1,89 @@
+{{- if .Values.prometheusRule.enabled }}
+{{- if not .Values.serviceMonitor.enabled }}
+{{- fail "prometheusRule requires serviceMonitor.enabled" }}
+{{- end }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: fs2-serve-control-plane.rules
+      rules:
+        - alert: Fs2ServeCatalogMetricsUnavailable
+          expr: absent(fs2_serve_model_info) == 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: fs2-serve catalog metrics are unavailable
+            description: The gateway is not exporting bounded canonical-model metadata; zero promoted routes remains a valid fail-closed state.
+        - alert: Fs2ServeDeploymentUnavailable
+          expr: kube_deployment_status_replicas_available{namespace={{ .Release.Namespace | quote }},deployment={{ include "fs2-serve.fullname" . | quote }}} < kube_deployment_spec_replicas{namespace={{ .Release.Namespace | quote }},deployment={{ include "fs2-serve.fullname" . | quote }}}
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: fs2-serve has unavailable control-plane replicas
+            description: Available gateway replicas remain below the declared Deployment replica count.
+        - alert: Fs2ServeOldestQueueAgeHigh
+          expr: max(fs2_serve_oldest_queued_operation_age_seconds) > {{ .Values.prometheusRule.maxQueueAgeSeconds }}
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: fs2-serve durable queue age exceeds its release threshold
+            description: At least one bounded model queue has remained above the configured age threshold.
+        - alert: Fs2ServeQueueDepthHigh
+          expr: sum(fs2_serve_operations{state="queued"}) > {{ .Values.prometheusRule.maxQueueDepth }}
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: fs2-serve durable queue depth exceeds its release threshold
+            description: The aggregate durable queued-operation count remains above the configured bound.
+        - alert: Fs2ServeSyncWaitSaturation
+          expr: increase(fs2_serve_sync_wait_saturated_total[10m]) > {{ .Values.prometheusRule.maxSyncWaitSaturations }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: fs2-serve synchronous wait capacity is saturated
+            description: Admitted requests are being returned as asynchronous operations because wait slots are full.
+        - alert: Fs2ServeAuthenticationFailureSpike
+          expr: sum(increase(fs2_serve_authentication_failures_total[5m])) > {{ .Values.prometheusRule.maxAuthenticationFailures }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: fs2-serve authentication failures exceed the release threshold
+            description: Bounded authentication failure classes increased above the configured threshold.
+{{- if .Values.publicTls.enabled }}
+        - alert: Fs2ServePublicCertificateNotReady
+          expr: max(certmanager_certificate_ready_status{namespace={{ .Release.Namespace | quote }},name={{ printf "%s-public" (include "fs2-serve.fullname" .) | quote }},condition="True"}) != 1 or absent(certmanager_certificate_ready_status{namespace={{ .Release.Namespace | quote }},name={{ printf "%s-public" (include "fs2-serve.fullname" .) | quote }},condition="True"})
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: fs2-serve short-lived public IP certificate is not Ready
+            description: cert-manager has not kept the exact public IP certificate Ready through its bounded renewal window.
+        - alert: Fs2ServePublicCertificateRenewalOverdue
+          expr: time() > max(certmanager_certificate_renewal_timestamp_seconds{namespace={{ .Release.Namespace | quote }},name={{ printf "%s-public" (include "fs2-serve.fullname" .) | quote }}}) or absent(certmanager_certificate_renewal_timestamp_seconds{namespace={{ .Release.Namespace | quote }},name={{ printf "%s-public" (include "fs2-serve.fullname" .) | quote }}})
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: fs2-serve short-lived public IP certificate renewal is overdue
+            description: The 160-hour IP certificate crossed its cert-manager renewal timestamp without replacement.
+        - alert: Fs2ServePublicCertificateExpiresSoon
+          expr: max(certmanager_certificate_expiration_timestamp_seconds{namespace={{ .Release.Namespace | quote }},name={{ printf "%s-public" (include "fs2-serve.fullname" .) | quote }}}) - time() < 172800 or absent(certmanager_certificate_expiration_timestamp_seconds{namespace={{ .Release.Namespace | quote }},name={{ printf "%s-public" (include "fs2-serve.fullname" .) | quote }}})
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: fs2-serve public IP certificate expires within 48 hours
+            description: The mandatory short-lived certificate is inside its final 48-hour safety window.
+{{- end }}
+{{- end }}

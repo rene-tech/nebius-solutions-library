@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - runtime.yaml
+  - networkpolicy.yaml
+configMapGenerator:
+  - name: qwen3-8b-b300-contract
+    namespace: fs2-models
+    files:
+      - model.lock.json
+      - localize.py
+generatorOptions:
+  labels:
+    app.kubernetes.io/name: qwen3-8b
+    app.kubernetes.io/instance: qwen3-8b-b300
+    app.kubernetes.io/part-of: fs2-serve
+    fs2.nebius/task: fs2-serve-qwen-b300-vertical-slice

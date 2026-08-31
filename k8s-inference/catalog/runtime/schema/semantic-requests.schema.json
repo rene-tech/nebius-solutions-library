@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/semantic-request-contracts/v1",
+  "title": "Canonical model semantic request payload and asset contracts",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "contracts"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/semantic-request-contracts/v1"},
+    "contracts": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+      "additionalProperties": {"$ref": "#/$defs/contract"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "blocker", "serialization", "invocation", "requests", "assets"],
+      "properties": {
+        "state": {"enum": ["qualified", "blocked"]},
+        "blocker": {"type": ["string", "null"]},
+        "serialization": {"enum": ["sha256-canonical-json-newline/v1", "sha256-canonical-json-no-newline/v1", null]},
+        "invocation": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["operation", "protocol", "method", "endpoint"],
+              "properties": {
+                "operation": {"type": "string", "minLength": 1},
+                "protocol": {"type": "string", "minLength": 1},
+                "method": {"const": "POST"},
+                "endpoint": {"type": "string", "pattern": "^/"}
+              }
+            }
+          ]
+        },
+        "requests": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "payload_sha256"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1, "maxLength": 128},
+              "payload_sha256": {"$ref": "#/$defs/digest"}
+            }
+          }
+        },
+        "assets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["request_id", "kind", "uri", "content_sha256", "bytes", "license"],
+            "properties": {
+              "request_id": {"type": "string", "minLength": 1},
+              "kind": {"const": "licensed-image"},
+              "uri": {"type": "string", "pattern": "^https://"},
+              "content_sha256": {"$ref": "#/$defs/digest"},
+              "bytes": {"type": "integer", "minimum": 1},
+              "license": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    }
+  }
+}

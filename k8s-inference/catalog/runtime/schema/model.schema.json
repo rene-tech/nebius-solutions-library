@@ -1,0 +1,477 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model/v1",
+  "title": "fs2-serve model record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "model",
+    "runtime",
+    "resources",
+    "interface",
+    "startup",
+    "cache",
+    "semantic_validator",
+    "support",
+    "evidence",
+    "provenance"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model/v1"},
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "display_name", "family", "tested_lane", "source"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+        "display_name": {"type": "string", "minLength": 1},
+        "family": {"enum": ["bionemo-nim", "medical-imaging", "llm", "image-generation"]},
+        "tested_lane": {"type": "boolean"},
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "repository", "revision", "license", "entitlement"],
+          "properties": {
+            "kind": {"enum": ["ngc-nim", "huggingface", "git"]},
+            "repository": {"type": ["string", "null"]},
+            "revision": {"type": ["string", "null"]},
+            "license": {"$ref": "#/$defs/statusBinding"},
+            "entitlement": {"$ref": "#/$defs/entitlement"}
+          }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "version", "image", "command"],
+      "properties": {
+        "kind": {"enum": ["nim", "vllm", "custom", "diffusers", "unresolved"]},
+        "version": {"type": ["string", "null"]},
+        "image": {"$ref": "#/$defs/image"},
+        "command": {"description": "Direct argv template. Tested Hugging Face vLLM records contain exactly one {FS2_MODEL_CONTENT_PATH} token and --served-model-name equal to model.id; remote repository/revision argv is forbidden.", "type": "array", "items": {"type": "string"}}
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu_millis", "memory_bytes", "host_ram_min_bytes", "scaler_owner", "gpu"],
+      "properties": {
+        "cpu_millis": {"type": ["integer", "null"], "minimum": 1},
+        "memory_bytes": {"type": ["integer", "null"], "minimum": 1},
+        "host_ram_min_bytes": {"type": ["integer", "null"], "minimum": 1},
+        "scaler_owner": {"const": "nebius-managed-node-group-autoscaler"},
+        "gpu": {
+          "type": "object",
+          "description": "count/topology describe the workload allocation only; placement describes the independently selected node pool and cache capabilities.",
+          "additionalProperties": false,
+          "required": ["class", "count", "topology", "placement", "b300_state", "alternatives"],
+          "properties": {
+            "class": {"const": "NVIDIA-B300-SXM6-288GB"},
+            "count": {"type": "integer", "minimum": 1, "maximum": 8},
+            "topology": {"enum": ["single-gpu", "single-node-multi-gpu"]},
+            "placement": {
+              "oneOf": [
+                {"type": "null"},
+                {"$ref": "#/$defs/gpuPlacement"}
+              ]
+            },
+            "b300_state": {"enum": ["unverified", "historical-supported", "incompatible-sm103", "blocked", "qualified"]},
+            "alternatives": {"type": "array", "items": {"$ref": "#/$defs/gpuAlternative"}}
+          }
+        }
+      }
+    },
+    "interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["execution_mode", "protocols", "endpoints", "readiness", "warmup", "policy", "mcp"],
+      "properties": {
+        "execution_mode": {"enum": ["http", "batch", "unavailable"]},
+        "protocols": {"type": "array", "uniqueItems": true, "items": {"enum": ["native", "openai-chat", "openai-completions", "openai-embeddings", "openai-images"]}},
+        "endpoints": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^/"}},
+        "readiness": {"anyOf": [{"$ref": "#/$defs/probe"}, {"type": "null"}]},
+        "warmup": {"anyOf": [{"$ref": "#/$defs/probe"}, {"type": "null"}]},
+        "policy": {
+          "type": "object", "additionalProperties": false,
+          "required": ["operations", "license_enforced", "non_clinical", "commercial_use"],
+          "properties": {
+            "operations": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+            "license_enforced": {"const": true},
+            "non_clinical": {"type": "boolean"},
+            "commercial_use": {"enum": ["allowed", "license-dependent", "prohibited", "blocked"]}
+          }
+        },
+        "mcp": {"type": "object", "additionalProperties": false, "required": ["discoverable", "invocable"], "properties": {"discoverable": {"type": "boolean"}, "invocable": {"type": "boolean"}}}
+      }
+    },
+    "startup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default", "fallback", "enabled_mechanisms", "experiments", "multi_gpu_criu"],
+      "properties": {
+        "default": {"const": "conventional"},
+        "fallback": {"const": "conventional"},
+        "enabled_mechanisms": {
+          "type": "array",
+          "items": {"enum": ["conventional", "snapshot", "sleep-wake", "custom-runtime"]},
+          "uniqueItems": true
+        },
+        "experiments": {"type": "array", "items": {"$ref": "#/$defs/experiment"}},
+        "multi_gpu_criu": {"const": "unproven-disabled"}
+      }
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "shared_path", "local_path", "pre_pull_image", "artifact"],
+      "properties": {
+        "owner": {"enum": ["nim-operator-nimcache", "fs2-serve-localizer", "none"]},
+        "shared_path": {"type": "string", "pattern": "^/mnt/fs2-serve-cache/models/"},
+        "local_path": {"type": "string", "pattern": "^/var/lib/fs2-serve/cache/models/"},
+        "pre_pull_image": {"type": "boolean"},
+        "artifact": {"$ref": "#/$defs/artifact"}
+      }
+    },
+    "semantic_validator": {"$ref": "#/$defs/semanticValidator"},
+    "support": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "route_exposed", "non_clinical", "limitations"],
+      "properties": {
+        "state": {"enum": ["unqualified", "blocked", "qualified"]},
+        "route_exposed": {"type": "boolean"},
+        "non_clinical": {"type": "boolean"},
+        "limitations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}},
+    "provenance": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/provenance"}}
+  },
+  "$defs": {
+    "statusBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "notes"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "state": {"enum": ["verified", "unverified", "blocked"]},
+        "notes": {"type": "string", "minLength": 1},
+        "artifact": {"$ref": "#/$defs/licenseArtifact"}
+      }
+    },
+    "licenseArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "sha256"],
+      "properties": {
+        "url": {"type": "string", "pattern": "^https://"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "entitlement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "state", "credential_contract", "notes"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "state": {"enum": ["not-required", "unverified", "blocked", "verified"]},
+        "credential_contract": {"type": ["string", "null"]},
+        "notes": {"type": "string", "minLength": 1}
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference", "digest", "state"],
+      "properties": {
+        "reference": {"type": ["string", "null"]},
+        "digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+        "state": {"enum": ["resolved", "historical-redacted", "unresolved"]}
+      }
+    },
+    "experiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mechanism", "state", "gate", "artifact_kind", "artifact_manifest_digest", "reason"],
+      "properties": {
+        "mechanism": {"enum": ["snapshot", "sleep-wake", "custom-runtime"]},
+        "state": {"enum": ["gated", "qualified", "disabled-negative-evidence", "blocked"]},
+        "gate": {"type": ["string", "null"]},
+        "artifact_kind": {"enum": ["weights", "snapshot"]},
+        "artifact_manifest_digest": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "historical_artifact": {"$ref": "#/$defs/historicalSnapshotArtifact"},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "historicalSnapshotArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "manifest_digest", "expanded_bytes", "file_count", "hardware", "compatibility", "file_signatures"],
+      "properties": {
+        "kind": {"const": "snapshot"},
+        "manifest_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "expanded_bytes": {"type": "integer", "minimum": 1},
+        "file_count": {"type": "integer", "minimum": 1},
+        "hardware": {"type": "string", "minLength": 1},
+        "compatibility": {"const": "incompatible-with-b300"},
+        "file_signatures": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "kind", "manifest_digest", "expanded_bytes", "minimum_bytes", "capacity_bound_bytes", "staged"],
+      "properties": {
+        "state": {"enum": ["unresolved", "historical-verified", "platform-verified", "blocked"]},
+        "kind": {"enum": ["weights", "nim-cache", null]},
+        "manifest_digest": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "expanded_bytes": {"type": ["integer", "null"], "minimum": 1},
+        "minimum_bytes": {"type": ["integer", "null"], "minimum": 1},
+        "capacity_bound_bytes": {"type": ["integer", "null"], "minimum": 1},
+        "staged": {"const": false, "description": "Static catalogs never assert live staging; a verified serving-binding receipt owns that state."},
+        "qualification_gate": {"const": "fs2-serve/exact-hf-weight-per-file-sha256-manifest/v1"},
+        "historical_inventory": {"$ref": "#/$defs/historicalWeightInventory"},
+        "expected_identity": {"$ref": "#/$defs/expectedArtifactIdentity"}
+      }
+    },
+    "historicalWeightInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity_sha256", "identity_scope", "file_count", "logical_bytes", "source_revision", "per_file_sha256_complete"],
+      "properties": {
+        "identity_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "identity_scope": {"const": "canonical-path-and-size-only"},
+        "file_count": {"type": "integer", "minimum": 1},
+        "logical_bytes": {"type": "integer", "minimum": 1},
+        "source_revision": {"type": "string", "minLength": 1},
+        "per_file_sha256_complete": {"const": false}
+      }
+    },
+    "expectedArtifactIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "source_url", "source_revision", "file_count", "expanded_bytes", "content_digest", "manifest_digest", "payload_policy", "files"],
+      "properties": {
+        "state": {"const": "expected-only-unverified"},
+        "source_url": {"type": "string", "pattern": "^https://huggingface\\.co/api/models/"},
+        "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "file_count": {"type": "integer", "minimum": 1},
+        "expanded_bytes": {"type": "integer", "minimum": 1},
+        "content_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "manifest_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "payload_policy": {"const": "scratch-to-clean-exact-allowlist-regular-files-only"},
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "bytes", "sha256", "source_identity"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "bytes": {"type": "integer", "minimum": 1},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "source_identity": {"enum": ["git-exact-revision-streamed-sha256", "lfs-oid-sha256"]}
+            }
+          }
+        }
+      }
+    },
+    "probe": {
+      "type": "object", "additionalProperties": false,
+      "required": ["method", "path", "expected_status", "timeout_seconds"],
+      "properties": {
+        "method": {"enum": ["GET", "POST"]},
+        "path": {"type": "string", "pattern": "^/"},
+        "expected_status": {"type": "integer", "minimum": 100, "maximum": 599},
+        "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 3600}
+      }
+    },
+    "gpuAlternative": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "count", "topology", "placement", "state", "source_commit", "notes"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "count": {"type": "integer", "minimum": 2, "maximum": 8},
+        "topology": {"const": "single-node-multi-gpu"},
+        "placement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["node_gpu_count", "node_preset"],
+          "properties": {
+            "node_gpu_count": {"const": 8},
+            "node_preset": {"const": "b300-8x"}
+          }
+        },
+        "state": {"enum": ["measured-historical-fallback", "unverified", "negative"]},
+        "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "notes": {"type": "string", "minLength": 1}
+      }
+    },
+    "gpuPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pool", "capacity_type", "node_gpu_count", "node_preset", "node_selector", "tolerations", "cache_capabilities", "qualification_sequence", "provider_block_pvc", "local_pv_pvc"],
+      "properties": {
+        "pool": {"enum": ["b300-hot-8x", "b300-burst-8x", "b300-burst-1x"]},
+        "capacity_type": {"enum": ["regular", "preemptible"]},
+        "node_gpu_count": {"enum": [1, 8]},
+        "node_preset": {"enum": ["b300-1x", "b300-8x"]},
+        "node_selector": {
+          "type": "object",
+          "minProperties": 5,
+          "propertyNames": {"minLength": 1},
+          "additionalProperties": {"type": "string", "minLength": 1}
+        },
+        "tolerations": {
+          "const": [{"key": "dedicated", "operator": "Equal", "value": "fs2-inference", "effect": "NoSchedule"}]
+        },
+        "cache_capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["provider-block-pvc-candidate", "provider-block-pvc-qualified", "sfs-conventional-qualified", "node-local-pv-pvc-qualified"]}
+        },
+        "qualification_sequence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["order", "storage_mode", "startup_mechanism", "cohort_binding", "state", "qualification_gate"],
+            "properties": {
+              "order": {"type": "integer", "minimum": 1},
+              "storage_mode": {"enum": ["provider-block-pvc", "sfs-pvc", "local-nvme"]},
+              "startup_mechanism": {"const": "conventional"},
+              "cohort_binding": {"enum": ["provider-block-pvc-lifecycle", "replacement-node-rwx-canary", "activation-generation-pvc"]},
+              "state": {"enum": ["candidate-unqualified", "gated-unqualified", "qualified"]},
+              "qualification_gate": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "provider_block_pvc": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "contract", "storage_class", "claim", "acquisition", "runtime", "qualification_gates"],
+          "properties": {
+            "state": {"enum": ["candidate-unqualified", "qualified"]},
+            "contract": {"const": "fs2-serve.nebius.ai/provider-block-pvc/v1"},
+            "storage_class": {
+              "type": "object", "additionalProperties": false,
+              "required": ["name", "owner", "provisioner", "reclaim_policy", "volume_binding_mode", "allow_volume_expansion", "parameters", "default_delete_class_policy"],
+              "properties": {
+                "name": {"const": "fs2-network-ssd-retain"},
+                "owner": {"const": "fs2-serve-cluster"},
+                "provisioner": {"const": "compute.csi.nebius.com"},
+                "reclaim_policy": {"const": "Retain"},
+                "volume_binding_mode": {"const": "WaitForFirstConsumer"},
+                "allow_volume_expansion": {"const": true},
+                "parameters": {
+                  "const": {
+                    "type": "NETWORK_SSD",
+                    "csi.storage.k8s.io/fstype": "ext4"
+                  }
+                },
+                "default_delete_class_policy": {"const": "canary-only-with-deletion-protection"}
+              }
+            },
+            "claim": {
+              "type": "object", "additionalProperties": false,
+              "required": ["namespace", "name", "requested_bytes", "access_modes", "volume_mode", "fs_type"],
+              "properties": {
+                "namespace": {"const": "fs2-models"},
+                "name": {"const": "qwen3-8b-weights"},
+                "requested_bytes": {"const": 68719476736},
+                "access_modes": {"const": ["ReadWriteOnce"]},
+                "volume_mode": {"const": "Filesystem"},
+                "fs_type": {"const": "ext4"}
+              }
+            },
+            "acquisition": {
+              "type": "object", "additionalProperties": false,
+              "required": ["first_consumer", "sole_writer", "gpu_count", "placement_source", "atomic_publication"],
+              "properties": {
+                "first_consumer": {"const": true},
+                "sole_writer": {"const": true},
+                "gpu_count": {"const": 0},
+                "placement_source": {"const": "resources.gpu.placement.node_selector+tolerations"},
+                "atomic_publication": {"const": "scratch-to-clean-payload-content-address"}
+              }
+            },
+            "runtime": {
+              "type": "object", "additionalProperties": false,
+              "required": ["read_only", "gpu_count", "claim_reuse"],
+              "properties": {
+                "read_only": {"const": true},
+                "gpu_count": {"const": 1},
+                "claim_reuse": {"const": "same-pvc-uid-and-volume-name"}
+              }
+            },
+            "qualification_gates": {
+              "const": ["bound-after-targeted-acquirer", "content-manifest-verified", "detach-reattach-controlled-node-replacement", "no-multi-attach", "sole-writer-handoff-closed", "two-distinct-semantic-responses", "scale-one-to-zero-claim-retained"]
+            }
+          }
+        },
+        "local_pv_pvc": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "contract", "storage_class_name", "volume_binding_mode", "node_affinity", "preemption_fencing", "lost_node_fencing", "activation_generation_recreation", "model_pod_volume_type", "host_path_forbidden"],
+          "properties": {
+            "state": {"enum": ["gated-unimplemented", "reviewed-implemented"]},
+            "contract": {"const": "fs2-serve.nebius.ai/local-pv-pvc-lifecycle/v1"},
+            "storage_class_name": {"const": "fs2-local-nvme"},
+            "volume_binding_mode": {"const": "WaitForFirstConsumer"},
+            "node_affinity": {"const": "exact-serving-node-required"},
+            "preemption_fencing": {"const": "pod-pvc-pv-node-uid"},
+            "lost_node_fencing": {"const": "invalidate-and-recreate-next-activation-generation"},
+            "activation_generation_recreation": {"const": true},
+            "model_pod_volume_type": {"const": "persistentVolumeClaim"},
+            "host_path_forbidden": {"const": true}
+          }
+        }
+      }
+    },
+    "semanticValidator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "contract", "source_path", "source_sha256", "fixture_path", "fixture_sha256", "request_count", "distinct_requests", "distinct_responses"],
+      "properties": {
+        "kind": {"enum": ["repository-command", "openai-exact", "png", "medical-nonclinical", "sequence", "blocked"]},
+        "contract": {"type": "string", "minLength": 1},
+        "source_path": {"type": ["string", "null"]},
+        "source_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "fixture_path": {"type": ["string", "null"]},
+        "fixture_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "request_count": {"const": 2},
+        "distinct_requests": {"const": true},
+        "distinct_responses": {"const": true}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "hardware", "outcome", "source_commit", "summary"],
+      "properties": {
+        "classification": {"enum": ["measured-historical", "measured-platform", "negative", "blocked", "unverified"]},
+        "hardware": {"type": ["string", "null"]},
+        "outcome": {"enum": ["conventional-fallback", "snapshot-candidate", "snapshot-rejected", "resident-candidate", "custom-runtime-unqualified", "live-qualified", "no-live-lane", "unqualified"]},
+        "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree", "path", "classification"],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "path": {"type": "string", "minLength": 1},
+        "classification": {"enum": ["reviewed-input", "measured-handoff", "negative-evidence"]}
+      }
+    }
+  }
+}

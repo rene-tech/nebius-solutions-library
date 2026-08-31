@@ -1,0 +1,2940 @@
+{
+  "schema": "fs2-serve.nebius.ai/cold-start-optimization-matrix/v1alpha1",
+  "catalog_contract": {
+    "profile": "full_catalog",
+    "canonical_model_count": 15,
+    "model_profile_path": "../../catalog/profiles/model-profiles.json",
+    "route_inventory_path": "../../components/control-plane/contracts/all-models-live-services.json",
+    "semantic_contract_path": "../../catalog/runtime/contracts/semantic-requests.json"
+  },
+  "benchmark_policy": {
+    "semantic_call_count": 2,
+    "exploratory_repetitions_per_arm": 3,
+    "promotion_repetitions_per_arm": 20,
+    "required_transition": "zero-to-ready-to-call1-to-call2-to-zero",
+    "attempt_order": "strict-control-candidate-alternation",
+    "output_mode": "mode-0600-token-free-receipts"
+  },
+  "floor_policies": {
+    "elastic-zero": {
+      "minimum_ready_replicas": 0,
+      "minimum_gpu_nodes": 0,
+      "scale_to_zero_required": true,
+      "use": "default elastic and preemptible benchmark policy"
+    },
+    "prepared-node-zero-pod": {
+      "minimum_ready_replicas": 0,
+      "minimum_gpu_nodes": 1,
+      "scale_to_zero_required": true,
+      "use": "separate artifact/runtime load time from provider node creation"
+    },
+    "latency-critical-one": {
+      "minimum_ready_replicas": 1,
+      "minimum_gpu_nodes": 1,
+      "scale_to_zero_required": false,
+      "use": "explicit paid warm floor; report as non-cold reference only"
+    }
+  },
+  "capability_contract": {
+    "states": [
+      "active",
+      "eligible-experiment",
+      "blocked",
+      "not-applicable"
+    ],
+    "mechanisms": [
+      "conventional",
+      "shared-cache",
+      "local-nvme",
+      "oci-image-volume",
+      "oci-modelcar",
+      "cuda-criu-snapshot",
+      "dynamo-snapshot"
+    ],
+    "default_mechanism": "conventional"
+  },
+  "deployment_identity_contract": {
+    "default": "denied",
+    "required_annotations": [
+      "fs2.nebius/model-content-digest",
+      "fs2.nebius/runtime-image-digest",
+      "fs2.nebius/compile-cache-abi"
+    ],
+    "compile_cache_abi": "driver-580.173.02-sm103",
+    "compile_cache_abi_source": "foundation.yaml#ConfigMap/fs2-cold-start-cache-contract/data/compile-cache-abi",
+    "models": {
+      "boltz2": {
+        "state": "complete",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:9459dd0c80992f21d07e70ae7d54c318e66a9d5202d6e849a134957b0740d82a",
+          "fs2.nebius/runtime-image-digest": "sha256:ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": "../bionemo/boltz2/artifact-manifest.json#/content/digest",
+        "missing_annotations": [],
+        "blocker": null,
+        "blocker_source": null
+      },
+      "diffdock": {
+        "state": "complete",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:fe05bca0521f77e120fe135021f555269b0128e929e60f201542d4c17483329c",
+          "fs2.nebius/runtime-image-digest": "sha256:cb3875f7d66b8d170d0e3f16d3d9a63aee8d63fbb23fdf65ec7ea0214d849529",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": "../structure/artifact-manifest.json#/content/digest",
+        "missing_annotations": [],
+        "blocker": null,
+        "blocker_source": null
+      },
+      "evo2-40b": {
+        "state": "complete",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa",
+          "fs2.nebius/runtime-image-digest": "sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": "../general-media/evidence/evo2-40b-artifact-manifest.json#/content/digest",
+        "missing_annotations": [],
+        "blocker": null,
+        "blocker_source": null
+      },
+      "genmol": {
+        "state": "complete",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:7ef31ef5652574b6c108231a0d67d6d871b4df3f780e43c5a4dcc2491bc8d44a",
+          "fs2.nebius/runtime-image-digest": "sha256:c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": "../../catalog/runtime/contracts/model-variants.json#/variants/nv-genmol-89m-v2-blackwell-sm103/source/artifact/expected_content_sha256/0",
+        "missing_annotations": [],
+        "blocker": null,
+        "blocker_source": null
+      },
+      "glm-5-2-fp8": {
+        "state": "complete",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:20fe040f62612ae480971f0cf3433004062a186ff01af6d69127e6dd888bd795",
+          "fs2.nebius/runtime-image-digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": "../general-media/evidence/glm-5-2-fp8-artifact-manifest.json#/content/digest",
+        "missing_annotations": [],
+        "blocker": null,
+        "blocker_source": null
+      },
+      "molmim": {
+        "state": "complete",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:10522c9db6018c355313f9f01a0edea2b021ddc0a5a22ae4540cbf5bdafbd1f5",
+          "fs2.nebius/runtime-image-digest": "sha256:b51c758f2785accb2121db2dd322f81ed6ebb6142bd7a9988714867c5fe51641",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": "../../catalog/runtime/contracts/model-variants.json#/variants/molmim-exact-weights-blackwell-sm103/source/artifact/expected_content_sha256/0",
+        "missing_annotations": [],
+        "blocker": null,
+        "blocker_source": null
+      },
+      "msa-search-pdb70": {
+        "state": "blocked",
+        "annotations": {
+          "fs2.nebius/runtime-image-digest": "sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": null,
+        "missing_annotations": ["fs2.nebius/model-content-digest"],
+        "blocker": "nim-cache-content-unresolved",
+        "blocker_source": "../../catalog/runtime/models/msa-search-pdb70.json#/cache/artifact"
+      },
+      "nv-reason-cxr-3b": {
+        "state": "complete",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c",
+          "fs2.nebius/runtime-image-digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": "../general-media/evidence/nv-reason-cxr-3b-artifact-manifest.json#/content/digest",
+        "missing_annotations": [],
+        "blocker": null,
+        "blocker_source": null
+      },
+      "nv-segment-ct": {
+        "state": "complete",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:08e8ed72f8bb0702dc9a8c0c3b0edefc23a6e538e6955357da62c0c2ccfede89",
+          "fs2.nebius/runtime-image-digest": "sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": "../general-media/evidence/nv-segment-ct-artifact-manifest.json#/content/digest",
+        "missing_annotations": [],
+        "blocker": null,
+        "blocker_source": null
+      },
+      "openfold2": {
+        "state": "blocked",
+        "annotations": {
+          "fs2.nebius/runtime-image-digest": "sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": null,
+        "missing_annotations": ["fs2.nebius/model-content-digest"],
+        "blocker": "nim-cache-content-unresolved",
+        "blocker_source": "../../catalog/runtime/models/openfold2.json#/cache/artifact"
+      },
+      "openfold3": {
+        "state": "blocked",
+        "annotations": {
+          "fs2.nebius/runtime-image-digest": "sha256:6286cc7c02247ed3efe42f0f1af6c2f6f6a680b1e5cae669512c44b636aa42d2",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": null,
+        "missing_annotations": ["fs2.nebius/model-content-digest"],
+        "blocker": "nim-cache-content-unresolved",
+        "blocker_source": "../../catalog/runtime/models/openfold3.json#/cache/artifact"
+      },
+      "proteinmpnn": {
+        "state": "complete",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+          "fs2.nebius/runtime-image-digest": "sha256:13d195ac5e24ca9d75de058f08141ece37e60962dcdffb50b6d24ea474313d47",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": "../../catalog/runtime/contracts/model-variants.json#/variants/proteinmpnn-upstream-blackwell-sm103/source/artifact/expected_content_sha256/9",
+        "missing_annotations": [],
+        "blocker": null,
+        "blocker_source": null
+      },
+      "qwen3-8b": {
+        "state": "complete",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d",
+          "fs2.nebius/runtime-image-digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": "../../catalog/runtime/models/qwen3-8b.json#/cache/artifact/expected_identity/content_digest",
+        "missing_annotations": [],
+        "blocker": null,
+        "blocker_source": null
+      },
+      "rfdiffusion": {
+        "state": "complete",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+          "fs2.nebius/runtime-image-digest": "sha256:c715c5ec39e1f62761039f07867fe30ae08c60442dbdc05e700084becc456409",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": "../../catalog/runtime/contracts/model-variants.json#/variants/rfdiffusion-upstream-blackwell-sm103/source/artifact/expected_content_sha256/0",
+        "missing_annotations": [],
+        "blocker": null,
+        "blocker_source": null
+      },
+      "sdxl": {
+        "state": "complete",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81",
+          "fs2.nebius/runtime-image-digest": "sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+          "fs2.nebius/compile-cache-abi": "driver-580.173.02-sm103"
+        },
+        "model_content_source": "../general-media/evidence/sdxl-artifact-manifest.json#/content/digest",
+        "missing_annotations": [],
+        "blocker": null,
+        "blocker_source": null
+      }
+    }
+  },
+  "runtime_marker_contract": {
+    "default": "denied",
+    "accepted_events": [
+      "artifact-localization-start",
+      "artifact-localization-verified",
+      "weight-load-start",
+      "weight-load-end",
+      "engine-build-or-compile-start",
+      "engine-build-or-compile-end"
+    ],
+    "source_instrumented_models": {
+      "evo2-40b": {
+        "state": "source-instrumented-observation-required",
+        "sources": [
+          "../general-media/evo2_stage.py",
+          "../general-media/evo2_serve.py"
+        ]
+      }
+    },
+    "unqualified_models": [
+      "boltz2",
+      "diffdock",
+      "genmol",
+      "glm-5-2-fp8",
+      "molmim",
+      "msa-search-pdb70",
+      "nv-reason-cxr-3b",
+      "nv-segment-ct",
+      "openfold2",
+      "openfold3",
+      "proteinmpnn",
+      "qwen3-8b",
+      "rfdiffusion",
+      "sdxl"
+    ]
+  },
+  "snapshot_eligibility": {
+    "default": "denied",
+    "exact_match_fields": [
+      "model_id",
+      "model_content_digest",
+      "tokenizer_or_preprocessor_digest",
+      "semantic_oracle_digest",
+      "semantic_request_contract_digest",
+      "runtime_variant",
+      "runtime_source_identity_digest",
+      "runtime_image_digest",
+      "runtime_argv_digest",
+      "runtime_environment_digest",
+      "execution_identity_digest",
+      "loader_or_engine_format",
+      "host_cpu_architecture",
+      "host_os_release_digest",
+      "accelerator_pool_id",
+      "accelerator_pool_receipt_digest",
+      "gpu_vendor",
+      "gpu_product",
+      "gpu_chip_type",
+      "gpu_compute_capability",
+      "gpu_memory_bytes",
+      "workload_gpu_count",
+      "gpu_topology",
+      "gpu_topology_inventory_digest",
+      "mig_mode",
+      "mig_profile",
+      "driver_version",
+      "cuda_version",
+      "kernel_release",
+      "container_runtime_name",
+      "container_runtime_version",
+      "checkpoint_tool_digest",
+      "criu_version",
+      "artifact_manifest_digest",
+      "artifact_content_digest",
+      "artifact_bytes",
+      "storage_class",
+      "storage_mode",
+      "compile_cache_abi",
+      "capacity_state"
+    ],
+    "full_gpu": {
+      "required_mig_mode": "disabled",
+      "qualification_scope": "full-gpu",
+      "resource_identity_required": [
+        "nvidia.com/gpu",
+        "allocated_gpu_uuids",
+        "gpu_topology_inventory_digest",
+        "donor_node_identity_digest",
+        "target_node_identity_digest",
+        "donor_pvc_identity_digest",
+        "target_pvc_identity_digest"
+      ],
+      "cross_partition_restore": "denied"
+    },
+    "mig": {
+      "required_mig_mode": "enabled",
+      "qualification_scope": "mig",
+      "resource_identity_required": [
+        "discovered_extended_resource_name",
+        "mig_profile",
+        "mig_device_uuids",
+        "gpu_instance_ids",
+        "compute_instance_ids",
+        "donor_node_identity_digest",
+        "target_node_identity_digest",
+        "donor_pvc_identity_digest",
+        "target_pvc_identity_digest"
+      ],
+      "cross_partition_restore": "denied"
+    }
+  },
+  "baseline_evidence": {
+    "receipt_sha256": "05f8100cbbf94df1b9e6432392c52eb6aa5ec2d4c29086057a5f9ecd68696b79",
+    "source_commit": "cf152f7b294f9a2ffee8401dee2d3239d1040400",
+    "source_tree": "694bebdae74c29d8df9764ae6f060ce5161465d7",
+    "result": "PASS",
+    "observations": [
+      {
+        "model_id": "evo2-40b",
+        "pod_created_to_ready_seconds": 3092,
+        "dominant_observed_phase": "materialize-checkpoint init container ran for 1,805 seconds",
+        "experiment_priority": 1
+      },
+      {
+        "model_id": "glm-5-2-fp8",
+        "pod_created_to_ready_seconds": 2955,
+        "dominant_observed_phase": "vLLM container startup covered artifact resolution plus weight load for at least 2,498 seconds after scheduling",
+        "experiment_priority": 2
+      }
+    ]
+  },
+  "models": [
+    {
+      "model_id": "boltz2",
+      "deployment": "boltz2-b300",
+      "service": "boltz2",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "boltz2"
+      ],
+      "artifact_init_containers": [
+        "prepare-runtime-cache"
+      ],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "init-container-status",
+          "names": [
+            "prepare-runtime-cache"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "boltz2"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "nim-operator-cache-ownership",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "oci-modelcar": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "diffdock",
+      "deployment": "diffdock-b300",
+      "service": "diffdock-b300",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "runtime"
+      ],
+      "artifact_init_containers": [],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "runtime-log-marker",
+          "names": [
+            "artifact-localization-start",
+            "artifact-localization-verified"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "runtime"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "nim-operator-cache-ownership",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "oci-modelcar": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "evo2-40b",
+      "deployment": "evo2-40b",
+      "service": "evo2-40b",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "model",
+        "relay"
+      ],
+      "artifact_init_containers": [
+        "prepare-runtime-cache",
+        "materialize-checkpoint"
+      ],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "init-container-status",
+          "names": [
+            "prepare-runtime-cache",
+            "materialize-checkpoint"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "model",
+            "relay"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "read-only-runtime-mount",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Kubernetes 1.35 beta experiment; pull time stays inside T0."
+        },
+        "oci-modelcar": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Pilot only; modelcar sidecar behavior must preserve the canonical route semantics."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "fresh model PVC downloads and materializes the exact 82,253,491,694-byte two-part checkpoint",
+        "candidate": "signed exact Hugging Face parts are acquired once to durable shared cache and copied to a fresh model PVC with the same final checkpoint and receipt",
+        "success_gate": "At least three alternating fresh-PVC attempts; identical artifact and semantic digests; lower failure-ranked T0-to-call1 and no call2 regression."
+      }
+    },
+    {
+      "model_id": "genmol",
+      "deployment": "genmol-b300",
+      "service": "genmol",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "genmol"
+      ],
+      "artifact_init_containers": [
+        "prepare-runtime-cache"
+      ],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "init-container-status",
+          "names": [
+            "prepare-runtime-cache"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "genmol"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "nim-operator-cache-ownership",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "oci-modelcar": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "glm-5-2-fp8",
+      "deployment": "glm-5-2-fp8",
+      "service": "glm-5-2-fp8",
+      "gpu_count": 8,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "vllm"
+      ],
+      "artifact_init_containers": [
+        "prepare-runtime-cache"
+      ],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "init-container-status",
+          "names": [
+            "prepare-runtime-cache"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "vllm"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "read-only-runtime-mount",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Kubernetes 1.35 beta experiment; pull time stays inside T0."
+        },
+        "oci-modelcar": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Pilot only; modelcar sidecar behavior must preserve the canonical route semantics."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "vLLM resolves the pinned Hugging Face revision into a fresh 1-TiB model PVC during startup",
+        "candidate": "catalog-rendered read-only SFS content-addressed artifact path is passed directly to the same vLLM image and arguments",
+        "success_gate": "At least three alternating fresh-storage attempts; exact model/tokenizer and semantic parity; lower failure-ranked T0-to-call1 and no call2 regression."
+      }
+    },
+    {
+      "model_id": "molmim",
+      "deployment": "molmim-b300",
+      "service": "molmim",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "molmim"
+      ],
+      "artifact_init_containers": [],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "runtime-log-marker",
+          "names": [
+            "artifact-localization-start",
+            "artifact-localization-verified"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "molmim"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "nim-operator-cache-ownership",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "oci-modelcar": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "msa-search-pdb70",
+      "deployment": "msa-search-pdb70-nim",
+      "service": "msa-search-pdb70-nim",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "msa-search-pdb70"
+      ],
+      "artifact_init_containers": [],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "runtime-log-marker",
+          "names": [
+            "artifact-localization-start",
+            "artifact-localization-verified"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "msa-search-pdb70"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "nim-operator-cache-ownership",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "oci-modelcar": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "nv-reason-cxr-3b",
+      "deployment": "nv-reason-cxr-3b",
+      "service": "nv-reason-cxr-3b",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "vllm"
+      ],
+      "artifact_init_containers": [
+        "prepare-runtime-cache"
+      ],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "init-container-status",
+          "names": [
+            "prepare-runtime-cache"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "vllm"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "read-only-runtime-mount",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Kubernetes 1.35 beta experiment; pull time stays inside T0."
+        },
+        "oci-modelcar": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Pilot only; modelcar sidecar behavior must preserve the canonical route semantics."
+        },
+        "cuda-criu-snapshot": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Experiment eligibility is still denied until the exact full-GPU or MIG qualification receipt matches."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "nv-segment-ct",
+      "deployment": "nv-segment-ct",
+      "service": "nv-segment-ct",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "server"
+      ],
+      "artifact_init_containers": [
+        "prepare-runtime-cache"
+      ],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "init-container-status",
+          "names": [
+            "prepare-runtime-cache"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "server"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "read-only-runtime-mount",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Kubernetes 1.35 beta experiment; pull time stays inside T0."
+        },
+        "oci-modelcar": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Pilot only; modelcar sidecar behavior must preserve the canonical route semantics."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "openfold2",
+      "deployment": "openfold2-b300",
+      "service": "openfold2-b300",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "nim"
+      ],
+      "artifact_init_containers": [],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "runtime-log-marker",
+          "names": [
+            "artifact-localization-start",
+            "artifact-localization-verified"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "nim"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "nim-operator-cache-ownership",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "oci-modelcar": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "openfold3",
+      "deployment": "openfold3-b300",
+      "service": "openfold3-b300",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "nim"
+      ],
+      "artifact_init_containers": [],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "runtime-log-marker",
+          "names": [
+            "artifact-localization-start",
+            "artifact-localization-verified"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "nim"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "nim-operator-cache-ownership",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "oci-modelcar": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "proteinmpnn",
+      "deployment": "proteinmpnn-b300",
+      "service": "proteinmpnn-b300",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "runtime"
+      ],
+      "artifact_init_containers": [],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "runtime-log-marker",
+          "names": [
+            "artifact-localization-start",
+            "artifact-localization-verified"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "runtime"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "nim-operator-cache-ownership",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "oci-modelcar": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "qwen3-8b",
+      "deployment": "qwen3-8b-b300",
+      "service": "qwen3-8b-b300",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "vllm"
+      ],
+      "artifact_init_containers": [
+        "localize-model"
+      ],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "init-container-status",
+          "names": [
+            "localize-model"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "vllm"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "read-only-runtime-mount",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Kubernetes 1.35 beta experiment; pull time stays inside T0."
+        },
+        "oci-modelcar": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Pilot only; modelcar sidecar behavior must preserve the canonical route semantics."
+        },
+        "cuda-criu-snapshot": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Experiment eligibility is still denied until the exact full-GPU or MIG qualification receipt matches."
+        },
+        "dynamo-snapshot": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Isolated single-GPU vLLM pilot only; preview status grants no production support."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "rfdiffusion",
+      "deployment": "rfdiffusion-b300",
+      "service": "rfdiffusion-b300",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "runtime"
+      ],
+      "artifact_init_containers": [],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "runtime-log-marker",
+          "names": [
+            "artifact-localization-start",
+            "artifact-localization-verified"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "runtime"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "nim-operator-cache-ownership",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "oci-modelcar": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Blocked until NIM artifact redistribution and runtime ownership are reviewed."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "sdxl",
+      "deployment": "sdxl",
+      "service": "sdxl",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "server"
+      ],
+      "artifact_init_containers": [
+        "prepare-runtime-cache"
+      ],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "init-container-status",
+          "names": [
+            "prepare-runtime-cache"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "server"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract"
+          ],
+          "claim": "Current qualified fallback; no latency improvement is claimed."
+        },
+        "shared-cache": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "signed-artifact-acquisition-receipt",
+            "immutable-content-addressed-path",
+            "read-only-runtime-mount",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "Benchmark exact durable artifact localization against the same capacity state."
+        },
+        "local-nvme": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "reviewed-local-pv-pvc-lifecycle",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "Ephemeral cache only; a replacement node must relocalize from the durable source."
+        },
+        "oci-image-volume": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "kubernetes-image-volume-observation",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "Kubernetes 1.35 beta experiment; pull time stays inside T0."
+        },
+        "oci-modelcar": {
+          "state": "eligible-experiment",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "Pilot only; modelcar sidecar behavior must preserve the canonical route semantics."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact qualified donor/restore tuple exists; conventional startup remains mandatory."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "single-gpu-amd64-qualified-runtime",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "Current route is outside the reviewed single-GPU Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "shared-cache",
+        "control": "qualified conventional startup in the selected capacity state",
+        "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
+        "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "schema": "fs2-serve.nebius.ai/accelerator-pool-profiles/v1",
+  "authority": "capacity-selection-not-hardware-or-runtime-support",
+  "profiles": {
+    "minimal": {
+      "enabled": true,
+      "state": "hardware-validated",
+      "queue": {"cluster_queue_name": "fs2-b300-async", "local_queue_name": "fs2-models-async", "queueing_strategy": "BestEffortFIFO", "acceptance_pool_id": "nebius-b300-preemptible-1x"},
+      "pool_order": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"],
+      "pools": {
+        "nebius-b300-preemptible-1x": {"max_nodes": 1, "floor_nodes": {"zero": 0, "representative": 1}},
+        "nebius-b300-preemptible-8x": {"max_nodes": 1, "floor_nodes": {"zero": 0, "representative": 0}}
+      },
+      "notes": "Backward-compatible developer fixture: one 1-GPU and one 8-GPU B300 pool, both able to scale from zero."
+    },
+    "full_catalog": {
+      "enabled": true,
+      "state": "hardware-validated",
+      "queue": {"cluster_queue_name": "fs2-b300-async", "local_queue_name": "fs2-models-async", "queueing_strategy": "BestEffortFIFO", "acceptance_pool_id": "nebius-b300-preemptible-1x"},
+      "pool_order": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"],
+      "pools": {
+        "nebius-b300-preemptible-1x": {"max_nodes": 6, "floor_nodes": {"zero": 0, "representative": 1, "full_catalog": 6}},
+        "nebius-b300-preemptible-8x": {"max_nodes": 2, "floor_nodes": {"zero": 0, "representative": 0, "full_catalog": 2}}
+      },
+      "notes": "Exact existing 6x1 plus 2x8 B300, 22-GPU full-catalog acceptance fixture."
+    },
+    "heterogeneous_reference": {
+      "enabled": false,
+      "state": "declared-unvalidated",
+      "queue": {"cluster_queue_name": "fs2-heterogeneous-async", "local_queue_name": "fs2-models-async", "queueing_strategy": "BestEffortFIFO", "acceptance_pool_id": "nebius-b300-preemptible-1x"},
+      "pool_order": ["unbound-h100", "unbound-h200", "unbound-b200", "nebius-b300-preemptible-1x", "unbound-gb300", "unbound-rtx-pro-6000-blackwell"],
+      "pools": {
+        "unbound-h100": {"max_nodes": 0, "floor_nodes": {"zero": 0}},
+        "unbound-h200": {"max_nodes": 0, "floor_nodes": {"zero": 0}},
+        "unbound-b200": {"max_nodes": 0, "floor_nodes": {"zero": 0}},
+        "nebius-b300-preemptible-1x": {"max_nodes": 0, "floor_nodes": {"zero": 0}},
+        "unbound-gb300": {"max_nodes": 0, "floor_nodes": {"zero": 0}},
+        "unbound-rtx-pro-6000-blackwell": {"max_nodes": 0, "floor_nodes": {"zero": 0}}
+      },
+      "notes": "Design-only heterogeneous shape. Disabled until each exact provider realization, resource API, runtime, and model binding is independently qualified."
+    }
+  }
+}

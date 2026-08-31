@@ -1,0 +1,198 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: boltz2-b300
+  namespace: fs2-models
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: boltz2-model-cache
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/model-id: boltz2
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 32Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: boltz2-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: boltz2
+    app.kubernetes.io/instance: boltz2-b300
+    fs2-serve.nebius.ai/model-id: boltz2
+  annotations:
+    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/model-content-digest: sha256:9459dd0c80992f21d07e70ae7d54c318e66a9d5202d6e849a134957b0740d82a
+    fs2.nebius/runtime-image-digest: sha256:ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46
+    fs2-serve.nebius.ai/source-revision: b1ebfc46ecf57f5414e0d1a6f9027bbb122c53bc
+    fs2-serve.nebius.ai/model-revision: 6fdef46d763fee7fbb83ca5501ccceff43b85607
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: boltz2-b300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: boltz2
+        app.kubernetes.io/instance: boltz2-b300
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/part-of: fs2-serve
+        fs2-serve.nebius.ai/model-id: boltz2
+      annotations:
+        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/model-content-digest: sha256:9459dd0c80992f21d07e70ae7d54c318e66a9d5202d6e849a134957b0740d82a
+        fs2.nebius/runtime-image-digest: sha256:ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: boltz2-b300
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: accelerator.fs2.nebius/class
+                    operator: In
+                    values: [nvidia-b300-sxm6-288gb]
+                  - key: capacity.fs2.nebius/pool
+                    operator: In
+                    values: [burst, burst-single]
+      initContainers:
+        - name: prepare-runtime-cache
+          image: registry.example.invalid/k8s-inference/models/boltz2-blackwell@sha256:ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              for directory in home cuda torch-extensions torchinductor triton xdg; do
+                mkdir -p "${FS2_RUNTIME_CACHE_ROOT}/${directory}"
+              done
+              test -w "${FS2_RUNTIME_CACHE_ROOT}"
+          env:
+            - name: FS2_RUNTIME_CACHE_ROOT
+              value: /models/.fs2/runtime/ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46/9459dd0c80992f21d07e70ae7d54c318e66a9d5202d6e849a134957b0740d82a/driver-580.173.02-sm103
+          resources:
+            limits:
+              cpu: "1"
+              ephemeral-storage: 128Mi
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              ephemeral-storage: 16Mi
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /models
+              name: model-cache
+      containers:
+        - name: boltz2
+          image: registry.example.invalid/k8s-inference/models/boltz2-blackwell@sha256:ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: CUDA_CACHE_PATH
+              value: /models/.fs2/runtime/ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46/9459dd0c80992f21d07e70ae7d54c318e66a9d5202d6e849a134957b0740d82a/driver-580.173.02-sm103/cuda
+            - name: HOME
+              value: /models/.fs2/runtime/ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46/9459dd0c80992f21d07e70ae7d54c318e66a9d5202d6e849a134957b0740d82a/driver-580.173.02-sm103/home
+            - name: HF_HOME
+              value: /models/huggingface
+            - name: HF_HUB_CACHE
+              value: /models/huggingface/hub
+            - name: HF_HUB_DISABLE_XET
+              value: "1"
+            - name: TORCH_EXTENSIONS_DIR
+              value: /models/.fs2/runtime/ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46/9459dd0c80992f21d07e70ae7d54c318e66a9d5202d6e849a134957b0740d82a/driver-580.173.02-sm103/torch-extensions
+            - name: TORCHINDUCTOR_CACHE_DIR
+              value: /models/.fs2/runtime/ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46/9459dd0c80992f21d07e70ae7d54c318e66a9d5202d6e849a134957b0740d82a/driver-580.173.02-sm103/torchinductor
+            - name: TRITON_CACHE_DIR
+              value: /models/.fs2/runtime/ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46/9459dd0c80992f21d07e70ae7d54c318e66a9d5202d6e849a134957b0740d82a/driver-580.173.02-sm103/triton
+            - name: XDG_CACHE_HOME
+              value: /models/.fs2/runtime/ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46/9459dd0c80992f21d07e70ae7d54c318e66a9d5202d6e849a134957b0740d82a/driver-580.173.02-sm103/xdg
+          resources:
+            requests:
+              cpu: "12"
+              memory: 96Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "32"
+              memory: 192Gi
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 360
+          livenessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            initialDelaySeconds: 1200
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: model-cache
+              mountPath: /models
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: boltz2-model-cache
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: boltz2
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/model-id: boltz2
+spec:
+  selector:
+    app.kubernetes.io/instance: boltz2-b300
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

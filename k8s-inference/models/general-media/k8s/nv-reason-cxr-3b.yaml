@@ -1,0 +1,253 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nv-reason-cxr-3b
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: nv-reason-cxr-3b
+    app.kubernetes.io/part-of: fs2-serve
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nv-reason-cxr-3b-cache
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: nv-reason-cxr-3b
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 24Gi
+  storageClassName: compute-csi-default-sc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nv-reason-cxr-3b
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/instance: nv-reason-cxr-3b
+    app.kubernetes.io/name: nv-reason-cxr-3b
+    app.kubernetes.io/part-of: fs2-serve
+    app.kubernetes.io/version: 056bd0383b35226554da9dc5866e095df174ae19
+  annotations:
+    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/model-content-digest: sha256:8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c
+    fs2.nebius/model-repository: nvidia/NV-Reason-CXR-3B
+    fs2.nebius/model-revision: 056bd0383b35226554da9dc5866e095df174ae19
+    fs2.nebius/runtime-image-digest: sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+    fs2.nebius/non-clinical: "true"
+    fs2.nebius/task: fs2-serve-all-models-general-media-wave
+spec:
+  progressDeadlineSeconds: 2400
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: nv-reason-cxr-3b
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/instance: nv-reason-cxr-3b
+        app.kubernetes.io/name: nv-reason-cxr-3b
+        app.kubernetes.io/part-of: fs2-serve
+        app.kubernetes.io/version: 056bd0383b35226554da9dc5866e095df174ae19
+      annotations:
+        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/model-content-digest: sha256:8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c
+        fs2.nebius/model-repository: nvidia/NV-Reason-CXR-3B
+        fs2.nebius/model-revision: 056bd0383b35226554da9dc5866e095df174ae19
+        fs2.nebius/runtime-image-digest: sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+        fs2.nebius/non-clinical: "true"
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        capacity.fs2.nebius/pool: burst
+        capacity.fs2.nebius/type: preemptible
+        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: nv-reason-cxr-3b
+      terminationGracePeriodSeconds: 120
+      tolerations:
+        - effect: NoSchedule
+          key: dedicated
+          operator: Equal
+          value: fs2-inference
+      initContainers:
+        - name: prepare-runtime-cache
+          image: registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              for directory in cuda torch-extensions torchinductor triton vllm; do
+                mkdir -p "${FS2_RUNTIME_CACHE_ROOT}/${directory}"
+              done
+              test -w "${FS2_RUNTIME_CACHE_ROOT}"
+          env:
+            - name: FS2_RUNTIME_CACHE_ROOT
+              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/driver-580.173.02-sm103
+          resources:
+            limits:
+              cpu: "1"
+              ephemeral-storage: 128Mi
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              ephemeral-storage: 16Mi
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+      containers:
+        - name: vllm
+          image: registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+          imagePullPolicy: IfNotPresent
+          args:
+            - nvidia/NV-Reason-CXR-3B
+            - --revision
+            - 056bd0383b35226554da9dc5866e095df174ae19
+            - --served-model-name
+            - nv-reason-cxr-3b
+            - nvidia/NV-Reason-CXR-3B
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            - --dtype
+            - bfloat16
+            - --tensor-parallel-size
+            - "1"
+            - --max-model-len
+            - "8192"
+            - --max-num-seqs
+            - "1"
+            - --gpu-memory-utilization
+            - "0.85"
+            - --generation-config
+            - vllm
+            - --limit-mm-per-prompt
+            - '{"image":1}'
+          env:
+            - name: DO_NOT_TRACK
+              value: "1"
+            - name: HF_HUB_DISABLE_TELEMETRY
+              value: "1"
+            - name: HF_HOME
+              value: /model-cache
+            - name: HOME
+              value: /runtime-cache/home
+            - name: CUDA_CACHE_PATH
+              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/driver-580.173.02-sm103/cuda
+            - name: TORCH_EXTENSIONS_DIR
+              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/driver-580.173.02-sm103/torch-extensions
+            - name: TORCHINDUCTOR_CACHE_DIR
+              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/driver-580.173.02-sm103/torchinductor
+            - name: TRITON_CACHE_DIR
+              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/driver-580.173.02-sm103/triton
+            - name: VLLM_CACHE_ROOT
+              value: /model-cache/.fs2/runtime/2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635/8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c/driver-580.173.02-sm103/vllm
+            - name: VLLM_NO_USAGE_STATS
+              value: "1"
+            - name: XDG_CACHE_HOME
+              value: /runtime-cache/xdg
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "24"
+              ephemeral-storage: 32Gi
+              memory: 96Gi
+              nvidia.com/gpu: "1"
+            requests:
+              cpu: "8"
+              ephemeral-storage: 8Gi
+              memory: 48Gi
+              nvidia.com/gpu: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            failureThreshold: 180
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            failureThreshold: 4
+            periodSeconds: 15
+            tcpSocket:
+              port: http
+            timeoutSeconds: 3
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+            - mountPath: /runtime-cache
+              name: runtime-cache
+            - mountPath: /tmp
+              name: tmp
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: nv-reason-cxr-3b-cache
+        - emptyDir:
+            sizeLimit: 16Gi
+          name: runtime-cache
+        - emptyDir:
+            sizeLimit: 8Gi
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nv-reason-cxr-3b
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/instance: nv-reason-cxr-3b
+    app.kubernetes.io/name: nv-reason-cxr-3b
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  ports:
+    - name: http
+      port: 8000
+      protocol: TCP
+      targetPort: http
+  selector:
+    app.kubernetes.io/instance: nv-reason-cxr-3b
+  type: ClusterIP

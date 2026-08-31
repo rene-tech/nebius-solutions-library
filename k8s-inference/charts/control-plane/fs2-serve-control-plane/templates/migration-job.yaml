@@ -1,0 +1,64 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-migrate
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration
+  annotations:
+    fs2.nebius.ai/postgresql-contract-schema: {{ .Values.migration.releaseContract.schema | quote }}
+    fs2.nebius.ai/postgresql-contract-payload-sha256: {{ .Values.migration.releaseContract.contractPayloadSha256 | quote }}
+    fs2.nebius.ai/postgresql-migration-set-sha256: {{ .Values.migration.releaseContract.migrationSetSha256 | quote }}
+    fs2.nebius.ai/postgresql-migration-count: {{ .Values.migration.releaseContract.migrationCount | quote }}
+    fs2.nebius.ai/postgresql-first-migration: {{ .Values.migration.releaseContract.firstMigrationVersion | quote }}
+    fs2.nebius.ai/postgresql-last-migration: {{ .Values.migration.releaseContract.lastMigrationVersion | quote }}
+    fs2.nebius.ai/postgresql-namespace-role-sha256: {{ .Values.migration.releaseContract.namespaceRoleOwnershipSha256 | quote }}
+  {{- if .Release.IsUpgrade }}
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+  {{- end }}
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.migrationSelectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "migration") }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["migrate"]
+          env:
+            {{- include "fs2-serve.migrationEnv" . | nindent 12 }}
+          volumeMounts:
+            {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.migrationsDatabase) | nindent 8 }}

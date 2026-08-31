@@ -1,0 +1,439 @@
+{
+  "schema": "fs2-serve.nebius.ai/artifact-acquisition/v5",
+  "network_policy": {
+    "runner_ngc_access": "waf-blocked",
+    "ngc_validation_scope": "target-node-only",
+    "hf_access": "public-exact-revision-only"
+  },
+  "legal_reviews": {
+    "qwen3-8b": {
+      "review_state": "reviewed",
+      "repository": "Qwen/Qwen3-8B",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "license_id": "apache-2.0",
+      "source_url": "https://huggingface.co/api/models/Qwen/Qwen3-8B/revision/b968826d9c46dd6066d109eabc6255188de91218",
+      "model_card_url": "https://huggingface.co/Qwen/Qwen3-8B/blob/b968826d9c46dd6066d109eabc6255188de91218/README.md",
+      "license_file_url": "https://huggingface.co/Qwen/Qwen3-8B/raw/b968826d9c46dd6066d109eabc6255188de91218/LICENSE",
+      "license_file_sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+      "observed_at": "2026-08-27T00:50:46Z",
+      "metadata": {
+        "id": "Qwen/Qwen3-8B",
+        "sha": "b968826d9c46dd6066d109eabc6255188de91218",
+        "private": false,
+        "gated": false,
+        "disabled": false,
+        "license": "apache-2.0"
+      },
+      "metadata_sha256": "c653272690ef3247479467a23d991f68c2ed0e7c78f4c90fe7bd2b2de17ba3e7"
+    }
+  },
+  "qualification_priority": {
+    "rank": 1,
+    "model_id": "qwen3-8b",
+    "backend_class": "local-b300",
+    "startup_mechanism": "conventional",
+    "state": "candidate-unroutable",
+    "remaining_gates": [
+      "exact-hf-weight-per-file-sha256-manifest",
+      "protected-retain-provider-block-pvc",
+      "targeted-zero-gpu-acquisition-and-writer-handoff",
+      "detach-reattach-no-multi-attach",
+      "immutable-platform-runtime-image",
+      "exact-b300-runtime-qualification",
+      "two-distinct-gateway-semantic-responses",
+      "scale-one-to-zero-claim-retained",
+      "ready-unexpired-serving-binding"
+    ]
+  },
+  "plans": {
+    "boltz2": {
+      "method": "ngc-target-node-nimcache",
+      "source_kind": "ngc-nim",
+      "repository": "nvcr.io/nim/mit/boltz2",
+      "revision": "sha256:0788c95c8b5b6c1a73a62c656b298ecc353a8187dc22b794f496ae40672c4c98",
+      "artifact_kind": "nim-cache",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/boltz2",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": true,
+        "execution_scope": "target-gpu-node",
+        "output_policy": "values-suppressed",
+        "receipt_schema": "fs2-serve.nebius.ai/target-node-pull-canary/v2"
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "license-entitlement-and-live-qualification-required",
+      "helper_image_id": null
+    },
+    "diffdock": {
+      "method": "ngc-target-node-nimcache",
+      "source_kind": "ngc-nim",
+      "repository": "nvcr.io/nim/mit/diffdock",
+      "revision": "sha256:300696eb8331d78face40f84d835cc1e278c7d3c391c5aabbbee5884366da480",
+      "artifact_kind": "nim-cache",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/diffdock",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": true,
+        "execution_scope": "target-gpu-node",
+        "output_policy": "values-suppressed",
+        "receipt_schema": "fs2-serve.nebius.ai/target-node-pull-canary/v2"
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "alternative-backend-only-sm103-incompatible",
+      "helper_image_id": null
+    },
+    "evo2-40b": {
+      "method": "ngc-target-node-nimcache",
+      "source_kind": "ngc-nim",
+      "repository": "nvcr.io/nim/arc/evo2-40b",
+      "revision": "sha256:561886bab1d2d0da836ebf5bec403f9de2baf6e92deb7eedf1b316aa994b5dd2",
+      "artifact_kind": "nim-cache",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/evo2-40b",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": true,
+        "execution_scope": "target-gpu-node",
+        "output_policy": "values-suppressed",
+        "receipt_schema": "fs2-serve.nebius.ai/target-node-pull-canary/v2"
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "alternative-backend-only-sm103-incompatible",
+      "helper_image_id": null
+    },
+    "genmol": {
+      "method": "ngc-target-node-nimcache",
+      "source_kind": "ngc-nim",
+      "repository": "nvcr.io/nim/nvidia/genmol",
+      "revision": "sha256:139b909a450fe1fb81198214784a15f67e172e766a93a1569827ba5aa05b4541",
+      "artifact_kind": "nim-cache",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/genmol",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": true,
+        "execution_scope": "target-gpu-node",
+        "output_policy": "values-suppressed",
+        "receipt_schema": "fs2-serve.nebius.ai/target-node-pull-canary/v2"
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "license-entitlement-and-live-qualification-required",
+      "helper_image_id": null
+    },
+    "glm-5-2-fp8": {
+      "method": "huggingface-public-snapshot",
+      "source_kind": "huggingface",
+      "repository": "zai-org/GLM-5.2-FP8",
+      "revision": "ba978f7d347eaf65d22f1a86833408afdb953541",
+      "artifact_kind": "weights",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/glm-5-2-fp8",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/runtime-registry-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": false,
+        "execution_scope": "not-required",
+        "output_policy": "values-suppressed",
+        "receipt_schema": null
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "license-review-and-live-qualification-required",
+      "helper_image_id": "fs2-acquisition-helper"
+    },
+    "molmim": {
+      "method": "ngc-target-node-nimcache",
+      "source_kind": "ngc-nim",
+      "repository": "nvcr.io/nim/nvidia/molmim",
+      "revision": "sha256:7700c5556935a93055bee5367d36acb6d3e55d22fd1ba28503f5447656fa63fa",
+      "artifact_kind": "nim-cache",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/molmim",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": true,
+        "execution_scope": "target-gpu-node",
+        "output_policy": "values-suppressed",
+        "receipt_schema": "fs2-serve.nebius.ai/target-node-pull-canary/v2"
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "alternative-backend-only-sm103-incompatible",
+      "helper_image_id": null
+    },
+    "msa-search-pdb70": {
+      "method": "ngc-target-node-nimcache",
+      "source_kind": "ngc-nim",
+      "repository": "nvcr.io/nim/colabfold/msa-search",
+      "revision": "sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c",
+      "artifact_kind": "nim-cache",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/msa-search-pdb70",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": true,
+        "execution_scope": "target-gpu-node",
+        "output_policy": "values-suppressed",
+        "receipt_schema": "fs2-serve.nebius.ai/target-node-pull-canary/v2"
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "license-entitlement-and-live-qualification-required",
+      "helper_image_id": null
+    },
+    "nv-reason-cxr-3b": {
+      "method": "huggingface-public-snapshot",
+      "source_kind": "huggingface",
+      "repository": "nvidia/NV-Reason-CXR-3B",
+      "revision": "056bd0383b35226554da9dc5866e095df174ae19",
+      "artifact_kind": "weights",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/nv-reason-cxr-3b",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/runtime-registry-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": false,
+        "execution_scope": "not-required",
+        "output_policy": "values-suppressed",
+        "receipt_schema": null
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "noncommercial-nonclinical-live-qualification-required",
+      "helper_image_id": "fs2-acquisition-helper"
+    },
+    "nv-segment-ct": {
+      "method": "huggingface-public-snapshot",
+      "source_kind": "huggingface",
+      "repository": "nvidia/NV-Segment-CT",
+      "revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+      "artifact_kind": "weights",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/nv-segment-ct",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/runtime-registry-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": false,
+        "execution_scope": "not-required",
+        "output_policy": "values-suppressed",
+        "receipt_schema": null
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "license-nonclinical-and-live-qualification-required",
+      "helper_image_id": "fs2-acquisition-helper"
+    },
+    "openfold2": {
+      "method": "ngc-target-node-nimcache",
+      "source_kind": "ngc-nim",
+      "repository": "nvcr.io/nim/openfold/openfold2",
+      "revision": "sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4",
+      "artifact_kind": "nim-cache",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/openfold2",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": true,
+        "execution_scope": "target-gpu-node",
+        "output_policy": "values-suppressed",
+        "receipt_schema": "fs2-serve.nebius.ai/target-node-pull-canary/v2"
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "license-entitlement-and-live-qualification-required",
+      "helper_image_id": null
+    },
+    "openfold3": {
+      "method": "ngc-target-node-nimcache",
+      "source_kind": "ngc-nim",
+      "repository": "nvcr.io/nim/openfold/openfold3",
+      "revision": "sha256:6286cc7c02247ed3efe42f0f1af6c2f6f6a680b1e5cae669512c44b636aa42d2",
+      "artifact_kind": "nim-cache",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/openfold3",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": true,
+        "execution_scope": "target-gpu-node",
+        "output_policy": "values-suppressed",
+        "receipt_schema": "fs2-serve.nebius.ai/target-node-pull-canary/v2"
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "license-entitlement-and-live-qualification-required",
+      "helper_image_id": null
+    },
+    "proteinmpnn": {
+      "method": "ngc-target-node-nimcache",
+      "source_kind": "ngc-nim",
+      "repository": "nvcr.io/nim/ipd/proteinmpnn",
+      "revision": "sha256:b55a0aa6733e267e6e6fe06434e98aea61eff14bc5545127555607fef6f38aa5",
+      "artifact_kind": "nim-cache",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/proteinmpnn",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": true,
+        "execution_scope": "target-gpu-node",
+        "output_policy": "values-suppressed",
+        "receipt_schema": "fs2-serve.nebius.ai/target-node-pull-canary/v2"
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "alternative-backend-only-sm103-incompatible",
+      "helper_image_id": null
+    },
+    "qwen3-8b": {
+      "method": "huggingface-public-snapshot",
+      "source_kind": "huggingface",
+      "repository": "Qwen/Qwen3-8B",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "artifact_kind": "weights",
+      "destination_prefix": "/mnt/fs2-provider-block/models/qwen3-8b",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/runtime-registry-secret"
+      ],
+      "pull_canary": {
+        "required": false,
+        "execution_scope": "not-required",
+        "output_policy": "values-suppressed",
+        "receipt_schema": null
+      },
+      "publication": "atomic-content-addressed-provider-block-pvc",
+      "promotion_policy": "exact-hf-weight-manifest-provider-block-handoff-and-live-runtime-semantic-qualification-required",
+      "storage_contract": "fs2-serve.nebius.ai/provider-block-pvc/v1",
+      "helper_image_id": "fs2-acquisition-helper"
+    },
+    "rfdiffusion": {
+      "method": "ngc-target-node-nimcache",
+      "source_kind": "ngc-nim",
+      "repository": "nvcr.io/nim/ipd/rfdiffusion",
+      "revision": "sha256:15e40e466d8ebe9a53f1feea599373720428c9de65da750bf4271c96ec35ceb4",
+      "artifact_kind": "nim-cache",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/rfdiffusion",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/ngc-pull-secret",
+        "fs2-models/ngc-runtime-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": true,
+        "execution_scope": "target-gpu-node",
+        "output_policy": "values-suppressed",
+        "receipt_schema": "fs2-serve.nebius.ai/target-node-pull-canary/v2"
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "alternative-backend-only-sm103-incompatible",
+      "helper_image_id": null
+    },
+    "sdxl": {
+      "method": "huggingface-public-snapshot",
+      "source_kind": "huggingface",
+      "repository": "stabilityai/stable-diffusion-xl-base-1.0",
+      "revision": "462165984030d82259a11f4367a4eed129e94a7b",
+      "artifact_kind": "weights",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/sdxl",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/runtime-registry-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": false,
+        "execution_scope": "not-required",
+        "output_policy": "values-suppressed",
+        "receipt_schema": null
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "license-and-live-qualification-required",
+      "helper_image_id": "fs2-acquisition-helper"
+    }
+  },
+  "helper_images": {
+    "fs2-acquisition-helper": {
+      "schema": "fs2-serve.nebius.ai/acquisition-helper-image-contract/v1",
+      "state": "requires-signed-runtime-image-admission",
+      "repository_suffix": "/fs2-serve/acquisition-helper",
+      "platform": {
+        "os": "linux",
+        "architecture": "amd64"
+      },
+      "build_source": {
+        "repository": "https://github.com/rene-tech/nebius-solutions-library",
+        "path": "k8s-inference/catalog/runtime",
+        "package": "fs2-serve-catalog",
+        "package_version": "0.1.0",
+        "pyproject_sha256": "b32e9047829b6e410ef593ca33a95253c59465ec56a4c8c026a4b0e8a67c0a32",
+        "uv_lock_sha256": "87a43280317c2fa4924daac6a49bca9aed29b98031c9c11d95a6fa1b12dad88b"
+      },
+      "entrypoint": [
+        "python3",
+        "-m",
+        "fs2_serve_catalog.cli",
+        "acquire-hf"
+      ],
+      "security_context": {
+        "run_as_non_root": true,
+        "run_as_uid": 10001,
+        "run_as_gid": 10001,
+        "fs_group": 10001,
+        "supplemental_groups_policy": "Strict",
+        "seccomp_profile": "RuntimeDefault"
+      },
+      "required_attestations": {
+        "signature": "verified",
+        "signature_registry_identity": "exact-registry-subject",
+        "provenance_predicate": "https://slsa.dev/provenance/v1",
+        "provenance_materials": "exact-git-commit-tree-build-and-helper-contract",
+        "provenance_builder": "exact-builder-identity-and-build-type",
+        "base_images": "all-container-materials-digest-pinned",
+        "sbom_predicate": "https://spdx.dev/Document",
+        "sbom_subject": "exact-package-version-and-wheel",
+        "subjects": "exact-oci-manifest-digest"
+      },
+      "admission_receipt_schema": "fs2-serve.nebius.ai/acquisition-helper-image-admission/v1",
+      "caller_image_override": "forbidden",
+      "job_uid_binding": "server-observed-and-patched-before-unsuspend",
+      "pod_uid_binding": "downward-api-metadata-uid",
+      "cleanup_contract": "uid-precondition-plus-replacement-observation"
+    }
+  }
+}

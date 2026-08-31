@@ -1,0 +1,21 @@
+{
+  "schema_version": "fs2.admin-console.live-inventory/v1",
+  "scope": {
+    "kube_context": "public-export-fixture",
+    "access": "read-only",
+    "protected_cluster_queried": false,
+    "secrets_queried": false,
+    "public_endpoint_recorded": false,
+    "cluster_mutations": 0
+  },
+  "observability": [
+    {"id": "grafana", "state": "healthy"},
+    {"id": "prometheus", "state": "healthy"},
+    {"id": "loki", "state": "healthy"},
+    {"id": "opentelemetry", "state": "available-without-ui"},
+    {"id": "dcgm", "state": "available-without-ui"},
+    {"id": "kueue", "state": "available-without-ui"},
+    {"id": "alertmanager", "state": "absent"},
+    {"id": "tempo", "state": "absent"}
+  ]
+}

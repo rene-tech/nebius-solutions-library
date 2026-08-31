@@ -1,0 +1,240 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fs2-control-plane
+  namespace: fs2-observability
+  labels:
+    app.kubernetes.io/part-of: fs2-serve
+    observability.fs2.nebius/owner: fs2-serve-lean-observability-live
+spec:
+  namespaceSelector:
+    matchNames: [fs2-system]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fs2-serve-control-plane
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: false
+      metricRelabelings: &safe-labels
+        - action: labeldrop
+          regex: "(?i:authorization|api_?key|token|tenant(_?id)?|user(_?id)?|subject|request(_?id)?)"
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fs2-model-runtimes
+  namespace: fs2-observability
+  labels:
+    app.kubernetes.io/part-of: fs2-serve
+    observability.fs2.nebius/owner: fs2-serve-lean-observability-live
+spec:
+  namespaceSelector:
+    matchNames: [fs2-models]
+  selector:
+    matchLabels:
+      observability.fs2.nebius/scrape: "true"
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: false
+      metricRelabelings:
+        - action: labeldrop
+          regex: "(?i:authorization|api_?key|token|tenant(_?id)?|user(_?id)?|subject|request(_?id)?)"
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fs2-qwen3-b300
+  namespace: fs2-observability
+  labels:
+    app.kubernetes.io/part-of: fs2-serve
+    observability.fs2.nebius/owner: fs2-serve-lean-observability-live
+spec:
+  namespaceSelector:
+    matchNames: [fs2-models]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: qwen3-8b
+      app.kubernetes.io/instance: qwen3-8b-b300
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: false
+      metricRelabelings:
+        - action: labeldrop
+          regex: "(?i:authorization|api_?key|token|tenant(_?id)?|user(_?id)?|subject|request(_?id)?)"
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fs2-loki
+  namespace: fs2-observability
+  labels:
+    app.kubernetes.io/part-of: fs2-serve
+    observability.fs2.nebius/owner: fs2-serve-lean-observability-live
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+      app.kubernetes.io/instance: fs2-loki
+  endpoints:
+    - port: http-metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: fs2-otel-node
+  namespace: fs2-observability
+  labels:
+    app.kubernetes.io/part-of: fs2-serve
+    observability.fs2.nebius/owner: fs2-serve-lean-observability-live
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: fs2-otel-node
+      app.kubernetes.io/name: opentelemetry-collector
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fs2-lean-observability
+  namespace: fs2-observability
+  labels:
+    app.kubernetes.io/part-of: fs2-serve
+    observability.fs2.nebius/owner: fs2-serve-lean-observability-live
+spec:
+  groups:
+    - name: fs2-platform.availability
+      rules:
+        - alert: Fs2KubernetesInventoryAbsent
+          expr: absent(kube_node_info)
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: Kubernetes inventory metrics are absent
+        - alert: Fs2OtelGatewayDown
+          expr: absent(up{service="fs2-otel-gateway"}) or max(up{service="fs2-otel-gateway"}) < 1
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: OpenTelemetry gateway metrics are unavailable
+        - alert: Fs2TelemetryRejected
+          expr: sum(rate(otelcol_receiver_refused_spans_total[5m])) + sum(rate(otelcol_receiver_refused_metric_points_total[5m])) + sum(rate(otelcol_receiver_refused_log_records_total[5m])) > 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: OpenTelemetry Collector is refusing telemetry
+    - name: fs2-inference.operations
+      rules:
+        - alert: Fs2ControlPlaneMetricsAbsent
+          expr: absent(fs2_serve_operations)
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: fs2-serve control-plane metrics are absent
+        - alert: Fs2QwenMetricsDown
+          expr: absent(up{job="qwen3-8b-b300"}) or max(up{job="qwen3-8b-b300"}) < 1
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: Qwen worker metrics are unavailable
+        - alert: Fs2QueueAgeHigh
+          expr: max(fs2_serve_oldest_queued_operation_age_seconds) > 120
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: Oldest fs2-serve queued operation exceeds two minutes
+        - alert: Fs2DcgmTelemetryDeferred
+          expr: sum(kube_node_status_allocatable{resource="nvidia_com_gpu"}) > 0 and absent(DCGM_FI_DEV_GPU_UTIL)
+          for: 15m
+          labels: {severity: info}
+          annotations:
+            summary: GPU capacity exists but DCGM telemetry is not installed
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fs2-dashboard-platform
+  namespace: fs2-observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: fs2-serve
+    observability.fs2.nebius/owner: fs2-serve-lean-observability-live
+data:
+  fs2-platform.json: |-
+    {
+      "annotations":{"list":[]},"editable":false,"graphTooltip":1,
+      "panels":[
+        {"id":1,"type":"stat","title":"Ready nodes","gridPos":{"h":6,"w":6,"x":0,"y":0},"targets":[{"expr":"sum(kube_node_status_condition{condition=\"Ready\",status=\"true\"})"}]},
+        {"id":2,"type":"stat","title":"Allocatable GPUs","gridPos":{"h":6,"w":6,"x":6,"y":0},"targets":[{"expr":"sum(kube_node_status_allocatable{resource=\"nvidia_com_gpu\"})"}]},
+        {"id":3,"type":"stat","title":"Inventory absent (1 means missing)","gridPos":{"h":6,"w":6,"x":12,"y":0},"targets":[{"expr":"absent(kube_node_info) or vector(0)"}]},
+        {"id":4,"type":"stat","title":"Scrape targets up","gridPos":{"h":6,"w":6,"x":18,"y":0},"targets":[{"expr":"sum(up)"}]},
+        {"id":5,"type":"timeseries","title":"Node CPU utilization","gridPos":{"h":9,"w":12,"x":0,"y":6},"fieldConfig":{"defaults":{"unit":"percentunit"}},"targets":[{"expr":"1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))","legendFormat":"{{instance}}"}]},
+        {"id":6,"type":"timeseries","title":"Node memory utilization","gridPos":{"h":9,"w":12,"x":12,"y":6},"fieldConfig":{"defaults":{"unit":"percentunit"}},"targets":[{"expr":"1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)","legendFormat":"{{instance}}"}]}
+      ],
+      "refresh":"30s","schemaVersion":41,"tags":["fs2-serve","platform"],"time":{"from":"now-6h","to":"now"},"timezone":"utc","title":"fs2-serve platform overview","uid":"fs2-platform","version":1
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fs2-dashboard-inference
+  namespace: fs2-observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: fs2-serve
+    observability.fs2.nebius/owner: fs2-serve-lean-observability-live
+data:
+  fs2-inference.json: |-
+    {
+      "annotations":{"list":[]},"editable":false,"graphTooltip":1,
+      "panels":[
+        {"id":1,"type":"timeseries","title":"Durable operations by model/state","gridPos":{"h":8,"w":12,"x":0,"y":0},"targets":[{"expr":"sum by (model,state) (fs2_serve_operations)","legendFormat":"{{model}} / {{state}}"}]},
+        {"id":2,"type":"timeseries","title":"Oldest queue age","gridPos":{"h":8,"w":12,"x":12,"y":0},"fieldConfig":{"defaults":{"unit":"s"}},"targets":[{"expr":"max by (model) (fs2_serve_oldest_queued_operation_age_seconds)","legendFormat":"{{model}}"}]},
+        {"id":3,"type":"timeseries","title":"Request outcomes","gridPos":{"h":8,"w":12,"x":0,"y":8},"targets":[{"expr":"sum by (model,outcome) (rate(fs2_serve_requests_total[5m]))","legendFormat":"{{model}} / {{outcome}}"}]},
+        {"id":4,"type":"timeseries","title":"Request latency p95","gridPos":{"h":8,"w":12,"x":12,"y":8},"fieldConfig":{"defaults":{"unit":"s"}},"targets":[{"expr":"histogram_quantile(0.95,sum by (le,model) (rate(fs2_serve_request_duration_seconds_bucket[15m])))","legendFormat":"{{model}}"}]},
+        {"id":5,"type":"timeseries","title":"Cold-start p95","gridPos":{"h":8,"w":12,"x":0,"y":16},"fieldConfig":{"defaults":{"unit":"s"}},"targets":[{"expr":"histogram_quantile(0.95,sum by (le,model) (rate(fs2_serve_cold_start_duration_seconds_bucket[15m])))","legendFormat":"{{model}}"}]},
+        {"id":6,"type":"stat","title":"Control-plane metrics absent (1 means missing)","gridPos":{"h":8,"w":12,"x":12,"y":16},"targets":[{"expr":"absent(fs2_serve_operations) or vector(0)"}]},
+        {"id":7,"type":"stat","title":"Qwen metrics scrape (1 up, 0 unavailable)","gridPos":{"h":8,"w":12,"x":0,"y":24},"targets":[{"expr":"max(up{job=\"qwen3-8b-b300\"}) or vector(0)"}]}
+      ],
+      "refresh":"30s","schemaVersion":41,"tags":["fs2-serve","inference"],"time":{"from":"now-6h","to":"now"},"timezone":"utc","title":"fs2-serve inference operations","uid":"fs2-inference","version":1
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fs2-dashboard-gpu
+  namespace: fs2-observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: fs2-serve
+    observability.fs2.nebius/owner: fs2-serve-lean-observability-live
+data:
+  fs2-gpu.json: |-
+    {
+      "annotations":{"list":[]},"editable":false,"graphTooltip":1,
+      "panels":[
+        {"id":1,"type":"timeseries","title":"GPU requests by pod/node","gridPos":{"h":8,"w":12,"x":0,"y":0},"targets":[{"expr":"sum by (namespace,pod,node) (kube_pod_container_resource_requests{resource=\"nvidia_com_gpu\"})","legendFormat":"{{namespace}} / {{pod}} / {{node}}"}]},
+        {"id":2,"type":"stat","title":"DCGM absent (1 = deferred/missing)","gridPos":{"h":8,"w":12,"x":12,"y":0},"targets":[{"expr":"absent(DCGM_FI_DEV_GPU_UTIL) or vector(0)"}]},
+        {"id":3,"type":"timeseries","title":"GPU utilization by pod/node/GPU","gridPos":{"h":8,"w":12,"x":0,"y":8},"fieldConfig":{"defaults":{"unit":"percent"}},"targets":[{"expr":"avg by (pod,node,gpu,UUID) (DCGM_FI_DEV_GPU_UTIL)","legendFormat":"{{pod}} / {{node}} / GPU {{gpu}}"}]},
+        {"id":4,"type":"timeseries","title":"GPU framebuffer used","gridPos":{"h":8,"w":12,"x":12,"y":8},"fieldConfig":{"defaults":{"unit":"decmbytes"}},"targets":[{"expr":"DCGM_FI_DEV_FB_USED","legendFormat":"{{pod}} / {{node}} / GPU {{gpu}}"}]},
+        {"id":5,"type":"timeseries","title":"GPU temperature","gridPos":{"h":8,"w":12,"x":0,"y":16},"fieldConfig":{"defaults":{"unit":"celsius"}},"targets":[{"expr":"DCGM_FI_DEV_GPU_TEMP","legendFormat":"{{node}} / GPU {{gpu}}"}]},
+        {"id":6,"type":"timeseries","title":"GPU XID health","gridPos":{"h":8,"w":12,"x":12,"y":16},"targets":[{"expr":"DCGM_FI_DEV_XID_ERRORS","legendFormat":"{{node}} / GPU {{gpu}}"}]}
+      ],
+      "refresh":"30s","schemaVersion":41,"tags":["fs2-serve","gpu"],"time":{"from":"now-6h","to":"now"},"timezone":"utc","title":"fs2-serve GPU allocation and health","uid":"fs2-gpu","version":1
+    }

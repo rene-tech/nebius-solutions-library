@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/runtime-prerequisite-receipt/v4",
+  "title": "fs2-serve signed runtime prerequisite observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "checked_at", "model_id", "model_digest", "acquisition_plan_sha256", "observation"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/runtime-prerequisite-receipt/v4"},
+    "receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "status": {"const": "PASS"},
+    "checked_at": {"type": "string", "format": "date-time"},
+    "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "model_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "acquisition_plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "observation": {"$ref": "observed-prerequisites.schema.json"}
+  }
+}

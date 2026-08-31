@@ -1,0 +1,69 @@
+image:
+  keda:
+    registry: ghcr.io
+    repository: kedacore/keda
+    tag: 2.20.2@sha256:fe74c7b8849586a67ad2201bcb89e7f5ac221ff90399ecaa8fd28427f1ef11e6
+  metricsApiServer:
+    registry: ghcr.io
+    repository: kedacore/keda-metrics-apiserver
+    tag: 2.20.2@sha256:27286536a8a775aeeee37a7e343f8ecebb27ebf680ee1181a4f99e82eefb253b
+  pullPolicy: IfNotPresent
+  webhooks:
+    registry: ghcr.io
+    repository: kedacore/keda-admission-webhooks
+    tag: 2.20.2@sha256:41f74102aba7959c6e8d08b433ab8a5fd6cae7c5646c78f7fe3de40a52df3439
+metricsServer:
+  replicaCount: 2
+nodeSelector:
+  workload.fs2.nebius/system: "true"
+operator:
+  replicaCount: 2
+podDisruptionBudget:
+  metricServer:
+    minAvailable: 1
+  operator:
+    minAvailable: 1
+  webhooks:
+    minAvailable: 1
+webhooks:
+  replicaCount: 2
+
+# Scrape the three KEDA control-plane surfaces. Canonical ScaledObject/model
+# labels remain for bounded per-model history; raw ScaledJob samples and
+# request/user identities are excluded.
+prometheus:
+  metricServer:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+      targetLabels: []
+      podTargetLabels: []
+      metricRelabelings: &boundedKedaMetricRelabelings
+        - action: drop
+          sourceLabels: [scaledJob]
+          regex: .+
+        - action: drop
+          sourceLabels: [scaled_job]
+          regex: .+
+        - action: labeldrop
+          regex: '(?i)^(gpu_uuid|uuid|pod_uid|pod|operation|operation_id|principal|token|tenant|scaledjob|scaled_job|triggerindex|trigger_index)$'
+  operator:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+      targetLabels: []
+      podTargetLabels: []
+      metricRelabelings: *boundedKedaMetricRelabelings
+  webhooks:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+      targetLabels: []
+      podTargetLabels: []
+      metricRelabelings: *boundedKedaMetricRelabelings

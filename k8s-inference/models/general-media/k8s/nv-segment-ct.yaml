@@ -1,0 +1,238 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nv-segment-ct
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: nv-segment-ct
+    app.kubernetes.io/part-of: fs2-serve
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nv-segment-ct-cache
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: nv-segment-ct
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 16Gi
+  storageClassName: compute-csi-default-sc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nv-segment-ct
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/instance: nv-segment-ct
+    app.kubernetes.io/name: nv-segment-ct
+    app.kubernetes.io/part-of: fs2-serve
+    app.kubernetes.io/version: afb51518689f71e6abb367ee6301b2cd0225c66a
+  annotations:
+    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/model-content-digest: sha256:08e8ed72f8bb0702dc9a8c0c3b0edefc23a6e538e6955357da62c0c2ccfede89
+    fs2.nebius/model-repository: nvidia/NV-Segment-CT
+    fs2.nebius/model-revision: afb51518689f71e6abb367ee6301b2cd0225c66a
+    fs2.nebius/runtime-image-digest: sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd
+    fs2.nebius/non-clinical: "true"
+    fs2.nebius/task: fs2-serve-all-models-general-media-wave
+spec:
+  progressDeadlineSeconds: 2400
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: nv-segment-ct
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/instance: nv-segment-ct
+        app.kubernetes.io/name: nv-segment-ct
+        app.kubernetes.io/part-of: fs2-serve
+        app.kubernetes.io/version: afb51518689f71e6abb367ee6301b2cd0225c66a
+      annotations:
+        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/model-content-digest: sha256:08e8ed72f8bb0702dc9a8c0c3b0edefc23a6e538e6955357da62c0c2ccfede89
+        fs2.nebius/model-repository: nvidia/NV-Segment-CT
+        fs2.nebius/model-revision: afb51518689f71e6abb367ee6301b2cd0225c66a
+        fs2.nebius/runtime-image-digest: sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd
+        fs2.nebius/non-clinical: "true"
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        capacity.fs2.nebius/pool: burst
+        capacity.fs2.nebius/type: preemptible
+        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: nv-segment-ct
+      terminationGracePeriodSeconds: 120
+      tolerations:
+        - effect: NoSchedule
+          key: dedicated
+          operator: Equal
+          value: fs2-inference
+      initContainers:
+        - name: prepare-runtime-cache
+          image: registry.example.invalid/k8s-inference/models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              for directory in cuda torch-extensions torchinductor triton; do
+                mkdir -p "${FS2_RUNTIME_CACHE_ROOT}/${directory}"
+              done
+              test -w "${FS2_RUNTIME_CACHE_ROOT}"
+          env:
+            - name: FS2_RUNTIME_CACHE_ROOT
+              value: /model-cache/.fs2/runtime/834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd/08e8ed72f8bb0702dc9a8c0c3b0edefc23a6e538e6955357da62c0c2ccfede89/driver-580.173.02-sm103
+          resources:
+            limits:
+              cpu: "1"
+              ephemeral-storage: 128Mi
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              ephemeral-storage: 16Mi
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+      containers:
+        - name: server
+          image: registry.example.invalid/k8s-inference/models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd
+          imagePullPolicy: IfNotPresent
+          command:
+            - /opt/fs2-media-venv/bin/python
+            - /opt/fs2-media/nv_segment_ct_server.py
+          env:
+            - name: DO_NOT_TRACK
+              value: "1"
+            - name: FS2_MODEL_ID
+              value: nv-segment-ct
+            - name: FS2_MODEL_REPOSITORY
+              value: nvidia/NV-Segment-CT
+            - name: FS2_MODEL_REVISION
+              value: afb51518689f71e6abb367ee6301b2cd0225c66a
+            - name: HF_HUB_DISABLE_TELEMETRY
+              value: "1"
+            - name: HF_HOME
+              value: /model-cache
+            - name: HOME
+              value: /runtime-cache/home
+            - name: CUDA_CACHE_PATH
+              value: /model-cache/.fs2/runtime/834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd/08e8ed72f8bb0702dc9a8c0c3b0edefc23a6e538e6955357da62c0c2ccfede89/driver-580.173.02-sm103/cuda
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TORCHINDUCTOR_CACHE_DIR
+              value: /model-cache/.fs2/runtime/834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd/08e8ed72f8bb0702dc9a8c0c3b0edefc23a6e538e6955357da62c0c2ccfede89/driver-580.173.02-sm103/torchinductor
+            - name: TORCH_EXTENSIONS_DIR
+              value: /model-cache/.fs2/runtime/834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd/08e8ed72f8bb0702dc9a8c0c3b0edefc23a6e538e6955357da62c0c2ccfede89/driver-580.173.02-sm103/torch-extensions
+            - name: TRITON_CACHE_DIR
+              value: /model-cache/.fs2/runtime/834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd/08e8ed72f8bb0702dc9a8c0c3b0edefc23a6e538e6955357da62c0c2ccfede89/driver-580.173.02-sm103/triton
+            - name: XDG_CACHE_HOME
+              value: /runtime-cache/xdg
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "24"
+              ephemeral-storage: 16Gi
+              memory: 128Gi
+              nvidia.com/gpu: "1"
+            requests:
+              cpu: "8"
+              ephemeral-storage: 4Gi
+              memory: 64Gi
+              nvidia.com/gpu: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            failureThreshold: 240
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            failureThreshold: 4
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 3
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+            - mountPath: /runtime-cache
+              name: runtime-cache
+            - mountPath: /tmp
+              name: tmp
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: nv-segment-ct-cache
+        - emptyDir:
+            sizeLimit: 16Gi
+          name: runtime-cache
+        - emptyDir:
+            sizeLimit: 8Gi
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nv-segment-ct
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/instance: nv-segment-ct
+    app.kubernetes.io/name: nv-segment-ct
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  ports:
+    - name: http
+      port: 8000
+      protocol: TCP
+      targetPort: http
+  selector:
+    app.kubernetes.io/instance: nv-segment-ct
+  type: ClusterIP

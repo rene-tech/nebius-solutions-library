@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-variant-cold-boundary-receipt/v1",
+  "title": "Per-attempt zero-to-cold-runtime boundary",
+  "$comment": "Non-authoritative shape; executable verification requires complete API Pod absence, zero replicas/GPU clients, a new Pod/process/cache generation, readiness, T0, completion, and issued-after-observation joins.",
+  "type": "object",
+  "required": ["schema", "receipt_digest", "status", "variant_id", "variant_digest", "attempt_id", "runtime_tuple_digest", "artifact_manifest_digest", "pod_uid", "node_uid", "gpu_uuid", "process_identity_sha256", "cache_generation_sha256", "observations", "ready_at", "t0", "completed_at", "valid_until"],
+  "properties": {"schema": {"const": "fs2-serve.nebius.ai/model-variant-cold-boundary-receipt/v1"}, "receipt_digest": {"$ref": "#/$defs/digest"}, "status": {"const": "PASS"}, "variant_id": {"type": "string"}, "variant_digest": {"$ref": "#/$defs/digest"}, "attempt_id": {"type": "string"}, "runtime_tuple_digest": {"$ref": "#/$defs/digest"}, "artifact_manifest_digest": {"$ref": "#/$defs/digest"}, "pod_uid": {"type": "string"}, "node_uid": {"type": "string"}, "gpu_uuid": {"type": "string"}, "process_identity_sha256": {"$ref": "#/$defs/digest"}, "cache_generation_sha256": {"$ref": "#/$defs/digest"}, "observations": {"type": "object"}, "ready_at": {"type": "string"}, "t0": {"type": "string"}, "completed_at": {"type": "string"}, "valid_until": {"type": "string"}},
+  "additionalProperties": false,
+  "$defs": {"digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

@@ -1,0 +1,36 @@
+{{- if .Values.adminReadAdapters.observability.enabled }}
+{{- $links := dict }}
+{{- $linkValues := .Values.adminReadAdapters.observability.links }}
+{{- range $component := list "grafana" "prometheus" "loki" }}
+{{- $link := index $linkValues $component }}
+{{- if and $link.url (not $link.verifiedExternalRoute) }}
+{{- fail (printf "adminReadAdapters.observability.links.%s.url requires verifiedExternalRoute=true" $component) }}
+{{- end }}
+{{- if and $link.verifiedExternalRoute (not $link.url) }}
+{{- fail (printf "adminReadAdapters.observability.links.%s.verifiedExternalRoute requires a URL" $component) }}
+{{- end }}
+{{- if $link.verifiedExternalRoute }}
+{{- $hostAllowed := false }}
+{{- range $host := $linkValues.allowedHosts }}
+{{- $hostPattern := printf "^https://%s(?::[0-9]{1,5})?(?:/|$)" (regexQuoteMeta $host) }}
+{{- if regexMatch $hostPattern $link.url }}
+{{- $hostAllowed = true }}
+{{- end }}
+{{- end }}
+{{- if not $hostAllowed }}
+{{- fail (printf "adminReadAdapters.observability.links.%s.url host is not allow-listed" $component) }}
+{{- end }}
+{{- $_ := set $links $component $link.url }}
+{{- end }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-admin-observability
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin-observability
+data:
+  config.json: |-
+    {{- dict "allowed_hosts" $linkValues.allowedHosts "installed" .Values.adminReadAdapters.observability.installed "links" $links | toPrettyJson | nindent 4 }}
+{{- end }}

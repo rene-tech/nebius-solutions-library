@@ -1,0 +1,18 @@
+{
+  "schema": "fs2-serve.nebius.ai/provider-subnet-status-fixture/v1",
+  "source": "synthetic provider response shape",
+  "provider": "registry.terraform.io/nebius/nebius@0.6.28",
+  "status": {
+    "ipv4_private_cidrs": [
+      "10.104.0.0/13"
+    ],
+    "ipv4_private_pools": [
+      {
+        "cidrs": [
+          "10.104.0.0/13"
+        ],
+        "pool_id": "vpcpool-syntheticlocal"
+      }
+    ]
+  }
+}

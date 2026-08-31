@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-variant-supply-receipt/v5",
+  "title": "Signed model-variant artifact/build supply receipt",
+  "$comment": "Non-authoritative shape only; the executable verifier must reopen signed immutable subjects and join them to static discovery.",
+  "x-fs2-authority": "non-authoritative-shape-only",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "variant_id", "variant_digest", "base_model_id", "exposed_model_id", "source", "artifact", "license", "runtime", "build", "attestations", "valid_until"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "PASS"},
+    "variant_id": {"$ref": "#/$defs/id"},
+    "variant_digest": {"$ref": "#/$defs/digest"},
+    "base_model_id": {"$ref": "#/$defs/id"},
+    "exposed_model_id": {"$ref": "#/$defs/id"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "repository", "revision", "revision_url"],
+      "properties": {
+        "kind": {"enum": ["huggingface", "git"]},
+        "repository": {"type": "string", "minLength": 1},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "revision_url": {"type": "string", "pattern": "^https://.*[0-9a-f]{40}"}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_schema", "manifest_sha256", "content_sha256", "file_count", "expanded_bytes", "file_inventory_sha256"],
+      "properties": {
+        "manifest_schema": {"const": "fs2-serve.nebius.ai/artifact-manifest/v1"},
+        "manifest_sha256": {"$ref": "#/$defs/digest"},
+        "content_sha256": {"$ref": "#/$defs/digest"},
+        "file_count": {"type": "integer", "minimum": 1},
+        "expanded_bytes": {"type": "integer", "minimum": 1},
+        "file_inventory_sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source_url", "artifact_sha256", "revision"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "source_url": {"type": "string", "pattern": "^https://"},
+        "artifact_sha256": {"$ref": "#/$defs/digest"},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["architecture", "repository", "digest", "reference", "oci_subject_sha256"],
+      "properties": {
+        "architecture": {"enum": ["portable", "blackwell-sm103"]},
+        "repository": {"type": "string", "minLength": 1, "pattern": "^[^@]+$"},
+        "digest": {"$ref": "#/$defs/imageDigest"},
+        "reference": {"$ref": "#/$defs/imageReference"},
+        "oci_subject_sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_repository", "source_revision", "source_tree_sha256", "materials_sha256", "builder_identity_sha256", "build_type"],
+      "properties": {
+        "source_repository": {"type": "string", "minLength": 1},
+        "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "source_tree_sha256": {"$ref": "#/$defs/digest"},
+        "materials_sha256": {"$ref": "#/$defs/digest"},
+        "builder_identity_sha256": {"$ref": "#/$defs/digest"},
+        "build_type": {"type": "string", "minLength": 1}
+      }
+    },
+    "attestations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signature_object_digest", "provenance_object_digest", "sbom_object_digest", "scan_object_digest"],
+      "properties": {
+        "signature_object_digest": {"$ref": "#/$defs/digest"},
+        "provenance_object_digest": {"$ref": "#/$defs/digest"},
+        "sbom_object_digest": {"$ref": "#/$defs/digest"},
+        "scan_object_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "valid_until": {"type": "string", "format": "date-time", "pattern": "Z$"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "imageDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "imageReference": {"type": "string", "pattern": "^[^@\\s]+@sha256:[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"}
+  }
+}

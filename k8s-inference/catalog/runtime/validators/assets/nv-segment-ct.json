@@ -1,0 +1,46 @@
+{
+  "schema": "fs2-serve.nebius.ai/semantic-contract/v1",
+  "contract": "two-distinct-synthetic-ct-segmentations-nonclinical/v1",
+  "kind": "medical-segmentation-nonclinical",
+  "non_clinical": true,
+  "commercial_use": "license-dependent",
+  "model": {
+    "id": "nv-segment-ct",
+    "repository": "nvidia/NV-Segment-CT",
+    "revision": "afb51518689f71e6abb367ee6301b2cd0225c66a"
+  },
+  "requests": [
+    {
+      "id": "centered-sphere-r20",
+      "generator": {
+        "kind": "synthetic-ellipsoid/v1",
+        "shape": [96, 96, 96],
+        "center": [48, 48, 48],
+        "axes": [20, 20, 20],
+        "background_hu": -1000.0,
+        "foreground_hu": 100.0,
+        "affine": "identity",
+        "gzip_mtime": 0
+      },
+      "request": {"label_prompt": [3]},
+      "payload_sha256": "22356103ec58e1155720440c8e328a01c3e2f8cae4e2bf3623138d228591ba43",
+      "oracle": {"shape": [96, 96, 96], "foreground_label": 3, "minimum_foreground_voxels": 1}
+    },
+    {
+      "id": "centered-sphere-r24",
+      "generator": {
+        "kind": "synthetic-ellipsoid/v1",
+        "shape": [96, 96, 96],
+        "center": [48, 48, 48],
+        "axes": [24, 24, 24],
+        "background_hu": -1000.0,
+        "foreground_hu": 100.0,
+        "affine": "identity",
+        "gzip_mtime": 0
+      },
+      "request": {"label_prompt": [3]},
+      "payload_sha256": "ae71a66865a5033cce594bc8eb72d218fc5c0da5dfef79b3224cac289d08d480",
+      "oracle": {"shape": [96, 96, 96], "foreground_label": 3, "minimum_foreground_voxels": 1}
+    }
+  ]
+}

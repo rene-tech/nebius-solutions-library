@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/protected-storage-class-receipt/v1",
+  "title": "fs2-serve signed pre-PVC protected StorageClass observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "observed_at", "model_id", "model_digest", "observer", "storage_class", "intended_claim"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/protected-storage-class-receipt/v1"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "PASS"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "model_id": {"const": "qwen3-8b"},
+    "model_digest": {"$ref": "#/$defs/digest"},
+    "observer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "api_server_observed", "cluster_identity_sha256", "api_server_identity_sha256", "service_account_namespace", "service_account_name", "service_account_uid"],
+      "properties": {
+        "source": {"const": "kubernetes-apiserver-get"},
+        "api_server_observed": {"const": true},
+        "cluster_identity_sha256": {"$ref": "#/$defs/digest"},
+        "api_server_identity_sha256": {"$ref": "#/$defs/digest"},
+        "service_account_namespace": {"const": "fs2-system"},
+        "service_account_name": {"const": "fs2-storage-contract-observer"},
+        "service_account_uid": {"$ref": "#/$defs/uid"}
+      }
+    },
+    "storage_class": {"$ref": "#/$defs/storageClass"},
+    "intended_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace", "name", "model_id", "model_digest"],
+      "properties": {
+        "namespace": {"const": "fs2-models"},
+        "name": {"const": "qwen3-8b-weights"},
+        "model_id": {"const": "qwen3-8b"},
+        "model_digest": {"$ref": "#/$defs/digest"}
+      }
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+    "storageClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "metadata", "spec"],
+      "properties": {
+        "apiVersion": {"const": "storage.k8s.io/v1"},
+        "kind": {"const": "StorageClass"},
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "uid", "resourceVersion"],
+          "properties": {
+            "name": {"const": "fs2-network-ssd-retain"},
+            "uid": {"$ref": "#/$defs/uid"},
+            "resourceVersion": {"type": "string", "minLength": 1}
+          }
+        },
+        "spec": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provisioner", "reclaimPolicy", "volumeBindingMode", "allowVolumeExpansion", "parameters"],
+          "properties": {
+            "provisioner": {"const": "compute.csi.nebius.com"},
+            "reclaimPolicy": {"const": "Retain"},
+            "volumeBindingMode": {"const": "WaitForFirstConsumer"},
+            "allowVolumeExpansion": {"const": true},
+            "parameters": {"const": {"type": "NETWORK_SSD", "csi.storage.k8s.io/fstype": "ext4"}}
+          }
+        }
+      }
+    }
+  }
+}

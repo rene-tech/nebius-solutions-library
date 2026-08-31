@@ -1,0 +1,4 @@
+# Preserve the digest-pinned PDB fixture byte-for-byte; fixed-width PDB records
+# intentionally contain trailing columns and must not be whitespace-normalized.
+packaged-repository/nim-fast-start/faststart-v2/rfdiffusion-native/fixtures/1UBQ.pdb -diff
+validators/assets/*.pdb whitespace=-trailing-space

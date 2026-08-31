@@ -1,0 +1,261 @@
+{
+  "schema": "fs2-serve.nebius.ai/all-models-live-services/v3",
+  "namespace": "fs2-models",
+  "qualification": {
+    "schema": "fs2-serve.nebius.ai/model-qualification-observations/v1",
+    "authority": "reviewed-retained-evidence",
+    "observed_at": "2026-08-30T13:44:39Z",
+    "evidence": {
+      "audited_catalog_sha256": "36222c86357ef1ce7efbb5c6e2246fe37583456fd7323cd282bac1463b55cf74",
+      "audited_live_routes_sha256": "2cc8360b97bb09fb8d4281729adcc4b6e13db36598f6f14b61c5696f085c0cca",
+      "retained_deployments_sha256": "9c99015ea0b9d3bc5b8ae93c74a23d0957ffd0b7fa483e57efbac8d33911dc43",
+      "model_discovery_sha256": "955cba641bfe571455770ab48e2bbde6a2a2e8b202b4306b1a1e4754f446b11f",
+      "mcp_discovery_sha256": "74febece19ee0fe1250c984c871eff6ea7522a6b1de845cec5c3be632693aa0e",
+      "http_mcp_acceptance_sha256": "9719765e1986bbeed853de9b30a4740758ade82a4f4510c63e1f5fd7eb58c550",
+      "cold_start_acceptance_sha256": "778683ecc7ff595fb452d06060d005de34a83176deb20f90f2c5c49b4beaf300"
+    },
+    "active_variant_bindings": {
+      "boltz2": "boltz2-hf-blackwell-sm103",
+      "diffdock": "diffdock-upstream-blackwell-sm103",
+      "evo2-40b": "evo2-40b-upstream-blackwell-sm103",
+      "genmol": "nv-genmol-89m-v2-blackwell-sm103",
+      "molmim": "molmim-exact-weights-blackwell-sm103",
+      "nv-segment-ct": "nv-segment-ct-upstream-blackwell-sm103",
+      "proteinmpnn": "proteinmpnn-upstream-blackwell-sm103",
+      "rfdiffusion": "rfdiffusion-upstream-blackwell-sm103"
+    },
+    "runtime_ready_models": [
+      "boltz2", "diffdock", "evo2-40b", "genmol", "glm-5-2-fp8",
+      "molmim", "msa-search-pdb70", "nv-reason-cxr-3b", "nv-segment-ct",
+      "openfold2", "openfold3", "proteinmpnn", "qwen3-8b", "rfdiffusion", "sdxl"
+    ],
+    "semantic_qualified_models": [
+      "boltz2", "diffdock", "evo2-40b", "genmol", "glm-5-2-fp8",
+      "molmim", "msa-search-pdb70", "nv-reason-cxr-3b", "nv-segment-ct",
+      "openfold2", "openfold3", "proteinmpnn", "qwen3-8b", "rfdiffusion", "sdxl"
+    ],
+    "http_mcp_qualified_models": [
+      "boltz2", "diffdock", "evo2-40b", "genmol", "glm-5-2-fp8",
+      "molmim", "msa-search-pdb70", "nv-reason-cxr-3b", "nv-segment-ct",
+      "openfold2", "openfold3", "proteinmpnn", "qwen3-8b", "rfdiffusion", "sdxl"
+    ],
+    "cold_start_qualified_models": [
+      "boltz2", "evo2-40b", "glm-5-2-fp8", "msa-search-pdb70",
+      "nv-reason-cxr-3b", "nv-segment-ct", "openfold2", "openfold3",
+      "qwen3-8b", "rfdiffusion", "sdxl"
+    ],
+    "elasticity_qualified_models": []
+  },
+  "routes": {
+    "boltz2": {
+      "variant_id": "boltz2-hf-blackwell-sm103",
+      "model_revision": "6fdef46d763fee7fbb83ca5501ccceff43b85607",
+      "runtime_image_digest": "sha256:ec4ccb67476f0783d1b756959362318691ef44477e485a62eb4f1c77eff10c46",
+      "service": {"name": "boltz2", "port": 8000},
+      "storage_mode": "provider-block-pvc",
+      "protocols": {"native": "/biology/mit/boltz2/predict"},
+      "operations": ["predict"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "boltz2_predict",
+        "description": "Run an authorized Boltz2 protein structure prediction."
+      }
+    },
+    "diffdock": {
+      "variant_id": "diffdock-upstream-blackwell-sm103",
+      "model_revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+      "runtime_image_digest": "sha256:cb3875f7d66b8d170d0e3f16d3d9a63aee8d63fbb23fdf65ec7ea0214d849529",
+      "service": {"name": "diffdock-b300", "port": 8000},
+      "storage_mode": "ephemeral-emptydir",
+      "protocols": {"native": "/molecular-docking/diffdock/generate"},
+      "operations": ["dock"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "infer_diffdock",
+        "description": "Run an authorized DiffDock molecular docking request."
+      }
+    },
+    "evo2-40b": {
+      "variant_id": "evo2-40b-upstream-blackwell-sm103",
+      "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+      "runtime_image_digest": "sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c",
+      "service": {"name": "evo2-40b", "port": 8000},
+      "storage_mode": "provider-block-pvc",
+      "protocols": {"native": "/biology/arc/evo2/generate"},
+      "operations": ["generate-sequence"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "generate_dna",
+        "description": "Run an authorized Evo2 DNA sequence generation request."
+      }
+    },
+    "genmol": {
+      "variant_id": "nv-genmol-89m-v2-blackwell-sm103",
+      "model_revision": "2acccbd6eee62f2a90334ccf14dc7d2b17ef9e80",
+      "runtime_image_digest": "sha256:c0ce8cab57295b6ba2fc4be17d5f5a78751f76b7e93754309fa353d9c2f54a1f",
+      "service": {"name": "genmol", "port": 8000},
+      "storage_mode": "provider-block-pvc",
+      "protocols": {"native": "/generate"},
+      "operations": ["generate-molecule"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "genmol_generate",
+        "description": "Run an authorized GenMol molecule generation request."
+      }
+    },
+    "glm-5-2-fp8": {
+      "variant_id": null,
+      "model_revision": "ba978f7d347eaf65d22f1a86833408afdb953541",
+      "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "service": {"name": "glm-5-2-fp8", "port": 8000},
+      "storage_mode": "provider-block-pvc",
+      "protocols": {"openai-chat": "/v1/chat/completions"},
+      "operations": ["chat"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "chat_completion",
+        "description": "Run an authorized GLM-5.2-FP8 chat completion."
+      }
+    },
+    "molmim": {
+      "variant_id": "molmim-exact-weights-blackwell-sm103",
+      "model_revision": "9ba9b2c337917fc815ffbd5d99f78d9db7904493",
+      "runtime_image_digest": "sha256:b51c758f2785accb2121db2dd322f81ed6ebb6142bd7a9988714867c5fe51641",
+      "service": {"name": "molmim", "port": 8000},
+      "storage_mode": "ephemeral-emptydir",
+      "protocols": {"native": "/generate"},
+      "operations": ["generate-molecule"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "molmim_run",
+        "description": "Run an authorized MolMIM molecule optimization request."
+      }
+    },
+    "msa-search-pdb70": {
+      "variant_id": null,
+      "model_revision": "sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c",
+      "runtime_image_digest": "sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c",
+      "service": {"name": "msa-search-pdb70-nim", "port": 8000},
+      "storage_mode": "provider-block-pvc",
+      "protocols": {"native": "/biology/colabfold/msa-search/predict"},
+      "operations": ["search-msa"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "msa_search",
+        "description": "Run an authorized PDB70 multiple-sequence-alignment search."
+      }
+    },
+    "nv-reason-cxr-3b": {
+      "variant_id": null,
+      "model_revision": "056bd0383b35226554da9dc5866e095df174ae19",
+      "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "service": {"name": "nv-reason-cxr-3b", "port": 8000},
+      "storage_mode": "provider-block-pvc",
+      "protocols": {"openai-chat": "/v1/chat/completions"},
+      "operations": ["analyze-image"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "analyze_image",
+        "description": "Run an authorized non-clinical chest radiograph analysis."
+      }
+    },
+    "nv-segment-ct": {
+      "variant_id": "nv-segment-ct-upstream-blackwell-sm103",
+      "model_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+      "runtime_image_digest": "sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd",
+      "service": {"name": "nv-segment-ct", "port": 8000},
+      "storage_mode": "provider-block-pvc",
+      "protocols": {"native": "/segment"},
+      "operations": ["segment-ct"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "segment_ct",
+        "description": "Run an authorized non-clinical CT segmentation request."
+      }
+    },
+    "openfold2": {
+      "variant_id": null,
+      "model_revision": "sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4",
+      "runtime_image_digest": "sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4",
+      "service": {"name": "openfold2-b300", "port": 8000},
+      "storage_mode": "provider-block-pvc",
+      "protocols": {"native": "/biology/openfold/openfold2/predict-structure-from-msa-and-template"},
+      "operations": ["predict"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "infer_openfold2",
+        "description": "Run an authorized OpenFold2 protein structure prediction."
+      }
+    },
+    "openfold3": {
+      "variant_id": null,
+      "model_revision": "sha256:6286cc7c02247ed3efe42f0f1af6c2f6f6a680b1e5cae669512c44b636aa42d2",
+      "runtime_image_digest": "sha256:6286cc7c02247ed3efe42f0f1af6c2f6f6a680b1e5cae669512c44b636aa42d2",
+      "service": {"name": "openfold3-b300", "port": 8000},
+      "storage_mode": "provider-block-pvc",
+      "protocols": {"native": "/biology/openfold/openfold3/predict"},
+      "operations": ["predict"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "infer_openfold3",
+        "description": "Run an authorized OpenFold3 protein structure prediction."
+      }
+    },
+    "proteinmpnn": {
+      "variant_id": "proteinmpnn-upstream-blackwell-sm103",
+      "model_revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+      "runtime_image_digest": "sha256:13d195ac5e24ca9d75de058f08141ece37e60962dcdffb50b6d24ea474313d47",
+      "service": {"name": "proteinmpnn-b300", "port": 8000},
+      "storage_mode": "ephemeral-emptydir",
+      "protocols": {"native": "/biology/ipd/proteinmpnn/predict"},
+      "operations": ["design-protein"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "infer_proteinmpnn",
+        "description": "Run an authorized ProteinMPNN sequence design request."
+      }
+    },
+    "qwen3-8b": {
+      "variant_id": null,
+      "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "runtime_image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "service": {"name": "qwen3-8b-b300", "port": 8000},
+      "storage_mode": "ephemeral-emptydir",
+      "protocols": {"openai-chat": "/v1/chat/completions"},
+      "operations": ["chat"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "qwen3_8b_chat",
+        "description": "Run an authorized Qwen3-8B chat completion."
+      }
+    },
+    "rfdiffusion": {
+      "variant_id": "rfdiffusion-upstream-blackwell-sm103",
+      "model_revision": "86507b6538f51fce57b5a72477165f03999ed7ae",
+      "runtime_image_digest": "sha256:c715c5ec39e1f62761039f07867fe30ae08c60442dbdc05e700084becc456409",
+      "service": {"name": "rfdiffusion-b300", "port": 8000},
+      "storage_mode": "ephemeral-emptydir",
+      "protocols": {"native": "/biology/ipd/rfdiffusion/generate"},
+      "operations": ["generate-backbone"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "infer_rfdiffusion",
+        "description": "Run an authorized RFdiffusion protein structure generation request."
+      }
+    },
+    "sdxl": {
+      "variant_id": null,
+      "model_revision": "462165984030d82259a11f4367a4eed129e94a7b",
+      "runtime_image_digest": "sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+      "service": {"name": "sdxl", "port": 8000},
+      "storage_mode": "provider-block-pvc",
+      "protocols": {"native": "/generate"},
+      "operations": ["generate-image"],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "generate_image",
+        "description": "Run an authorized SDXL image generation request."
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-dependency-contract
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dependency-contract
+data:
+  dependency-contract.json: |-
+    {
+      "schema": "fs2-serve.nebius.ai/gateway-dependency-contract/v1",
+      "secret_values_rendered": false,
+      "catalog": {
+        "resource_owner": "fs2-serve-models",
+        "namespace": "{{ .Release.Namespace }}",
+        "catalog_pvc": {{ .Values.catalog.persistentVolumeClaimName | quote }},
+        "bindings_config_map": {{ .Values.catalog.bindingsConfigMapName | quote }},
+        "bindings_key": {{ .Values.catalog.bindingsKey | quote }},
+        "variant_promotions_key": {{ .Values.catalog.variantPromotionsKey | quote }},
+        "evidence_pvc": {{ .Values.catalog.evidencePersistentVolumeClaimName | quote }},
+        "rollout_digest": {{ .Values.catalog.rolloutDigest | quote }}
+      },
+      "database": {
+        "resource_owner": "postgresql-platform-release",
+        "namespace": "fs2-data",
+        "cluster_name": "fs2-control-db",
+        "read_write_service": "fs2-control-db-rw",
+        "database_name": "fs2serve",
+        "schema_owner_role": "fs2serve",
+        "group_roles": {
+          "runtime": {{ .Values.migration.runtimeDatabaseRole | quote }},
+          "maintenance": {{ .Values.migration.maintenanceDatabaseRole | quote }},
+          "activation": {{ .Values.migration.activationDatabaseRole | quote }},
+          "reporting": {{ .Values.migration.reportingDatabaseRole | quote }}
+        },
+        "secret_refs": {
+          "runtime": {"namespace": "{{ .Release.Namespace }}", "name": {{ .Values.secrets.database.name | quote }}, "key": {{ .Values.secrets.database.key | quote }}},
+          "migrations": {"namespace": "{{ .Release.Namespace }}", "name": {{ .Values.secrets.migrationsDatabase.name | quote }}, "key": {{ .Values.secrets.migrationsDatabase.key | quote }}},
+          "maintenance": {"namespace": "{{ .Release.Namespace }}", "name": {{ .Values.secrets.maintenanceDatabase.name | quote }}, "key": {{ .Values.secrets.maintenanceDatabase.key | quote }}},
+          "reporting": {"namespace": {{ .Values.grafanaDashboard.namespace | quote }}, "name": "fs2-serve-database-reporting", "key": "url"}
+        }
+      },
+      "grafana": {
+        "resource_owner": "fs2-observability",
+        "namespace": {{ .Values.grafanaDashboard.namespace | quote }},
+        "datasource_uid": {{ .Values.grafanaDashboard.reportingDatasourceUid | quote }},
+        "datasource_secret": {{ .Values.grafanaDashboard.reportingDatasourceSecretName | quote }},
+        "datasource_secret_key": {{ .Values.grafanaDashboard.reportingDatasourceSecretKey | quote }},
+        "datasource_label": {{ .Values.grafanaDashboard.reportingDatasourceLabel | quote }},
+        "datasource_label_value": {{ .Values.grafanaDashboard.reportingDatasourceLabelValue | quote }},
+        "allowed_relations": ["fs2_reporting_model_usage", "fs2_reporting_principal_usage"]
+      }
+    }

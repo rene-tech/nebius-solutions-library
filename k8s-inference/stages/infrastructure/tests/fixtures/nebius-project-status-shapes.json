@@ -1,0 +1,24 @@
+{
+  "schema": "fs2-serve.nebius.ai/project-status-shapes-fixture/v1",
+  "source": "synthetic CLI and provider response shapes",
+  "cli": {
+    "metadata": {
+      "id": "project-syntheticlocal",
+      "parent_id": "tenant-syntheticlocal",
+      "name": "synthetic-local-project"
+    },
+    "status": {
+      "container_state": "ACTIVE"
+    }
+  },
+  "provider": {
+    "metadata": {
+      "id": "project-syntheticlocal",
+      "parent_id": "tenant-syntheticlocal",
+      "name": "synthetic-local-project"
+    },
+    "status": {
+      "project_state": "ACTIVE"
+    }
+  }
+}

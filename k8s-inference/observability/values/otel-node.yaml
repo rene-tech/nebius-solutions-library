@@ -1,0 +1,154 @@
+fullnameOverride: fs2-otel-node
+mode: daemonset
+
+image:
+  repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s
+  tag: 0.159.0
+command:
+  name: otelcol-k8s
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+presets:
+  logsCollection:
+    enabled: true
+    includeCollectorLogs: false
+    storeCheckpoints: false
+  kubernetesAttributes:
+    enabled: true
+    extractAllPodLabels: false
+    extractAllPodAnnotations: false
+
+tolerations:
+  - operator: Exists
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+ports:
+  otlp:
+    enabled: false
+  otlp-http:
+    enabled: false
+  jaeger-compact:
+    enabled: false
+  jaeger-grpc:
+    enabled: false
+  jaeger-thrift:
+    enabled: false
+  zipkin:
+    enabled: false
+  metrics:
+    enabled: true
+    containerPort: 8888
+    servicePort: 8888
+    protocol: TCP
+
+serviceMonitor:
+  enabled: true
+  metricsEndpoints:
+    - port: metrics
+      interval: 30s
+
+config:
+  extensions:
+    health_check:
+      endpoint: ${env:MY_POD_IP}:13133
+  receivers:
+    jaeger: null
+    otlp: null
+    prometheus: null
+    zipkin: null
+    file_log:
+      include:
+        - /var/log/pods/fs2-*_*/*/*.log
+      exclude:
+        - /var/log/pods/fs2-observability_*/*/*.log
+      include_file_name: false
+      include_file_path: true
+      start_at: end
+      operators:
+        - id: container-parser
+          type: container
+  processors:
+    memory_limiter:
+      check_interval: 5s
+      limit_percentage: 75
+      spike_limit_percentage: 20
+    k8s_attributes:
+      auth_type: serviceAccount
+      passthrough: false
+      extract:
+        metadata:
+          - k8s.namespace.name
+          - k8s.pod.name
+          - k8s.pod.uid
+          - k8s.container.name
+          - k8s.node.name
+          - service.name
+      pod_association:
+        - sources:
+            - from: resource_attribute
+              name: k8s.pod.uid
+    resource/sanitize:
+      attributes:
+        - key: enduser.id
+          action: delete
+        - key: user.id
+          action: delete
+        - key: tenant.id
+          action: delete
+        - key: api.key.id
+          action: delete
+        - key: http.request.header.authorization
+          action: delete
+    batch:
+      send_batch_size: 1024
+      timeout: 5s
+  exporters:
+    debug: null
+    otlp_grpc:
+      endpoint: fs2-otel-gateway.fs2-observability.svc.cluster.local:4317
+      tls:
+        insecure: true
+      sending_queue:
+        enabled: true
+        queue_size: 2048
+      retry_on_failure:
+        enabled: true
+        initial_interval: 1s
+        max_interval: 10s
+        max_elapsed_time: 60s
+  service:
+    extensions: [health_check]
+    telemetry:
+      metrics:
+        readers:
+          - pull:
+              exporter:
+                prometheus:
+                  host: ${env:MY_POD_IP}
+                  port: 8888
+    pipelines:
+      logs:
+        receivers: [file_log]
+        processors: [memory_limiter, k8s_attributes, resource/sanitize, batch]
+        exporters: [otlp_grpc]
+      metrics: null
+      traces: null

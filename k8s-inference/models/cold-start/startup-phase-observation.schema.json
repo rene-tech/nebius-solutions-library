@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/startup-phase-observation/v1",
+  "title": "FS2 startup phase observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "model_id",
+    "mechanism",
+    "pod_uid",
+    "node_uid",
+    "complete_for_promotion",
+    "missing_required_events",
+    "events"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/startup-phase-observation/v1"},
+    "model_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "mechanism": {"type": "string", "minLength": 1},
+    "pod_uid": {"type": ["string", "null"]},
+    "node_uid": {"type": ["string", "null"]},
+    "complete_for_promotion": {"type": "boolean"},
+    "missing_required_events": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/eventName"}
+    },
+    "events": {
+      "type": "array",
+      "minItems": 22,
+      "maxItems": 22,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "state", "timestamp"],
+        "properties": {
+          "name": {"$ref": "#/$defs/eventName"},
+          "state": {"enum": ["observed", "not-applicable", "missing"]},
+          "timestamp": {
+            "anyOf": [
+              {"type": "string", "format": "date-time", "pattern": "Z$"},
+              {"type": "null"}
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "eventName": {
+      "enum": [
+        "activation-accepted",
+        "capacity-requested",
+        "provider-instance-created",
+        "node-ready",
+        "workload-admitted",
+        "pod-scheduled",
+        "storage-attached",
+        "image-or-image-volume-pull-start",
+        "image-or-image-volume-pull-end",
+        "artifact-localization-start",
+        "artifact-localization-verified",
+        "runtime-process-start",
+        "weight-load-start",
+        "weight-load-end",
+        "engine-build-or-compile-start",
+        "engine-build-or-compile-end",
+        "checkpoint-restore-start",
+        "checkpoint-restore-end",
+        "readiness-accepted",
+        "semantic-call1-accepted",
+        "semantic-call2-accepted",
+        "return-to-zero-accepted"
+      ]
+    }
+  }
+}

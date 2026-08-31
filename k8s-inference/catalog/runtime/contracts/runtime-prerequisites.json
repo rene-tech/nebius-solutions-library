@@ -1,0 +1,243 @@
+{
+  "schema": "fs2-serve.nebius.ai/runtime-prerequisites/v4",
+  "credential_policy": {
+    "values": "suppressed",
+    "materialization": "pre-created-secret-observation-default",
+    "fresh_platform_ngc_key": "required",
+    "legacy_ngc_secret_copy": "forbidden",
+    "legacy_plaintext_rotation_source": "forbidden",
+    "legacy_phase_7c_hmac_reuse": "forbidden",
+    "exposed_evo_bearer_reuse": "forbidden"
+  },
+  "ngc_credential_contract": {
+    "schema": "fs2-serve.nebius.ai/ngc-credential-materialization/v3",
+    "platform_owner": "fs2-serve-platform",
+    "default_secret_delivery": {
+      "schema": "fs2-serve.nebius.ai/precreated-ngc-secret-delivery/v1",
+      "mode": "securely-pre-created-existing-kubernetes-secrets",
+      "namespace": "fs2-models",
+      "outputs": [
+        {
+          "requirement_id": "fs2-models/ngc-pull-secret",
+          "secret_name": "fs2-ngc-pull",
+          "secret_type": "kubernetes.io/dockerconfigjson",
+          "required_keys": [".dockerconfigjson"]
+        },
+        {
+          "requirement_id": "fs2-models/ngc-runtime-secret",
+          "secret_name": "fs2-ngc-runtime",
+          "secret_type": "Opaque",
+          "required_keys": ["NGC_API_KEY"]
+        }
+      ],
+      "helm_and_git_content": "names-and-keys-only-values-forbidden",
+      "required_observation": "server-observed-uid-resourceVersion-type-key-set",
+      "sole_authority": "signed-runtime-prerequisite-receipt"
+    },
+    "optional_secret_backends": [
+      {
+        "id": "external-secrets-nebius-mysterybox",
+        "operator": "external-secrets",
+        "version": "2.5.0",
+        "provider": "nebiusmysterybox",
+        "foundation_crd_state": "ineligible",
+        "status": "disabled-until-separately-reviewed-eligible-provider-build-receipt",
+        "required_receipt_schema": "fs2-serve.nebius.ai/external-secrets-provider-build-eligibility-receipt/v1",
+        "rendering": "disabled",
+        "cluster_secret_store": "forbidden",
+        "static_service_account_keys": "forbidden",
+        "default_service_account": "forbidden"
+      }
+    ],
+    "freshness_evidence": "signed-issuance-validity-noncompromise",
+    "legacy_secret_audit": "all-legacy-copies-no-go",
+    "secret_requirement_ids": ["fs2-models/ngc-pull-secret", "fs2-models/ngc-runtime-secret"],
+    "required_downstream_evidence": ["exact-digest-b300-target-node-pull-canary", "nimcache-auth-readiness", "two-distinct-semantic-requests"],
+    "values": "suppressed",
+    "route_state_without_receipt": "disabled"
+  },
+  "resources": [
+    {
+      "id": "fs2-faststart/donor-service-account",
+      "api_version": "v1",
+      "kind": "ServiceAccount",
+      "namespace": "fs2-faststart",
+      "name": "fs2-donor",
+      "secret_type": null,
+      "required_keys": [],
+      "access_modes": [],
+      "minimum_capacity_bytes": null,
+      "required_state": "present",
+      "value_policy": "not-applicable",
+      "owner": "platform-bootstrap"
+    },
+    {
+      "id": "fs2-faststart/runtime-registry-secret",
+      "api_version": "v1",
+      "kind": "Secret",
+      "namespace": "fs2-faststart",
+      "name": "fs2-runtime-registry",
+      "secret_type": "kubernetes.io/dockerconfigjson",
+      "required_keys": [".dockerconfigjson"],
+      "access_modes": [],
+      "minimum_capacity_bytes": null,
+      "required_state": "present",
+      "value_policy": "metadata-only-values-suppressed",
+      "owner": "platform-bootstrap"
+    },
+    {
+      "id": "fs2-faststart/snapshot-service-account",
+      "api_version": "v1",
+      "kind": "ServiceAccount",
+      "namespace": "fs2-faststart",
+      "name": "fs2-snapshot",
+      "secret_type": null,
+      "required_keys": [],
+      "access_modes": [],
+      "minimum_capacity_bytes": null,
+      "required_state": "present",
+      "value_policy": "not-applicable",
+      "owner": "platform-bootstrap"
+    },
+    {
+      "id": "fs2-models/batch-service-account",
+      "api_version": "v1",
+      "kind": "ServiceAccount",
+      "namespace": "fs2-models",
+      "name": "fs2-batch",
+      "secret_type": null,
+      "required_keys": [],
+      "access_modes": [],
+      "minimum_capacity_bytes": null,
+      "required_state": "present",
+      "value_policy": "not-applicable",
+      "owner": "platform-bootstrap"
+    },
+    {
+      "id": "fs2-models/cache-service-account",
+      "api_version": "v1",
+      "kind": "ServiceAccount",
+      "namespace": "fs2-models",
+      "name": "fs2-cache",
+      "secret_type": null,
+      "required_keys": [],
+      "access_modes": [],
+      "minimum_capacity_bytes": null,
+      "required_state": "present",
+      "value_policy": "not-applicable",
+      "owner": "platform-bootstrap"
+    },
+    {
+      "id": "fs2-models/evaluation-service-account",
+      "api_version": "v1",
+      "kind": "ServiceAccount",
+      "namespace": "fs2-models",
+      "name": "fs2-evaluation",
+      "secret_type": null,
+      "required_keys": [],
+      "access_modes": [],
+      "minimum_capacity_bytes": null,
+      "required_state": "present",
+      "value_policy": "not-applicable",
+      "owner": "platform-bootstrap"
+    },
+    {
+      "id": "fs2-models/evo2-upstream-token",
+      "api_version": "v1",
+      "kind": "Secret",
+      "namespace": "fs2-models",
+      "name": "evo2-upstream-token",
+      "secret_type": "Opaque",
+      "required_keys": ["token"],
+      "access_modes": [],
+      "minimum_capacity_bytes": null,
+      "required_state": "present",
+      "value_policy": "metadata-only-values-suppressed",
+      "owner": "platform-bootstrap"
+    },
+    {
+      "id": "fs2-models/model-runtime-service-account",
+      "api_version": "v1",
+      "kind": "ServiceAccount",
+      "namespace": "fs2-models",
+      "name": "fs2-model-runtime",
+      "secret_type": null,
+      "required_keys": [],
+      "access_modes": [],
+      "minimum_capacity_bytes": null,
+      "required_state": "present",
+      "value_policy": "not-applicable",
+      "owner": "platform-bootstrap"
+    },
+    {
+      "id": "fs2-models/molmim-upstream-token",
+      "api_version": "v1",
+      "kind": "Secret",
+      "namespace": "fs2-models",
+      "name": "molmim-upstream-token",
+      "secret_type": "Opaque",
+      "required_keys": ["token"],
+      "access_modes": [],
+      "minimum_capacity_bytes": null,
+      "required_state": "present",
+      "value_policy": "metadata-only-values-suppressed",
+      "owner": "platform-bootstrap"
+    },
+    {
+      "id": "fs2-models/ngc-pull-secret",
+      "api_version": "v1",
+      "kind": "Secret",
+      "namespace": "fs2-models",
+      "name": "fs2-ngc-pull",
+      "secret_type": "kubernetes.io/dockerconfigjson",
+      "required_keys": [".dockerconfigjson"],
+      "access_modes": [],
+      "minimum_capacity_bytes": null,
+      "required_state": "present",
+      "value_policy": "metadata-only-values-suppressed",
+      "owner": "platform-security-bootstrap"
+    },
+    {
+      "id": "fs2-models/ngc-runtime-secret",
+      "api_version": "v1",
+      "kind": "Secret",
+      "namespace": "fs2-models",
+      "name": "fs2-ngc-runtime",
+      "secret_type": "Opaque",
+      "required_keys": ["NGC_API_KEY"],
+      "access_modes": [],
+      "minimum_capacity_bytes": null,
+      "required_state": "present",
+      "value_policy": "metadata-only-values-suppressed",
+      "owner": "platform-security-bootstrap"
+    },
+    {
+      "id": "fs2-models/runtime-registry-secret",
+      "api_version": "v1",
+      "kind": "Secret",
+      "namespace": "fs2-models",
+      "name": "fs2-runtime-registry",
+      "secret_type": "kubernetes.io/dockerconfigjson",
+      "required_keys": [".dockerconfigjson"],
+      "access_modes": [],
+      "minimum_capacity_bytes": null,
+      "required_state": "present",
+      "value_policy": "metadata-only-values-suppressed",
+      "owner": "platform-bootstrap"
+    },
+    {
+      "id": "fs2-models/shared-cache-pvc",
+      "api_version": "v1",
+      "kind": "PersistentVolumeClaim",
+      "namespace": "fs2-models",
+      "name": "fs2-cache",
+      "secret_type": null,
+      "required_keys": [],
+      "access_modes": ["ReadWriteMany"],
+      "minimum_capacity_bytes": 4398046511104,
+      "required_state": "Bound",
+      "value_policy": "not-applicable",
+      "owner": "platform-bootstrap"
+    }
+  ]
+}

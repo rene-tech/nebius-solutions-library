@@ -1,0 +1,30 @@
+{
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "model_id": "nv-reason-cxr-3b",
+  "kind": "weights",
+  "source": {"uri": "hf://nvidia/NV-Reason-CXR-3B", "revision": "056bd0383b35226554da9dc5866e095df174ae19"},
+  "content": {
+    "digest": "8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c",
+    "expanded_bytes": 8147616740,
+    "files": [
+      {"path": "added_tokens.json", "bytes": 605, "sha256": "58b54bbe36fc752f79a24a271ef66a0a0830054b4dfad94bde757d851968060b"},
+      {"path": "chat_template.jinja", "bytes": 1017, "sha256": "a0bc6f6fc7a29a80017a433e8f03a1cc1236e838a944a2d034295a60c4f2fddb"},
+      {"path": "config.json", "bytes": 3394, "sha256": "d2e78064f70b1c7f30a083773af2f9dba1e47e8fb87decfda718be9bc05e9e3f"},
+      {"path": "generation_config.json", "bytes": 188, "sha256": "ad461c577b72937580551513735fd84eb7275a693c2d40e6269e74a537c89fc0"},
+      {"path": "merges.txt", "bytes": 1671853, "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"},
+      {"path": "model-00001-of-00002.safetensors", "bytes": 4997750760, "sha256": "4d7c2918d730a8732c07f2808a3122f01de8fd43e3c16507cb8538b9e02eac61"},
+      {"path": "model-00002-of-00002.safetensors", "bytes": 3133917248, "sha256": "9559a3c324420ed677e9493d0ea33e14cec8e045203c2d54d7e3c7f50052d657"},
+      {"path": "model.safetensors.index.json", "bytes": 65542, "sha256": "d2cac9ab67aff1d2f54ad1d4967e6ec6102f3eddee391a2903b10684c2038a14"},
+      {"path": "preprocessor_config.json", "bytes": 789, "sha256": "34369c1fcd220fef56c450153f5a8426146d79ecd00b2731f8ae4bbb8c0c4747"},
+      {"path": "special_tokens_map.json", "bytes": 613, "sha256": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd"},
+      {"path": "tokenizer.json", "bytes": 11422063, "sha256": "5eee858c5123a4279c3e1f7b81247343f356ac767940b2692a928ad929543214"},
+      {"path": "tokenizer_config.json", "bytes": 4902, "sha256": "4844df124846ddadd3ff7985a378f894f991c3df32fdd227ff8763dfae324e9d"},
+      {"path": "video_preprocessor_config.json", "bytes": 933, "sha256": "32c72edf61c33b85a3d53328978fcb7fe2df7dbc17d99765850990abe1d44f7c"},
+      {"path": "vocab.json", "bytes": 2776833, "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"}
+    ]
+  },
+  "license": {"id": "NVIDIA-OneWay-Noncommercial", "state": "verified"},
+  "entitlement_state": "not-required",
+  "owner": "fs2-serve-localizer",
+  "retention": "retained-platform"
+}

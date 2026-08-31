@@ -1,0 +1,232 @@
+{
+  "schema_version": "fs2.admin-api.contract/v1",
+  "api_prefix": "/admin/api/v1",
+  "openapi_url": "/internal/openapi.json",
+  "authentication_handoff": "bootstrap bearer exchanges server-side for a same-origin HttpOnly operator session at POST /admin/api/v1/session; the bootstrap credential is never browser-stored",
+  "session": {
+    "endpoint": "/admin/api/v1/session",
+    "cookie": "__Host-fs2_admin_session",
+    "cookie_attributes": ["Secure", "HttpOnly", "SameSite=Strict", "Path=/", "no Domain"],
+    "ttl_seconds": {"minimum": 300, "maximum": 86400},
+    "csrf_boundary": "exact trusted Host and Origin plus SameSite=Strict",
+    "cache_control": "no-store"
+  },
+  "envelope": {
+    "fields": ["meta", "data"],
+    "meta_fields": ["schema_version", "generated_at", "context", "sources", "warnings"],
+    "schema_version": "fs2.admin-api/v1"
+  },
+  "measurement": {
+    "fields": ["value", "unit", "state", "source", "reason"],
+    "states": ["available", "estimated", "unavailable"],
+    "unavailable_contract": "value is null and reason is non-null"
+  },
+  "problem": {
+    "content_type": "application/problem+json",
+    "fields": ["type", "title", "status", "code", "detail", "request_id"],
+    "request_id_header": "x-request-id",
+    "request_id_authority": "server-generated UUID",
+    "status_codes": [400, 401, 403, 404, 409, 422, 429, 503]
+  },
+  "model_states": ["hot", "loading", "queued", "cold", "unhealthy", "unsupported", "unknown"],
+  "compatibility_supported_states": ["qualified", "lean-live-verified"],
+  "semantic_health_contract": "hot requires explicit true; false is unhealthy; null is unknown",
+  "model_identity_projection": {
+    "activation_authority": "versioned-lean-live-route-inventory",
+    "active_runtime_fields": [
+      "variant_id",
+      "kind",
+      "source_kind",
+      "repository",
+      "relationship",
+      "nim_artifact_parity"
+    ],
+    "qualification_fields": [
+      "registered",
+      "route_active",
+      "runtime_ready",
+      "semantic_qualified",
+      "http_mcp_qualified",
+      "cold_start_qualified",
+      "elasticity_qualified"
+    ],
+    "qualification_snapshot": {
+      "kind": "reviewed-evidence-snapshot",
+      "timestamp_field": "observed_at",
+      "current_readiness_authority": "live Kubernetes and control-plane adapters, never the retained evidence snapshot"
+    },
+    "policy_fields": ["license_id", "non_clinical", "commercial_use"]
+  },
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/admin/api/v1/session",
+      "success_status": 200,
+      "data_schema": "OperatorSession",
+      "sets_session_cookie": true,
+      "cache_control": "no-store"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/session",
+      "success_status": 200,
+      "data_schema": "OperatorSession",
+      "cache_control": "no-store"
+    },
+    {
+      "method": "DELETE",
+      "path": "/admin/api/v1/session",
+      "success_status": 204,
+      "data_schema": null,
+      "clears_session_cookie": true,
+      "cache_control": "no-store"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/principals",
+      "success_status": 200,
+      "data_schema": "AdminPrincipalList"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/api/v1/principals",
+      "success_status": 201,
+      "data_schema": "OperatorPrincipal"
+    },
+    {
+      "method": "PATCH",
+      "path": "/admin/api/v1/principals/{principal_id}",
+      "success_status": 200,
+      "data_schema": "OperatorPrincipal"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/keys",
+      "success_status": 200,
+      "data_schema": "AdminApiKeyList"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/api/v1/keys",
+      "success_status": 201,
+      "data_schema": "AdminApiKeyDisclosure",
+      "secret_disclosure": "one-time",
+      "cache_control": "no-store"
+    },
+    {
+      "method": "PATCH",
+      "path": "/admin/api/v1/keys/{token_id}",
+      "success_status": 200,
+      "data_schema": "AdminApiKey"
+    },
+    {
+      "method": "DELETE",
+      "path": "/admin/api/v1/keys/{token_id}",
+      "success_status": 200,
+      "data_schema": "AdminApiKey"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/api/v1/keys/{token_id}:rotate",
+      "success_status": 201,
+      "data_schema": "AdminApiKeyDisclosure",
+      "secret_disclosure": "one-time",
+      "cache_control": "no-store"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/audit",
+      "success_status": 200,
+      "data_schema": "AdminAuditList"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/context",
+      "success_status": 200,
+      "data_schema": "AdminContextData"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/overview",
+      "success_status": 200,
+      "data_schema": "AdminOverview"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/models",
+      "success_status": 200,
+      "data_schema": "AdminModelList"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/models/{model_id}",
+      "success_status": 200,
+      "data_schema": "AdminModelDetail"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/operations",
+      "success_status": 200,
+      "data_schema": "AdminOperationList"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/operations/{operation_id}",
+      "success_status": 200,
+      "data_schema": "AdminOperationDetail"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/capacity",
+      "success_status": 200,
+      "data_schema": "AdminCapacity"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/observability",
+      "success_status": 200,
+      "data_schema": "AdminObservability"
+    }
+  ],
+  "shared_context_query": ["project", "cluster", "region", "from", "to", "timezone"],
+  "operation_filters": [
+    "limit",
+    "cursor",
+    "tenant_id",
+    "model_id",
+    "principal_id",
+    "api_key_prefix",
+    "status",
+    "error_code"
+  ],
+  "observability_filters": ["model_id", "operation_id"],
+  "capacity_contract": {
+    "allocation_state": "estimated from bounded Pod requests",
+    "health_state": "unavailable without an explicit GPU health source",
+    "kueue_quantities": ["nominal_quota", "reservation", "usage", "borrowed"]
+  },
+  "observability_component_fields": ["installed", "health", "data_present", "launch"],
+  "bounds": {
+    "maximum_time_range_days": 31,
+    "maximum_model_page_size": 256,
+    "maximum_operation_page_size": 200,
+    "maximum_cursor_characters": 512
+  },
+  "forbidden_response_fields": [
+    "request_body",
+    "response_body",
+    "request_ciphertext",
+    "response_ciphertext",
+    "request_hmac",
+    "response_hmac",
+    "idempotency_key",
+    "error_detail",
+    "traceparent",
+    "gpu_uuids",
+    "pod_uid",
+    "node_uid",
+    "raw_api_key",
+    "database_url",
+    "kubeconfig"
+  ]
+}

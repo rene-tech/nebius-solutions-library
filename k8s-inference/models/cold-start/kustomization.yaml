@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - foundation.yaml
+  - keepers/boltz2-b300-1x.yaml
+  - keepers/evo2-b300-1x.yaml
+  - keepers/genmol-b300-1x.yaml
+  - keepers/nv-segment-ct-b300-1x.yaml
+  - keepers/sdxl-b300-1x.yaml
+  - keepers/vllm-b300-1x.yaml
+  - keepers/vllm-b300-8x.yaml

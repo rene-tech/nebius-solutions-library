@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/federated-backends/v1",
+  "title": "fs2-serve exact federated backend inventory v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "recorded_at", "authority", "identity_alias_policy", "records"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/federated-backends/v1"},
+    "recorded_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "authority": {"const": "agent-task-deck-manager-sm90-inventory"},
+    "identity_alias_policy": {"const": "forbidden"},
+    "records": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+      "additionalProperties": {"$ref": "#/$defs/backend"}
+    }
+  },
+  "$defs": {
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend_class", "region", "gpu_class", "runtime_image_digest", "backend_state", "route_state", "runtime_image_state", "trust_state", "endpoint_identity_sha256", "trust_bundle_sha256", "credential_requirement_id", "preference", "qualification_requirements", "notes"],
+      "properties": {
+        "backend_class": {"enum": ["federated-kserve-nim", "federated-serverless", "historical-h100-bridge"]},
+        "region": {"type": ["string", "null"], "pattern": "^[a-z]+-[a-z]+[0-9]+$"},
+        "gpu_class": {"enum": ["NVIDIA-H100-SXM-80GB", "NVIDIA-H200-SXM"]},
+        "runtime_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "backend_state": {"enum": ["ready-observed", "running-observed", "historical-only", "qualified"]},
+        "route_state": {"enum": ["gated", "credential-compromised", "disabled", "qualified"]},
+        "runtime_image_state": {"enum": ["digest-pinned", "mutable-unverified", "historical-exact-pin-only"]},
+        "trust_state": {"enum": ["authorized-observed-unattested", "credential-exposed-by-provider-diagnostics", "historical-no-live-service", "verified"]},
+        "endpoint_identity_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "trust_bundle_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "credential_requirement_id": {"type": ["string", "null"], "pattern": "^fs2-models/[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+        "preference": {"enum": ["best-current-exact-upstream", "candidate-after-remediation", "none"]},
+        "qualification_requirements": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "notes": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

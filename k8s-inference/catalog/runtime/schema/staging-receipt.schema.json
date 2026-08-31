@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/staging-receipt/v3",
+  "title": "Node-bound atomic localization receipt v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "operation_id", "model_id", "artifact_manifest_digest", "content_digest", "source_path", "source_uri", "destination_path", "content_uri", "controller_owner", "lock_path", "serving_node", "max_concurrent_files", "expanded_bytes", "reserve_bytes", "free_bytes_before", "free_bytes_after", "outcome", "cleanup"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/staging-receipt/v3"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "operation_id": {"type": "string", "minLength": 1},
+    "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "artifact_manifest_digest": {"$ref": "#/$defs/digest"},
+    "content_digest": {"$ref": "#/$defs/digest"},
+    "source_path": {"type": "string", "pattern": "^/"},
+    "source_uri": {"type": "string", "pattern": "^sfs://fs2-cache/"},
+    "destination_path": {"type": "string", "pattern": "^/"},
+    "content_uri": {"type": "string", "pattern": "^nvme://localhost/"},
+    "controller_owner": {"const": "fs2-serve-localizer"},
+    "lock_path": {"type": "string", "pattern": "/\\.locks/"},
+    "serving_node": {"$ref": "#/$defs/node"},
+    "max_concurrent_files": {"type": "integer", "minimum": 1, "maximum": 16},
+    "expanded_bytes": {"type": "integer", "minimum": 1},
+    "reserve_bytes": {"type": "integer", "minimum": 0},
+    "free_bytes_before": {"type": "integer", "minimum": 0},
+    "free_bytes_after": {"type": "integer", "minimum": 0},
+    "outcome": {"enum": ["staged", "already-present"]},
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["temporary_path_absent"],
+      "properties": {"temporary_path_absent": {"const": true}}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "uid", "provider_id_sha256"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 253},
+        "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+        "provider_id_sha256": {"$ref": "#/$defs/digest"}
+      }
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/provider-block-writer-admission/v2",
+  "title": "fs2-serve provider block complete-mount-set API/Lease sole-writer admission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "admitted_at", "model_id", "model_digest", "operation_id", "storage_class_receipt_digest", "claim", "writer", "controller", "lease", "mount_set", "api_fence"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/provider-block-writer-admission/v2"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "admitted"},
+    "admitted_at": {"type": "string", "format": "date-time"},
+    "model_id": {"const": "qwen3-8b"},
+    "model_digest": {"$ref": "#/$defs/digest"},
+    "operation_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "storage_class_receipt_digest": {"$ref": "#/$defs/digest"},
+    "claim": {
+      "type": "object", "additionalProperties": false,
+      "required": ["namespace", "name", "uid", "resource_version"],
+      "properties": {"namespace": {"const": "fs2-models"}, "name": {"const": "qwen3-8b-weights"}, "uid": {"$ref": "#/$defs/uid"}, "resource_version": {"type": "string", "minLength": 1}}
+    },
+    "writer": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "kind", "namespace", "name", "service_account_name", "service_account_uid"],
+      "properties": {"api_version": {"const": "batch/v1"}, "kind": {"const": "Job"}, "namespace": {"const": "fs2-models"}, "name": {"type": "string", "pattern": "^qwen3-8b-cache-"}, "service_account_name": {"const": "cache-service-account"}, "service_account_uid": {"$ref": "#/$defs/uid"}}
+    },
+    "controller": {
+      "type": "object", "additionalProperties": false,
+      "required": ["namespace", "deployment_name", "deployment_uid", "service_account_name", "service_account_uid", "validating_admission_policy_name", "validating_admission_policy_uid", "writer_create_role_name", "writer_create_role_uid", "writer_create_role_binding_name", "writer_create_role_binding_uid", "identity_sha256"],
+      "properties": {
+        "namespace": {"const": "fs2-system"}, "deployment_name": {"const": "fs2-provider-block-writer-admission"}, "deployment_uid": {"$ref": "#/$defs/uid"},
+        "service_account_name": {"const": "fs2-provider-block-writer-admission"}, "service_account_uid": {"$ref": "#/$defs/uid"},
+        "validating_admission_policy_name": {"const": "fs2-provider-block-sole-writer"}, "validating_admission_policy_uid": {"$ref": "#/$defs/uid"},
+        "writer_create_role_name": {"const": "fs2-provider-block-writer-create"}, "writer_create_role_uid": {"$ref": "#/$defs/uid"},
+        "writer_create_role_binding_name": {"const": "fs2-provider-block-writer-create"}, "writer_create_role_binding_uid": {"$ref": "#/$defs/uid"},
+        "identity_sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "lease": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_version", "kind", "namespace", "name", "uid", "resource_version", "holder_identity", "fencing_token", "renew_time", "lease_duration_seconds"],
+      "properties": {
+        "api_version": {"const": "coordination.k8s.io/v1"}, "kind": {"const": "Lease"}, "namespace": {"const": "fs2-models"}, "name": {"const": "qwen3-8b-weights-writer"},
+        "uid": {"$ref": "#/$defs/uid"}, "resource_version": {"type": "string", "minLength": 1}, "holder_identity": {"type": "string", "minLength": 1},
+        "fencing_token": {"type": "integer", "minimum": 1}, "renew_time": {"type": "string", "format": "date-time"}, "lease_duration_seconds": {"const": 900}
+      }
+    },
+    "mount_set": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_server_identity_sha256", "namespace", "claim_uid", "list_resource_version", "continue_token", "remaining_item_count", "complete", "observed_at", "mounts"],
+      "properties": {
+        "api_server_identity_sha256": {"$ref": "#/$defs/digest"}, "namespace": {"const": "fs2-models"}, "claim_uid": {"$ref": "#/$defs/uid"},
+        "list_resource_version": {"type": "string", "minLength": 1}, "continue_token": {"type": "null"}, "remaining_item_count": {"const": 0}, "complete": {"const": true}, "observed_at": {"type": "string", "format": "date-time"},
+        "mounts": {"const": []}
+      }
+    },
+    "api_fence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["enforcement", "api_server_applied", "claim_resource_version", "allowed_operation_id", "allowed_writer_name", "allowed_creator_service_account_uid", "lease_uid", "fencing_token", "complete_mount_set_sha256", "writer_create_role_uid", "writer_create_role_binding_uid", "race_window", "second_writer_denied"],
+      "properties": {
+        "enforcement": {"const": "controller-owned-job-create-plus-validating-admission-policy-plus-lease-cas"}, "api_server_applied": {"const": true}, "claim_resource_version": {"type": "string", "minLength": 1},
+        "allowed_operation_id": {"type": "string", "minLength": 1}, "allowed_writer_name": {"type": "string", "minLength": 1}, "allowed_creator_service_account_uid": {"$ref": "#/$defs/uid"}, "lease_uid": {"$ref": "#/$defs/uid"},
+        "fencing_token": {"type": "integer", "minimum": 1}, "complete_mount_set_sha256": {"$ref": "#/$defs/digest"}, "writer_create_role_uid": {"$ref": "#/$defs/uid"}, "writer_create_role_binding_uid": {"$ref": "#/$defs/uid"},
+        "race_window": {"const": "closed-by-controller-held-lease-through-job-create-and-completion"}, "second_writer_denied": {"const": true}
+      }
+    }
+  },
+  "$defs": {"digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"}}
+}

@@ -1,0 +1,182 @@
+{
+  "canonicalization": "utf8-json-sort-keys-no-whitespace",
+  "contract_payload_sha256": "6bc458b18a85dfa260b20a175bcca730f0238ba19caa53f8312e550fe9ededdd",
+  "migration_set": {
+    "algorithm": "sha256",
+    "ordered_migrations": [
+      {
+        "ordinal": 1,
+        "sha256": "fa1ece4a99ef5d5b8f9260d120ec452bd64fedfe581a376faee69013020c0179",
+        "version": "0001_initial.sql"
+      },
+      {
+        "ordinal": 2,
+        "sha256": "3b7e40e6ff290ff348e36b86a5d0310192b538b2cfce301d137ad6aac17ca428",
+        "version": "0002_bound_operation_attempts.sql"
+      },
+      {
+        "ordinal": 3,
+        "sha256": "7f6d4d7de60efee4928ebd0274d2a4c7410aee2316604249992647c0c65bfe0c",
+        "version": "0003_bound_operation_identifiers.sql"
+      },
+      {
+        "ordinal": 4,
+        "sha256": "2cb1e55877d36c953d003028b9db06491bcc524bb019e2abac16070daf0f6e95",
+        "version": "0004_index_queued_deadlines.sql"
+      },
+      {
+        "ordinal": 5,
+        "sha256": "fedb6789a4839d42645c5ffb6905ce46525c213d81f15d9d987eacc109614197",
+        "version": "0005_terminal_accounting.sql"
+      },
+      {
+        "ordinal": 6,
+        "sha256": "ac15d435e5fefb03da2780011e059736da803e5ded482414a5d1012ee265b022",
+        "version": "0006_activation_controller.sql"
+      },
+      {
+        "ordinal": 7,
+        "sha256": "b60a2976b366acc55c652f2e1cbdc4a06f2a38933930aa8d2805b48e063e150d",
+        "version": "0007_activation_controller_health.sql"
+      },
+      {
+        "ordinal": 8,
+        "sha256": "b7ea9fe6497df00fa4a0d4c6bfb2b01dfa3e699f7b4392979b1d24f13a8fcd3d",
+        "version": "0008_activation_fencing_identity.sql"
+      },
+      {
+        "ordinal": 9,
+        "sha256": "3bf0342f7b9ef8b5dc1e88aeda985d6d8856f5cf111b82aded3d0c56e44d0c23",
+        "version": "0009_maintenance_least_privilege.sql"
+      },
+      {
+        "ordinal": 10,
+        "sha256": "113d7ff18906fd7af94f14e8751c6d9480eba25b711440b528ff7dde9157c5e5",
+        "version": "0010_admin_access_accounting.sql"
+      },
+      {
+        "ordinal": 11,
+        "sha256": "fa8ab57dcf32bba741c149352e796cb261341df535d0b972af432792bbd8da43",
+        "version": "0011_admin_configuration.sql"
+      }
+    ],
+    "sha256": "25581efdc1a2cb52d4cfb2c05711ce993dee3310e669dd30348b820ae2a41b37"
+  },
+  "namespace_role_ownership": {
+    "credential_secrets": [
+      {
+        "consumer_owners": [
+          "fs2-model-activation-controller"
+        ],
+        "database_group_role": "fs2_serve_activation",
+        "key": "url",
+        "name": "fs2-serve-database-activation",
+        "namespace": "fs2-system",
+        "purpose": "activation",
+        "writer_owner": "postgresql-platform-release"
+      },
+      {
+        "consumer_owners": [
+          "fs2-serve-control-plane-maintenance"
+        ],
+        "database_group_role": "fs2_serve_maintenance",
+        "key": "url",
+        "name": "fs2-serve-database-maintenance",
+        "namespace": "fs2-system",
+        "purpose": "maintenance",
+        "writer_owner": "postgresql-platform-release"
+      },
+      {
+        "consumer_owners": [
+          "fs2-serve-control-plane-migration"
+        ],
+        "database_group_role": null,
+        "database_owner_role": "fs2serve",
+        "key": "url",
+        "name": "fs2-serve-database-migrations",
+        "namespace": "fs2-system",
+        "purpose": "migrations",
+        "writer_owner": "postgresql-platform-release"
+      },
+      {
+        "consumer_owners": [
+          "fs2-observability-grafana"
+        ],
+        "database_group_role": "fs2_serve_reporting",
+        "key": "url",
+        "name": "fs2-serve-database-reporting",
+        "namespace": "fs2-observability",
+        "purpose": "reporting",
+        "writer_owner": "postgresql-platform-release"
+      },
+      {
+        "consumer_owners": [
+          "fs2-serve-control-plane-gateway"
+        ],
+        "database_group_role": "fs2_serve_runtime",
+        "key": "url",
+        "name": "fs2-serve-database",
+        "namespace": "fs2-system",
+        "purpose": "runtime",
+        "writer_owner": "postgresql-platform-release"
+      }
+    ],
+    "database": {
+      "cluster_name": "fs2-control-db",
+      "database_name": "fs2serve",
+      "database_owner_role": "fs2serve",
+      "namespace": "fs2-data",
+      "port": 5432,
+      "read_write_service_name": "fs2-control-db-rw",
+      "resource_owner": "postgresql-platform-release"
+    },
+    "database_group_roles": [
+      {
+        "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        "login": false,
+        "name": "fs2_serve_activation",
+        "purpose": "activation"
+      },
+      {
+        "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        "login": false,
+        "name": "fs2_serve_maintenance",
+        "purpose": "maintenance"
+      },
+      {
+        "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        "login": false,
+        "name": "fs2_serve_reporting",
+        "purpose": "reporting"
+      },
+      {
+        "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        "login": false,
+        "name": "fs2_serve_runtime",
+        "purpose": "runtime"
+      }
+    ],
+    "ownership_rules": [
+      "postgresql-platform-release-owns-cluster-database-owner-and-secret-writes",
+      "fs2-serve-control-plane-migration-is-sole-schema-and-group-grant-owner",
+      "application-and-observability-workloads-read-only-their-namespaced-secret",
+      "credential-login-members-are-distinct-and-receipt-bound-outside-this-value-suppressed-contract"
+    ],
+    "schema_migration_owner": {
+      "database_role": "fs2serve",
+      "job_name": "fs2-serve-control-plane-migrate",
+      "namespace": "fs2-system",
+      "ownership": "sole-ddl-and-grant-owner",
+      "service_account_name": "fs2-serve-control-plane-migration"
+    }
+  },
+  "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
+  "required_release_receipt_inputs": {
+    "first_migration_version": "0001_initial.sql",
+    "last_migration_version": "0011_admin_configuration.sql",
+    "migration_count": 11,
+    "migration_set_sha256": "25581efdc1a2cb52d4cfb2c05711ce993dee3310e669dd30348b820ae2a41b37",
+    "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"
+  },
+  "schema": "fs2-serve.nebius.ai/postgresql-release-contract/v1"
+}

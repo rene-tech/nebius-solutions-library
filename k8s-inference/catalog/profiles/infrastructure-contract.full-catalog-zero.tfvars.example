@@ -1,0 +1,55 @@
+# Human-readable shape of the non-secret cross-stage contract for the approved
+# eu-west2 full-catalog/zero-floor recovery run. Prefer generating the private
+# JSON var-file from `terraform output -json infrastructure_contract`; replace
+# source_commit only when reviewing this example directly.
+infrastructure_contract = {
+  schema        = "fs2-serve.nebius.ai/terraform-infrastructure-contract/v1"
+  source_commit = "0000000000000000000000000000000000000000"
+  target = {
+    project_id = "project-exampletarget2"
+    region     = "eu-west2"
+    system_update_strategy = {
+      max_surge       = 0
+      max_unavailable = 1
+    }
+  }
+  source_registry = {
+    id         = "registry-example"
+    project_id = "project-exampletarget"
+    fqdn       = "cr.us-north1.nebius.cloud"
+  }
+  capacity = {
+    profile               = "full_catalog"
+    floor_profile         = "zero"
+    maximum_gpus          = 22
+    shared_cache_size_gib = 2048
+    system = {
+      capacity        = "regular"
+      platform        = "cpu-d3"
+      preset          = "8vcpu-32gb"
+      nodes           = 3
+      max_surge       = 0
+      max_unavailable = 1
+    }
+    gpu_b300_1x = {
+      capacity      = "preemptible"
+      platform      = "gpu-b300-sxm"
+      preset        = "1gpu-24vcpu-346gb"
+      gpus_per_node = 1
+      min_nodes     = 0
+      max_nodes     = 6
+      driver_preset = "cuda13.0"
+      local_nvme    = false
+    }
+    gpu_b300_8x = {
+      capacity      = "preemptible"
+      platform      = "gpu-b300-sxm"
+      preset        = "8gpu-192vcpu-2768gb"
+      gpus_per_node = 8
+      min_nodes     = 0
+      max_nodes     = 2
+      driver_preset = "cuda13.0"
+      local_nvme    = true
+    }
+  }
+}

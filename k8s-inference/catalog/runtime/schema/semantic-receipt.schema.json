@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/semantic-receipt/v3",
+  "title": "Signed two-response semantic qualification receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "model_id", "model_digest", "runtime_tuple_digest", "request_contract_sha256", "request_asset_set_sha256", "attempt_id", "observed_at", "validator", "responses", "distinct_requests", "distinct_responses", "gateway_path", "validator_result_digest"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/semantic-receipt/v3"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "PASS"},
+    "model_id": {"$ref": "#/$defs/modelId"},
+    "model_digest": {"$ref": "#/$defs/digest"},
+    "runtime_tuple_digest": {"$ref": "#/$defs/digest"},
+    "request_contract_sha256": {"$ref": "#/$defs/digest"},
+    "request_asset_set_sha256": {"$ref": "#/$defs/digest"},
+    "attempt_id": {"type": "string", "minLength": 1},
+    "observed_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "validator": {"$ref": "#/$defs/validator"},
+    "responses": {"$ref": "#/$defs/responses"},
+    "distinct_requests": {"const": true},
+    "distinct_responses": {"const": true},
+    "gateway_path": {"type": ["object", "null"]},
+    "validator_result_digest": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "modelId": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "validator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "source_path", "source_sha256", "fixture_path", "fixture_sha256"],
+      "properties": {
+        "contract": {"type": "string", "minLength": 1},
+        "source_path": {"type": "string", "minLength": 1},
+        "source_sha256": {"$ref": "#/$defs/digest"},
+        "fixture_path": {"type": ["string", "null"]},
+        "fixture_sha256": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]}
+      }
+    },
+    "responses": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["request_id", "request_sha256", "response_sha256", "semantic_valid"],
+        "properties": {
+          "request_id": {"type": "string", "minLength": 1},
+          "request_sha256": {"$ref": "#/$defs/digest"},
+          "response_sha256": {"$ref": "#/$defs/digest"},
+          "semantic_valid": {"const": true}
+        }
+      }
+    }
+  }
+}

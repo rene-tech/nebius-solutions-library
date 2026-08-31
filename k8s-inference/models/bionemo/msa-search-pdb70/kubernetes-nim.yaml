@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: msa-search-pdb70-nim-cache
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/model-id: msa-search-pdb70
+    fs2-serve.nebius.ai/runtime: exact-nim
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 8Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: msa-search-pdb70-nim
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: msa-search-pdb70
+    app.kubernetes.io/instance: msa-search-pdb70-nim
+    fs2-serve.nebius.ai/model-id: msa-search-pdb70
+  annotations:
+    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/runtime-image-digest: sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c
+    fs2-serve.nebius.ai/identity-relationship: exact
+    fs2-serve.nebius.ai/runtime-image-digest: sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c
+    fs2-serve.nebius.ai/model-profile: ad5086cc67393792e71fa57444f13eaff8425658e8fb5feea07070ca3b2d34bb
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: msa-search-pdb70-nim
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: msa-search-pdb70
+        app.kubernetes.io/instance: msa-search-pdb70-nim
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/part-of: fs2-serve
+        fs2-serve.nebius.ai/model-id: msa-search-pdb70
+      annotations:
+        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/runtime-image-digest: sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: msa-search-pdb70
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: nvcrio-cred
+      nodeSelector:
+        capacity.fs2.nebius/pool: burst
+        capacity.fs2.nebius/type: preemptible
+        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: msa-search-pdb70
+          image: nvcr.io/nim/colabfold/msa-search@sha256:944f3cf845761be8e42b33147ae08b68c61eca7cad67bf5251e1708d03c0165c
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - /opt/nim/start_server.sh
+          env:
+            - name: NIM_CACHE_PATH
+              value: /opt/nim/.cache
+            - name: NIM_MODEL_PROFILE
+              value: ad5086cc67393792e71fa57444f13eaff8425658e8fb5feea07070ca3b2d34bb
+            - name: NIM_GLOBAL_MAX_MSA_DEPTH
+              value: "500"
+            - name: NGC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ngc-api-key
+                  key: NGC_API_KEY
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "10"
+              memory: 128Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "15"
+              memory: 180Gi
+              nvidia.com/gpu: "1"
+          startupProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 360
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 6
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: nim-cache
+              mountPath: /opt/nim/.cache
+            - name: nim-cache
+              mountPath: /opt/nim/workspace
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+        - name: nim-cache
+          persistentVolumeClaim:
+            claimName: msa-search-pdb70-nim-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: msa-search-pdb70-nim
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/model-id: msa-search-pdb70
+spec:
+  selector:
+    app.kubernetes.io/instance: msa-search-pdb70-nim
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

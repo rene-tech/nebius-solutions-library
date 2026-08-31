@@ -1,0 +1,100 @@
+command:
+  name: otelcol-k8s
+config:
+  exporters:
+    debug: null
+    otlp:
+      endpoint: fs2-otel-gateway.fs2-observability.svc.cluster.local:4317
+      retry_on_failure: {enabled: true, initial_interval: 1s, max_elapsed_time: 60s, max_interval: 10s}
+      sending_queue: {enabled: true, queue_size: 2048}
+      tls: {insecure: true}
+  extensions:
+    health_check: {endpoint: "${env:MY_POD_IP}:13133"}
+  processors:
+    batch: {send_batch_size: 1024, timeout: 5s}
+    k8sattributes:
+      auth_type: serviceAccount
+      extract:
+        metadata:
+          - k8s.namespace.name
+          - k8s.pod.name
+          - k8s.pod.uid
+          - k8s.container.name
+          - k8s.node.name
+      passthrough: false
+      pod_association:
+        - sources:
+            - {from: resource_attribute, name: k8s.pod.uid}
+    memory_limiter: {check_interval: 5s, limit_percentage: 75, spike_limit_percentage: 20}
+    resource/sanitize:
+      attributes:
+        - {action: delete, key: enduser.id}
+        - {action: delete, key: user.id}
+        - {action: delete, key: tenant.id}
+        - {action: delete, key: api.key.id}
+        - {action: delete, key: http.request.header.authorization}
+  receivers:
+    filelog:
+      exclude: [/var/log/pods/fs2-observability_*/*/*.log]
+      include: [/var/log/pods/fs2-*_*/*/*.log]
+      include_file_name: false
+      include_file_path: true
+      operators: [{id: container-parser, type: container}]
+      start_at: end
+    jaeger: null
+    otlp: null
+    prometheus: null
+    zipkin: null
+  service:
+    extensions: [health_check]
+    pipelines:
+      logs:
+        exporters: [otlp]
+        processors: [memory_limiter, k8sattributes, resource/sanitize, batch]
+        receivers: [filelog]
+      metrics: null
+      traces: null
+fullnameOverride: fs2-otel-node
+image:
+  repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s
+  tag: 0.159.0
+mode: daemonset
+podSecurityContext:
+  fsGroup: 10001
+  runAsGroup: 10001
+  runAsNonRoot: true
+  runAsUser: 10001
+  # Nebius kubelet log roots/files are 0750/0640 root:root. Grant only the
+  # supplemental read group; the collector remains non-root with a read-only
+  # hostPath, read-only root filesystem, and no Linux capabilities.
+  supplementalGroups: [0]
+  seccompProfile: {type: RuntimeDefault}
+ports:
+  jaeger-compact: {enabled: false}
+  jaeger-grpc: {enabled: false}
+  jaeger-thrift: {enabled: false}
+  metrics: {containerPort: 8888, enabled: true, protocol: TCP, servicePort: 8888}
+  otlp: {enabled: false}
+  otlp-http: {enabled: false}
+  zipkin: {enabled: false}
+presets:
+  kubernetesAttributes:
+    enabled: true
+    extractAllPodAnnotations: false
+    extractAllPodLabels: false
+  logsCollection:
+    enabled: true
+    includeCollectorLogs: false
+    storeCheckpoints: false
+resources:
+  limits: {cpu: 500m, memory: 512Mi}
+  requests: {cpu: 50m, memory: 128Mi}
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities: {drop: [ALL]}
+  readOnlyRootFilesystem: true
+serviceMonitor:
+  enabled: true
+  metricsEndpoints: [{interval: 30s, port: metrics}]
+tolerations:
+  - operator: Exists

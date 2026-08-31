@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "name": "gateway-api",
+      "kind": "manifest",
+      "version": "1.5.1",
+      "source": "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/standard-install.yaml",
+      "artifact": "gateway-api-standard-v1.5.1.yaml",
+      "sha256": "751002b3b91a87f7ae3bd2517c79a47a8d7ed6702901808a1cf9bd97d284f9b8",
+      "namespace": null,
+      "required": true
+    },
+    {
+      "name": "cert-manager",
+      "kind": "helm-repo",
+      "version": "v1.21.1",
+      "source": "https://charts.jetstack.io",
+      "chart": "cert-manager",
+      "artifact": "cert-manager-v1.21.1.tgz",
+      "sha256": "c27101f3f3e2349fb4a9e704316105bf7b52ad73b8c8257d3498ef7f2f6a4adc",
+      "namespace": "cert-manager",
+      "required": true
+    },
+    {
+      "name": "envoy-gateway",
+      "kind": "helm-oci",
+      "version": "v1.8.1",
+      "source": "oci://docker.io/envoyproxy/gateway-helm",
+      "oci_digest": "sha256:f46b2f38b695279fce81dced26d97724c3445fcccb0488aaa28ec5ef963a6181",
+      "artifact": "gateway-helm-v1.8.1.tgz",
+      "sha256": "59a8cadd97f55dc40f70fe331eefb32de0853558615941eccafcb789678c80cd",
+      "namespace": "envoy-gateway-system",
+      "required": true
+    },
+    {
+      "name": "kueue",
+      "kind": "helm-oci",
+      "version": "0.17.8",
+      "source": "oci://registry.k8s.io/kueue/charts/kueue",
+      "oci_digest": "sha256:e5f000fcf0604e5dea0025e0ffdd20e6712de432bcca0ec254d71d97f012a354",
+      "artifact": "kueue-0.17.8.tgz",
+      "sha256": "409de6260d2b7834fece5044502822bcb4e74ed8a03b8ea22bb78bcdfa1627db",
+      "namespace": "kueue-system",
+      "required": true
+    },
+    {
+      "name": "kserve-crd",
+      "kind": "helm-oci",
+      "version": "v0.20.0",
+      "source": "oci://ghcr.io/kserve/charts/kserve-crd",
+      "oci_digest": "sha256:92deb742d22aaf295f4fd86d5c2595cbf08b14b6916760bfb16875b20761ee0d",
+      "artifact": "kserve-crd-v0.20.0.tgz",
+      "sha256": "0b5437558fa3a77684a08b1480252404db2b7729f46f0605f5744f41a8efd44c",
+      "namespace": "kserve",
+      "required": true
+    },
+    {
+      "name": "kserve-resources",
+      "kind": "helm-oci",
+      "version": "v0.20.0",
+      "source": "oci://ghcr.io/kserve/charts/kserve-resources",
+      "oci_digest": "sha256:956c4860374fd83fc5702f23905e37a60c0470783356c2fe8b2e8363ca20572b",
+      "artifact": "kserve-resources-v0.20.0.tgz",
+      "sha256": "1d43f36f47037f5e604c69fb78dace2c0e30c80c2a44324c701efd8a8b7631ce",
+      "namespace": "kserve",
+      "required": true
+    },
+    {
+      "name": "kube-prometheus-stack",
+      "kind": "helm-repo",
+      "version": "88.5.4",
+      "source": "https://prometheus-community.github.io/helm-charts",
+      "chart": "kube-prometheus-stack",
+      "artifact": "kube-prometheus-stack-88.5.4.tgz",
+      "sha256": "c17a08afbbaa8577b5bdc990511b3cf1a3a37ae76ce5817e7478300f9933749b",
+      "namespace": "fs2-observability",
+      "required": true
+    },
+    {
+      "name": "dcgm-exporter",
+      "kind": "helm-repo",
+      "version": "4.8.3",
+      "source": "https://nvidia.github.io/dcgm-exporter/helm-charts",
+      "chart": "dcgm-exporter",
+      "artifact": "dcgm-exporter-4.8.3.tgz",
+      "sha256": "b1206338d5c446126e233f93df80f0538c285ce40b2e72e6c2f46c9db59ef223",
+      "namespace": "fs2-observability",
+      "required": false,
+      "gate": "FS2_DCGM_IMAGE_DIGEST must contain a reviewed nvcr.io manifest digest"
+    }
+  ]
+}

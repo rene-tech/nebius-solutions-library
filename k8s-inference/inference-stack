@@ -1,0 +1,1137 @@
+#!/usr/bin/env python3
+"""Operate the staged Kubernetes inference stack from one customer tfvars file."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Mapping, Sequence
+from urllib.parse import urlsplit
+
+
+SOLUTION_ROOT = Path(__file__).resolve().parent
+DEPLOY_ROOT = SOLUTION_ROOT
+REPOSITORY_ROOT = SOLUTION_ROOT.parent
+INFRA_ROOT = SOLUTION_ROOT / "stages" / "infrastructure"
+FOUNDATION_ROOT = SOLUTION_ROOT / "stages" / "foundation"
+WORKLOADS_ROOT = SOLUTION_ROOT / "stages" / "workloads"
+STAGE_COMPLETION_OUTPUTS = {
+    "infrastructure": "accelerator_pool_contract",
+    "foundation": "cluster_contract",
+    "workloads": "deployment_contract",
+}
+
+
+class DeploymentError(RuntimeError):
+    """A bounded, user-actionable deployment failure."""
+
+
+def command_text(arguments: Sequence[str]) -> str:
+    """Return a readable command containing no secret environment values."""
+    return " ".join(arguments)
+
+
+def run(
+    arguments: Sequence[str],
+    *,
+    env: Mapping[str, str] | None = None,
+    capture: bool = False,
+    input_text: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    print(f"+ {command_text(arguments)}", file=sys.stderr)
+    try:
+        return subprocess.run(
+            list(arguments),
+            env=dict(env) if env is not None else None,
+            input=input_text,
+            text=True,
+            check=True,
+            stdout=subprocess.PIPE if capture else sys.stderr,
+            stderr=subprocess.PIPE if capture else None,
+        )
+    except FileNotFoundError as exc:
+        raise DeploymentError(f"required executable not found: {arguments[0]}") from exc
+    except subprocess.CalledProcessError as exc:
+        if capture and exc.stderr:
+            print(exc.stderr.rstrip(), file=sys.stderr)
+        raise DeploymentError(
+            f"command failed with exit code {exc.returncode}: {command_text(arguments)}"
+        ) from exc
+
+
+def private_directory(path: Path) -> None:
+    if path.exists() and (path.is_symlink() or not path.is_dir()):
+        raise DeploymentError(f"run root must be a real directory: {path}")
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.chmod(0o700)
+
+
+def private_json(path: Path, value: Any) -> None:
+    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    descriptor = os.open(temporary, flags, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def private_text(path: Path, value: str) -> None:
+    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(value)
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def clean_environment() -> dict[str, str]:
+    # Stage inputs are generated explicitly. Inherited TF_VAR values could
+    # otherwise make the same customer file produce a different deployment.
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("TF_VAR_")
+        and not key.startswith("TF_CLI_ARGS")
+        and key not in {"TF_DATA_DIR", "TF_WORKSPACE"}
+    }
+
+
+def terraform_environment(run_root: Path, stage: str) -> dict[str, str]:
+    environment = clean_environment()
+    data_directory = run_root / "terraform-data" / stage
+    private_directory(data_directory)
+    environment["TF_DATA_DIR"] = str(data_directory)
+    environment["TF_IN_AUTOMATION"] = "1"
+    return environment
+
+
+def terraform_init(
+    terraform: str,
+    root: Path,
+    backend: Path,
+    environment: Mapping[str, str],
+) -> None:
+    if backend.is_symlink():
+        raise DeploymentError(f"Terraform backend path must not be a symlink: {backend}")
+    run(
+        [
+            terraform,
+            f"-chdir={root}",
+            "init",
+            "-input=false",
+            "-reconfigure",
+            f"-backend-config=path={backend}",
+        ],
+        env=environment,
+    )
+
+
+def validate_stage_roots(terraform: str, run_root: Path) -> None:
+    for stage in ("infrastructure", "foundation", "workloads"):
+        environment = terraform_environment(run_root, f"validate-{stage}")
+        root = stage_root(stage)
+        run(
+            [
+                terraform,
+                f"-chdir={root}",
+                "init",
+                "-backend=false",
+                "-input=false",
+            ],
+            env=environment,
+        )
+        run(
+            [terraform, f"-chdir={root}", "validate", "-no-color"],
+            env=environment,
+        )
+
+
+def terraform_json_output(
+    terraform: str,
+    root: Path,
+    name: str,
+    environment: Mapping[str, str],
+) -> Any:
+    result = run(
+        [terraform, f"-chdir={root}", "output", "-json", name],
+        env=environment,
+        capture=True,
+    )
+    return json.loads(result.stdout)
+
+
+def state_addresses(
+    terraform: str,
+    root: Path,
+    environment: Mapping[str, str],
+) -> list[str]:
+    result = subprocess.run(
+        [terraform, f"-chdir={root}", "state", "list"],
+        env=dict(environment),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
+def plan_json(
+    terraform: str,
+    *,
+    root: Path,
+    environment: Mapping[str, str],
+    variable_file: Path,
+    plan_path: Path,
+    json_path: Path,
+    destroy: bool = False,
+) -> dict[str, Any]:
+    if plan_path.is_symlink() or json_path.is_symlink():
+        raise DeploymentError("plan and plan JSON paths must not be symlinks")
+    arguments = [
+        terraform,
+        f"-chdir={root}",
+        "plan",
+        "-input=false",
+        "-lock=true",
+        f"-var-file={variable_file}",
+        f"-out={plan_path}",
+    ]
+    if destroy:
+        arguments.insert(3, "-destroy")
+    run(arguments, env=environment)
+    plan_path.chmod(0o600)
+    result = run(
+        [terraform, f"-chdir={root}", "show", "-json", str(plan_path)],
+        env=environment,
+        capture=True,
+    )
+    private_text(json_path, result.stdout)
+    return json.loads(result.stdout)
+
+
+def planned_output(document: Mapping[str, Any], name: str) -> Any:
+    try:
+        return document["planned_values"]["outputs"][name]["value"]
+    except (KeyError, TypeError) as exc:
+        raise DeploymentError(f"configuration plan did not produce output {name!r}") from exc
+
+
+def source_commit() -> str:
+    result = run(
+        ["git", "-C", str(REPOSITORY_ROOT), "rev-parse", "HEAD"],
+        capture=True,
+        env=clean_environment(),
+    )
+    commit = result.stdout.strip()
+    if len(commit) != 40 or any(character not in "0123456789abcdef" for character in commit):
+        raise DeploymentError("the source checkout does not have an exact Git commit identity")
+    return commit
+
+
+def default_run_root(variable_file: Path) -> Path:
+    identity = hashlib.sha256(str(variable_file.resolve()).encode()).hexdigest()[:12]
+    state_home = os.environ.get("XDG_STATE_HOME")
+    base = Path(state_home) if state_home else Path.home() / ".local" / "state"
+    return base / "nebius-k8s-inference" / identity
+
+
+def validate_configuration(
+    terraform: str,
+    variable_file: Path,
+    run_root: Path,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    environment = terraform_environment(run_root, "configuration")
+    backend = run_root / "configuration.tfstate"
+    terraform_init(terraform, DEPLOY_ROOT, backend, environment)
+    document = plan_json(
+        terraform,
+        root=DEPLOY_ROOT,
+        environment=environment,
+        variable_file=variable_file,
+        plan_path=run_root / "configuration.tfplan",
+        json_path=run_root / "configuration.plan.json",
+    )
+    contract = planned_output(document, "deployment_contract")
+    private_json(run_root / "deployment-contract.json", contract)
+    return contract, environment
+
+
+def preflight_accelerators(
+    args: argparse.Namespace,
+    contract: Mapping[str, Any],
+) -> None:
+    """Validate project-local platform, preset, capacity, and driver facts live."""
+    pools = contract["stages"]["infrastructure"].get(
+        "custom_accelerator_pools", {}
+    )
+    if not pools:
+        raise DeploymentError(
+            "live preflight requires deployment.accelerator_pools; checked-in profile pools are evidence-backed but not a substitute for current capacity"
+        )
+
+    project_id = contract["target"]["project_id"]
+    kubernetes_version = contract["stages"]["infrastructure"][
+        "kubernetes_version"
+    ]
+    checked: list[dict[str, Any]] = []
+    for pool_id, pool in sorted(pools.items()):
+        platform_result = run(
+            [
+                args.nebius,
+                "--profile",
+                args.nebius_profile,
+                "compute",
+                "platform",
+                "get-by-name",
+                "--parent-id",
+                project_id,
+                "--name",
+                pool["platform"],
+                "--format",
+                "json",
+            ],
+            capture=True,
+            env=clean_environment(),
+        )
+        platform = json.loads(platform_result.stdout)
+        presets = {
+            item.get("name"): item
+            for item in platform.get("spec", {}).get("presets", [])
+        }
+        if pool["preset"] not in presets:
+            raise DeploymentError(
+                f"accelerator pool {pool_id!r}: preset {pool['preset']!r} is not offered by platform {pool['platform']!r} in project {project_id}"
+            )
+        preset = presets[pool["preset"]]
+        advertised_gpu_count = preset.get("resources", {}).get("gpu_count")
+        if advertised_gpu_count != pool["gpus_per_node"]:
+            raise DeploymentError(
+                f"accelerator pool {pool_id!r}: gpus_per_node={pool['gpus_per_node']} differs from the live preset value {advertised_gpu_count}"
+            )
+        if (
+            pool["capacity_type"] == "preemptible"
+            and not platform.get("status", {}).get("allowed_for_preemptibles", False)
+        ):
+            raise DeploymentError(
+                f"accelerator pool {pool_id!r}: platform {pool['platform']!r} does not allow preemptible capacity in this project"
+            )
+        if (
+            pool["topology"]["mode"] == "gpu_cluster"
+            and not preset.get("allow_gpu_clustering", False)
+        ):
+            raise DeploymentError(
+                f"accelerator pool {pool_id!r}: preset {pool['preset']!r} is not GPU-cluster capable"
+            )
+
+        compatibility_result = run(
+            [
+                args.nebius,
+                "--profile",
+                args.nebius_profile,
+                "mk8s",
+                "node-group",
+                "get-compatibility-matrix",
+                "--cluster-kubernetes-version",
+                kubernetes_version,
+                "--platform",
+                pool["platform"],
+                "--format",
+                "json",
+            ],
+            capture=True,
+            env=clean_environment(),
+        )
+        compatibility = json.loads(compatibility_result.stdout)
+        items = [
+            item
+            for version in compatibility.get("versions", [])
+            if version.get("kubernetes_version") == kubernetes_version
+            for item in version.get("items", [])
+            if pool["platform"] in item.get("compatible_platforms", [])
+            and item.get("os") == pool["os"]
+        ]
+        driver = pool["driver"]
+        compatible = any(
+            (
+                driver["mode"] == "managed"
+                and item.get("drivers_preset") == driver.get("preset")
+            )
+            or (
+                driver["mode"] == "operator"
+                and not item.get("drivers_preset")
+            )
+            for item in items
+        )
+        if not compatible:
+            raise DeploymentError(
+                f"accelerator pool {pool_id!r}: OS/driver mode is absent from the live MK8s compatibility matrix"
+            )
+        checked.append(
+            {
+                "pool_id": pool_id,
+                "platform": pool["platform"],
+                "preset": pool["preset"],
+                "capacity_type": pool["capacity_type"],
+                "driver_mode": driver["mode"],
+                "topology": pool["topology"]["mode"],
+                "status": "compatible",
+            }
+        )
+
+    print(
+        json.dumps(
+            {
+                "status": "compatible",
+                "project_id": project_id,
+                "kubernetes_version": kubernetes_version,
+                "accelerator_pools": checked,
+                "capacity_advisor": "Run Capacity Advisor immediately before apply; availability is not guaranteed by compatibility.",
+            },
+            indent=2,
+        )
+    )
+
+
+def require_deployable_images(contract: Mapping[str, Any]) -> None:
+    """Fail before cloud mutation when source-build placeholders remain."""
+    workloads = contract["stages"]["workloads"]
+    application_images = {
+        "control plane": workloads["control_plane_image"],
+        "admin console": workloads["admin_console"]["image"],
+    }
+    for label, image in application_images.items():
+        repository = image["repository"]
+        digest = image["digest"]
+        if repository.split("/", 1)[0].endswith(".invalid"):
+            raise DeploymentError(
+                f"{label} image still uses a .invalid source-build placeholder"
+            )
+        if digest == f"sha256:{'0' * 64}":
+            raise DeploymentError(f"{label} image still uses the zero digest placeholder")
+
+    selected_models = set(contract["selected_model_ids"])
+    model_images = workloads.get("model_image_overrides", {})
+    missing = sorted(selected_models - set(model_images))
+    if missing:
+        raise DeploymentError(
+            "selected models require deployment.models.image_overrides before apply: "
+            + ", ".join(missing)
+        )
+
+
+def stage_paths(run_root: Path, stage: str) -> tuple[Path, Path, Path]:
+    state_names = {
+        "infrastructure": "terraform.tfstate",
+        "foundation": "foundation.tfstate",
+        "workloads": "workloads.tfstate",
+    }
+    return (
+        run_root / state_names[stage],
+        run_root / f"{stage}.tfvars.json",
+        run_root / "terraform-data" / stage,
+    )
+
+
+def stage_root(stage: str) -> Path:
+    return {
+        "infrastructure": INFRA_ROOT,
+        "foundation": FOUNDATION_ROOT,
+        "workloads": WORKLOADS_ROOT,
+    }[stage]
+
+
+def stage_environment(
+    run_root: Path,
+    stage: str,
+    contract: Mapping[str, Any],
+    *,
+    include_secrets: bool = True,
+) -> dict[str, str]:
+    environment = terraform_environment(run_root, stage)
+    if not include_secrets:
+        return environment
+    secret_names = contract["secret_environment"]
+
+    if stage == "foundation":
+        username = os.environ.get(secret_names["grafana_username"])
+        password = os.environ.get(secret_names["grafana_password"])
+        if not username or not password:
+            raise DeploymentError(
+                "fresh foundation deployment requires both configured Grafana bootstrap username and password environment references"
+            )
+        environment["TF_VAR_bootstrap_grafana_credentials"] = json.dumps(
+            {"username": username, "password": password},
+            separators=(",", ":"),
+        )
+
+    if stage == "workloads":
+        ngc_key = os.environ.get(secret_names["ngc_api_key"])
+        docker_config = os.environ.get(secret_names["nvcr_dockerconfig"])
+        requirements = contract["secret_requirements"]
+        if requirements["ngc_api_key"] and not ngc_key:
+            raise DeploymentError(
+                "the selected NIM models require the configured NGC API-key environment reference"
+            )
+        if requirements["nvcr_dockerconfig"] and not docker_config:
+            raise DeploymentError(
+                "the selected workloads require the configured NVCR dockerconfig environment reference"
+            )
+        if ngc_key:
+            environment["TF_VAR_ngc_api_key"] = ngc_key
+        if docker_config:
+            environment["TF_VAR_nvcrio_dockerconfigjson"] = docker_config
+
+    return environment
+
+
+def write_infrastructure_variables(
+    run_root: Path,
+    contract: Mapping[str, Any],
+    commit: str,
+    nebius_profile: str,
+) -> Path:
+    variables = dict(contract["stages"]["infrastructure"])
+    variables["source_commit"] = commit
+    variables["nebius_profile"] = nebius_profile
+    path = run_root / "infrastructure.tfvars.json"
+    private_json(path, variables)
+    return path
+
+
+def ensure_kubeconfig(
+    *,
+    nebius: str,
+    nebius_profile: str,
+    kubectl: str,
+    run_root: Path,
+    cluster_id: str,
+    cluster_name: str,
+) -> tuple[Path, str]:
+    kubeconfig = run_root / "kubeconfig"
+    if kubeconfig.is_symlink():
+        raise DeploymentError(f"kubeconfig path must not be a symlink: {kubeconfig}")
+    environment = clean_environment()
+    environment["KUBECONFIG"] = str(kubeconfig)
+    run(
+        [
+            nebius,
+            "--profile",
+            nebius_profile,
+            "mk8s",
+            "cluster",
+            "get-credentials",
+            "--id",
+            cluster_id,
+            "--external",
+            "--force",
+            "--context-name",
+            cluster_name,
+        ],
+        env=environment,
+    )
+    if not kubeconfig.is_file():
+        raise DeploymentError("Nebius CLI did not create the run-scoped kubeconfig")
+    kubeconfig.chmod(0o600)
+    result = run(
+        [
+            kubectl,
+            "--kubeconfig",
+            str(kubeconfig),
+            "--context",
+            cluster_name,
+            "get",
+            "namespace",
+            "kube-system",
+            "-o",
+            "jsonpath={.metadata.uid}",
+        ],
+        env=environment,
+        capture=True,
+    )
+    uid = result.stdout.strip()
+    if len(uid) < 20:
+        raise DeploymentError("kube-system did not return a valid namespace UID")
+    return kubeconfig, uid
+
+
+def infrastructure_outputs(
+    terraform: str,
+    run_root: Path,
+    contract: Mapping[str, Any],
+    *,
+    nebius: str,
+    nebius_profile: str,
+    kubectl: str,
+) -> dict[str, Any]:
+    environment = stage_environment(run_root, "infrastructure", contract)
+    state, _, _ = stage_paths(run_root, "infrastructure")
+    terraform_init(terraform, INFRA_ROOT, state, environment)
+    cluster_id = terraform_json_output(terraform, INFRA_ROOT, "cluster_id", environment)
+    cluster_name = terraform_json_output(terraform, INFRA_ROOT, "cluster_name", environment)
+    kubeconfig, kube_system_uid = ensure_kubeconfig(
+        nebius=nebius,
+        nebius_profile=nebius_profile,
+        kubectl=kubectl,
+        run_root=run_root,
+        cluster_id=cluster_id,
+        cluster_name=cluster_name,
+    )
+    return {
+        "run_root": str(run_root.resolve()),
+        "kubeconfig_path": str(kubeconfig.resolve()),
+        "run_id": contract["run_id"],
+        "cluster_id": cluster_id,
+        "cluster_name": cluster_name,
+        "kube_context": cluster_name,
+        "kube_system_uid": kube_system_uid,
+        "project_id": contract["target"]["project_id"],
+        "target_contract": terraform_json_output(
+            terraform, INFRA_ROOT, "target_contract", environment
+        ),
+        "infrastructure_contract": terraform_json_output(
+            terraform, INFRA_ROOT, "infrastructure_contract", environment
+        ),
+        "accelerator_pool_contract": terraform_json_output(
+            terraform, INFRA_ROOT, "accelerator_pool_contract", environment
+        ),
+        "public_edge_contract": terraform_json_output(
+            terraform, INFRA_ROOT, "public_edge_contract", environment
+        ),
+    }
+
+
+def write_downstream_variables(
+    run_root: Path,
+    contract: Mapping[str, Any],
+    dynamic: Mapping[str, Any],
+) -> tuple[Path, Path]:
+    identity_keys = (
+        "run_root",
+        "kubeconfig_path",
+        "run_id",
+        "cluster_id",
+        "cluster_name",
+        "kube_context",
+        "kube_system_uid",
+        "project_id",
+        "target_contract",
+        "infrastructure_contract",
+        "accelerator_pool_contract",
+    )
+    identity = {key: dynamic[key] for key in identity_keys}
+    foundation = {**contract["stages"]["foundation"], **identity}
+    workloads = {
+        **contract["stages"]["workloads"],
+        **identity,
+        "public_edge_contract": dynamic["public_edge_contract"],
+    }
+    if foundation["grafana_publication"]["enabled"]:
+        edge = dynamic["public_edge_contract"]
+        origin = edge.get("public_origin")
+        parsed = urlsplit(origin or "")
+        if (
+            edge.get("mode") != "public"
+            or parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.path not in ("", "/")
+            or parsed.query
+            or parsed.fragment
+            or parsed.username
+            or parsed.password
+        ):
+            raise DeploymentError(
+                "external Grafana publication requires an exact HTTPS public origin from the infrastructure output"
+            )
+        origin = origin.rstrip("/")
+        foundation["grafana_publication"] = {
+            **foundation["grafana_publication"],
+            "external_base_url": origin,
+        }
+        workloads["admin_observability_links"] = {
+            "allowed_hosts": [parsed.hostname],
+            "grafana": {
+                "url": f"{origin}/admin/observability/grafana",
+                "verified_external_route": True,
+            },
+            "prometheus": {"url": "", "verified_external_route": False},
+            "loki": {"url": "", "verified_external_route": False},
+        }
+    foundation_path = run_root / "foundation.tfvars.json"
+    workloads_path = run_root / "workloads.tfvars.json"
+    private_json(foundation_path, foundation)
+    private_json(workloads_path, workloads)
+    return foundation_path, workloads_path
+
+
+def plan_stage(
+    terraform: str,
+    *,
+    run_root: Path,
+    stage: str,
+    contract: Mapping[str, Any],
+    variable_file: Path,
+    destroy: bool = False,
+) -> tuple[Path, dict[str, Any], dict[str, str]]:
+    root = stage_root(stage)
+    state, _, _ = stage_paths(run_root, stage)
+    environment = stage_environment(
+        run_root,
+        stage,
+        contract,
+        include_secrets=not destroy,
+    )
+    terraform_init(terraform, root, state, environment)
+    suffix = "destroy" if destroy else "plan"
+    plan_path = run_root / f"{stage}-{suffix}.tfplan"
+    document = plan_json(
+        terraform,
+        root=root,
+        environment=environment,
+        variable_file=variable_file,
+        plan_path=plan_path,
+        json_path=run_root / f"{stage}-{suffix}.plan.json",
+        destroy=destroy,
+    )
+    return plan_path, document, environment
+
+
+def apply_plan(
+    terraform: str,
+    root: Path,
+    plan_path: Path,
+    environment: Mapping[str, str],
+) -> None:
+    run(
+        [terraform, f"-chdir={root}", "apply", "-input=false", str(plan_path)],
+        env=environment,
+    )
+
+
+def workload_endpoint_outputs(
+    terraform: str,
+    run_root: Path,
+    contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Read only the two non-secret, customer-facing workload endpoints."""
+    environment = stage_environment(
+        run_root, "workloads", contract, include_secrets=False
+    )
+    return {
+        "mcp_endpoint_url": terraform_json_output(
+            terraform, WORKLOADS_ROOT, "mcp_endpoint_url", environment
+        ),
+        "admin_web_interface_url": terraform_json_output(
+            terraform, WORKLOADS_ROOT, "admin_web_interface_url", environment
+        ),
+    }
+
+
+def state_ready(
+    terraform: str,
+    run_root: Path,
+    stage: str,
+    contract: Mapping[str, Any],
+) -> bool:
+    state, _, _ = stage_paths(run_root, stage)
+    if not state.exists():
+        return False
+    environment = stage_environment(
+        run_root, stage, contract, include_secrets=False
+    )
+    terraform_init(terraform, stage_root(stage), state, environment)
+    result = subprocess.run(
+        [
+            terraform,
+            f"-chdir={stage_root(stage)}",
+            "output",
+            "-json",
+            STAGE_COMPLETION_OUTPUTS[stage],
+        ],
+        env=dict(environment),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return False
+    try:
+        return json.loads(result.stdout) is not None
+    except json.JSONDecodeError:
+        return False
+
+
+def state_has_resources(
+    terraform: str,
+    run_root: Path,
+    stage: str,
+    contract: Mapping[str, Any],
+) -> bool:
+    state, _, _ = stage_paths(run_root, stage)
+    if not state.exists():
+        return False
+    environment = stage_environment(
+        run_root, stage, contract, include_secrets=False
+    )
+    terraform_init(terraform, stage_root(stage), state, environment)
+    return bool(state_addresses(terraform, stage_root(stage), environment))
+
+
+def apply_stack(
+    args: argparse.Namespace,
+    run_root: Path,
+    contract: Mapping[str, Any],
+    commit: str,
+) -> None:
+    infrastructure_variables = write_infrastructure_variables(
+        run_root, contract, commit, args.nebius_profile
+    )
+    plan_path, _, environment = plan_stage(
+        args.terraform,
+        run_root=run_root,
+        stage="infrastructure",
+        contract=contract,
+        variable_file=infrastructure_variables,
+    )
+    apply_plan(args.terraform, INFRA_ROOT, plan_path, environment)
+
+    dynamic = infrastructure_outputs(
+        args.terraform,
+        run_root,
+        contract,
+        nebius=args.nebius,
+        nebius_profile=args.nebius_profile,
+        kubectl=args.kubectl,
+    )
+    foundation_variables, workloads_variables = write_downstream_variables(
+        run_root, contract, dynamic
+    )
+
+    plan_path, _, environment = plan_stage(
+        args.terraform,
+        run_root=run_root,
+        stage="foundation",
+        contract=contract,
+        variable_file=foundation_variables,
+    )
+    apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment)
+
+    plan_path, _, environment = plan_stage(
+        args.terraform,
+        run_root=run_root,
+        stage="workloads",
+        contract=contract,
+        variable_file=workloads_variables,
+    )
+    apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
+
+    endpoints = workload_endpoint_outputs(args.terraform, run_root, contract)
+    print(json.dumps({"status": "applied", **endpoints}, indent=2))
+
+
+def plan_stack(
+    args: argparse.Namespace,
+    run_root: Path,
+    contract: Mapping[str, Any],
+    commit: str,
+) -> None:
+    infrastructure_variables = write_infrastructure_variables(
+        run_root, contract, commit, args.nebius_profile
+    )
+    if not state_ready(args.terraform, run_root, "infrastructure", contract):
+        plan_stage(
+            args.terraform,
+            run_root=run_root,
+            stage="infrastructure",
+            contract=contract,
+            variable_file=infrastructure_variables,
+        )
+        print("Planned infrastructure. Apply it before foundation can be planned against the new API server.")
+        return
+
+    dynamic = infrastructure_outputs(
+        args.terraform,
+        run_root,
+        contract,
+        nebius=args.nebius,
+        nebius_profile=args.nebius_profile,
+        kubectl=args.kubectl,
+    )
+    foundation_variables, workloads_variables = write_downstream_variables(
+        run_root, contract, dynamic
+    )
+    if not state_ready(args.terraform, run_root, "foundation", contract):
+        plan_stage(
+            args.terraform,
+            run_root=run_root,
+            stage="foundation",
+            contract=contract,
+            variable_file=foundation_variables,
+        )
+        print("Planned foundation. Apply it before custom resources can be planned.")
+        return
+
+    if not state_ready(args.terraform, run_root, "workloads", contract):
+        plan_stage(
+            args.terraform,
+            run_root=run_root,
+            stage="workloads",
+            contract=contract,
+            variable_file=workloads_variables,
+        )
+        print("Planned workloads.")
+        return
+
+    for stage, variable_file in (
+        ("infrastructure", infrastructure_variables),
+        ("foundation", foundation_variables),
+        ("workloads", workloads_variables),
+    ):
+        plan_stage(
+            args.terraform,
+            run_root=run_root,
+            stage=stage,
+            contract=contract,
+            variable_file=variable_file,
+        )
+    print("Planned all three existing states.")
+
+
+def destroy_stack(
+    args: argparse.Namespace,
+    run_root: Path,
+    contract: Mapping[str, Any],
+    commit: str,
+) -> None:
+    infrastructure_variables = write_infrastructure_variables(
+        run_root, contract, commit, args.nebius_profile
+    )
+    resources = {
+        stage: state_has_resources(args.terraform, run_root, stage, contract)
+        for stage in ("infrastructure", "foundation", "workloads")
+    }
+    cached_foundation = run_root / "foundation.tfvars.json"
+    cached_workloads = run_root / "workloads.tfvars.json"
+    downstream: tuple[Path, Path] | None = None
+    if resources["foundation"] or resources["workloads"]:
+        if (
+            cached_foundation.is_file()
+            and not cached_foundation.is_symlink()
+            and cached_workloads.is_file()
+            and not cached_workloads.is_symlink()
+        ):
+            downstream = (cached_foundation, cached_workloads)
+        elif state_ready(args.terraform, run_root, "infrastructure", contract):
+            dynamic = infrastructure_outputs(
+                args.terraform,
+                run_root,
+                contract,
+                nebius=args.nebius,
+                nebius_profile=args.nebius_profile,
+                kubectl=args.kubectl,
+            )
+            downstream = write_downstream_variables(run_root, contract, dynamic)
+        else:
+            raise DeploymentError(
+                "downstream resources exist but their private generated tfvars and a complete infrastructure handoff are both unavailable"
+            )
+
+    for stage, variable_file in (
+        ("workloads", downstream[1] if downstream else None),
+        ("foundation", downstream[0] if downstream else None),
+        ("infrastructure", infrastructure_variables),
+    ):
+        if not resources[stage]:
+            continue
+        if variable_file is None:
+            raise DeploymentError(
+                f"cannot destroy {stage}: its generated private variable file is unavailable"
+            )
+        plan_path, _, environment = plan_stage(
+            args.terraform,
+            run_root=run_root,
+            stage=stage,
+            contract=contract,
+            variable_file=variable_file,
+            destroy=True,
+        )
+        apply_plan(args.terraform, stage_root(stage), plan_path, environment)
+    print(f"Destroyed Terraform-owned stack resources. Evidence remains in {run_root}.")
+
+
+def status_stack(
+    args: argparse.Namespace,
+    run_root: Path,
+    contract: Mapping[str, Any],
+) -> None:
+    stages: dict[str, Any] = {}
+    workloads_ready = False
+    for stage in ("infrastructure", "foundation", "workloads"):
+        state, _, _ = stage_paths(run_root, stage)
+        if not state.exists():
+            stages[stage] = {"state": "absent", "addresses": 0, "complete": False}
+            continue
+        environment = stage_environment(
+            run_root, stage, contract, include_secrets=False
+        )
+        terraform_init(args.terraform, stage_root(stage), state, environment)
+        addresses = state_addresses(args.terraform, stage_root(stage), environment)
+        complete = state_ready(args.terraform, run_root, stage, contract)
+        stages[stage] = {
+            "state": "ready" if complete else ("partial" if addresses else "empty"),
+            "addresses": len(addresses),
+            "complete": complete,
+        }
+        if stage == "workloads":
+            workloads_ready = complete
+    endpoints = (
+        workload_endpoint_outputs(args.terraform, run_root, contract)
+        if workloads_ready
+        else {
+            "mcp_endpoint_url": None,
+            "admin_web_interface_url": None,
+        }
+    )
+    print(
+        json.dumps(
+            {"run_root": str(run_root), "stages": stages, **endpoints},
+            indent=2,
+        )
+    )
+
+
+def output_stack(
+    args: argparse.Namespace,
+    run_root: Path,
+    contract: Mapping[str, Any],
+) -> None:
+    """Print only the stable non-secret entry points from a completed deployment."""
+    if not state_ready(args.terraform, run_root, "workloads", contract):
+        raise DeploymentError(
+            "workloads are not applied; run inference-stack apply before requesting endpoints"
+        )
+    print(
+        json.dumps(
+            workload_endpoint_outputs(args.terraform, run_root, contract),
+            indent=2,
+        )
+    )
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Plan, apply, inspect, or destroy Kubernetes inference from one terraform.tfvars file."
+    )
+    parser.add_argument(
+        "command",
+        choices=(
+            "validate",
+            "preflight",
+            "plan",
+            "apply",
+            "destroy",
+            "status",
+            "output",
+        ),
+    )
+    parser.add_argument(
+        "--var-file",
+        type=Path,
+        default=DEPLOY_ROOT / "terraform.tfvars",
+        help="customer terraform.tfvars file (default: k8s-inference/terraform.tfvars)",
+    )
+    parser.add_argument(
+        "--run-root",
+        type=Path,
+        help="private state/evidence directory; defaults to an XDG state path bound to the tfvars path",
+    )
+    parser.add_argument("--terraform", default="terraform")
+    parser.add_argument("--kubectl", default="kubectl")
+    parser.add_argument("--nebius", default="nebius")
+    parser.add_argument(
+        "--nebius-profile",
+        default=os.environ.get("NEBIUS_PROFILE", "sandbox"),
+        help="authenticated Nebius CLI profile (default: NEBIUS_PROFILE or sandbox)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    os.umask(0o077)
+    args = parse_args(argv)
+    variable_file = args.var_file.expanduser().resolve()
+    if not variable_file.is_file():
+        raise DeploymentError(
+            f"configuration does not exist: {variable_file}; copy terraform.tfvars.example first"
+        )
+    run_root = (args.run_root or default_run_root(variable_file)).expanduser().resolve()
+    private_directory(run_root)
+
+    lock_path = run_root / ".inference-stack.lock"
+    if lock_path.is_symlink():
+        raise DeploymentError(f"lock path must not be a symlink: {lock_path}")
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        lock_path.chmod(0o600)
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise DeploymentError(
+                f"another inference-stack process owns {run_root}"
+            ) from exc
+
+        contract, _ = validate_configuration(args.terraform, variable_file, run_root)
+        commit = source_commit()
+        if args.command == "validate":
+            validate_stage_roots(args.terraform, run_root)
+            print(
+                json.dumps(
+                    {
+                        "status": "valid",
+                        "run_root": str(run_root),
+                        "deployment": contract["name"],
+                        "profiles": contract["profiles"],
+                        "accelerator_pools": contract["selected_accelerator_pool_ids"],
+                        "models": contract["selected_model_ids"],
+                    },
+                    indent=2,
+                )
+            )
+        elif args.command == "preflight":
+            preflight_accelerators(args, contract)
+        elif args.command == "plan":
+            plan_stack(args, run_root, contract, commit)
+        elif args.command == "apply":
+            require_deployable_images(contract)
+            apply_stack(args, run_root, contract, commit)
+        elif args.command == "destroy":
+            destroy_stack(args, run_root, contract, commit)
+        elif args.command == "output":
+            output_stack(args, run_root, contract)
+        else:
+            status_stack(args, run_root, contract)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except DeploymentError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        raise SystemExit(2)

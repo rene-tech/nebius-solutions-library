@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/compatibility-audit/v1",
+  "title": "fs2-serve immutable model/GPU compatibility audit",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "audit_id", "recorded_at", "authority", "gpu_architecture", "records"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/compatibility-audit/v1"},
+    "audit_id": {"const": "manager-sm103-audit-2026-08-26"},
+    "recorded_at": {"type": "string", "format": "date-time"},
+    "authority": {"const": "agent-task-deck-manager-input"},
+    "gpu_architecture": {"const": "NVIDIA-SM103"},
+    "records": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+      "additionalProperties": {"$ref": "#/$defs/record"}
+    }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["execution_identity_sha256", "b300_state", "route_backend_policy", "notes"],
+      "properties": {
+        "execution_identity_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "b300_state": {"enum": ["historical-supported", "incompatible-sm103", "unverified", "blocked"]},
+        "route_backend_policy": {"enum": ["exact-live-backend-required", "h100-h200-or-qualified-alternative-only", "blocked"]},
+        "notes": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

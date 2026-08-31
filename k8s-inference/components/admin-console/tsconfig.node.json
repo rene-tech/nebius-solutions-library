@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": [
+    "vite.config.ts",
+    "src/api/configurationTypes.ts",
+    "src/api/types.ts",
+    "src/test/browserFixtures.ts",
+    "src/test/capacityObservabilityFixtures.ts",
+    "src/test/configurationFixtures.ts"
+  ]
+}

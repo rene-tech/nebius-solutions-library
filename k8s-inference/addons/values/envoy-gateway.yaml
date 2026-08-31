@@ -1,0 +1,25 @@
+global:
+  images:
+    envoyGateway:
+      image: docker.io/envoyproxy/gateway:v1.8.3
+crds:
+  # Gateway API CRDs are owned by the separately pinned standard manifest.
+  # Avoid Helm SSA ownership conflicts while retaining Envoy extension CRDs
+  # through the chart's rendered resources.
+  enabled: false
+deployment:
+  replicas: 2
+  pod:
+    nodeSelector:
+      workload.fs2.nebius/system: "true"
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            control-plane: envoy-gateway
+podDisruptionBudget:
+  minAvailable: 1
+service:
+  type: ClusterIP

@@ -1,0 +1,46 @@
+schema: fs2-serve.nebius.ai/observability-lock/v1
+snapshotDate: "2026-08-27"
+clusterCompatibility:
+  kubernetesServer: v1.35.6
+  kubelet: v1.35.7
+charts:
+  kubePrometheusStack:
+    repository: https://prometheus-community.github.io/helm-charts
+    name: kube-prometheus-stack
+    version: 88.5.4
+    sha256: c17a08afbbaa8577b5bdc990511b3cf1a3a37ae76ce5817e7478300f9933749b
+  openTelemetryCollector:
+    repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+    name: opentelemetry-collector
+    version: 0.171.0
+    sha256: 5526010c00b6319ced10dd9e711149b10d5539dfa1e23ee22546648f7f702352
+  loki:
+    repository: https://grafana.github.io/helm-charts
+    name: loki
+    version: 7.3.0
+    sha256: 04a339f712d770a1f599f05fc0a5a3cde18e43914e49ae6a49f7171be86bcc09
+  dcgmExporter:
+    repository: https://nvidia.github.io/dcgm-exporter/helm-charts
+    name: dcgm-exporter
+    version: 4.8.3
+    sha256: b1206338d5c446126e233f93df80f0538c285ce40b2e72e6c2f46c9db59ef223
+imagePolicy:
+  deployment: official-chart-tags
+  digestResolution: deferred-by-lean-manager-override
+  reason: Basic retained telemetry takes priority over an exhaustive first-install supply lock.
+images:
+  - docker.io/grafana/grafana:13.2.0
+  - docker.io/library/busybox:1.38.0
+  - ghcr.io/jkroepke/kube-webhook-certgen:1.8.7
+  - quay.io/kiwigrid/k8s-sidecar:2.10.1
+  - quay.io/prometheus-operator/prometheus-operator:v0.93.1
+  - quay.io/prometheus-operator/prometheus-config-reloader:v0.93.1
+  - quay.io/prometheus/node-exporter:v1.12.1-distroless
+  - quay.io/prometheus/prometheus:v3.14.0-distroless
+  - registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0
+  - docker.io/grafana/loki:3.7.6
+  - ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.159.0
+  - ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s:0.159.0
+deferredGpuImage:
+  source: nvcr.io/nvidia/k8s/dcgm-exporter:4.6.0-4.8.3-distroless
+  resolutionFailure: HTTP 403 Forbidden from https://nvcr.io/v2/ at 2026-08-27T11:45:44Z

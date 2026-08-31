@@ -1,0 +1,262 @@
+{
+  "schema": "fs2-serve.nebius.ai/accelerator-pools/v2",
+  "authority": "declaration-only-not-runtime-support",
+  "support_states": {
+    "declared-unvalidated": "The shape is representable and may enter a qualification queue; it is not schedulable serving support.",
+    "hardware-validated": "The exact provider pool was observed live; models still require an exact matching runtime qualification.",
+    "blocked": "Negative evidence or an unavailable provider realization prevents placement."
+  },
+  "accelerator_classes": {
+    "nvidia-h100-sxm-80gb": {
+      "vendor": "nvidia",
+      "product": "H100 SXM 80GB",
+      "architecture": "hopper",
+      "compute_capability": "9.0",
+      "memory_gb_nominal": 80,
+      "resource_api": {"mode": "extended-resource", "resource_name": "nvidia.com/gpu"},
+      "identity_source": "https://developer.nvidia.com/cuda-gpus"
+    },
+    "nvidia-h200-sxm-141gb": {
+      "vendor": "nvidia",
+      "product": "H200 SXM 141GB",
+      "architecture": "hopper",
+      "compute_capability": "9.0",
+      "memory_gb_nominal": 141,
+      "resource_api": {"mode": "extended-resource", "resource_name": "nvidia.com/gpu"},
+      "identity_source": "https://developer.nvidia.com/cuda-gpus"
+    },
+    "nvidia-b200-sxm-180gb": {
+      "vendor": "nvidia",
+      "product": "B200 SXM 180GB",
+      "architecture": "blackwell",
+      "compute_capability": "10.0",
+      "memory_gb_nominal": 180,
+      "resource_api": {"mode": "extended-resource", "resource_name": "nvidia.com/gpu"},
+      "identity_source": "https://developer.nvidia.com/cuda-gpus"
+    },
+    "nvidia-b300-sxm6-288gb": {
+      "vendor": "nvidia",
+      "product": "B300 SXM6 288GB",
+      "architecture": "blackwell-ultra",
+      "compute_capability": "10.3",
+      "memory_gb_nominal": 288,
+      "resource_api": {"mode": "extended-resource", "resource_name": "nvidia.com/gpu"},
+      "identity_source": "https://developer.nvidia.com/cuda-gpus"
+    },
+    "nvidia-gb300-288gb": {
+      "vendor": "nvidia",
+      "product": "GB300 288GB",
+      "architecture": "blackwell-ultra",
+      "compute_capability": "10.3",
+      "memory_gb_nominal": 288,
+      "resource_api": {"mode": "dra", "resource_name": "gpu.nvidia.com"},
+      "identity_source": "https://developer.nvidia.com/cuda-gpus"
+    },
+    "nvidia-rtx-pro-6000-blackwell-96gb": {
+      "vendor": "nvidia",
+      "product": "RTX PRO 6000 Blackwell Server Edition 96GB",
+      "architecture": "blackwell",
+      "compute_capability": "12.0",
+      "memory_gb_nominal": 96,
+      "resource_api": {"mode": "extended-resource", "resource_name": "nvidia.com/gpu"},
+      "identity_source": "https://developer.nvidia.com/cuda-gpus"
+    }
+  },
+  "pool_templates": {
+    "nebius-b300-preemptible-1x": {
+      "id": "nebius-b300-preemptible-1x",
+      "enabled": true,
+      "state": "hardware-validated",
+      "accelerator_class": "nvidia-b300-sxm6-288gb",
+      "provider": {
+        "name": "nebius",
+        "platform": "gpu-b300-sxm",
+        "preset": "1gpu-24vcpu-346gb",
+        "node_group_name_suffix": "b300-1x",
+        "node_group_label": "gpu-b300-1x",
+        "os": "ubuntu24.04",
+        "driver": {"owner": "provider-managed", "preset": "cuda13.0"},
+        "reservation_policy": "FORBID"
+      },
+      "node": {
+        "gpus_per_node": 1,
+        "gpu_memory_gb_nominal": 288,
+        "vcpu_count": 24,
+        "memory_gib": 346,
+        "host_architectures": ["amd64"],
+        "topology": "single-gpu",
+        "boot_disk": {"size_gib": 320, "type": "NETWORK_SSD"},
+        "drain_timeout": "15m"
+      },
+      "capacity": {"allowed_modes": ["preemptible"], "default_mode": "preemptible", "scale_from_zero": true},
+      "scheduling": {
+        "stable_node_labels": {
+          "workload.fs2.nebius/gpu": "true",
+          "accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb",
+          "accelerator.fs2.nebius/pool-id": "nebius-b300-preemptible-1x",
+          "capacity.fs2.nebius/type": "preemptible",
+          "capacity.fs2.nebius/pool": "burst",
+          "capacity.fs2.nebius/preset": "b300-1x",
+          "capacity.fs2.nebius/gpu-count": "1",
+          "topology.fs2.nebius/scope": "single-gpu",
+          "storage.fs2.nebius/tier": "sfs-conventional",
+          "snapshot.fs2.nebius/eligible": "false",
+          "local-nvme.fs2.nebius/eligible": "false"
+        },
+        "resource_flavor_name": "fs2-b300-1x",
+        "taints": [{"key": "dedicated", "value": "fs2-inference", "effect": "NO_SCHEDULE"}],
+        "tolerations": [{"key": "dedicated", "operator": "Equal", "value": "fs2-inference", "effect": "NoSchedule"}],
+        "forbidden_scale_zero_selectors": ["kubernetes.io/arch"]
+      },
+      "features": {
+        "mig": {"mode": "disabled", "resource_strategy": "single"},
+        "local_storage": {"mode": "none", "provider_config": "none"},
+        "shared_filesystem": true,
+        "local_cache": "shared-filesystem",
+        "gpu_snapshot": "ineligible"
+      },
+      "region_availability": [
+        {"region": "us-north1", "state": "hardware-validated", "capacity_modes": ["preemptible"]},
+        {"region": "eu-west2", "state": "hardware-validated", "capacity_modes": ["preemptible"]}
+      ],
+      "evidence": {"hardware_state": "hardware-validated", "reference": "retained us-north1 and disposable eu-west2 B300 lifecycle evidence; capacity remains a per-run preflight gate"}
+    },
+    "nebius-b300-preemptible-8x": {
+      "id": "nebius-b300-preemptible-8x",
+      "enabled": true,
+      "state": "hardware-validated",
+      "accelerator_class": "nvidia-b300-sxm6-288gb",
+      "provider": {
+        "name": "nebius",
+        "platform": "gpu-b300-sxm",
+        "preset": "8gpu-192vcpu-2768gb",
+        "node_group_name_suffix": "b300-8x",
+        "node_group_label": "gpu-b300-8x",
+        "os": "ubuntu24.04",
+        "driver": {"owner": "provider-managed", "preset": "cuda13.0"},
+        "reservation_policy": "FORBID"
+      },
+      "node": {
+        "gpus_per_node": 8,
+        "gpu_memory_gb_nominal": 288,
+        "vcpu_count": 192,
+        "memory_gib": 2768,
+        "host_architectures": ["amd64"],
+        "topology": "single-node-multi-gpu",
+        "boot_disk": {"size_gib": 320, "type": "NETWORK_SSD"},
+        "drain_timeout": "30m"
+      },
+      "capacity": {"allowed_modes": ["preemptible"], "default_mode": "preemptible", "scale_from_zero": true},
+      "scheduling": {
+        "stable_node_labels": {
+          "workload.fs2.nebius/gpu": "true",
+          "accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb",
+          "accelerator.fs2.nebius/pool-id": "nebius-b300-preemptible-8x",
+          "capacity.fs2.nebius/type": "preemptible",
+          "capacity.fs2.nebius/pool": "burst",
+          "capacity.fs2.nebius/preset": "b300-8x",
+          "capacity.fs2.nebius/gpu-count": "8",
+          "topology.fs2.nebius/scope": "single-node-multi-gpu",
+          "storage.fs2.nebius/tier": "local-nvme",
+          "snapshot.fs2.nebius/eligible": "true",
+          "local-nvme.fs2.nebius/eligible": "true"
+        },
+        "resource_flavor_name": "fs2-b300-8x",
+        "taints": [{"key": "dedicated", "value": "fs2-inference", "effect": "NO_SCHEDULE"}],
+        "tolerations": [{"key": "dedicated", "operator": "Equal", "value": "fs2-inference", "effect": "NoSchedule"}],
+        "forbidden_scale_zero_selectors": ["kubernetes.io/arch"]
+      },
+      "features": {
+        "mig": {"mode": "disabled", "resource_strategy": "single"},
+        "local_storage": {"mode": "host-local-nvme", "provider_config": "passthrough-none"},
+        "shared_filesystem": true,
+        "local_cache": "local-nvme",
+        "gpu_snapshot": "candidate-unvalidated"
+      },
+      "region_availability": [
+        {"region": "us-north1", "state": "hardware-validated", "capacity_modes": ["preemptible"]},
+        {"region": "eu-west2", "state": "hardware-validated", "capacity_modes": ["preemptible"]}
+      ],
+      "evidence": {"hardware_state": "hardware-validated", "reference": "retained us-north1 and disposable eu-west2 B300 lifecycle evidence; capacity remains a per-run preflight gate"}
+    },
+    "unbound-h100": {
+      "id": "unbound-h100",
+      "enabled": false,
+      "state": "declared-unvalidated",
+      "accelerator_class": "nvidia-h100-sxm-80gb",
+      "provider": {"name": "unbound", "platform": null, "preset": null, "node_group_name_suffix": null, "node_group_label": null, "os": null, "driver": {"owner": "unbound", "preset": null}, "reservation_policy": null},
+      "node": {"gpus_per_node": null, "gpu_memory_gb_nominal": 80, "vcpu_count": null, "memory_gib": null, "host_architectures": [], "topology": "provider-specific-unverified", "boot_disk": null, "drain_timeout": null},
+      "capacity": {"allowed_modes": ["regular", "preemptible"], "default_mode": "unbound", "scale_from_zero": false},
+      "scheduling": {"stable_node_labels": {"accelerator.fs2.nebius/class": "nvidia-h100-sxm-80gb", "accelerator.fs2.nebius/pool-id": "unbound-h100"}, "resource_flavor_name": "fs2-unbound-h100", "taints": [], "tolerations": [], "forbidden_scale_zero_selectors": ["kubernetes.io/arch"]},
+      "features": {"mig": {"mode": "unvalidated", "resource_strategy": null}, "local_storage": {"mode": "unvalidated", "provider_config": null}, "shared_filesystem": false, "local_cache": "unvalidated", "gpu_snapshot": "candidate-unvalidated"},
+      "region_availability": [],
+      "evidence": {"hardware_state": "declared-unvalidated", "reference": null}
+    },
+    "unbound-h200": {
+      "id": "unbound-h200",
+      "enabled": false,
+      "state": "declared-unvalidated",
+      "accelerator_class": "nvidia-h200-sxm-141gb",
+      "provider": {"name": "unbound", "platform": null, "preset": null, "node_group_name_suffix": null, "node_group_label": null, "os": null, "driver": {"owner": "unbound", "preset": null}, "reservation_policy": null},
+      "node": {"gpus_per_node": null, "gpu_memory_gb_nominal": 141, "vcpu_count": null, "memory_gib": null, "host_architectures": [], "topology": "provider-specific-unverified", "boot_disk": null, "drain_timeout": null},
+      "capacity": {"allowed_modes": ["regular", "preemptible"], "default_mode": "unbound", "scale_from_zero": false},
+      "scheduling": {"stable_node_labels": {"accelerator.fs2.nebius/class": "nvidia-h200-sxm-141gb", "accelerator.fs2.nebius/pool-id": "unbound-h200"}, "resource_flavor_name": "fs2-unbound-h200", "taints": [], "tolerations": [], "forbidden_scale_zero_selectors": ["kubernetes.io/arch"]},
+      "features": {"mig": {"mode": "unvalidated", "resource_strategy": null}, "local_storage": {"mode": "unvalidated", "provider_config": null}, "shared_filesystem": false, "local_cache": "unvalidated", "gpu_snapshot": "candidate-unvalidated"},
+      "region_availability": [],
+      "evidence": {"hardware_state": "declared-unvalidated", "reference": null}
+    },
+    "unbound-b200": {
+      "id": "unbound-b200",
+      "enabled": false,
+      "state": "declared-unvalidated",
+      "accelerator_class": "nvidia-b200-sxm-180gb",
+      "provider": {"name": "unbound", "platform": null, "preset": null, "node_group_name_suffix": null, "node_group_label": null, "os": null, "driver": {"owner": "unbound", "preset": null}, "reservation_policy": null},
+      "node": {"gpus_per_node": null, "gpu_memory_gb_nominal": 180, "vcpu_count": null, "memory_gib": null, "host_architectures": [], "topology": "provider-specific-unverified", "boot_disk": null, "drain_timeout": null},
+      "capacity": {"allowed_modes": ["regular", "preemptible"], "default_mode": "unbound", "scale_from_zero": false},
+      "scheduling": {"stable_node_labels": {"accelerator.fs2.nebius/class": "nvidia-b200-sxm-180gb", "accelerator.fs2.nebius/pool-id": "unbound-b200"}, "resource_flavor_name": "fs2-unbound-b200", "taints": [], "tolerations": [], "forbidden_scale_zero_selectors": ["kubernetes.io/arch"]},
+      "features": {"mig": {"mode": "unvalidated", "resource_strategy": null}, "local_storage": {"mode": "unvalidated", "provider_config": null}, "shared_filesystem": false, "local_cache": "unvalidated", "gpu_snapshot": "candidate-unvalidated"},
+      "region_availability": [],
+      "evidence": {"hardware_state": "declared-unvalidated", "reference": null}
+    },
+    "unbound-gb300": {
+      "id": "unbound-gb300",
+      "enabled": false,
+      "state": "declared-unvalidated",
+      "accelerator_class": "nvidia-gb300-288gb",
+      "provider": {"name": "unbound", "platform": null, "preset": null, "node_group_name_suffix": null, "node_group_label": null, "os": null, "driver": {"owner": "unbound", "preset": null}, "reservation_policy": null},
+      "node": {"gpus_per_node": null, "gpu_memory_gb_nominal": 288, "vcpu_count": null, "memory_gib": null, "host_architectures": ["arm64"], "topology": "multi-node-nvlink", "boot_disk": null, "drain_timeout": null},
+      "capacity": {"allowed_modes": ["regular", "preemptible"], "default_mode": "unbound", "scale_from_zero": false},
+      "scheduling": {"stable_node_labels": {"accelerator.fs2.nebius/class": "nvidia-gb300-288gb", "accelerator.fs2.nebius/pool-id": "unbound-gb300"}, "resource_flavor_name": "fs2-unbound-gb300", "taints": [], "tolerations": [], "forbidden_scale_zero_selectors": ["kubernetes.io/arch"]},
+      "features": {"mig": {"mode": "unvalidated", "resource_strategy": null}, "local_storage": {"mode": "unvalidated", "provider_config": null}, "shared_filesystem": false, "local_cache": "unvalidated", "gpu_snapshot": "candidate-unvalidated"},
+      "region_availability": [],
+      "evidence": {"hardware_state": "declared-unvalidated", "reference": null}
+    },
+    "unbound-rtx-pro-6000-blackwell": {
+      "id": "unbound-rtx-pro-6000-blackwell",
+      "enabled": false,
+      "state": "declared-unvalidated",
+      "accelerator_class": "nvidia-rtx-pro-6000-blackwell-96gb",
+      "provider": {"name": "unbound", "platform": null, "preset": null, "node_group_name_suffix": null, "node_group_label": null, "os": null, "driver": {"owner": "unbound", "preset": null}, "reservation_policy": null},
+      "node": {"gpus_per_node": null, "gpu_memory_gb_nominal": 96, "vcpu_count": null, "memory_gib": null, "host_architectures": [], "topology": "provider-specific-unverified", "boot_disk": null, "drain_timeout": null},
+      "capacity": {"allowed_modes": ["regular", "preemptible"], "default_mode": "unbound", "scale_from_zero": false},
+      "scheduling": {"stable_node_labels": {"accelerator.fs2.nebius/class": "nvidia-rtx-pro-6000-blackwell-96gb", "accelerator.fs2.nebius/pool-id": "unbound-rtx-pro-6000-blackwell"}, "resource_flavor_name": "fs2-unbound-rtx-pro-6000-blackwell", "taints": [], "tolerations": [], "forbidden_scale_zero_selectors": ["kubernetes.io/arch"]},
+      "features": {"mig": {"mode": "unvalidated", "resource_strategy": null}, "local_storage": {"mode": "unvalidated", "provider_config": null}, "shared_filesystem": false, "local_cache": "unvalidated", "gpu_snapshot": "candidate-unvalidated"},
+      "region_availability": [],
+      "evidence": {"hardware_state": "declared-unvalidated", "reference": null}
+    }
+  },
+  "heterogeneous_examples": {
+    "mixed-hopper-blackwell-ultra-rtx": {
+      "enabled": false,
+      "state": "declared-unvalidated",
+      "pool_templates": ["unbound-h100", "unbound-h200", "nebius-b300-preemptible-8x", "unbound-rtx-pro-6000-blackwell"],
+      "notes": "Design-only proof that one cluster contract can carry independently qualified pool types. It must remain disabled until every provider realization and selected model binding has live evidence."
+    },
+    "mixed-blackwell-scale-up": {
+      "enabled": false,
+      "state": "declared-unvalidated",
+      "pool_templates": ["unbound-b200", "nebius-b300-preemptible-1x", "unbound-gb300"],
+      "notes": "Design-only Blackwell/Blackwell Ultra example; GB300 DRA and topology require a separate qualification lane."
+    }
+  }
+}

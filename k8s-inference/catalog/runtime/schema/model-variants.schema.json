@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-variants/v4",
+  "title": "fs2-serve immutable model variant candidates",
+  "$comment": "Shape validation only. Promotion authority exists exclusively in the signed live overlay verified by fs2_serve_catalog.variant_promotions.",
+  "x-fs2-authority": "non-authoritative-shape-only",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "shape_authority", "route_authority", "receipt_contracts", "fallback_candidates", "variants"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-variants/v4"},
+    "shape_authority": {"const": "non-authoritative-discovery-only"},
+    "route_authority": {"const": false},
+    "receipt_contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supply", "qualification"],
+      "properties": {
+        "supply": {"const": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5"},
+        "qualification": {"const": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5"}
+      }
+    },
+    "fallback_candidates": {
+      "type": "object",
+      "minProperties": 11,
+      "maxProperties": 11,
+      "propertyNames": {"$ref": "#/$defs/modelId"},
+      "additionalProperties": {"$ref": "#/$defs/fallbackCandidate"}
+    },
+    "variants": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+      "additionalProperties": {"$ref": "#/$defs/variant"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "imageDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "revision": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|sha256:[0-9a-f]{64})$"},
+    "modelId": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "nullableModelId": {"anyOf": [{"$ref": "#/$defs/modelId"}, {"type": "null"}]},
+    "fallbackCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_id", "lane_id", "state", "relationship", "profile_variants", "secondary_non_alias_alternative", "notes"],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/modelId"},
+        "lane_id": {"$ref": "#/$defs/modelId"},
+        "state": {"enum": ["mapped-source-only", "blocked-provenance", "deferred-source-reconciliation", "blocked-access", "blocked-license"]},
+        "relationship": {"enum": ["exact-model", "capability-equivalent-non-alias"]},
+        "profile_variants": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["portable", "blackwell-sm103"],
+          "properties": {
+            "portable": {"$ref": "#/$defs/nullableModelId"},
+            "blackwell-sm103": {"$ref": "#/$defs/nullableModelId"}
+          }
+        },
+        "secondary_non_alias_alternative": {
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["reference_model_id", "relationship", "alias_allowed"],
+              "properties": {
+                "reference_model_id": {"const": "molmim"},
+                "relationship": {"const": "capability-equivalent"},
+                "alias_allowed": {"const": false}
+              }
+            }
+          ]
+        },
+        "notes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variant_id", "base_model_id", "exposed_model_id", "variant_kind", "relationship", "source", "runtime", "receipt_requirements", "promotion", "notes"],
+      "properties": {
+        "variant_id": {"$ref": "#/$defs/modelId"},
+        "base_model_id": {"$ref": "#/$defs/modelId"},
+        "exposed_model_id": {"$ref": "#/$defs/modelId"},
+        "variant_kind": {"enum": ["nim", "independent-runtime"]},
+        "relationship": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "reference_model_id", "subject_model_id", "nim_artifact_parity", "distinct_base_record_required", "vendor_baseline", "notes"],
+          "properties": {
+            "kind": {"enum": ["exact-model", "capability-equivalent"]},
+            "reference_model_id": {"$ref": "#/$defs/modelId"},
+            "subject_model_id": {"$ref": "#/$defs/modelId"},
+            "nim_artifact_parity": {"enum": ["verified", "unverified", "not-applicable"]},
+            "distinct_base_record_required": {"type": "boolean"},
+            "vendor_baseline": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "schema", "record_sha256", "model_id", "execution_identity_sha256", "b300_state"],
+              "properties": {
+                "mode": {"const": "canonical-compatibility-audit-delegation"},
+                "schema": {"const": "fs2-serve.nebius.ai/compatibility-audit/v1"},
+                "record_sha256": {"$ref": "#/$defs/digest"},
+                "model_id": {"$ref": "#/$defs/modelId"},
+                "execution_identity_sha256": {"$ref": "#/$defs/digest"},
+                "b300_state": {"enum": ["historical-supported", "incompatible-sm103", "unverified", "blocked"]}
+              }
+            },
+            "notes": {"type": "string", "minLength": 1}
+          }
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "repository", "revision", "revision_url", "artifact", "license", "entitlement"],
+          "properties": {
+            "kind": {"enum": ["ngc-nim", "huggingface", "git"]},
+            "repository": {"type": "string", "minLength": 1},
+            "revision": {"$ref": "#/$defs/revision"},
+            "revision_url": {"type": "string", "pattern": "^https://"},
+            "artifact": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "uri", "identity_state", "manifest_schema", "expected_file_count", "expected_bytes", "expected_content_sha256", "manifest_sha256"],
+              "properties": {
+                "kind": {"enum": ["nim-image", "weights", "release-archive", "checkpoint-set"]},
+                "uri": {"type": "string", "pattern": "^(?:https://|nvcr\\.io/)"},
+                "identity_state": {"enum": ["exact-image", "expected-only-incomplete-manifest", "verified-full-per-file-manifest"]},
+                "manifest_schema": {"const": "fs2-serve.nebius.ai/artifact-manifest/v1"},
+                "expected_file_count": {"type": ["integer", "null"], "minimum": 1},
+                "expected_bytes": {"type": ["integer", "null"], "minimum": 1},
+                "expected_content_sha256": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/digest"}},
+                "manifest_sha256": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]}
+              }
+            },
+            "license": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "state", "source_url", "artifact_sha256", "commercial_use", "non_clinical"],
+              "properties": {
+                "id": {"type": "string", "minLength": 1},
+                "state": {"enum": ["verified-artifact", "metadata-reviewed-artifact-unbound", "unverified", "blocked"]},
+                "source_url": {"type": "string", "pattern": "^https://"},
+                "artifact_sha256": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]},
+                "commercial_use": {"enum": ["allowed", "license-dependent", "prohibited", "blocked"]},
+                "non_clinical": {"type": "boolean"}
+              }
+            },
+            "entitlement": {"enum": ["not-required", "fresh-platform-ngc-required", "blocked"]}
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["architecture", "build_state", "image_digest", "device_capability", "network_startup"],
+          "properties": {
+            "architecture": {"enum": ["vendor-nim", "portable", "blackwell-sm103"]},
+            "build_state": {"enum": ["existing-exact-image", "source-only-candidate", "built-attested", "negative-evidence", "blocked"]},
+            "image_digest": {"anyOf": [{"$ref": "#/$defs/imageDigest"}, {"type": "null"}]},
+            "device_capability": {"enum": ["vendor-declared", "portable-unverified", "portable-qualified", "sm103-unverified", "sm103-qualified", "sm103-incompatible"]},
+            "network_startup": {"const": "deny-until-exact-mounted-artifact-ready"}
+          }
+        },
+        "receipt_requirements": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["supply_schema", "qualification_schema", "supply_claims", "qualification_claims"],
+          "properties": {
+            "supply_schema": {"const": "fs2-serve.nebius.ai/model-variant-supply-receipt/v5"},
+            "qualification_schema": {"const": "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5"},
+            "supply_claims": {"const": ["artifact-manifest", "build-materials", "builder", "immutable-image", "license-artifact", "provenance", "sbom", "scan", "signature", "source-repository-revision"]},
+            "qualification_claims": {"const": ["cold-and-warm-cohorts-separate", "compute-capability-10.3", "determinism-and-kernel-dispatch-repeated", "exact-worker-gpu-runtime-tuple", "failures-in-denominator", "network-denied-mounted-artifact-startup", "preemption-recovery", "quality-comparator-identity", "scale-zero-ready-zero", "two-semantic-gateway-responses", "vendor-nim-baseline-evidence", "warm-attempts-at-least-10"]}
+          }
+        },
+        "promotion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "route_exposed", "supply_receipt_digest", "qualification_receipt_digest", "independent_review_receipt_digest"],
+          "properties": {
+            "state": {"enum": ["candidate-unqualified", "blocked", "negative"]},
+            "route_exposed": {"const": false},
+            "supply_receipt_digest": {"const": null},
+            "qualification_receipt_digest": {"const": null},
+            "independent_review_receipt_digest": {"const": null}
+          }
+        },
+        "notes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

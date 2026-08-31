@@ -1,0 +1,115 @@
+name: 'Kubernetes Inference'
+
+on:
+  pull_request:
+    paths:
+      - 'k8s-inference/**'
+      - 'modules/**'
+      - 'README.md'
+      - '.github/workflows/k8s-inference.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'k8s-inference/**'
+      - 'modules/**'
+      - 'README.md'
+      - '.github/workflows/k8s-inference.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: k8s-inference-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  TF_IN_AUTOMATION: 'true'
+
+jobs:
+  static-validation:
+    name: 'Static and staged validation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Keep the training solution isolated
+        if: github.event_name == 'pull_request'
+        run: git diff --exit-code "${{ github.event.pull_request.base.sha }}" HEAD -- k8s-training
+
+      - name: Keep the training solution isolated on push
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: git diff --exit-code "${{ github.event.before }}" "${{ github.sha }}" -- k8s-training
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install facade test dependencies
+        run: python -m pip install --disable-pip-version-check jsonschema==4.25.1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 'v1.11.4'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.18.6'
+
+      - name: Check Nebius provider identity
+        shell: bash
+        run: |
+          expected='terraform-provider.storage.eu-north1.nebius.cloud/nebius/nebius'
+          if ! grep -R --include='*.tf' -F "source  = \"${expected}\"" k8s-inference/stages; then
+            echo "The inference stages must use the Solutions Library Nebius provider source: ${expected}" >&2
+            exit 1
+          fi
+          if grep -R --include='*.tf' -E 'source[[:space:]]*=[[:space:]]*"nebius/nebius"' k8s-inference; then
+            echo 'The inference solution declares a second Nebius provider identity.' >&2
+            exit 1
+          fi
+
+      - name: Check Terraform formatting
+        run: terraform -chdir=k8s-inference fmt -check -diff -recursive
+
+      - name: Check wrapper command surface
+        run: ./k8s-inference/inference-stack --help
+
+      - name: Test public export, provider-free facade, and wrapper
+        run: python3 -m unittest discover -s k8s-inference/tests -p 'test_*.py' -v
+
+      - name: Test add-on contracts
+        run: python3 -m unittest discover -s k8s-inference/addons/tests -p 'test_*.py' -v
+
+      - name: Lint and render the control-plane chart
+        shell: bash
+        run: |
+          chart='k8s-inference/charts/control-plane/fs2-serve-control-plane'
+          values=(
+            --namespace fs2-system
+            --set image.repository=registry.nebius.cloud/unit/k8s-inference-control-plane
+            --set image.digest=sha256:1111111111111111111111111111111111111111111111111111111111111111
+            --set catalog.rolloutDigest=sha256:3333333333333333333333333333333333333333333333333333333333333333
+            --set config.publicBaseUrl=https://203.0.113.17
+            --set config.authorizationServerUrl=https://identity.unit.test
+            --set config.publicAuthorityMode=ip
+            --set httpRoute.authorityMode=ip
+          )
+          helm lint "${chart}" "${values[@]}"
+          helm template k8s-inference "${chart}" "${values[@]}" >/dev/null
+
+      - name: Validate provider-free facade and Terraform stages
+        run: |
+          ./k8s-inference/inference-stack validate \
+            --var-file k8s-inference/terraform.tfvars.example \
+            --run-root "${RUNNER_TEMP}/k8s-inference-validation"

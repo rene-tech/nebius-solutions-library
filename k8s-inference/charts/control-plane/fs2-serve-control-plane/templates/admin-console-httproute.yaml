@@ -1,0 +1,69 @@
+{{- if .Values.adminConsole.httpRoute.enabled }}
+{{- if not .Values.adminConsole.enabled }}
+{{- fail "adminConsole.enabled is required when adminConsole.httpRoute.enabled=true" }}
+{{- end }}
+{{- if not .Values.httpRoute.enabled }}
+{{- fail "httpRoute.enabled is required for the public admin console route" }}
+{{- end }}
+{{- if not .Values.publicGateway.enabled }}
+{{- fail "publicGateway.enabled is required for the public admin console route" }}
+{{- end }}
+{{- if not .Values.publicLoadBalancer.enabled }}
+{{- fail "publicLoadBalancer.enabled is required for the public admin console route" }}
+{{- end }}
+{{- if not .Values.publicTls.enabled }}
+{{- fail "publicTls.enabled is required for the public admin console route" }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "fs2-serve.adminConsoleFullname" . }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin-console
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.publicGateway.gatewayName }}
+      sectionName: {{ .Values.publicGateway.httpsListenerName }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /admin/api
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - x-fs2-tenant
+              - x-fs2-principal
+              - x-fs2-token-id
+              - x-fs2-model-scope
+              - x-fs2-accounting-id
+      timeouts:
+        request: {{ .Values.adminConsole.httpRoute.requestTimeout | quote }}
+        backendRequest: {{ .Values.adminConsole.httpRoute.backendRequestTimeout | quote }}
+      backendRefs:
+        - name: {{ include "fs2-serve.fullname" . }}
+          port: {{ .Values.service.port }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /admin
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - x-fs2-tenant
+              - x-fs2-principal
+              - x-fs2-token-id
+              - x-fs2-model-scope
+              - x-fs2-accounting-id
+      timeouts:
+        request: {{ .Values.adminConsole.httpRoute.requestTimeout | quote }}
+        backendRequest: {{ .Values.adminConsole.httpRoute.backendRequestTimeout | quote }}
+      backendRefs:
+        - name: {{ include "fs2-serve.adminConsoleFullname" . }}
+          port: {{ .Values.adminConsole.service.port }}
+{{- end }}

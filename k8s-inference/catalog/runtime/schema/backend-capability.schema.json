@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/backend-capability/v6",
+  "title": "fs2-serve PVC-only model-bound backend capability v6",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "backend_id", "backend_class", "region", "admission_scope", "model_id", "model_digest", "model_revision", "runtime_image_digest", "gpu", "allowed_mechanisms", "scheduling", "storage", "runtime_tuple_digest", "backend_identity_digest", "nim_image"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/backend-capability/v6"},
+    "backend_id": {"type": "string", "minLength": 1},
+    "backend_class": {"enum": ["local-kubernetes", "federated-upstream"]},
+    "region": {"type": "string", "pattern": "^[a-z]+-[a-z]+[0-9]+$"},
+    "admission_scope": {"enum": ["experiment-only", "route-qualified"]},
+    "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "model_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "model_revision": {"type": "string", "minLength": 1},
+    "runtime_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "gpu": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "node_preset", "node_count", "node_topology", "workload_count", "workload_topology"],
+      "properties": {
+        "class": {"enum": ["NVIDIA-B300-SXM6-288GB", "NVIDIA-H100-SXM-80GB", "NVIDIA-H200-SXM"]},
+            "node_preset": {"enum": ["b300-1x", "b300-8x"]},
+        "node_count": {"type": "integer", "minimum": 1},
+        "node_topology": {"type": "string", "minLength": 1},
+        "workload_count": {"type": "integer", "minimum": 1},
+        "workload_topology": {"type": "string", "minLength": 1}
+      }
+    },
+    "allowed_mechanisms": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"enum": ["conventional", "custom-runtime", "sleep-wake", "snapshot"]}
+    },
+    "scheduling": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pool", "capacity_type", "node_selector", "tolerations"],
+          "properties": {
+            "pool": {"enum": ["b300-hot-8x", "b300-burst-8x", "b300-burst-1x"]},
+            "capacity_type": {"enum": ["regular", "preemptible"]},
+            "node_selector": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {"minLength": 1},
+              "additionalProperties": {"type": "string", "minLength": 1}
+            },
+            "tolerations": {
+              "const": [{"key": "dedicated", "operator": "Equal", "value": "fs2-inference", "effect": "NoSchedule"}]
+            }
+          }
+        }
+      ]
+    },
+    "storage": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "pvc_requirement_id", "mount_path", "node_identity", "provider_block_pvc", "local_pv_pvc"],
+          "properties": {
+            "mode": {"enum": ["provider-block-pvc", "sfs-pvc", "local-nvme", "nimcache-pvc"]},
+            "pvc_requirement_id": {"type": ["string", "null"]},
+            "mount_path": {"type": "string", "pattern": "^/"},
+            "node_identity": {
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name", "uid", "provider_id_sha256"],
+                  "properties": {
+                    "name": {"type": "string", "minLength": 1, "maxLength": 253},
+                    "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                    "provider_id_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                  }
+                }
+              ]
+            },
+            "provider_block_pvc": {
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["schema", "state", "lifecycle_receipt_digest", "storage_class", "claim"],
+                  "properties": {
+                    "schema": {"const": "fs2-serve.nebius.ai/provider-block-pvc-lifecycle/v2"},
+                    "state": {"const": "verified"},
+                    "lifecycle_receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "storage_class": {"$ref": "#/$defs/providerBlockStorageClassObservation"},
+                    "claim": {
+                      "type": "object", "additionalProperties": false,
+                      "required": ["namespace", "name", "uid", "resource_version", "volume_name", "capacity_bytes", "access_modes", "volume_mode", "fs_type"],
+                      "properties": {
+                        "namespace": {"const": "fs2-models"},
+                        "name": {"const": "qwen3-8b-weights"},
+                        "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                        "resource_version": {"type": "string", "minLength": 1},
+                        "volume_name": {"type": "string", "minLength": 1},
+                        "capacity_bytes": {"type": "integer", "minimum": 68719476736},
+                        "access_modes": {"const": ["ReadWriteOnce"]},
+                        "volume_mode": {"const": "Filesystem"},
+                        "fs_type": {"const": "ext4"}
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "local_pv_pvc": {
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["schema", "state", "lifecycle_receipt_digest", "cache_namespace", "localizer_security_profile", "storage_class_name", "volume_binding_mode", "activation_generation", "persistent_volume", "persistent_volume_claim", "activation_target", "fencing"],
+                  "properties": {
+                    "schema": {"const": "fs2-serve.nebius.ai/local-pv-pvc-lifecycle/v1"},
+                    "state": {"const": "reviewed-implemented"},
+                    "lifecycle_receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "cache_namespace": {"const": "fs2-models"},
+                    "localizer_security_profile": {"const": "restricted-unprivileged"},
+                    "storage_class_name": {"const": "fs2-local-nvme"},
+                    "volume_binding_mode": {"const": "WaitForFirstConsumer"},
+                    "activation_generation": {"type": "integer", "minimum": 1},
+                    "persistent_volume": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["name", "uid", "resource_version", "node_affinity"],
+                      "properties": {
+                        "name": {"type": "string", "minLength": 1},
+                        "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                        "resource_version": {"type": "string", "minLength": 1},
+                        "node_affinity": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["node_name", "node_uid", "required_node_selector"],
+                          "properties": {
+                            "node_name": {"type": "string", "minLength": 1},
+                            "node_uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                            "required_node_selector": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string", "minLength": 1}}
+                          }
+                        }
+                      }
+                    },
+                    "persistent_volume_claim": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["namespace", "name", "uid", "resource_version", "volume_name", "access_modes"],
+                      "properties": {
+                        "namespace": {"const": "fs2-models"},
+                        "name": {"type": "string", "minLength": 1},
+                        "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+                        "resource_version": {"type": "string", "minLength": 1},
+                        "volume_name": {"type": "string", "minLength": 1},
+                        "access_modes": {"const": ["ReadWriteOnce"]}
+                      }
+                    },
+                    "activation_target": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["api_version", "kind", "namespace", "name", "uid"],
+                      "properties": {
+                        "api_version": {"const": "apps/v1"},
+                        "kind": {"const": "Deployment"},
+                        "namespace": {"const": "fs2-models"},
+                        "name": {"type": "string", "minLength": 1},
+                        "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"}
+                      }
+                    },
+                    "fencing": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["preemption", "lost_node", "activation_generation_recreation"],
+                      "properties": {
+                        "preemption": {"const": "pod-pvc-pv-node-uid"},
+                        "lost_node": {"const": "invalidate-and-recreate-next-activation-generation"},
+                        "activation_generation_recreation": {"const": true}
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "runtime_tuple_digest": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "backend_identity_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nim_image": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "tag", "expected_digest", "tag_binding_receipt_digest"],
+          "properties": {
+            "repository": {"type": "string", "minLength": 1},
+            "tag": {"type": "string", "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"},
+            "expected_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "tag_binding_receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "providerBlockStorageClassObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiVersion", "kind", "metadata", "spec"],
+      "properties": {
+        "apiVersion": {"const": "storage.k8s.io/v1"},
+        "kind": {"const": "StorageClass"},
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "uid", "resourceVersion"],
+          "properties": {
+            "name": {"const": "fs2-network-ssd-retain"},
+            "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"},
+            "resourceVersion": {"type": "string", "minLength": 1}
+          }
+        },
+        "spec": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provisioner", "reclaimPolicy", "volumeBindingMode", "allowVolumeExpansion", "parameters"],
+          "properties": {
+            "provisioner": {"const": "compute.csi.nebius.com"},
+            "reclaimPolicy": {"const": "Retain"},
+            "volumeBindingMode": {"const": "WaitForFirstConsumer"},
+            "allowVolumeExpansion": {"const": true},
+            "parameters": {
+              "const": {
+                "type": "NETWORK_SSD",
+                "csi.storage.k8s.io/fstype": "ext4"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"backend_class": {"const": "local-kubernetes"}}},
+      "then": {
+        "properties": {
+          "gpu": {"properties": {"class": {"const": "NVIDIA-B300-SXM6-288GB"}}},
+          "scheduling": {"type": "object"},
+          "storage": {"type": "object"},
+          "runtime_tuple_digest": {"type": "string"}
+        }
+      },
+      "else": {
+        "properties": {
+          "gpu": {"properties": {"class": {"enum": ["NVIDIA-H100-SXM-80GB", "NVIDIA-H200-SXM"]}}},
+          "scheduling": {"type": "null"},
+          "storage": {"type": "null"},
+          "runtime_tuple_digest": {"type": "null"},
+          "nim_image": {"type": "null"}
+        }
+      }
+    }
+  ]
+}

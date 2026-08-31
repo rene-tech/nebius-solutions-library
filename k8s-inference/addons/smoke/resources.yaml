@@ -1,0 +1,320 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fs2-addon-smoke
+  labels:
+    fs2.nebius.ai/smoke: "true"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: fs2-addon-smoke
+  namespace: fs2-addon-smoke
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: ClusterIP
+      envoyDeployment:
+        pod:
+          nodeSelector:
+            workload.fs2.nebius/system: "true"
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: fs2-addon-smoke
+  namespace: fs2-addon-smoke
+spec:
+  gatewayClassName: envoy
+  infrastructure:
+    labels:
+      fs2.nebius.ai/smoke: "true"
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: fs2-addon-smoke
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 8080
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-backend
+  namespace: fs2-addon-smoke
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway-backend
+  template:
+    metadata:
+      labels:
+        app: gateway-backend
+    spec:
+      nodeSelector:
+        workload.fs2.nebius/system: "true"
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: backend
+          image: registry.k8s.io/e2e-test-images/agnhost:2.53@sha256:99c6b4bb4a1e1df3f0b3752168c89358794d02258ebebc26bf21c29399011a85
+          args: [netexec, --http-port=8080]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-backend
+  namespace: fs2-addon-smoke
+spec:
+  selector:
+    app: gateway-backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: fs2-addon-smoke
+  namespace: fs2-addon-smoke
+spec:
+  parentRefs:
+    - name: fs2-addon-smoke
+  rules:
+    - backendRefs:
+        - name: gateway-backend
+          port: 8080
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: smoke-client
+  namespace: fs2-addon-smoke
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    workload.fs2.nebius/system: "true"
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: curl
+      image: curlimages/curl:8.15.0@sha256:4026b29997dc7c823b51c164b71e2b51e0fd95cce4601f78202c513d97da2922
+      command: [sh, -c, "sleep 600"]
+      resources:
+        requests:
+          cpu: 5m
+          memory: 8Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+      securityContext:
+        runAsUser: 100
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: smoke-selfsigned
+  namespace: fs2-addon-smoke
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: smoke-certificate
+  namespace: fs2-addon-smoke
+spec:
+  secretName: smoke-tls
+  issuerRef:
+    name: smoke-selfsigned
+    kind: Issuer
+  dnsNames:
+    - smoke.fs2-addon-smoke.svc
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: fs2-addon-smoke
+spec: {}
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: fs2-addon-smoke
+spec:
+  namespaceSelector:
+    matchLabels:
+      fs2.nebius.ai/smoke: "true"
+  resourceGroups:
+    - coveredResources: [cpu, memory]
+      flavors:
+        - name: fs2-addon-smoke
+          resources:
+            - name: cpu
+              nominalQuota: "1"
+            - name: memory
+              nominalQuota: 128Mi
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: fs2-addon-smoke
+  namespace: fs2-addon-smoke
+spec:
+  clusterQueue: fs2-addon-smoke
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kueue-smoke
+  namespace: fs2-addon-smoke
+  labels:
+    kueue.x-k8s.io/queue-name: fs2-addon-smoke
+spec:
+  suspend: true
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        workload.fs2.nebius/system: "true"
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: smoke
+          image: registry.k8s.io/e2e-test-images/busybox:1.36.1-1@sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9
+          command: [sh, -c, "echo kueue-admitted"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          securityContext:
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keda-smoke
+  namespace: fs2-addon-smoke
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keda-smoke
+  template:
+    metadata:
+      labels:
+        app: keda-smoke
+    spec:
+      nodeSelector:
+        workload.fs2.nebius/system: "true"
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server
+          image: registry.k8s.io/e2e-test-images/agnhost:2.53@sha256:99c6b4bb4a1e1df3f0b3752168c89358794d02258ebebc26bf21c29399011a85
+          args: [netexec, --http-port=8080]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: keda-smoke
+  namespace: fs2-addon-smoke
+spec:
+  scaleTargetRef:
+    name: keda-smoke
+  minReplicaCount: 1
+  maxReplicaCount: 2
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "80"
+---
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: kserve-smoke
+  namespace: fs2-addon-smoke
+  annotations:
+    serving.kserve.io/deploymentMode: Standard
+spec:
+  predictor:
+    minReplicas: 1
+    maxReplicas: 1
+    containers:
+      - name: kserve-container
+        image: registry.k8s.io/e2e-test-images/agnhost:2.53@sha256:99c6b4bb4a1e1df3f0b3752168c89358794d02258ebebc26bf21c29399011a85
+        args: [netexec, --http-port=8080]
+        ports:
+          - name: http1
+            containerPort: 8080
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          runAsUser: 65532
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: [ALL]
+          seccompProfile:
+            type: RuntimeDefault

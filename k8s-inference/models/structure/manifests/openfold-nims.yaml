@@ -1,0 +1,339 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openfold2-nim-cache
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: openfold2
+    app.kubernetes.io/part-of: fs2-serve
+    fs2.nebius.ai/model-id: openfold2
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: compute-csi-default-sc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfold2-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: openfold2
+    app.kubernetes.io/instance: openfold2-b300
+    app.kubernetes.io/part-of: fs2-serve
+    fs2.nebius.ai/model-id: openfold2
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: openfold2-b300
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfold2-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: openfold2
+    app.kubernetes.io/instance: openfold2-b300
+    app.kubernetes.io/part-of: fs2-serve
+    fs2.nebius.ai/model-id: openfold2
+  annotations:
+    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/runtime-image-digest: sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: openfold2-b300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openfold2
+        app.kubernetes.io/instance: openfold2-b300
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/part-of: fs2-serve
+        fs2.nebius.ai/model-id: openfold2
+      annotations:
+        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/runtime-image-digest: sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: nvcrio-cred
+      nodeSelector:
+        capacity.fs2.nebius/pool: burst
+        capacity.fs2.nebius/type: preemptible
+        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nim
+          image: nvcr.io/nim/openfold/openfold2@sha256:fc64916731fee39e124225829dca78e80ec24fe1891be47057d0d69209b93ab4
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - exec /opt/nim/start_server.sh
+          env:
+            - name: NIM_CACHE_PATH
+              value: /opt/nim/.cache
+            - name: NGC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ngc-api-key
+                  key: NGC_API_KEY
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "14"
+              memory: 128Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "20"
+              memory: 180Gi
+              nvidia.com/gpu: "1"
+          startupProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 360
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /v1/health/live
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: nim-cache
+              mountPath: /opt/nim/.cache
+            - name: workspace
+              mountPath: /opt/nim/workspace
+            - name: output
+              mountPath: /opt/nim/output
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi
+        - name: nim-cache
+          persistentVolumeClaim:
+            claimName: openfold2-nim-cache
+        - name: workspace
+          emptyDir:
+            sizeLimit: 8Gi
+        - name: output
+          emptyDir:
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openfold3-nim-cache
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: openfold3
+    app.kubernetes.io/part-of: fs2-serve
+    fs2.nebius.ai/model-id: openfold3
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 64Gi
+  storageClassName: compute-csi-default-sc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfold3-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: openfold3
+    app.kubernetes.io/instance: openfold3-b300
+    app.kubernetes.io/part-of: fs2-serve
+    fs2.nebius.ai/model-id: openfold3
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: openfold3-b300
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfold3-b300
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: openfold3
+    app.kubernetes.io/instance: openfold3-b300
+    app.kubernetes.io/part-of: fs2-serve
+    fs2.nebius.ai/model-id: openfold3
+  annotations:
+    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/runtime-image-digest: sha256:6286cc7c02247ed3efe42f0f1af6c2f6f6a680b1e5cae669512c44b636aa42d2
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: openfold3-b300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openfold3
+        app.kubernetes.io/instance: openfold3-b300
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/part-of: fs2-serve
+        fs2.nebius.ai/model-id: openfold3
+      annotations:
+        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/runtime-image-digest: sha256:6286cc7c02247ed3efe42f0f1af6c2f6f6a680b1e5cae669512c44b636aa42d2
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: nvcrio-cred
+      nodeSelector:
+        capacity.fs2.nebius/pool: burst
+        capacity.fs2.nebius/type: preemptible
+        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nim
+          image: nvcr.io/nim/openfold/openfold3@sha256:6286cc7c02247ed3efe42f0f1af6c2f6f6a680b1e5cae669512c44b636aa42d2
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - cd /opt/nim/workspace && exec /opt/nim/start_server.sh
+          env:
+            - name: NIM_CACHE_PATH
+              value: /opt/nim/.cache
+            - name: NGC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ngc-api-key
+                  key: NGC_API_KEY
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "10"
+              memory: 120Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "16"
+              memory: 180Gi
+              nvidia.com/gpu: "1"
+          startupProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 360
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /v1/health/live
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: nim-cache
+              mountPath: /opt/nim/.cache
+            - name: workspace
+              mountPath: /opt/nim/workspace
+            - name: output
+              mountPath: /opt/nim/output
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi
+        - name: nim-cache
+          persistentVolumeClaim:
+            claimName: openfold3-nim-cache
+        - name: workspace
+          emptyDir:
+            sizeLimit: 8Gi
+        - name: output
+          emptyDir:
+            sizeLimit: 1Gi

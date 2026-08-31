@@ -1,0 +1,25 @@
+{{- if and .Values.httpRoute.enabled .Values.edgeRateLimit.enabled }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-edge-limit
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  mergeType: StrategicMerge
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ include "fs2-serve.fullname" . }}
+    {{- if .Values.adminConsole.httpRoute.enabled }}
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ include "fs2-serve.adminConsoleFullname" . }}
+    {{- end }}
+  rateLimit:
+    local:
+      rules:
+        - limit:
+            requests: {{ .Values.edgeRateLimit.requests }}
+            unit: {{ .Values.edgeRateLimit.unit }}
+{{- end }}

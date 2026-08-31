@@ -1,0 +1,293 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/accelerator-pools/v2",
+  "title": "FS2 accelerator classes and pool templates",
+  "$comment": "This contract describes schedulable intent. Only a hardware-validated pool with matching model evidence is eligible for serving.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "authority",
+    "support_states",
+    "accelerator_classes",
+    "pool_templates",
+    "heterogeneous_examples"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/accelerator-pools/v2"},
+    "authority": {"const": "declaration-only-not-runtime-support"},
+    "support_states": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["declared-unvalidated", "hardware-validated", "blocked"],
+      "properties": {
+        "declared-unvalidated": {"type": "string", "minLength": 1},
+        "hardware-validated": {"type": "string", "minLength": 1},
+        "blocked": {"type": "string", "minLength": 1}
+      }
+    },
+    "accelerator_classes": {
+      "type": "object",
+      "minProperties": 6,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {"$ref": "#/$defs/acceleratorClass"}
+    },
+    "pool_templates": {
+      "type": "object",
+      "minProperties": 7,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {"$ref": "#/$defs/poolTemplate"}
+    },
+    "heterogeneous_examples": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["enabled", "state", "pool_templates", "notes"],
+        "properties": {
+          "enabled": {"const": false},
+          "state": {"const": "declared-unvalidated"},
+          "pool_templates": {
+            "type": "array",
+            "minItems": 2,
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/id"}
+          },
+          "notes": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"
+    },
+    "nullableString": {"type": ["string", "null"]},
+    "acceleratorClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vendor",
+        "product",
+        "architecture",
+        "compute_capability",
+        "memory_gb_nominal",
+        "resource_api",
+        "identity_source"
+      ],
+      "properties": {
+        "vendor": {"const": "nvidia"},
+        "product": {"type": "string", "minLength": 1},
+        "architecture": {"enum": ["hopper", "blackwell", "blackwell-ultra"]},
+        "compute_capability": {"pattern": "^[0-9]+\\.[0-9]+$"},
+        "memory_gb_nominal": {"type": "integer", "minimum": 1},
+        "resource_api": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "resource_name"],
+          "properties": {
+            "mode": {"enum": ["extended-resource", "dra"]},
+            "resource_name": {"type": "string", "minLength": 1}
+          }
+        },
+        "identity_source": {"type": "string", "pattern": "^https://"}
+      }
+    },
+    "poolTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "enabled",
+        "state",
+        "accelerator_class",
+        "provider",
+        "node",
+        "capacity",
+        "scheduling",
+        "features",
+        "region_availability",
+        "evidence"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "enabled": {"type": "boolean"},
+        "state": {"enum": ["declared-unvalidated", "hardware-validated", "blocked"]},
+        "accelerator_class": {"$ref": "#/$defs/id"},
+        "provider": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "platform", "preset", "node_group_name_suffix", "node_group_label", "os", "driver", "reservation_policy"],
+          "properties": {
+            "name": {"enum": ["nebius", "unbound"]},
+            "platform": {"$ref": "#/$defs/nullableString"},
+            "preset": {"$ref": "#/$defs/nullableString"},
+            "node_group_name_suffix": {"$ref": "#/$defs/nullableString"},
+            "node_group_label": {"$ref": "#/$defs/nullableString"},
+            "os": {"$ref": "#/$defs/nullableString"},
+            "driver": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["owner", "preset"],
+              "properties": {
+                "owner": {"enum": ["provider-managed", "operator-managed", "unbound"]},
+                "preset": {"$ref": "#/$defs/nullableString"}
+              }
+            },
+            "reservation_policy": {"type": ["string", "null"], "enum": ["AUTO", "FORBID", "STRICT", null]}
+          }
+        },
+        "node": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["gpus_per_node", "gpu_memory_gb_nominal", "vcpu_count", "memory_gib", "host_architectures", "topology", "boot_disk", "drain_timeout"],
+          "properties": {
+            "gpus_per_node": {"type": ["integer", "null"], "minimum": 1},
+            "gpu_memory_gb_nominal": {"type": "integer", "minimum": 1},
+            "vcpu_count": {"type": ["integer", "null"], "minimum": 1},
+            "memory_gib": {"type": ["integer", "null"], "minimum": 1},
+            "host_architectures": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"enum": ["amd64", "arm64"]}
+            },
+            "topology": {
+              "enum": ["single-gpu", "single-node-multi-gpu", "multi-node-nvlink", "provider-specific-unverified"]
+            },
+            "boot_disk": {
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["size_gib", "type"],
+                  "properties": {
+                    "size_gib": {"type": "integer", "minimum": 1},
+                    "type": {"enum": ["NETWORK_SSD", "NETWORK_SSD_IO_M3", "NETWORK_SSD_NON_REPLICATED"]}
+                  }
+                }
+              ]
+            },
+            "drain_timeout": {"type": ["string", "null"], "pattern": "^[0-9]+m$"}
+          }
+        },
+        "capacity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allowed_modes", "default_mode", "scale_from_zero"],
+          "properties": {
+            "allowed_modes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"enum": ["regular", "preemptible"]}
+            },
+            "default_mode": {"enum": ["regular", "preemptible", "unbound"]},
+            "scale_from_zero": {"type": "boolean"}
+          }
+        },
+        "scheduling": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["stable_node_labels", "resource_flavor_name", "taints", "tolerations", "forbidden_scale_zero_selectors"],
+          "properties": {
+            "stable_node_labels": {
+              "type": "object",
+              "propertyNames": {"type": "string", "minLength": 1},
+              "additionalProperties": {"type": "string", "minLength": 1}
+            },
+            "resource_flavor_name": {"$ref": "#/$defs/id"},
+            "taints": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["key", "value", "effect"],
+                "properties": {
+                  "key": {"type": "string", "minLength": 1},
+                  "value": {"type": "string", "minLength": 1},
+                  "effect": {"enum": ["NO_SCHEDULE", "NO_EXECUTE", "PREFER_NO_SCHEDULE"]}
+                }
+              }
+            },
+            "tolerations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["key", "operator", "value", "effect"],
+                "properties": {
+                  "key": {"type": "string", "minLength": 1},
+                  "operator": {"const": "Equal"},
+                  "value": {"type": "string", "minLength": 1},
+                  "effect": {"const": "NoSchedule"}
+                }
+              }
+            },
+            "forbidden_scale_zero_selectors": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "features": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mig", "local_storage", "shared_filesystem", "local_cache", "gpu_snapshot"],
+          "properties": {
+            "mig": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "resource_strategy"],
+              "properties": {
+                "mode": {"enum": ["disabled", "unvalidated", "validated"]},
+                "resource_strategy": {"type": ["string", "null"], "enum": ["single", "mixed", null]}
+              }
+            },
+            "local_storage": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "provider_config"],
+              "properties": {
+                "mode": {"enum": ["none", "host-local-nvme", "unvalidated"]},
+                "provider_config": {"type": ["string", "null"], "enum": ["none", "passthrough-none", "kubelet-ephemeral", null]}
+              }
+            },
+            "shared_filesystem": {"type": "boolean"},
+            "local_cache": {"enum": ["none", "shared-filesystem", "local-nvme", "unvalidated"]},
+            "gpu_snapshot": {"enum": ["ineligible", "candidate-unvalidated", "validated"]}
+          }
+        },
+        "region_availability": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["region", "state", "capacity_modes"],
+            "properties": {
+              "region": {"type": "string", "minLength": 1},
+              "state": {"enum": ["declared-unvalidated", "hardware-validated", "unavailable"]},
+              "capacity_modes": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {"enum": ["regular", "preemptible"]}
+              }
+            }
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hardware_state", "reference"],
+          "properties": {
+            "hardware_state": {"enum": ["declared-unvalidated", "hardware-validated", "blocked"]},
+            "reference": {"type": ["string", "null"]}
+          }
+        }
+      }
+    }
+  }
+}

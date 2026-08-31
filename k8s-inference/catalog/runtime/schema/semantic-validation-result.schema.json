@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/semantic-validation-result/v3",
+  "title": "Signed executable semantic validator result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "validated_at", "model_id", "model_digest", "runtime_identity_digest", "request_contract_sha256", "request_asset_set_sha256", "gateway_path_sha256", "attempt_id", "validator", "request_sha256", "response_sha256"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/semantic-validation-result/v3"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "PASS"},
+    "validated_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "model_digest": {"$ref": "#/$defs/digest"},
+    "runtime_identity_digest": {"$ref": "#/$defs/digest"},
+    "request_contract_sha256": {"$ref": "#/$defs/digest"},
+    "request_asset_set_sha256": {"$ref": "#/$defs/digest"},
+    "gateway_path_sha256": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]},
+    "attempt_id": {"type": "string", "minLength": 1},
+    "validator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "source_path", "source_sha256", "fixture_path", "fixture_sha256"],
+      "properties": {
+        "contract": {"type": "string", "minLength": 1},
+        "source_path": {"type": "string", "minLength": 1},
+        "source_sha256": {"$ref": "#/$defs/digest"},
+        "fixture_path": {"type": ["string", "null"]},
+        "fixture_sha256": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]}
+      }
+    },
+    "request_sha256": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"$ref": "#/$defs/digest"}},
+    "response_sha256": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"$ref": "#/$defs/digest"}}
+  },
+  "$defs": {"digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+}

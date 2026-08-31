@@ -1,0 +1,31 @@
+{{- if .Values.publicTls.enabled }}
+{{- if not .Values.publicGateway.enabled }}
+{{- fail "publicTls requires the chart-owned publicGateway" }}
+{{- end }}
+{{- if ne .Values.config.publicAuthorityMode "ip" }}
+{{- fail "publicTls IP certificate requires config.publicAuthorityMode=ip" }}
+{{- end }}
+{{- $authority := trimSuffix "/" (trimPrefix "https://" .Values.config.publicBaseUrl) -}}
+{{- $authority = trimSuffix ":443" $authority -}}
+{{- if ne $authority .Values.publicTls.ipAddress }}
+{{- fail "publicTls.ipAddress must equal the exact config.publicBaseUrl IPv4 authority" }}
+{{- end }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-public
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.publicTls.secretName }}
+  duration: {{ .Values.publicTls.duration }}
+  renewBeforePercentage: {{ .Values.publicTls.renewBeforePercentage }}
+  ipAddresses:
+    - {{ .Values.publicTls.ipAddress | quote }}
+  privateKey:
+    rotationPolicy: Always
+  issuerRef:
+    name: {{ required "publicTls.issuerRef.name is required" .Values.publicTls.issuerRef.name }}
+    kind: {{ .Values.publicTls.issuerRef.kind }}
+    group: {{ .Values.publicTls.issuerRef.group }}
+{{- end }}

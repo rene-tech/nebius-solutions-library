@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/acquisition-helper-image-admission/v1",
+  "title": "Signed catalog-bound acquisition helper image admission",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "verified_at", "valid_until", "model_id", "model_digest", "acquisition_plan_sha256", "helper_contract_sha256", "image", "build", "attestations", "review"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/acquisition-helper-image-admission/v1"},
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "status": {"const": "PASS"},
+    "verified_at": {"type": "string", "format": "date-time"},
+    "valid_until": {"type": "string", "format": "date-time"},
+    "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "model_digest": {"$ref": "#/$defs/digest"},
+    "acquisition_plan_sha256": {"$ref": "#/$defs/digest"},
+    "helper_contract_sha256": {"$ref": "#/$defs/digest"},
+    "image": {"$ref": "#/$defs/image"},
+    "build": {"$ref": "#/$defs/build"},
+    "attestations": {"$ref": "#/$defs/attestations"},
+    "review": {"$ref": "#/$defs/review"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "imageDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "gitObject": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "reference", "digest", "registry_identity_sha256", "os", "architecture"],
+      "properties": {
+        "id": {"const": "fs2-acquisition-helper"},
+        "reference": {"type": "string", "pattern": "^[^@\\s]+/fs2-serve/acquisition-helper@sha256:[0-9a-f]{64}$"},
+        "digest": {"$ref": "#/$defs/imageDigest"},
+        "registry_identity_sha256": {"$ref": "#/$defs/digest"},
+        "os": {"const": "linux"},
+        "architecture": {"const": "amd64"}
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "source_commit", "source_tree", "source_path", "package", "package_version", "wheel_sha256", "pyproject_sha256", "uv_lock_sha256", "entrypoint"],
+      "properties": {
+        "repository": {"const": "https://github.com/rene-tech/nebius-solutions-library"},
+        "source_commit": {"$ref": "#/$defs/gitObject"},
+        "source_tree": {"$ref": "#/$defs/gitObject"},
+        "source_path": {"const": "k8s-inference/catalog/runtime"},
+        "package": {"const": "fs2-serve-catalog"},
+        "package_version": {"const": "0.1.0"},
+        "wheel_sha256": {"$ref": "#/$defs/digest"},
+        "pyproject_sha256": {"$ref": "#/$defs/digest"},
+        "uv_lock_sha256": {"$ref": "#/$defs/digest"},
+        "entrypoint": {"const": ["python3", "-m", "fs2_serve_catalog.cli", "acquire-hf"]}
+      }
+    },
+    "attestedSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["predicate_type", "statement_sha256", "subject_image_digest"],
+      "properties": {
+        "predicate_type": {"type": "string", "minLength": 1},
+        "statement_sha256": {"$ref": "#/$defs/digest"},
+        "subject_image_digest": {"$ref": "#/$defs/imageDigest"}
+      }
+    },
+    "attestations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signature", "provenance", "sbom"],
+      "properties": {
+        "signature": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["verified", "subject_image_digest", "registry_identity_sha256", "bundle_sha256", "signer_identity_sha256"],
+          "properties": {
+            "verified": {"const": true},
+            "subject_image_digest": {"$ref": "#/$defs/imageDigest"},
+            "registry_identity_sha256": {"$ref": "#/$defs/digest"},
+            "bundle_sha256": {"$ref": "#/$defs/digest"},
+            "signer_identity_sha256": {"$ref": "#/$defs/digest"}
+          }
+        },
+        "provenance": {"type": "object", "additionalProperties": false, "required": ["predicate_type", "statement_sha256", "subject_image_digest", "source_commit", "source_tree", "build_identity_sha256", "helper_contract_sha256", "builder_identity_sha256", "build_type", "materials_sha256", "all_container_images_digest_pinned"], "properties": {"predicate_type": {"const": "https://slsa.dev/provenance/v1"}, "statement_sha256": {"$ref": "#/$defs/digest"}, "subject_image_digest": {"$ref": "#/$defs/imageDigest"}, "source_commit": {"$ref": "#/$defs/gitObject"}, "source_tree": {"$ref": "#/$defs/gitObject"}, "build_identity_sha256": {"$ref": "#/$defs/digest"}, "helper_contract_sha256": {"$ref": "#/$defs/digest"}, "builder_identity_sha256": {"$ref": "#/$defs/digest"}, "build_type": {"type": "string", "minLength": 1}, "materials_sha256": {"$ref": "#/$defs/digest"}, "all_container_images_digest_pinned": {"const": true}}},
+        "sbom": {"type": "object", "additionalProperties": false, "required": ["predicate_type", "statement_sha256", "subject_image_digest", "package", "package_version", "wheel_sha256"], "properties": {"predicate_type": {"const": "https://spdx.dev/Document"}, "statement_sha256": {"$ref": "#/$defs/digest"}, "subject_image_digest": {"$ref": "#/$defs/imageDigest"}, "package": {"const": "fs2-serve-catalog"}, "package_version": {"const": "0.1.0"}, "wheel_sha256": {"$ref": "#/$defs/digest"}}}
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["review_commit", "reviewer_identity_sha256"],
+      "properties": {
+        "review_commit": {"$ref": "#/$defs/gitObject"},
+        "reviewer_identity_sha256": {"$ref": "#/$defs/digest"}
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+kserve:
+  version: v0.20.0
+  createSharedResources: true
+  agent:
+    image: kserve/agent
+    tag: v0.20.0@sha256:eaac98ad53fb4ad7e62203978578cca5ff8e240d898cadb8ee13d9b576cc3104
+  router:
+    image: kserve/router
+    tag: v0.20.0@sha256:984987c5c83dd47f2609f4d6566afa2665ce5ae3045f3a3e82ddc9865a87834c
+  storage:
+    image: kserve/storage-initializer
+    tag: v0.20.0@sha256:9bea2bfe436307698a8b0c4d99bc2cdd6935158aadf2709c147d145471fe76f9
+  servingruntime:
+    art:
+      image: kserve/art-explainer
+      defaultVersion: v0.20.0@sha256:b6fdde012496328fd2289e804c03846a67a90702f90b8a80a7c9da3df8260e7d
+  localmodel:
+    enabled: false
+    defaultJobImage: kserve/storage-initializer
+    defaultJobTag: v0.20.0@sha256:9bea2bfe436307698a8b0c4d99bc2cdd6935158aadf2709c147d145471fe76f9
+  controller:
+    deploymentMode: Standard
+    image: kserve/kserve-controller
+    tag: v0.20.0@sha256:61850d24e78dba875b8c78215e3f9f9dbcec52340eeb18b293978dad1797f653
+    imagePullPolicy: IfNotPresent
+    rbacProxyImage: quay.io/brancz/kube-rbac-proxy:v0.18.0@sha256:754ab2a723c8fc7ea8e09ae1224f8af5be91849b8b2f2a3735c6237f1c534187
+    nodeSelector:
+      workload.fs2.nebius/system: "true"
+    gateway:
+      disableIstioVirtualHost: true
+      disableIngressCreation: true
+      ingressGateway:
+        enableGatewayApi: true
+        createGateway: false
+        className: envoy

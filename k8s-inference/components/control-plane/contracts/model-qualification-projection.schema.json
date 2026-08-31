@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-qualification-projection/v1",
+  "title": "fs2-serve reviewed active model qualification projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "activation_authority", "qualification_authority", "observed_at", "rows"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-qualification-projection/v1"},
+    "activation_authority": {"const": "versioned-lean-live-route-inventory"},
+    "qualification_authority": {"const": "reviewed-retained-evidence"},
+    "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+    },
+    "rows": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {"$ref": "#/$defs/row"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "modelId": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "imageDigest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_id", "variant_id", "active_runtime", "runtime_origin", "states", "policy", "evidence"],
+      "properties": {
+        "model_id": {"$ref": "#/$defs/modelId"},
+        "variant_id": {"anyOf": [{"$ref": "#/$defs/modelId"}, {"type": "null"}]},
+        "active_runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model_revision", "runtime_image_digest", "service"],
+          "properties": {
+            "model_revision": {"type": "string", "pattern": "^(?:[a-f0-9]{40}|sha256:[a-f0-9]{64})$"},
+            "runtime_image_digest": {"$ref": "#/$defs/imageDigest"},
+            "service": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["namespace", "name", "port"],
+              "properties": {
+                "namespace": {"const": "fs2-models"},
+                "name": {"$ref": "#/$defs/modelId"},
+                "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+              }
+            }
+          }
+        },
+        "runtime_origin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "variant_id", "source_kind", "repository", "relationship", "nim_artifact_parity"],
+          "properties": {
+            "kind": {"enum": ["nvidia-nim", "independent-runtime"]},
+            "variant_id": {"anyOf": [{"$ref": "#/$defs/modelId"}, {"type": "null"}]},
+            "source_kind": {"enum": ["ngc-nim", "huggingface", "git"]},
+            "repository": {"type": "string", "minLength": 1},
+            "relationship": {"enum": ["canonical-nim-package", "canonical-runtime", "exact-model", "capability-equivalent"]},
+            "nim_artifact_parity": {"enum": ["verified", "unverified", "not-applicable"]}
+          }
+        },
+        "states": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["registered", "route_active", "runtime_ready", "semantic_qualified", "http_mcp_qualified", "cold_start_qualified", "elasticity_qualified"],
+          "properties": {
+            "registered": {"const": true},
+            "route_active": {"const": true},
+            "runtime_ready": {"type": "boolean"},
+            "semantic_qualified": {"type": "boolean"},
+            "http_mcp_qualified": {"type": "boolean"},
+            "cold_start_qualified": {"type": "boolean"},
+            "elasticity_qualified": {"type": "boolean"}
+          }
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["license_id", "non_clinical", "commercial_use"],
+          "properties": {
+            "license_id": {"type": "string", "minLength": 1},
+            "non_clinical": {"type": "boolean"},
+            "commercial_use": {"enum": ["allowed", "license-dependent", "prohibited", "blocked"]}
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "audited_catalog_sha256",
+            "audited_live_routes_sha256",
+            "retained_deployments_sha256",
+            "model_discovery_sha256",
+            "mcp_discovery_sha256",
+            "http_mcp_acceptance_sha256",
+            "cold_start_acceptance_sha256"
+          ],
+          "properties": {
+            "audited_catalog_sha256": {"$ref": "#/$defs/digest"},
+            "audited_live_routes_sha256": {"$ref": "#/$defs/digest"},
+            "retained_deployments_sha256": {"$ref": "#/$defs/digest"},
+            "model_discovery_sha256": {"$ref": "#/$defs/digest"},
+            "mcp_discovery_sha256": {"$ref": "#/$defs/digest"},
+            "http_mcp_acceptance_sha256": {"$ref": "#/$defs/digest"},
+            "cold_start_acceptance_sha256": {"$ref": "#/$defs/digest"}
+          }
+        }
+      }
+    }
+  }
+}

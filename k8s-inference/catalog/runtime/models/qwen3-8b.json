@@ -1,0 +1,424 @@
+{
+  "schema": "fs2-serve.nebius.ai/model/v1",
+  "model": {
+    "id": "qwen3-8b",
+    "display_name": "Qwen3-8B",
+    "family": "llm",
+    "tested_lane": true,
+    "source": {
+      "kind": "huggingface",
+      "repository": "Qwen/Qwen3-8B",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "license": {
+        "id": "apache-2.0",
+        "state": "verified",
+        "notes": "Reviewed at the exact tested revision against the official Hugging Face API, exact-revision model card, and immutable LICENSE bytes; the acquisition contract pins both observation and license-artifact digests.",
+        "artifact": {
+          "url": "https://huggingface.co/Qwen/Qwen3-8B/raw/b968826d9c46dd6066d109eabc6255188de91218/LICENSE",
+          "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+        }
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The reviewed source did not require a private model entitlement."
+      }
+    }
+  },
+  "runtime": {
+    "kind": "vllm",
+    "version": "0.28.0",
+    "image": {
+      "reference": "registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+      "state": "resolved"
+    },
+    "command": [
+      "vllm",
+      "serve",
+      "{FS2_MODEL_CONTENT_PATH}",
+      "--served-model-name",
+      "qwen3-8b",
+      "--dtype",
+      "bfloat16",
+      "--tensor-parallel-size",
+      "1",
+      "--max-model-len",
+      "32768",
+      "--gpu-memory-utilization",
+      "0.80",
+      "--generation-config",
+      "vllm",
+      "--enable-prefix-caching"
+    ]
+  },
+  "resources": {
+    "cpu_millis": 8000,
+    "memory_bytes": 68719476736,
+    "host_ram_min_bytes": null,
+    "scaler_owner": "nebius-managed-node-group-autoscaler",
+    "gpu": {
+      "class": "NVIDIA-B300-SXM6-288GB",
+      "count": 1,
+      "topology": "single-gpu",
+      "placement": {
+        "pool": "b300-burst-8x",
+        "capacity_type": "preemptible",
+        "node_gpu_count": 8,
+        "node_preset": "b300-8x",
+        "node_selector": {
+          "capacity.fs2.nebius/gpu-count": "8",
+          "capacity.fs2.nebius/pool": "burst",
+          "capacity.fs2.nebius/preset": "b300-8x",
+          "capacity.fs2.nebius/type": "preemptible",
+          "workload.fs2.nebius/gpu": "true"
+        },
+        "tolerations": [
+          {
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": "fs2-inference",
+            "effect": "NoSchedule"
+          }
+        ],
+        "cache_capabilities": [
+          "provider-block-pvc-candidate"
+        ],
+        "qualification_sequence": [
+          {
+            "order": 1,
+            "storage_mode": "provider-block-pvc",
+            "startup_mechanism": "conventional",
+            "cohort_binding": "provider-block-pvc-lifecycle",
+            "state": "candidate-unqualified",
+            "qualification_gate": "fs2-serve/provider-block-pvc-handoff/v1"
+          },
+          {
+            "order": 2,
+            "storage_mode": "sfs-pvc",
+            "startup_mechanism": "conventional",
+            "cohort_binding": "replacement-node-rwx-canary",
+            "state": "gated-unqualified",
+            "qualification_gate": "fs2-serve/sfs-rwx-replacement-node-canary/v1"
+          },
+          {
+            "order": 3,
+            "storage_mode": "local-nvme",
+            "startup_mechanism": "conventional",
+            "cohort_binding": "activation-generation-pvc",
+            "state": "gated-unqualified",
+            "qualification_gate": "fs2-serve/local-pv-pvc-lifecycle/v1"
+          }
+        ],
+        "provider_block_pvc": {
+          "state": "candidate-unqualified",
+          "contract": "fs2-serve.nebius.ai/provider-block-pvc/v1",
+          "storage_class": {
+            "name": "fs2-network-ssd-retain",
+            "owner": "fs2-serve-cluster",
+            "provisioner": "compute.csi.nebius.com",
+            "reclaim_policy": "Retain",
+            "volume_binding_mode": "WaitForFirstConsumer",
+            "allow_volume_expansion": true,
+            "parameters": {
+              "type": "NETWORK_SSD",
+              "csi.storage.k8s.io/fstype": "ext4"
+            },
+            "default_delete_class_policy": "canary-only-with-deletion-protection"
+          },
+          "claim": {
+            "namespace": "fs2-models",
+            "name": "qwen3-8b-weights",
+            "requested_bytes": 68719476736,
+            "access_modes": [
+              "ReadWriteOnce"
+            ],
+            "volume_mode": "Filesystem",
+            "fs_type": "ext4"
+          },
+          "acquisition": {
+            "first_consumer": true,
+            "sole_writer": true,
+            "gpu_count": 0,
+            "placement_source": "resources.gpu.placement.node_selector+tolerations",
+            "atomic_publication": "scratch-to-clean-payload-content-address"
+          },
+          "runtime": {
+            "read_only": true,
+            "gpu_count": 1,
+            "claim_reuse": "same-pvc-uid-and-volume-name"
+          },
+          "qualification_gates": [
+            "bound-after-targeted-acquirer",
+            "content-manifest-verified",
+            "detach-reattach-controlled-node-replacement",
+            "no-multi-attach",
+            "sole-writer-handoff-closed",
+            "two-distinct-semantic-responses",
+            "scale-one-to-zero-claim-retained"
+          ]
+        },
+        "local_pv_pvc": {
+          "state": "gated-unimplemented",
+          "contract": "fs2-serve.nebius.ai/local-pv-pvc-lifecycle/v1",
+          "storage_class_name": "fs2-local-nvme",
+          "volume_binding_mode": "WaitForFirstConsumer",
+          "node_affinity": "exact-serving-node-required",
+          "preemption_fencing": "pod-pvc-pv-node-uid",
+          "lost_node_fencing": "invalidate-and-recreate-next-activation-generation",
+          "activation_generation_recreation": true,
+          "model_pod_volume_type": "persistentVolumeClaim",
+          "host_path_forbidden": true
+        }
+      },
+      "b300_state": "qualified",
+      "alternatives": []
+    }
+  },
+  "interface": {
+    "execution_mode": "http",
+    "protocols": [
+      "openai-chat"
+    ],
+    "endpoints": {
+      "openai-chat": "/v1/chat/completions"
+    },
+    "readiness": {
+      "method": "GET",
+      "path": "/health",
+      "expected_status": 200,
+      "timeout_seconds": 900
+    },
+    "warmup": null,
+    "policy": {
+      "operations": [
+        "chat"
+      ],
+      "license_enforced": true,
+      "non_clinical": false,
+      "commercial_use": "allowed"
+    },
+    "mcp": {
+      "discoverable": true,
+      "invocable": false
+    }
+  },
+  "startup": {
+    "default": "conventional",
+    "fallback": "conventional",
+    "enabled_mechanisms": [
+      "conventional"
+    ],
+    "experiments": [
+      {
+        "mechanism": "snapshot",
+        "state": "gated",
+        "gate": "fs2-serve/exact-b300-single-gpu-runtime-tuple/v1",
+        "artifact_kind": "snapshot",
+        "artifact_manifest_digest": null,
+        "historical_artifact": {
+          "kind": "snapshot",
+          "manifest_digest": "76b8845141df43882a142f9085ff233a0b5bf27b55f19ae385dd9ac88dab6394",
+          "expanded_bytes": 27306999047,
+          "file_count": 505,
+          "hardware": "NVIDIA H100 80GB HBM3",
+          "compatibility": "incompatible-with-b300",
+          "file_signatures": [
+            "cgroup.img",
+            "core-*.img"
+          ]
+        },
+        "reason": "The retained 76b884 checkpoint is a CUDA-CRIU snapshot containing cgroup.img and core-*.img subjects, not model weights, and cannot restore on B300; a new donor requires the exact target tuple."
+      }
+    ],
+    "multi_gpu_criu": "unproven-disabled"
+  },
+  "cache": {
+    "owner": "fs2-serve-localizer",
+    "shared_path": "/mnt/fs2-serve-cache/models/qwen3-8b",
+    "local_path": "/var/lib/fs2-serve/cache/models/qwen3-8b",
+    "pre_pull_image": true,
+    "artifact": {
+      "state": "platform-verified",
+      "kind": "weights",
+      "manifest_digest": "2cf721c69d9e1b66860274de129f0dd486172ef1dad289483ea891dab5b80806",
+      "expanded_bytes": 16397461266,
+      "minimum_bytes": 16397461266,
+      "capacity_bound_bytes": 34359738368,
+      "staged": false,
+      "qualification_gate": "fs2-serve/exact-hf-weight-per-file-sha256-manifest/v1",
+      "historical_inventory": {
+        "identity_sha256": "1e89964f62cbba0c316f76db2e4ea56d2a79fcf5b8ec678bec48d53c457a30cc",
+        "identity_scope": "canonical-path-and-size-only",
+        "file_count": 15,
+        "logical_bytes": 16397461266,
+        "source_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "per_file_sha256_complete": false
+      },
+      "expected_identity": {
+        "state": "expected-only-unverified",
+        "source_url": "https://huggingface.co/api/models/Qwen/Qwen3-8B/tree/b968826d9c46dd6066d109eabc6255188de91218?recursive=true&expand=true",
+        "source_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "file_count": 15,
+        "expanded_bytes": 16397461266,
+        "content_digest": "5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d",
+        "manifest_digest": "2cf721c69d9e1b66860274de129f0dd486172ef1dad289483ea891dab5b80806",
+        "payload_policy": "scratch-to-clean-exact-allowlist-regular-files-only",
+        "files": [
+          {
+            "path": ".gitattributes",
+            "bytes": 1570,
+            "sha256": "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930",
+            "source_identity": "git-exact-revision-streamed-sha256"
+          },
+          {
+            "path": "LICENSE",
+            "bytes": 11343,
+            "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+            "source_identity": "git-exact-revision-streamed-sha256"
+          },
+          {
+            "path": "README.md",
+            "bytes": 16660,
+            "sha256": "0f36caaff9c2516411a7738db384606263ba653c1e63e61d72f511606164d5a6",
+            "source_identity": "git-exact-revision-streamed-sha256"
+          },
+          {
+            "path": "config.json",
+            "bytes": 728,
+            "sha256": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30",
+            "source_identity": "git-exact-revision-streamed-sha256"
+          },
+          {
+            "path": "generation_config.json",
+            "bytes": 239,
+            "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2",
+            "source_identity": "git-exact-revision-streamed-sha256"
+          },
+          {
+            "path": "merges.txt",
+            "bytes": 1671853,
+            "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+            "source_identity": "git-exact-revision-streamed-sha256"
+          },
+          {
+            "path": "model-00001-of-00005.safetensors",
+            "bytes": 3996250744,
+            "sha256": "31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f",
+            "source_identity": "lfs-oid-sha256"
+          },
+          {
+            "path": "model-00002-of-00005.safetensors",
+            "bytes": 3993160032,
+            "sha256": "5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282",
+            "source_identity": "lfs-oid-sha256"
+          },
+          {
+            "path": "model-00003-of-00005.safetensors",
+            "bytes": 3959604768,
+            "sha256": "c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836",
+            "source_identity": "lfs-oid-sha256"
+          },
+          {
+            "path": "model-00004-of-00005.safetensors",
+            "bytes": 3187841392,
+            "sha256": "b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a",
+            "source_identity": "lfs-oid-sha256"
+          },
+          {
+            "path": "model-00005-of-00005.safetensors",
+            "bytes": 1244659840,
+            "sha256": "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff",
+            "source_identity": "lfs-oid-sha256"
+          },
+          {
+            "path": "model.safetensors.index.json",
+            "bytes": 32878,
+            "sha256": "f9fdbcb91c23971c13ec5d5f2573d2349e8f61f2f049371ec699281748fdb1bc",
+            "source_identity": "git-exact-revision-streamed-sha256"
+          },
+          {
+            "path": "tokenizer.json",
+            "bytes": 11422654,
+            "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+            "source_identity": "lfs-oid-sha256"
+          },
+          {
+            "path": "tokenizer_config.json",
+            "bytes": 9732,
+            "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
+            "source_identity": "git-exact-revision-streamed-sha256"
+          },
+          {
+            "path": "vocab.json",
+            "bytes": 2776833,
+            "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+            "source_identity": "git-exact-revision-streamed-sha256"
+          }
+        ]
+      }
+    }
+  },
+  "semantic_validator": {
+    "kind": "repository-command",
+    "contract": "two-distinct-exact-content-prompts-qwen3/v1",
+    "source_path": "k8s-inference/catalog/runtime/validators/validate_response.py",
+    "source_sha256": "b504331d1979712af2fe4b64fa8f27a81ccc158b2afb55e91bddfd73748026bd",
+    "fixture_path": "k8s-inference/catalog/runtime/validators/assets/qwen3-8b.json",
+    "fixture_sha256": "90a9af8e20e4bf8c3a8a9478f74296d4a981398a7422b3871b0327fd9afdc8a2",
+    "request_count": 2,
+    "distinct_requests": true,
+    "distinct_responses": true
+  },
+  "support": {
+    "state": "qualified",
+    "route_exposed": false,
+    "non_clinical": false,
+    "limitations": [
+      "The exact CUDA 13 vLLM image is mirrored by immutable digest and was observed executing SM103 kernels on B300.",
+      "The exact-revision 15-file/16,397,461,266-byte identity was verified before the serving container started.",
+      "The 76b884 H100 CUDA-CRIU snapshot is not a weights artifact and cannot restore on B300.",
+      "The one-GPU runtime allocation targets a preemptible eight-B300 burst node; the acquisition Job uses the same labels and toleration but requests no GPU.",
+      "The first candidate lane is a protected Retain provider-block PVC on compute.csi.nebius.com. SFS and node-local NVMe remain separate unqualified cohorts and must never be relabeled or pooled.",
+      "The qualified live workload uses ephemeral emptyDir model storage, so a recreated Pod reacquires and verifies the exact revision."
+    ]
+  },
+  "evidence": [
+    {
+      "classification": "measured-historical",
+      "hardware": "NVIDIA H100 80GB HBM3",
+      "outcome": "conventional-fallback",
+      "source_commit": "ce3daebc291f4b35807989959cf24068cdf500a7",
+      "summary": "The exact model revision and two exact-content prompts are reusable. Weight inventory 1e89964f62cbba0c316f76db2e4ea56d2a79fcf5b8ec678bec48d53c457a30cc covers 15 logical paths and 16,397,461,266 bytes but has no per-file content hashes and is not a promotable artifact manifest."
+    },
+    {
+      "classification": "measured-historical",
+      "hardware": "NVIDIA H100 80GB HBM3",
+      "outcome": "snapshot-candidate",
+      "source_commit": "3f20fa12b1e82a46eade6822839615b0de347612",
+      "summary": "Manifest 76b8845141df43882a142f9085ff233a0b5bf27b55f19ae385dd9ac88dab6394 is the 505-file, 27,306,999,047-byte H100 CUDA-CRIU snapshot subject; it includes cgroup.img/core-*.img and is incompatible with B300, never conventional weights."
+    },
+    {
+      "classification": "measured-platform",
+      "hardware": "NVIDIA B300 SXM6 288GB",
+      "outcome": "live-qualified",
+      "source_commit": "b5dbd9ec7cdab67d8110b2b2b4c675091954e7c1",
+      "summary": "The unchanged exact Qwen3-8B revision, exact 15-file manifest, and CUDA 13 vLLM 0.28 image passed two distinct cold and warm semantics on fs2-serve-usn1; the base catalog remains non-routable."
+    }
+  ],
+  "provenance": [
+    {
+      "commit": "ce3daebc291f4b35807989959cf24068cdf500a7",
+      "tree": "e98ab16eaa01d3f00d44db739b59403ac42d2b9f",
+      "path": "nim-fast-start/faststart-v2/qwen3-faststart/campaign-contract.json",
+      "classification": "measured-handoff"
+    },
+    {
+      "commit": "3f20fa12b1e82a46eade6822839615b0de347612",
+      "tree": "ec6ab01b42be481dc7b9bfa467e65e9ef9f13a4a",
+      "path": "docs/fs2/fs2-product-switch/results.json",
+      "classification": "measured-handoff"
+    }
+  ]
+}

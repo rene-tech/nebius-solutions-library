@@ -1,0 +1,275 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: evo2-40b
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: evo2-40b
+    app.kubernetes.io/part-of: fs2-serve
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: evo2-40b-cache
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: evo2-40b
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 192Gi
+  storageClassName: compute-csi-default-sc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: evo2-40b
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/instance: evo2-40b
+    app.kubernetes.io/name: evo2-40b
+    app.kubernetes.io/part-of: fs2-serve
+    app.kubernetes.io/version: d529aa57c30771814217ad89baaeaf6e2315c7d7
+  annotations:
+    fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/model-content-digest: sha256:b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa
+    fs2.nebius/model-repository: arcinstitute/evo2_40b
+    fs2.nebius/model-revision: d529aa57c30771814217ad89baaeaf6e2315c7d7
+    fs2.nebius/runtime-image-digest: sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c
+    fs2.nebius/task: fs2-serve-all-models-general-media-wave
+spec:
+  progressDeadlineSeconds: 7200
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: evo2-40b
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/instance: evo2-40b
+        app.kubernetes.io/name: evo2-40b
+        app.kubernetes.io/part-of: fs2-serve
+        app.kubernetes.io/version: d529aa57c30771814217ad89baaeaf6e2315c7d7
+      annotations:
+        fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/model-content-digest: sha256:b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa
+        fs2.nebius/model-repository: arcinstitute/evo2_40b
+        fs2.nebius/model-revision: d529aa57c30771814217ad89baaeaf6e2315c7d7
+        fs2.nebius/runtime-image-digest: sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        capacity.fs2.nebius/pool: burst
+        capacity.fs2.nebius/type: preemptible
+        accelerator.fs2.nebius/class: nvidia-b300-sxm6-288gb
+      securityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: evo2-40b
+      terminationGracePeriodSeconds: 30
+      tolerations:
+        - effect: NoSchedule
+          key: dedicated
+          operator: Equal
+          value: fs2-inference
+      initContainers:
+        - name: prepare-runtime-cache
+          image: registry.example.invalid/k8s-inference/models/evo2-runtime@sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              for directory in cuda torch-extensions torchinductor triton; do
+                mkdir -p "${FS2_RUNTIME_CACHE_ROOT}/${directory}"
+              done
+              test -w "${FS2_RUNTIME_CACHE_ROOT}"
+          env:
+            - name: FS2_RUNTIME_CACHE_ROOT
+              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.173.02-sm103
+          resources:
+            limits:
+              cpu: "1"
+              ephemeral-storage: 128Mi
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              ephemeral-storage: 16Mi
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+        - name: materialize-checkpoint
+          image: registry.example.invalid/k8s-inference/models/evo2-runtime@sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c
+          imagePullPolicy: IfNotPresent
+          command:
+            - python3
+            - /opt/fs2-evo2/evo2_stage.py
+          env:
+            - name: DO_NOT_TRACK
+              value: "1"
+            - name: HF_HOME
+              value: /model-cache/hf-home
+            - name: HF_HUB_DISABLE_TELEMETRY
+              value: "1"
+            - name: HF_HUB_DOWNLOAD_TIMEOUT
+              value: "3600"
+            - name: HF_XET_CACHE
+              value: /model-cache/xet
+            - name: HOME
+              value: /model-cache/home
+          resources:
+            limits:
+              cpu: "32"
+              ephemeral-storage: 8Gi
+              memory: 32Gi
+            requests:
+              cpu: "8"
+              ephemeral-storage: 2Gi
+              memory: 8Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+      containers:
+        - name: model
+          image: registry.example.invalid/k8s-inference/models/evo2-runtime@sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c
+          imagePullPolicy: IfNotPresent
+          command:
+            - python3
+            - /opt/fs2-evo2/evo2_serve.py
+          args:
+            - --host
+            - 127.0.0.1
+            - --port
+            - "8001"
+          env:
+            - name: CUDA_CACHE_PATH
+              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.173.02-sm103/cuda
+            - name: CUDA_VISIBLE_DEVICES
+              value: "0"
+            - name: EVO2_MODEL_PATH
+              value: /model-cache/evo2_40b.pt
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: expandable_segments:True
+            - name: TORCH_EXTENSIONS_DIR
+              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.173.02-sm103/torch-extensions
+            - name: TORCHINDUCTOR_CACHE_DIR
+              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.173.02-sm103/torchinductor
+            - name: TRITON_CACHE_DIR
+              value: /model-cache/.fs2/runtime/5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c/b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa/driver-580.173.02-sm103/triton
+            - name: TRITON_PTXAS_PATH
+              value: /usr/local/cuda/bin/ptxas
+          resources:
+            limits:
+              cpu: "64"
+              ephemeral-storage: 32Gi
+              memory: 256Gi
+              nvidia.com/gpu: "1"
+            requests:
+              cpu: "16"
+              ephemeral-storage: 8Gi
+              memory: 128Gi
+              nvidia.com/gpu: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+        - name: relay
+          image: registry.example.invalid/k8s-inference/models/evo2-runtime@sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c
+          imagePullPolicy: IfNotPresent
+          command:
+            - python3
+            - /opt/fs2-evo2/evo2_proxy.py
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "2"
+              ephemeral-storage: 2Gi
+              memory: 1Gi
+            requests:
+              cpu: 250m
+              ephemeral-storage: 256Mi
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            failureThreshold: 240
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            failureThreshold: 4
+            httpGet:
+              path: /v1/runtime
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: evo2-40b-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: evo2-40b
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/instance: evo2-40b
+    app.kubernetes.io/name: evo2-40b
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  ports:
+    - name: http
+      port: 8000
+      protocol: TCP
+      targetPort: http
+  selector:
+    app.kubernetes.io/instance: evo2-40b
+  type: ClusterIP

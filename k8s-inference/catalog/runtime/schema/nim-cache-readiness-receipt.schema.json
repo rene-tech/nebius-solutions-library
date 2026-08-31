@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/nim-cache-readiness-receipt/v2",
+  "title": "Signed NIMCache readiness subject",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "status", "checked_at", "model_id", "model_digest", "artifact_manifest_digest", "content_digest", "content_uri", "controller_owner", "nim_cache", "persistent_volume_claim", "runtime_image_digest", "credential_authentication"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/nim-cache-readiness-receipt/v2"},
+    "receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "status": {"const": "Ready"},
+    "checked_at": {"type": "string", "format": "date-time"},
+    "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "model_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact_manifest_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "content_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "content_uri": {"type": "string", "pattern": "^sfs://"},
+    "controller_owner": {"const": "nim-operator-nimcache"},
+    "runtime_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "credential_authentication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "prerequisite_receipt_digest", "credential_materialization_sha256", "secret_requirement_ids", "secret_resource_uids", "values_suppressed"],
+      "properties": {
+        "status": {"const": "PASS"},
+        "prerequisite_receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "credential_materialization_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "secret_requirement_ids": {"const": ["fs2-models/ngc-pull-secret", "fs2-models/ngc-runtime-secret"]},
+        "secret_resource_uids": {
+          "type": "array",
+          "prefixItems": [
+            {"$ref": "#/$defs/pullSecretUid"},
+            {"$ref": "#/$defs/runtimeSecretUid"}
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "values_suppressed": {"const": true}
+      }
+    },
+    "nim_cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_version", "kind", "namespace", "name", "uid", "resource_version", "observed_generation", "cache_state"],
+      "properties": {
+        "api_version": {"const": "apps.nvidia.com/v1alpha1"},
+        "kind": {"const": "NIMCache"},
+        "namespace": {"const": "fs2-models"},
+        "name": {"type": "string", "minLength": 1},
+        "uid": {"type": "string", "minLength": 36},
+        "resource_version": {"type": "string", "minLength": 1},
+        "observed_generation": {"type": "integer", "minimum": 1},
+        "cache_state": {"const": "Ready"}
+      }
+    },
+    "persistent_volume_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace", "name", "uid", "resource_version", "state"],
+      "properties": {
+        "namespace": {"const": "fs2-models"},
+        "name": {"type": "string", "minLength": 1},
+        "uid": {"type": "string", "minLength": 36},
+        "resource_version": {"type": "string", "minLength": 1},
+        "state": {"const": "Bound"}
+      }
+    }
+  },
+  "$defs": {
+    "secretUid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement_id", "uid"],
+      "properties": {
+        "requirement_id": {"type": "string"},
+        "uid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27,}$"}
+      }
+    },
+    "pullSecretUid": {
+      "allOf": [
+        {"$ref": "#/$defs/secretUid"},
+        {"properties": {"requirement_id": {"const": "fs2-models/ngc-pull-secret"}}}
+      ]
+    },
+    "runtimeSecretUid": {
+      "allOf": [
+        {"$ref": "#/$defs/secretUid"},
+        {"properties": {"requirement_id": {"const": "fs2-models/ngc-runtime-secret"}}}
+      ]
+    }
+  }
+}

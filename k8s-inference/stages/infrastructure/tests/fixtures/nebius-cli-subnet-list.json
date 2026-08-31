@@ -1,0 +1,21 @@
+{
+  "schema": "fs2-serve.nebius.ai/cli-subnet-list-fixture/v1",
+  "source": "synthetic Nebius CLI response shape",
+  "items": [
+    {
+      "metadata": {
+        "id": "vpcsubnet-syntheticlocal",
+        "name": "synthetic-subnet"
+      },
+      "spec": {
+        "network_id": "vpcnetwork-syntheticlocal"
+      },
+      "status": {
+        "state": "READY",
+        "ipv4_private_cidrs": [
+          "10.104.0.0/13"
+        ]
+      }
+    }
+  ]
+}

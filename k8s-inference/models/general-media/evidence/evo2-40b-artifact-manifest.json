@@ -1,0 +1,27 @@
+{
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "model_id": "evo2-40b",
+  "kind": "weights",
+  "source": {
+    "uri": "hf://arcinstitute/evo2_40b",
+    "revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7"
+  },
+  "content": {
+    "digest": "b45c6237bc56e0c7484e6402b12cb765f1241d6714403c8e36debb6577dd14fa",
+    "expanded_bytes": 82253491694,
+    "files": [
+      {
+        "path": "evo2_40b.pt",
+        "bytes": 82253491694,
+        "sha256": "dd299612b1c1cdded0dfdcaf4d16f98fc97458261d80f4d662429f0ccb316bc3"
+      }
+    ]
+  },
+  "license": {
+    "id": "apache-2.0",
+    "state": "verified"
+  },
+  "entitlement_state": "not-required",
+  "owner": "fs2-serve-localizer",
+  "retention": "retained-platform"
+}

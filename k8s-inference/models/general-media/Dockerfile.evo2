@@ -1,0 +1,9 @@
+FROM registry.example.invalid/k8s-inference/models/evo2-cache-builder@sha256:c90dbbf38ab907c3336c2389294a6fc13197c17623d3acd17ab5727b93bc0815
+
+COPY evo2_stage.py evo2_proxy.py evo2_serve.py /opt/fs2-evo2/
+
+LABEL org.opencontainers.image.title="FS2 Evo2-40B B300 service runtime" \
+      org.opencontainers.image.source="https://github.com/nebius/nebius-solutions-library" \
+      ai.nebius.fs2.model.repository="arcinstitute/evo2_40b" \
+      ai.nebius.fs2.model.revision="d529aa57c30771814217ad89baaeaf6e2315c7d7" \
+      ai.nebius.fs2.upstream.runtime.digest="sha256:c90dbbf38ab907c3336c2389294a6fc13197c17623d3acd17ab5727b93bc0815"
