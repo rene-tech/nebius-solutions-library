@@ -69,8 +69,17 @@
 {{- if and .Values.config.allowNonClusterUrls .Values.publicGateway.enabled }}
 {{- fail "config.allowNonClusterUrls is forbidden when the public Gateway is enabled" }}
 {{- end }}
-{{- if and .Values.config.allowNonClusterUrls (ne .Values.config.publicBaseUrl "http://localhost:18082") }}
-{{- fail "config.allowNonClusterUrls requires an explicit loopback operator-proxy origin" }}
+{{- if .Values.config.allowNonClusterUrls }}
+{{- if not (regexMatch "^http://localhost:[0-9]{4,5}$" .Values.config.publicBaseUrl) }}
+{{- fail "config.allowNonClusterUrls requires an exact localhost operator-proxy origin" }}
+{{- end }}
+{{- if ne .Values.config.publicBaseUrl .Values.config.authorizationServerUrl }}
+{{- fail "internal public and authorization origins must use the same operator-proxy port" }}
+{{- end }}
+{{- $operatorProxyPort := int (regexFind "[0-9]+$" .Values.config.publicBaseUrl) }}
+{{- if or (lt $operatorProxyPort 1024) (gt $operatorProxyPort 65535) }}
+{{- fail "internal operator-proxy port must be from 1024 through 65535" }}
+{{- end }}
 {{- end }}
 {{- $secretNames := list .Values.secrets.database.name .Values.secrets.migrationsDatabase.name .Values.secrets.maintenanceDatabase.name .Values.secrets.payloadKeyring.name .Values.secrets.ledgerHmacKeyring.name .Values.secrets.tokenPepper.name .Values.secrets.routeAttestors.name .Values.secrets.admin.name .Values.federation.secretName }}
 {{- if ne (len $secretNames) (len (uniq $secretNames)) }}

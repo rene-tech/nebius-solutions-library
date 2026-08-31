@@ -1396,7 +1396,8 @@ def test_enabled_public_route_rejects_an_incomplete_edge() -> None:
     assert "publicGateway" in result.stderr and "enabled" in result.stderr
 
 
-def test_internal_only_render_uses_plain_loopback_origin_without_public_objects() -> None:
+def test_internal_only_chart_lints_and_renders_configured_loopback_origin() -> None:
+    operator_origin = "http://localhost:28082"
     command = [
         HELM,
         "template",
@@ -1407,9 +1408,9 @@ def test_internal_only_render_uses_plain_loopback_origin_without_public_objects(
         *helm_values(),
         *admin_console_values(route=False),
         "--set",
-        "config.publicBaseUrl=http://localhost:18082",
+        f"config.publicBaseUrl={operator_origin}",
         "--set",
-        "config.authorizationServerUrl=http://localhost:18082",
+        f"config.authorizationServerUrl={operator_origin}",
         "--set",
         "config.publicAuthorityMode=dns",
         "--set",
@@ -1417,12 +1418,20 @@ def test_internal_only_render_uses_plain_loopback_origin_without_public_objects(
         "--set",
         "httpRoute.authorityMode=dns",
     ]
+    lint_command = [HELM, "lint", str(CHART), *command[4:]]
     result = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
         command,
         check=True,
         capture_output=True,
         text=True,
     )
+    lint = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
+        lint_command,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "0 chart(s) failed" in lint.stdout
     documents = [document for document in yaml.safe_load_all(result.stdout) if document]
     kinds = {document["kind"] for document in documents}
     names = {document["metadata"]["name"] for document in documents}
@@ -1434,8 +1443,8 @@ def test_internal_only_render_uses_plain_loopback_origin_without_public_objects(
     environment = {
         item["name"]: item.get("value") for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
     }
-    assert environment["FS2_PUBLIC_BASE_URL"] == "http://localhost:18082"
-    assert environment["FS2_AUTHORIZATION_SERVER_URL"] == "http://localhost:18082"
+    assert environment["FS2_PUBLIC_BASE_URL"] == operator_origin
+    assert environment["FS2_AUTHORIZATION_SERVER_URL"] == operator_origin
     assert environment["FS2_ALLOW_NON_CLUSTER_URLS"] == "true"
 
 
@@ -1490,11 +1499,36 @@ def test_internal_only_render_uses_plain_loopback_origin_without_public_objects(
                 "--set",
                 "httpRoute.authorityMode=dns",
                 "--set",
-                "config.publicBaseUrl=http://localhost:18083",
+                "config.publicBaseUrl=http://localhost:28082",
                 "--set",
-                "config.authorizationServerUrl=http://localhost:18083",
+                "config.authorizationServerUrl=http://localhost:28083",
             ),
-            "18082",
+            "same operator-proxy port",
+        ),
+        (
+            (
+                "--set",
+                "config.allowNonClusterUrls=true",
+                "--set",
+                "publicGateway.enabled=false",
+                "--set",
+                "publicLoadBalancer.enabled=false",
+                "--set",
+                "publicTls.enabled=false",
+                "--set",
+                "publicTls.acmeIssuer.enabled=false",
+                "--set",
+                "httpRoute.enabled=false",
+                "--set",
+                "config.publicAuthorityMode=dns",
+                "--set",
+                "httpRoute.authorityMode=dns",
+                "--set",
+                "config.publicBaseUrl=http://localhost:65536",
+                "--set",
+                "config.authorizationServerUrl=http://localhost:65536",
+            ),
+            "1024 through 65535",
         ),
     ],
 )

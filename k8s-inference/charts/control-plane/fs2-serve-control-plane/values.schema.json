@@ -846,8 +846,8 @@
         "properties": {
           "config": {
             "properties": {
-              "publicBaseUrl": {"const": "http://localhost:18082"},
-              "authorizationServerUrl": {"const": "http://localhost:18082"},
+              "publicBaseUrl": {"pattern": "^http://localhost:[0-9]{4,5}$"},
+              "authorizationServerUrl": {"pattern": "^http://localhost:[0-9]{4,5}$"},
               "publicAuthorityMode": {"const": "dns"}
             }
           },
