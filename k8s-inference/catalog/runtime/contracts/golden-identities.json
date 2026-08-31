@@ -53,6 +53,58 @@
       "source_repository": "nvcr.io/nim/mit/boltz2",
       "source_revision": "sha256:0788c95c8b5b6c1a73a62c656b298ecc353a8187dc22b794f496ae40672c4c98"
     },
+    "cosmos3-nano": {
+      "acquisition_method": "huggingface-public-snapshot",
+      "acquisition_prerequisite_ids": [
+        "fs2-models/cache-service-account",
+        "fs2-models/runtime-registry-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "acquisition_promotion_policy": "license-and-live-qualification-required",
+      "acquisition_repository": "nvidia/Cosmos3-Nano",
+      "acquisition_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "artifact_kind": "weights",
+      "artifact_manifest_digest": "49b4bf03d84857892b86366ef2f6c3b68ac575cb1a3f2de4122c41e638f4cc6e",
+      "b300_state": "qualified",
+      "compatibility_route_backend_policy": "exact-live-backend-required",
+      "endpoints": {
+        "native": "/generate"
+      },
+      "execution_identity_sha256": "6ec5d834692c4884772780ca48089ca1105ce423eefad510da6947b2f1ba92a0",
+      "execution_mode": "http",
+      "gpu_allocation_count": 1,
+      "gpu_allocation_topology": "single-gpu",
+      "gpu_placement": null,
+      "protocols": [
+        "native"
+      ],
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "runtime_command_sha256": "5c65591b084ad4ea16769a70b9d7693f8b24bb1f7e028ace0c9d491f3aab33fd",
+      "runtime_image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+      "runtime_kind": "vllm-omni",
+      "scale_activation_mode": "replica-scale",
+      "scale_contract_sha256": "fbac9df920305440d341881b4765d11d4938ab3935336c15f5cb247a0c32d5d6",
+      "scale_resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "scale_target_template_sha256": "7fa721e1e01e03261a5253791baedb24e2f56c07a720221772214f819129070f",
+      "semantic_contract": "bounded-json-base64-media/v1",
+      "semantic_fixture_sha256": "467bfa7484ec20dc1fc30a109b8e0e7e23d3b443061f1c0a9b659dfce30c82de",
+      "semantic_identity_sha256": "2144f0f2deddd894707d903c4202d495cb7e02f01c6edd4d2eb7ef2cdae34def",
+      "semantic_request_asset_set_sha256": "5856d22a77078ba237309f932f1ea6206b4b0a6c63f42bf6a2245e1f3a518829",
+      "semantic_request_contract_sha256": "5124d228f131988ba56a8ae3a22cdc154aed29cb307e15f9bb2db5c56d858cc7",
+      "semantic_request_ids": [
+        "cosmos3-t2v-robot-arm-seed-2407",
+        "cosmos3-t2v-factory-cart-seed-2408"
+      ],
+      "semantic_request_sha256": [
+        "e4f2897190d5efc4f551af9c1f3cee9880b7a001c17589065d0338bd277a53e2",
+        "fc50ae5e08546a5a68e745d03fcbf68cd5f9abcfc94a3dd22f2ef1155af58e0a"
+      ],
+      "semantic_request_state": "qualified",
+      "semantic_source_sha256": "9482862238b3f4582d4aa48786fcad4c0920e4755a7bd7c15acc7c97e618745b",
+      "source_kind": "huggingface",
+      "source_repository": "nvidia/Cosmos3-Nano",
+      "source_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1"
+    },
     "diffdock": {
       "acquisition_method": "ngc-target-node-nimcache",
       "acquisition_prerequisite_ids": [

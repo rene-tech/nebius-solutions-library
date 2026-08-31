@@ -1,0 +1,56 @@
+{
+  "schema": "fs2-serve.nebius.ai/semantic-contract/v1",
+  "contract": "bounded-json-base64-media/v1",
+  "kind": "base64-mp4-json",
+  "model": {
+    "id": "cosmos3-nano",
+    "repository": "nvidia/Cosmos3-Nano",
+    "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1"
+  },
+  "requests": [
+    {
+      "id": "cosmos3-t2v-robot-arm-seed-2407",
+      "request": {
+        "mode": "text-to-video",
+        "prompt": "A robot arm carefully places a red cube on a clean workbench, fixed camera, smooth natural motion.",
+        "negative_prompt": "blurry, distorted, low quality, jittery, deformed",
+        "size": "448x256",
+        "num_frames": 25,
+        "fps": 24,
+        "num_inference_steps": 8,
+        "guidance_scale": 6.0,
+        "seed": 2407
+      },
+      "oracle": {
+        "mime_type": "video/mp4",
+        "width": 448,
+        "height": 256,
+        "frames": 25,
+        "fps": 24,
+        "maximum_decoded_bytes": 67108864
+      }
+    },
+    {
+      "id": "cosmos3-t2v-factory-cart-seed-2408",
+      "request": {
+        "mode": "text-to-video",
+        "prompt": "A small autonomous cart moves slowly through a bright factory aisle, fixed camera, realistic motion.",
+        "negative_prompt": "blurry, distorted, low quality, jittery, deformed",
+        "size": "448x256",
+        "num_frames": 25,
+        "fps": 24,
+        "num_inference_steps": 8,
+        "guidance_scale": 6.0,
+        "seed": 2408
+      },
+      "oracle": {
+        "mime_type": "video/mp4",
+        "width": 448,
+        "height": 256,
+        "frames": 25,
+        "fps": 24,
+        "maximum_decoded_bytes": 67108864
+      }
+    }
+  ]
+}

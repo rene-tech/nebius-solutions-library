@@ -1,0 +1,899 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cosmos3-nano
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: cosmos3-nano
+    app.kubernetes.io/part-of: fs2-serve
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cosmos3-nano-cache
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: cosmos3-nano
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 64Gi
+  storageClassName: compute-csi-default-sc
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cosmos3-nano-adapter
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: cosmos3-nano
+    app.kubernetes.io/part-of: fs2-serve
+  annotations:
+    fs2.nebius/output-contract: bounded-inline-json
+    fs2.nebius/output-follow-up: object-backed-async-for-large-media
+data:
+  adapter.py: |
+    from __future__ import annotations
+
+    import asyncio
+    import base64
+    import binascii
+    import hashlib
+    import json
+    import os
+    import struct
+    import time
+    import uuid
+    from contextlib import asynccontextmanager
+    from typing import Annotated, Literal, Union
+
+    import httpx
+    import uvicorn
+    from fastapi import FastAPI, Request
+    from fastapi.responses import JSONResponse, PlainTextResponse
+    from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+    MODEL_REPOSITORY = "nvidia/Cosmos3-Nano"
+    MODEL_REVISION = "7a312c868bcce8e40b3eb40861300a9d0ba3fde1"
+    RESOLVED_MODEL = f"{MODEL_REPOSITORY}@{MODEL_REVISION}"
+    UPSTREAM_BASE_URL = "http://127.0.0.1:8000"
+    MAX_RAW_BYTES = 64 * 1024 * 1024
+    MAX_ENCODED_BYTES = 90 * 1024 * 1024
+    MAX_IMAGE_RESPONSE_BYTES = MAX_ENCODED_BYTES + (1024 * 1024)
+    BACKEND_ID = os.getenv("POD_NAME", "unknown")
+
+    RESULTS = {
+        "accepted": 0,
+        "completed": 0,
+        "failed": 0,
+        "rejected": 0,
+        "timed_out": 0,
+        "cancelled": 0,
+    }
+    DURATIONS = {
+        "queue": {"count": 0, "sum": 0.0},
+        "upstream": {"count": 0, "sum": 0.0},
+        "encoding": {"count": 0, "sum": 0.0},
+        "total": {"count": 0, "sum": 0.0},
+    }
+    OUTPUT_BYTES = 0
+    OUTPUT_FRAMES = 0
+    READY = 0
+
+
+    class CommonRequest(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+
+        model: Literal[RESOLVED_MODEL] = RESOLVED_MODEL
+        prompt: str = Field(min_length=1, max_length=4096)
+        negative_prompt: str = Field(default="", max_length=4096)
+        seed: int = Field(default=0, ge=0, le=4294967295)
+        num_inference_steps: int = Field(default=30, ge=1, le=50)
+        guidance_scale: float = Field(default=7.0, ge=0.0, le=20.0)
+
+        @staticmethod
+        def validate_size(size: str) -> None:
+            try:
+                width_text, height_text = size.split("x", 1)
+                width, height = int(width_text), int(height_text)
+            except (AttributeError, TypeError, ValueError):
+                raise ValueError("size must use WIDTHxHEIGHT") from None
+            if not 256 <= width <= 1280 or not 256 <= height <= 720:
+                raise ValueError("size must be between 256x256 and 1280x720")
+            if width % 16 or height % 16:
+                raise ValueError("width and height must be multiples of 16")
+            if width * height > 1280 * 720:
+                raise ValueError("width times height must not exceed 921600 pixels")
+
+
+    class TextToImageRequest(CommonRequest):
+        mode: Literal["text-to-image"]
+        size: str = Field(default="512x512", min_length=7, max_length=9)
+        output_format: Literal["png"] = "png"
+
+        @model_validator(mode="after")
+        def dimensions_are_bounded(self) -> "TextToImageRequest":
+            self.validate_size(self.size)
+            return self
+
+
+    class TextToVideoRequest(CommonRequest):
+        mode: Literal["text-to-video"]
+        size: str = Field(default="448x256", min_length=7, max_length=9)
+        num_frames: int = Field(default=25, ge=5, le=400)
+        fps: int = Field(default=24, ge=1, le=30)
+        output_format: Literal["mp4"] = "mp4"
+
+        @model_validator(mode="after")
+        def dimensions_are_bounded(self) -> "TextToVideoRequest":
+            self.validate_size(self.size)
+            return self
+
+
+    GenerateRequest = Annotated[
+        Union[TextToImageRequest, TextToVideoRequest],
+        Field(discriminator="mode"),
+    ]
+
+
+    class AdapterError(Exception):
+        def __init__(
+            self,
+            status_code: int,
+            code: str,
+            message: str,
+            retryable: bool,
+        ) -> None:
+            super().__init__(message)
+            self.status_code = status_code
+            self.code = code
+            self.message = message
+            self.retryable = retryable
+
+
+    class AdmissionRejected(Exception):
+        pass
+
+
+    class AdmissionController:
+        """Allow one active generation and at most one queued generation."""
+
+        def __init__(self) -> None:
+            self._semaphore = asyncio.Semaphore(1)
+            self._lock = asyncio.Lock()
+            self._outstanding = 0
+            self._active = 0
+
+        async def enter(self) -> float:
+            queued_at = time.monotonic()
+            async with self._lock:
+                if self._outstanding >= 2:
+                    raise AdmissionRejected
+                self._outstanding += 1
+            try:
+                await self._semaphore.acquire()
+            except BaseException:
+                async with self._lock:
+                    self._outstanding -= 1
+                raise
+            async with self._lock:
+                self._active += 1
+            return time.monotonic() - queued_at
+
+        async def leave(self) -> None:
+            async with self._lock:
+                self._active -= 1
+                self._outstanding -= 1
+            self._semaphore.release()
+
+        async def snapshot(self) -> tuple[int, int]:
+            async with self._lock:
+                return self._active, self._outstanding - self._active
+
+
+    ADMISSION = AdmissionController()
+
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        timeout = httpx.Timeout(1800.0, connect=5.0, pool=5.0)
+        limits = httpx.Limits(max_connections=2, max_keepalive_connections=2)
+        app.state.client = httpx.AsyncClient(timeout=timeout, limits=limits)
+        try:
+            yield
+        finally:
+            await app.state.client.aclose()
+
+
+    app = FastAPI(
+        title="Cosmos3-Nano bounded media adapter",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        lifespan=lifespan,
+    )
+
+
+    def error_response(
+        request_id: str,
+        status_code: int,
+        code: str,
+        message: str,
+        retryable: bool,
+        *,
+        retry_after: str | None = None,
+    ) -> JSONResponse:
+        headers = {
+            "X-Backend-Id": BACKEND_ID,
+            "X-Request-Id": request_id,
+        }
+        if retry_after is not None:
+            headers["Retry-After"] = retry_after
+        return JSONResponse(
+            status_code=status_code,
+            headers=headers,
+            content={
+                "error": {
+                    "request_id": request_id,
+                    "code": code,
+                    "message": message,
+                    "retryable": retryable,
+                }
+            },
+        )
+
+
+    async def read_limited(response: httpx.Response, limit: int) -> bytes:
+        if response.status_code >= 400:
+            raise AdapterError(
+                502,
+                "upstream_error",
+                f"model runtime returned HTTP {response.status_code}",
+                response.status_code >= 500,
+            )
+        content_length = response.headers.get("content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > limit:
+                    raise AdapterError(
+                        502,
+                        "upstream_output_too_large",
+                        "model runtime output exceeds the inline response limit",
+                        False,
+                    )
+            except ValueError:
+                raise AdapterError(
+                    502,
+                    "invalid_upstream_response",
+                    "model runtime returned an invalid content length",
+                    False,
+                ) from None
+        result = bytearray()
+        async for chunk in response.aiter_bytes():
+            result.extend(chunk)
+            if len(result) > limit:
+                raise AdapterError(
+                    502,
+                    "upstream_output_too_large",
+                    "model runtime output exceeds the inline response limit",
+                    False,
+                )
+        return bytes(result)
+
+
+    def validate_png(raw: bytes, expected_width: int, expected_height: int) -> None:
+        if len(raw) < 24 or raw[:8] != b"\x89PNG\r\n\x1a\n" or raw[12:16] != b"IHDR":
+            raise AdapterError(
+                502,
+                "invalid_upstream_media",
+                "model runtime did not return a valid PNG image",
+                False,
+            )
+        width, height = struct.unpack(">II", raw[16:24])
+        if (width, height) != (expected_width, expected_height):
+            raise AdapterError(
+                502,
+                "invalid_upstream_media",
+                "model runtime returned unexpected image dimensions",
+                False,
+            )
+
+
+    async def generate_image(
+        client: httpx.AsyncClient,
+        body: TextToImageRequest,
+        width: int,
+        height: int,
+    ) -> tuple[bytes, str]:
+        payload = {
+            "model": MODEL_REPOSITORY,
+            "prompt": body.prompt,
+            "negative_prompt": body.negative_prompt,
+            "n": 1,
+            "size": body.size,
+            "response_format": "b64_json",
+            "seed": body.seed,
+            "num_inference_steps": body.num_inference_steps,
+            "guidance_scale": body.guidance_scale,
+        }
+        async with client.stream(
+            "POST",
+            f"{UPSTREAM_BASE_URL}/v1/images/generations",
+            json=payload,
+        ) as response:
+            encoded_response = await read_limited(response, MAX_IMAGE_RESPONSE_BYTES)
+        try:
+            response_payload = json.loads(encoded_response)
+            encoded_media = response_payload["data"][0]["b64_json"]
+        except (KeyError, IndexError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
+            raise AdapterError(
+                502,
+                "invalid_upstream_response",
+                "model runtime returned an invalid image response",
+                False,
+            ) from None
+        if not isinstance(encoded_media, str) or len(encoded_media.encode("ascii")) > MAX_ENCODED_BYTES:
+            raise AdapterError(
+                502,
+                "upstream_output_too_large",
+                "model runtime image exceeds the inline response limit",
+                False,
+            )
+        try:
+            raw = base64.b64decode(encoded_media, validate=True)
+        except (ValueError, UnicodeEncodeError, binascii.Error):
+            raise AdapterError(
+                502,
+                "invalid_upstream_media",
+                "model runtime returned invalid base64 image data",
+                False,
+            ) from None
+        if len(raw) > MAX_RAW_BYTES:
+            raise AdapterError(
+                502,
+                "upstream_output_too_large",
+                "model runtime image exceeds the inline response limit",
+                False,
+            )
+        validate_png(raw, width, height)
+        return raw, "image/png"
+
+
+    async def generate_video(
+        client: httpx.AsyncClient,
+        body: TextToVideoRequest,
+    ) -> tuple[bytes, str]:
+        fields = {
+            "model": MODEL_REPOSITORY,
+            "prompt": body.prompt,
+            "negative_prompt": body.negative_prompt,
+            "size": body.size,
+            "num_frames": str(body.num_frames),
+            "fps": str(body.fps),
+            "seed": str(body.seed),
+            "num_inference_steps": str(body.num_inference_steps),
+            "guidance_scale": str(body.guidance_scale),
+            "max_sequence_length": "4096",
+            "flow_shift": "10.0",
+            "extra_params": json.dumps(
+                {
+                    "use_resolution_template": False,
+                    "use_duration_template": False,
+                    "guardrails": False,
+                },
+                separators=(",", ":"),
+            ),
+        }
+        multipart = {name: (None, value) for name, value in fields.items()}
+        async with client.stream(
+            "POST",
+            f"{UPSTREAM_BASE_URL}/v1/videos/sync",
+            files=multipart,
+            headers={"Accept": "video/mp4"},
+        ) as response:
+            content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+            if response.status_code < 400 and content_type not in {"video/mp4", "application/mp4"}:
+                raise AdapterError(
+                    502,
+                    "invalid_upstream_media",
+                    "model runtime returned an unexpected video content type",
+                    False,
+                )
+            raw = await read_limited(response, MAX_RAW_BYTES)
+        if len(raw) < 16 or b"ftyp" not in raw[:32]:
+            raise AdapterError(
+                502,
+                "invalid_upstream_media",
+                "model runtime did not return a valid MP4 container",
+                False,
+            )
+        return raw, "video/mp4"
+
+
+    @app.get("/healthz")
+    async def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
+
+    @app.get("/readyz")
+    async def readyz(request: Request):
+        global READY
+        try:
+            response = await request.app.state.client.get(f"{UPSTREAM_BASE_URL}/health")
+            if response.status_code >= 400:
+                raise RuntimeError("not ready")
+        except (httpx.HTTPError, RuntimeError):
+            READY = 0
+            return JSONResponse(status_code=503, content={"status": "not-ready"})
+        READY = 1
+        return {"status": "ready"}
+
+
+    @app.get("/metrics", response_class=PlainTextResponse)
+    async def metrics() -> PlainTextResponse:
+        active, queued = await ADMISSION.snapshot()
+        lines = [
+            "# HELP fs2_cosmos_adapter_requests_total Requests by fixed result class.",
+            "# TYPE fs2_cosmos_adapter_requests_total counter",
+        ]
+        for result in ("accepted", "completed", "failed", "rejected", "timed_out", "cancelled"):
+            lines.append(
+                f'fs2_cosmos_adapter_requests_total{{result="{result}"}} {RESULTS[result]}'
+            )
+        lines.extend(
+            [
+                "# HELP fs2_cosmos_adapter_active_requests Active model generations.",
+                "# TYPE fs2_cosmos_adapter_active_requests gauge",
+                f"fs2_cosmos_adapter_active_requests {active}",
+                "# HELP fs2_cosmos_adapter_queue_depth Accepted requests waiting for the GPU.",
+                "# TYPE fs2_cosmos_adapter_queue_depth gauge",
+                f"fs2_cosmos_adapter_queue_depth {queued}",
+                "# HELP fs2_cosmos_adapter_ready Whether the upstream model is ready.",
+                "# TYPE fs2_cosmos_adapter_ready gauge",
+                f"fs2_cosmos_adapter_ready {READY}",
+                "# HELP fs2_cosmos_adapter_duration_seconds Generation durations by fixed phase.",
+                "# TYPE fs2_cosmos_adapter_duration_seconds summary",
+            ]
+        )
+        for phase in ("queue", "upstream", "encoding", "total"):
+            lines.append(
+                f'fs2_cosmos_adapter_duration_seconds_count{{phase="{phase}"}} '
+                f'{DURATIONS[phase]["count"]}'
+            )
+            lines.append(
+                f'fs2_cosmos_adapter_duration_seconds_sum{{phase="{phase}"}} '
+                f'{DURATIONS[phase]["sum"]:.9f}'
+            )
+        lines.extend(
+            [
+                "# HELP fs2_cosmos_adapter_output_bytes_total Valid output bytes returned.",
+                "# TYPE fs2_cosmos_adapter_output_bytes_total counter",
+                f"fs2_cosmos_adapter_output_bytes_total {OUTPUT_BYTES}",
+                "# HELP fs2_cosmos_adapter_output_frames_total Valid output frames returned.",
+                "# TYPE fs2_cosmos_adapter_output_frames_total counter",
+                f"fs2_cosmos_adapter_output_frames_total {OUTPUT_FRAMES}",
+            ]
+        )
+        return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+
+
+    @app.post("/generate")
+    async def generate(body: GenerateRequest, request: Request) -> JSONResponse:
+        global OUTPUT_BYTES, OUTPUT_FRAMES
+        request_id = str(uuid.uuid4())
+        total_started = time.monotonic()
+        try:
+            queue_seconds = await ADMISSION.enter()
+        except AdmissionRejected:
+            RESULTS["rejected"] += 1
+            return error_response(
+                request_id,
+                429,
+                "queue_full",
+                "one generation is active and one is already queued",
+                True,
+                retry_after="5",
+            )
+
+        RESULTS["accepted"] += 1
+        DURATIONS["queue"]["count"] += 1
+        DURATIONS["queue"]["sum"] += queue_seconds
+        upstream_started = time.monotonic()
+        try:
+            width_text, height_text = body.size.split("x", 1)
+            width, height = int(width_text), int(height_text)
+            if isinstance(body, TextToImageRequest):
+                raw, mime_type = await generate_image(
+                    request.app.state.client,
+                    body,
+                    width,
+                    height,
+                )
+                frames = 1
+                fps = None
+            else:
+                raw, mime_type = await generate_video(request.app.state.client, body)
+                frames = body.num_frames
+                fps = body.fps
+            upstream_seconds = time.monotonic() - upstream_started
+            encoding_started = time.monotonic()
+            encoded = base64.b64encode(raw).decode("ascii")
+            encoding_seconds = time.monotonic() - encoding_started
+            if len(encoded.encode("ascii")) > MAX_ENCODED_BYTES:
+                raise AdapterError(
+                    502,
+                    "encoded_output_too_large",
+                    "encoded media exceeds the inline response limit",
+                    False,
+                )
+            total_seconds = time.monotonic() - total_started
+            DURATIONS["upstream"]["count"] += 1
+            DURATIONS["upstream"]["sum"] += upstream_seconds
+            DURATIONS["encoding"]["count"] += 1
+            DURATIONS["encoding"]["sum"] += encoding_seconds
+            DURATIONS["total"]["count"] += 1
+            DURATIONS["total"]["sum"] += total_seconds
+            RESULTS["completed"] += 1
+            OUTPUT_BYTES += len(raw)
+            OUTPUT_FRAMES += frames
+            content = {
+                "model": MODEL_REPOSITORY,
+                "revision": MODEL_REVISION,
+                "mode": body.mode,
+                "mime_type": mime_type,
+                "data_base64": encoded,
+                "bytes": len(raw),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "width": width,
+                "height": height,
+                "frames": frames,
+                "fps": fps,
+                "timings_ms": {
+                    "queue": queue_seconds * 1000.0,
+                    "upstream": upstream_seconds * 1000.0,
+                    "total": total_seconds * 1000.0,
+                },
+            }
+            return JSONResponse(
+                status_code=200,
+                headers={
+                    "X-Backend-Id": BACKEND_ID,
+                    "X-Request-Id": request_id,
+                },
+                content=content,
+            )
+        except AdapterError as exc:
+            RESULTS["failed"] += 1
+            return error_response(
+                request_id,
+                exc.status_code,
+                exc.code,
+                exc.message,
+                exc.retryable,
+            )
+        except httpx.TimeoutException:
+            RESULTS["timed_out"] += 1
+            return error_response(
+                request_id,
+                504,
+                "upstream_timeout",
+                "model runtime did not finish before the request deadline",
+                True,
+            )
+        except httpx.HTTPError:
+            RESULTS["failed"] += 1
+            return error_response(
+                request_id,
+                502,
+                "upstream_unavailable",
+                "model runtime is unavailable",
+                True,
+            )
+        except asyncio.CancelledError:
+            RESULTS["cancelled"] += 1
+            raise
+        except Exception:
+            RESULTS["failed"] += 1
+            return error_response(
+                request_id,
+                500,
+                "adapter_error",
+                "the media adapter failed to complete the request",
+                False,
+            )
+        finally:
+            await ADMISSION.leave()
+
+
+    if __name__ == "__main__":
+        uvicorn.run(app, host="0.0.0.0", port=8080, workers=1, log_level="info")
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cosmos3-nano
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/instance: cosmos3-nano
+    app.kubernetes.io/managed-by: fs2-serve-models
+    app.kubernetes.io/name: cosmos3-nano
+    app.kubernetes.io/part-of: fs2-serve
+    app.kubernetes.io/version: 7a312c868bcce8e40b3eb40861300a9d0ba3fde1
+  annotations:
+    fs2.nebius/model-precision: bfloat16
+    fs2.nebius/model-repository: nvidia/Cosmos3-Nano
+    fs2.nebius/model-content-digest: sha256:dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95
+    fs2.nebius/runtime-image-digest: sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
+spec:
+  progressDeadlineSeconds: 2700
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: cosmos3-nano
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/instance: cosmos3-nano
+        app.kubernetes.io/managed-by: fs2-serve-models
+        app.kubernetes.io/name: cosmos3-nano
+        app.kubernetes.io/part-of: fs2-serve
+        app.kubernetes.io/version: 7a312c868bcce8e40b3eb40861300a9d0ba3fde1
+      annotations:
+        fs2.nebius/model-precision: bfloat16
+        fs2.nebius/model-repository: nvidia/Cosmos3-Nano
+        fs2.nebius/model-revision: 7a312c868bcce8e40b3eb40861300a9d0ba3fde1
+        fs2.nebius/model-content-digest: sha256:dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95
+        fs2.nebius/runtime-image-digest: sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: cosmos3-nano
+      terminationGracePeriodSeconds: 300
+      tolerations:
+        - effect: NoSchedule
+          key: dedicated
+          operator: Equal
+          value: fs2-inference
+      containers:
+        - name: vllm-omni
+          image: docker.io/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
+          imagePullPolicy: IfNotPresent
+          command:
+            - vllm
+          args:
+            - serve
+            - nvidia/Cosmos3-Nano
+            - --omni
+            - --revision
+            - 7a312c868bcce8e40b3eb40861300a9d0ba3fde1
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            - --init-timeout
+            - "1800"
+            - --no-guardrails
+            - --model-class-name
+            - Cosmos3OmniDiffusersPipeline
+          env:
+            - name: DO_NOT_TRACK
+              value: "1"
+            - name: FS2_MODEL_PRECISION
+              value: bfloat16
+            - name: HF_HUB_DISABLE_TELEMETRY
+              value: "1"
+            - name: HF_HOME
+              value: /model-cache/huggingface
+            - name: HOME
+              value: /runtime-cache/home
+            - name: VLLM_NO_USAGE_STATS
+              value: "1"
+            - name: XDG_CACHE_HOME
+              value: /runtime-cache/xdg
+          ports:
+            - containerPort: 8000
+              name: upstream
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "32"
+              ephemeral-storage: 32Gi
+              memory: 256Gi
+              nvidia.com/gpu: "1"
+            requests:
+              cpu: "8"
+              ephemeral-storage: 8Gi
+              memory: 128Gi
+              nvidia.com/gpu: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            failureThreshold: 240
+            httpGet:
+              path: /health
+              port: upstream
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: upstream
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            failureThreshold: 4
+            tcpSocket:
+              port: upstream
+            periodSeconds: 15
+            timeoutSeconds: 3
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+            - mountPath: /runtime-cache
+              name: runtime-cache
+            - mountPath: /tmp
+              name: tmp
+        - name: bounded-json-adapter
+          image: docker.io/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
+          imagePullPolicy: IfNotPresent
+          command:
+            - python3
+            - /adapter/adapter.py
+          env:
+            - name: HOME
+              value: /tmp/home
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          ports:
+            - containerPort: 8080
+              name: adapter
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "2"
+              ephemeral-storage: 1Gi
+              memory: 2Gi
+            requests:
+              cpu: 250m
+              ephemeral-storage: 128Mi
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          startupProbe:
+            failureThreshold: 30
+            httpGet:
+              path: /healthz
+              port: adapter
+            periodSeconds: 2
+            timeoutSeconds: 2
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: adapter
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            failureThreshold: 4
+            httpGet:
+              path: /healthz
+              port: adapter
+            periodSeconds: 15
+            timeoutSeconds: 3
+          volumeMounts:
+            - mountPath: /adapter
+              name: adapter
+              readOnly: true
+            - mountPath: /tmp
+              name: adapter-tmp
+      volumes:
+        - configMap:
+            defaultMode: 292
+            name: cosmos3-nano-adapter
+          name: adapter
+        - emptyDir:
+            sizeLimit: 2Gi
+          name: adapter-tmp
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: cosmos3-nano-cache
+        - emptyDir:
+            sizeLimit: 16Gi
+          name: runtime-cache
+        - emptyDir:
+            sizeLimit: 32Gi
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cosmos3-nano
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/instance: cosmos3-nano
+    app.kubernetes.io/managed-by: fs2-serve-models
+    app.kubernetes.io/name: cosmos3-nano
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: adapter
+    - name: upstream
+      port: 8000
+      protocol: TCP
+      targetPort: upstream
+  selector:
+    app.kubernetes.io/instance: cosmos3-nano
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cosmos3-nano
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: cosmos3-nano
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: cosmos3-nano
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: fs2-system
+      ports:
+        - port: 8080
+          protocol: TCP
+        - port: 8000
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP

@@ -260,9 +260,10 @@ interface version 1. `terraform.tfvars` supplies immutable control-plane,
 admin-console, and selected model image digests; admin provenance is a typed
 source-commit, source-tree, and CycloneDX SBOM identity.
 
-The `full_catalog` model profile currently contains these 15 canonical routes:
+The `full_catalog` model profile currently contains these 16 canonical routes:
 
 - `boltz2`
+- `cosmos3-nano`
 - `diffdock`
 - `evo2-40b`
 - `genmol`

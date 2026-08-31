@@ -64,7 +64,10 @@ def build_gap_matrix(args: argparse.Namespace) -> dict[str, Any]:
         item["model_id"]: item for item in matrix["models"] if isinstance(item, dict)
     }
     route_ids = set(routes["routes"])
-    if set(matrix_models) != route_ids or len(route_ids) != 15:
+    if (
+        set(matrix_models) != route_ids
+        or len(route_ids) != matrix["catalog_contract"]["canonical_model_count"]
+    ):
         raise GapMatrixError("full_catalog_partition_invalid")
     backends = {
         item["model_id"]: item

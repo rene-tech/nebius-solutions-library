@@ -508,6 +508,309 @@ class DeploymentContractTests(unittest.TestCase):
                     places=9,
                 )
 
+    def test_full_catalog_surfaces_have_exact_model_set_coverage(self) -> None:
+        canonical = set(
+            self.model_profiles["full_catalog"]["canonical_routes"]
+        )
+        self.assertEqual(canonical, set(self.model_contract["model_artifacts"]))
+        self.assertEqual(
+            canonical,
+            set(self.model_contract["model_autoscaling_targets"]),
+        )
+        self.assertEqual(
+            canonical,
+            {
+                placement["model_id"]
+                for placement in self.model_contract["workload_placements"].values()
+            },
+        )
+        runtime_catalog = json.loads(
+            (DEPLOY_ROOT / "catalog" / "runtime" / "catalog.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(canonical, set(runtime_catalog["tested_model_ids"]))
+        accelerator_compatibility = json.loads(
+            (
+                DEPLOY_ROOT
+                / "catalog"
+                / "profiles"
+                / "model-accelerator-compatibility.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(canonical, set(accelerator_compatibility["models"]))
+
+    def test_cosmos_manifest_is_gpu_agnostic_and_exact_image_rewrite_is_model_scoped(
+        self,
+    ) -> None:
+        model = json.loads(
+            (
+                DEPLOY_ROOT
+                / "catalog"
+                / "runtime"
+                / "models"
+                / "cosmos3-nano.json"
+            ).read_text(encoding="utf-8")
+        )
+        manifest = next(
+            document
+            for document in yaml.safe_load_all(
+                (
+                    DEPLOY_ROOT
+                    / "models"
+                    / "general-media"
+                    / "k8s"
+                    / "cosmos3-nano.yaml"
+                ).read_text(encoding="utf-8")
+            )
+            if document is not None and document.get("kind") == "Deployment"
+        )
+        pod_spec = manifest["spec"]["template"]["spec"]
+        self.assertNotIn("nodeSelector", pod_spec)
+        exact_image = model["runtime"]["image"]["reference"]
+        self.assertEqual(
+            {container["image"] for container in pod_spec["containers"]},
+            {exact_image},
+        )
+
+        mirror = "cr.eu-north1.nebius.cloud/registry/fs2-models/vllm-omni@sha256:" + "1" * 64
+
+        def rewrite(model_id: str, image: str) -> str:
+            runtime_images = {
+                "cosmos3-nano": exact_image,
+                "other-model": "example.invalid/other@sha256:" + "2" * 64,
+            }
+            overrides = {"cosmos3-nano": mirror}
+            is_runtime_image = (
+                image == runtime_images[model_id]
+                or image.startswith(
+                    "registry.example.invalid/k8s-inference/models/"
+                )
+            )
+            return (
+                overrides[model_id]
+                if model_id in overrides and is_runtime_image
+                else image
+            )
+
+        self.assertEqual(rewrite("cosmos3-nano", exact_image), mirror)
+        adapter = "registry.example.invalid/k8s-inference/sidecars/adapter@sha256:" + "3" * 64
+        self.assertEqual(rewrite("cosmos3-nano", adapter), adapter)
+        self.assertEqual(rewrite("other-model", exact_image), exact_image)
+
+        source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
+            encoding="utf-8"
+        )
+        self.assertGreaterEqual(
+            source.count(
+                'try(container.image, "") == local.catalog_model_runtime_images[document.model_id]'
+            ),
+            2,
+        )
+        self.assertGreaterEqual(
+            source.count(
+                '"registry.example.invalid/k8s-inference/models/"'
+            ),
+            2,
+        )
+        self.assertNotIn("regexreplace(container.image", source)
+
+        placement = next(
+            item
+            for item in self.model_contract["workload_placements"].values()
+            if item["model_id"] == "cosmos3-nano"
+        )
+        self.assertEqual(
+            placement["required_node_labels"],
+            {"accelerator.fs2.nebius/class": "nvidia-b300-sxm6-288gb"},
+        )
+        self.assertEqual(
+            set(placement["compatible_pool_ids"]),
+            {"nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"},
+        )
+        self.assertIn("document.placement.required_node_labels", source)
+        self.assertIn("contains(keys(var.model_pool_overrides), document.model_id)", source)
+
+    def test_full_catalog_runtime_images_rewrite_without_sidecar_overreach(
+        self,
+    ) -> None:
+        catalog = json.loads(
+            (DEPLOY_ROOT / "catalog" / "runtime" / "catalog.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        runtime_images = {}
+        for model_file in catalog["model_files"]:
+            model = json.loads(
+                (
+                    DEPLOY_ROOT
+                    / "catalog"
+                    / "runtime"
+                    / "models"
+                    / model_file
+                ).read_text(encoding="utf-8")
+            )
+            runtime_images[model["model"]["id"]] = model["runtime"]["image"][
+                "reference"
+            ]
+
+        inventory = json.loads(
+            (
+                DEPLOY_ROOT
+                / "components"
+                / "control-plane"
+                / "contracts"
+                / "all-models-live-services.json"
+            ).read_text(encoding="utf-8")
+        )
+        overrides = {
+            model_id: "mirror.invalid/fs2-models/"
+            + model_id
+            + "@"
+            + route["runtime_image_digest"]
+            for model_id, route in inventory["routes"].items()
+        }
+        reserved_prefix = "registry.example.invalid/k8s-inference/models/"
+
+        def rewrite(model_id: str, image: str) -> str:
+            if image == runtime_images[model_id] or image.startswith(reserved_prefix):
+                return overrides[model_id]
+            return image
+
+        source_models = {
+            path: [
+                model_id
+                for model_id, artifact in self.model_contract[
+                    "model_artifacts"
+                ].items()
+                if path in artifact["manifest_paths"]
+            ]
+            for path in self.model_profiles["full_catalog"]["manifest_paths"]
+        }
+        reserved_placeholders = 0
+        rewritten_images = []
+        for relative_path in self.model_profiles["full_catalog"]["manifest_paths"]:
+            for document in yaml.safe_load_all(
+                (DEPLOY_ROOT / relative_path).read_text(encoding="utf-8")
+            ):
+                if document is None or document.get("kind") != "Deployment":
+                    continue
+                labels = document["metadata"].get("labels", {})
+                model_id = labels.get("fs2-serve.nebius.ai/model-id")
+                if model_id is None:
+                    model_id = labels.get("fs2.nebius.ai/model-id")
+                if (
+                    model_id is None
+                    and labels.get("app.kubernetes.io/name")
+                    in self.model_profiles["full_catalog"]["canonical_routes"]
+                ):
+                    model_id = labels["app.kubernetes.io/name"]
+                if model_id is None and len(source_models[relative_path]) == 1:
+                    model_id = source_models[relative_path][0]
+                self.assertIn(model_id, runtime_images, document["metadata"]["name"])
+                pod_spec = document["spec"]["template"]["spec"]
+                for container in pod_spec.get("containers", []) + pod_spec.get(
+                    "initContainers", []
+                ):
+                    image = container["image"]
+                    rendered = rewrite(model_id, image)
+                    rewritten_images.append(rendered)
+                    if image.startswith(reserved_prefix):
+                        reserved_placeholders += 1
+                        self.assertEqual(rendered, overrides[model_id])
+                    elif image == runtime_images[model_id]:
+                        self.assertEqual(rendered, overrides[model_id])
+                    else:
+                        self.assertEqual(rendered, image)
+
+        self.assertGreater(reserved_placeholders, 0)
+        self.assertFalse(
+            any(image.startswith(reserved_prefix) for image in rewritten_images)
+        )
+        unrelated_sidecar = (
+            "registry.example.invalid/k8s-inference/sidecars/metrics@sha256:"
+            + "4" * 64
+        )
+        self.assertEqual(
+            rewrite("cosmos3-nano", unrelated_sidecar),
+            unrelated_sidecar,
+        )
+
+    def test_cosmos_uses_default_placement_or_an_explicit_preemptible_h100_pool(
+        self,
+    ) -> None:
+        default_deployment = {
+            "schema_version": 1,
+            "name": "cosmos-default-placement",
+            "profiles": {"models": "full_catalog"},
+            "target": self.catalog_target(),
+            "models": {
+                "selection": "explicit",
+                "enabled": ["cosmos3-nano"],
+                "scaling": {"mode": "keda", "hot": []},
+            },
+            "edge": {"mode": "internal-only"},
+        }
+        default_contract = self._planned_outputs(
+            self._write_configuration("cosmos-default", default_deployment),
+            "cosmos-default",
+        )["deployment_contract"]
+        self.assertEqual(
+            default_contract["stages"]["workloads"]["model_pool_overrides"],
+            {},
+        )
+        self.assertEqual(
+            set(default_contract["selected_accelerator_pool_ids"]),
+            {"nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"},
+        )
+
+        h100_deployment = {
+            **default_deployment,
+            "name": "cosmos-h100-placement",
+            "target": {**default_deployment["target"], "region": "eu-north1"},
+            "accelerator_pools": {
+                "h100-preemptible-1x": {
+                    "platform": "gpu-h100-sxm",
+                    "preset": "1gpu-16vcpu-200gb",
+                    "accelerator_class": "nvidia-h100-sxm5-80gb",
+                    "gpus_per_node": 1,
+                    "gpu_memory_gb": 80,
+                    "capacity_type": "preemptible",
+                    "min_nodes": 0,
+                    "max_nodes": 1,
+                    "driver": {"mode": "managed", "preset": "cuda13.0"},
+                    "local_nvme": False,
+                }
+            },
+            "models": {
+                **default_deployment["models"],
+                "enabled": ["cosmos3-nano", "qwen3-8b"],
+                "pool_overrides": {
+                    "cosmos3-nano": "h100-preemptible-1x",
+                    "qwen3-8b": "h100-preemptible-1x",
+                },
+            },
+        }
+        h100_contract = self._planned_outputs(
+            self._write_configuration("cosmos-h100", h100_deployment),
+            "cosmos-h100",
+        )["deployment_contract"]
+        self.assertEqual(
+            h100_contract["selected_accelerator_pool_ids"],
+            ["h100-preemptible-1x"],
+        )
+        self.assertEqual(
+            h100_contract["stages"]["workloads"]["model_pool_overrides"],
+            {
+                "cosmos3-nano": "h100-preemptible-1x",
+                "qwen3-8b": "h100-preemptible-1x",
+            },
+        )
+        self.assertEqual(
+            h100_contract["target"],
+            {"project_id": TEST_PROJECT_ID, "region": "eu-north1"},
+        )
+
     def test_pool_override_preserves_scale_from_zero_selector_contract(self) -> None:
         source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
             encoding="utf-8"
@@ -539,7 +842,7 @@ class DeploymentContractTests(unittest.TestCase):
             source,
         )
 
-    def test_runtime_lean_routes_keep_the_exact_v2_parser_contract(self) -> None:
+    def test_runtime_lean_routes_carry_the_exact_v4_placement_contract(self) -> None:
         locals_source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
             encoding="utf-8"
         )
@@ -553,8 +856,17 @@ class DeploymentContractTests(unittest.TestCase):
         lean_routes = locals_source.split("  lean_routes = {", maxsplit=1)[1].split(
             "\n  }", maxsplit=1
         )[0]
-        self.assertIn('schema = "fs2-serve.nebius.ai/lean-routes/v2"', lean_routes)
+        self.assertIn('schema = "fs2-serve.nebius.ai/lean-routes/v4"', lean_routes)
         self.assertIn("routes = [", lean_routes)
+        self.assertIn("region            = local.selected_target.region", lean_routes)
+        self.assertIn(
+            'accelerator_class = local.effective_model_placements[model_id].required_node_labels["accelerator.fs2.nebius/class"]',
+            lean_routes,
+        )
+        self.assertIn(
+            'pool_id           = try(local.effective_model_placements[model_id].required_node_labels["accelerator.fs2.nebius/pool-id"], null)',
+            lean_routes,
+        )
         self.assertNotIn("qualification", lean_routes)
         self.assertNotIn("lean-routes/v3", lean_routes)
         self.assertIn(
@@ -566,6 +878,33 @@ class DeploymentContractTests(unittest.TestCase):
             "configMapName = kubernetes_config_map_v1.lean_routes.metadata[0].name",
             control_plane_source,
         )
+
+    def test_h100_cosmos_and_qwen_open_the_exact_distinct_runtime_ports(self) -> None:
+        inventory = json.loads(
+            (
+                DEPLOY_ROOT
+                / "components/control-plane/contracts/all-models-live-services.json"
+            ).read_text(encoding="utf-8")
+        )
+        selected = ("cosmos3-nano", "qwen3-8b")
+        self.assertEqual(
+            sorted({inventory["routes"][model_id]["service"]["port"] for model_id in selected}),
+            [8000, 8080],
+        )
+
+        locals_source = (DEPLOY_ROOT / "stages/workloads/locals.tf").read_text(
+            encoding="utf-8"
+        )
+        control_plane_source = (
+            DEPLOY_ROOT / "stages/workloads/control_plane.tf"
+        ).read_text(encoding="utf-8")
+        catalog_source = (DEPLOY_ROOT / "stages/workloads/catalog.tf").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("selected_runtime_ports = [", locals_source)
+        self.assertIn("format(\"%05d\", local.selected_routes[model_id].service.port)", locals_source)
+        self.assertIn("ports = local.selected_runtime_ports", control_plane_source)
+        self.assertIn("port >= 1 && port <= 65535", catalog_source)
 
     def test_lean_route_config_map_name_covers_its_complete_data_map(self) -> None:
         locals_source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
@@ -592,7 +931,11 @@ class DeploymentContractTests(unittest.TestCase):
             catalog_source,
         )
         self.assertIn(
-            "lifecycle {\n    create_before_destroy = true\n  }",
+            "lifecycle {\n    create_before_destroy = true",
+            catalog_source,
+        )
+        self.assertIn(
+            "Selected model routes must resolve to a nonempty bounded set of distinct runtime ports.",
             catalog_source,
         )
 

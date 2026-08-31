@@ -460,7 +460,7 @@ class ColdStartContractTest(unittest.TestCase):
             path.stem for path in (CATALOG_ROOT / "models").glob("*.json")
         )
         self.assertEqual(models, sorted(contract["plans"]))
-        self.assertEqual(15, len(models))
+        self.assertEqual(16, len(models))
         qwen = contract["plans"]["qwen3-8b"]
         self.assertEqual(
             "atomic-content-addressed-provider-block-pvc", qwen["publication"]
@@ -1058,7 +1058,7 @@ class ColdStartContractTest(unittest.TestCase):
     def test_post_acceptance_plan_links_only_planning_authority(self) -> None:
         plan = (COLD_START_ROOT / "POST_ACCEPTANCE_COLD_START_PLAN.md").read_text()
         self.assertRegex(plan, r"planning\s+authority only")
-        self.assertRegex(plan, r"All 15 enable only\s+`conventional`")
+        self.assertRegex(plan, r"All 16 enable only\s+`conventional`")
         self.assertRegex(plan, r"one KEDA `ScaledObject` for each")
         self.assertIn("promotion_minimum_attempts_per_cell", (
             COLD_START_ROOT / "post-acceptance-benchmark-contract.json"

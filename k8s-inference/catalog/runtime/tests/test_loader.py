@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fs2_serve_catalog.artifacts import canonical_bytes
+from fs2_serve_catalog.artifacts import canonical_bytes, load_artifact_manifest
 from fs2_serve_catalog.loader import (
     CatalogError,
     REQUIRED_TESTED_MODEL_IDS,
@@ -814,6 +814,35 @@ class CatalogLoaderTests(unittest.TestCase):
             qwen["provenance"][0]["commit"],
         )
 
+    def test_cosmos_exact_revision_manifest_and_bootstrap_state_are_bound(self) -> None:
+        cosmos = self.load().model("cosmos3-nano").to_dict()
+        artifact = load_artifact_manifest(
+            CATALOG_ROOT.parent.parent
+            / "models"
+            / "general-media"
+            / "evidence"
+            / "cosmos3-nano-artifact-manifest.json"
+        )
+
+        self.assertEqual("nvidia/Cosmos3-Nano", cosmos["model"]["source"]["repository"])
+        self.assertEqual(
+            "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+            cosmos["model"]["source"]["revision"],
+        )
+        self.assertEqual("openmdw1.1-license", cosmos["model"]["source"]["license"]["id"])
+        self.assertEqual(68, len(artifact.files))
+        self.assertEqual(34_986_890_561, artifact.expanded_bytes)
+        self.assertEqual(
+            "dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95",
+            artifact.content_digest,
+        )
+        self.assertEqual(
+            cosmos["cache"]["artifact"]["manifest_digest"],
+            artifact.digest,
+        )
+        self.assertFalse(cosmos["support"]["route_exposed"])
+        self.assertFalse(cosmos["interface"]["mcp"]["invocable"])
+
     def test_vllm_serving_argv_uses_only_mounted_content_and_canonical_alias(self) -> None:
         catalog = self.load()
         for model_id in ("qwen3-8b", "glm-5-2-fp8", "nv-reason-cxr-3b"):
@@ -1485,6 +1514,7 @@ class CatalogLoaderTests(unittest.TestCase):
                 "rfdiffusion",
             },
             "qualified": {
+                "cosmos3-nano",
                 "glm-5-2-fp8",
                 "msa-search-pdb70",
                 "nv-reason-cxr-3b",
@@ -1591,6 +1621,27 @@ class CatalogLoaderTests(unittest.TestCase):
         value["entries"][0]["content_sha256"] = "0123456789abcdef" * 4
         path.write_text(json.dumps(value) + "\n")
         with self.assertRaisesRegex(CatalogError, "packaged provenance lock digest mismatch"):
+            load_catalog(target, repo_root=REPO_ROOT)
+
+    def test_external_provenance_must_match_an_immutable_locked_subject(self) -> None:
+        _, target = self.copy_catalog()
+        path = target / "models" / "cosmos3-nano.json"
+        value = json.loads(path.read_text())
+        substituted_revision = "0" * 40
+        value["provenance"][0] = {
+            "url": (
+                "https://huggingface.co/nvidia/Cosmos3-Nano/raw/"
+                f"{substituted_revision}/README.md"
+            ),
+            "revision": substituted_revision,
+            "classification": "reviewed-input",
+        }
+        path.write_text(json.dumps(value) + "\n")
+
+        with self.assertRaisesRegex(
+            CatalogError,
+            "external provenance is absent from the packaged provenance lock",
+        ):
             load_catalog(target, repo_root=REPO_ROOT)
 
     def test_a_second_cache_controller_is_rejected(self) -> None:

@@ -11,6 +11,12 @@
       "route_backend_policy": "exact-live-backend-required",
       "notes": "Historical B300 support is an audit input, not target-cluster qualification or route authority."
     },
+    "cosmos3-nano": {
+      "execution_identity_sha256": "6ec5d834692c4884772780ca48089ca1105ce423eefad510da6947b2f1ba92a0",
+      "b300_state": "unverified",
+      "route_backend_policy": "exact-live-backend-required",
+      "notes": "The immutable upstream recipe documents one-B300 support, but target-cluster qualification and retained platform measurements remain separate evidence."
+    },
     "diffdock": {
       "execution_identity_sha256": "3712edfec38a4482c665dcd147fa4d679a87b593a19c241cba34d127cc02cdd4",
       "b300_state": "incompatible-sm103",

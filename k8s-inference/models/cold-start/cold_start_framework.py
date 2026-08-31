@@ -358,7 +358,10 @@ def validate_matrix(
     compile_cache_abi = identity_contract["compile_cache_abi"]
     for identity in identity_models.values():
         annotations = identity["annotations"]
-        if annotations["fs2.nebius/compile-cache-abi"] != compile_cache_abi:
+        if (
+            "fs2.nebius/compile-cache-abi" in annotations
+            and annotations["fs2.nebius/compile-cache-abi"] != compile_cache_abi
+        ):
             raise ColdStartContractError("matrix_identity_compile_cache_abi_mismatch")
         missing = set(identity["missing_annotations"])
         if set(annotations) | missing != required_annotations:
@@ -382,13 +385,28 @@ def validate_matrix(
                 != annotations["fs2.nebius/model-content-digest"]
             ):
                 raise ColdStartContractError("matrix_model_content_digest_mismatch")
-        elif (
-            missing != {"fs2.nebius/model-content-digest"}
-            or identity["model_content_source"] is not None
-            or not isinstance(identity["blocker"], str)
-            or not isinstance(identity["blocker_source"], str)
-        ):
-            raise ColdStartContractError("matrix_blocked_identity_invalid")
+        else:
+            if (
+                len(missing) != 1
+                or not isinstance(identity["blocker"], str)
+                or not isinstance(identity["blocker_source"], str)
+            ):
+                raise ColdStartContractError("matrix_blocked_identity_invalid")
+            if "fs2.nebius/model-content-digest" in missing:
+                if identity["model_content_source"] is not None:
+                    raise ColdStartContractError("matrix_blocked_identity_invalid")
+            else:
+                if not isinstance(identity["model_content_source"], str):
+                    raise ColdStartContractError("matrix_blocked_identity_invalid")
+                resolved_content_digest = _normalized_sha256(
+                    _resolve_json_scalar_source(identity["model_content_source"], fs2_root),
+                    "matrix_model_content_source_digest_invalid",
+                )
+                if (
+                    resolved_content_digest
+                    != annotations["fs2.nebius/model-content-digest"]
+                ):
+                    raise ColdStartContractError("matrix_model_content_digest_mismatch")
 
     marker_contract = matrix["runtime_marker_contract"]
     instrumented = set(marker_contract["source_instrumented_models"])

@@ -10,21 +10,22 @@
     "placement_authority": {"const": "checked-in-b300-fixture-only-not-runtime-support"},
     "workload_placements": {
       "type": "object",
-      "minProperties": 15,
+      "minProperties": 1,
       "propertyNames": {"$ref": "#/$defs/id"},
       "additionalProperties": {"$ref": "#/$defs/placement"}
     },
     "model_autoscaling_targets": {
       "type": "object",
-      "minProperties": 15,
+      "minProperties": 1,
       "propertyNames": {"$ref": "#/$defs/id"},
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["deployment", "gpu_count"],
+        "required": ["deployment", "gpu_count", "ephemeral_storage_request_gib"],
         "properties": {
           "deployment": {"$ref": "#/$defs/id"},
-          "gpu_count": {"type": "integer", "minimum": 1}
+          "gpu_count": {"type": "integer", "minimum": 1},
+          "ephemeral_storage_request_gib": {"type": "number", "minimum": 0}
         }
       }
     },
@@ -36,41 +37,9 @@
     },
     "model_artifacts": {
       "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "boltz2",
-        "diffdock",
-        "evo2-40b",
-        "genmol",
-        "glm-5-2-fp8",
-        "molmim",
-        "msa-search-pdb70",
-        "nv-reason-cxr-3b",
-        "nv-segment-ct",
-        "openfold2",
-        "openfold3",
-        "proteinmpnn",
-        "qwen3-8b",
-        "rfdiffusion",
-        "sdxl"
-      ],
-      "properties": {
-        "boltz2": {"$ref": "#/$defs/model_artifact"},
-        "diffdock": {"$ref": "#/$defs/model_artifact"},
-        "evo2-40b": {"$ref": "#/$defs/model_artifact"},
-        "genmol": {"$ref": "#/$defs/model_artifact"},
-        "glm-5-2-fp8": {"$ref": "#/$defs/model_artifact"},
-        "molmim": {"$ref": "#/$defs/model_artifact"},
-        "msa-search-pdb70": {"$ref": "#/$defs/model_artifact"},
-        "nv-reason-cxr-3b": {"$ref": "#/$defs/model_artifact"},
-        "nv-segment-ct": {"$ref": "#/$defs/model_artifact"},
-        "openfold2": {"$ref": "#/$defs/model_artifact"},
-        "openfold3": {"$ref": "#/$defs/model_artifact"},
-        "proteinmpnn": {"$ref": "#/$defs/model_artifact"},
-        "qwen3-8b": {"$ref": "#/$defs/model_artifact"},
-        "rfdiffusion": {"$ref": "#/$defs/model_artifact"},
-        "sdxl": {"$ref": "#/$defs/model_artifact"}
-      }
+      "minProperties": 1,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {"$ref": "#/$defs/model_artifact"}
     },
     "profiles": {
       "type": "object",

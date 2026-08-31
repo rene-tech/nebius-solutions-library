@@ -13,6 +13,7 @@ from fs2_serve_catalog.consumer import SERVING_BINDINGS_SCHEMA
 from fs2_serve_catalog.loader import Catalog, load_catalog
 from jsonschema import Draft202012Validator, ValidationError
 
+from fs2_serve import live_release
 from fs2_serve.live_release import LiveReleaseError, render_live_release
 from fs2_serve.qualification import (
     QualificationError,
@@ -24,6 +25,7 @@ PROJECTION_SCHEMA = CONTROL_ROOT / "contracts/model-qualification-projection.sch
 PROJECTION = CONTROL_ROOT / "contracts/model-qualification-projection.json"
 TESTED_MODELS = {
     "boltz2",
+    "cosmos3-nano",
     "diffdock",
     "evo2-40b",
     "genmol",
@@ -60,6 +62,10 @@ def inventory() -> dict[str, Any]:
     return json.loads(INVENTORY.read_text(encoding="utf-8"))
 
 
+def test_inventory_safety_ceiling_has_headroom_for_catalog_growth() -> None:
+    assert len(TESTED_MODELS) < live_release._MAX_ROUTES <= 1024
+
+
 def write_inventory(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
@@ -70,7 +76,7 @@ def test_rendered_configmaps_and_helm_values_share_one_versioned_release(tmp_pat
 
     release = render_live_release(catalog, path)
 
-    assert len(release.routes) == 15
+    assert len(release.routes) == len(TESTED_MODELS)
     assert release.bindings_config_map_name.endswith(release.release_id)
     assert release.routes_config_map_name.endswith(release.release_id)
     assert release.helm_values["catalog"] == {
@@ -118,7 +124,9 @@ def test_qualified_inventory_requires_v3_and_qualification(
         render_live_release(catalog, path)
 
 
-def test_projection_is_exactly_15_schema_valid_and_excludes_literal_bf16(tmp_path: Path, catalog: Catalog) -> None:
+def test_projection_exactly_covers_the_tested_catalog_and_excludes_literal_bf16(
+    tmp_path: Path, catalog: Catalog
+) -> None:
     path = tmp_path / "inventory.json"
     write_inventory(path, inventory())
     release = render_live_release(catalog, path)
@@ -244,9 +252,19 @@ def test_projection_names_eight_independent_variants_three_exact_nims_and_policy
         "non_clinical": True,
         "commercial_use": "prohibited",
     }
-    assert all(row["states"]["runtime_ready"] for row in rows.values())
-    assert all(row["states"]["semantic_qualified"] for row in rows.values())
-    assert all(row["states"]["http_mcp_qualified"] for row in rows.values())
+    previously_retained = [row for model_id, row in rows.items() if model_id != "cosmos3-nano"]
+    assert all(row["states"]["runtime_ready"] for row in previously_retained)
+    assert all(row["states"]["semantic_qualified"] for row in previously_retained)
+    assert all(row["states"]["http_mcp_qualified"] for row in previously_retained)
+    assert rows["cosmos3-nano"]["states"] == {
+        "registered": True,
+        "route_active": True,
+        "runtime_ready": False,
+        "semantic_qualified": False,
+        "http_mcp_qualified": False,
+        "cold_start_qualified": False,
+        "elasticity_qualified": False,
+    }
     assert not any(row["states"]["elasticity_qualified"] for row in rows.values())
 
 

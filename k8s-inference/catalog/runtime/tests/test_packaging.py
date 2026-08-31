@@ -74,9 +74,25 @@ class PackagingContractTests(unittest.TestCase):
             "sql/0001_activation_store.sql",
         ):
             self.assertTrue((CATALOG_ROOT / relative).is_file(), relative)
+        expected_validator_assets = {
+            Path(json.loads(model_path.read_text())["semantic_validator"]["fixture_path"]).name
+            for model_path in (CATALOG_ROOT / "models").glob("*.json")
+            if str(json.loads(model_path.read_text())["semantic_validator"]["fixture_path"]).startswith(
+                "k8s-inference/catalog/runtime/validators/assets/"
+            )
+        }
+        actual_validator_assets = {
+            path.name for path in (CATALOG_ROOT / "validators" / "assets").glob("*.json")
+        }
+        fixture_stems = {Path(fixture).stem for fixture in expected_validator_assets}
+        expected_validator_assets.update(
+            name
+            for name in actual_validator_assets
+            if any(name.startswith(f"{stem}-") for stem in fixture_stems)
+        )
         self.assertEqual(
-            8,
-            len(list((CATALOG_ROOT / "validators" / "assets").glob("*.json"))),
+            expected_validator_assets,
+            actual_validator_assets,
         )
 
         packaged_paths: set[str] = set()

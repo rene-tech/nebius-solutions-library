@@ -313,7 +313,7 @@ variable "shared_cache" {
 }
 
 variable "capacity_profile" {
-  description = "Reviewed capacity envelope. full_catalog supports all 15 routes plus the second MSA backend without HCL edits."
+  description = "Reviewed capacity envelope. full_catalog supports every canonical route plus the second MSA backend without HCL edits."
   type        = string
   default     = "minimal"
 

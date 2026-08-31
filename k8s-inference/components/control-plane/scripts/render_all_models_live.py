@@ -34,7 +34,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--qualification-output",
         type=Path,
-        help="Optional generated 15-row qualification contract output.",
+        help="Optional generated full-catalog qualification contract output.",
     )
     return result
 

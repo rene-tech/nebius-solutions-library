@@ -12,6 +12,28 @@
       ],
       "assets": []
     },
+    "cosmos3-nano": {
+      "state": "qualified",
+      "blocker": null,
+      "serialization": "sha256-canonical-json-no-newline/v1",
+      "invocation": {
+        "operation": "generate-media",
+        "protocol": "native",
+        "method": "POST",
+        "endpoint": "/generate"
+      },
+      "requests": [
+        {
+          "id": "cosmos3-t2v-robot-arm-seed-2407",
+          "payload_sha256": "e4f2897190d5efc4f551af9c1f3cee9880b7a001c17589065d0338bd277a53e2"
+        },
+        {
+          "id": "cosmos3-t2v-factory-cart-seed-2408",
+          "payload_sha256": "fc50ae5e08546a5a68e745d03fcbf68cd5f9abcfc94a3dd22f2ef1155af58e0a"
+        }
+      ],
+      "assets": []
+    },
     "diffdock": {
       "state": "qualified",
       "blocker": null,

@@ -26,7 +26,7 @@
       "required": ["profile", "canonical_model_count", "model_profile_path", "route_inventory_path", "semantic_contract_path"],
       "properties": {
         "profile": {"const": "full_catalog"},
-        "canonical_model_count": {"const": 15},
+        "canonical_model_count": {"const": 16},
         "model_profile_path": {"type": "string", "minLength": 1},
         "route_inventory_path": {"type": "string", "minLength": 1},
         "semantic_contract_path": {"type": "string", "minLength": 1}
@@ -83,8 +83,8 @@
         "compile_cache_abi_source": {"type": "string", "minLength": 1},
         "models": {
           "type": "object",
-          "minProperties": 15,
-          "maxProperties": 15,
+          "minProperties": 16,
+          "maxProperties": 16,
           "additionalProperties": {"$ref": "#/$defs/deploymentIdentity"}
         }
       }
@@ -171,8 +171,8 @@
     },
     "models": {
       "type": "array",
-      "minItems": 15,
-      "maxItems": 15,
+      "minItems": 16,
+      "maxItems": 16,
       "items": {"$ref": "#/$defs/model"}
     }
   },
@@ -180,10 +180,10 @@
     "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "identityAnnotations": {
       "type": "object",
-      "minProperties": 2,
+      "minProperties": 1,
       "maxProperties": 3,
       "additionalProperties": false,
-      "required": ["fs2.nebius/runtime-image-digest", "fs2.nebius/compile-cache-abi"],
+      "required": ["fs2.nebius/runtime-image-digest"],
       "properties": {
         "fs2.nebius/model-content-digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
         "fs2.nebius/runtime-image-digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
@@ -202,7 +202,7 @@
           "type": "array",
           "maxItems": 1,
           "uniqueItems": true,
-          "items": {"const": "fs2.nebius/model-content-digest"}
+          "items": {"enum": ["fs2.nebius/model-content-digest", "fs2.nebius/compile-cache-abi"]}
         },
         "blocker": {"type": ["string", "null"]},
         "blocker_source": {"type": ["string", "null"]}

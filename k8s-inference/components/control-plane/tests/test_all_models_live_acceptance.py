@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from conftest import CATALOG_ROOT, CONTROL_ROOT
+from conftest import CATALOG_ROOT, CONTROL_ROOT, REPO_ROOT
 
 from fs2_serve import live_acceptance
 from fs2_serve.live_acceptance import (
@@ -27,7 +27,7 @@ from fs2_serve.live_acceptance import (
     tls_verify_for_mode,
     write_evidence,
 )
-from fs2_serve.live_release import LiveRelease
+from fs2_serve.live_release import LiveRelease, render_live_release
 
 
 @pytest.mark.parametrize("script_name", ("accept_all_models_live.py", "render_all_models_live.py"))
@@ -131,6 +131,43 @@ def test_sdxl_gateway_json_envelope_is_required_and_summarized_without_pixels() 
     assert "pixels" not in json.dumps(summary)
     with pytest.raises(AcceptanceError, match="semantic_response_schema_invalid"):
         response_summary({"data": [{"url": "https://private.invalid"}]}, b"{}", "png-b64-json")
+
+
+def test_cosmos_mp4_envelope_is_bounded_and_summarized_without_media() -> None:
+    mp4 = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 24
+    value = {
+        "model": "nvidia/Cosmos3-Nano",
+        "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "mode": "text-to-video",
+        "mime_type": "video/mp4",
+        "data_base64": base64.b64encode(mp4).decode("ascii"),
+        "bytes": len(mp4),
+        "sha256": live_acceptance.sha256_bytes(mp4),
+        "width": 448,
+        "height": 256,
+        "frames": 25,
+        "fps": 24,
+        "timings_ms": {"queue": 1.0, "upstream": 100.0, "total": 101.0},
+    }
+    raw = json.dumps(value, separators=(",", ":")).encode()
+
+    summary = response_summary(value, raw, "mp4-b64-json")
+
+    assert summary["artifact_bytes"] == len(mp4)
+    assert summary["artifact_sha256"] == value["sha256"]
+    assert summary["frames"] == 25
+    assert "data_base64" not in summary
+    assert base64.b64encode(mp4).decode("ascii") not in json.dumps(summary)
+
+    for field, invalid in (
+        ("mime_type", "application/octet-stream"),
+        ("bytes", len(mp4) + 1),
+        ("sha256", "0" * 64),
+        ("frames", 401),
+    ):
+        corrupted = {**value, field: invalid}
+        with pytest.raises(AcceptanceError, match="semantic_response_schema_invalid"):
+            response_summary(corrupted, json.dumps(corrupted).encode(), "mp4-b64-json")
 
 
 def test_native_and_openai_summaries_persist_only_digests() -> None:
@@ -255,6 +292,26 @@ def test_case_loader_binds_payload_to_canonical_semantic_contract(tmp_path: Path
 
     cases = _load_cases(path, catalog, release())  # type: ignore[arg-type]
     assert cases[0].payload == payload
+
+
+def test_published_acceptance_cases_exactly_cover_the_live_release() -> None:
+    catalog = live_acceptance.load_catalog(CATALOG_ROOT, repo_root=REPO_ROOT)
+    published_release = render_live_release(
+        catalog,
+        CONTROL_ROOT / "contracts/all-models-live-services.json",
+    )
+
+    cases = _load_cases(
+        CONTROL_ROOT / "contracts/all-models-live-acceptance.json",
+        catalog,
+        published_release,
+    )
+
+    assert {case.model_id for case in cases} == set(catalog.tested_model_ids)
+    cosmos = next(case for case in cases if case.model_id == "cosmos3-nano")
+    assert cosmos.operation == "generate-media"
+    assert cosmos.payload_sha256 == "e4f2897190d5efc4f551af9c1f3cee9880b7a001c17589065d0338bd277a53e2"
+    assert cosmos.response_kind == "mp4-b64-json"
 
 
 def test_packaged_licensed_image_is_digest_bound_and_materialized_as_data_uri(

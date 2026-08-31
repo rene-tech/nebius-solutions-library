@@ -49,6 +49,50 @@
     },
     {
       "active_runtime": {
+        "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "runtime_image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+        "service": {
+          "name": "cosmos3-nano",
+          "namespace": "fs2-models",
+          "port": 8080
+        }
+      },
+      "evidence": {
+        "audited_catalog_sha256": "36222c86357ef1ce7efbb5c6e2246fe37583456fd7323cd282bac1463b55cf74",
+        "audited_live_routes_sha256": "2cc8360b97bb09fb8d4281729adcc4b6e13db36598f6f14b61c5696f085c0cca",
+        "cold_start_acceptance_sha256": "778683ecc7ff595fb452d06060d005de34a83176deb20f90f2c5c49b4beaf300",
+        "http_mcp_acceptance_sha256": "9719765e1986bbeed853de9b30a4740758ade82a4f4510c63e1f5fd7eb58c550",
+        "mcp_discovery_sha256": "74febece19ee0fe1250c984c871eff6ea7522a6b1de845cec5c3be632693aa0e",
+        "model_discovery_sha256": "955cba641bfe571455770ab48e2bbde6a2a2e8b202b4306b1a1e4754f446b11f",
+        "retained_deployments_sha256": "9c99015ea0b9d3bc5b8ae93c74a23d0957ffd0b7fa483e57efbac8d33911dc43"
+      },
+      "model_id": "cosmos3-nano",
+      "policy": {
+        "commercial_use": "allowed",
+        "license_id": "openmdw1.1-license",
+        "non_clinical": false
+      },
+      "runtime_origin": {
+        "kind": "independent-runtime",
+        "nim_artifact_parity": "not-applicable",
+        "relationship": "canonical-runtime",
+        "repository": "nvidia/Cosmos3-Nano",
+        "source_kind": "huggingface",
+        "variant_id": null
+      },
+      "states": {
+        "cold_start_qualified": false,
+        "elasticity_qualified": false,
+        "http_mcp_qualified": false,
+        "registered": true,
+        "route_active": true,
+        "runtime_ready": false,
+        "semantic_qualified": false
+      },
+      "variant_id": null
+    },
+    {
+      "active_runtime": {
         "model_revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
         "runtime_image_digest": "sha256:cb3875f7d66b8d170d0e3f16d3d9a63aee8d63fbb23fdf65ec7ea0214d849529",
         "service": {

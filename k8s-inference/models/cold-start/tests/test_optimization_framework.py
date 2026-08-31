@@ -136,9 +136,9 @@ class OptimizationFrameworkTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.matrix = FRAMEWORK.load_json(ROOT / "cold-start-optimization-matrix.json")
 
-    def test_matrix_closes_all_fifteen_catalog_models_and_priority_evidence(self) -> None:
+    def test_matrix_closes_all_sixteen_catalog_models_and_priority_evidence(self) -> None:
         FRAMEWORK.validate_matrix(self.matrix)
-        self.assertEqual(15, len(self.matrix["models"]))
+        self.assertEqual(16, len(self.matrix["models"]))
         self.assertEqual(
             ["evo2-40b", "glm-5-2-fp8"],
             [item["model_id"] for item in self.matrix["baseline_evidence"]["observations"]],
@@ -152,7 +152,47 @@ class OptimizationFrameworkTests(unittest.TestCase):
             self.assertNotEqual("active", model["capabilities"]["cuda-criu-snapshot"]["state"])
             self.assertNotEqual("active", model["capabilities"]["dynamo-snapshot"]["state"])
 
-    def test_deployment_identity_contract_matches_all_fifteen_immutable_manifests(self) -> None:
+    def test_cosmos_conventional_baseline_is_storage_bound_and_unmeasured(self) -> None:
+        cosmos = FRAMEWORK.matrix_model(self.matrix, "cosmos3-nano")
+        routes = FRAMEWORK.load_json(
+            FS2_ROOT / "components/control-plane/contracts/all-models-live-services.json"
+        )
+        identity = self.matrix["deployment_identity_contract"]["models"][
+            "cosmos3-nano"
+        ]
+        self.assertEqual(1, cosmos["gpu_count"])
+        self.assertEqual(
+            "provider-block-pvc",
+            routes["routes"]["cosmos3-nano"]["storage_mode"],
+        )
+        self.assertEqual("blocked", identity["state"])
+        self.assertEqual(
+            ["fs2.nebius/compile-cache-abi"], identity["missing_annotations"]
+        )
+        self.assertEqual("active", cosmos["capabilities"]["conventional"]["state"])
+        self.assertIn(
+            "no FS2 cold-start",
+            cosmos["capabilities"]["conventional"]["claim"],
+        )
+        self.assertEqual("conventional", cosmos["next_experiment"]["mechanism"])
+        self.assertNotIn(
+            "cosmos3-nano",
+            {
+                observation["model_id"]
+                for observation in self.matrix["baseline_evidence"]["observations"]
+            },
+        )
+        for mechanism in (
+            "shared-cache",
+            "local-nvme",
+            "oci-image-volume",
+            "oci-modelcar",
+            "cuda-criu-snapshot",
+            "dynamo-snapshot",
+        ):
+            self.assertEqual("blocked", cosmos["capabilities"][mechanism]["state"])
+
+    def test_deployment_identity_contract_matches_all_sixteen_immutable_manifests(self) -> None:
         contract = self.matrix["deployment_identity_contract"]
         required = set(contract["required_annotations"])
         matrix_models = {item["model_id"]: item for item in self.matrix["models"]}
@@ -218,11 +258,6 @@ class OptimizationFrameworkTests(unittest.TestCase):
                 {key: value for key, value in pod_annotations.items() if key in required},
                 model_id,
             )
-            self.assertEqual(
-                contract["compile_cache_abi"],
-                expected["fs2.nebius/compile-cache-abi"],
-                model_id,
-            )
             containers = {
                 item["name"]: item["image"]
                 for item in deployment["spec"]["template"]["spec"]["containers"]
@@ -237,6 +272,11 @@ class OptimizationFrameworkTests(unittest.TestCase):
             if identity["state"] == "complete":
                 complete.add(model_id)
                 self.assertEqual(required, set(expected))
+                self.assertEqual(
+                    contract["compile_cache_abi"],
+                    expected["fs2.nebius/compile-cache-abi"],
+                    model_id,
+                )
                 self.assertEqual([], identity["missing_annotations"])
                 source_digest = referenced_json_value(identity["model_content_source"])
                 self.assertEqual(
@@ -248,19 +288,35 @@ class OptimizationFrameworkTests(unittest.TestCase):
                 self.assertIsNone(identity["blocker_source"])
             else:
                 blocked.add(model_id)
-                self.assertEqual(
-                    ["fs2.nebius/model-content-digest"],
-                    identity["missing_annotations"],
-                )
-                self.assertNotIn("fs2.nebius/model-content-digest", expected)
-                blocker = referenced_json_value(identity["blocker_source"])
-                self.assertEqual("unresolved", blocker["state"], model_id)
-                self.assertIsNone(blocker["manifest_digest"], model_id)
-                self.assertIsInstance(identity["blocker"], str)
+                if model_id == "cosmos3-nano":
+                    self.assertEqual(
+                        ["fs2.nebius/compile-cache-abi"],
+                        identity["missing_annotations"],
+                    )
+                    self.assertIn("fs2.nebius/model-content-digest", expected)
+                    self.assertNotIn("fs2.nebius/compile-cache-abi", expected)
+                    self.assertEqual(
+                        "gpu-family-specific-compile-cache-abi-unbound",
+                        identity["blocker"],
+                    )
+                    self.assertEqual(
+                        "../general-media/k8s/cosmos3-nano.yaml",
+                        identity["blocker_source"],
+                    )
+                else:
+                    self.assertEqual(
+                        ["fs2.nebius/model-content-digest"],
+                        identity["missing_annotations"],
+                    )
+                    self.assertNotIn("fs2.nebius/model-content-digest", expected)
+                    blocker = referenced_json_value(identity["blocker_source"])
+                    self.assertEqual("unresolved", blocker["state"], model_id)
+                    self.assertIsNone(blocker["manifest_digest"], model_id)
+                    self.assertIsInstance(identity["blocker"], str)
 
         self.assertEqual(12, len(complete))
         self.assertEqual(
-            {"msa-search-pdb70", "openfold2", "openfold3"},
+            {"cosmos3-nano", "msa-search-pdb70", "openfold2", "openfold3"},
             blocked,
         )
 

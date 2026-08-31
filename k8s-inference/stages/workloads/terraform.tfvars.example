@@ -57,6 +57,6 @@ hot_model_ids      = []
 # ngc_api_key               = "REPLACE"
 # nvcrio_dockerconfigjson   = "{...}"
 
-# Initial verified create requires false. After all 15 routes/16 backends are
+# Initial verified create requires false. After all 16 routes/17 backends are
 # Ready, change only this value to true for the verified acceptance augmentation.
 run_acceptance_job = false

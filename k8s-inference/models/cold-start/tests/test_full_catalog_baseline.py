@@ -296,11 +296,11 @@ class FullCatalogBaselineTests(unittest.TestCase):
         private_json(path, receipt)
         return path
 
-    def test_discovers_exact_fifteen_routes_and_sixteen_backends(self) -> None:
+    def test_discovers_exact_sixteen_routes_and_seventeen_backends(self) -> None:
         backends = BASELINE.discover_backends()
-        self.assertEqual(len(backends), 16)
+        self.assertEqual(len(backends), 17)
         self.assertEqual(
-            len({item["route_id"] for item in backends if item["route_id"]}), 15
+            len({item["route_id"] for item in backends if item["route_id"]}), 16
         )
         fallback = [item for item in backends if item["resource_class"] == "cpu"]
         self.assertEqual(
@@ -536,13 +536,13 @@ class FullCatalogBaselineTests(unittest.TestCase):
     def test_plan_keeps_blocked_nim_slots_outside_attempt_denominator(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             plan = self._plan(Path(temporary))
-        self.assertEqual(len(plan["backends"]), 16)
-        self.assertEqual(len(plan["cells"]), 64)
+        self.assertEqual(len(plan["backends"]), 17)
+        self.assertEqual(len(plan["cells"]), 68)
         counts = {
             state: sum(1 for cell in plan["cells"] if cell["admission"] == state)
             for state in ("admitted", "blocked", "not-applicable")
         }
-        self.assertEqual(counts, {"admitted": 49, "blocked": 12, "not-applicable": 3})
+        self.assertEqual(counts, {"admitted": 49, "blocked": 16, "not-applicable": 3})
         self.assertEqual(
             sum(
                 len(cell["expected_attempt_ids"])
@@ -557,7 +557,7 @@ class FullCatalogBaselineTests(unittest.TestCase):
                 for cell in plan["cells"]
                 if cell["admission"] == "blocked"
             ),
-            36,
+            48,
         )
         self.assertEqual(
             sum(
@@ -581,12 +581,12 @@ class FullCatalogBaselineTests(unittest.TestCase):
             state: sum(1 for cell in plan["cells"] if cell["admission"] == state)
             for state in ("admitted", "blocked", "not-applicable")
         }
-        self.assertEqual(counts, {"admitted": 53, "blocked": 8, "not-applicable": 3})
+        self.assertEqual(counts, {"admitted": 53, "blocked": 12, "not-applicable": 3})
         self.assertEqual(
             sum(len(cell["expected_attempt_ids"]) for cell in plan["cells"]), 159
         )
         self.assertEqual(
-            sum(len(cell["blocked_planned_slots"]) for cell in plan["cells"]), 24
+            sum(len(cell["blocked_planned_slots"]) for cell in plan["cells"]), 36
         )
         backend = next(
             item for item in plan["backends"] if item["model_id"] == "openfold2"
@@ -726,8 +726,8 @@ class FullCatalogBaselineTests(unittest.TestCase):
             )
         self.assertEqual(packet["attempt_count"], 0)
         self.assertEqual(packet["expected_admitted_attempt_count"], 147)
-        self.assertEqual(packet["blocked_cell_count"], 12)
-        self.assertEqual(packet["blocked_planned_slot_count"], 36)
+        self.assertEqual(packet["blocked_cell_count"], 16)
+        self.assertEqual(packet["blocked_planned_slot_count"], 48)
         self.assertEqual(packet["not_applicable_cell_count"], 3)
         self.assertEqual(len(packet["missing_attempt_ids"]), 147)
         blocked = [cell for cell in packet["cells"] if cell["admission"] == "blocked"]

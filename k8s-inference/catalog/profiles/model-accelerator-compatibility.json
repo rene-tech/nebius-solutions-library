@@ -32,6 +32,41 @@
         }
       }
     },
+    "cosmos3-nano": {
+      "runtimes": {
+        "catalog-canonical": {
+          "runtime_variant": "catalog-canonical",
+          "runtime_ref": "catalog/models/cosmos3-nano.json",
+          "runtime_ref_kind": "catalog-entry-observation",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-b300-sxm6-288gb",
+              "pool_template": "nebius-b300-preemptible-1x",
+              "state": "historical-evidence-only",
+              "enabled": false,
+              "catalog_b300_state": "qualified",
+              "evidence": "immutable upstream vLLM-Omni one-B300 recipe at eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c; vendor/community evidence, not an FS2 platform measurement"
+            },
+            {
+              "accelerator_class": "nvidia-h100-sxm-80gb",
+              "pool_template": "unbound-h100",
+              "state": "historical-evidence-only",
+              "enabled": false,
+              "catalog_b300_state": null,
+              "evidence": "immutable NVIDIA model card at 7a312c868bcce8e40b3eb40861300a9d0ba3fde1 reports H100 testing; vendor evidence, not an FS2 platform measurement"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
     "diffdock": {
       "runtimes": {
         "catalog-canonical": {

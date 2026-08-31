@@ -25,12 +25,16 @@ from fs2_serve_catalog.loader import Catalog, CatalogError
 
 from .qualification import QualificationError, validate_qualification_projection
 
-LEAN_ROUTES_SCHEMA = "fs2-serve.nebius.ai/lean-routes/v3"
+LEAN_ROUTES_SCHEMA = "fs2-serve.nebius.ai/lean-routes/v4"
+QUALIFIED_LEAN_ROUTES_SCHEMA = "fs2-serve.nebius.ai/lean-routes/v3"
 LEGACY_LEAN_ROUTES_SCHEMA = "fs2-serve.nebius.ai/lean-routes/v2"
 _DIGEST = re.compile(r"sha256:[a-f0-9]{64}")
 _DNS_LABEL = re.compile(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?")
 _MODEL_REVISION = re.compile(r"[a-f0-9]{40}|[a-f0-9]{64}|sha256:[a-f0-9]{64}")
 _TOOL_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")
+_REGION = re.compile(r"[a-z][a-z0-9-]{1,31}[a-z0-9]")
+_GPU_CLASS = re.compile(r"[a-z0-9][a-z0-9-]{1,126}[a-z0-9]")
+_POOL_ID = re.compile(r"[a-z0-9][a-z0-9-]{1,126}[a-z0-9]")
 _STORAGE_MODES = {"provider-block-pvc", "sfs-pvc", "local-nvme", "ephemeral-emptydir"}
 _MAX_BYTES = 64 * 1024
 
@@ -80,9 +84,12 @@ def _load_json(path: Path) -> dict[str, Any]:
     if schema == LEGACY_LEAN_ROUTES_SCHEMA:
         if fields != {"schema", "routes"}:
             raise LeanRouteError("legacy lean route v2 cannot include qualification")
-    elif schema == LEAN_ROUTES_SCHEMA:
+    elif schema == QUALIFIED_LEAN_ROUTES_SCHEMA:
         if fields != {"schema", "routes", "qualification"}:
             raise LeanRouteError("qualified lean route v3 requires qualification")
+    elif schema == LEAN_ROUTES_SCHEMA:
+        if fields != {"schema", "routes"}:
+            raise LeanRouteError("Terraform lean route v4 fields are invalid")
     else:
         raise LeanRouteError("lean route schema is invalid")
     return value
@@ -148,7 +155,7 @@ def bind_lean_routes(
 
     document = _load_json(path)
     routes = document["routes"]
-    if not isinstance(routes, list) or not 1 <= len(routes) <= 16:
+    if not isinstance(routes, list) or not 1 <= len(routes) <= len(catalog.tested_model_ids):
         raise LeanRouteError("lean route count is invalid")
     qualification_rows: dict[str, Mapping[str, Any]] = {}
     qualification_metadata: dict[str, Any] = {}
@@ -165,25 +172,28 @@ def bind_lean_routes(
             }
         except QualificationError as exc:
             raise LeanRouteError("lean route qualification projection is invalid") from exc
-    elif len(routes) == len(catalog.tested_model_ids):
+    elif document["schema"] == LEGACY_LEAN_ROUTES_SCHEMA and len(routes) == len(catalog.tested_model_ids):
         raise LeanRouteError("full-catalog lean routes require the qualification projection")
 
     models = dict(gateway.models)
     routed: set[str] = set()
     for index, raw_route in enumerate(routes):
+        route_fields = {
+            "model_id",
+            "variant_id",
+            "model_revision",
+            "runtime_image_digest",
+            "service",
+            "storage_mode",
+            "protocols",
+            "operations",
+            "mcp",
+        }
+        if document["schema"] == LEAN_ROUTES_SCHEMA:
+            route_fields.add("placement")
         route = _exact(
             raw_route,
-            {
-                "model_id",
-                "variant_id",
-                "model_revision",
-                "runtime_image_digest",
-                "service",
-                "storage_mode",
-                "protocols",
-                "operations",
-                "mcp",
-            },
+            route_fields,
             f"lean route {index}",
         )
         model_id = route["model_id"]
@@ -274,6 +284,30 @@ def bind_lean_routes(
         ):
             raise LeanRouteError("lean route MCP description is invalid")
 
+        if document["schema"] == LEAN_ROUTES_SCHEMA:
+            placement = _exact(
+                route["placement"],
+                {"region", "accelerator_class", "pool_id"},
+                "lean route placement",
+            )
+            backend_region = placement["region"]
+            backend_gpu_class = placement["accelerator_class"]
+            pool_id = placement["pool_id"]
+            if not isinstance(backend_region, str) or _REGION.fullmatch(backend_region) is None:
+                raise LeanRouteError("lean route placement region is invalid")
+            if not isinstance(backend_gpu_class, str) or _GPU_CLASS.fullmatch(backend_gpu_class) is None:
+                raise LeanRouteError("lean route placement accelerator class is invalid")
+            if pool_id is not None and (not isinstance(pool_id, str) or _POOL_ID.fullmatch(pool_id) is None):
+                raise LeanRouteError("lean route placement pool ID is invalid")
+        else:
+            # The reviewed v2/v3 retained-route campaigns ran in us-north1 and
+            # predate an explicit deployment projection. Preserve their exact
+            # interpretation while requiring all new Terraform routes to carry
+            # their resolved region and accelerator class in v4.
+            placement = None
+            backend_region = "us-north1"
+            backend_gpu_class = base.gpu_class
+
         service_subject = {"namespace": namespace, "name": name, "port": port}
         route_subject = {
             "schema": document["schema"],
@@ -287,6 +321,8 @@ def bind_lean_routes(
             "operations": operations,
             "mcp": mcp,
         }
+        if placement is not None:
+            route_subject["placement"] = placement
         endpoint_identity = _sha256(service_subject)
         binding = ServingBinding(
             model_id=model_id,
@@ -302,8 +338,8 @@ def bind_lean_routes(
             service_origin=f"http://{name}.{namespace}.svc.cluster.local:{port}",
             activation=_disabled_activation(base.scale_contract.digest),
             backend_class="local-kubernetes",
-            backend_region="us-north1",
-            backend_gpu_class=base.gpu_class,
+            backend_region=backend_region,
+            backend_gpu_class=backend_gpu_class,
             backend_runtime_image_digest=runtime_digest,
             backend_endpoint_identity_sha256=endpoint_identity,
             backend_trust_bundle_sha256=None,
@@ -343,6 +379,7 @@ def bind_lean_routes(
             base,
             model_revision=revision,
             runtime_image_digest=runtime_digest,
+            gpu_class=backend_gpu_class,
             support_state="lean-live-verified",
             routable=True,
             mcp_invocable=mcp["enabled"],

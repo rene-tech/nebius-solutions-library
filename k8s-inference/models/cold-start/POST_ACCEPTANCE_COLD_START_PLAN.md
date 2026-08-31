@@ -38,7 +38,7 @@ authority.
 
 ## Current evidence boundary
 
-The current catalog has 15 canonical models. All 15 enable only
+The current catalog has 16 canonical models. All 16 enable only
 `conventional`; snapshot, sleep/wake, and custom-runtime entries are either
 gated or disabled by negative evidence. B300/SM103 is the current platform's
 only hardware-observed accelerator class. That does not make every runtime
@@ -455,7 +455,7 @@ Create separate post-acceptance pilots for the two uncovered decisions:
 
 - an integrated full-catalog v2 evidence packet that refreshes exact current
   release/runtime identities and extends the existing four-model clock to all
-  15 routes before mechanism trials;
+  16 routes before mechanism trials;
 - an isolated Dynamo Snapshot single-GPU B300 comparison without the all-in-one
   platform bundle.
 

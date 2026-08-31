@@ -1,0 +1,167 @@
+{
+  "schema": "fs2-serve.nebius.ai/model/v1",
+  "model": {
+    "id": "cosmos3-nano",
+    "display_name": "NVIDIA Cosmos 3 Nano",
+    "family": "video-generation",
+    "tested_lane": true,
+    "source": {
+      "kind": "huggingface",
+      "repository": "nvidia/Cosmos3-Nano",
+      "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "license": {
+        "id": "openmdw1.1-license",
+        "state": "verified",
+        "notes": "The exact-revision NVIDIA model card identifies Open Model Data and Weights License 1.1 and permits commercial and non-commercial use."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The exact Hugging Face revision is public and ungated."
+      }
+    }
+  },
+  "runtime": {
+    "kind": "vllm-omni",
+    "version": "vllm-omni-0.25.0",
+    "image": {
+      "reference": "docker.io/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+      "digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+      "state": "resolved"
+    },
+    "command": [
+      "vllm",
+      "serve",
+      "nvidia/Cosmos3-Nano",
+      "--omni",
+      "--revision",
+      "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "8000",
+      "--init-timeout",
+      "1800",
+      "--no-guardrails",
+      "--model-class-name",
+      "Cosmos3OmniDiffusersPipeline"
+    ]
+  },
+  "resources": {
+    "cpu_millis": 16000,
+    "memory_bytes": 137438953472,
+    "host_ram_min_bytes": null,
+    "scaler_owner": "nebius-managed-node-group-autoscaler",
+    "gpu": {
+      "class": "NVIDIA-B300-SXM6-288GB",
+      "count": 1,
+      "topology": "single-gpu",
+      "placement": null,
+      "b300_state": "qualified",
+      "alternatives": []
+    }
+  },
+  "interface": {
+    "execution_mode": "http",
+    "protocols": [
+      "native"
+    ],
+    "endpoints": {
+      "native": "/generate"
+    },
+    "readiness": {
+      "method": "GET",
+      "path": "/readyz",
+      "expected_status": 200,
+      "timeout_seconds": 1800
+    },
+    "warmup": null,
+    "policy": {
+      "operations": [
+        "generate-media"
+      ],
+      "license_enforced": true,
+      "non_clinical": false,
+      "commercial_use": "allowed"
+    },
+    "mcp": {
+      "discoverable": true,
+      "invocable": false
+    }
+  },
+  "startup": {
+    "default": "conventional",
+    "fallback": "conventional",
+    "enabled_mechanisms": [
+      "conventional"
+    ],
+    "experiments": [],
+    "multi_gpu_criu": "unproven-disabled"
+  },
+  "cache": {
+    "owner": "fs2-serve-localizer",
+    "shared_path": "/mnt/fs2-serve-cache/models/cosmos3-nano",
+    "local_path": "/var/lib/fs2-serve/cache/models/cosmos3-nano",
+    "pre_pull_image": true,
+    "artifact": {
+      "state": "platform-verified",
+      "kind": "weights",
+      "manifest_digest": "49b4bf03d84857892b86366ef2f6c3b68ac575cb1a3f2de4122c41e638f4cc6e",
+      "expanded_bytes": 34986890561,
+      "minimum_bytes": 34986890561,
+      "capacity_bound_bytes": 68719476736,
+      "staged": false
+    }
+  },
+  "semantic_validator": {
+    "kind": "repository-command",
+    "contract": "bounded-json-base64-media/v1",
+    "source_path": "k8s-inference/catalog/runtime/validators/validate_cosmos3_nano.py",
+    "source_sha256": "9482862238b3f4582d4aa48786fcad4c0920e4755a7bd7c15acc7c97e618745b",
+    "fixture_path": "k8s-inference/catalog/runtime/validators/assets/cosmos3-nano.json",
+    "fixture_sha256": "467bfa7484ec20dc1fc30a109b8e0e7e23d3b443061f1c0a9b659dfce30c82de",
+    "request_count": 2,
+    "distinct_requests": true,
+    "distinct_responses": true
+  },
+  "support": {
+    "state": "qualified",
+    "route_exposed": false,
+    "non_clinical": false,
+    "limitations": [
+      "Bootstrap support is based on immutable upstream vendor and vLLM recipe evidence; retained platform qualification is still required before claiming platform-measured performance.",
+      "The synchronous JSON adapter is intentionally bounded to small media; production-scale video output requires object-backed asynchronous delivery.",
+      "The bootstrap Deployment uses a model-specific RWO Hugging Face cache; it does not yet consume the catalog's shared content-addressed SFS acquisition artifact or claim local-NVMe weight placement.",
+      "Guardrails are disabled because the upstream guardrail dependency is separately gated; deployment policy remains a control-plane responsibility."
+    ]
+  },
+  "evidence": [
+    {
+      "classification": "measured-historical",
+      "hardware": "NVIDIA B300 288GB",
+      "outcome": "conventional-fallback",
+      "source_commit": "eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c",
+      "summary": "The immutable vLLM-Omni recipe documents online Cosmos3-Nano serving on one B300; this is vendor/community evidence, not an fs2 platform measurement."
+    },
+    {
+      "classification": "measured-historical",
+      "hardware": "NVIDIA H100 80GB HBM3",
+      "outcome": "conventional-fallback",
+      "source_commit": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "summary": "The immutable NVIDIA model card reports H100 testing; this is vendor evidence, not an fs2 platform measurement."
+    }
+  ],
+  "provenance": [
+    {
+      "url": "https://huggingface.co/nvidia/Cosmos3-Nano/raw/7a312c868bcce8e40b3eb40861300a9d0ba3fde1/README.md",
+      "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "classification": "reviewed-input"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm-omni/eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c/recipes/cosmos3/Cosmos3-Nano.md",
+      "revision": "eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c",
+      "classification": "reviewed-input"
+    }
+  ]
+}

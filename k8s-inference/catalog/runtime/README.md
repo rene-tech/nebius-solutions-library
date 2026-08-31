@@ -23,6 +23,16 @@ The catalog is fail-closed:
 - an unresolved license, entitlement, immutable identity, artifact acquisition,
   target-node NGC canary, or runtime prerequisite blocks routing.
 
+Cosmos3-Nano is pinned to Hugging Face revision
+`7a312c868bcce8e40b3eb40861300a9d0ba3fde1` and to the official vLLM-Omni OCI
+digest in its model record. Its 68-file, 34,986,890,561-byte inventory is bound
+by a canonical per-file manifest. NVIDIA/vLLM upstream material records H100 and
+B300 execution, but those are vendor historical inputs rather than retained
+FS2 performance evidence. The base record is therefore discoverable and
+qualified for bootstrap while remaining unexposed and MCP-non-invocable; the
+live inventory and normal qualification receipts remain the only route
+authority.
+
 Qwen3-8B at exact revision
 `b968826d9c46dd6066d109eabc6255188de91218` has reviewed Apache-2.0, public,
 ungated Hugging Face evidence and is the preferred first conventional B300

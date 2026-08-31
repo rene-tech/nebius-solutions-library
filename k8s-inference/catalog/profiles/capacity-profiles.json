@@ -11,11 +11,11 @@
     },
     "full_catalog": {
       "system_nodes": 3,
-      "gpu_1x_max_nodes": 6,
+      "gpu_1x_max_nodes": 7,
       "gpu_8x_max_nodes": 2,
-      "maximum_gpus": 22,
+      "maximum_gpus": 23,
       "shared_cache_size_gib": 2048,
-      "description": "All 15 canonical routes plus the second MSA backend on 6x1-B300 and 2x8-B300."
+      "description": "All 16 canonical routes plus the second MSA backend on 7x1-B300 and 2x8-B300."
     }
   },
   "floor_profiles": {
@@ -30,9 +30,9 @@
       "description": "One hot preemptible B300 for CUDA and representative-model acceptance."
     },
     "full_catalog": {
-      "gpu_1x_min_nodes": 6,
+      "gpu_1x_min_nodes": 7,
       "gpu_8x_min_nodes": 2,
-      "description": "Keep the proven 22-GPU full-catalog topology hot."
+      "description": "Keep the 23-GPU full-catalog topology hot."
     }
   },
   "compatible_floor_profiles": {

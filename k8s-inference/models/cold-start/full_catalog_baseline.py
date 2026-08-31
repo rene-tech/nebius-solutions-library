@@ -496,7 +496,11 @@ def _manifest_deployments(profile: Mapping[str, Any]) -> dict[str, dict[str, Any
                 .get("metadata", {})
                 .get("labels", {}),
             }
-    if len(deployments) != 16 or len(services) < 16:
+    expected_backend_count = len(profile["canonical_routes"]) + 1
+    if (
+        len(deployments) != expected_backend_count
+        or len(services) < expected_backend_count
+    ):
         raise BaselineError("full_catalog_backend_partition_invalid")
     for deployment, value in deployments.items():
         labels = value.pop("pod_labels")
@@ -522,7 +526,11 @@ def discover_backends() -> list[dict[str, Any]]:
     profile = profiles["profiles"][contract["spec"]["scope"]["profile"]]
     deployments = _manifest_deployments(profile)
     canonical = profile["canonical_routes"]
-    if len(canonical) != 15 or set(canonical) != set(routes["routes"]):
+    scope = contract["spec"]["scope"]
+    if (
+        len(canonical) != scope["canonical_route_count"]
+        or set(canonical) != set(routes["routes"])
+    ):
         raise BaselineError("full_catalog_route_partition_invalid")
     if set(canonical) != set(semantics["contracts"]):
         raise BaselineError("full_catalog_semantic_partition_invalid")
@@ -628,7 +636,7 @@ def discover_backends() -> list[dict[str, Any]]:
             "fallback_evidence_sha256": file_digest(fallback_evidence),
         }
     )
-    if len(result) != 16:
+    if len(result) != scope["rendered_backend_count"]:
         raise BaselineError("backend_count_invalid")
     return result
 
@@ -1114,11 +1122,11 @@ def validate_plan(plan: Any) -> dict[str, Any]:
         raise BaselineError("plan_feature_flags_invalid")
     backends = value.get("backends")
     cells = value.get("cells")
-    if not isinstance(backends, list) or len(backends) != 16:
-        raise BaselineError("plan_backend_count_invalid")
     expected_backends = {
         backend["backend_id"]: backend for backend in discover_backends()
     }
+    if not isinstance(backends, list) or len(backends) != len(expected_backends):
+        raise BaselineError("plan_backend_count_invalid")
     validated_backends: dict[str, dict[str, Any]] = {}
     for raw_backend in backends:
         backend = _object(raw_backend, "plan_backend_invalid")
@@ -1195,7 +1203,10 @@ def validate_plan(plan: Any) -> dict[str, Any]:
     backend_ids = list(validated_backends)
     if set(backend_ids) != set(expected_backends):
         raise BaselineError("plan_backend_ids_invalid")
-    if not isinstance(cells, list) or len(cells) != 16 * len(CAPACITY_STATES):
+    if (
+        not isinstance(cells, list)
+        or len(cells) != len(expected_backends) * len(CAPACITY_STATES)
+    ):
         raise BaselineError("plan_cell_count_invalid")
     observed_cells: set[tuple[str, str]] = set()
     attempt_ids: list[str] = []

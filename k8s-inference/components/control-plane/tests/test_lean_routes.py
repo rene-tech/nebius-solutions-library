@@ -82,6 +82,28 @@ def _diffdock_variant_route() -> dict[str, Any]:
     }
 
 
+def _cosmos_h100_route() -> dict[str, Any]:
+    inventory = json.loads((CONTROL_ROOT / "contracts/all-models-live-services.json").read_text(encoding="utf-8"))
+    return {
+        "schema": "fs2-serve.nebius.ai/lean-routes/v4",
+        "routes": [
+            {
+                **inventory["routes"]["cosmos3-nano"],
+                "model_id": "cosmos3-nano",
+                "service": {
+                    **inventory["routes"]["cosmos3-nano"]["service"],
+                    "namespace": inventory["namespace"],
+                },
+                "placement": {
+                    "region": "eu-north1",
+                    "accelerator_class": "nvidia-h100-sxm5-80gb",
+                    "pool_id": "h100-preemptible-1x",
+                },
+            }
+        ],
+    }
+
+
 def _load(tmp_path: Path, route: dict[str, Any]) -> Registry:
     catalog = load_catalog(CATALOG_ROOT, repo_root=REPO_ROOT)
     bindings = tmp_path / "serving-bindings.json"
@@ -137,6 +159,55 @@ def test_lean_route_binds_static_hot_qwen_service(tmp_path: Path) -> None:
     assert "lean-static-hot-route" not in public
 
 
+def test_terraform_v4_route_uses_exact_eu_north1_h100_placement(tmp_path: Path) -> None:
+    registry = _load(tmp_path, _cosmos_h100_route())
+    model = registry.get("cosmos3-nano")
+
+    assert model.binding.backend_region == "eu-north1"
+    assert model.binding.backend_gpu_class == "nvidia-h100-sxm5-80gb"
+    assert model.gateway.gpu_class == "nvidia-h100-sxm5-80gb"
+    assert model.binding.backend_port == 8080
+    assert _model_view(model)["gpu_class"] == "nvidia-h100-sxm5-80gb"
+    assert AdminReadService._identity(model).gpu_class == "nvidia-h100-sxm5-80gb"
+    rendered = Metrics(registry.list()).render()
+    assert b'gpu_class="nvidia-h100-sxm5-80gb"' in rendered
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda value: value["routes"][0]["placement"].update(region="EU North 1"),
+            "placement region is invalid",
+        ),
+        (
+            lambda value: value["routes"][0]["placement"].update(accelerator_class="NVIDIA H100"),
+            "placement accelerator class is invalid",
+        ),
+        (
+            lambda value: value["routes"][0]["placement"].update(pool_id="H100/pool"),
+            "placement pool ID is invalid",
+        ),
+        (
+            lambda value: value["routes"][0].pop("placement"),
+            "lean route 0 fields are invalid",
+        ),
+    ],
+)
+def test_terraform_v4_route_rejects_malformed_placement(
+    tmp_path: Path,
+    mutate: Callable[[dict[str, Any]], object],
+    message: str,
+) -> None:
+    route = _cosmos_h100_route()
+    mutate(route)
+
+    with pytest.raises(RegistryError, match="canonical gateway catalog validation failed") as error:
+        _load(tmp_path, route)
+    assert error.value.__cause__ is not None
+    assert message in str(error.value.__cause__)
+
+
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
@@ -173,7 +244,7 @@ def test_lean_routes_bind_multiple_catalog_models_and_nim_revision(tmp_path: Pat
     assert model.binding.mcp_tool_name == "boltz2_predict"
 
 
-@pytest.mark.parametrize(("profile", "expected_count"), [("minimal", 1), ("full_catalog", 15)])
+@pytest.mark.parametrize(("profile", "expected_count"), [("minimal", 1), ("full_catalog", 16)])
 def test_terraform_route_sets_disable_the_activation_controller_handshake(
     tmp_path: Path, profile: str, expected_count: int
 ) -> None:
@@ -233,6 +304,41 @@ def test_terraform_route_sets_disable_the_activation_controller_handshake(
         cxr = _model_view(registry.get("nv-reason-cxr-3b"))
         assert cxr["policy"]["non_clinical"] is True
         assert cxr["policy"]["commercial_use"] == "prohibited"
+
+
+def test_terraform_v4_full_catalog_uses_catalog_derived_route_ceiling(tmp_path: Path) -> None:
+    inventory = json.loads((CONTROL_ROOT / "contracts/all-models-live-services.json").read_text(encoding="utf-8"))
+    model_contract = json.loads((SOLUTION_ROOT / "catalog/profiles/model-profiles.json").read_text(encoding="utf-8"))
+    model_ids = model_contract["profiles"]["full_catalog"]["canonical_routes"]
+    routes = []
+    for model_id in sorted(model_ids):
+        deployment = model_contract["model_autoscaling_targets"][model_id]["deployment"]
+        labels = model_contract["workload_placements"][deployment]["required_node_labels"]
+        routes.append(
+            {
+                **inventory["routes"][model_id],
+                "model_id": model_id,
+                "service": {
+                    **inventory["routes"][model_id]["service"],
+                    "namespace": inventory["namespace"],
+                },
+                "placement": {
+                    "region": "eu-north1",
+                    "accelerator_class": labels["accelerator.fs2.nebius/class"],
+                    "pool_id": labels.get("accelerator.fs2.nebius/pool-id"),
+                },
+            }
+        )
+
+    catalog = load_catalog(CATALOG_ROOT, repo_root=REPO_ROOT)
+    assert len(routes) == len(catalog.tested_model_ids)
+    registry = _load(
+        tmp_path,
+        {"schema": "fs2-serve.nebius.ai/lean-routes/v4", "routes": routes},
+    )
+    assert len(registry.list(enabled_only=True)) == len(catalog.tested_model_ids)
+    assert all(model.binding.backend_region == "eu-north1" for model in registry.list(enabled_only=True))
+    assert registry.get("cosmos3-nano").gateway.gpu_class == "nvidia-b300-sxm6-288gb"
 
 
 def test_lean_route_binds_exact_qualified_sm103_variant(tmp_path: Path) -> None:

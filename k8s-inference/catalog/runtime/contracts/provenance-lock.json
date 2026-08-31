@@ -1,5 +1,5 @@
 {
-  "schema": "fs2-serve.nebius.ai/provenance-lock/v1",
+  "schema": "fs2-serve.nebius.ai/provenance-lock/v2",
   "entries": [
     {
       "commit": "307e4ff86ff3fe2fe2d27ef44b3acfaebe5e6c55",
@@ -84,6 +84,18 @@
       "path": "nim-fast-start/faststart-v2/qwen3-faststart/campaign-contract.json",
       "classification": "measured-handoff",
       "content_sha256": "5b32e8b2995fb381efe657e0def1880b011d4797cf68e2164983ed92432d8d52"
+    },
+    {
+      "url": "https://huggingface.co/nvidia/Cosmos3-Nano/raw/7a312c868bcce8e40b3eb40861300a9d0ba3fde1/README.md",
+      "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "classification": "reviewed-input",
+      "content_sha256": "70cd946ba24ef287f5519dc76b9f3aa2e5dcac7e18560756645364f992757a4e"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm-omni/eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c/recipes/cosmos3/Cosmos3-Nano.md",
+      "revision": "eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c",
+      "classification": "reviewed-input",
+      "content_sha256": "ab9520ff6601292a0d827b0e7786120ff48886f0a8049054faefc41655d60528"
     }
   ]
 }

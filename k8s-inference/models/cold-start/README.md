@@ -22,11 +22,11 @@ themselves.
 
 The executable follow-on is documented in
 [`COLD_START_OPTIMIZATION_IMPLEMENTATION.md`](COLD_START_OPTIMIZATION_IMPLEMENTATION.md).
-Its machine matrix covers all 15 routes, its raw phase observations retain
+Its machine matrix covers all 16 routes, its raw phase observations retain
 missing measurements, and its separate Terraform root sequences the exact
 zero-to-Ready-to-call-1-to-call-2-to-zero attempts without putting tokens or
 semantic payloads in Terraform state. The same matrix partitions Deployment
-identity into twelve exact complete tuples and three explicitly blocked
+identity into thirteen exact complete tuples and three explicitly blocked
 unresolved model-content digests, and denies runtime log markers for every
 route except the reviewed Evo source-instrumented observation path.
 
@@ -117,6 +117,14 @@ weights become active only after the existing provider-block admission and
 replacement-node qualification pass. A later distinct writable PVC is needed
 for a persistent Qwen compile cache because the admitted weights claim is
 read-only.
+
+Cosmos3-Nano also uses its own provider-block RWO PVC in the checked-in
+conventional manifest. The cold-start matrix binds its exact model-content and
+runtime-image digests, one-GPU request, service, and storage mode, but records
+no FS2 timing or latency claim. That manifest downloads into the model-specific
+PVC at runtime; it does not yet consume the catalog's content-addressed shared
+SFS artifact or a local-NVMe weight path. Those mechanisms remain blocked until
+their integration and replacement-node behavior produce exact receipts.
 
 NIM cache ownership is unchanged. NIM artifacts stay under the NIM Operator's
 `NIMCache`; the FS2 localizer must never write those paths.

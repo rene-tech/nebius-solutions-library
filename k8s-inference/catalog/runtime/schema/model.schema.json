@@ -26,7 +26,7 @@
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
         "display_name": {"type": "string", "minLength": 1},
-        "family": {"enum": ["bionemo-nim", "medical-imaging", "llm", "image-generation"]},
+        "family": {"enum": ["bionemo-nim", "medical-imaging", "llm", "image-generation", "video-generation"]},
         "tested_lane": {"type": "boolean"},
         "source": {
           "type": "object",
@@ -47,10 +47,10 @@
       "additionalProperties": false,
       "required": ["kind", "version", "image", "command"],
       "properties": {
-        "kind": {"enum": ["nim", "vllm", "custom", "diffusers", "unresolved"]},
+        "kind": {"enum": ["nim", "vllm", "vllm-omni", "custom", "diffusers", "unresolved"]},
         "version": {"type": ["string", "null"]},
         "image": {"$ref": "#/$defs/image"},
-        "command": {"description": "Direct argv template. Tested Hugging Face vLLM records contain exactly one {FS2_MODEL_CONTENT_PATH} token and --served-model-name equal to model.id; remote repository/revision argv is forbidden.", "type": "array", "items": {"type": "string"}}
+        "command": {"description": "Direct argv template. Tested Hugging Face vLLM records consume an exact mounted artifact path; vLLM-Omni records instead bind the exact repository and immutable --revision because that runtime owns its multimodal acquisition path.", "type": "array", "items": {"type": "string"}}
       }
     },
     "resources": {
@@ -463,15 +463,29 @@
       }
     },
     "provenance": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["commit", "tree", "path", "classification"],
-      "properties": {
-        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "path": {"type": "string", "minLength": 1},
-        "classification": {"enum": ["reviewed-input", "measured-handoff", "negative-evidence"]}
-      }
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit", "tree", "path", "classification"],
+          "properties": {
+            "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "path": {"type": "string", "minLength": 1},
+            "classification": {"enum": ["reviewed-input", "measured-handoff", "negative-evidence"]}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url", "revision", "classification"],
+          "properties": {
+            "url": {"type": "string", "pattern": "^https://"},
+            "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "classification": {"const": "reviewed-input"}
+          }
+        }
+      ]
     }
   }
 }

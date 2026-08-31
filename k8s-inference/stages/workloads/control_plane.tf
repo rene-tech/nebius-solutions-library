@@ -47,7 +47,7 @@ locals {
           "app.kubernetes.io/component" = "model-runtime"
           "app.kubernetes.io/part-of"   = "fs2-serve"
         }
-        ports = [8000]
+        ports = local.selected_runtime_ports
       }
       otlp = {
         namespaceLabels = { "kubernetes.io/metadata.name" = "fs2-observability" }

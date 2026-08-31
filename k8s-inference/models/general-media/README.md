@@ -1,8 +1,8 @@
 # FS2 general/media model runtimes
 
 This task-owned directory contains the retained runtime adapters and Kubernetes
-manifests for `evo2-40b`, `glm-5-2-fp8`, `nv-reason-cxr-3b`,
-`nv-segment-ct`, and `sdxl`.
+manifests for `cosmos3-nano`, `evo2-40b`, `glm-5-2-fp8`,
+`nv-reason-cxr-3b`, `nv-segment-ct`, and `sdxl`.
 
 The common media image is based on the exact CUDA 13 B300-qualified vLLM image
 digest already mirrored by FS2. SDXL loads the public exact Diffusers revision;
@@ -17,6 +17,20 @@ the base64 PNG, immutable model identity, effective generation parameters, PNG
 size/hash, backend identity, and the echoed `X-FS2-Operation-ID` correlation ID.
 NV-Segment-CT accepts a base64 gzip NIfTI volume at `POST /segment` and returns a
 JSON envelope containing the output NIfTI plus non-clinical identity metadata.
+
+Cosmos3-Nano runs the exact vLLM-Omni image and Hugging Face revision recorded
+in the runtime catalog. The upstream server remains available cluster-internal
+on port 8000. A companion adapter on port 8080 exposes `POST /generate`, health,
+readiness, and metrics. Initial public/MCP acceptance uses one bounded 448x256,
+25-frame text-to-video request and returns a digest-bound base64 MP4 JSON
+envelope below the control-plane response ceiling. This synchronous envelope is
+for small acceptance artifacts; production media delivery should use an
+object-backed asynchronous result instead of carrying large 720p videos through
+MCP. The bootstrap Deployment's RWO Hugging Face cache does not yet consume the
+catalog's content-addressed shared-SFS artifact and does not claim that weights
+are served from local NVMe. Pool placement is supplied by the model profile or
+overridden through `models.pool_overrides`; the manifest itself has no
+GPU-family node selector.
 
 All medical-model outputs are research-only and non-clinical. Live deployment
 evidence and immutable image bindings are recorded under `evidence/`.

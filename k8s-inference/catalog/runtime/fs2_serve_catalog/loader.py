@@ -44,6 +44,7 @@ REQUIRED_FALLBACK_CANDIDATE_IDS = frozenset(
 REQUIRED_TESTED_MODEL_IDS = frozenset(
     {
         "boltz2",
+        "cosmos3-nano",
         "diffdock",
         "evo2-40b",
         "genmol",
@@ -660,6 +661,24 @@ def _validate_provenance(
     provenance_lock: Mapping[tuple[str, str, str, str], str],
     used_provenance: set[tuple[str, str, str, str]],
 ) -> None:
+    if isinstance(value, dict) and set(value) == {"url", "revision", "classification"}:
+        item = value
+        url = _text(item["url"], "provenance.url")
+        revision = item["revision"]
+        if (
+            url is None
+            or not url.startswith("https://")
+            or not isinstance(revision, str)
+            or GIT_OBJECT.fullmatch(revision) is None
+            or revision not in url
+            or item["classification"] != "reviewed-input"
+        ):
+            raise CatalogError("external provenance must bind an immutable HTTPS revision")
+        key = (url, revision, "external", item["classification"])
+        if key not in provenance_lock:
+            raise CatalogError("external provenance is absent from the packaged provenance lock")
+        used_provenance.add(key)
+        return
     item = _exact(value, {"commit", "tree", "path", "classification"}, f"provenance[{index}]")
     for key in ("commit", "tree"):
         if not isinstance(item[key], str) or GIT_OBJECT.fullmatch(item[key]) is None:
@@ -717,7 +736,11 @@ def _validate_model(
     if filename != f"{model_id}.json":
         raise CatalogError("model filename must match model.id")
     _text(model["display_name"], "model.display_name")
-    _enum(model["family"], {"bionemo-nim", "medical-imaging", "llm", "image-generation"}, "model.family")
+    _enum(
+        model["family"],
+        {"bionemo-nim", "medical-imaging", "llm", "image-generation", "video-generation"},
+        "model.family",
+    )
     tested_lane = _boolean(model["tested_lane"], "model.tested_lane")
     source = _exact(model["source"], {"kind", "repository", "revision", "license", "entitlement"}, "model.source")
     source_kind = _enum(
@@ -746,7 +769,11 @@ def _validate_model(
             raise CatalogError("tested lane source revision must be immutable for its source kind")
 
     runtime = _exact(record["runtime"], {"kind", "version", "image", "command"}, "runtime")
-    runtime_kind = _enum(runtime["kind"], {"nim", "vllm", "custom", "diffusers", "unresolved"}, "runtime.kind")
+    runtime_kind = _enum(
+        runtime["kind"],
+        {"nim", "vllm", "vllm-omni", "custom", "diffusers", "unresolved"},
+        "runtime.kind",
+    )
     _text(runtime["version"], "runtime.version", nullable=True)
     image_state, _, image_digest = _validate_image(runtime["image"])
     command = _list(runtime["command"], "runtime.command")
@@ -768,6 +795,27 @@ def _validate_model(
             raise CatalogError("vLLM argv must define the canonical served-model alias") from exc
         if alias_index >= len(command) or command[alias_index] != model_id:
             raise CatalogError("vLLM argv served-model alias must equal model.id")
+    if tested_lane and source_kind == "huggingface" and runtime_kind == "vllm-omni":
+        repository = source["repository"]
+        expected_command = [
+            "vllm",
+            "serve",
+            repository,
+            "--omni",
+            "--revision",
+            revision,
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--init-timeout",
+            "1800",
+            "--no-guardrails",
+            "--model-class-name",
+            "Cosmos3OmniDiffusersPipeline",
+        ]
+        if command != expected_command:
+            raise CatalogError("vLLM-Omni argv differs from the reviewed immutable launch")
 
     resources = _exact(
         record["resources"],
@@ -1741,12 +1789,37 @@ def _load_provenance_lock(
     if hashlib.sha256(raw).hexdigest() != digest:
         raise CatalogError("packaged provenance lock digest mismatch")
     document = _exact(_load_json(path), {"schema", "entries"}, "provenance lock")
-    if document["schema"] != "fs2-serve.nebius.ai/provenance-lock/v1":
+    if document["schema"] != "fs2-serve.nebius.ai/provenance-lock/v2":
         raise CatalogError("unsupported packaged provenance lock schema")
     entries = _list(document["entries"], "provenance lock entries", nonempty=True)
     locked: dict[tuple[str, str, str, str], str] = {}
     canonical_order: list[tuple[str, str, str, str]] = []
     for index, raw_entry in enumerate(entries):
+        if isinstance(raw_entry, dict) and set(raw_entry) == {
+            "url",
+            "revision",
+            "classification",
+            "content_sha256",
+        }:
+            url = _text(raw_entry["url"], "provenance lock external URL")
+            revision = raw_entry["revision"]
+            if (
+                url is None
+                or not url.startswith("https://")
+                or not isinstance(revision, str)
+                or GIT_OBJECT.fullmatch(revision) is None
+                or revision not in url
+                or raw_entry["classification"] != "reviewed-input"
+            ):
+                raise CatalogError("external provenance lock subject is not immutable")
+            key = (url, revision, "external", raw_entry["classification"])
+            if key in locked:
+                raise CatalogError("packaged provenance lock contains a duplicate subject")
+            locked[key] = strong_sha256(
+                raw_entry["content_sha256"], "external provenance content digest"
+            )
+            canonical_order.append(key)
+            continue
         entry = _exact(
             raw_entry,
             {"commit", "tree", "path", "classification", "content_sha256"},
@@ -3082,7 +3155,7 @@ def _load_acquisition_plans(
             "path": "k8s-inference/catalog/runtime",
             "package": "fs2-serve-catalog",
             "package_version": "0.1.0",
-            "pyproject_sha256": "b32e9047829b6e410ef593ca33a95253c59465ec56a4c8c026a4b0e8a67c0a32",
+            "pyproject_sha256": "6224c2e9b5528dab7cc71a9d05b133a1afdf8b1a8f0f8f39942f78c314529494",
             "uv_lock_sha256": "87a43280317c2fa4924daac6a49bca9aed29b98031c9c11d95a6fa1b12dad88b",
         },
         "entrypoint": ["python3", "-m", "fs2_serve_catalog.cli", "acquire-hf"],

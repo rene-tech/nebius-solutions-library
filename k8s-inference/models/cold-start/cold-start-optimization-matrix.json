@@ -2,7 +2,7 @@
   "schema": "fs2-serve.nebius.ai/cold-start-optimization-matrix/v1alpha1",
   "catalog_contract": {
     "profile": "full_catalog",
-    "canonical_model_count": 15,
+    "canonical_model_count": 16,
     "model_profile_path": "../../catalog/profiles/model-profiles.json",
     "route_inventory_path": "../../components/control-plane/contracts/all-models-live-services.json",
     "semantic_contract_path": "../../catalog/runtime/contracts/semantic-requests.json"
@@ -74,6 +74,19 @@
         "missing_annotations": [],
         "blocker": null,
         "blocker_source": null
+      },
+      "cosmos3-nano": {
+        "state": "blocked",
+        "annotations": {
+          "fs2.nebius/model-content-digest": "sha256:dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95",
+          "fs2.nebius/runtime-image-digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587"
+        },
+        "model_content_source": "../general-media/evidence/cosmos3-nano-artifact-manifest.json#/content/digest",
+        "missing_annotations": [
+          "fs2.nebius/compile-cache-abi"
+        ],
+        "blocker": "gpu-family-specific-compile-cache-abi-unbound",
+        "blocker_source": "../general-media/k8s/cosmos3-nano.yaml"
       },
       "diffdock": {
         "state": "complete",
@@ -263,6 +276,7 @@
     },
     "unqualified_models": [
       "boltz2",
+      "cosmos3-nano",
       "diffdock",
       "genmol",
       "glm-5-2-fp8",
@@ -543,6 +557,179 @@
         "control": "qualified conventional startup in the selected capacity state",
         "candidate": "same runtime tuple using a signed content-addressed durable artifact cache",
         "success_gate": "Three exploratory alternating attempts before any promotion cohort; exact semantics, full phase coverage, preemption fallback, and return to zero."
+      }
+    },
+    {
+      "model_id": "cosmos3-nano",
+      "deployment": "cosmos3-nano",
+      "service": "cosmos3-nano",
+      "gpu_count": 1,
+      "floor_policy": "elastic-zero",
+      "primary_containers": [
+        "vllm-omni",
+        "bounded-json-adapter"
+      ],
+      "artifact_init_containers": [],
+      "identity_sources": [
+        "deployment-annotations",
+        "pod-image-ids",
+        "artifact-manifest-receipt",
+        "runtime-argv",
+        "runtime-environment-digest",
+        "node-labels",
+        "cuda-in-container-receipt",
+        "topology-inventory-receipt",
+        "allocated-device-receipt",
+        "storage-identity-receipt"
+      ],
+      "phase_sources": {
+        "pod-scheduled": {
+          "source": "kubernetes-condition",
+          "names": [
+            "PodScheduled"
+          ],
+          "promotion_required": true
+        },
+        "image-pull": {
+          "source": "kubernetes-event",
+          "names": [
+            "Pulling",
+            "Pulled"
+          ],
+          "promotion_required": true
+        },
+        "artifact-localization": {
+          "source": "runtime-log-marker",
+          "names": [
+            "artifact-localization-start",
+            "artifact-localization-verified"
+          ],
+          "promotion_required": true
+        },
+        "runtime-process": {
+          "source": "container-status",
+          "names": [
+            "vllm-omni",
+            "bounded-json-adapter"
+          ],
+          "promotion_required": true
+        },
+        "weight-load": {
+          "source": "runtime-log-marker",
+          "names": [
+            "weight-load-start",
+            "weight-load-end"
+          ],
+          "promotion_required": true
+        },
+        "engine-build-or-compile": {
+          "source": "runtime-log-marker",
+          "names": [
+            "engine-build-or-compile-start",
+            "engine-build-or-compile-end"
+          ],
+          "promotion_required": true
+        },
+        "readiness": {
+          "source": "kubernetes-condition",
+          "names": [
+            "Ready"
+          ],
+          "promotion_required": true
+        },
+        "semantic-calls": {
+          "source": "external-receipt",
+          "names": [
+            "semantic-call1-accepted",
+            "semantic-call2-accepted"
+          ],
+          "promotion_required": true
+        },
+        "return-to-zero": {
+          "source": "external-receipt",
+          "names": [
+            "return-to-zero-accepted"
+          ],
+          "promotion_required": true
+        }
+      },
+      "capabilities": {
+        "conventional": {
+          "state": "active",
+          "prerequisites": [
+            "exact-runtime-image-digest",
+            "exact-model-content-digest",
+            "semantic-contract",
+            "provider-block-pvc"
+          ],
+          "claim": "Exact conventional route fallback only; no FS2 cold-start or latency performance is claimed."
+        },
+        "shared-cache": {
+          "state": "blocked",
+          "prerequisites": [
+            "manifest-rwo-cache-to-content-addressed-sfs-integration",
+            "signed-artifact-acquisition-receipt",
+            "read-only-runtime-mount",
+            "preemption-fallback-to-durable-source"
+          ],
+          "claim": "The current route uses a model-specific provider-block RWO cache and does not consume the catalog shared-cache artifact."
+        },
+        "local-nvme": {
+          "state": "blocked",
+          "prerequisites": [
+            "accelerator-pool-local-nvme-capability",
+            "explicit-localization-init-container",
+            "node-identity-receipt",
+            "relocalization-after-preemption"
+          ],
+          "claim": "The current manifest has no local-NVMe weight path; a measured localization pilot is required."
+        },
+        "oci-image-volume": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-oci-artifact-digest",
+            "license-and-redistribution-review",
+            "container-runtime-image-volume-support",
+            "registry-custody-receipt"
+          ],
+          "claim": "No exact OCI weight artifact is bound to this route."
+        },
+        "oci-modelcar": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-modelcar-image-digest",
+            "shared-process-namespace-review",
+            "runtime-path-parity",
+            "registry-custody-receipt"
+          ],
+          "claim": "No exact modelcar image or runtime path-parity receipt exists."
+        },
+        "cuda-criu-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-donor-and-target-compatibility-tuples",
+            "qualified-vllm-omni-checkpoint-tool-digest",
+            "partition-specific-qualification",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "No exact vLLM-Omni donor/restore tuple or conventional FS2 baseline receipt exists."
+        },
+        "dynamo-snapshot": {
+          "state": "blocked",
+          "prerequisites": [
+            "exact-dynamo-chart-and-agent-digests",
+            "vllm-omni-backend-qualification",
+            "driver-and-cuda-gate",
+            "conventional-fallback-receipt"
+          ],
+          "claim": "The vLLM-Omni media route is outside the reviewed Dynamo snapshot pilot."
+        }
+      },
+      "next_experiment": {
+        "mechanism": "conventional",
+        "control": "immutable Cosmos3-Nano runtime, model, request, one-GPU, and provider-block-pvc tuple",
+        "candidate": "three conventional cold-start observations in each admitted capacity state",
+        "success_gate": "Capture valid semantic responses, complete phase and storage receipts, failures, preemption recovery, and return to zero; make no performance claim from this baseline."
       }
     },
     {

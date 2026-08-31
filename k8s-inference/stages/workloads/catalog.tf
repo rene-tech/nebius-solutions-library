@@ -33,6 +33,15 @@ resource "kubernetes_config_map_v1" "lean_routes" {
 
   lifecycle {
     create_before_destroy = true
+
+    precondition {
+      condition = (
+        length(local.selected_runtime_ports) > 0 &&
+        length(local.selected_runtime_ports) <= length(local.selected_routes) &&
+        alltrue([for port in local.selected_runtime_ports : port >= 1 && port <= 65535])
+      )
+      error_message = "Selected model routes must resolve to a nonempty bounded set of distinct runtime ports."
+    }
   }
   depends_on = [terraform_data.cluster_contract]
 }

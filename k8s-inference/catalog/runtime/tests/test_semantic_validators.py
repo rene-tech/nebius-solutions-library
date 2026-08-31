@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import copy
+import base64
+import hashlib
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from validators.validate_response import SemanticError, validate
+from validators.validate_cosmos3_nano import (
+    SemanticError as CosmosSemanticError,
+    load_contract as load_cosmos_contract,
+    validate as validate_cosmos,
+)
 
 
 CATALOG_ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +64,46 @@ class SemanticValidatorTests(unittest.TestCase):
                         self.response(root, "four.json", "QWEN3_FS2_SECOND_OK"),
                     ],
                 )
+
+    def test_cosmos_bounded_mp4_contract_accepts_distinct_media_and_rejects_drift(self) -> None:
+        fixture_path = CATALOG_ROOT / "validators" / "assets" / "cosmos3-nano.json"
+        contract = load_cosmos_contract(fixture_path)
+
+        def envelope(media: bytes) -> dict[str, object]:
+            return {
+                "model": "nvidia/Cosmos3-Nano",
+                "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+                "mode": "text-to-video",
+                "mime_type": "video/mp4",
+                "data_base64": base64.b64encode(media).decode("ascii"),
+                "bytes": len(media),
+                "sha256": hashlib.sha256(media).hexdigest(),
+                "width": 448,
+                "height": 256,
+                "frames": 25,
+                "fps": 24,
+                "timings_ms": {"queue": 1.0, "upstream": 9.0, "total": 10.0},
+            }
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            media = (
+                b"\x00\x00\x00\x18ftypisom" + b"first-media",
+                b"\x00\x00\x00\x18ftypisom" + b"second-media",
+            )
+            paths: list[Path] = []
+            for index, value in enumerate(media):
+                path = root / f"cosmos-{index}.json"
+                path.write_text(json.dumps(envelope(value)), encoding="utf-8")
+                paths.append(path)
+
+            self.assertEqual("PASS", validate_cosmos(contract, paths)["status"])
+
+            corrupted = envelope(media[1])
+            corrupted["sha256"] = "0" * 64
+            paths[1].write_text(json.dumps(corrupted), encoding="utf-8")
+            with self.assertRaisesRegex(CosmosSemanticError, "media identity differs"):
+                validate_cosmos(contract, paths)
 
     def test_cxr_contract_cannot_drop_nonclinical_noncommercial_policy(self) -> None:
         contract = json.loads(

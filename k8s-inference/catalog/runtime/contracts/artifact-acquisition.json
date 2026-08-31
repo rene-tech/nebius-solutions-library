@@ -69,6 +69,28 @@
       "promotion_policy": "license-entitlement-and-live-qualification-required",
       "helper_image_id": null
     },
+    "cosmos3-nano": {
+      "method": "huggingface-public-snapshot",
+      "source_kind": "huggingface",
+      "repository": "nvidia/Cosmos3-Nano",
+      "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "artifact_kind": "weights",
+      "destination_prefix": "/mnt/fs2-serve-cache/models/cosmos3-nano",
+      "required_prerequisites": [
+        "fs2-models/cache-service-account",
+        "fs2-models/runtime-registry-secret",
+        "fs2-models/shared-cache-pvc"
+      ],
+      "pull_canary": {
+        "required": false,
+        "execution_scope": "not-required",
+        "output_policy": "values-suppressed",
+        "receipt_schema": null
+      },
+      "publication": "atomic-content-addressed-sfs",
+      "promotion_policy": "license-and-live-qualification-required",
+      "helper_image_id": "fs2-acquisition-helper"
+    },
     "diffdock": {
       "method": "ngc-target-node-nimcache",
       "source_kind": "ngc-nim",
@@ -401,7 +423,7 @@
         "path": "k8s-inference/catalog/runtime",
         "package": "fs2-serve-catalog",
         "package_version": "0.1.0",
-        "pyproject_sha256": "b32e9047829b6e410ef593ca33a95253c59465ec56a4c8c026a4b0e8a67c0a32",
+        "pyproject_sha256": "6224c2e9b5528dab7cc71a9d05b133a1afdf8b1a8f0f8f39942f78c314529494",
         "uv_lock_sha256": "87a43280317c2fa4924daac6a49bca9aed29b98031c9c11d95a6fa1b12dad88b"
       },
       "entrypoint": [

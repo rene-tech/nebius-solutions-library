@@ -121,6 +121,15 @@ locals {
   profile_contract = jsondecode(file("${path.module}/../../catalog/profiles/model-profiles.json"))
   selected_profile = local.profile_contract.profiles[var.deployment_profile]
   inventory        = jsondecode(file("${local.fs2_root}/components/control-plane/contracts/all-models-live-services.json"))
+  runtime_catalog  = jsondecode(file("${local.fs2_root}/catalog/runtime/catalog.json"))
+  catalog_models = {
+    for model_file in local.runtime_catalog.model_files :
+    jsondecode(file("${local.fs2_root}/catalog/runtime/models/${model_file}")).model.id =>
+    jsondecode(file("${local.fs2_root}/catalog/runtime/models/${model_file}"))
+  }
+  catalog_model_runtime_images = {
+    for model_id, model in local.catalog_models : model_id => model.runtime.image.reference
+  }
 
   selected_model_ids = sort(tolist(
     var.enabled_model_ids == null ?
@@ -302,7 +311,13 @@ locals {
                 {
                   containers = [
                     for container in try(document.manifest.spec.template.spec.containers, []) :
-                    startswith(try(container.image, ""), "registry.example.invalid/") ?
+                    (
+                      try(container.image, "") == local.catalog_model_runtime_images[document.model_id] ||
+                      startswith(
+                        try(container.image, ""),
+                        "registry.example.invalid/k8s-inference/models/",
+                      )
+                    ) ?
                     merge(container, { image = var.model_image_overrides[document.model_id] }) :
                     container
                   ]
@@ -310,7 +325,13 @@ locals {
                 length(try(document.manifest.spec.template.spec.initContainers, [])) > 0 ? {
                   initContainers = [
                     for container in document.manifest.spec.template.spec.initContainers :
-                    startswith(try(container.image, ""), "registry.example.invalid/") ?
+                    (
+                      try(container.image, "") == local.catalog_model_runtime_images[document.model_id] ||
+                      startswith(
+                        try(container.image, ""),
+                        "registry.example.invalid/k8s-inference/models/",
+                      )
+                    ) ?
                     merge(container, { image = var.model_image_overrides[document.model_id] }) :
                     container
                   ]
@@ -327,12 +348,22 @@ locals {
   placement_overridden_model_documents = [
     for document in local.image_overridden_model_documents : merge(document, {
       manifest = jsondecode(
-        document.manifest.kind == "Deployment" && contains(keys(var.model_pool_overrides), document.model_id) ?
+        document.manifest.kind == "Deployment" && (
+          contains(keys(var.model_pool_overrides), document.model_id) ||
+          (
+            document.gpu_count > 0 &&
+            document.placement != null &&
+            !alltrue([
+              for key, value in document.placement.required_node_labels :
+              try(document.manifest.spec.template.spec.nodeSelector[key] == value, false)
+            ])
+          )
+        ) ?
         jsonencode(merge(document.manifest, {
           spec = merge(document.manifest.spec, {
             template = merge(document.manifest.spec.template, {
               spec = merge(document.manifest.spec.template.spec, {
-                nodeSelector = {
+                nodeSelector = contains(keys(var.model_pool_overrides), document.model_id) ? {
                   for key, value in {
                     "accelerator.fs2.nebius/class"   = local.selected_queue_pools[var.model_pool_overrides[document.model_id]].accelerator_class
                     "accelerator.fs2.nebius/pool-id" = var.model_pool_overrides[document.model_id]
@@ -345,8 +376,15 @@ locals {
                       key,
                     )
                   )
-                }
-                tolerations = local.selected_queue_pools[var.model_pool_overrides[document.model_id]].scheduling.tolerations
+                  } : merge(
+                  try(document.manifest.spec.template.spec.nodeSelector, {}),
+                  document.placement.required_node_labels,
+                )
+                tolerations = (
+                  contains(keys(var.model_pool_overrides), document.model_id) ?
+                  local.selected_queue_pools[var.model_pool_overrides[document.model_id]].scheduling.tolerations :
+                  local.selected_queue_pools[document.placement.compatible_pool_ids[0]].scheduling.tolerations
+                )
               })
             })
           })
@@ -520,7 +558,13 @@ locals {
               spec = merge(document.manifest.spec.template.spec, {
                 containers = [
                   for container in document.manifest.spec.template.spec.containers :
-                  startswith(try(container.image, ""), "registry.example.invalid/") ?
+                  (
+                    try(container.image, "") == local.catalog_model_runtime_images[document.model_id] ||
+                    startswith(
+                      try(container.image, ""),
+                      "registry.example.invalid/k8s-inference/models/",
+                    )
+                  ) ?
                   merge(container, { image = var.model_image_overrides[document.model_id] }) :
                   container
                 ]
@@ -534,15 +578,25 @@ locals {
   ]
   keeper_manifests = { for document in local.rendered_keeper_documents : document.key => document }
 
-  selected_routes          = { for model_id in local.selected_model_ids : model_id => local.inventory.routes[model_id] }
+  selected_routes = { for model_id in local.selected_model_ids : model_id => local.inventory.routes[model_id] }
+  selected_runtime_ports = [
+    for port in sort(tolist(toset([
+      for model_id in sort(keys(local.selected_routes)) : format("%05d", local.selected_routes[model_id].service.port)
+    ]))) : tonumber(port)
+  ]
   qualification_projection = jsondecode(file("${local.fs2_root}/components/control-plane/contracts/model-qualification-projection.json"))
-  # The pinned control-plane runtime accepts the exact v2 document shape. Keep
-  # reviewed qualification evidence beside, but outside, the mounted route file.
+  # Terraform routes carry the resolved deployment placement in v4. Reviewed
+  # qualification evidence stays beside, but outside, the mounted route file.
   lean_routes = {
-    schema = "fs2-serve.nebius.ai/lean-routes/v2"
+    schema = "fs2-serve.nebius.ai/lean-routes/v4"
     routes = [for model_id in sort(keys(local.selected_routes)) : merge(local.selected_routes[model_id], {
       model_id = model_id
       service  = merge(local.selected_routes[model_id].service, { namespace = local.inventory.namespace })
+      placement = {
+        region            = local.selected_target.region
+        accelerator_class = local.effective_model_placements[model_id].required_node_labels["accelerator.fs2.nebius/class"]
+        pool_id           = try(local.effective_model_placements[model_id].required_node_labels["accelerator.fs2.nebius/pool-id"], null)
+      }
     })]
   }
   lean_routes_config_map_data = {

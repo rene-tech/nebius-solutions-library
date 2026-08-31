@@ -19,10 +19,10 @@
       "queue": {"cluster_queue_name": "fs2-b300-async", "local_queue_name": "fs2-models-async", "queueing_strategy": "BestEffortFIFO", "acceptance_pool_id": "nebius-b300-preemptible-1x"},
       "pool_order": ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"],
       "pools": {
-        "nebius-b300-preemptible-1x": {"max_nodes": 6, "floor_nodes": {"zero": 0, "representative": 1, "full_catalog": 6}},
+        "nebius-b300-preemptible-1x": {"max_nodes": 7, "floor_nodes": {"zero": 0, "representative": 1, "full_catalog": 7}},
         "nebius-b300-preemptible-8x": {"max_nodes": 2, "floor_nodes": {"zero": 0, "representative": 0, "full_catalog": 2}}
       },
-      "notes": "Exact existing 6x1 plus 2x8 B300, 22-GPU full-catalog acceptance fixture."
+      "notes": "Seven 1-GPU plus two 8-GPU B300 nodes provide the 23-GPU full-catalog acceptance envelope."
     },
     "heterogeneous_reference": {
       "enabled": false,

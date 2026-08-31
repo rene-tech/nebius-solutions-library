@@ -10,8 +10,8 @@
   "spec": {
     "scope": {
       "profile": "full_catalog",
-      "canonical_route_count": 15,
-      "rendered_backend_count": 16,
+      "canonical_route_count": 16,
+      "rendered_backend_count": 17,
       "mechanism": "conventional",
       "matrix": "cold-start-optimization-matrix.json",
       "profile_contract": "../../catalog/profiles/model-profiles.json",

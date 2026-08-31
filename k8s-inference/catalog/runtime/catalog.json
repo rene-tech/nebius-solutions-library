@@ -1,13 +1,13 @@
 {
   "artifact_acquisition": {
     "path": "contracts/artifact-acquisition.json",
-    "sha256": "790fd5e772f9639db7ebc0d0dd10fcce0f8897e9b8e85705606f9e1140129772"
+    "sha256": "d9fb2158c9e040ab897076ee85d9679ef69ea4daa0f29b52e2065965d3fc2f09"
   },
   "blocked_candidate_ids": [],
   "catalog_version": "2026-08-27",
   "compatibility_audit": {
     "path": "contracts/compatibility-audit.json",
-    "sha256": "34f435dd4f880dcf1422779d042dcb538447d3ee5167834d9bad8704d288c64c"
+    "sha256": "df9081e846f37cc3fddb334d00846ea0de0b8f1d15b5592fd9580422f270d87c"
   },
   "federated_backends": {
     "path": "contracts/federated-backends.json",
@@ -16,6 +16,7 @@
   "loader_contract": "fs2-serve.nebius.ai/catalog-loader/v1",
   "model_files": [
     "boltz2.json",
+    "cosmos3-nano.json",
     "diffdock.json",
     "evo2-40b.json",
     "genmol.json",
@@ -38,7 +39,7 @@
   },
   "provenance_lock": {
     "path": "contracts/provenance-lock.json",
-    "sha256": "9f12cf6c3876e29667b62fa0a379b4c25ccfb06d06d6f1effc3055d42d45643f"
+    "sha256": "594c8c507b6345687ded96b5e6b4742feb4e35e3bf1ca30df55de72ea797e1b8"
   },
   "runtime_prerequisites": {
     "path": "contracts/runtime-prerequisites.json",
@@ -46,15 +47,16 @@
   },
   "scale_contracts": {
     "path": "contracts/scale-contracts.json",
-    "sha256": "8f399d1caa25d96deba17dfd9eb5db00854f8d4694d3c1ed490320b75e2b769e"
+    "sha256": "745fea07ab4d66a583f50c661eb15d519b6ca6dfa803423e9dab0e0cec573930"
   },
   "schema": "fs2-serve.nebius.ai/catalog/v1",
   "semantic_requests": {
     "path": "contracts/semantic-requests.json",
-    "sha256": "47449f99ed49255a755c21d61f87c8ceb2d1eaab5923c76eae9beaf635ca7fe1"
+    "sha256": "42f3975c3825a1796ce21dac795eb33aad94dc688bb3e08490cb0fdee24c568c"
   },
   "tested_model_ids": [
     "boltz2",
+    "cosmos3-nano",
     "diffdock",
     "evo2-40b",
     "genmol",

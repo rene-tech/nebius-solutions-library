@@ -28,6 +28,23 @@
       "protocol": "native",
       "response_kind": "json-object"
     },
+    "cosmos3-nano": {
+      "operation": "generate-media",
+      "payload": {
+        "fps": 24,
+        "guidance_scale": 6.0,
+        "mode": "text-to-video",
+        "negative_prompt": "blurry, distorted, low quality, jittery, deformed",
+        "num_frames": 25,
+        "num_inference_steps": 8,
+        "prompt": "A robot arm carefully places a red cube on a clean workbench, fixed camera, smooth natural motion.",
+        "seed": 2407,
+        "size": "448x256"
+      },
+      "payload_sha256": "e4f2897190d5efc4f551af9c1f3cee9880b7a001c17589065d0338bd277a53e2",
+      "protocol": "native",
+      "response_kind": "mp4-b64-json"
+    },
     "diffdock": {
       "operation": "dock",
       "payload": {

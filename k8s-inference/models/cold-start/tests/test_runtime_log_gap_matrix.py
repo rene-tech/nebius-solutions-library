@@ -82,8 +82,8 @@ class RuntimeLogGapMatrixTests(unittest.TestCase):
             packet = GAPS.build_gap_matrix(
                 argparse.Namespace(plan=plan_path, discovery_receipt=[])
             )
-        self.assertEqual(packet["summary"]["route_count"], 15)
-        self.assertEqual(packet["summary"]["blocked_identity_route_count"], 3)
+        self.assertEqual(packet["summary"]["route_count"], 16)
+        self.assertEqual(packet["summary"]["blocked_identity_route_count"], 4)
         self.assertEqual(packet["summary"]["incomplete_route_count"], 12)
         self.assertEqual(packet["summary"]["complete_route_count"], 0)
         self.assertGreater(packet["summary"]["instrumentation_gap_count"], 12)

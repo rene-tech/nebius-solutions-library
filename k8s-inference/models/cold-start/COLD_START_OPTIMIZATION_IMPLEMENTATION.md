@@ -3,7 +3,7 @@
 This implementation turns the post-acceptance spike into an executable,
 fail-closed benchmark path. It does not promote a snapshot mechanism and it
 does not alter a live cluster by itself. Conventional startup remains the only
-active default for all 15 canonical routes.
+active default for all 16 canonical routes.
 
 ## Evidence-led priority
 
@@ -91,12 +91,12 @@ runtime image is independently shown to emit the reviewed marker contract;
 the matrix declaration alone is not evidence that a marker exists. The
 machine `runtime_marker_contract` therefore denies markers by default,
 accepts the six reviewed names only for the Evo source-instrumented path, and
-rejects even syntactically valid marker names from the other 14 routes. Evo's
+rejects even syntactically valid marker names from the other 15 routes. Evo's
 Deployment image still has to be rebuilt and the markers observed before a
 live receipt can use them.
 
-The machine Deployment identity contract covers all 15 routes and preserves
-the same default denial. Twelve templates now have all three exact annotations.
+The machine Deployment identity contract covers all 16 routes and preserves
+the same default denial. Thirteen templates now have all three exact annotations.
 Six of the original nine gaps were closed from immutable evidence: MolMIM's
 exact `.nemo` SHA-256, ProteinMPNN and RFdiffusion's exact checkpoint SHA-256
 values, Qwen's exact 15-file content digest, Boltz2's three-file public model
@@ -106,6 +106,15 @@ canonical NIM cache fields remain unresolved and are not substituted for these
 fallback identities. The aggregate algorithm and evidence boundary are
 documented in `MODEL_CONTENT_IDENTITY_CLOSURE.md` and validated by the existing
 artifact-manifest implementation.
+
+Cosmos3-Nano binds its immutable upstream model manifest and runtime image to
+the one-GPU provider-block-PVC route. Its portable manifest deliberately omits
+a GPU-family-specific compile-cache ABI, so accelerated cache reuse remains
+blocked until the selected pool supplies and proves the exact ABI.
+It has no FS2 cold-start observation in the historical evidence table, so its
+first admitted work is a conventional baseline and not an optimization or
+performance claim. Shared SFS, local NVMe, OCI, and snapshot paths stay blocked
+until each has an exact integration and receipt.
 
 For `msa-search-pdb70`, `openfold2`, and `openfold3`, the exact runtime image
 and compile-cache ABI are recorded, but the model-content annotation remains
@@ -225,7 +234,7 @@ are:
 
 1. deploy the final source commit and rebuild the Evo image containing the new
    phase markers;
-2. pass all 15 canonical HTTP and MCP semantics;
+2. pass all 16 canonical HTTP and MCP semantics;
 3. configure KEDA with the selected model at a zero floor and prove the GPU
    pool can return to zero;
 4. generate exact compatibility tuples from in-container CUDA, driver,

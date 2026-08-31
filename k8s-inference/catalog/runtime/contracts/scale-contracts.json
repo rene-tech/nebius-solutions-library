@@ -25,6 +25,31 @@
       },
       "warmup": null
     },
+    "cosmos3-nano": {
+      "activation_mode": "replica-scale",
+      "execution_identity_sha256": "6ec5d834692c4884772780ca48089ca1105ce423eefad510da6947b2f1ba92a0",
+      "model_digest": "6a255335d7635d9c6ffdbfdb7fdaaa4f9de5f060da674da6621037dd5e0dbd5e",
+      "policy_profile": "http-deployment-zero-to-one-v1",
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/readyz",
+        "timeout_seconds": 1800
+      },
+      "resource_placement_identity_sha256": "62bd82be07c5cfa4d1b4f130c14ab2234c27bb95e2bfa18c5dc3a6f306d93219",
+      "target": {
+        "api_version": "apps/v1",
+        "kind": "Deployment",
+        "name": "cosmos3-nano",
+        "namespace": "fs2-models",
+        "selector": {
+          "fs2-serve.nebius.ai/model-id": "cosmos3-nano"
+        },
+        "template_identity_sha256": "7fa721e1e01e03261a5253791baedb24e2f56c07a720221772214f819129070f",
+        "uid_source": "signed-serving-binding"
+      },
+      "warmup": null
+    },
     "diffdock": {
       "activation_mode": "replica-scale",
       "execution_identity_sha256": "3712edfec38a4482c665dcd147fa4d679a87b593a19c241cba34d127cc02cdd4",

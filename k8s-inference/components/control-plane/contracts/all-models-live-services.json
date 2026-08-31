@@ -61,6 +61,27 @@
         "description": "Run an authorized Boltz2 protein structure prediction."
       }
     },
+    "cosmos3-nano": {
+      "variant_id": null,
+      "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "runtime_image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+      "service": {
+        "name": "cosmos3-nano",
+        "port": 8080
+      },
+      "storage_mode": "provider-block-pvc",
+      "protocols": {
+        "native": "/generate"
+      },
+      "operations": [
+        "generate-media"
+      ],
+      "mcp": {
+        "enabled": true,
+        "tool_name": "cosmos3_nano_generate_media",
+        "description": "Generate bounded authorized image or video media with Cosmos 3 Nano."
+      }
+    },
     "diffdock": {
       "variant_id": "diffdock-upstream-blackwell-sm103",
       "model_revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",

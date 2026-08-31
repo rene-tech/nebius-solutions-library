@@ -39,7 +39,8 @@ _TERMINAL = frozenset({"succeeded", "failed", "cancelled", "preempted", "expired
 _SAFE_CODE = re.compile(r"[a-z][a-z0-9_]{0,95}")
 _SHA256 = re.compile(r"[a-f0-9]{64}")
 _MAX_TOKEN_BYTES = 4096
-_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+_MAX_RESPONSE_BYTES = 96 * 1024 * 1024
+_MAX_MEDIA_BYTES = 64 * 1024 * 1024
 _MAX_CASE_BYTES = 16 * 1024 * 1024
 
 
@@ -320,7 +321,13 @@ def _load_cases(path: Path, catalog: Catalog, release: LiveRelease) -> tuple[Acc
             raise AcceptanceError("acceptance_case_invocation_drift")
         if protocol.startswith("openai-") and (payload.get("model") != model_id or payload.get("stream") is True):
             raise AcceptanceError("acceptance_case_openai_payload_invalid")
-        if response_kind not in {"json-object", "openai-chat", "png-b64-json", "nifti-b64-json"}:
+        if response_kind not in {
+            "json-object",
+            "openai-chat",
+            "png-b64-json",
+            "nifti-b64-json",
+            "mp4-b64-json",
+        }:
             raise AcceptanceError("acceptance_case_response_kind_invalid")
         payload = _materialize_payload_assets(
             payload,
@@ -383,6 +390,84 @@ def response_summary(value: object, raw: bytes, kind: str) -> dict[str, object]:
         if not decoded.startswith(b"\x1f\x8b"):
             raise AcceptanceError("semantic_response_schema_invalid")
         summary.update({"artifact_sha256": sha256_bytes(decoded), "artifact_bytes": len(decoded)})
+    elif kind == "mp4-b64-json":
+        envelope = _exact(
+            value,
+            {
+                "model",
+                "revision",
+                "mode",
+                "mime_type",
+                "data_base64",
+                "bytes",
+                "sha256",
+                "width",
+                "height",
+                "frames",
+                "fps",
+                "timings_ms",
+            },
+            "semantic_response_schema_invalid",
+        )
+        encoded = envelope["data_base64"]
+        if not isinstance(encoded, str) or envelope["mime_type"] != "video/mp4":
+            raise AcceptanceError("semantic_response_schema_invalid")
+        try:
+            decoded = base64.b64decode(encoded, validate=True)
+        except ValueError:
+            raise AcceptanceError("semantic_response_schema_invalid") from None
+        if (
+            not isinstance(envelope["model"], str)
+            or not envelope["model"]
+            or not isinstance(envelope["revision"], str)
+            or re.fullmatch(r"[a-f0-9]{40}", envelope["revision"]) is None
+            or not isinstance(envelope["bytes"], int)
+            or isinstance(envelope["bytes"], bool)
+            or not isinstance(envelope["sha256"], str)
+            or _SHA256.fullmatch(envelope["sha256"]) is None
+            or not decoded
+            or len(decoded) > _MAX_MEDIA_BYTES
+            or len(decoded) < 12
+            or decoded[4:8] != b"ftyp"
+            or envelope["bytes"] != len(decoded)
+            or envelope["sha256"] != sha256_bytes(decoded)
+            or envelope["mode"] != "text-to-video"
+        ):
+            raise AcceptanceError("semantic_response_schema_invalid")
+        dimensions = (envelope["width"], envelope["height"])
+        if any(not isinstance(item, int) or isinstance(item, bool) or item <= 0 for item in dimensions):
+            raise AcceptanceError("semantic_response_schema_invalid")
+        frames = envelope["frames"]
+        fps = envelope["fps"]
+        if (
+            not isinstance(frames, int)
+            or isinstance(frames, bool)
+            or not 5 <= frames <= 400
+            or not isinstance(fps, int)
+            or isinstance(fps, bool)
+            or not 1 <= fps <= 30
+        ):
+            raise AcceptanceError("semantic_response_schema_invalid")
+        timings = _exact(
+            envelope["timings_ms"],
+            {"queue", "upstream", "total"},
+            "semantic_response_schema_invalid",
+        )
+        if (
+            any(not isinstance(item, int | float) or isinstance(item, bool) or item < 0 for item in timings.values())
+            or timings["total"] < timings["queue"] + timings["upstream"]
+        ):
+            raise AcceptanceError("semantic_response_schema_invalid")
+        summary.update(
+            {
+                "artifact_sha256": envelope["sha256"],
+                "artifact_bytes": envelope["bytes"],
+                "width": envelope["width"],
+                "height": envelope["height"],
+                "frames": frames,
+                "fps": fps,
+            }
+        )
     return summary
 
 

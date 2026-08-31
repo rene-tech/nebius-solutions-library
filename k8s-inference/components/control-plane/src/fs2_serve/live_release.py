@@ -28,6 +28,7 @@ _DNS_LABEL = re.compile(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?")
 _MCP_TOOL = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _STORAGE_MODES = frozenset({"provider-block-pvc", "sfs-pvc", "local-nvme", "ephemeral-emptydir"})
 _MAX_INVENTORY_BYTES = 256 * 1024
+_MAX_ROUTES = 256
 
 
 class LiveReleaseError(ValueError):
@@ -216,7 +217,7 @@ def _route(model_id: str, raw: object, *, namespace: str, catalog: Catalog) -> d
 
 
 def render_live_release(catalog: Catalog, inventory_path: Path) -> LiveRelease:
-    """Validate one exact 1..16 service inventory and render versioned objects."""
+    """Validate one complete bounded service inventory and render versioned objects."""
 
     inventory = _load_json(inventory_path)
     if inventory["schema"] != INVENTORY_SCHEMA:
@@ -225,7 +226,7 @@ def render_live_release(catalog: Catalog, inventory_path: Path) -> LiveRelease:
     if namespace != "fs2-models":
         raise LiveReleaseError("live model services must remain in fs2-models")
     raw_routes = inventory["routes"]
-    if not isinstance(raw_routes, dict) or not 1 <= len(raw_routes) <= 16:
+    if not isinstance(raw_routes, dict) or not 1 <= len(raw_routes) <= _MAX_ROUTES:
         raise LiveReleaseError("live service route count is invalid")
     if set(raw_routes) != set(catalog.tested_model_ids):
         missing = sorted(set(catalog.tested_model_ids) - set(raw_routes))
