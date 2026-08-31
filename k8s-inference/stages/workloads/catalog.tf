@@ -28,7 +28,10 @@ resource "kubernetes_config_map_v1" "lean_routes" {
   }
   immutable = true
   data = {
-    "lean-routes.json" = jsonencode(local.lean_routes)
+    # The Helm release mounts only lean-routes.json. Qualification remains
+    # available as retained evidence without broadening the runtime schema.
+    "lean-routes.json"              = jsonencode(local.lean_routes)
+    "qualification-projection.json" = jsonencode(local.qualification_projection)
   }
   depends_on = [terraform_data.cluster_contract]
 }

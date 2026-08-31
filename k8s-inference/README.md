@@ -32,6 +32,12 @@ provider validation cannot prove that an arbitrary model runtime supports a
 new GPU architecture. Keep model/runtime qualification evidence with any new
 binding.
 
+The mounted `lean-routes.json` intentionally uses the exact two-field v2
+runtime contract (`schema` and `routes`) accepted by the pinned control-plane
+image. The reviewed qualification projection is retained in the same immutable
+ConfigMap under `qualification-projection.json`, but is not mounted into the
+runtime route parser.
+
 The checked-in accelerator catalog retains reviewed B300 fixtures and a
 current Nebius GPU inventory for examples and tests. It is not an allowlist for
 custom pools. A small regular CPU system pool hosts Kubernetes and platform

@@ -366,6 +366,26 @@ class DeploymentContractTests(unittest.TestCase):
             source,
         )
 
+    def test_runtime_lean_routes_keep_the_exact_v2_parser_contract(self) -> None:
+        locals_source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
+            encoding="utf-8"
+        )
+        catalog_source = (DEPLOY_ROOT / "stages" / "workloads" / "catalog.tf").read_text(
+            encoding="utf-8"
+        )
+
+        lean_routes = locals_source.split("  lean_routes = {", maxsplit=1)[1].split(
+            "\n  }", maxsplit=1
+        )[0]
+        self.assertIn('schema = "fs2-serve.nebius.ai/lean-routes/v2"', lean_routes)
+        self.assertIn("routes = [", lean_routes)
+        self.assertNotIn("qualification", lean_routes)
+        self.assertNotIn("lean-routes/v3", lean_routes)
+        self.assertIn(
+            '"qualification-projection.json" = jsonencode(local.qualification_projection)',
+            catalog_source,
+        )
+
     def test_replica_override_uses_compatible_accelerator_capacity(self) -> None:
         deployment = {
             "schema_version": 1,

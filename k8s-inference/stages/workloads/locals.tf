@@ -536,16 +536,15 @@ locals {
 
   selected_routes          = { for model_id in local.selected_model_ids : model_id => local.inventory.routes[model_id] }
   qualification_projection = jsondecode(file("${local.fs2_root}/components/control-plane/contracts/model-qualification-projection.json"))
-  lean_routes = merge({
-    schema = var.deployment_profile == "full_catalog" ? "fs2-serve.nebius.ai/lean-routes/v3" : "fs2-serve.nebius.ai/lean-routes/v2"
+  # The pinned control-plane runtime accepts the exact v2 document shape. Keep
+  # reviewed qualification evidence beside, but outside, the mounted route file.
+  lean_routes = {
+    schema = "fs2-serve.nebius.ai/lean-routes/v2"
     routes = [for model_id in sort(keys(local.selected_routes)) : merge(local.selected_routes[model_id], {
       model_id = model_id
       service  = merge(local.selected_routes[model_id].service, { namespace = local.inventory.namespace })
     })]
-    }, var.deployment_profile == "full_catalog" ? {
-    qualification = local.qualification_projection
-    } : {}
-  )
+  }
   catalog_digest = trimprefix(var.catalog_rollout_digest, "sha256:")
   serving_bindings = {
     schema         = "fs2-serve.nebius.ai/serving-bindings/v16"
