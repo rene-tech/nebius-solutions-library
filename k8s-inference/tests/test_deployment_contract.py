@@ -939,6 +939,34 @@ class DeploymentContractTests(unittest.TestCase):
             catalog_source,
         )
 
+    def test_all_catalog_dependent_immutable_config_maps_are_content_addressed(self) -> None:
+        locals_source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
+            encoding="utf-8"
+        )
+        catalog_source = (DEPLOY_ROOT / "stages" / "workloads" / "catalog.tf").read_text(
+            encoding="utf-8"
+        )
+
+        for prefix in ("serving_bindings", "platform_contract"):
+            self.assertIn(
+                f"{prefix}_config_map_digest = sha256(jsonencode(local.{prefix}_config_map_data))",
+                locals_source,
+            )
+            self.assertIn(
+                f"name      = local.{prefix}_config_map_name",
+                catalog_source,
+            )
+
+        self.assertNotIn(
+            'name      = "fs2-serve-serving-bindings-terraform"',
+            catalog_source,
+        )
+        self.assertNotIn(
+            'name      = "fs2-terraform-workloads-contract"',
+            catalog_source,
+        )
+        self.assertEqual(catalog_source.count("create_before_destroy = true"), 3)
+
     def test_replica_override_uses_compatible_accelerator_capacity(self) -> None:
         deployment = {
             "schema_version": 1,

@@ -619,6 +619,38 @@ locals {
     promotions             = {}
   }
 
+  # Every immutable ConfigMap that changes with the selected catalog is named
+  # from its complete data map. Kubernetes can then create the new revision
+  # before the control plane switches mounts and Terraform removes the old
+  # revision. Fixed names cannot be upgraded safely because immutable objects
+  # cannot be updated and create-before-destroy collides with the live name.
+  serving_bindings_config_map_data = {
+    "serving-bindings.json"         = jsonencode(local.serving_bindings)
+    "model-variant-promotions.json" = jsonencode(local.variant_promotions)
+  }
+  serving_bindings_config_map_digest = sha256(jsonencode(local.serving_bindings_config_map_data))
+  serving_bindings_config_map_name   = "fs2-serve-serving-bindings-terraform-${substr(local.serving_bindings_config_map_digest, 0, 12)}"
+
+  platform_contract_config_map_data = merge({
+    schema                                      = var.model_scaling_mode == "keda" ? "fs2-serve.nebius.ai/terraform-workloads-contract/v2" : "fs2-serve.nebius.ai/terraform-workloads-contract/v1"
+    deployment_profile                          = var.deployment_profile
+    canonical_route_count                       = tostring(length(local.selected_model_ids))
+    model_manifest_count                        = tostring(length(local.model_manifests))
+    keeper_manifest_count                       = tostring(length(local.keeper_manifests))
+    catalog_rollout_digest                      = var.catalog_rollout_digest
+    keda_scaledobject_count                     = tostring(length(local.model_scalers))
+    dcgm_provider_hostengine                    = "present-inactive"
+    dcgm_exporter_owner                         = var.deployment_profile == "full_catalog" ? "terraform" : "not-installed-minimal"
+    dcgm_exporter_version                       = var.deployment_profile == "full_catalog" ? "4.8.3" : "none"
+    dcgm_campaign_enabled                       = tostring(var.enable_dcgm_cold_start_campaign)
+    dcgm_attribution_metric_collection_interval = local.dcgm_collection_interval
+    dcgm_scrape_interval                        = local.dcgm_scrape_interval
+    dcgm_scrape_timeout                         = local.dcgm_scrape_timeout
+    run_id                                      = var.run_id
+  }, local.model_autoscaling_config_map_data)
+  platform_contract_config_map_digest = sha256(jsonencode(local.platform_contract_config_map_data))
+  platform_contract_config_map_name   = "fs2-terraform-workloads-contract-${substr(local.platform_contract_config_map_digest, 0, 12)}"
+
   common_labels = {
     "app.kubernetes.io/managed-by" = "terraform"
     "app.kubernetes.io/part-of"    = "fs2-serve"
