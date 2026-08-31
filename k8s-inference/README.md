@@ -76,9 +76,10 @@ NEBIUS_PROFILE=sandbox ./inference-stack plan --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack apply --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack status --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars
+NEBIUS_PROFILE=sandbox ./inference-stack proxy --var-file terraform.tfvars
 ```
 
-After a public deployment, `apply`, `status`, and `output` print the two
+After a deployment, `apply`, `status`, and `output` print the two
 customer entry points as top-level JSON fields. `output` is the narrowest
 machine-readable interface because it emits only these fields:
 
@@ -119,15 +120,35 @@ non-conflicting local endpoint tuple.
 
 The current public-edge fixture uses the disposable staging IP-ACME issuer, so
 its URL is an acceptance endpoint rather than a browser-trusted production
-hostname. `internal-only` does not start a permanent listener: start the
-run-scoped operator proxy described by `port_forward_contract` before using its
-loopback links.
+hostname. `internal-only` does not expose a public listener. Run
+`inference-stack proxy` after `apply` to start the two run-scoped Kubernetes
+port-forwards and the same-origin loopback proxy described by
+`port_forward_contract`. Keep that foreground process running while using the
+emitted MCP and admin links; stop it with `Ctrl-C`. Separate deployments can run
+concurrently when their `edge.port_forward_ports` tuples differ. These loopback
+URLs are reachable only from the machine running the proxy; use an SSH tunnel
+for remote testing or select `edge.mode = "public"` for a shared endpoint.
 
 `validate` creates no cloud resources. On a new run, `plan` stops after the
 infrastructure plan because foundation providers cannot safely plan until the
 new API server exists. Once a state exists, `plan` resumes at the first missing
 stage; with all three states present, it plans all stages. `apply` plans and
 applies infrastructure, foundation, and workloads in that order.
+
+The control plane currently uses an in-cluster CloudNativePG deployment. It
+does not create Nebius Managed PostgreSQL. Its database, admin bootstrap
+credential, encryption material, and PAT verifier state are therefore part of
+the cluster lifecycle and protected Terraform/Kubernetes state boundary.
+
+Use the admin interface's **Access / API keys** area to issue a revocable PAT
+with only the required models, scopes, concurrency, request, and GPU-time
+budgets. The bootstrap admin credential is a sensitive workloads Terraform
+output and is intentionally excluded from `inference-stack output`; retrieve it
+only from the protected run state for the initial operator handoff. Store a new
+PAT in an owner-only (`0600`) file because its value is returned once. Clients
+send it as `Authorization: Bearer <PAT>` to the printed OpenAI-compatible and
+MCP endpoint. Never put the bootstrap credential or PAT in tfvars, source,
+shell history, Task Deck cards, or acceptance receipts.
 
 The default run directory is a private XDG state path derived from the absolute
 tfvars path. Reusing the same path resumes the same staged deployment. To make
@@ -239,6 +260,10 @@ B300 pool and Qwen to an H100 pool entirely through tfvars; adapt its provider
 identifiers to the target region and run the live preflight. The separate
 [negative fixture](examples/heterogeneous-unqualified.tfvars) proves that a
 legacy catalog profile with no concrete pool declarations is still rejected.
+
+The secret-free [dual preemptible-cluster acceptance](LIVE_ACCEPTANCE.md)
+records the tfvars-only B300/H100 deployment exercise and its current provider
+limitations.
 
 ## Destroy
 

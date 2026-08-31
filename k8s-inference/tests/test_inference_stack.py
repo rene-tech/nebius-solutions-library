@@ -511,6 +511,99 @@ class InferenceStackTests(unittest.TestCase):
                 )
         endpoint_outputs.assert_not_called()
 
+    def test_internal_proxy_command_uses_only_terraform_owned_runtime_contract(self) -> None:
+        run_root = Path("/private/test-run")
+        port_forward = {
+            "enabled": True,
+            "bind_address": "127.0.0.1",
+            "control_plane_service": "fs2-serve-control-plane",
+            "control_plane_port": 8080,
+            "control_plane_local_port": 28080,
+            "admin_console_service": "fs2-serve-control-plane-admin-console",
+            "admin_console_port": 8080,
+            "admin_console_local_port": 28081,
+            "operator_proxy_port": 28082,
+            "application_origin": "http://localhost:28082",
+            "operator_endpoint": "http://127.0.0.1:28082",
+        }
+        outputs = {
+            "cluster_id": "mk8scluster-test",
+            "cluster_name": "k8s-inference-test",
+            "public_edge_contract": {
+                "mode": "internal-only",
+                "port_forward": port_forward,
+            },
+        }
+        with (
+            mock.patch.object(STACK, "state_ready", return_value=True),
+            mock.patch.object(STACK, "stage_environment", return_value={}),
+            mock.patch.object(STACK, "terraform_init"),
+            mock.patch.object(
+                STACK,
+                "terraform_json_output",
+                side_effect=lambda _terraform, _root, name, _environment: outputs[name],
+            ),
+            mock.patch.object(
+                STACK,
+                "ensure_kubeconfig",
+                return_value=(run_root / "kubeconfig", "namespace-uid"),
+            ),
+            mock.patch.object(
+                STACK,
+                "workload_endpoint_outputs",
+                return_value={
+                    "mcp_endpoint_url": "http://localhost:28082/mcp",
+                    "admin_web_interface_url": "http://localhost:28082/admin/",
+                },
+            ),
+        ):
+            command = STACK.internal_proxy_command(arguments(), run_root, contract())
+
+        self.assertEqual(command[0], sys.executable)
+        self.assertEqual(command[1], str(STACK.INTERNAL_EDGE_PROXY))
+        self.assertIn("k8s-inference-test", command)
+        self.assertIn("--control-plane-local-port", command)
+        self.assertIn("28080", command)
+        self.assertIn("--admin-console-local-port", command)
+        self.assertIn("28081", command)
+        self.assertIn("--operator-proxy-port", command)
+        self.assertIn("28082", command)
+        self.assertEqual(
+            command[-4:],
+            [
+                "--mcp-endpoint-url",
+                "http://localhost:28082/mcp",
+                "--admin-web-interface-url",
+                "http://localhost:28082/admin/",
+            ],
+        )
+        self.assertNotIn("admin_token", " ".join(command))
+
+    def test_internal_proxy_rejects_public_edge_contract(self) -> None:
+        with (
+            mock.patch.object(STACK, "state_ready", return_value=True),
+            mock.patch.object(STACK, "stage_environment", return_value={}),
+            mock.patch.object(STACK, "terraform_init"),
+            mock.patch.object(
+                STACK,
+                "terraform_json_output",
+                side_effect=(
+                    "mk8scluster-test",
+                    "k8s-inference-test",
+                    {"mode": "public"},
+                ),
+            ),
+            mock.patch.object(
+                STACK,
+                "ensure_kubeconfig",
+                return_value=(Path("/private/test-run/kubeconfig"), "namespace-uid"),
+            ),
+            self.assertRaisesRegex(STACK.DeploymentError, "public edge"),
+        ):
+            STACK.internal_proxy_command(
+                arguments(), Path("/private/test-run"), contract()
+            )
+
     def test_plan_resumes_at_the_first_stage_without_state(self) -> None:
         scenarios = (
             (

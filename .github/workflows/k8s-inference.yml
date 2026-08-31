@@ -54,7 +54,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install facade test dependencies
-        run: python -m pip install --disable-pip-version-check jsonschema==4.25.1
+        run: python -m pip install --disable-pip-version-check jsonschema==4.25.1 PyYAML==6.0.2
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -83,7 +83,9 @@ jobs:
         run: terraform -chdir=k8s-inference fmt -check -diff -recursive
 
       - name: Check wrapper command surface
-        run: ./k8s-inference/inference-stack --help
+        run: |
+          ./k8s-inference/inference-stack --help
+          python3 k8s-inference/stages/workloads/scripts/internal_edge_proxy.py --help
 
       - name: Test public export, provider-free facade, and wrapper
         run: python3 -m unittest discover -s k8s-inference/tests -p 'test_*.py' -v

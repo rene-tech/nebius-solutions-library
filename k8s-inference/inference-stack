@@ -21,6 +21,7 @@ REPOSITORY_ROOT = SOLUTION_ROOT.parent
 INFRA_ROOT = SOLUTION_ROOT / "stages" / "infrastructure"
 FOUNDATION_ROOT = SOLUTION_ROOT / "stages" / "foundation"
 WORKLOADS_ROOT = SOLUTION_ROOT / "stages" / "workloads"
+INTERNAL_EDGE_PROXY = WORKLOADS_ROOT / "scripts" / "internal_edge_proxy.py"
 STAGE_COMPLETION_OUTPUTS = {
     "infrastructure": "accelerator_pool_contract",
     "foundation": "cluster_contract",
@@ -1056,6 +1057,115 @@ def output_stack(
     )
 
 
+def internal_proxy_command(
+    args: argparse.Namespace,
+    run_root: Path,
+    contract: Mapping[str, Any],
+) -> list[str]:
+    """Build the non-secret command that serves an internal-only edge."""
+    if not state_ready(args.terraform, run_root, "workloads", contract):
+        raise DeploymentError(
+            "workloads are not applied; run inference-stack apply before starting the proxy"
+        )
+
+    infrastructure_environment = stage_environment(
+        run_root, "infrastructure", contract, include_secrets=False
+    )
+    infrastructure_state, _, _ = stage_paths(run_root, "infrastructure")
+    terraform_init(
+        args.terraform,
+        INFRA_ROOT,
+        infrastructure_state,
+        infrastructure_environment,
+    )
+    cluster_id = terraform_json_output(
+        args.terraform, INFRA_ROOT, "cluster_id", infrastructure_environment
+    )
+    cluster_name = terraform_json_output(
+        args.terraform, INFRA_ROOT, "cluster_name", infrastructure_environment
+    )
+    public_edge = terraform_json_output(
+        args.terraform,
+        INFRA_ROOT,
+        "public_edge_contract",
+        infrastructure_environment,
+    )
+    kubeconfig, _ = ensure_kubeconfig(
+        nebius=args.nebius,
+        nebius_profile=args.nebius_profile,
+        kubectl=args.kubectl,
+        run_root=run_root,
+        cluster_id=cluster_id,
+        cluster_name=cluster_name,
+    )
+
+    if (
+        not isinstance(public_edge, dict)
+        or public_edge.get("mode") != "internal-only"
+    ):
+        raise DeploymentError(
+            "this deployment has a public edge and does not require an operator proxy"
+        )
+    port_forward = public_edge.get("port_forward")
+    if (
+        not isinstance(port_forward, dict)
+        or port_forward.get("enabled") is not True
+    ):
+        raise DeploymentError("the Terraform port-forward contract is malformed")
+    expected = {
+        "bind_address": "127.0.0.1",
+        "control_plane_service": "fs2-serve-control-plane",
+        "control_plane_port": 8080,
+        "admin_console_service": "fs2-serve-control-plane-admin-console",
+        "admin_console_port": 8080,
+    }
+    if any(port_forward.get(key) != value for key, value in expected.items()):
+        raise DeploymentError("the Terraform port-forward contract is unsupported")
+    try:
+        local_ports = [
+            int(port_forward["control_plane_local_port"]),
+            int(port_forward["admin_console_local_port"]),
+            int(port_forward["operator_proxy_port"]),
+        ]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DeploymentError("the Terraform port-forward contract is malformed") from exc
+    application_origin = f"http://localhost:{local_ports[2]}"
+    operator_endpoint = f"http://127.0.0.1:{local_ports[2]}"
+    if (
+        port_forward.get("application_origin") != application_origin
+        or port_forward.get("operator_endpoint") != operator_endpoint
+    ):
+        raise DeploymentError("the Terraform loopback origins do not match its ports")
+    endpoints = workload_endpoint_outputs(args.terraform, run_root, contract)
+    expected_endpoints = {
+        "mcp_endpoint_url": f"{application_origin}/mcp",
+        "admin_web_interface_url": f"{application_origin}/admin/",
+    }
+    if endpoints != expected_endpoints:
+        raise DeploymentError("the workload endpoint outputs do not match the edge contract")
+
+    return [
+        sys.executable,
+        str(INTERNAL_EDGE_PROXY),
+        "--kubeconfig",
+        str(kubeconfig),
+        "--context",
+        cluster_name,
+        "--kubectl",
+        args.kubectl,
+        "--control-plane-local-port",
+        str(local_ports[0]),
+        "--admin-console-local-port",
+        str(local_ports[1]),
+        "--operator-proxy-port",
+        str(local_ports[2]),
+        "--mcp-endpoint-url",
+        endpoints["mcp_endpoint_url"],
+        "--admin-web-interface-url",
+        endpoints["admin_web_interface_url"],
+    ]
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Plan, apply, inspect, or destroy Kubernetes inference from one terraform.tfvars file."
@@ -1070,6 +1180,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "destroy",
             "status",
             "output",
+            "proxy",
         ),
     )
     parser.add_argument(
@@ -1118,6 +1229,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ) from exc
 
         contract, _ = validate_configuration(args.terraform, variable_file, run_root)
+        proxy_arguments: list[str] | None = None
         commit = source_commit()
         if args.command == "validate":
             validate_stage_roots(args.terraform, run_root)
@@ -1145,8 +1257,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             destroy_stack(args, run_root, contract, commit)
         elif args.command == "output":
             output_stack(args, run_root, contract)
+        elif args.command == "proxy":
+            proxy_arguments = internal_proxy_command(args, run_root, contract)
         else:
             status_stack(args, run_root, contract)
+    if proxy_arguments is not None:
+        try:
+            run(proxy_arguments, env=clean_environment())
+        except KeyboardInterrupt:
+            pass
     return 0
 
 

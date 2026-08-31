@@ -19,6 +19,7 @@ import urllib.request
 from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 BIND_ADDRESS = "127.0.0.1"
@@ -34,6 +35,8 @@ ADMIN_SERVICE = "fs2-serve-control-plane-admin-console"
 SERVICE_PORT = 8080
 MAX_REQUEST_BYTES = 16 * 1024 * 1024
 MAX_RESPONSE_BYTES = 128 * 1024 * 1024
+STREAM_CHUNK_BYTES = 64 * 1024
+UPSTREAM_TIMEOUT_SECONDS = 600
 PRIVATE_FILE_MAX_BYTES = 16 * 1024
 PROTEINMPNN_SEMANTIC_REQUEST_MAX_BYTES = 96 * 1024
 ACCEPTANCE_TIMEOUT_SECONDS = 7200
@@ -85,13 +88,14 @@ def configure_local_ports(
 
 def upstream_port(path: str) -> int:
     """Route browser assets to the console and API/MCP traffic to control."""
+    path = urlsplit(path).path
+    if path == "/admin/api" or path.startswith("/admin/api/"):
+        return CONTROL_PORT
+    if path == "/admin/v1" or path.startswith("/admin/v1/"):
+        return CONTROL_PORT
     if path == "/healthz":
         return ADMIN_PORT
-    if path == "/admin" or (
-        path.startswith("/admin/")
-        and path != "/admin/api"
-        and not path.startswith("/admin/api/")
-    ):
+    if path == "/admin" or path.startswith("/admin/"):
         return ADMIN_PORT
     return CONTROL_PORT
 
@@ -102,6 +106,9 @@ class SameOriginProxy(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:  # noqa: N802
+        self._forward()
+
+    def do_HEAD(self) -> None:  # noqa: N802
         self._forward()
 
     def do_POST(self) -> None:  # noqa: N802
@@ -133,6 +140,8 @@ class SameOriginProxy(BaseHTTPRequestHandler):
         return self.rfile.read(length) if length else b""
 
     def _forward(self) -> None:
+        connection: http.client.HTTPConnection | None = None
+        response_started = False
         try:
             body = self._body()
             headers = {
@@ -145,10 +154,35 @@ class SameOriginProxy(BaseHTTPRequestHandler):
             connection = http.client.HTTPConnection(
                 BIND_ADDRESS,
                 upstream_port(self.path),
-                timeout=30,
+                timeout=UPSTREAM_TIMEOUT_SECONDS,
             )
             connection.request(self.command, self.path, body=body, headers=headers)
             response = connection.getresponse()
+            content_type = response.getheader("Content-Type", "")
+            stream_response = (
+                self.command != "HEAD"
+                and content_type.partition(";")[0].strip().lower()
+                == "text/event-stream"
+            )
+
+            if stream_response:
+                self.send_response(response.status)
+                for name, value in response.getheaders():
+                    if name.lower() not in HOP_BY_HOP | {"content-length"}:
+                        self.send_header(name, value)
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                self.wfile.flush()
+                response_started = True
+                while chunk := response.read1(STREAM_CHUNK_BYTES):
+                    self.wfile.write(f"{len(chunk):x}\r\n".encode("ascii"))
+                    self.wfile.write(chunk)
+                    self.wfile.write(b"\r\n")
+                    self.wfile.flush()
+                self.wfile.write(b"0\r\n\r\n")
+                self.wfile.flush()
+                return
+
             payload = response.read(MAX_RESPONSE_BYTES + 1)
             if len(payload) > MAX_RESPONSE_BYTES:
                 raise ValueError("response body exceeds the bounded proxy limit")
@@ -158,10 +192,17 @@ class SameOriginProxy(BaseHTTPRequestHandler):
                     self.send_header(name, value)
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
-            self.wfile.write(payload)
-            connection.close()
+            response_started = True
+            if self.command != "HEAD":
+                self.wfile.write(payload)
         except (OSError, http.client.HTTPException, ValueError):
-            self.send_error(502, "loopback upstream unavailable")
+            if response_started:
+                self.close_connection = True
+            else:
+                self.send_error(502, "loopback upstream unavailable")
+        finally:
+            if connection is not None:
+                connection.close()
 
 
 def checked_private_file(
@@ -180,9 +221,16 @@ def checked_private_file(
     return value
 
 
-def port_forward_command(kubeconfig: Path, context: str, service: str, local_port: int) -> list[str]:
+def port_forward_command(
+    kubeconfig: Path,
+    context: str,
+    service: str,
+    local_port: int,
+    *,
+    kubectl: str = "kubectl",
+) -> list[str]:
     return [
-        "kubectl",
+        kubectl,
         "--kubeconfig",
         str(kubeconfig),
         "--context",
@@ -851,7 +899,8 @@ def main() -> None:
         print(json.dumps(accept(admin_token, semantic, deadline), sort_keys=True))
     finally:
         if server is not None:
-            server.shutdown()
+            if server_thread is not None:
+                server.shutdown()
             server.server_close()
         if server_thread is not None:
             server_thread.join(timeout=5)
