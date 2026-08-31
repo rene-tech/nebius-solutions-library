@@ -815,7 +815,9 @@ class DeploymentContractTests(unittest.TestCase):
             {
                 "grafana_bootstrap": True,
                 "ngc_api_key": False,
-                "nvcr_dockerconfig": False,
+                # This is the one-time full-catalog DCGM exporter credential,
+                # not a requirement introduced by Cosmos or Qwen.
+                "nvcr_dockerconfig": True,
             },
         )
 

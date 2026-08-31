@@ -295,7 +295,7 @@ locals {
     secret_requirements = {
       grafana_bootstrap = true
       ngc_api_key       = contains(local.selected_model_required_secrets, "ngc_api_key")
-      nvcr_dockerconfig = contains(local.selected_model_required_secrets, "nvcr_dockerconfigjson")
+      nvcr_dockerconfig = local.model_profile == "full_catalog" || contains(local.selected_model_required_secrets, "nvcr_dockerconfigjson")
     }
   }
   deployment_contract = merge(local.deployment_contract_payload, {
