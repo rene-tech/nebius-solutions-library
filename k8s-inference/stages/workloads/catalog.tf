@@ -18,7 +18,7 @@ resource "kubernetes_config_map_v1" "serving_bindings" {
 
 resource "kubernetes_config_map_v1" "lean_routes" {
   metadata {
-    name      = "fs2-serve-lean-routes-terraform"
+    name      = local.lean_routes_config_map_name
     namespace = "fs2-system"
     labels    = merge(local.common_labels, { "app.kubernetes.io/component" = "model-routing" })
     annotations = {
@@ -27,11 +27,12 @@ resource "kubernetes_config_map_v1" "lean_routes" {
     }
   }
   immutable = true
-  data = {
-    # The Helm release mounts only lean-routes.json. Qualification remains
-    # available as retained evidence without broadening the runtime schema.
-    "lean-routes.json"              = jsonencode(local.lean_routes)
-    "qualification-projection.json" = jsonencode(local.qualification_projection)
+  # The Helm release mounts only lean-routes.json. Qualification remains
+  # available as retained evidence without broadening the runtime schema.
+  data = local.lean_routes_config_map_data
+
+  lifecycle {
+    create_before_destroy = true
   }
   depends_on = [terraform_data.cluster_contract]
 }

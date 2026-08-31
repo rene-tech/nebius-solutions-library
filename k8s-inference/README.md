@@ -36,7 +36,9 @@ The mounted `lean-routes.json` intentionally uses the exact two-field v2
 runtime contract (`schema` and `routes`) accepted by the pinned control-plane
 image. The reviewed qualification projection is retained in the same immutable
 ConfigMap under `qualification-projection.json`, but is not mounted into the
-runtime route parser.
+runtime route parser. The ConfigMap name includes a digest of its complete data
+map, so route changes create a new object and roll the Helm workload without
+reusing kubelet-cached immutable content.
 
 The checked-in accelerator catalog retains reviewed B300 fixtures and a
 current Nebius GPU inventory for examples and tests. It is not an allowlist for

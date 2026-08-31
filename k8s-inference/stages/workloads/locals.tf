@@ -545,7 +545,13 @@ locals {
       service  = merge(local.selected_routes[model_id].service, { namespace = local.inventory.namespace })
     })]
   }
-  catalog_digest = trimprefix(var.catalog_rollout_digest, "sha256:")
+  lean_routes_config_map_data = {
+    "lean-routes.json"              = jsonencode(local.lean_routes)
+    "qualification-projection.json" = jsonencode(local.qualification_projection)
+  }
+  lean_routes_config_map_digest = sha256(jsonencode(local.lean_routes_config_map_data))
+  lean_routes_config_map_name   = "fs2-serve-lean-routes-terraform-${substr(local.lean_routes_config_map_digest, 0, 12)}"
+  catalog_digest                = trimprefix(var.catalog_rollout_digest, "sha256:")
   serving_bindings = {
     schema         = "fs2-serve.nebius.ai/serving-bindings/v16"
     catalog_digest = local.catalog_digest

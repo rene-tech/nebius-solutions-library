@@ -373,6 +373,9 @@ class DeploymentContractTests(unittest.TestCase):
         catalog_source = (DEPLOY_ROOT / "stages" / "workloads" / "catalog.tf").read_text(
             encoding="utf-8"
         )
+        control_plane_source = (
+            DEPLOY_ROOT / "stages" / "workloads" / "control_plane.tf"
+        ).read_text(encoding="utf-8")
 
         lean_routes = locals_source.split("  lean_routes = {", maxsplit=1)[1].split(
             "\n  }", maxsplit=1
@@ -383,6 +386,40 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertNotIn("lean-routes/v3", lean_routes)
         self.assertIn(
             '"qualification-projection.json" = jsonencode(local.qualification_projection)',
+            locals_source,
+        )
+        self.assertIn("data = local.lean_routes_config_map_data", catalog_source)
+        self.assertIn(
+            "configMapName = kubernetes_config_map_v1.lean_routes.metadata[0].name",
+            control_plane_source,
+        )
+
+    def test_lean_route_config_map_name_covers_its_complete_data_map(self) -> None:
+        locals_source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(
+            encoding="utf-8"
+        )
+        catalog_source = (DEPLOY_ROOT / "stages" / "workloads" / "catalog.tf").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "lean_routes_config_map_digest = sha256(jsonencode(local.lean_routes_config_map_data))",
+            locals_source,
+        )
+        self.assertIn(
+            'lean_routes_config_map_name   = "fs2-serve-lean-routes-terraform-${substr(local.lean_routes_config_map_digest, 0, 12)}"',
+            locals_source,
+        )
+        self.assertIn(
+            "name      = local.lean_routes_config_map_name",
+            catalog_source,
+        )
+        self.assertIn(
+            "data = local.lean_routes_config_map_data",
+            catalog_source,
+        )
+        self.assertIn(
+            "lifecycle {\n    create_before_destroy = true\n  }",
             catalog_source,
         )
 
