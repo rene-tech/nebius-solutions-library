@@ -133,7 +133,7 @@ The top-level variable is `deployment`:
 | `accelerator_pools` | Open map of GPU platform/preset, capacity, topology, driver, local-storage, and node-floor/ceiling settings. |
 | `models` | Profile or explicit selection, KEDA/static scaling, hot-model floor, and per-model scaling overrides. |
 | `storage.shared_cache` | Optional shared model-cache size/type/block-size override. |
-| `artifacts.external_registry_ids` | Same-tenant registries whose immutable images need run-scoped node-pull viewer access, including registries in another project or region. |
+| `artifacts.external_registry_ids` | Same-tenant registries whose immutable images need run-scoped node-pull viewer access. Terraform creates a project-scoped reader group beside each registry, including registries in another project or region. |
 | `edge` | `internal-only` or bounded public ingress configuration. |
 | `observability` | DCGM cold-start campaign and optional external Grafana publication. |
 | `secrets` | Environment-variable names and Kubernetes Secret key references, never secret values. |

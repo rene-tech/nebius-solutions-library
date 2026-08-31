@@ -72,8 +72,11 @@ output "owned_resource_ids" {
     shared_cache        = nebius_compute_v1_filesystem.cache.id
     nodepull_sa         = nebius_iam_v1_service_account.nodepull.id
     target_reader_group = nebius_iam_v1_group.target_registry_readers.id
-    worker_sg           = nebius_vpc_v1_security_group.workers.id
-    gateway_allocation  = try(one(nebius_vpc_v1_allocation.gateway[*].id), null)
+    external_reader_groups = {
+      for registry_id, group in nebius_iam_v1_group.external_registry_readers : registry_id => group.id
+    }
+    worker_sg          = nebius_vpc_v1_security_group.workers.id
+    gateway_allocation = try(one(nebius_vpc_v1_allocation.gateway[*].id), null)
   }
 }
 

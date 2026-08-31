@@ -8,11 +8,10 @@ resource "nebius_iam_v1_service_account" "nodepull" {
 }
 
 resource "nebius_iam_v1_group" "target_registry_readers" {
-  # A project-scoped group can receive permits only for resources in that
-  # project. Keep the run-scoped group at the target project's tenant so the
-  # node identity can pull immutable images from any explicitly allowlisted
-  # registry in the same tenant, including registries in another region.
-  parent_id = data.nebius_iam_v2_project.target.parent_id
+  # Access permits inherit the group's scope, so the run-owned registry uses a
+  # group in the target project. External registries receive their own groups
+  # in the projects that own them below; no tenant-level IAM write is needed.
+  parent_id = data.nebius_iam_v2_project.target.id
   name      = "${local.resource_name}-target-readers"
   labels    = merge(local.common_labels, { purpose = "target-registry-read" })
 
@@ -30,10 +29,27 @@ resource "nebius_iam_v1_access_permit" "nodepull_registry" {
   role        = "viewer"
 }
 
-resource "nebius_iam_v1_access_permit" "nodepull_external_registry" {
-  for_each = var.external_registry_ids
+resource "nebius_iam_v1_group" "external_registry_readers" {
+  for_each = data.nebius_registry_v1_registry.external
 
-  parent_id   = nebius_iam_v1_group.target_registry_readers.id
-  resource_id = each.value
+  parent_id = each.value.parent_id
+  name      = "${local.resource_name}-external-${substr(sha256(each.key), 0, 8)}-readers"
+  labels    = merge(local.common_labels, { purpose = "external-registry-read" })
+
+  depends_on = [terraform_data.target_contract]
+}
+
+resource "nebius_iam_v1_group_membership" "nodepull_external_registry" {
+  for_each = data.nebius_registry_v1_registry.external
+
+  parent_id = nebius_iam_v1_group.external_registry_readers[each.key].id
+  member_id = nebius_iam_v1_service_account.nodepull.id
+}
+
+resource "nebius_iam_v1_access_permit" "nodepull_external_registry" {
+  for_each = data.nebius_registry_v1_registry.external
+
+  parent_id   = nebius_iam_v1_group.external_registry_readers[each.key].id
+  resource_id = each.key
   role        = "viewer"
 }

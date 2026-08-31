@@ -150,17 +150,18 @@ class DisposableTerraformContractTests(unittest.TestCase):
             "targets": {},
         })
 
-    def test_tenant_scoped_registry_pull_and_public_edge_are_owned(self) -> None:
+    def test_project_scoped_registry_pull_and_public_edge_are_owned(self) -> None:
         iam = (ROOT / "iam.tf").read_text(encoding="utf-8")
         data = (ROOT / "data.tf").read_text(encoding="utf-8")
+        cluster = (ROOT / "cluster.tf").read_text(encoding="utf-8")
         network = (ROOT / "network.tf").read_text(encoding="utf-8")
+        outputs = (ROOT / "outputs.tf").read_text(encoding="utf-8")
         self.assertIn(
             'resource "nebius_iam_v1_group" "target_registry_readers" {\n'
-            "  # A project-scoped group can receive permits only for resources in that\n"
-            "  # project. Keep the run-scoped group at the target project's tenant so the\n"
-            "  # node identity can pull immutable images from any explicitly allowlisted\n"
-            "  # registry in the same tenant, including registries in another region.\n"
-            "  parent_id = data.nebius_iam_v2_project.target.parent_id",
+            "  # Access permits inherit the group's scope, so the run-owned registry uses a\n"
+            "  # group in the target project. External registries receive their own groups\n"
+            "  # in the projects that own them below; no tenant-level IAM write is needed.\n"
+            "  parent_id = data.nebius_iam_v2_project.target.id",
             iam,
         )
         self.assertIn(
@@ -177,24 +178,52 @@ class DisposableTerraformContractTests(unittest.TestCase):
             iam,
         )
         self.assertIn(
-            'resource "nebius_iam_v1_access_permit" "nodepull_external_registry" {\n'
+            'data "nebius_registry_v1_registry" "external" {\n'
             "  for_each = var.external_registry_ids\n\n"
-            "  parent_id   = nebius_iam_v1_group.target_registry_readers.id\n"
-            "  resource_id = each.value\n"
+            "  id = each.value",
+            data,
+        )
+        self.assertIn(
+            'resource "nebius_iam_v1_group" "external_registry_readers" {\n'
+            "  for_each = data.nebius_registry_v1_registry.external\n\n"
+            "  parent_id = each.value.parent_id",
+            iam,
+        )
+        self.assertIn(
+            'resource "nebius_iam_v1_group_membership" "nodepull_external_registry" {\n'
+            "  for_each = data.nebius_registry_v1_registry.external\n\n"
+            "  parent_id = nebius_iam_v1_group.external_registry_readers[each.key].id\n"
+            "  member_id = nebius_iam_v1_service_account.nodepull.id",
+            iam,
+        )
+        self.assertIn(
+            'resource "nebius_iam_v1_access_permit" "nodepull_external_registry" {\n'
+            "  for_each = data.nebius_registry_v1_registry.external\n\n"
+            "  parent_id   = nebius_iam_v1_group.external_registry_readers[each.key].id\n"
+            "  resource_id = each.key\n"
             '  role        = "viewer"',
             iam,
         )
         self.assertNotIn(
-            "parent_id = data.nebius_iam_v2_project.target.id",
+            "parent_id = data.nebius_iam_v2_project.target.parent_id",
             iam,
         )
         self.assertNotIn(
             "parent_id   = nebius_iam_v1_service_account.nodepull.id",
             iam,
         )
-        self.assertNotIn("source_registry_owner", data)
-        self.assertNotIn("source_registry_readers", iam)
-        self.assertNotIn("nodepull_source_registry", iam)
+        self.assertIn(
+            "    nebius_iam_v1_group_membership.nodepull_external_registry,\n"
+            "    nebius_iam_v1_access_permit.nodepull_registry,\n"
+            "    nebius_iam_v1_access_permit.nodepull_external_registry,",
+            cluster,
+        )
+        self.assertIn(
+            "    external_reader_groups = {\n"
+            "      for registry_id, group in nebius_iam_v1_group.external_registry_readers : registry_id => group.id\n"
+            "    }",
+            outputs,
+        )
         self.assertIn('resource "nebius_vpc_v1_allocation" "gateway"', network)
         self.assertIn(
             'resource "nebius_vpc_v1_security_rule" "workers_public_edge_ingress"',

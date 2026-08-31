@@ -13,13 +13,17 @@ run-owned resources:
 
 - a Nebius Managed Kubernetes control plane and regular CPU system pool;
 - one node group for each selected accelerator pool or NVLink rack;
-- the node-pull service account and narrowly scoped registry-reader group;
+- the node-pull service account and narrowly scoped, project-local
+  registry-reader groups;
 - a solution registry, shared model-cache filesystem, and worker security
   group; and
 - an optional public IPv4 allocation when public edge mode is selected.
 
 It does not raise quotas, change service limits, or adopt resources from
 another deployment. Capacity and quota failures are returned to the operator.
+Each external registry is resolved by ID and receives a reader group in its
+own project. This permits same-tenant, cross-project image pulls without a
+tenant-scoped group or tenant-level IAM write.
 
 ## Inputs and accelerator pools
 

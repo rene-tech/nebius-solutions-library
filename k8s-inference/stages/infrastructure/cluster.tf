@@ -125,6 +125,7 @@ resource "nebius_mk8s_v1_node_group" "system" {
 
   depends_on = [
     nebius_iam_v1_group_membership.nodepull_target_registry,
+    nebius_iam_v1_group_membership.nodepull_external_registry,
     nebius_iam_v1_access_permit.nodepull_registry,
     nebius_iam_v1_access_permit.nodepull_external_registry,
     nebius_compute_v1_filesystem.cache,

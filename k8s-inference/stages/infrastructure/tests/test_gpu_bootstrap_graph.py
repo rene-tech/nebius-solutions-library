@@ -84,6 +84,17 @@ class GpuBootstrapGraphTests(unittest.TestCase):
             with self.subTest(module=module):
                 self.assertIn((f"[root] module.{module} (expand)", system), self.edges)
 
+    def test_system_capacity_waits_for_all_registry_access(self) -> None:
+        system = "[root] nebius_mk8s_v1_node_group.system (expand)"
+        for resource in (
+            "nebius_iam_v1_group_membership.nodepull_target_registry",
+            "nebius_iam_v1_group_membership.nodepull_external_registry",
+            "nebius_iam_v1_access_permit.nodepull_registry",
+            "nebius_iam_v1_access_permit.nodepull_external_registry",
+        ):
+            with self.subTest(resource=resource):
+                self.assertIn((system, f"[root] {resource} (expand)"), self.edges)
+
     def test_gpu_capacity_waits_for_software_release_completion(self) -> None:
         for node_group in ("gpu", "nvlink_rack"):
             source = f"[root] nebius_mk8s_v1_node_group.{node_group} (expand)"

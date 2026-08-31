@@ -2,6 +2,12 @@ data "nebius_iam_v2_project" "target" {
   id = var.project_id
 }
 
+data "nebius_registry_v1_registry" "external" {
+  for_each = var.external_registry_ids
+
+  id = each.value
+}
+
 data "nebius_vpc_v1_network" "target" {
   parent_id = var.project_id
   name      = local.selected_target.network_name
