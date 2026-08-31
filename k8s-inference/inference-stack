@@ -259,6 +259,22 @@ def planned_output(document: Mapping[str, Any], name: str) -> Any:
         raise DeploymentError(f"configuration plan did not produce output {name!r}") from exc
 
 
+def plan_changes_managed_resources_or_outputs(document: Mapping[str, Any]) -> bool:
+    """Return whether a stage handoff must converge before its consumer plans."""
+    unchanged_actions = (["no-op"], ["read"])
+    for resource in document.get("resource_changes", []):
+        if resource.get("mode", "managed") != "managed":
+            continue
+        actions = resource.get("change", {}).get("actions", [])
+        if actions not in unchanged_actions:
+            return True
+    for output in document.get("output_changes", {}).values():
+        actions = output.get("actions", [])
+        if actions not in unchanged_actions:
+            return True
+    return False
+
+
 def source_commit() -> str:
     result = run(
         ["git", "-C", str(REPOSITORY_ROOT), "rev-parse", "HEAD"],
@@ -1314,6 +1330,19 @@ def plan_stack(
         print("Planned infrastructure. Apply it before foundation can be planned against the new API server.")
         return
 
+    _, infrastructure_plan, _ = plan_stage(
+        args.terraform,
+        run_root=run_root,
+        stage="infrastructure",
+        contract=contract,
+        variable_file=infrastructure_variables,
+    )
+    if plan_changes_managed_resources_or_outputs(infrastructure_plan):
+        print(
+            "Planned infrastructure changes. Apply infrastructure and rerun plan before planning foundation."
+        )
+        return
+
     dynamic = infrastructure_outputs(
         args.terraform,
         run_root,
@@ -1348,6 +1377,19 @@ def plan_stack(
         print("Planned foundation. Apply it before custom resources can be planned.")
         return
 
+    _, foundation_plan, _ = plan_stage(
+        args.terraform,
+        run_root=run_root,
+        stage="foundation",
+        contract=contract,
+        variable_file=foundation_variables,
+    )
+    if plan_changes_managed_resources_or_outputs(foundation_plan):
+        print(
+            "Planned foundation changes. Apply foundation and rerun plan before planning workloads."
+        )
+        return
+
     if not state_ready(args.terraform, run_root, "workloads", contract):
         plan_stage(
             args.terraform,
@@ -1359,19 +1401,14 @@ def plan_stack(
         print("Planned workloads.")
         return
 
-    for stage, variable_file in (
-        ("infrastructure", infrastructure_variables),
-        ("foundation", foundation_variables),
-        ("workloads", workloads_variables),
-    ):
-        plan_stage(
-            args.terraform,
-            run_root=run_root,
-            stage=stage,
-            contract=contract,
-            variable_file=variable_file,
-        )
-    print("Planned all three existing states.")
+    plan_stage(
+        args.terraform,
+        run_root=run_root,
+        stage="workloads",
+        contract=contract,
+        variable_file=workloads_variables,
+    )
+    print("Planned all three existing states after upstream handoffs converged.")
 
 
 def destroy_stack(

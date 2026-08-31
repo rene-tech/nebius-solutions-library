@@ -132,9 +132,18 @@ for remote testing or select `edge.mode = "public"` for a shared endpoint.
 
 `validate` creates no cloud resources. On a new run, `plan` stops after the
 infrastructure plan because foundation providers cannot safely plan until the
-new API server exists. Once a state exists, `plan` resumes at the first missing
-stage; with all three states present, it plans all stages. `apply` plans and
-applies infrastructure, foundation, and workloads in that order.
+new API server exists. Once upstream state exists, `plan` first checks that
+state for changes before it plans the first missing downstream stage. With all
+three states present, it plans them through the same convergence barriers.
+`apply` plans and applies infrastructure, foundation, and workloads in that
+order, so a normal wrapper `apply` converges the complete stack in one command.
+
+Existing states also converge in dependency order. If the infrastructure plan
+changes a managed resource or output, `plan` stops and asks the operator to
+apply infrastructure before it plans foundation. It uses the same barrier
+between foundation and workloads. This prevents a downstream provider from
+planning against an old remote-state or in-cluster contract; rerun `plan` after
+each requested upstream apply. Planning never mirrors registry content.
 
 The default `artifacts.registry_policy.mode = "regional-mirror"` makes the
 Terraform-created registry useful: after infrastructure apply, the wrapper

@@ -683,11 +683,11 @@ class InferenceStackTests(unittest.TestCase):
             ),
             (
                 {"infrastructure": True, "foundation": False, "workloads": False},
-                ["foundation"],
+                ["infrastructure", "foundation"],
             ),
             (
                 {"infrastructure": True, "foundation": True, "workloads": False},
-                ["workloads"],
+                ["infrastructure", "foundation", "workloads"],
             ),
             (
                 {"infrastructure": True, "foundation": True, "workloads": True},
@@ -695,6 +695,21 @@ class InferenceStackTests(unittest.TestCase):
             ),
         )
         run_root = Path("/private/test-run")
+
+        def no_op_plan(*_args, **kwargs):
+            return (
+                Path(f"/{kwargs['stage']}.tfplan"),
+                {
+                    "resource_changes": [
+                        {"mode": "managed", "change": {"actions": ["no-op"]}}
+                    ],
+                    "output_changes": {
+                        "contract": {"actions": ["no-op"]}
+                    },
+                },
+                {},
+            )
+
         for readiness, expected_stages in scenarios:
             with self.subTest(readiness=readiness):
                 with (
@@ -723,7 +738,9 @@ class InferenceStackTests(unittest.TestCase):
                             Path("/workloads.json"),
                         ),
                     ),
-                    mock.patch.object(STACK, "plan_stage") as plan_stage,
+                    mock.patch.object(
+                        STACK, "plan_stage", side_effect=no_op_plan
+                    ) as plan_stage,
                     mock.patch.object(STACK, "mirror_selected_images") as mirror_images,
                     redirect_stdout(io.StringIO()),
                 ):
@@ -731,6 +748,144 @@ class InferenceStackTests(unittest.TestCase):
                 self.assertEqual(
                     [call.kwargs["stage"] for call in plan_stage.call_args_list],
                     expected_stages,
+                )
+                mirror_images.assert_not_called()
+
+    def test_existing_states_stop_after_changed_infrastructure_plan(self) -> None:
+        run_root = Path("/private/test-run")
+        changed_documents = (
+            {
+                "resource_changes": [
+                    {"mode": "managed", "change": {"actions": ["update"]}}
+                ],
+                "output_changes": {},
+            },
+            {
+                "resource_changes": [
+                    {"mode": "data", "change": {"actions": ["read"]}}
+                ],
+                "output_changes": {
+                    "accelerator_pool_contract": {"actions": ["update"]}
+                },
+            },
+        )
+        for changed in changed_documents:
+            for foundation_ready in (False, True):
+                with self.subTest(
+                    changed=changed, foundation_ready=foundation_ready
+                ):
+                    readiness = {
+                        "infrastructure": True,
+                        "foundation": foundation_ready,
+                        "workloads": foundation_ready,
+                    }
+                    with (
+                        mock.patch.object(
+                            STACK,
+                            "write_infrastructure_variables",
+                            return_value=Path("/infra.json"),
+                        ),
+                        mock.patch.object(
+                            STACK,
+                            "state_ready",
+                            side_effect=lambda _terraform, _root, stage, _contract: readiness[
+                                stage
+                            ],
+                        ),
+                        mock.patch.object(
+                            STACK,
+                            "infrastructure_outputs",
+                            return_value=dynamic_outputs(run_root),
+                        ) as infrastructure_outputs,
+                        mock.patch.object(
+                            STACK,
+                            "write_downstream_variables",
+                            return_value=(
+                                Path("/foundation.json"),
+                                Path("/workloads.json"),
+                            ),
+                        ) as downstream,
+                        mock.patch.object(
+                            STACK,
+                            "plan_stage",
+                            return_value=(Path("/infra.tfplan"), changed, {}),
+                        ) as plan_stage,
+                        mock.patch.object(
+                            STACK, "mirror_selected_images"
+                        ) as mirror_images,
+                        redirect_stdout(io.StringIO()),
+                    ):
+                        STACK.plan_stack(arguments(), run_root, contract(), "d" * 40)
+                self.assertEqual(
+                    [call.kwargs["stage"] for call in plan_stage.call_args_list],
+                    ["infrastructure"],
+                )
+                infrastructure_outputs.assert_not_called()
+                downstream.assert_not_called()
+                mirror_images.assert_not_called()
+
+    def test_existing_states_stop_after_changed_foundation_plan(self) -> None:
+        run_root = Path("/private/test-run")
+        no_op = {
+            "resource_changes": [
+                {"mode": "managed", "change": {"actions": ["no-op"]}}
+            ],
+            "output_changes": {"contract": {"actions": ["no-op"]}},
+        }
+        changed_foundation = {
+            "resource_changes": [],
+            "output_changes": {"cluster_contract": {"actions": ["update"]}},
+        }
+
+        def staged_plan(*_args, **kwargs):
+            document = no_op if kwargs["stage"] == "infrastructure" else changed_foundation
+            return Path(f"/{kwargs['stage']}.tfplan"), document, {}
+
+        for workloads_ready in (False, True):
+            with self.subTest(workloads_ready=workloads_ready):
+                readiness = {
+                    "infrastructure": True,
+                    "foundation": True,
+                    "workloads": workloads_ready,
+                }
+                with (
+                    mock.patch.object(
+                        STACK,
+                        "write_infrastructure_variables",
+                        return_value=Path("/infra.json"),
+                    ),
+                    mock.patch.object(
+                        STACK,
+                        "state_ready",
+                        side_effect=lambda _terraform, _root, stage, _contract: readiness[
+                            stage
+                        ],
+                    ),
+                    mock.patch.object(
+                        STACK,
+                        "infrastructure_outputs",
+                        return_value=dynamic_outputs(run_root),
+                    ),
+                    mock.patch.object(
+                        STACK,
+                        "write_downstream_variables",
+                        return_value=(
+                            Path("/foundation.json"),
+                            Path("/workloads.json"),
+                        ),
+                    ),
+                    mock.patch.object(
+                        STACK, "plan_stage", side_effect=staged_plan
+                    ) as plan_stage,
+                    mock.patch.object(
+                        STACK, "mirror_selected_images"
+                    ) as mirror_images,
+                    redirect_stdout(io.StringIO()),
+                ):
+                    STACK.plan_stack(arguments(), run_root, contract(), "d" * 40)
+                self.assertEqual(
+                    [call.kwargs["stage"] for call in plan_stage.call_args_list],
+                    ["infrastructure", "foundation"],
                 )
                 mirror_images.assert_not_called()
 
@@ -1037,9 +1192,24 @@ class InferenceStackTests(unittest.TestCase):
                 STACK, "write_infrastructure_variables", return_value=Path("/infra.json")
             ),
             mock.patch.object(STACK, "state_ready", return_value=True),
-            mock.patch.object(STACK, "infrastructure_outputs", return_value=dynamic),
+            mock.patch.object(
+                STACK, "infrastructure_outputs", return_value=dynamic
+            ) as infrastructure_outputs,
             mock.patch.object(STACK, "write_downstream_variables") as downstream,
-            mock.patch.object(STACK, "plan_stage") as plan_stage,
+            mock.patch.object(
+                STACK,
+                "plan_stage",
+                return_value=(
+                    Path("/infra.tfplan"),
+                    {
+                        "resource_changes": [],
+                        "output_changes": {
+                            "accelerator_pool_contract": {"actions": ["update"]}
+                        },
+                    },
+                    {},
+                ),
+            ) as plan_stage,
             mock.patch.object(STACK, "mirror_selected_images") as mirror_images,
             redirect_stdout(io.StringIO()),
         ):
@@ -1048,6 +1218,7 @@ class InferenceStackTests(unittest.TestCase):
             [call.kwargs["stage"] for call in plan_stage.call_args_list],
             ["infrastructure"],
         )
+        infrastructure_outputs.assert_not_called()
         downstream.assert_not_called()
         mirror_images.assert_not_called()
 
