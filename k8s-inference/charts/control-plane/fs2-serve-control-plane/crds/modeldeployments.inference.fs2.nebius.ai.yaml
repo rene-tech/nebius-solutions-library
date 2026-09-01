@@ -1,0 +1,629 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: modeldeployments.inference.fs2.nebius.ai
+  labels:
+    app.kubernetes.io/name: fs2-model-controller
+    app.kubernetes.io/part-of: fs2-serve
+    app.kubernetes.io/managed-by: fs2-platform-bootstrap
+spec:
+  group: inference.fs2.nebius.ai
+  scope: Namespaced
+  names:
+    plural: modeldeployments
+    singular: modeldeployment
+    kind: ModelDeployment
+    listKind: ModelDeploymentList
+    shortNames: [mdpl]
+    categories: [all, fs2-serve]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Model
+          type: string
+          jsonPath: .spec.modelRef
+        - name: Desired
+          type: string
+          jsonPath: .spec.lifecycle.desiredState
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Ready
+          type: integer
+          jsonPath: .status.replicas.ready
+        - name: Min
+          type: integer
+          jsonPath: .spec.availability.minReplicas
+        - name: Max
+          type: integer
+          jsonPath: .spec.availability.maxReplicas
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - modelRef
+                - tenantId
+                - lifecycle
+                - artifact
+                - runtime
+                - placement
+                - availability
+                - cache
+                - queue
+                - rollout
+                - exposure
+                - policy
+              x-kubernetes-validations:
+                - rule: self.availability.maxReplicas >= self.availability.minReplicas
+                  message: availability.maxReplicas must be greater than or equal to minReplicas
+                - rule: self.lifecycle.desiredState == 'Enabled' || self.availability.minReplicas == 0
+                  message: a disabled or draining model must have a zero hot floor
+                - rule: self.lifecycle.desiredState != 'Enabled' || self.availability.maxReplicas > 0
+                  message: an enabled model must permit at least one replica
+                - rule: self.lifecycle.desiredState == 'Enabled' || !has(self.availability.warmWindows) || size(self.availability.warmWindows) == 0
+                  message: disabled or draining models cannot have warm windows
+                - rule: '!has(self.availability.warmWindows) || self.availability.warmWindows.all(window, window.minReplicas <= self.availability.maxReplicas)'
+                  message: warm window minReplicas cannot exceed availability.maxReplicas
+                - rule: '!has(self.adoption) || self.adoption.mode != ''Claim'' || has(self.adoption.receiptRef)'
+                  message: Claim adoption requires an immutable receiptRef
+                - rule: '!has(self.adoption) || self.adoption.mode == ''Claim'' || !has(self.adoption.receiptRef)'
+                  message: an adoption receiptRef is valid only in Claim mode
+                - rule: self.modelRef == oldSelf.modelRef
+                  message: modelRef is immutable; create a new ModelDeployment for another catalog model
+                - rule: self.tenantId == oldSelf.tenantId
+                  message: tenantId is immutable
+                - rule: self.runtime.profile == oldSelf.runtime.profile
+                  message: runtime profile is immutable; revisions of its image remain mutable
+                - rule: '!has(oldSelf.adoption) || oldSelf.adoption.mode != ''Claim'' || self.adoption.mode == ''Claim'''
+                  message: Claim adoption cannot be downgraded
+                - rule: '!has(oldSelf.adoption) || !has(oldSelf.adoption.receiptRef) || self.adoption.receiptRef.name == oldSelf.adoption.receiptRef.name'
+                  message: an accepted adoption receipt name is immutable
+                - rule: '!has(oldSelf.adoption) || !has(oldSelf.adoption.receiptRef) || self.adoption.receiptRef.digest == oldSelf.adoption.receiptRef.digest'
+                  message: an accepted adoption receipt digest is immutable
+              properties:
+                modelRef:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  pattern: ^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$
+                tenantId:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                  pattern: ^[A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9])?$
+                lifecycle:
+                  type: object
+                  required: [desiredState]
+                  properties:
+                    desiredState:
+                      type: string
+                      enum: [Enabled, Draining, Disabled]
+                artifact:
+                  type: object
+                  required: [revision, manifestDigest]
+                  properties:
+                    revision:
+                      type: string
+                      minLength: 1
+                      maxLength: 256
+                      pattern: ^[A-Za-z0-9][A-Za-z0-9._:/+-]*$
+                    manifestDigest:
+                      type: string
+                      pattern: ^sha256:[a-f0-9]{64}$
+                    storageRef:
+                      type: object
+                      required: [kind, name]
+                      properties:
+                        kind:
+                          type: string
+                          enum: [ObjectStore, PersistentVolumeClaim, LocalModelCache]
+                        name:
+                          type: string
+                          minLength: 1
+                          maxLength: 253
+                          pattern: ^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:[.][a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$
+                runtime:
+                  type: object
+                  required: [profile, image, templateRef]
+                  properties:
+                    profile:
+                      type: string
+                      minLength: 1
+                      maxLength: 128
+                      pattern: ^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$
+                    image:
+                      type: string
+                      minLength: 73
+                      maxLength: 768
+                      pattern: ^[^[:space:]@]+@sha256:[a-f0-9]{64}$
+                    templateRef:
+                      type: object
+                      required: [name, digest]
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                          maxLength: 253
+                          pattern: ^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:[.][a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$
+                        digest:
+                          type: string
+                          pattern: ^sha256:[a-f0-9]{64}$
+                placement:
+                  type: object
+                  required: [poolRefs, acceleratorsPerReplica, topologyPolicy]
+                  properties:
+                    poolRefs:
+                      type: array
+                      minItems: 1
+                      maxItems: 32
+                      x-kubernetes-list-type: set
+                      items:
+                        type: string
+                        minLength: 1
+                        maxLength: 128
+                        pattern: ^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$
+                    acceleratorsPerReplica:
+                      type: integer
+                      format: int32
+                      minimum: 1
+                      maximum: 64
+                    topologyPolicy:
+                      type: string
+                      enum: [Any, SingleNode, HighBandwidthDomain]
+                availability:
+                  type: object
+                  required:
+                    - minReplicas
+                    - maxReplicas
+                    - idleSeconds
+                    - targetQueueDepth
+                    - pollingIntervalSeconds
+                    - cooldownSeconds
+                  properties:
+                    minReplicas:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                      maximum: 10000
+                    maxReplicas:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                      maximum: 10000
+                    idleSeconds:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                      maximum: 604800
+                    targetQueueDepth:
+                      type: integer
+                      format: int32
+                      minimum: 1
+                      maximum: 100000
+                    pollingIntervalSeconds:
+                      type: integer
+                      format: int32
+                      minimum: 1
+                      maximum: 60
+                    cooldownSeconds:
+                      type: integer
+                      format: int32
+                      minimum: 5
+                      maximum: 86400
+                    warmWindows:
+                      type: array
+                      maxItems: 64
+                      x-kubernetes-list-type: map
+                      x-kubernetes-list-map-keys: [name]
+                      items:
+                        type: object
+                        required: [name, schedule, timeZone, durationSeconds, minReplicas]
+                        properties:
+                          name:
+                            type: string
+                            minLength: 1
+                            maxLength: 63
+                            pattern: ^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$
+                          schedule:
+                            type: string
+                            minLength: 9
+                            maxLength: 128
+                          timeZone:
+                            type: string
+                            minLength: 1
+                            maxLength: 64
+                          durationSeconds:
+                            type: integer
+                            format: int32
+                            minimum: 60
+                            maximum: 604800
+                          minReplicas:
+                            type: integer
+                            format: int32
+                            minimum: 1
+                            maximum: 10000
+                cache:
+                  type: object
+                  required: [tier, snapshotPreference]
+                  x-kubernetes-validations:
+                    - rule: self.snapshotPreference != 'Require' || self.tier != 'Disabled'
+                      message: a required snapshot needs an enabled cache tier
+                    - rule: self.snapshotPreference == 'Never' || has(self.snapshotRef)
+                      message: Prefer or Require snapshot policy needs a qualified snapshotRef
+                    - rule: self.snapshotPreference != 'Never' || !has(self.snapshotRef)
+                      message: snapshotRef must be absent when snapshotPreference is Never
+                  properties:
+                    tier:
+                      type: string
+                      enum: [Disabled, ObjectStore, SharedFilesystem, NodeLocal]
+                    snapshotPreference:
+                      type: string
+                      enum: [Never, Prefer, Require]
+                    snapshotRef:
+                      type: object
+                      required: [name, digest, strategy]
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                          maxLength: 253
+                          pattern: ^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:[.][a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$
+                        digest:
+                          type: string
+                          pattern: ^sha256:[a-f0-9]{64}$
+                        strategy:
+                          type: string
+                          enum: [Weights, RuntimeNative, CudaCheckpoint]
+                queue:
+                  type: object
+                  required: [localQueue, priorityClass, maxQueueSeconds]
+                  properties:
+                    localQueue:
+                      type: string
+                      minLength: 1
+                      maxLength: 253
+                      pattern: ^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:[.][a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$
+                    priorityClass:
+                      type: string
+                      minLength: 1
+                      maxLength: 253
+                      pattern: ^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:[.][a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$
+                    maxQueueSeconds:
+                      type: integer
+                      format: int32
+                      minimum: 1
+                      maximum: 604800
+                rollout:
+                  type: object
+                  required: [strategy, maxUnavailable, maxSurge, progressDeadlineSeconds]
+                  x-kubernetes-validations:
+                    - rule: self.strategy != 'Rolling' || self.maxUnavailable + self.maxSurge > 0
+                      message: a rolling rollout must allow at least one unavailable or surge replica
+                    - rule: self.strategy == 'Rolling' || (self.maxUnavailable == 1 && self.maxSurge == 0)
+                      message: Recreate rollouts use maxUnavailable=1 and maxSurge=0
+                  properties:
+                    strategy:
+                      type: string
+                      enum: [Rolling, Recreate]
+                    maxUnavailable:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                      maximum: 10000
+                    maxSurge:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                      maximum: 10000
+                    progressDeadlineSeconds:
+                      type: integer
+                      format: int32
+                      minimum: 60
+                      maximum: 86400
+                exposure:
+                  type: object
+                  required: [openAI, mcp]
+                  x-kubernetes-validations:
+                    - rule: self.mcp || !has(self.mcpToolName)
+                      message: mcpToolName must be absent when MCP exposure is disabled
+                    - rule: '!self.mcp || has(self.mcpToolName)'
+                      message: MCP exposure requires mcpToolName
+                    - rule: self.openAI || !has(self.openAIAliases) || size(self.openAIAliases) == 0
+                      message: OpenAI aliases must be empty when OpenAI exposure is disabled
+                  properties:
+                    openAI:
+                      type: boolean
+                    openAIAliases:
+                      type: array
+                      maxItems: 32
+                      x-kubernetes-list-type: set
+                      items:
+                        type: string
+                        minLength: 1
+                        maxLength: 128
+                        pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._:/-]*[A-Za-z0-9])?$
+                    mcp:
+                      type: boolean
+                    mcpToolName:
+                      type: string
+                      minLength: 1
+                      maxLength: 128
+                      pattern: ^[a-z][a-z0-9_]*$
+                policy:
+                  type: object
+                  required: [visibility, policyRef]
+                  properties:
+                    visibility:
+                      type: string
+                      enum: [Private, Tenant]
+                    policyRef:
+                      type: string
+                      minLength: 1
+                      maxLength: 253
+                      pattern: ^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:[.][a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$
+                    allowedPrincipalIds:
+                      type: array
+                      maxItems: 256
+                      x-kubernetes-list-type: set
+                      items:
+                        type: string
+                        minLength: 1
+                        maxLength: 200
+                        pattern: ^[A-Za-z0-9](?:[A-Za-z0-9_.:@/-]*[A-Za-z0-9])?$
+                    ratePolicyRef:
+                      type: string
+                      minLength: 1
+                      maxLength: 253
+                      pattern: ^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:[.][a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$
+                adoption:
+                  type: object
+                  required: [mode]
+                  default: {mode: None}
+                  properties:
+                    mode:
+                      type: string
+                      enum: [None, Observe, Claim]
+                    receiptRef:
+                      type: object
+                      required: [name, digest]
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                          maxLength: 253
+                          pattern: ^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:[.][a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$
+                        digest:
+                          type: string
+                          pattern: ^sha256:[a-f0-9]{64}$
+            status:
+              type: object
+              properties:
+                observedGeneration:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                phase:
+                  type: string
+                  enum:
+                    - Desired
+                    - Admitted
+                    - NodePending
+                    - Localizing
+                    - RuntimeStarting
+                    - Warming
+                    - Ready
+                    - Cold
+                    - Draining
+                    - Failed
+                    - InfrastructureRequired
+                specDigest:
+                  type: string
+                  pattern: ^sha256:[a-f0-9]{64}$
+                renderDigest:
+                  type: string
+                  pattern: ^sha256:[a-f0-9]{64}$
+                activeRevision:
+                  type: string
+                  minLength: 1
+                  maxLength: 256
+                admittedPoolRef:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                replicas:
+                  type: object
+                  properties:
+                    desired:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                    admitted:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                    nodePending:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                    localizing:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                    runtimeStarting:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                    warming:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                    ready:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                    available:
+                      type: integer
+                      format: int32
+                      minimum: 0
+                cache:
+                  type: object
+                  required: [state]
+                  properties:
+                    state:
+                      type: string
+                      enum: [Unknown, Missing, Localizing, Cached, Failed]
+                    tier:
+                      type: string
+                      enum: [ObjectStore, SharedFilesystem, NodeLocal]
+                    digest:
+                      type: string
+                      pattern: ^sha256:[a-f0-9]{64}$
+                    observedAt:
+                      type: string
+                      format: date-time
+                publication:
+                  type: object
+                  required: [openAI, mcp]
+                  properties:
+                    openAI:
+                      type: boolean
+                    mcp:
+                      type: boolean
+                    observedAt:
+                      type: string
+                      format: date-time
+                adoption:
+                  type: object
+                  required: [state]
+                  properties:
+                    state:
+                      type: string
+                      enum: [None, ObserveOnly, Claiming, Owned, RollingBack, Failed]
+                    receiptDigest:
+                      type: string
+                      pattern: ^sha256:[a-f0-9]{64}$
+                resources:
+                  type: array
+                  maxItems: 256
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [identity]
+                  items:
+                    type: object
+                    required: [identity, apiVersion, kind, namespace, name, uid, generation]
+                    properties:
+                      identity:
+                        type: string
+                        minLength: 1
+                        maxLength: 512
+                      apiVersion:
+                        type: string
+                        minLength: 1
+                        maxLength: 128
+                      kind:
+                        type: string
+                        minLength: 1
+                        maxLength: 128
+                      namespace:
+                        type: string
+                        minLength: 1
+                        maxLength: 63
+                      name:
+                        type: string
+                        minLength: 1
+                        maxLength: 253
+                      uid:
+                        type: string
+                        minLength: 1
+                        maxLength: 128
+                      generation:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      digest:
+                        type: string
+                        pattern: ^sha256:[a-f0-9]{64}$
+                infrastructureHandoff:
+                  type: object
+                  required: [reason, owner, requiredInputs]
+                  properties:
+                    reason:
+                      type: string
+                      minLength: 1
+                      maxLength: 240
+                    owner:
+                      type: string
+                      enum: [Terraform]
+                    requiredInputs:
+                      type: array
+                      minItems: 1
+                      maxItems: 64
+                      x-kubernetes-list-type: set
+                      items:
+                        type: string
+                        minLength: 1
+                        maxLength: 128
+                        pattern: ^[a-z][a-z0-9._-]*$
+                retryCount:
+                  type: integer
+                  format: int32
+                  minimum: 0
+                  maximum: 20
+                lastReconcileTime:
+                  type: string
+                  format: date-time
+                conditions:
+                  type: array
+                  maxItems: 32
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    type: object
+                    required: [type, status, observedGeneration, reason, message, lastTransitionTime]
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                          - Ready
+                          - Cached
+                          - Cold
+                          - Loading
+                          - Draining
+                          - InfrastructureRequired
+                          - Failed
+                          - Progressing
+                      status:
+                        type: string
+                        enum: ["True", "False", Unknown]
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      reason:
+                        type: string
+                        minLength: 1
+                        maxLength: 1024
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      message:
+                        type: string
+                        minLength: 1
+                        maxLength: 32768
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
