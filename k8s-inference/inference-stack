@@ -468,30 +468,38 @@ def preflight_accelerators(
                         f"accelerator pool {pool_id!r}: capacity block {reservation_id!r} is not an active {target_region}/{pool['platform']} reservation"
                     )
                 limit_text = str(status.get("current_limit", ""))
+                usage_units_text = str(status.get("usage", ""))
                 usage_text = str(status.get("usage_percentage", ""))
                 if (
                     not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", limit_text)
+                    or not re.fullmatch(
+                        r"[0-9]+(?:\.[0-9]+)?", usage_units_text
+                    )
                     or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", usage_text)
                 ):
                     raise DeploymentError(
                         f"accelerator pool {pool_id!r}: capacity block {reservation_id!r} has malformed capacity status"
                     )
                 current_limit = float(limit_text)
-                usage_percentage = float(usage_text)
-                if not 0.0 <= usage_percentage <= 100.0:
+                usage_gpu_units = float(usage_units_text)
+                usage_fraction = float(usage_text)
+                if (
+                    current_limit < 0.0
+                    or not 0.0 <= usage_gpu_units <= current_limit
+                    or not 0.0 <= usage_fraction <= 1.0
+                ):
                     raise DeploymentError(
-                        f"accelerator pool {pool_id!r}: capacity block {reservation_id!r} has invalid usage percentage"
+                        f"accelerator pool {pool_id!r}: capacity block {reservation_id!r} has invalid capacity usage"
                     )
                 total_gpu_units += current_limit
-                available_gpu_units += current_limit * (
-                    1.0 - usage_percentage / 100.0
-                )
+                available_gpu_units += current_limit - usage_gpu_units
                 groups.append(
                     {
                         "id": reservation_id,
                         "state": status["state"],
                         "current_limit": current_limit,
-                        "usage_percentage": usage_percentage,
+                        "usage_gpu_units": usage_gpu_units,
+                        "usage_fraction": usage_fraction,
                         "active_until": status.get("current_continuous_interval", {}).get(
                             "end_time"
                         ),

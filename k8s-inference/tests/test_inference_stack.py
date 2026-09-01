@@ -337,7 +337,8 @@ class InferenceStackTests(unittest.TestCase):
                             "compute_v1": {"platform": "gpu-h100-sxm"}
                         },
                         "current_limit": "16",
-                        "usage_percentage": "100.00",
+                        "usage": "16",
+                        "usage_percentage": "1.00",
                         "current_continuous_interval": {
                             "end_time": "2027-03-01T00:00:00Z"
                         },
@@ -432,6 +433,7 @@ class InferenceStackTests(unittest.TestCase):
                             "compute_v1": {"platform": "gpu-h100-sxm"}
                         },
                         "current_limit": "16",
+                        "usage": "0",
                         "usage_percentage": "0.00",
                     },
                 }
