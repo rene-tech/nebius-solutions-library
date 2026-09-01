@@ -60,6 +60,7 @@ variable "accelerator_pool_contract" {
           preset = string
         })
         reservation_policy = string
+        reservation_ids    = optional(list(string), [])
       })
       node = object({
         gpus_per_node         = number

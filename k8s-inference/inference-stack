@@ -329,6 +329,7 @@ def preflight_accelerators(
         )
 
     project_id = contract["target"]["project_id"]
+    target_region = contract["target"]["region"]
     kubernetes_version = contract["stages"]["infrastructure"][
         "kubernetes_version"
     ]
@@ -425,17 +426,102 @@ def preflight_accelerators(
             raise DeploymentError(
                 f"accelerator pool {pool_id!r}: OS/driver mode is absent from the live MK8s compatibility matrix"
             )
-        checked.append(
-            {
-                "pool_id": pool_id,
-                "platform": pool["platform"],
-                "preset": pool["preset"],
-                "capacity_type": pool["capacity_type"],
-                "driver_mode": driver["mode"],
-                "topology": pool["topology"]["mode"],
+
+        reservation = pool.get("reservation_policy")
+        reservation_evidence: dict[str, Any] | None = None
+        if reservation is not None:
+            reservation_ids = reservation.get("reservation_ids", [])
+            required_gpu_units = pool["max_nodes"] * pool["gpus_per_node"]
+            total_gpu_units = 0.0
+            available_gpu_units = 0.0
+            groups: list[dict[str, Any]] = []
+            for reservation_id in reservation_ids:
+                group_result = run(
+                    [
+                        args.nebius,
+                        "--profile",
+                        args.nebius_profile,
+                        "capacity",
+                        "capacity-block-group",
+                        "get",
+                        "--id",
+                        reservation_id,
+                        "--format",
+                        "json",
+                    ],
+                    capture=True,
+                    env=clean_environment(),
+                )
+                group = json.loads(group_result.stdout)
+                metadata = group.get("metadata", {})
+                status = group.get("status", {})
+                affinity = status.get("resource_affinity", {}).get(
+                    "compute_v1", {}
+                )
+                if (
+                    metadata.get("id") != reservation_id
+                    or status.get("state") != "STATE_ACTIVE"
+                    or status.get("region") != target_region
+                    or affinity.get("platform") != pool["platform"]
+                ):
+                    raise DeploymentError(
+                        f"accelerator pool {pool_id!r}: capacity block {reservation_id!r} is not an active {target_region}/{pool['platform']} reservation"
+                    )
+                limit_text = str(status.get("current_limit", ""))
+                usage_text = str(status.get("usage_percentage", ""))
+                if (
+                    not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", limit_text)
+                    or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", usage_text)
+                ):
+                    raise DeploymentError(
+                        f"accelerator pool {pool_id!r}: capacity block {reservation_id!r} has malformed capacity status"
+                    )
+                current_limit = float(limit_text)
+                usage_percentage = float(usage_text)
+                if not 0.0 <= usage_percentage <= 100.0:
+                    raise DeploymentError(
+                        f"accelerator pool {pool_id!r}: capacity block {reservation_id!r} has invalid usage percentage"
+                    )
+                total_gpu_units += current_limit
+                available_gpu_units += current_limit * (
+                    1.0 - usage_percentage / 100.0
+                )
+                groups.append(
+                    {
+                        "id": reservation_id,
+                        "state": status["state"],
+                        "current_limit": current_limit,
+                        "usage_percentage": usage_percentage,
+                        "active_until": status.get("current_continuous_interval", {}).get(
+                            "end_time"
+                        ),
+                    }
+                )
+            if total_gpu_units + 1e-9 < required_gpu_units:
+                raise DeploymentError(
+                    f"accelerator pool {pool_id!r}: capacity blocks reserve {total_gpu_units:g} total GPU units but fixed capacity requires {required_gpu_units}"
+                )
+            reservation_evidence = {
+                "policy": reservation["policy"],
+                "required_gpu_units": required_gpu_units,
+                "total_gpu_units": total_gpu_units,
+                "available_gpu_units": available_gpu_units,
+                "groups": groups,
                 "status": "compatible",
             }
-        )
+
+        pool_evidence = {
+            "pool_id": pool_id,
+            "platform": pool["platform"],
+            "preset": pool["preset"],
+            "capacity_type": pool["capacity_type"],
+            "driver_mode": driver["mode"],
+            "topology": pool["topology"]["mode"],
+            "status": "compatible",
+        }
+        if reservation_evidence is not None:
+            pool_evidence["reservation"] = reservation_evidence
+        checked.append(pool_evidence)
 
     print(
         json.dumps(

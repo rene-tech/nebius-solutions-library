@@ -294,6 +294,183 @@ class InferenceStackTests(unittest.TestCase):
         self.assertNotIn("TF_VAR_ngc_api_key", environment)
         self.assertNotIn("TF_VAR_nvcrio_dockerconfigjson", environment)
 
+    def test_capacity_block_preflight_is_repeatable_for_an_allocated_block(
+        self,
+    ) -> None:
+        configuration = contract()
+        configuration["target"]["region"] = "eu-north1"
+        configuration["stages"]["infrastructure"].update(
+            {
+                "kubernetes_version": "1.35",
+                "custom_accelerator_pools": {
+                    "h100-reserved-8x": {
+                        "platform": "gpu-h100-sxm",
+                        "preset": "8gpu-128vcpu-1600gb",
+                        "gpus_per_node": 8,
+                        "capacity_type": "regular",
+                        "max_nodes": 2,
+                        "os": "ubuntu24.04",
+                        "driver": {"mode": "managed", "preset": "cuda13.0"},
+                        "topology": {"mode": "standalone"},
+                        "reservation_policy": {
+                            "policy": "STRICT",
+                            "reservation_ids": [
+                                "capacityblockgroup-testreservation"
+                            ],
+                        },
+                    }
+                },
+            }
+        )
+
+        def fake_run(command, **_kwargs):
+            if "capacity-block-group" in command:
+                payload = {
+                    "metadata": {
+                        "id": "capacityblockgroup-testreservation",
+                        "parent_id": "tenant-test",
+                    },
+                    "status": {
+                        "state": "STATE_ACTIVE",
+                        "region": "eu-north1",
+                        "resource_affinity": {
+                            "compute_v1": {"platform": "gpu-h100-sxm"}
+                        },
+                        "current_limit": "16",
+                        "usage_percentage": "100.00",
+                        "current_continuous_interval": {
+                            "end_time": "2027-03-01T00:00:00Z"
+                        },
+                    },
+                }
+            elif "get-by-name" in command:
+                payload = {
+                    "spec": {
+                        "presets": [
+                            {
+                                "name": "8gpu-128vcpu-1600gb",
+                                "resources": {"gpu_count": 8},
+                            }
+                        ]
+                    },
+                    "status": {"allowed_for_preemptibles": True},
+                }
+            else:
+                payload = {
+                    "versions": [
+                        {
+                            "kubernetes_version": "1.35",
+                            "items": [
+                                {
+                                    "compatible_platforms": ["gpu-h100-sxm"],
+                                    "os": "ubuntu24.04",
+                                    "drivers_preset": "cuda13.0",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(payload), stderr=""
+            )
+
+        output = io.StringIO()
+        with (
+            mock.patch.object(STACK, "run", side_effect=fake_run),
+            redirect_stdout(output),
+        ):
+            STACK.preflight_accelerators(arguments(), configuration)
+
+        evidence = json.loads(output.getvalue())
+        reservation = evidence["accelerator_pools"][0]["reservation"]
+        self.assertEqual(reservation["required_gpu_units"], 16)
+        self.assertEqual(reservation["total_gpu_units"], 16.0)
+        self.assertEqual(reservation["available_gpu_units"], 0.0)
+        self.assertEqual(
+            reservation["groups"][0]["id"],
+            "capacityblockgroup-testreservation",
+        )
+
+    def test_capacity_block_preflight_rejects_wrong_region(self) -> None:
+        configuration = contract()
+        configuration["target"]["region"] = "eu-north1"
+        configuration["stages"]["infrastructure"].update(
+            {
+                "kubernetes_version": "1.35",
+                "custom_accelerator_pools": {
+                    "h100-reserved-8x": {
+                        "platform": "gpu-h100-sxm",
+                        "preset": "8gpu-128vcpu-1600gb",
+                        "gpus_per_node": 8,
+                        "capacity_type": "regular",
+                        "max_nodes": 2,
+                        "os": "ubuntu24.04",
+                        "driver": {"mode": "managed", "preset": "cuda13.0"},
+                        "topology": {"mode": "standalone"},
+                        "reservation_policy": {
+                            "policy": "STRICT",
+                            "reservation_ids": [
+                                "capacityblockgroup-testreservation"
+                            ],
+                        },
+                    }
+                },
+            }
+        )
+
+        def fake_run(command, **_kwargs):
+            if "capacity-block-group" in command:
+                payload = {
+                    "metadata": {
+                        "id": "capacityblockgroup-testreservation",
+                        "parent_id": "tenant-test",
+                    },
+                    "status": {
+                        "state": "STATE_ACTIVE",
+                        "region": "eu-west1",
+                        "resource_affinity": {
+                            "compute_v1": {"platform": "gpu-h100-sxm"}
+                        },
+                        "current_limit": "16",
+                        "usage_percentage": "0.00",
+                    },
+                }
+            elif "get-by-name" in command:
+                payload = {
+                    "spec": {
+                        "presets": [
+                            {
+                                "name": "8gpu-128vcpu-1600gb",
+                                "resources": {"gpu_count": 8},
+                            }
+                        ]
+                    }
+                }
+            else:
+                payload = {
+                    "versions": [
+                        {
+                            "kubernetes_version": "1.35",
+                            "items": [
+                                {
+                                    "compatible_platforms": ["gpu-h100-sxm"],
+                                    "os": "ubuntu24.04",
+                                    "drivers_preset": "cuda13.0",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            return subprocess.CompletedProcess(
+                command, 0, stdout=json.dumps(payload), stderr=""
+            )
+
+        with mock.patch.object(STACK, "run", side_effect=fake_run):
+            with self.assertRaisesRegex(
+                STACK.DeploymentError, "not an active eu-north1/gpu-h100-sxm"
+            ):
+                STACK.preflight_accelerators(arguments(), configuration)
+
     def test_nebius_profile_is_used_for_kubeconfig_retrieval(self) -> None:
         calls: list[list[str]] = []
         with tempfile.TemporaryDirectory(prefix="inference-stack-profile-") as temporary:

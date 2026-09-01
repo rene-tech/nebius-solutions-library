@@ -401,7 +401,11 @@ variable "custom_accelerator_pools" {
     capacity_type     = optional(string, "preemptible")
     min_nodes         = optional(number, 0)
     max_nodes         = optional(number, 1)
-    os                = optional(string, "ubuntu24.04")
+    reservation_policy = optional(object({
+      policy          = optional(string, "STRICT")
+      reservation_ids = optional(list(string), [])
+    }))
+    os = optional(string, "ubuntu24.04")
     driver = optional(object({
       mode   = optional(string, "managed")
       preset = optional(string)
@@ -441,6 +445,18 @@ variable "custom_accelerator_pools" {
         contains(["raw", "kubelet-ephemeral"], pool.local_nvme_mode) &&
         floor(pool.min_nodes) == pool.min_nodes && pool.min_nodes >= 0 &&
         floor(pool.max_nodes) == pool.max_nodes && pool.max_nodes >= pool.min_nodes &&
+        (pool.reservation_policy == null ? true : (
+          pool.capacity_type == "regular" &&
+          pool.min_nodes >= 1 &&
+          pool.min_nodes == pool.max_nodes &&
+          contains(["AUTO", "STRICT"], pool.reservation_policy.policy) &&
+          length(pool.reservation_policy.reservation_ids) >= 1 &&
+          length(distinct(pool.reservation_policy.reservation_ids)) == length(pool.reservation_policy.reservation_ids) &&
+          alltrue([
+            for reservation_id in pool.reservation_policy.reservation_ids :
+            can(regex("^capacityblockgroup-[a-z0-9]+$", reservation_id))
+          ])
+        )) &&
         contains(["managed", "operator"], pool.driver.mode) &&
         (pool.driver.mode == "managed" ? try(length(trimspace(pool.driver.preset)) > 0, false) : pool.driver.preset == null) &&
         contains(["standalone", "gpu_cluster", "nvlink_rack"], pool.topology.mode) &&
@@ -468,7 +484,7 @@ variable "custom_accelerator_pools" {
         ))
       )
     ])
-    error_message = "custom_accelerator_pools must satisfy sizing, driver, topology, architecture, and MIG invariants; NVLink racks are fixed 18-node GB300 groups and multiple racks require a fabric; other platform/preset validity is checked live."
+    error_message = "custom_accelerator_pools must satisfy sizing, driver, topology, architecture, MIG, and reservation invariants; reservations require fixed regular capacity, AUTO or STRICT policy, and unique capacity-block-group IDs; NVLink racks are fixed 18-node GB300 groups and multiple racks require a fabric; other platform/preset validity is checked live."
   }
 }
 
@@ -656,7 +672,8 @@ locals {
           owner  = pool.driver.mode == "managed" ? "provider-managed" : "gpu-operator"
           preset = pool.driver.preset
         }
-        reservation_policy = "FORBID"
+        reservation_policy = pool.reservation_policy == null ? "FORBID" : pool.reservation_policy.policy
+        reservation_ids    = pool.reservation_policy == null ? [] : pool.reservation_policy.reservation_ids
       }
       node = {
         gpus_per_node         = pool.gpus_per_node
@@ -677,7 +694,7 @@ locals {
         scale_from_zero = pool.topology.mode != "nvlink_rack" && pool.min_nodes == 0
       }
       scheduling = {
-        stable_node_labels = {
+        stable_node_labels = merge({
           "workload.fs2.nebius/gpu"        = "true"
           "accelerator.fs2.nebius/class"   = pool.accelerator_class
           "accelerator.fs2.nebius/pool-id" = pool_id
@@ -686,7 +703,10 @@ locals {
           "topology.fs2.nebius/scope"      = pool.topology.mode
           "local-nvme.fs2.nebius/eligible" = tostring(pool.local_nvme)
           "snapshot.fs2.nebius/eligible"   = tostring(pool.local_nvme)
-        }
+          }, pool.reservation_policy == null ? {} : {
+          "capacity.fs2.nebius/source" = "capacity-block"
+          }
+        )
         resource_flavor_name = "inference-${substr(pool_id, 0, 48)}"
         taints = [{
           key    = "dedicated"

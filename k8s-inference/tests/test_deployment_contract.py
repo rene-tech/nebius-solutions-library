@@ -1059,6 +1059,106 @@ class DeploymentContractTests(unittest.TestCase):
             "gpu-future-sxm",
         )
 
+    def test_capacity_block_pool_preserves_the_provider_reservation_shape(
+        self,
+    ) -> None:
+        reserved_pool = {
+            "platform": "gpu-h100-sxm",
+            "preset": "8gpu-128vcpu-1600gb",
+            "accelerator_class": "nvidia-h100-sxm5-80gb",
+            "gpus_per_node": 8,
+            "capacity_type": "regular",
+            "min_nodes": 2,
+            "max_nodes": 2,
+            "reservation_policy": {
+                "policy": "STRICT",
+                "reservation_ids": ["capacityblockgroup-testreservation"],
+            },
+            "driver": {"mode": "managed", "preset": "cuda13.0"},
+        }
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-capacity-block-test",
+            "profiles": {"capacity": "minimal", "models": "none"},
+            "target": self.catalog_target(),
+            "accelerator_pools": {"h100-reserved-8x": reserved_pool},
+            "models": {"selection": "profile"},
+        }
+        variable_file = self._write_configuration("capacity-block", deployment)
+        outputs = self._planned_outputs(variable_file, "capacity-block")
+
+        rendered = outputs["deployment_contract"]["stages"]["infrastructure"]
+        self.assertEqual(
+            rendered["custom_accelerator_pools"]["h100-reserved-8x"],
+            {
+                **reserved_pool,
+                "boot_disk": {"size_gib": 320, "type": "NETWORK_SSD"},
+                "drain_timeout": "30m",
+                "gpu_memory_gb": None,
+                "host_architecture": "amd64",
+                "local_nvme": False,
+                "local_nvme_mode": "raw",
+                "mig": {"config": None, "strategy": "none"},
+                "os": "ubuntu24.04",
+                "resource_name": "nvidia.com/gpu",
+                "shared_filesystem": True,
+                "topology": {
+                    "infiniband_fabric": None,
+                    "mode": "standalone",
+                    "nodes_per_rack": 18,
+                    "rack_count": 0,
+                },
+            },
+        )
+
+    def test_capacity_block_rejects_preemptible_or_elastic_pool(self) -> None:
+        base_pool = {
+            "platform": "gpu-h100-sxm",
+            "preset": "8gpu-128vcpu-1600gb",
+            "accelerator_class": "nvidia-h100-sxm5-80gb",
+            "gpus_per_node": 8,
+            "capacity_type": "regular",
+            "min_nodes": 2,
+            "max_nodes": 2,
+            "reservation_policy": {
+                "policy": "STRICT",
+                "reservation_ids": ["capacityblockgroup-testreservation"],
+            },
+            "driver": {"mode": "managed", "preset": "cuda13.0"},
+        }
+        invalid_pools = (
+            {**base_pool, "capacity_type": "preemptible"},
+            {**base_pool, "min_nodes": 0},
+            {
+                **base_pool,
+                "reservation_policy": {
+                    "policy": "FORBID",
+                    "reservation_ids": ["capacityblockgroup-testreservation"],
+                },
+            },
+        )
+        for index, pool in enumerate(invalid_pools):
+            with self.subTest(pool=pool):
+                variable_file = self._write_configuration(
+                    f"invalid-capacity-block-{index}",
+                    {
+                        "schema_version": 1,
+                        "name": f"fs2-invalid-capacity-block-{index}",
+                        "profiles": {"capacity": "minimal", "models": "none"},
+                        "target": self.catalog_target(),
+                        "accelerator_pools": {"h100-reserved-8x": pool},
+                        "models": {"selection": "profile"},
+                    },
+                )
+                result, _ = self._plan_file(
+                    variable_file, f"invalid-capacity-block-{index}"
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertRegex(
+                    f"{result.stdout}\n{result.stderr}",
+                    r"reservations require fixed regular\s+capacity",
+                )
+
     def test_unqualified_heterogeneous_profile_fails_before_cloud_plan(self) -> None:
         deployment = {
             "schema_version": 1,

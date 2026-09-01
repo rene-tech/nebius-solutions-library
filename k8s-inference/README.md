@@ -18,10 +18,11 @@ only by an explicit `destroy`.
 
 `deployment.accelerator_pools` is an open map. Each entry declares the Nebius
 platform and preset, GPU resource name, host architecture, capacity mode,
-driver owner, topology, node floor/ceiling, and optional local storage. Those
-provider identifiers are intentionally not hard-coded in HCL, so the same
-solution can describe H100, H200, B200, B300, GB300, RTX PRO 6000 Blackwell,
-heterogeneous clusters, and future Nebius shapes.
+driver owner, topology, node floor/ceiling, optional local storage, and an
+optional Nebius capacity-block reservation policy. Those provider identifiers
+are intentionally not hard-coded in HCL, so the same solution can describe
+H100, H200, B200, B300, GB300, RTX PRO 6000 Blackwell, heterogeneous clusters,
+and future Nebius shapes.
 
 `inference-stack preflight` checks the selected platform, preset, GPU count,
 preemptible support, OS, driver preset, and Kubernetes version against the live
@@ -31,6 +32,35 @@ contract. That explicit binding is an operator compatibility assertion; live
 provider validation cannot prove that an arbitrary model runtime supports a
 new GPU architecture. Keep model/runtime qualification evidence with any new
 binding.
+
+Capacity blocks are regular GPU capacity, not a third capacity type. Declare a
+fixed pool (`min_nodes == max_nodes`) and pass the ordered capacity-block group
+IDs through the same shape used by the Nebius node-group provider:
+
+```hcl
+"h100-reserved-8x" = {
+  platform          = "gpu-h100-sxm"
+  preset            = "8gpu-128vcpu-1600gb"
+  accelerator_class = "nvidia-h100-sxm5-80gb"
+  gpus_per_node     = 8
+  capacity_type     = "regular"
+  min_nodes         = 2
+  max_nodes         = 2
+  reservation_policy = {
+    policy          = "STRICT"
+    reservation_ids = ["capacityblockgroup-yourblockid"]
+  }
+  driver = {
+    mode   = "managed"
+    preset = "cuda13.0"
+  }
+}
+```
+
+`STRICT` prevents fallback to shared PAYG capacity. Terraform renders a fixed
+node group, omits the preemptible block, and uses a zero-surge/one-unavailable
+rollout so a reservation that is exactly full is still maintainable. Pools
+without `reservation_policy` retain the existing autoscaling behavior.
 
 The mounted `lean-routes.json` intentionally uses the exact two-field v2
 runtime contract (`schema` and `routes`) accepted by the pinned control-plane
@@ -204,7 +234,7 @@ The top-level variable is `deployment`:
 | `profiles.accelerators` | Qualified accelerator-pool topology. If omitted, it follows the capacity profile. |
 | `profiles.models` | Model catalog: `minimal` or `full_catalog`. |
 | `cluster` | Kubernetes version, API CIDR allowlist, and optional regular CPU system-pool shape. |
-| `accelerator_pools` | Open map of GPU platform/preset, capacity, topology, driver, local-storage, and node-floor/ceiling settings. |
+| `accelerator_pools` | Open map of GPU platform/preset, capacity, optional capacity-block reservation, topology, driver, local-storage, and node-floor/ceiling settings. |
 | `models` | Profile or explicit selection, KEDA/static scaling, hot-model floor, and per-model scaling overrides. |
 | `storage.shared_cache` | Optional shared model-cache size/type/block-size override. |
 | `artifacts.external_registry_ids` | Same-tenant registries whose immutable images need run-scoped node-pull viewer access. Terraform creates a project-scoped reader group beside each registry, including registries in another project or region. |

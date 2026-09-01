@@ -63,7 +63,11 @@ variable "deployment" {
       capacity_type     = optional(string, "preemptible")
       min_nodes         = optional(number, 0)
       max_nodes         = optional(number, 1)
-      os                = optional(string, "ubuntu24.04")
+      reservation_policy = optional(object({
+        policy          = optional(string, "STRICT")
+        reservation_ids = optional(list(string), [])
+      }))
+      os = optional(string, "ubuntu24.04")
       driver = optional(object({
         mode   = optional(string, "managed")
         preset = optional(string)
@@ -379,6 +383,18 @@ variable "deployment" {
         pool.boot_disk.size_gib >= 32 && pool.boot_disk.size_gib <= 4096 &&
         floor(pool.min_nodes) == pool.min_nodes && pool.min_nodes >= 0 &&
         floor(pool.max_nodes) == pool.max_nodes && pool.max_nodes >= pool.min_nodes &&
+        (pool.reservation_policy == null ? true : (
+          pool.capacity_type == "regular" &&
+          pool.min_nodes >= 1 &&
+          pool.min_nodes == pool.max_nodes &&
+          contains(["AUTO", "STRICT"], pool.reservation_policy.policy) &&
+          length(pool.reservation_policy.reservation_ids) >= 1 &&
+          length(distinct(pool.reservation_policy.reservation_ids)) == length(pool.reservation_policy.reservation_ids) &&
+          alltrue([
+            for reservation_id in pool.reservation_policy.reservation_ids :
+            can(regex("^capacityblockgroup-[a-z0-9]+$", reservation_id))
+          ])
+        )) &&
         contains(["managed", "operator"], pool.driver.mode) &&
         (pool.driver.mode == "managed" ? pool.driver.preset != null : pool.driver.preset == null) &&
         contains(["standalone", "gpu_cluster", "nvlink_rack"], pool.topology.mode) &&
@@ -398,7 +414,7 @@ variable "deployment" {
         ))
       )
     ]), false)
-    error_message = "accelerator_pools must be structurally valid provider pools, including a whole 32-4096 GiB supported boot disk; platform and preset stay open-ended so current and future Nebius GPUs pass through to provider validation."
+    error_message = "accelerator_pools must be structurally valid provider pools, including a whole 32-4096 GiB supported boot disk; reservations require fixed regular capacity, AUTO or STRICT policy, and unique capacity-block-group IDs; platform and preset stay open-ended so current and future Nebius GPUs pass through to provider validation."
   }
 
   validation {

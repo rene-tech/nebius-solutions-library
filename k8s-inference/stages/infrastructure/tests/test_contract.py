@@ -125,6 +125,31 @@ class DisposableTerraformContractTests(unittest.TestCase):
         }
         self.assertEqual(enabled_local, {"nebius-b300-preemptible-8x"})
 
+    def test_capacity_block_pools_are_fixed_and_never_preemptible(self) -> None:
+        cluster = (ROOT / "cluster.tf").read_text(encoding="utf-8")
+        variables = (ROOT / "variables.tf").read_text(encoding="utf-8")
+        self.assertIn("reservation_policy = optional(object({", variables)
+        self.assertIn('contains(["AUTO", "STRICT"]', variables)
+        self.assertIn('pool.capacity_type == "regular"', variables)
+        self.assertIn("pool.min_nodes == pool.max_nodes", variables)
+        self.assertIn(
+            'fixed_node_count = each.value.provider.reservation_policy != "FORBID" ? each.value.max_nodes : null',
+            cluster,
+        )
+        self.assertIn(
+            'autoscaling = each.value.provider.reservation_policy == "FORBID" ? {',
+            cluster,
+        )
+        self.assertIn("reservation_ids = length(try(", cluster)
+        self.assertIn(
+            'max_surge       = { count = each.value.provider.reservation_policy == "FORBID" ? 1 : 0 }',
+            cluster,
+        )
+        self.assertIn(
+            'max_unavailable = { count = each.value.provider.reservation_policy == "FORBID" ? 0 : 1 }',
+            cluster,
+        )
+
     def test_full_catalog_capacity_profile_is_explicit(self) -> None:
         profiles = (
             ROOT.parents[1] / "catalog/profiles/capacity-profiles.json"

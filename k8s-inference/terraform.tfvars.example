@@ -33,6 +33,12 @@ deployment = {
   }
 
   accelerator_pools = {
+    # A reserved regular pool uses min_nodes == max_nodes and the provider's
+    # reservation_policy shape. STRICT prevents fallback to shared PAYG:
+    # reservation_policy = {
+    #   policy          = "STRICT"
+    #   reservation_ids = ["capacityblockgroup-yourblockid"]
+    # }
     "nebius-b300-preemptible-1x" = {
       platform          = "gpu-b300-sxm"
       preset            = "1gpu-24vcpu-346gb"

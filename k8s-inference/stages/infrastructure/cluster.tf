@@ -150,14 +150,16 @@ resource "nebius_mk8s_v1_node_group" "gpu" {
   labels    = merge(local.common_labels, { pool = each.value.provider.node_group_label })
   version   = var.kubernetes_version
 
-  autoscaling = {
+  fixed_node_count = each.value.provider.reservation_policy != "FORBID" ? each.value.max_nodes : null
+
+  autoscaling = each.value.provider.reservation_policy == "FORBID" ? {
     min_node_count = each.value.min_nodes
     max_node_count = each.value.max_nodes
-  }
+  } : null
 
   strategy = {
-    max_surge       = { count = 1 }
-    max_unavailable = { count = 0 }
+    max_surge       = { count = each.value.provider.reservation_policy == "FORBID" ? 1 : 0 }
+    max_unavailable = { count = each.value.provider.reservation_policy == "FORBID" ? 0 : 1 }
     drain_timeout   = each.value.node.drain_timeout
   }
 
@@ -182,7 +184,10 @@ resource "nebius_mk8s_v1_node_group" "gpu" {
     network_interfaces = local.worker_network_interfaces
     os                 = each.value.provider.os
     preemptible        = each.value.capacity.default_mode == "preemptible" ? {} : null
-    reservation_policy = { policy = each.value.provider.reservation_policy }
+    reservation_policy = {
+      policy          = each.value.provider.reservation_policy
+      reservation_ids = length(try(each.value.provider.reservation_ids, [])) > 0 ? each.value.provider.reservation_ids : null
+    }
     service_account_id = nebius_iam_v1_service_account.nodepull.id
     underlay_required  = false
     resources = {
@@ -212,6 +217,14 @@ resource "nebius_mk8s_v1_node_group" "gpu" {
         each.value.min_nodes <= each.value.max_nodes &&
         contains(["provider-managed", "gpu-operator"], each.value.provider.driver.owner) &&
         (each.value.features.mig.mode == "none" || each.value.provider.driver.owner == "gpu-operator") &&
+        (each.value.provider.reservation_policy == "FORBID" ? (
+          length(try(each.value.provider.reservation_ids, [])) == 0
+          ) : (
+          contains(["AUTO", "STRICT"], each.value.provider.reservation_policy) &&
+          each.value.capacity.default_mode == "regular" &&
+          each.value.min_nodes >= 1 &&
+          each.value.min_nodes == each.value.max_nodes
+        )) &&
         each.value.node.topology != "nvlink_rack"
         ) : (
         each.value.id == each.key &&
@@ -294,8 +307,12 @@ resource "nebius_mk8s_v1_node_group" "nvlink_rack" {
     nvlink = {
       nvl_instance_group_id = nebius_compute_v1_nvl_instance_group.rack[each.key].id
     }
-    gpu_cluster        = try(length(trimspace(each.value.pool.topology.infiniband_fabric)) > 0, false) ? nebius_compute_v1_gpu_cluster.pool[each.value.pool_id] : null
-    os                 = each.value.pool.provider.os
+    gpu_cluster = try(length(trimspace(each.value.pool.topology.infiniband_fabric)) > 0, false) ? nebius_compute_v1_gpu_cluster.pool[each.value.pool_id] : null
+    os          = each.value.pool.provider.os
+    reservation_policy = {
+      policy          = each.value.pool.provider.reservation_policy
+      reservation_ids = length(try(each.value.pool.provider.reservation_ids, [])) > 0 ? each.value.pool.provider.reservation_ids : null
+    }
     service_account_id = nebius_iam_v1_service_account.nodepull.id
     underlay_required  = false
     resources = {
