@@ -13,7 +13,7 @@ Both deployments were created from the same repository and the same
 | Deployment | Project | Region | Accelerator pool | Local NVMe | Selected model |
 | --- | --- | --- | --- | --- | --- |
 | `k8s-inference-b300` | B300 acceptance project | `us-north1` | preemptible 8x B300, one-node floor and ceiling | kubelet ephemeral storage | `glm-5-2-fp8` |
-| `k8s-inference-h100` | H100 acceptance project | `eu-north1` | preemptible 1x H100, zero-node floor and one-node ceiling | disabled | `qwen3-8b` |
+| `k8s-inference-h100` | H100 acceptance project | `eu-north1` | preemptible 1x H100, zero-node floor and two-node ceiling | disabled | `qwen3-8b`, `cosmos3-nano` |
 
 The regular CPU system pool hosts Kubernetes and platform services; only GPU
 workers are preemptible. The platform database is CloudNativePG inside each
@@ -31,10 +31,11 @@ deployment = {
 
   models = {
     selection = "explicit"
-    enabled   = ["qwen3-8b"]
+    enabled   = ["cosmos3-nano", "qwen3-8b"]
 
     pool_overrides = {
-      "qwen3-8b" = "h100-1x"
+      "cosmos3-nano" = "h100-1x"
+      "qwen3-8b"     = "h100-1x"
     }
   }
 }
@@ -85,6 +86,26 @@ or deploy `edge.mode = "public"`.
   `stream=true`, so this is runtime evidence rather than an edge-streaming SLO;
   the admin measurement correctly remains unavailable until gateway streaming
   and token instrumentation are enabled.
+- Adding `cosmos3-nano` through the same private `terraform.tfvars` scaled the
+  preemptible H100 pool from one to two nodes without replacing the cluster,
+  Qwen Deployment, or Qwen cache PVC. The new Pod triggered autoscaling at
+  18:24:53 UTC, scheduled at 18:27:00, started its containers at 18:30:10, and
+  became Ready at 18:51:07 with zero restarts.
+- The first Cosmos cold start was acquisition-bound: the 9.19 GB runtime image
+  pulled in 2 minutes 41.532 seconds and the public 34,986,890,561-byte model
+  populated a new 64 GiB persistent cache before CUDA initialization. Once the
+  cache was complete, seven weight shards loaded in 5.17 seconds; the model
+  runner initialized in 10.633 seconds using 30.237 GiB, and vLLM-Omni's dummy
+  warm-up pipeline took 6.99 seconds. Scheduled-to-Ready was 24 minutes 7
+  seconds; a recreated Pod can reuse the retained cache and should not be
+  represented by that first-population baseline.
+- Two distinct 448x256, 25-frame, eight-step video requests passed the pinned
+  semantic validator. The direct adapter request reported 894 ms total and
+  produced a 141,224-byte MP4; the authenticated MCP request completed in 3.44
+  seconds end to end and produced a distinct 406,976-byte MP4. Both carried the
+  pinned model revision, correct frame/fps metadata, valid ISO BMFF structure,
+  and matching payload SHA-256 values. MCP exposes the qualified runtime as
+  `cosmos3_nano_generate_media_native`.
 
 ### B300 / GLM-5.2-FP8
 

@@ -1,0 +1,108 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 1,
+  "model": {
+    "id": "example-7b",
+    "display_name": "Example 7B",
+    "family": "llm",
+    "source": {
+      "kind": "huggingface",
+      "repository": "example-org/example-7b",
+      "revision": "1111111111111111111111111111111111111111",
+      "review": {
+        "url": "https://huggingface.co/example-org/example-7b/tree/1111111111111111111111111111111111111111",
+        "revision": "1111111111111111111111111111111111111111",
+        "summary": "Illustrative exact-revision review input; replace it with retained vendor and platform evidence."
+      },
+      "license": {
+        "id": "apache-2.0",
+        "state": "verified",
+        "notes": "Illustrative declaration only; verify the exact upstream license before promotion."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The illustrative repository is declared public and ungated; verify this before promotion."
+      }
+    }
+  },
+  "runtime": {
+    "template": "deployment",
+    "kind": "vllm",
+    "version": "vllm-example",
+    "image": "registry.example.invalid/k8s-inference/models/vllm-openai@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "command": [
+      "vllm",
+      "serve"
+    ],
+    "args": [
+      "{MODEL_PATH}",
+      "--served-model-name",
+      "example-7b",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "8000",
+      "--tensor-parallel-size",
+      "1"
+    ],
+    "environment": {
+      "VLLM_NO_USAGE_STATS": "1"
+    }
+  },
+  "resources": {
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "32Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "8",
+      "memory": "64Gi",
+      "ephemeral_storage": "4Gi"
+    },
+    "limits": {
+      "cpu": "24",
+      "memory": "128Gi",
+      "ephemeral_storage": "32Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "compatible_pool_ids": [
+      "h100-preemptible"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm-80gb"
+    }
+  },
+  "serving": {
+    "port": 8000,
+    "protocols": {
+      "openai-chat": "/v1/chat/completions"
+    },
+    "operations": [
+      "chat"
+    ],
+    "readiness_path": "/health",
+    "liveness_path": "/health",
+    "startup_timeout_seconds": 1800,
+    "storage_mode": "provider-block-pvc",
+    "mcp": {
+      "tool_name": "example_7b_chat",
+      "description": "Run an authorized Example 7B chat completion."
+    }
+  },
+  "policy": {
+    "commercial_use": "allowed",
+    "non_clinical": false,
+    "limitations": [
+      "This example uses placeholder model and image identities and is not deployable.",
+      "Live GPU compatibility and semantic behavior remain unqualified."
+    ]
+  }
+}

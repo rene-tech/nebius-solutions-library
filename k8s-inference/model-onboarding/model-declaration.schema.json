@@ -1,0 +1,544 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-onboarding-declaration/v1",
+  "title": "FS2 Serve model onboarding declaration",
+  "description": "One review-owned input for deterministic model onboarding projections. This first version renders Deployment-based HTTP runtimes only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "model",
+    "runtime",
+    "resources",
+    "placement",
+    "serving",
+    "policy"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "../model-declaration.schema.json"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "family",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/model_id"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "family": {
+          "enum": [
+            "bionemo-nim",
+            "medical-imaging",
+            "llm",
+            "image-generation",
+            "video-generation"
+          ]
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "repository",
+            "revision",
+            "review",
+            "license",
+            "entitlement"
+          ],
+          "properties": {
+            "kind": {
+              "const": "huggingface"
+            },
+            "repository": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96,
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]*/[A-Za-z0-9_][A-Za-z0-9._-]*$"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "review": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "url",
+                "revision",
+                "summary"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "pattern": "^https://[^\\s]+$",
+                  "maxLength": 2048
+                },
+                "revision": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                "summary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                }
+              }
+            },
+            "license": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "state",
+                "notes"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "state": {
+                  "enum": [
+                    "verified",
+                    "unverified",
+                    "blocked"
+                  ]
+                },
+                "notes": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                }
+              }
+            },
+            "entitlement": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "required",
+                "state",
+                "credential_contract",
+                "notes"
+              ],
+              "properties": {
+                "required": {
+                  "type": "boolean"
+                },
+                "state": {
+                  "enum": [
+                    "not-required",
+                    "unverified",
+                    "blocked",
+                    "verified"
+                  ]
+                },
+                "credential_contract": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "notes": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "template",
+        "kind",
+        "version",
+        "image",
+        "command",
+        "args"
+      ],
+      "properties": {
+        "template": {
+          "const": "deployment"
+        },
+        "kind": {
+          "enum": [
+            "vllm",
+            "custom",
+            "diffusers"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?/[a-z0-9]+(?:[._-]+[a-z0-9]+)*(?:/[a-z0-9]+(?:[._-]+[a-z0-9]+)*)*@sha256:[0-9a-f]{64}$",
+          "maxLength": 512
+        },
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "args": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "environment": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": {
+            "pattern": "^[A-Z_][A-Z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gpu_count",
+        "gpu_topology",
+        "cache_pvc",
+        "requests",
+        "limits"
+      ],
+      "properties": {
+        "host_ram_min_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "gpu_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "gpu_topology": {
+          "enum": [
+            "single-gpu",
+            "single-node-multi-gpu"
+          ]
+        },
+        "cache_pvc": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "size",
+            "storage_class"
+          ],
+          "properties": {
+            "size": {
+              "$ref": "#/$defs/binary_quantity"
+            },
+            "storage_class": {
+              "$ref": "#/$defs/dns_label"
+            }
+          }
+        },
+        "requests": {
+          "$ref": "#/$defs/container_resources"
+        },
+        "limits": {
+          "$ref": "#/$defs/container_resources"
+        }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_architectures",
+        "compatible_pool_ids",
+        "required_node_labels"
+      ],
+      "properties": {
+        "host_architectures": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "amd64",
+              "arm64"
+            ]
+          }
+        },
+        "compatible_pool_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/profile_id"
+          }
+        },
+        "required_node_labels": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 16,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 317,
+            "pattern": "^(?:[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?/)?[A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])?$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9](?:[-_.A-Za-z0-9]{0,61}[A-Za-z0-9])?$"
+          }
+        }
+      }
+    },
+    "serving": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "port",
+        "protocols",
+        "operations",
+        "readiness_path",
+        "liveness_path",
+        "startup_timeout_seconds",
+        "storage_mode",
+        "mcp"
+      ],
+      "properties": {
+        "service_name": {
+          "$ref": "#/$defs/dns_label"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "protocols": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 5,
+          "propertyNames": {
+            "enum": [
+              "native",
+              "openai-chat",
+              "openai-completions",
+              "openai-embeddings",
+              "openai-images"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^/",
+            "maxLength": 512
+          }
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "maxLength": 64
+          }
+        },
+        "readiness_path": {
+          "$ref": "#/$defs/http_path"
+        },
+        "liveness_path": {
+          "$ref": "#/$defs/http_path"
+        },
+        "startup_timeout_seconds": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 3600
+        },
+        "storage_mode": {
+          "const": "provider-block-pvc"
+        },
+        "mcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tool_name",
+            "description"
+          ],
+          "properties": {
+            "tool_name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "maxLength": 128
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            }
+          }
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "manifest_path": {
+          "type": "string",
+          "pattern": "^models/(?!\\.\\.(?:/|$))(?!.*(?:/\\.\\.(?:/|$))).+\\.ya?ml$",
+          "maxLength": 512
+        },
+        "memberships": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "const": "full_catalog"
+          }
+        },
+        "keeper_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^models/(?!\\.\\.(?:/|$))(?!.*(?:/\\.\\.(?:/|$))).+\\.ya?ml$",
+            "maxLength": 512
+          }
+        },
+        "required_secrets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "ngc_api_key",
+              "nvcr_dockerconfigjson"
+            ]
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commercial_use",
+        "non_clinical",
+        "limitations"
+      ],
+      "properties": {
+        "commercial_use": {
+          "enum": [
+            "allowed",
+            "license-dependent",
+            "prohibited",
+            "blocked"
+          ]
+        },
+        "non_clinical": {
+          "type": "boolean"
+        },
+        "limitations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "model_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$",
+      "maxLength": 128
+    },
+    "dns_label": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "http_path": {
+      "type": "string",
+      "pattern": "^/",
+      "maxLength": 512
+    },
+    "cpu_quantity": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*(?:m)?$",
+      "maxLength": 32
+    },
+    "binary_quantity": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$",
+      "maxLength": 32
+    },
+    "container_resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu",
+        "memory",
+        "ephemeral_storage"
+      ],
+      "properties": {
+        "cpu": {
+          "$ref": "#/$defs/cpu_quantity"
+        },
+        "memory": {
+          "$ref": "#/$defs/binary_quantity"
+        },
+        "ephemeral_storage": {
+          "$ref": "#/$defs/binary_quantity"
+        }
+      }
+    }
+  }
+}
