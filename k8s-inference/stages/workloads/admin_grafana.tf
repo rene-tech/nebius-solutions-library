@@ -3,7 +3,7 @@ locals {
   grafana_publication_labels = merge(local.common_labels, {
     "app.kubernetes.io/component"                  = "admin-observability"
     "fs2-serve.nebius.ai/public-backend"           = "grafana-only"
-    "fs2-serve.nebius.ai/required-parent-statuses" = "Accepted=True,ResolvedRefs=True"
+    "fs2-serve.nebius.ai/required-parent-statuses" = "Accepted-True_ResolvedRefs-True"
   })
 }
 

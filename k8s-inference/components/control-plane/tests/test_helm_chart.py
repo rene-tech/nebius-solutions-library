@@ -425,11 +425,20 @@ def test_admin_configuration_is_an_exact_read_only_immutable_handoff_mount() -> 
     environment = {item["name"]: item["value"] for item in container["env"] if "value" in item}
     assert environment["FS2_ADMIN_CONFIGURATION_FILE"] == "/etc/fs2-serve/admin/admin-configuration.json"
     assert environment["FS2_ADMIN_CONFIGURATION_RECEIPT_FILE"] == ("/etc/fs2-serve/admin/terraform-apply-receipt.json")
-    assert next(item for item in container["volumeMounts"] if item["name"] == "admin-configuration") == {
-        "name": "admin-configuration",
-        "mountPath": "/etc/fs2-serve/admin",
-        "readOnly": True,
-    }
+    assert [item for item in container["volumeMounts"] if item["name"] == "admin-configuration"] == [
+        {
+            "name": "admin-configuration",
+            "mountPath": "/etc/fs2-serve/admin/admin-configuration.json",
+            "subPath": "admin-configuration.json",
+            "readOnly": True,
+        },
+        {
+            "name": "admin-configuration",
+            "mountPath": "/etc/fs2-serve/admin/terraform-apply-receipt.json",
+            "subPath": "terraform-apply-receipt.json",
+            "readOnly": True,
+        },
+    ]
     assert next(item for item in pod["volumes"] if item["name"] == "admin-configuration") == {
         "name": "admin-configuration",
         "configMap": {

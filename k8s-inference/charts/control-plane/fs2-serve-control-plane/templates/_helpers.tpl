@@ -325,8 +325,15 @@ app.kubernetes.io/component: migration
 {{- end }}
 {{- if .Values.adminConfiguration.enabled }}
 - name: admin-configuration
-  mountPath: /etc/fs2-serve/admin
+  mountPath: /etc/fs2-serve/admin/{{ .Values.adminConfiguration.key }}
+  subPath: {{ .Values.adminConfiguration.key }}
   readOnly: true
+{{- if .Values.adminConfiguration.receiptKey }}
+- name: admin-configuration
+  mountPath: /etc/fs2-serve/admin/{{ .Values.adminConfiguration.receiptKey }}
+  subPath: {{ .Values.adminConfiguration.receiptKey }}
+  readOnly: true
+{{- end }}
 {{- end }}
 {{- end -}}
 
