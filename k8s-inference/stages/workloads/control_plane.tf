@@ -1,4 +1,5 @@
 locals {
+  acme_issuer_name = "fs2-serve-ip-acme-${var.acme_environment}"
   control_plane_overrides = {
     replicaCount = 2
     image = {
@@ -31,7 +32,7 @@ locals {
       activationTimeoutSeconds = "7200"
     } : {})
     networkPolicy = {
-      kubernetesApiCidrs = sort(tolist(local.kubernetes_api_service_cidrs))
+      kubernetesApiCidrs = sort(tolist(local.kubernetes_api_egress_cidrs))
       dns                = { podLabels = { "k8s-app" = "coredns" } }
       prometheus = {
         namespaceLabels = { "kubernetes.io/metadata.name" = "fs2-observability" }
@@ -59,6 +60,13 @@ locals {
       }
     }
     adminReadAdapters = {
+      kubernetesCacheTtlSeconds = "15"
+      context = {
+        project = nonsensitive(var.project_id)
+        cluster = var.cluster_name
+        region  = local.selected_target.region
+        label   = var.cluster_name
+      }
       capacity = {
         enabled = true
       }
@@ -93,13 +101,13 @@ locals {
     publicTls = {
       enabled   = local.public_edge_enabled
       ipAddress = local.public_edge_enabled ? var.public_edge_contract.public_ipv4_address : ""
-      issuerRef = { name = "fs2-serve-ip-acme-staging", kind = "Issuer", group = "cert-manager.io" }
+      issuerRef = { name = local.acme_issuer_name, kind = "Issuer", group = "cert-manager.io" }
       acmeIssuer = {
         enabled                     = local.public_edge_enabled
-        name                        = "fs2-serve-ip-acme-staging"
-        environment                 = "staging"
+        name                        = local.acme_issuer_name
+        environment                 = var.acme_environment
         email                       = local.public_edge_enabled ? var.acme_email : ""
-        accountPrivateKeySecretName = "fs2-serve-ip-acme-staging-account"
+        accountPrivateKeySecretName = "${local.acme_issuer_name}-account"
         profile                     = "shortlived"
       }
     }

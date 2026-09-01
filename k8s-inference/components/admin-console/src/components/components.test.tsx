@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { AdminEnvelope, AdminMeasurement, ModelState } from "../api/types";
+import { AdminApiError } from "../api/client";
 import { DataBoundary } from "./DataBoundary";
 import { Measurement } from "./Measurement";
 import { StatusChip } from "./StatusChip";
@@ -53,5 +54,27 @@ describe("status and missing-data semantics", () => {
     render(<DataBoundary data={envelope} error={null} pending={false}>{({ data }) => <p>{data.value}</p>}</DataBoundary>);
     expect(screen.getByText("Partial data")).toBeInTheDocument();
     expect(screen.getByText("durable result")).toBeInTheDocument();
+  });
+
+  it("provides the shared loading, error and empty states used by every data route", () => {
+    const { rerender } = render(
+      <DataBoundary<{ value: string }> data={undefined} error={null} pending>{() => null}</DataBoundary>,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Loading current fleet data");
+
+    rerender(
+      <DataBoundary<{ value: string }>
+        data={undefined}
+        error={new AdminApiError("operator policy does not permit this request", 403, "request-role", "permission_denied")}
+        pending={false}
+      >{() => null}</DataBoundary>,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Operator role insufficient");
+    expect(screen.getByRole("alert")).toHaveTextContent("Request request-role");
+
+    rerender(
+      <DataBoundary data={{ meta, data: { value: "unused" } }} error={null} pending={false} empty>{() => null}</DataBoundary>,
+    );
+    expect(screen.getByText("No resources match the selected context.")).toBeInTheDocument();
   });
 });

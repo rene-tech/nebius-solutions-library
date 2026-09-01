@@ -29,7 +29,6 @@ TEST_ALLOCATION_ID = "vpcallocation-e00abc123xyz"
 TEST_ACME_EMAIL = "edge-owner@unit.test"
 TEST_HTTP_NODE_PORT = 31425
 TEST_HTTPS_NODE_PORT = 32633
-TEST_STAGING_RECEIPT_SHA256 = "2" * 64
 TEST_CATALOG_ROLLOUT_DIGEST = "sha256:" + "3" * 64
 HELM = shutil.which("helm")
 assert HELM is not None, "helm is required for chart tests"
@@ -1731,67 +1730,14 @@ def test_foundation_default_deny_and_release_edge_flows_coexist_without_plaintex
     assert solver_match["path_type"] != redirect["spec"]["rules"][0]["matches"][0]["path"]["type"]
 
 
-@pytest.mark.parametrize(
-    "promotion_arguments",
-    [
-        [],
-        [
-            "--set",
-            "publicTls.acmeIssuer.productionPromotion.approved=true",
-            "--set",
-            "publicTls.acmeIssuer.productionPromotion.stagingCertificateReady=true",
-            "--set",
-            f"publicTls.acmeIssuer.productionPromotion.stagingIpAddress={TEST_PUBLIC_IP}",
-        ],
-        [
-            "--set",
-            "publicTls.acmeIssuer.productionPromotion.approved=true",
-            "--set",
-            "publicTls.acmeIssuer.productionPromotion.stagingCertificateReady=true",
-            "--set",
-            "publicTls.acmeIssuer.productionPromotion.stagingIpAddress=203.0.113.18",
-            "--set",
-            f"publicTls.acmeIssuer.productionPromotion.stagingReceiptSha256={TEST_STAGING_RECEIPT_SHA256}",
-        ],
-    ],
-)
-def test_production_acme_issuer_requires_exact_ready_staging_receipt(promotion_arguments: list[str]) -> None:
-    result = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
-        render_command(
-            "--set",
-            "publicTls.acmeIssuer.environment=production",
-            *promotion_arguments,
-        ),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode != 0
-    assert "productionPromotion" in result.stderr or "staging" in result.stderr
-
-
-def test_production_acme_issuer_uses_exact_directory_after_staging_promotion() -> None:
+def test_production_acme_issuer_uses_exact_directory_without_manual_receipt_fields() -> None:
     documents = render(
         "--set",
         "publicTls.acmeIssuer.environment=production",
-        "--set",
-        "publicTls.acmeIssuer.productionPromotion.approved=true",
-        "--set",
-        "publicTls.acmeIssuer.productionPromotion.stagingCertificateReady=true",
-        "--set",
-        "publicTls.acmeIssuer.productionPromotion.stagingSolverReachabilityReady=true",
-        "--set",
-        "publicTls.acmeIssuer.productionPromotion.stagingExternalHttpsReady=true",
-        "--set",
-        f"publicTls.acmeIssuer.productionPromotion.stagingIpAddress={TEST_PUBLIC_IP}",
-        "--set",
-        f"publicTls.acmeIssuer.productionPromotion.stagingReceiptSha256={TEST_STAGING_RECEIPT_SHA256}",
     )
     issuer = next(document for document in documents if document["kind"] == "Issuer")
     assert issuer["spec"]["acme"]["server"] == "https://acme-v02.api.letsencrypt.org/directory"
     assert issuer["spec"]["acme"]["profile"] == "shortlived"
-    rendered = json.dumps(documents)
-    assert TEST_STAGING_RECEIPT_SHA256 not in rendered
     assert "privateKey" not in issuer["spec"]["acme"]["privateKeySecretRef"]
 
 
@@ -2259,6 +2205,14 @@ def test_capacity_adapter_has_short_lived_token_and_exact_list_only_rbac() -> No
         "adminReadAdapters.capacity.enabled=true",
         "--set-string",
         "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+        "--set-string",
+        "adminReadAdapters.context.project=project-e00unit",
+        "--set-string",
+        "adminReadAdapters.context.cluster=k8s-inference-unit",
+        "--set-string",
+        "adminReadAdapters.context.region=eu-north1",
+        "--set-string",
+        "adminReadAdapters.context.label=Unit cluster",
     )
     pod = gateway_deployment(documents)["spec"]["template"]["spec"]
     container = pod["containers"][0]
@@ -2270,6 +2224,11 @@ def test_capacity_adapter_has_short_lived_token_and_exact_list_only_rbac() -> No
     assert env["FS2_ADMIN_CAPACITY_ENABLED"] == "true"
     assert env["FS2_ADMIN_KUBERNETES_API_URL"] == "https://kubernetes.default.svc"
     assert env["FS2_ADMIN_KUBERNETES_TOKEN_FILE"].endswith("/admin-kubernetes/token")
+    assert env["FS2_ADMIN_KUBERNETES_CACHE_TTL_SECONDS"] == "15"
+    assert env["FS2_ADMIN_CONTEXT_PROJECT"] == "project-e00unit"
+    assert env["FS2_ADMIN_CONTEXT_CLUSTER"] == "k8s-inference-unit"
+    assert env["FS2_ADMIN_CONTEXT_REGION"] == "eu-north1"
+    assert env["FS2_ADMIN_CONTEXT_LABEL"] == "Unit cluster"
     assert sources[0]["serviceAccountToken"] == {
         "expirationSeconds": 600,
         "path": "token",
@@ -2303,7 +2262,8 @@ def test_capacity_adapter_has_short_lived_token_and_exact_list_only_rbac() -> No
         item for (namespace, name), item in roles.items() if namespace == "fs2-system" and name.endswith("-system")
     )
     assert model_role["rules"] == [
-        {"apiGroups": [""], "resources": ["pods"], "verbs": ["list"]},
+        {"apiGroups": [""], "resources": ["pods", "services"], "verbs": ["list"]},
+        {"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["list"]},
         {
             "apiGroups": ["autoscaling"],
             "resources": ["horizontalpodautoscalers"],
@@ -2344,7 +2304,7 @@ def test_capacity_adapter_has_short_lived_token_and_exact_list_only_rbac() -> No
             "--set",
             "adminReadAdapters.capacity.enabled=true",
             "--set-string",
-            "networkPolicy.kubernetesApiCidrs[0]=10.0.0.0/8",
+            "networkPolicy.kubernetesApiCidrs[0]=0.0.0.0/0",
         ),
         (
             "--set",
@@ -2354,7 +2314,7 @@ def test_capacity_adapter_has_short_lived_token_and_exact_list_only_rbac() -> No
         ),
     ],
 )
-def test_admin_read_adapters_reject_missing_or_broad_network_access(extra: tuple[str, ...]) -> None:
+def test_admin_read_adapters_reject_missing_or_unbounded_network_access(extra: tuple[str, ...]) -> None:
     result = subprocess.run(  # noqa: S603 - fixed Helm binary and bounded adversarial values
         render_command(*extra),
         check=False,

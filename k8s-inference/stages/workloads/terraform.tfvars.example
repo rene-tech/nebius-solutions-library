@@ -22,8 +22,10 @@ project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 deployment_profile = "minimal"
 # Pass the exact infra-disposable public_edge_contract output through a private
 # JSON var-file. Never invent an allocation ID or public IP. In public mode set
-# an ACME contact; in internal-only mode leave acme_email null/omitted.
+# an ACME contact and production/staging directory; in internal-only mode leave
+# acme_email null/omitted.
 # acme_email = "operator@example.com"
+# acme_environment = "production"
 
 # Static is backward-compatible and creates no ScaledObjects. For an elastic
 # run set keda and choose zero or more canonical models for the loaded floor.

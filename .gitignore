@@ -46,7 +46,11 @@ terraform.rc
 # Python bytecode and local test caches
 **/__pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
+
+# Local browser-acceptance traces and snapshots
+**/.playwright-cli/
 
 # Ignore Soperator installations in commits to this repo.
 # It's added to the root .gitignore because they shouldn't be ignored if commited to other repos.

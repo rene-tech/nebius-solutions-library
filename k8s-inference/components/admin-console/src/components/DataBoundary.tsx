@@ -15,12 +15,26 @@ export function DataBoundary<T>({ data, error, pending, empty, children }: Props
     return <div className="state-panel state-panel--loading" role="status">Loading current fleet data…</div>;
   }
   if (error) {
-    const forbidden = error instanceof AdminApiError && error.status === 403;
+    const apiError = error instanceof AdminApiError ? error : null;
+    const title = apiError?.status === 401
+      ? "Operator session required"
+      : apiError?.status === 403
+        ? "Operator role insufficient"
+        : apiError?.status === 404
+          ? "Resource not found"
+          : "This view is unavailable";
+    const guidance = apiError?.status === 403
+      ? "Ask a cluster administrator to grant the role required for this view or action."
+      : apiError?.status === 503
+        ? "The console has kept the rest of the page isolated. Retry after the named backend source is healthy."
+        : null;
     return (
       <div className="state-panel state-panel--error" role="alert">
-        <strong>{forbidden ? "Operator access required" : "This view is unavailable"}</strong>
+        <strong>{title}</strong>
         <span>{error.message}</span>
-        {error instanceof AdminApiError && error.requestId ? <code>Request {error.requestId}</code> : null}
+        {guidance ? <span>{guidance}</span> : null}
+        {apiError?.code ? <code>{apiError.code}</code> : null}
+        {apiError?.requestId ? <code>Request {apiError.requestId}</code> : null}
       </div>
     );
   }

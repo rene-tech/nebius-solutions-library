@@ -100,7 +100,7 @@
 {{- fail "adminReadAdapters require networkPolicy.enabled=true" }}
 {{- end }}
 {{- if and .Values.adminReadAdapters.capacity.enabled (eq (len .Values.networkPolicy.kubernetesApiCidrs) 0) }}
-{{- fail "adminReadAdapters.capacity requires at least one exact networkPolicy.kubernetesApiCidrs destination" }}
+{{- fail "adminReadAdapters.capacity requires at least one bounded networkPolicy.kubernetesApiCidrs destination" }}
 {{- end }}
 {{- if or (lt (.Values.adminReadAdapters.adapterTimeoutSeconds | float64) 0.1) (gt (.Values.adminReadAdapters.adapterTimeoutSeconds | float64) 10.0) }}
 {{- fail "adminReadAdapters.adapterTimeoutSeconds must be between 0.1 and 10 seconds" }}
@@ -108,9 +108,22 @@
 {{- if or (lt (.Values.adminReadAdapters.sourceMaxAgeSeconds | float64) 1.0) (gt (.Values.adminReadAdapters.sourceMaxAgeSeconds | float64) 3600.0) }}
 {{- fail "adminReadAdapters.sourceMaxAgeSeconds must be between 1 and 3600 seconds" }}
 {{- end }}
+{{- if or (lt (.Values.adminReadAdapters.kubernetesCacheTtlSeconds | float64) 1.0) (gt (.Values.adminReadAdapters.kubernetesCacheTtlSeconds | float64) 60.0) }}
+{{- fail "adminReadAdapters.kubernetesCacheTtlSeconds must be between 1 and 60 seconds" }}
+{{- end }}
+{{- $context := .Values.adminReadAdapters.context }}
+{{- $contextParts := list $context.project $context.cluster $context.region }}
+{{- $contextConfigured := 0 }}
+{{- range $contextParts }}{{- if . }}{{- $contextConfigured = add1 $contextConfigured }}{{- end }}{{- end }}
+{{- if and (gt $contextConfigured 0) (lt $contextConfigured 3) }}
+{{- fail "adminReadAdapters.context project, cluster, and region must be configured together" }}
+{{- end }}
+{{- if and $context.label (ne $contextConfigured 3) }}
+{{- fail "adminReadAdapters.context.label requires a complete context identity" }}
+{{- end }}
 {{- range .Values.networkPolicy.kubernetesApiCidrs }}
-{{- if not (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$|^[0-9A-Fa-f:]+/128$" .) }}
-{{- fail "networkPolicy.kubernetesApiCidrs accepts only exact /32 or /128 destinations" }}
+{{- if not (regexMatch "^(([0-9]{1,3}\\.){3}[0-9]{1,3}/([1-9]|[12][0-9]|3[0-2])|[0-9A-Fa-f:]+/([1-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$" .) }}
+{{- fail "networkPolicy.kubernetesApiCidrs accepts only bounded IPv4 or IPv6 CIDRs and rejects default routes" }}
 {{- end }}
 {{- end }}
 apiVersion: apps/v1

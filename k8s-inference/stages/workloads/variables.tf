@@ -446,7 +446,7 @@ variable "public_edge_contract" {
 }
 
 variable "acme_email" {
-  description = "Contact for the disposable staging IP ACME Issuer."
+  description = "Contact for the selected IP ACME Issuer."
   type        = string
   default     = null
   nullable    = true
@@ -454,6 +454,17 @@ variable "acme_email" {
   validation {
     condition     = var.acme_email == null || can(regex("^[^@[:space:]]+@[^@[:space:]]+$", var.acme_email))
     error_message = "acme_email must be null or a non-placeholder email address."
+  }
+}
+
+variable "acme_environment" {
+  description = "Let's Encrypt directory used by the chart-owned IP ACME Issuer. Production is the customer-facing default; staging is an explicit test-only tfvars choice."
+  type        = string
+  default     = "production"
+
+  validation {
+    condition     = contains(["staging", "production"], var.acme_environment)
+    error_message = "acme_environment must be staging or production."
   }
 }
 

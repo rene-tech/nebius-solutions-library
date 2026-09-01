@@ -1361,6 +1361,10 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
             worker_id=operation.worker_id,
             fencing_token=operation.fencing_token,
         )
+        key_usage = await runtime_store.admin_key_usage((principal.token_id,), tenant_id=principal.tenant_id)
+        assert len(key_usage) == 1
+        assert key_usage[0].token_id == principal.token_id
+        assert key_usage[0].terminal_operations == 1
 
         async with runtime_pool.acquire() as runtime_connection:
             for statement in (
@@ -2243,6 +2247,23 @@ async def test_terminal_usage_facts_are_exactly_once_survive_operation_retention
         assert not await connection.fetchval(
             "SELECT has_table_privilege('fs2_serve_runtime','fs2_usage_facts','SELECT,INSERT')"
         )
+        for column in (
+            "operation_id",
+            "token_id",
+            "estimated_gpu_seconds",
+            "input_tokens",
+            "output_tokens",
+            "modality_usage",
+        ):
+            assert await connection.fetchval(
+                "SELECT has_column_privilege('fs2_serve_runtime','fs2_usage_facts',$1,'SELECT')",
+                column,
+            )
+        for column in ("tenant_id", "principal_id", "model_id", "outcome"):
+            assert not await connection.fetchval(
+                "SELECT has_column_privilege('fs2_serve_runtime','fs2_usage_facts',$1,'SELECT')",
+                column,
+            )
         assert await connection.fetchval(
             "SELECT has_table_privilege('fs2_serve_runtime','fs2_audit_events','SELECT,INSERT')"
         )

@@ -57,6 +57,89 @@ class InternalEdgePortTests(unittest.TestCase):
         self.assertEqual(command[0], "kubectl-test")
         self.assertIn("k8s-inference-test", command)
 
+    def test_admin_envelope_requires_live_sources_and_rejects_placeholders(
+        self,
+    ) -> None:
+        envelope = {
+            "meta": {
+                "schema_version": ACCEPTANCE.ADMIN_SCHEMA_VERSION,
+                "generated_at": "2026-09-01T12:00:00+00:00",
+                "context": {},
+                "sources": [
+                    {
+                        "id": "kubernetes",
+                        "state": "available",
+                        "observed_at": "2026-09-01T12:00:00+00:00",
+                        "age_seconds": 0,
+                        "reason": None,
+                    }
+                ],
+                "warnings": [],
+            },
+            "data": {"items": [{"name": "placeholder model"}]},
+        }
+        with self.assertRaisesRegex(RuntimeError, "placeholder data"):
+            ACCEPTANCE.validate_admin_envelope(
+                envelope,
+                "admin models",
+                required_sources=frozenset({"kubernetes"}),
+            )
+
+        envelope["data"] = {"items": [{"name": "cosmos3-nano"}]}
+        envelope["meta"]["sources"][0] = {
+            "id": "kubernetes",
+            "state": "unavailable",
+            "observed_at": None,
+            "age_seconds": None,
+            "reason": "API connection is unavailable",
+        }
+        with self.assertRaisesRegex(RuntimeError, "required live sources"):
+            ACCEPTANCE.validate_admin_envelope(
+                envelope,
+                "admin models",
+                required_sources=frozenset({"kubernetes"}),
+            )
+
+    def test_admin_envelope_accepts_concrete_available_projection(self) -> None:
+        data = {"items": [{"name": "cosmos3-nano"}]}
+        envelope = {
+            "meta": {
+                "schema_version": ACCEPTANCE.ADMIN_SCHEMA_VERSION,
+                "generated_at": "2026-09-01T12:00:00+00:00",
+                "context": {},
+                "sources": [
+                    {
+                        "id": "kubernetes",
+                        "state": "available",
+                        "observed_at": "2026-09-01T12:00:00+00:00",
+                        "age_seconds": 0,
+                        "reason": None,
+                    }
+                ],
+                "warnings": [],
+            },
+            "data": data,
+        }
+        self.assertEqual(
+            ACCEPTANCE.validate_admin_envelope(
+                envelope,
+                "admin models",
+                required_sources=frozenset({"kubernetes"}),
+            ),
+            data,
+        )
+
+    def test_public_edge_acceptance_keeps_certificate_verification_enabled(
+        self,
+    ) -> None:
+        public_acceptance = (SCRIPT_PATH.parent / "acceptance.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ssl.create_default_context()", public_acceptance)
+        self.assertIn("verify=True", public_acceptance)
+        self.assertNotIn("ssl.CERT_NONE", public_acceptance)
+        self.assertNotIn("verify=False", public_acceptance)
+
     def test_same_origin_proxy_streams_sse_before_upstream_completion(self) -> None:
         first_event = b'data: {"sequence":1}\n\n'
         second_event = b'data: {"sequence":2}\n\n'

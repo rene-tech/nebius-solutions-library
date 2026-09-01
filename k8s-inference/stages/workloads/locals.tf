@@ -115,8 +115,29 @@ locals {
     strcontains(local.kubernetes_api_service_ip, ":") ? 128 : 32,
   )
   kubernetes_api_service_cidrs = toset([local.kubernetes_api_service_cidr])
-  public_edge_enabled          = var.public_edge_contract.mode == "public"
-  public_base_url              = local.public_edge_enabled ? var.public_edge_contract.public_origin : var.public_edge_contract.port_forward.application_origin
+  kubernetes_api_endpoint_ips = toset(flatten([
+    for endpoint_slice in data.kubernetes_resources.kubernetes_api_endpoint_slices.objects : flatten([
+      for endpoint in try(endpoint_slice.endpoints, []) : [
+        for address in try(endpoint.addresses, []) : address
+        if try(coalesce(endpoint.conditions.ready, true), true) &&
+        contains([for port in try(endpoint_slice.ports, []) : try(port.port, 0)], 443)
+      ]
+    ])
+  ]))
+  kubernetes_api_endpoint_cidrs = toset([
+    for ip in local.kubernetes_api_endpoint_ips : format(
+      "%s/%d",
+      ip,
+      strcontains(ip, ":") ? 128 : 32,
+    )
+  ])
+  kubernetes_api_egress_cidrs = setunion(
+    local.kubernetes_api_service_cidrs,
+    local.kubernetes_api_endpoint_cidrs,
+    toset([var.target_contract.private_subnet_cidr]),
+  )
+  public_edge_enabled = var.public_edge_contract.mode == "public"
+  public_base_url     = local.public_edge_enabled ? var.public_edge_contract.public_origin : var.public_edge_contract.port_forward.application_origin
 
   profile_contract = jsondecode(file("${path.module}/../../catalog/profiles/model-profiles.json"))
   selected_profile = local.profile_contract.profiles[var.deployment_profile]

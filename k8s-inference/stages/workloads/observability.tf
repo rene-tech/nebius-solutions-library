@@ -57,7 +57,7 @@ resource "kubernetes_network_policy_v1" "grafana_observability_egress" {
     }
 
     dynamic "egress" {
-      for_each = sort(tolist(local.kubernetes_api_service_cidrs))
+      for_each = sort(tolist(local.kubernetes_api_egress_cidrs))
       iterator = kubernetes_api_cidr
 
       content {

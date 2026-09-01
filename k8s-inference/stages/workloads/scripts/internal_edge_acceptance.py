@@ -17,6 +17,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -62,6 +63,12 @@ HOP_BY_HOP = frozenset(
         "transfer-encoding",
         "upgrade",
     }
+)
+ADMIN_SCHEMA_VERSION = "fs2.admin-api/v1"
+ADMIN_SOURCE_STATES = frozenset({"available", "stale", "unavailable"})
+PLACEHOLDER_TEXT = re.compile(
+    r"\b(?:placeholder|fixture|mock(?:ed)?|synthetic)\b",
+    re.IGNORECASE,
 )
 
 
@@ -245,7 +252,9 @@ def port_forward_command(
     ]
 
 
-def wait_for_port(processes: list[subprocess.Popen[bytes]], port: int, deadline: float) -> None:
+def wait_for_port(
+    processes: list[subprocess.Popen[bytes]], port: int, deadline: float
+) -> None:
     while time.monotonic() < deadline:
         if any(process.poll() is not None for process in processes):
             raise RuntimeError("kubectl port-forward exited before acceptance")
@@ -298,6 +307,327 @@ def decoded_json(payload: bytes, label: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise RuntimeError(f"{label} returned a non-object JSON envelope")
     return value
+
+
+def _aware_timestamp(value: object, label: str) -> datetime:
+    if not isinstance(value, str) or not value:
+        raise RuntimeError(f"{label} is missing")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise RuntimeError(f"{label} is invalid") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise RuntimeError(f"{label} is not timezone-aware")
+    return parsed
+
+
+def _reject_placeholder_values(value: object, label: str) -> None:
+    if isinstance(value, str):
+        if PLACEHOLDER_TEXT.search(value):
+            raise RuntimeError(f"{label} contains placeholder data")
+        return
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            _reject_placeholder_values(key, label)
+            _reject_placeholder_values(child, label)
+        return
+    if isinstance(value, list):
+        for child in value:
+            _reject_placeholder_values(child, label)
+
+
+def validate_admin_envelope(
+    envelope: object,
+    label: str,
+    *,
+    required_sources: frozenset[str] = frozenset(),
+) -> dict[str, object]:
+    """Reject shape-only HTTP 200 responses and non-live source projections."""
+    if not isinstance(envelope, dict):
+        raise RuntimeError(f"{label} returned a non-object admin envelope")
+    meta = envelope.get("meta")
+    data = envelope.get("data")
+    if not isinstance(meta, dict) or not isinstance(data, dict):
+        raise RuntimeError(f"{label} lacks typed admin meta/data objects")
+    if meta.get("schema_version") != ADMIN_SCHEMA_VERSION:
+        raise RuntimeError(f"{label} returned an unsupported admin schema")
+    _aware_timestamp(meta.get("generated_at"), f"{label} generated_at")
+    if not isinstance(meta.get("context"), dict):
+        raise RuntimeError(f"{label} lacks a server-owned context")
+    sources = meta.get("sources")
+    if not isinstance(sources, list) or not sources:
+        raise RuntimeError(f"{label} does not disclose any data sources")
+    source_states: dict[str, str] = {}
+    for source in sources:
+        if not isinstance(source, dict):
+            raise RuntimeError(f"{label} contains an invalid source record")
+        source_id = source.get("id")
+        state = source.get("state")
+        if (
+            not isinstance(source_id, str)
+            or not source_id
+            or source_id in source_states
+            or state not in ADMIN_SOURCE_STATES
+        ):
+            raise RuntimeError(f"{label} contains an invalid or duplicate source")
+        source_states[source_id] = state
+        reason = source.get("reason")
+        if state == "available":
+            _aware_timestamp(
+                source.get("observed_at"), f"{label} {source_id} observed_at"
+            )
+            if reason not in {None, ""}:
+                raise RuntimeError(f"{label} marks {source_id} available with a reason")
+        elif not isinstance(reason, str) or not reason:
+            raise RuntimeError(f"{label} marks {source_id} {state} without a reason")
+    unavailable = sorted(
+        source_id
+        for source_id in required_sources
+        if source_states.get(source_id) != "available"
+    )
+    if unavailable:
+        raise RuntimeError(
+            f"{label} required live sources are unavailable: {', '.join(unavailable)}"
+        )
+    _reject_placeholder_values(envelope, label)
+    return data
+
+
+def _available_measurement(value: object, label: str) -> float:
+    if not isinstance(value, dict) or value.get("state") != "available":
+        raise RuntimeError(f"{label} is not an available measurement")
+    measured = value.get("value")
+    if isinstance(measured, bool) or not isinstance(measured, int | float):
+        raise RuntimeError(f"{label} is not numeric")
+    return _finite(measured, label)
+
+
+def validate_admin_context(data: dict[str, object]) -> None:
+    selected = data.get("selected")
+    options = data.get("options")
+    if data.get("server_authoritative") is not True or not isinstance(selected, dict):
+        raise RuntimeError("admin context is not server-authoritative")
+    identity = (
+        selected.get("project"),
+        selected.get("cluster"),
+        selected.get("region"),
+    )
+    if not all(isinstance(value, str) and value for value in identity):
+        raise RuntimeError("admin context lacks the deployed project/cluster/region")
+    if not isinstance(options, list) or not any(
+        isinstance(option, dict)
+        and (option.get("project"), option.get("cluster"), option.get("region"))
+        == identity
+        for option in options
+    ):
+        raise RuntimeError("admin context options do not contain the selected cluster")
+
+
+def validate_admin_overview(data: dict[str, object]) -> None:
+    states = data.get("model_states")
+    if not isinstance(states, list) or not any(
+        isinstance(item, dict)
+        and item.get("state") != "unknown"
+        and isinstance(item.get("models"), int)
+        and item["models"] > 0
+        for item in states
+    ):
+        raise RuntimeError("admin overview has no concrete model state")
+    if (
+        _available_measurement(data.get("requests_per_second"), "admin request rate")
+        < 0
+    ):
+        raise RuntimeError("admin request rate is negative")
+    capacity = data.get("capacity")
+    if not isinstance(capacity, dict):
+        raise RuntimeError("admin overview lacks fleet capacity")
+    if (
+        _available_measurement(capacity.get("allocatable_gpus"), "allocatable GPUs")
+        <= 0
+    ):
+        raise RuntimeError("admin overview reports no allocatable GPUs")
+
+
+def validate_admin_models(data: dict[str, object]) -> int:
+    items = data.get("items")
+    total = data.get("total")
+    if (
+        not isinstance(items, list)
+        or not items
+        or not isinstance(total, int)
+        or total < len(items)
+    ):
+        raise RuntimeError("admin model inventory is empty or inconsistent")
+    concrete = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        identity = item.get("identity")
+        runtime = item.get("runtime")
+        if (
+            not isinstance(identity, dict)
+            or not isinstance(runtime, dict)
+            or identity.get("enabled") is not True
+        ):
+            continue
+        if (
+            runtime.get("state") != "unknown"
+            and isinstance(runtime.get("desired_replicas"), int)
+            and isinstance(runtime.get("ready_replicas"), int)
+            and isinstance(runtime.get("semantic_healthy"), bool)
+        ):
+            _aware_timestamp(runtime.get("observed_at"), "admin model observed_at")
+            concrete += 1
+    if concrete == 0:
+        raise RuntimeError(
+            "admin model inventory has no concrete Kubernetes-backed model"
+        )
+    return len(items)
+
+
+def validate_admin_capacity(data: dict[str, object]) -> None:
+    node_pools = data.get("node_pools")
+    if (
+        not isinstance(node_pools, dict)
+        or node_pools.get("state") != "available"
+        or not isinstance(node_pools.get("items"), list)
+        or not node_pools["items"]
+    ):
+        raise RuntimeError("admin capacity lacks a live node-pool inventory")
+
+
+def validate_admin_observability(data: dict[str, object]) -> None:
+    components = data.get("components")
+    if not isinstance(components, list):
+        raise RuntimeError("admin observability lacks component inventory")
+    by_id = {
+        component.get("id"): component
+        for component in components
+        if isinstance(component, dict) and isinstance(component.get("id"), str)
+    }
+    for component_id in ("prometheus", "grafana", "loki", "dcgm", "otel"):
+        component = by_id.get(component_id)
+        if (
+            not isinstance(component, dict)
+            or component.get("installed") is not True
+            or component.get("health") == "unknown"
+        ):
+            raise RuntimeError(f"admin observability lacks live {component_id} state")
+
+
+def validate_admin_configuration(data: dict[str, object]) -> None:
+    if not isinstance(data.get("revision"), int) or data["revision"] < 1:
+        raise RuntimeError("admin configuration lacks a concrete revision")
+    for field in ("desired", "effective"):
+        configuration = data.get(field)
+        if (
+            not isinstance(configuration, dict)
+            or configuration.get("schema_version") != "fs2.admin-configuration/v1"
+            or not isinstance(configuration.get("pools"), dict)
+            or not configuration["pools"]
+            or not isinstance(configuration.get("models"), dict)
+            or not configuration["models"]
+        ):
+            raise RuntimeError(f"admin configuration {field} state is not concrete")
+
+
+def admin_get(
+    cookie: str,
+    path: str,
+    label: str,
+    *,
+    required_sources: frozenset[str] = frozenset(),
+) -> dict[str, object]:
+    status, _, payload = request(
+        path,
+        headers={"Cookie": cookie, "Origin": APPLICATION_ORIGIN},
+    )
+    if status != 200:
+        raise RuntimeError(f"{label} returned HTTP {status}")
+    return validate_admin_envelope(
+        decoded_json(payload, label),
+        label,
+        required_sources=required_sources,
+    )
+
+
+def verify_admin_live_views(cookie: str, deadline: float) -> dict[str, int]:
+    """Poll through scrape/cache latency, then require every operator view to be real."""
+    poll_deadline = min(deadline, time.monotonic() + 90)
+    last_error: RuntimeError | None = None
+    while time.monotonic() < poll_deadline:
+        try:
+            context = admin_get(
+                cookie,
+                "/admin/api/v1/context",
+                "admin context",
+                required_sources=frozenset({"context"}),
+            )
+            validate_admin_context(context)
+            overview = admin_get(
+                cookie,
+                "/admin/api/v1/overview",
+                "admin overview",
+                required_sources=frozenset(
+                    {"catalog", "postgresql", "kubernetes", "prometheus"}
+                ),
+            )
+            validate_admin_overview(overview)
+            models = admin_get(
+                cookie,
+                "/admin/api/v1/models",
+                "admin models",
+                required_sources=frozenset(
+                    {"catalog", "postgresql", "kubernetes", "prometheus"}
+                ),
+            )
+            model_count = validate_admin_models(models)
+            operations = admin_get(
+                cookie,
+                "/admin/api/v1/operations",
+                "admin operations",
+                required_sources=frozenset({"postgresql"}),
+            )
+            if not isinstance(operations.get("items"), list) or not operations["items"]:
+                raise RuntimeError(
+                    "admin operations did not observe the semantic invocation"
+                )
+            capacity = admin_get(
+                cookie,
+                "/admin/api/v1/capacity",
+                "admin capacity",
+                required_sources=frozenset({"kubernetes_capacity", "kueue"}),
+            )
+            validate_admin_capacity(capacity)
+            observability = admin_get(
+                cookie,
+                "/admin/api/v1/observability",
+                "admin observability",
+                required_sources=frozenset({"observability"}),
+            )
+            validate_admin_observability(observability)
+            for path, label in (
+                ("/admin/api/v1/principals", "admin principals"),
+                ("/admin/api/v1/keys", "admin keys"),
+                ("/admin/api/v1/audit", "admin audit"),
+            ):
+                value = admin_get(
+                    cookie, path, label, required_sources=frozenset({"postgresql"})
+                )
+                if not isinstance(value.get("items"), list):
+                    raise RuntimeError(f"{label} lacks a concrete item collection")
+            configuration = admin_get(
+                cookie,
+                "/admin/api/v1/configuration",
+                "admin configuration",
+                required_sources=frozenset({"postgresql"}),
+            )
+            validate_admin_configuration(configuration)
+            return {"models": model_count, "operations": len(operations["items"])}
+        except RuntimeError as exc:
+            last_error = exc
+            time.sleep(3)
+    raise RuntimeError("admin live-data acceptance did not converge") from last_error
 
 
 def issue_acceptance_pat(admin_token: str, model_id: str) -> tuple[str, str]:
@@ -488,7 +818,9 @@ def mcp_list_tools(pat: str) -> dict[str, object]:
         or not isinstance(server_info.get("version"), str)
         or not server_info["version"]
     ):
-        raise RuntimeError("MCP initialize did not negotiate the reviewed legacy version")
+        raise RuntimeError(
+            "MCP initialize did not negotiate the reviewed legacy version"
+        )
     session_id = initialize_headers.get("MCP-Session-Id")
     _mcp_rpc(
         pat,
@@ -686,7 +1018,9 @@ def run_semantic(
     }
     remaining_seconds = int(deadline - time.monotonic())
     if remaining_seconds < 1:
-        raise TimeoutError("semantic invocation exceeded the bounded acceptance timeout")
+        raise TimeoutError(
+            "semantic invocation exceeded the bounded acceptance timeout"
+        )
     status, headers, response = request(
         f"/v1/models/{model_id}:invoke",
         method="POST",
@@ -772,8 +1106,7 @@ def accept(
             status != 200
             or not isinstance(models, list)
             or not any(
-                isinstance(item, dict) and item.get("id") == model_id
-                for item in models
+                isinstance(item, dict) and item.get("id") == model_id for item in models
             )
         ):
             raise RuntimeError("authenticated model catalog lacks the acceptance model")
@@ -784,7 +1117,7 @@ def accept(
             "Authorization": f"Bearer {admin_token}",
             "Origin": APPLICATION_ORIGIN,
         }
-        status, headers, _ = request(
+        status, headers, session_payload = request(
             "/admin/api/v1/session",
             method="POST",
             headers=session_headers,
@@ -794,13 +1127,12 @@ def accept(
         cookie = set_cookie.split(";", 1)[0]
         if status != 200 or not cookie.startswith("__Host-fs2_admin_session="):
             raise RuntimeError("admin API did not issue the reviewed operator session")
-
-        status, _, overview = request(
-            "/admin/api/v1/overview",
-            headers={"Cookie": cookie, "Origin": APPLICATION_ORIGIN},
+        validate_admin_envelope(
+            decoded_json(session_payload, "admin session"),
+            "admin session",
+            required_sources=frozenset({"postgresql"}),
         )
-        if status != 200 or not isinstance(json.loads(overview), dict):
-            raise RuntimeError("admin overview acceptance failed")
+        admin_views = verify_admin_live_views(cookie, deadline)
     finally:
         revoke_acceptance_pat(admin_token, token_id)
     return {
@@ -809,6 +1141,7 @@ def accept(
         "origin": APPLICATION_ORIGIN,
         "admin_static": True,
         "admin_api": True,
+        "admin_live_views": admin_views,
         "admin_health": True,
         "control_ready": True,
         "models": len(models),
@@ -884,7 +1217,9 @@ def main() -> None:
         ):
             processes.append(
                 subprocess.Popen(  # noqa: S603
-                    port_forward_command(args.kubeconfig.resolve(), args.context, service, port),
+                    port_forward_command(
+                        args.kubeconfig.resolve(), args.context, service, port
+                    ),
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,

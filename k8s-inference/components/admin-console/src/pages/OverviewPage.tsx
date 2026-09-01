@@ -5,12 +5,14 @@ import type { ModelState } from "../api/types";
 import { DataBoundary } from "../components/DataBoundary";
 import { MetricCard, Measurement } from "../components/Measurement";
 import { StatusChip } from "../components/StatusChip";
+import { sharedContextParams } from "../lib/search";
 
 export function OverviewPage() {
   const [searchParams] = useSearchParams();
+  const context = sharedContextParams(searchParams);
   const query = useQuery({
-    queryKey: ["admin-overview", searchParams.toString()],
-    queryFn: ({ signal }) => adminApi.overview(searchParams, signal),
+    queryKey: ["admin-overview", context.toString()],
+    queryFn: ({ signal }) => adminApi.overview(context, signal),
   });
 
   return (
@@ -20,7 +22,7 @@ export function OverviewPage() {
           <section aria-labelledby="fleet-heading">
             <div className="section-heading">
               <div><span className="eyebrow">Fleet now</span><h2 id="fleet-heading">Inference at a glance</h2></div>
-              <Link to={{ pathname: "/admin/models", search: searchParams.toString() }} className="text-link">View models</Link>
+              <Link to={{ pathname: "/admin/models", search: context.toString() }} className="text-link">View models</Link>
             </div>
             <div className="metric-grid">
               <MetricCard label="Requests" value={data.requests_per_second} detail="Current observed rate" />

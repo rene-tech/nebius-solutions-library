@@ -1,16 +1,14 @@
 variable "admin_kubernetes_api_cidrs" {
-  description = "Optional fail-closed assertion for the automatically discovered default/kubernetes spec.clusterIP as one exact IPv4 /32 or IPv6 /128. Never populate it from the kubeconfig server hostname or external DNS."
+  description = "Optional fail-closed assertion for the complete API egress set: default/kubernetes Service IP, ready control-plane endpoint host routes, and the target-contract private subnet CIDR used as the stable endpoint-rotation fallback."
   type        = set(string)
   default     = []
 
   validation {
-    condition = length(var.admin_kubernetes_api_cidrs) <= 1 && alltrue([
-      for cidr in var.admin_kubernetes_api_cidrs : can(cidrhost(cidr, 0)) && (
-        can(regex("^[0-9.]+/32$", cidr)) ||
-        can(regex("^[0-9A-Fa-f:]+/128$", cidr))
-      )
+    condition = length(var.admin_kubernetes_api_cidrs) <= 32 && alltrue([
+      for cidr in var.admin_kubernetes_api_cidrs :
+      can(cidrhost(cidr, 0)) && !contains(["0.0.0.0/0", "::/0"], cidr)
     ])
-    error_message = "admin_kubernetes_api_cidrs may be empty or contain only the exact default/kubernetes spec.clusterIP as one IPv4 /32 or IPv6 /128 assertion."
+    error_message = "admin_kubernetes_api_cidrs may be empty or contain at most 32 valid non-default-route API destinations."
   }
 }
 

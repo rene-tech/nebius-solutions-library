@@ -292,6 +292,17 @@ serviceMonitor:
 adminReadAdapters:
   adapterTimeoutSeconds: "2"
   sourceMaxAgeSeconds: "90"
+  # Cache only immutable, server-selected Kubernetes LIST projections. A short
+  # TTL bounds API-server load without letting the admin UI select resources.
+  kubernetesCacheTtlSeconds: "15"
+  # Empty is a valid library default. The Terraform workloads stage fills this
+  # from the selected project/cluster/region so browser context is never a
+  # second configuration surface.
+  context:
+    project: ""
+    cluster: ""
+    region: ""
+    label: ""
   capacity:
     enabled: false
     kubernetesApiUrl: https://kubernetes.default.svc
@@ -401,13 +412,6 @@ publicTls:
     email: ""
     accountPrivateKeySecretName: fs2-serve-ip-acme-account
     profile: shortlived
-    productionPromotion:
-      approved: false
-      stagingCertificateReady: false
-      stagingSolverReachabilityReady: false
-      stagingExternalHttpsReady: false
-      stagingIpAddress: ""
-      stagingReceiptSha256: ""
 
 # Lightweight per-Envoy abuse protection. Durable per-token budgets and
 # concurrency remain authoritative in PostgreSQL.

@@ -205,6 +205,8 @@ app.kubernetes.io/component: migration
   value: {{ .Values.adminReadAdapters.capacity.systemNamespace | quote }}
 - name: FS2_ADMIN_KUEUE_API_VERSION
   value: {{ .Values.adminReadAdapters.capacity.kueueApiVersion | quote }}
+- name: FS2_ADMIN_KUBERNETES_CACHE_TTL_SECONDS
+  value: {{ .Values.adminReadAdapters.kubernetesCacheTtlSeconds | quote }}
 {{- end }}
 {{- if .Values.adminReadAdapters.observability.enabled }}
 - name: FS2_ADMIN_PROMETHEUS_URL
@@ -216,6 +218,16 @@ app.kubernetes.io/component: migration
   value: {{ .Values.adminReadAdapters.adapterTimeoutSeconds | quote }}
 - name: FS2_ADMIN_SOURCE_MAX_AGE_SECONDS
   value: {{ .Values.adminReadAdapters.sourceMaxAgeSeconds | quote }}
+{{- if and .Values.adminReadAdapters.context.project .Values.adminReadAdapters.context.cluster .Values.adminReadAdapters.context.region }}
+- name: FS2_ADMIN_CONTEXT_PROJECT
+  value: {{ .Values.adminReadAdapters.context.project | quote }}
+- name: FS2_ADMIN_CONTEXT_CLUSTER
+  value: {{ .Values.adminReadAdapters.context.cluster | quote }}
+- name: FS2_ADMIN_CONTEXT_REGION
+  value: {{ .Values.adminReadAdapters.context.region | quote }}
+- name: FS2_ADMIN_CONTEXT_LABEL
+  value: {{ default .Values.adminReadAdapters.context.cluster .Values.adminReadAdapters.context.label | quote }}
+{{- end }}
 {{- end -}}
 
 {{- define "fs2-serve.migrationEnv" -}}

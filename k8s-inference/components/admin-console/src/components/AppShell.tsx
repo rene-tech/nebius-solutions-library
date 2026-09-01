@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { NavLink, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { adminApi } from "../api/client";
+import { adminApi, AdminApiError } from "../api/client";
 import { formatTimestamp } from "../lib/format";
 import { sharedContextParams } from "../lib/search";
 import { useSession } from "../auth/SessionContext";
@@ -34,6 +34,15 @@ export function AppShell() {
   });
   const options = contextQuery.data?.data.options ?? [];
   const selected = contextQuery.data?.data.selected;
+  const contextImpaired = contextQuery.data?.meta.sources.some((source) => source.state !== "available") ?? false;
+  const contextStatus = contextQuery.isPending
+    ? "Checking"
+    : contextQuery.isError || !contextQuery.data
+      ? "Unavailable"
+      : contextImpaired
+        ? "Partial"
+        : "Live";
+  const contextError = contextQuery.error instanceof AdminApiError ? contextQuery.error : null;
 
   function changeContext(index: string) {
     const option = options[Number(index)];
@@ -131,9 +140,18 @@ export function AppShell() {
           </div>
           <div className="page-heading__context">
             {selected?.region ? <span className="quiet-chip">{selected.region}</span> : null}
-            {contextQuery.data?.meta.sources.some((source) => source.state !== "available") ? <span className="quiet-chip quiet-chip--warning">Partial</span> : <span className="quiet-chip quiet-chip--healthy">Live</span>}
+            <span className={`quiet-chip ${contextStatus === "Live" ? "quiet-chip--healthy" : "quiet-chip--warning"}`}>{contextStatus}</span>
           </div>
         </div>
+        {contextQuery.isError ? (
+          <div className="inline-notice inline-notice--error context-error" role="alert">
+            <strong>Cluster context is unavailable.</strong> {contextError?.message ?? "The admin service did not return an authorized cluster context."}
+            {contextError?.requestId ? <code> Request {contextError.requestId}</code> : null}
+            <button className="button" disabled={contextQuery.isFetching} onClick={() => void contextQuery.refetch()} type="button">{contextQuery.isFetching ? "Retrying…" : "Try again"}</button>
+          </div>
+        ) : contextQuery.data && options.length === 0 ? (
+          <div className="inline-notice inline-notice--warning context-error" role="status"><strong>No authorized cluster context is configured.</strong> Model and capacity views may be unavailable until the backend publishes one.</div>
+        ) : null}
         <Outlet />
       </main>
     </div>

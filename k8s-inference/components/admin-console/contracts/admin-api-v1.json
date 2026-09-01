@@ -186,6 +186,48 @@
       "path": "/admin/api/v1/observability",
       "success_status": 200,
       "data_schema": "AdminObservability"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/configuration",
+      "success_status": 200,
+      "data_schema": "ConfigurationRevision"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/api/v1/configuration:diff",
+      "success_status": 200,
+      "data_schema": "ConfigurationDiff"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/api/v1/configuration:validate",
+      "success_status": 200,
+      "data_schema": "ConfigurationValidation"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/api/v1/configuration:plan",
+      "success_status": 200,
+      "data_schema": "ConfigurationPlan"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/api/v1/configuration:reconcile",
+      "success_status": 200,
+      "data_schema": "ReconciliationStatus"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/configuration/reconciliations/{reconciliation_id}",
+      "success_status": 200,
+      "data_schema": "ReconciliationStatus"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/api/v1/configuration:rollback",
+      "success_status": 200,
+      "data_schema": "RollbackPlan"
     }
   ],
   "shared_context_query": ["project", "cluster", "region", "from", "to", "timezone"],
@@ -208,6 +250,16 @@
   "observability_component_fields": ["installed", "health", "data_present", "launch"],
   "bounds": {
     "maximum_time_range_days": 31,
+    "maximum_project_characters": 128,
+    "maximum_cluster_characters": 128,
+    "maximum_region_characters": 64,
+    "maximum_timezone_characters": 64,
+    "maximum_model_search_characters": 128,
+    "maximum_tenant_characters": 120,
+    "maximum_model_id_characters": 128,
+    "maximum_principal_id_characters": 200,
+    "maximum_api_key_prefix_characters": 64,
+    "maximum_error_code_characters": 64,
     "maximum_model_page_size": 256,
     "maximum_operation_page_size": 200,
     "maximum_cursor_characters": 512

@@ -6,6 +6,7 @@ import { adminApi } from "../../api/client";
 import { useSession } from "../../auth/SessionContext";
 import { DataBoundary } from "../../components/DataBoundary";
 import { formatTimestamp } from "../../lib/format";
+import { sharedContextParams } from "../../lib/search";
 
 function boundedTenant(value: string | null): string | undefined {
   if (!value || value.length > 120 || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(value)) return undefined;
@@ -39,7 +40,8 @@ export function AuditPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const fixedTenant = session.principal.tenant_id;
-  const selectedTenant = fixedTenant ?? boundedTenant(searchParams.get("tenant"));
+  const requestedTenant = searchParams.get("tenant");
+  const selectedTenant = fixedTenant ?? boundedTenant(requestedTenant);
   const requestedOutcome = searchParams.get("outcome");
   const outcome = requestedOutcome === "succeeded" || requestedOutcome === "failed"
     ? requestedOutcome
@@ -54,7 +56,10 @@ export function AuditPage() {
   const items = query.data?.data.items.filter((event) => matches(event, normalizedSearch, outcome)) ?? [];
 
   function update(key: string, value: string, defaultValue?: string) {
-    const next = new URLSearchParams(searchParams);
+    const next = sharedContextParams(searchParams);
+    if (selectedTenant) next.set("tenant", selectedTenant);
+    if (outcome !== "all") next.set("outcome", outcome);
+    if (limit !== 200) next.set("limit", String(limit));
     value === defaultValue || value === "" ? next.delete(key) : next.set(key, value);
     setSearchParams(next);
   }
@@ -72,6 +77,7 @@ export function AuditPage() {
         <label>Rows<select onChange={(event) => update("limit", event.target.value, "200")} value={limit}>{[50, 100, 200, 500, 1000].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <span className="toolbar__summary">{items.length} of {query.data?.data.items.length ?? "—"} events</span>
       </div>
+      {fixedTenant === null && requestedTenant !== null && selectedTenant === undefined ? <div className="freshness-notice" role="status"><strong>Invalid tenant filter ignored</strong><span>Tenant identifiers must be 1–120 letters, numbers, dots, underscores or hyphens.</span></div> : null}
       <DataBoundary data={query.data} error={query.error} pending={query.isPending} empty={!query.isPending && items.length === 0}>
         {() => (
           <div className="table-frame">

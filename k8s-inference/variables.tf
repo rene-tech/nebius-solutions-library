@@ -132,9 +132,10 @@ variable "deployment" {
     }), {})
 
     edge = optional(object({
-      mode         = optional(string, "internal-only")
-      source_cidrs = optional(set(string), [])
-      acme_email   = optional(string)
+      mode             = optional(string, "internal-only")
+      source_cidrs     = optional(set(string), [])
+      acme_email       = optional(string)
+      acme_environment = optional(string, "production")
       port_forward_ports = optional(object({
         control_plane  = optional(number, 18080)
         admin_console  = optional(number, 18081)
@@ -532,6 +533,7 @@ variable "deployment" {
   validation {
     condition = (
       contains(["public", "internal-only"], var.deployment.edge.mode) &&
+      contains(["staging", "production"], var.deployment.edge.acme_environment) &&
       (
         var.deployment.edge.mode == "public" ?
         length(var.deployment.edge.source_cidrs) > 0 &&
@@ -544,7 +546,7 @@ variable "deployment" {
         length(var.deployment.edge.source_cidrs) == 0 && var.deployment.edge.acme_email == null
       )
     )
-    error_message = "Public edge mode requires one to eight IPv4 source CIDRs and an ACME email; internal-only mode requires neither."
+    error_message = "Public edge mode requires one to eight IPv4 source CIDRs, an ACME email, and a staging or production ACME environment; internal-only mode requires neither CIDRs nor email."
   }
 
   validation {

@@ -270,12 +270,17 @@ def test_promql_is_fixed_bounded_and_rejects_selector_injection() -> None:
     queries = PrometheusQueryTemplates.for_window(model_id="glm-5-2-fp8", seconds=300)
     assert set(queries) == {
         "requests_per_second",
+        "terminal_operations",
         "error_rate",
         "latency_p50_seconds",
         "latency_p95_seconds",
         "latency_p99_seconds",
     }
-    assert all("glm-5-2-fp8" in query and "[300s]" in query for query in queries.values())
+    assert all("glm-5-2-fp8" in query for query in queries.values())
+    assert all("[300s]" in query for name, query in queries.items() if name != "terminal_operations")
+    grouped = PrometheusQueryTemplates.by_model_for_window(seconds=300)
+    assert set(grouped) == set(queries)
+    assert all("glm-5-2-fp8" not in query for query in grouped.values())
     with pytest.raises(ValueError, match="selector"):
         PrometheusQueryTemplates.for_window(model_id='qwen"} or vector(1)', seconds=300)
     with pytest.raises(ValueError, match="range"):
@@ -627,7 +632,16 @@ def test_operation_store_failure_is_sanitized_problem_detail(registry: Any, ciph
 
 
 def test_openapi_matches_typed_versioned_admin_contract(registry: Any, cipher: Any, hasher: Any) -> None:
+    from test_admin_configuration import qualified_configuration
+
+    from fs2_serve.configuration import ConfigurationService, InMemoryConfigurationRepository
+
     runtime = _runtime(registry, cipher, hasher)
+    initial, configuration_catalog = qualified_configuration()
+    runtime.configuration = ConfigurationService(
+        repository=InMemoryConfigurationRepository(initial),
+        catalog=configuration_catalog,
+    )
     schema = create_app(runtime).openapi()
     contract = json.loads(
         (Path(__file__).resolve().parents[2] / "admin-console" / "contracts" / "admin-api-v1.json").read_text(

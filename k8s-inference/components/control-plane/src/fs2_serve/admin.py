@@ -198,23 +198,54 @@ class PrometheusQueryTemplates:
             raise ValueError("Prometheus range is outside the bound")
         selector = cls._selector(model_id)
         labels = f"{{{selector}}}" if selector else ""
-        bucket_labels = f"{{{selector}}}" if selector else ""
         window = f"{seconds}s"
-        requests = f"sum(rate(fs2_serve_requests_total{labels}[{window}]))"
-        errors = (
-            "sum(rate(fs2_serve_requests_total"
-            f'{{{selector + "," if selector else ""}outcome!="succeeded"}}[{window}])) / '
-            f"clamp_min({requests}, 1e-12)"
+        requests = f"sum(max by (model, protocol, outcome) (rate(fs2_serve_requests_total{labels}[{window}])))"
+        terminal = f"sum(max by (model, protocol, outcome) (fs2_serve_requests_total{labels}))"
+        error_labels = f'{{{selector + "," if selector else ""}outcome!="succeeded"}}'
+        error_requests = (
+            f"sum(max by (model, protocol, outcome) (rate(fs2_serve_requests_total{error_labels}[{window}])))"
         )
+        errors = f"clamp((({error_requests}) or vector(0)) / clamp_min(({requests}), 1e-12), 0, 1)"
         latency = {
             quantile: (
                 f"histogram_quantile({quantile}, sum by (le) "
-                f"(rate(fs2_serve_request_duration_seconds_bucket{bucket_labels}[{window}])))"
+                f"(rate(fs2_serve_request_duration_seconds_bucket{labels}[{window}])))"
             )
             for quantile in ("0.50", "0.95", "0.99")
         }
         return {
             "requests_per_second": requests,
+            "terminal_operations": terminal,
+            "error_rate": errors,
+            "latency_p50_seconds": latency["0.50"],
+            "latency_p95_seconds": latency["0.95"],
+            "latency_p99_seconds": latency["0.99"],
+        }
+
+    @staticmethod
+    def by_model_for_window(*, seconds: int) -> Mapping[str, str]:
+        """Return six fixed vector queries, independent of catalog size."""
+
+        if not 60 <= seconds <= int(MAX_ADMIN_WINDOW.total_seconds()):
+            raise ValueError("Prometheus range is outside the bound")
+        window = f"{seconds}s"
+        requests = f"sum by (model) (max by (model, protocol, outcome) (rate(fs2_serve_requests_total[{window}])))"
+        terminal = "sum by (model) (max by (model, protocol, outcome) (fs2_serve_requests_total))"
+        error_requests = (
+            "sum by (model) (max by (model, protocol, outcome) "
+            f'(rate(fs2_serve_requests_total{{outcome!="succeeded"}}[{window}])))'
+        )
+        errors = f"clamp((({error_requests}) or on(model) (0 * ({requests}))) / clamp_min(({requests}), 1e-12), 0, 1)"
+        latency = {
+            quantile: (
+                f"histogram_quantile({quantile}, sum by (model, le) "
+                f"(rate(fs2_serve_request_duration_seconds_bucket[{window}])))"
+            )
+            for quantile in ("0.50", "0.95", "0.99")
+        }
+        return {
+            "requests_per_second": requests,
+            "terminal_operations": terminal,
             "error_rate": errors,
             "latency_p50_seconds": latency["0.50"],
             "latency_p95_seconds": latency["0.95"],
@@ -287,11 +318,11 @@ def derive_model_state(
     if not sources_fresh:
         return AdminModelState.UNKNOWN, "a required observed-state source is unavailable or stale"
     if health_failure or phase == AdminActivationPhase.FAILED:
-        return AdminModelState.UNHEALTHY, "semantic or activation health failed"
+        return AdminModelState.UNHEALTHY, "workload or activation health failed"
     if phase == AdminActivationPhase.CLAIMED or desired_replicas > ready_replicas:
         return AdminModelState.LOADING, "activation is claimed or desired replicas are not ready"
     if ready_replicas > 0:
-        return AdminModelState.HOT, "at least one semantically healthy replica is ready"
+        return AdminModelState.HOT, "at least one healthy Service-selected replica is Ready"
     if phase == AdminActivationPhase.QUEUED or queued_operations > 0:
         return AdminModelState.QUEUED, "durable demand is waiting without a ready replica"
     return AdminModelState.COLD, "qualified model is idle at zero ready replicas"

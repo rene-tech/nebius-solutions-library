@@ -200,8 +200,12 @@ class InferenceStackTests(unittest.TestCase):
             credentials = json.loads(
                 foundation_environment["TF_VAR_bootstrap_grafana_credentials"]
             )
-            self.assertEqual(credentials["username"], secret_values["TEST_FS2_GRAFANA_USERNAME"])
-            self.assertEqual(credentials["password"], secret_values["TEST_FS2_GRAFANA_PASSWORD"])
+            self.assertEqual(
+                credentials["username"], secret_values["TEST_FS2_GRAFANA_USERNAME"]
+            )
+            self.assertEqual(
+                credentials["password"], secret_values["TEST_FS2_GRAFANA_PASSWORD"]
+            )
             self.assertEqual(
                 workloads_environment["TF_VAR_ngc_api_key"],
                 secret_values["TEST_FS2_NGC_API_KEY"],
@@ -239,8 +243,113 @@ class InferenceStackTests(unittest.TestCase):
         self.assertNotIn("TF_VAR_project_id", cleaned)
         self.assertNotIn("TF_DATA_DIR", cleaned)
 
+    def test_admin_baseline_is_derived_from_selected_tfvars_and_live_pool_contract(
+        self,
+    ) -> None:
+        configuration = contract()
+        configuration["selected_model_ids"] = ["qwen3-8b"]
+        configuration["profiles"]["accelerators"] = "minimal"
+        configuration["admin_configuration"] = {
+            "enabled": True,
+            "source": "derived-terraform-baseline",
+        }
+        configuration["stages"]["workloads"].update(
+            {
+                "enabled_model_ids": ["qwen3-8b"],
+                "model_image_overrides": {
+                    "qwen3-8b": "registry.example.invalid/fs2-models/qwen3-8b@"
+                    f"sha256:{'2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635'}"
+                },
+                "model_pool_overrides": {"qwen3-8b": "h100-1x"},
+                "model_scaling_mode": "static",
+                "model_scaling_overrides": {},
+                "hot_model_ids": [],
+                "keda_polling_interval_seconds": 5,
+                "keda_cooldown_period_seconds": 300,
+            }
+        )
+        with tempfile.TemporaryDirectory(prefix="inference-stack-admin-") as temporary:
+            run_root = Path(temporary)
+            dynamic = dynamic_outputs(run_root)
+            dynamic["accelerator_pool_contract"] = {
+                "schema": "fs2-serve.nebius.ai/terraform-accelerator-pools/v2",
+                "pools": {
+                    "h100-1x": {
+                        "accelerator_class": "nvidia-h100-sxm5-80gb",
+                        "capacity": {
+                            "type": "preemptible",
+                            "min_nodes": 0,
+                            "max_nodes": 2,
+                        },
+                        "node": {"gpus_per_node": 1},
+                        "resource_api": {"resource_name": "nvidia.com/gpu"},
+                        "features": {
+                            "local_cache": "shared-filesystem",
+                            "shared_filesystem": True,
+                        },
+                        "scheduling": {
+                            "stable_node_labels": {
+                                "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                                "accelerator.fs2.nebius/pool-id": "h100-1x",
+                            },
+                            "tolerations": [
+                                {
+                                    "key": "dedicated",
+                                    "operator": "Equal",
+                                    "value": "fs2-inference",
+                                    "effect": "NoSchedule",
+                                }
+                            ],
+                        },
+                    }
+                },
+            }
+            _, workloads_path = STACK.write_downstream_variables(
+                run_root,
+                configuration,
+                dynamic,
+            )
+            workloads = json.loads(workloads_path.read_text(encoding="utf-8"))
+
+        baseline = workloads["admin_configuration"]
+        self.assertEqual(baseline["schema_version"], "fs2.admin-configuration/v1")
+        self.assertEqual(list(baseline["models"]), ["qwen3-8b"])
+        self.assertEqual(
+            baseline["models"]["qwen3-8b"]["placement"]["pool_ids"], ["h100-1x"]
+        )
+        self.assertEqual(
+            baseline["models"]["qwen3-8b"]["artifact"]["image_digest"],
+            "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+        )
+        self.assertEqual(
+            baseline["models"]["qwen3-8b"]["mcp"],
+            {"exposed": True, "tool_name": "qwen3_8b_chat"},
+        )
+        self.assertEqual(
+            baseline["pools"]["h100-1x"]["tolerations"],
+            [
+                {
+                    "key": "dedicated",
+                    "operator": "Equal",
+                    "value": "fs2-inference",
+                    "effect": "NoSchedule",
+                    "toleration_seconds": None,
+                }
+            ],
+        )
+        self.assertEqual(
+            workloads["model_scaling_overrides"]["qwen3-8b"]["min_replicas"], 1
+        )
+        self.assertTrue(workloads["admin_configuration_bootstrap_baseline_accepted"])
+        self.assertEqual(
+            workloads["admin_configuration_sha256"],
+            STACK.canonical_sha256(baseline),
+        )
+
     def test_public_grafana_origin_and_allowlist_come_from_infrastructure(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="inference-stack-grafana-") as temporary:
+        with tempfile.TemporaryDirectory(
+            prefix="inference-stack-grafana-"
+        ) as temporary:
             run_root = Path(temporary)
             configuration = contract()
             configuration["stages"]["foundation"]["grafana_publication"] = {
@@ -279,7 +388,9 @@ class InferenceStackTests(unittest.TestCase):
         configuration = contract()
         configuration["secret_requirements"]["ngc_api_key"] = False
         configuration["secret_requirements"]["nvcr_dockerconfig"] = False
-        with tempfile.TemporaryDirectory(prefix="inference-stack-secrets-") as temporary:
+        with tempfile.TemporaryDirectory(
+            prefix="inference-stack-secrets-"
+        ) as temporary:
             with mock.patch.dict(
                 os.environ,
                 {
@@ -314,9 +425,7 @@ class InferenceStackTests(unittest.TestCase):
                         "topology": {"mode": "standalone"},
                         "reservation_policy": {
                             "policy": "STRICT",
-                            "reservation_ids": [
-                                "capacityblockgroup-testreservation"
-                            ],
+                            "reservation_ids": ["capacityblockgroup-testreservation"],
                         },
                     }
                 },
@@ -410,9 +519,7 @@ class InferenceStackTests(unittest.TestCase):
                         "topology": {"mode": "standalone"},
                         "reservation_policy": {
                             "policy": "STRICT",
-                            "reservation_ids": [
-                                "capacityblockgroup-testreservation"
-                            ],
+                            "reservation_ids": ["capacityblockgroup-testreservation"],
                         },
                     }
                 },
@@ -475,7 +582,9 @@ class InferenceStackTests(unittest.TestCase):
 
     def test_nebius_profile_is_used_for_kubeconfig_retrieval(self) -> None:
         calls: list[list[str]] = []
-        with tempfile.TemporaryDirectory(prefix="inference-stack-profile-") as temporary:
+        with tempfile.TemporaryDirectory(
+            prefix="inference-stack-profile-"
+        ) as temporary:
             run_root = Path(temporary)
 
             def fake_run(arguments, **_kwargs):
@@ -531,16 +640,19 @@ class InferenceStackTests(unittest.TestCase):
             for name, value in required_outputs.items()
         }
 
-        with tempfile.TemporaryDirectory(prefix="inference-stack-contract-") as temporary:
+        with tempfile.TemporaryDirectory(
+            prefix="inference-stack-contract-"
+        ) as temporary:
             run_root = Path(temporary)
             with (
                 mock.patch.object(STACK, "terraform_init"),
                 mock.patch.object(
                     STACK,
                     "terraform_json_output",
-                    side_effect=lambda _terraform, _root, name, _environment: required_outputs[
-                        name
-                    ],
+                    side_effect=lambda _terraform,
+                    _root,
+                    name,
+                    _environment: required_outputs[name],
                 ),
                 mock.patch.object(
                     STACK,
@@ -606,7 +718,9 @@ class InferenceStackTests(unittest.TestCase):
                     )
                 )
 
-    def test_clean_environment_removes_workspace_and_cli_argument_overrides(self) -> None:
+    def test_clean_environment_removes_workspace_and_cli_argument_overrides(
+        self,
+    ) -> None:
         with mock.patch.dict(
             os.environ,
             {
@@ -640,7 +754,9 @@ class InferenceStackTests(unittest.TestCase):
         output = io.StringIO()
         with (
             mock.patch.object(
-                STACK, "write_infrastructure_variables", return_value=Path("/infra.json")
+                STACK,
+                "write_infrastructure_variables",
+                return_value=Path("/infra.json"),
             ),
             mock.patch.object(STACK, "plan_stage", side_effect=fake_plan),
             mock.patch.object(STACK, "apply_plan") as apply_plan,
@@ -665,9 +781,7 @@ class InferenceStackTests(unittest.TestCase):
         ):
             STACK.apply_stack(arguments(), run_root, contract(), "c" * 40)
 
-        self.assertEqual(
-            planned_stages, ["infrastructure", "foundation", "workloads"]
-        )
+        self.assertEqual(planned_stages, ["infrastructure", "foundation", "workloads"])
         self.assertEqual(
             [call.args[1] for call in apply_plan.call_args_list],
             [STACK.INFRA_ROOT, STACK.FOUNDATION_ROOT, STACK.WORKLOADS_ROOT],
@@ -756,12 +870,12 @@ class InferenceStackTests(unittest.TestCase):
                 STACK.DeploymentError,
                 "run inference-stack apply",
             ):
-                STACK.output_stack(
-                    arguments(), Path("/private/test-run"), contract()
-                )
+                STACK.output_stack(arguments(), Path("/private/test-run"), contract())
         endpoint_outputs.assert_not_called()
 
-    def test_internal_proxy_command_uses_only_terraform_owned_runtime_contract(self) -> None:
+    def test_internal_proxy_command_uses_only_terraform_owned_runtime_contract(
+        self,
+    ) -> None:
         run_root = Path("/private/test-run")
         port_forward = {
             "enabled": True,
@@ -882,9 +996,7 @@ class InferenceStackTests(unittest.TestCase):
                     "resource_changes": [
                         {"mode": "managed", "change": {"actions": ["no-op"]}}
                     ],
-                    "output_changes": {
-                        "contract": {"actions": ["no-op"]}
-                    },
+                    "output_changes": {"contract": {"actions": ["no-op"]}},
                 },
                 {},
             )
@@ -900,9 +1012,10 @@ class InferenceStackTests(unittest.TestCase):
                     mock.patch.object(
                         STACK,
                         "state_ready",
-                        side_effect=lambda _terraform, _root, stage, _contract: readiness[
-                            stage
-                        ],
+                        side_effect=lambda _terraform,
+                        _root,
+                        stage,
+                        _contract: readiness[stage],
                     ),
                     mock.patch.object(
                         STACK,
@@ -940,9 +1053,7 @@ class InferenceStackTests(unittest.TestCase):
                 "output_changes": {},
             },
             {
-                "resource_changes": [
-                    {"mode": "data", "change": {"actions": ["read"]}}
-                ],
+                "resource_changes": [{"mode": "data", "change": {"actions": ["read"]}}],
                 "output_changes": {
                     "accelerator_pool_contract": {"actions": ["update"]}
                 },
@@ -950,9 +1061,7 @@ class InferenceStackTests(unittest.TestCase):
         )
         for changed in changed_documents:
             for foundation_ready in (False, True):
-                with self.subTest(
-                    changed=changed, foundation_ready=foundation_ready
-                ):
+                with self.subTest(changed=changed, foundation_ready=foundation_ready):
                     readiness = {
                         "infrastructure": True,
                         "foundation": foundation_ready,
@@ -967,9 +1076,10 @@ class InferenceStackTests(unittest.TestCase):
                         mock.patch.object(
                             STACK,
                             "state_ready",
-                            side_effect=lambda _terraform, _root, stage, _contract: readiness[
-                                stage
-                            ],
+                            side_effect=lambda _terraform,
+                            _root,
+                            stage,
+                            _contract: readiness[stage],
                         ),
                         mock.patch.object(
                             STACK,
@@ -1006,9 +1116,7 @@ class InferenceStackTests(unittest.TestCase):
     def test_existing_states_stop_after_changed_foundation_plan(self) -> None:
         run_root = Path("/private/test-run")
         no_op = {
-            "resource_changes": [
-                {"mode": "managed", "change": {"actions": ["no-op"]}}
-            ],
+            "resource_changes": [{"mode": "managed", "change": {"actions": ["no-op"]}}],
             "output_changes": {"contract": {"actions": ["no-op"]}},
         }
         changed_foundation = {
@@ -1017,7 +1125,9 @@ class InferenceStackTests(unittest.TestCase):
         }
 
         def staged_plan(*_args, **kwargs):
-            document = no_op if kwargs["stage"] == "infrastructure" else changed_foundation
+            document = (
+                no_op if kwargs["stage"] == "infrastructure" else changed_foundation
+            )
             return Path(f"/{kwargs['stage']}.tfplan"), document, {}
 
         for workloads_ready in (False, True):
@@ -1036,9 +1146,10 @@ class InferenceStackTests(unittest.TestCase):
                     mock.patch.object(
                         STACK,
                         "state_ready",
-                        side_effect=lambda _terraform, _root, stage, _contract: readiness[
-                            stage
-                        ],
+                        side_effect=lambda _terraform,
+                        _root,
+                        stage,
+                        _contract: readiness[stage],
                     ),
                     mock.patch.object(
                         STACK,
@@ -1056,9 +1167,7 @@ class InferenceStackTests(unittest.TestCase):
                     mock.patch.object(
                         STACK, "plan_stage", side_effect=staged_plan
                     ) as plan_stage,
-                    mock.patch.object(
-                        STACK, "mirror_selected_images"
-                    ) as mirror_images,
+                    mock.patch.object(STACK, "mirror_selected_images") as mirror_images,
                     redirect_stdout(io.StringIO()),
                 ):
                     STACK.plan_stack(arguments(), run_root, contract(), "d" * 40)
@@ -1081,7 +1190,9 @@ class InferenceStackTests(unittest.TestCase):
 
         with (
             mock.patch.object(
-                STACK, "write_infrastructure_variables", return_value=Path("/infra.json")
+                STACK,
+                "write_infrastructure_variables",
+                return_value=Path("/infra.json"),
             ),
             mock.patch.object(STACK, "state_has_resources", return_value=True),
             mock.patch.object(STACK, "state_ready", return_value=True),
@@ -1102,9 +1213,7 @@ class InferenceStackTests(unittest.TestCase):
         ):
             STACK.destroy_stack(arguments(), run_root, contract(), "e" * 40)
 
-        self.assertEqual(
-            planned_stages, ["workloads", "foundation", "infrastructure"]
-        )
+        self.assertEqual(planned_stages, ["workloads", "foundation", "infrastructure"])
         self.assertEqual(destroy_flags, [True, True, True])
         self.assertEqual(
             [call.args[1] for call in apply_plan.call_args_list],
@@ -1112,7 +1221,9 @@ class InferenceStackTests(unittest.TestCase):
         )
         mirror_images.assert_not_called()
 
-    def test_destroy_reuses_legacy_cached_downstream_inputs_without_mirroring(self) -> None:
+    def test_destroy_reuses_legacy_cached_downstream_inputs_without_mirroring(
+        self,
+    ) -> None:
         planned_files: list[Path] = []
 
         def fake_plan(*_args, **kwargs):
@@ -1177,9 +1288,9 @@ class InferenceStackTests(unittest.TestCase):
 
     def test_regional_mirror_rejects_tag_only_model_source(self) -> None:
         configuration = regional_contract()
-        configuration["stages"]["workloads"]["model_image_overrides"][
-            "proteinmpnn"
-        ] = "nvcr.io/nim/ipd/proteinmpnn:latest"
+        configuration["stages"]["workloads"]["model_image_overrides"]["proteinmpnn"] = (
+            "nvcr.io/nim/ipd/proteinmpnn:latest"
+        )
         with self.assertRaisesRegex(STACK.DeploymentError, "repository@sha256"):
             STACK.require_deployable_images(configuration)
 
@@ -1187,9 +1298,7 @@ class InferenceStackTests(unittest.TestCase):
         self,
     ) -> None:
         configuration = regional_contract()
-        expected_digests = {
-            f"sha256:{character * 64}" for character in ("a", "b", "c")
-        }
+        expected_digests = {f"sha256:{character * 64}" for character in ("a", "b", "c")}
 
         def digest_from_reference(_crane, reference, environment, **_kwargs):
             self.assertEqual(environment["NEBIUS_PROFILE"], "explicit-profile")
@@ -1290,7 +1399,9 @@ class InferenceStackTests(unittest.TestCase):
 
         with (
             mock.patch.object(
-                STACK, "write_infrastructure_variables", return_value=Path("/infra.json")
+                STACK,
+                "write_infrastructure_variables",
+                return_value=Path("/infra.json"),
             ),
             mock.patch.object(
                 STACK,
@@ -1334,7 +1445,8 @@ class InferenceStackTests(unittest.TestCase):
             }
         )
         artifacts = STACK.selected_image_artifacts(
-            configuration, regional_dynamic(Path("/private/test-run"))["registry_delivery_contract"]
+            configuration,
+            regional_dynamic(Path("/private/test-run"))["registry_delivery_contract"],
         )
         model_targets = [
             artifact["target_reference"]
@@ -1343,32 +1455,38 @@ class InferenceStackTests(unittest.TestCase):
         ]
         self.assertEqual(len(set(model_targets)), 2)
 
-        images["model-b"] = (
-            f"registry.example.com/acme/runtime@sha256:{'e' * 64}"
-        )
+        images["model-b"] = f"registry.example.com/acme/runtime@sha256:{'e' * 64}"
         with self.assertRaisesRegex(STACK.DeploymentError, "collapse"):
             STACK.selected_image_artifacts(
                 configuration,
-                regional_dynamic(Path("/private/test-run"))["registry_delivery_contract"],
+                regional_dynamic(Path("/private/test-run"))[
+                    "registry_delivery_contract"
+                ],
             )
 
-    def test_regional_target_must_match_terraform_project_region_and_registry(self) -> None:
+    def test_regional_target_must_match_terraform_project_region_and_registry(
+        self,
+    ) -> None:
         dynamic = regional_dynamic(Path("/private/test-run"))
-        dynamic["registry_delivery_contract"]["target_registry"][
-            "project_id"
-        ] = "project-wrong"
+        dynamic["registry_delivery_contract"]["target_registry"]["project_id"] = (
+            "project-wrong"
+        )
         with self.assertRaisesRegex(STACK.DeploymentError, "target registry root"):
             STACK.selected_image_artifacts(
                 regional_contract(), dynamic["registry_delivery_contract"]
             )
 
-    def test_legacy_accelerator_contract_plans_only_infrastructure_upgrade(self) -> None:
+    def test_legacy_accelerator_contract_plans_only_infrastructure_upgrade(
+        self,
+    ) -> None:
         run_root = Path("/private/test-run")
         dynamic = dynamic_outputs(run_root)
         dynamic["accelerator_pool_contract"].pop("artifact_delivery")
         with (
             mock.patch.object(
-                STACK, "write_infrastructure_variables", return_value=Path("/infra.json")
+                STACK,
+                "write_infrastructure_variables",
+                return_value=Path("/infra.json"),
             ),
             mock.patch.object(STACK, "state_ready", return_value=True),
             mock.patch.object(

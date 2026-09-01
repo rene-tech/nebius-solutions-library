@@ -110,6 +110,28 @@ class AdminConsolePlanTests(unittest.TestCase):
             )
         )
 
+    def test_route_inventory_matches_executable_bff_paths(self) -> None:
+        endpoints = {
+            endpoint
+            for route in self.plan["routes"]
+            for endpoint in route["bff"]
+        }
+        self.assertNotIn("/admin/api/v1/queues", endpoints)
+        self.assertNotIn("/admin/api/v1/observability/capabilities", endpoints)
+        self.assertIn("/admin/api/v1/capacity", endpoints)
+        self.assertIn("/admin/api/v1/observability", endpoints)
+        self.assertTrue(
+            {
+                "/admin/api/v1/configuration",
+                "/admin/api/v1/configuration:diff",
+                "/admin/api/v1/configuration:validate",
+                "/admin/api/v1/configuration:plan",
+                "/admin/api/v1/configuration:reconcile",
+                "/admin/api/v1/configuration/reconciliations/{reconciliation_id}",
+                "/admin/api/v1/configuration:rollback",
+            }.issubset(endpoints)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

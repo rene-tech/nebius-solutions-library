@@ -28,10 +28,24 @@ export function useSession(): SessionContextValue {
 interface LoginProps {
   busy: boolean;
   error: AdminApiError | null;
+  notice?: string | null;
   onLogin: (token: string, principalId?: string) => Promise<void>;
 }
 
-export function LoginPage({ busy, error, onLogin }: LoginProps) {
+function authenticationGuidance(error: AdminApiError): string | null {
+  if (error.status === 401) {
+    return "Use the admin bootstrap token configured for this cluster. Inference API keys and MCP tokens cannot create an operator session.";
+  }
+  if (error.status === 403 || error.status === 421) {
+    return "Open the published HTTPS admin URL directly. The gateway rejects untrusted origins and host names.";
+  }
+  if (error.status >= 500) {
+    return "The token was not retained. Retry once the admin backend and gateway are healthy.";
+  }
+  return null;
+}
+
+export function LoginPage({ busy, error, notice = null, onLogin }: LoginProps) {
   const [token, setToken] = useState("");
   const [principalId, setPrincipalId] = useState("");
 
@@ -88,10 +102,12 @@ export function LoginPage({ busy, error, onLogin }: LoginProps) {
               />
             </label>
           </details>
+          {notice ? <div className="inline-notice inline-notice--warning" role="status">{notice}</div> : null}
           {error ? (
             <div className="inline-notice inline-notice--error" role="alert">
               <strong>Sign in failed.</strong> {error.message}
               {error.requestId ? <span> Request {error.requestId}</span> : null}
+              {authenticationGuidance(error) ? <span className="login-error-guidance">{authenticationGuidance(error)}</span> : null}
             </div>
           ) : null}
           <button className="button button--primary" disabled={busy} type="submit">
@@ -129,6 +145,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [override, setOverride] = useState<SessionEnvelope | null | undefined>(undefined);
   const [loginError, setLoginError] = useState<AdminApiError | null>(null);
+  const [loginNotice, setLoginNotice] = useState<string | null>(null);
   const [authenticating, setAuthenticating] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<AdminApiError | null>(null);
@@ -142,6 +159,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
   useEffect(() => {
     function expire() {
       setOverride(null);
+      setLoginNotice("Your operator session expired. Sign in again to continue.");
       queryClient.clear();
     }
     window.addEventListener("fs2:operator-session-expired", expire);
@@ -151,6 +169,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
   async function login(token: string, principalId?: string) {
     setAuthenticating(true);
     setLoginError(null);
+    setLoginNotice(null);
     try {
       const session = await adminApi.createSession(token, principalId);
       queryClient.clear();
@@ -193,7 +212,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
 
   if (sessionQuery.isPending && override === undefined) return <SessionLoading />;
   if (unauthorized) {
-    return <LoginPage busy={authenticating} error={loginError} onLogin={login} />;
+    return <LoginPage busy={authenticating} error={loginError} notice={loginNotice} onLogin={login} />;
   }
   if (!session) {
     const error =

@@ -9,6 +9,16 @@ export type ModelState =
   | "unsupported"
   | "unknown";
 
+export type OperationState =
+  | "queued"
+  | "activating"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "preempted"
+  | "expired";
+
 export interface AdminContext {
   project: string | null;
   cluster: string | null;
@@ -193,7 +203,7 @@ export interface AdminOperationItem {
   model_revision: string;
   protocol: string;
   operation: string;
-  status: string;
+  status: OperationState;
   accepted_at: string;
   completed_at: string | null;
   outcome: string | null;

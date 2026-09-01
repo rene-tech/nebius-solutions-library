@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { adminApi } from "./client";
+import { adminApi, AdminApiError } from "./client";
 
 const response = {
   meta: {
@@ -37,10 +37,92 @@ describe("same-origin admin API boundary", () => {
     });
     await adminApi.models(params);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/admin/api/v1/models?project=fixture-project&cluster=fixture-cluster&region=fixture-region&limit=100");
+    expect(url).toBe("/admin/api/v1/models?project=fixture-project&cluster=fixture-cluster&region=fixture-region&limit=200");
     expect(url).not.toContain("token");
     expect(url).not.toContain("status");
     expect(init.credentials).toBe("same-origin");
+  });
+
+  it("sends only explicit bounded model and operation filters supported by the live backend", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(response), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const context = new URLSearchParams({ project: "fixture-project", token: "must-not-flow" });
+
+    await adminApi.models(context, { state: "loading", search: "GLM 5.2", limit: 999 });
+    await adminApi.operations(context, {
+      tenantId: "tenant-a",
+      modelId: "glm-5-2",
+      principalId: "agent-a",
+      apiKeyPrefix: "fs2_pat_123",
+      status: "failed",
+      errorCode: "runtime_failed",
+      cursor: "opaque-cursor",
+      limit: 500,
+    });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/admin/api/v1/models?project=fixture-project&limit=256&state=loading&search=GLM+5.2",
+      "/admin/api/v1/operations?project=fixture-project&limit=200&cursor=opaque-cursor&tenant_id=tenant-a&model_id=glm-5-2&principal_id=agent-a&api_key_prefix=fs2_pat_123&status=failed&error_code=runtime_failed",
+    ]);
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).not.toEqual(expect.arrayContaining([expect.stringContaining("must-not-flow")]));
+  });
+
+  it("drops values beyond each backend query bound instead of causing avoidable 422 responses", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(response), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const context = new URLSearchParams({
+      project: "p".repeat(129),
+      cluster: "c".repeat(129),
+      region: "r".repeat(65),
+      timezone: "t".repeat(65),
+    });
+
+    await adminApi.models(context, { search: "s".repeat(129) });
+    await adminApi.operations(context, {
+      cursor: "c".repeat(513),
+      tenantId: "t".repeat(121),
+      modelId: "m".repeat(129),
+      principalId: "p".repeat(201),
+      apiKeyPrefix: "k".repeat(65),
+      errorCode: "e".repeat(65),
+    });
+    await adminApi.observability(context, {
+      modelId: "m".repeat(129),
+      operationId: "o".repeat(37),
+    });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/admin/api/v1/models?limit=200",
+      "/admin/api/v1/operations?limit=100",
+      "/admin/api/v1/observability",
+    ]);
+  });
+
+  it("parses both RFC admin problems and gateway authentication errors", async () => {
+    const requestId = "9ad7e7fc-0b9e-4457-a7db-6803267ba456";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      error: { type: "authentication_error", message: "admin authentication is required" },
+    }), { status: 401 })).mockResolvedValueOnce(new Response(JSON.stringify({
+      detail: "operator policy does not permit this request",
+      code: "permission_denied",
+      request_id: requestId,
+    }), { status: 403 })));
+
+    const authentication = await adminApi.createSession("invalid-token").catch((error: unknown) => error);
+    expect(authentication).toMatchObject({
+      message: "admin authentication is required",
+      status: 401,
+      code: "authentication_error",
+    });
+    expect(authentication).toBeInstanceOf(AdminApiError);
+
+    const permission = await adminApi.overview(new URLSearchParams()).catch((error: unknown) => error);
+    expect(permission).toMatchObject({
+      message: "operator policy does not permit this request",
+      status: 403,
+      code: "permission_denied",
+      requestId,
+    });
   });
 
   it("rejects a payload outside the typed envelope", async () => {

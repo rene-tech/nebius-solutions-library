@@ -262,7 +262,7 @@ export function CreateKeyDialog({ principals, tenant: initialTenant, fixedTenant
   return (
     <Modal description="The credential is displayed once after the server creates it. Only non-secret metadata appears in future views." onClose={onClose} title="Create API key">
       <form className="form-grid" onSubmit={(event) => void submit(event)}>
-        <label>Principal<select disabled={enabledPrincipals.length === 0} onChange={(event) => changePrincipal(event.target.value)} required value={principalId}>{enabledPrincipals.map((principal) => <option key={principal.id} value={principal.subject}>{principal.display_name} · {principal.subject}</option>)}</select></label>
+        <label>Principal<select disabled={enabledPrincipals.length === 0} onChange={(event) => changePrincipal(event.target.value)} required value={principalId}>{enabledPrincipals.length === 0 ? <option value="">No enabled principals available</option> : enabledPrincipals.map((principal) => <option key={principal.id} value={principal.subject}>{principal.display_name} · {principal.subject}</option>)}</select></label>
         <label>Tenant<input disabled={fixedTenant} maxLength={120} onChange={(event) => setTenant(event.target.value)} pattern="[A-Za-z0-9][A-Za-z0-9_.-]*" required value={tenant} /></label>
         <KeyPolicyFields {...{ name, setName, scopes, setScopes, models, setModels, expiry, setExpiry, requestBudget, setRequestBudget, gpuBudget, setGpuBudget, maxConcurrency, setMaxConcurrency, rateRequests, setRateRequests, rateWindow, setRateWindow }} />
         <FormError local={localError} remote={error} />

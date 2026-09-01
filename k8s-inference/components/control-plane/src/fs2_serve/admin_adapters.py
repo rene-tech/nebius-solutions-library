@@ -18,7 +18,7 @@ from uuid import UUID
 
 import httpx
 
-from .admin import AdminAdapterUnavailableError, AdminObservabilityQueryTemplates
+from .admin import AdminAdapterUnavailableError, AdminObservabilityQueryTemplates, PrometheusQueryTemplates
 from .admin_models import (
     AdminAutoscalingProjection,
     AdminCapabilityHealth,
@@ -32,6 +32,8 @@ from .admin_models import (
     AdminHorizontalAutoscalerInventory,
     AdminKedaScaledObject,
     AdminKedaScaledObjectInventory,
+    AdminKubernetesModel,
+    AdminKubernetesSnapshot,
     AdminKueueCohort,
     AdminKueueProjection,
     AdminKueueResourceQuota,
@@ -48,6 +50,8 @@ from .admin_models import (
     AdminObservabilityLaunch,
     AdminObservabilitySignals,
     AdminObservabilitySnapshot,
+    AdminPrometheusModel,
+    AdminPrometheusSnapshot,
     AdminQuantity,
     AdminResourceFlavor,
     AdminSourceState,
@@ -64,6 +68,22 @@ _GPU_RESOURCE = re.compile(r"^(?:nvidia\.com/(?:gpu|mig-[A-Za-z0-9_.-]+)|amd\.co
 _SAFE_COMPONENT = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _SAFE_REASON = re.compile(r"^[A-Za-z0-9_.:/ -]{1,200}$")
 _SAFE_HOST = re.compile(r"^(?:[a-z0-9](?:[-a-z0-9]*[a-z0-9])?\.)*[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
+_MODEL_LABEL_KEYS = (
+    "fs2-serve.nebius.ai/model-id",
+    "fs2.nebius.ai/model-id",
+    "app.kubernetes.io/name",
+)
+_POD_FAILURE_REASONS = frozenset(
+    {
+        "CrashLoopBackOff",
+        "CreateContainerConfigError",
+        "CreateContainerError",
+        "ErrImagePull",
+        "ImagePullBackOff",
+        "InvalidImageName",
+        "RunContainerError",
+    }
+)
 
 
 def _available(value: float, unit: str, source: str) -> AdminMeasurement:
@@ -287,6 +307,259 @@ def _pod_gpu_requests(pod: Mapping[str, Any]) -> Mapping[str, Decimal]:
         name: max(regular[name], initial[name]) + (_gpu_count(overhead[name]) if name in overhead else Decimal())
         for name in names
     }
+
+
+@dataclass(frozen=True)
+class KubernetesModelStateConfig:
+    """The fixed workload vocabulary accepted by the model-state reader."""
+
+    model_namespace: str = "fs2-models"
+    model_label_keys: tuple[str, ...] = _MODEL_LABEL_KEYS
+    capacity_type_label_keys: tuple[str, ...] = (
+        "capacity.fs2.nebius/type",
+        "karpenter.sh/capacity-type",
+        "cloud.google.com/gke-spot",
+        "nebius.com/preemptible",
+    )
+
+    def __post_init__(self) -> None:
+        if _NAMESPACE.fullmatch(self.model_namespace) is None:
+            raise ValueError("admin Kubernetes model namespace is invalid")
+        if not 1 <= len(self.model_label_keys) <= 8 or not 1 <= len(self.capacity_type_label_keys) <= 16:
+            raise ValueError("admin Kubernetes model-state label vocabulary is outside the bound")
+        if any(not 1 <= len(value) <= 253 for value in (*self.model_label_keys, *self.capacity_type_label_keys)):
+            raise ValueError("admin Kubernetes model-state label key is outside the bound")
+
+
+def _allowed_model_id(
+    value: Mapping[str, Any],
+    *,
+    allowed: frozenset[str],
+    label_keys: Sequence[str],
+) -> str | None:
+    labels = _mapping(_mapping(value.get("metadata")).get("labels"))
+    for key in label_keys:
+        model_id = labels.get(key)
+        if isinstance(model_id, str) and model_id in allowed:
+            return model_id
+    return None
+
+
+def _pod_ready(pod: Mapping[str, Any]) -> bool:
+    metadata = _mapping(pod.get("metadata"))
+    status = _mapping(pod.get("status"))
+    if metadata.get("deletionTimestamp") is not None or status.get("phase") != "Running":
+        return False
+    return any(
+        _mapping(condition).get("type") == "Ready" and _mapping(condition).get("status") == "True"
+        for condition in _sequence(status.get("conditions"))
+    )
+
+
+def _pod_failed(pod: Mapping[str, Any]) -> bool:
+    status = _mapping(pod.get("status"))
+    if status.get("phase") == "Failed":
+        return True
+    for container_status in (
+        *_sequence(status.get("initContainerStatuses")),
+        *_sequence(status.get("containerStatuses")),
+    ):
+        state = _mapping(_mapping(container_status).get("state"))
+        waiting_reason = _mapping(state.get("waiting")).get("reason")
+        terminated = _mapping(state.get("terminated"))
+        if waiting_reason in _POD_FAILURE_REASONS:
+            return True
+        if terminated and terminated.get("exitCode") not in {None, 0}:
+            return True
+    return False
+
+
+def _deployment_failed(deployment: Mapping[str, Any]) -> bool:
+    conditions = _sequence(_mapping(deployment.get("status")).get("conditions"))
+    for condition_value in conditions:
+        condition = _mapping(condition_value)
+        if condition.get("type") == "ReplicaFailure" and condition.get("status") == "True":
+            return True
+        if (
+            condition.get("type") == "Progressing"
+            and condition.get("status") == "False"
+            and condition.get("reason") == "ProgressDeadlineExceeded"
+        ):
+            return True
+    return False
+
+
+def _service_selects(service: Mapping[str, Any], pod: Mapping[str, Any]) -> bool:
+    selector = _mapping(_mapping(service.get("spec")).get("selector"))
+    labels = _mapping(_mapping(pod.get("metadata")).get("labels"))
+    return bool(selector) and all(
+        isinstance(value, str) and labels.get(key) == value for key, value in selector.items()
+    )
+
+
+class KubernetesModelStateAdminAdapter:
+    """Project Deployments, Services, Pods, and Nodes into bounded model state."""
+
+    def __init__(
+        self,
+        reader: KubernetesListReader,
+        *,
+        config: KubernetesModelStateConfig | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self.reader = reader
+        self.config = config or KubernetesModelStateConfig()
+        self.clock = clock or (lambda: datetime.now(UTC))
+
+    async def snapshot(self, model_ids: tuple[str, ...]) -> AdminKubernetesSnapshot:
+        if len(model_ids) > 256 or len(model_ids) != len(set(model_ids)) or any(not model_id for model_id in model_ids):
+            raise ValueError("admin Kubernetes model request is outside the bound")
+        namespace = self.config.model_namespace
+        deployments, services, pods, nodes = await asyncio.gather(
+            self.reader.list(f"/apis/apps/v1/namespaces/{namespace}/deployments"),
+            self.reader.list(f"/api/v1/namespaces/{namespace}/services"),
+            self.reader.list(f"/api/v1/namespaces/{namespace}/pods"),
+            self.reader.list("/api/v1/nodes"),
+        )
+        now = self.clock()
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise RuntimeError("admin adapter clock must be timezone-aware")
+        allowed = frozenset(model_ids)
+        try:
+            result = self._models(model_ids, allowed=allowed, deployments=deployments, services=services, pods=pods)
+            allocatable_gpus, ready_gpu_nodes, preemptible_gpu_nodes = self._gpu_nodes(nodes)
+            active_gpu_replicas = sum(
+                1
+                for pod in pods
+                if _allowed_model_id(pod, allowed=allowed, label_keys=self.config.model_label_keys) is not None
+                and _pod_ready(pod)
+                and sum(_pod_gpu_requests(pod).values(), Decimal()) > 0
+            )
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise AdminAdapterUnavailableError("Kubernetes model-state response is invalid") from exc
+        return AdminKubernetesSnapshot(
+            observed_at=now.astimezone(UTC),
+            models=result,
+            allocatable_gpus=allocatable_gpus,
+            ready_gpu_nodes=ready_gpu_nodes,
+            preemptible_gpu_nodes=preemptible_gpu_nodes,
+            active_gpu_replicas=active_gpu_replicas,
+        )
+
+    def _models(
+        self,
+        model_ids: tuple[str, ...],
+        *,
+        allowed: frozenset[str],
+        deployments: Sequence[Mapping[str, Any]],
+        services: Sequence[Mapping[str, Any]],
+        pods: Sequence[Mapping[str, Any]],
+    ) -> list[AdminKubernetesModel]:
+        deployments_by_model: defaultdict[str, list[Mapping[str, Any]]] = defaultdict(list)
+        services_by_model: defaultdict[str, list[Mapping[str, Any]]] = defaultdict(list)
+        pods_by_model: defaultdict[str, list[Mapping[str, Any]]] = defaultdict(list)
+        for value, destination in (
+            *((deployment, deployments_by_model) for deployment in deployments),
+            *((service, services_by_model) for service in services),
+            *((pod, pods_by_model) for pod in pods),
+        ):
+            model_id = _allowed_model_id(value, allowed=allowed, label_keys=self.config.model_label_keys)
+            if model_id is not None:
+                destination[model_id].append(value)
+
+        result: list[AdminKubernetesModel] = []
+        for model_id in model_ids:
+            model_deployments = deployments_by_model[model_id]
+            model_pods = pods_by_model[model_id]
+            model_services = list(services_by_model[model_id])
+            for service in services:
+                if service in model_services:
+                    continue
+                if any(_service_selects(service, pod) for pod in model_pods):
+                    model_services.append(service)
+            desired = 0
+            deployment_ready = 0
+            for deployment in model_deployments:
+                spec = _mapping(deployment.get("spec"))
+                status = _mapping(deployment.get("status"))
+                desired_value = spec.get("replicas", 1)
+                ready_value = status.get("readyReplicas", 0)
+                if (
+                    not isinstance(desired_value, int)
+                    or isinstance(desired_value, bool)
+                    or not 0 <= desired_value <= 10000
+                    or not isinstance(ready_value, int)
+                    or isinstance(ready_value, bool)
+                    or not 0 <= ready_value <= 10000
+                ):
+                    raise ValueError("Kubernetes Deployment replica count is invalid")
+                desired += desired_value
+                deployment_ready += ready_value
+            if desired > 10000 or deployment_ready > 10000:
+                raise ValueError("Kubernetes aggregate replica count is invalid")
+            served_ready_pods = {
+                str(_mapping(pod.get("metadata")).get("uid", _mapping(pod.get("metadata")).get("name", "")))
+                for pod in model_pods
+                if _pod_ready(pod) and any(_service_selects(service, pod) for service in model_services)
+            }
+            served_ready_pods.discard("")
+            ready = min(desired, deployment_ready, len(served_ready_pods))
+            explicit_failure = any(_deployment_failed(value) for value in model_deployments) or any(
+                _pod_failed(value) for value in model_pods
+            )
+            semantic_healthy: bool | None
+            if not model_deployments or not model_services:
+                semantic_healthy = None
+            elif explicit_failure:
+                semantic_healthy = False
+            else:
+                # A non-failing rollout is healthy-but-loading until its
+                # Service has a Ready endpoint. Scale-to-zero remains a valid
+                # cold state because no endpoint is expected at a zero floor.
+                semantic_healthy = True
+            result.append(
+                AdminKubernetesModel(
+                    model_id=model_id,
+                    desired_replicas=desired,
+                    ready_replicas=ready,
+                    semantic_healthy=semantic_healthy,
+                )
+            )
+        return result
+
+    def _gpu_nodes(self, nodes: Sequence[Mapping[str, Any]]) -> tuple[int, int, int]:
+        allocatable_gpus = 0
+        ready_gpu_nodes = 0
+        preemptible_gpu_nodes = 0
+        for node in nodes:
+            metadata = _mapping(node.get("metadata"))
+            labels = _mapping(metadata.get("labels"))
+            status = _mapping(node.get("status"))
+            allocatable = sum(
+                (
+                    _gpu_count(value)
+                    for resource_name, value in _mapping(status.get("allocatable")).items()
+                    if _GPU_RESOURCE.fullmatch(str(resource_name)) is not None
+                ),
+                Decimal(),
+            )
+            if allocatable <= 0:
+                continue
+            allocatable_gpus += int(allocatable)
+            ready = any(
+                _mapping(condition).get("type") == "Ready" and _mapping(condition).get("status") == "True"
+                for condition in _sequence(status.get("conditions"))
+            )
+            if ready:
+                ready_gpu_nodes += 1
+            for key in self.config.capacity_type_label_keys:
+                value = labels.get(key)
+                if isinstance(value, str) and value.casefold() in {"preemptible", "spot", "true"}:
+                    preemptible_gpu_nodes += 1
+                    break
+        if allocatable_gpus > 100000:
+            raise ValueError("Kubernetes aggregate GPU count is invalid")
+        return allocatable_gpus, ready_gpu_nodes, preemptible_gpu_nodes
 
 
 class KubernetesCapacityAdminAdapter:
@@ -783,6 +1056,16 @@ class PrometheusScalarReader(Protocol):
     async def scalar(self, query: str, *, at: datetime) -> float | None: ...
 
 
+class PrometheusModelMetricsReader(PrometheusScalarReader, Protocol):
+    async def model_vector(
+        self,
+        query: str,
+        *,
+        at: datetime,
+        model_ids: tuple[str, ...],
+    ) -> Mapping[str, float]: ...
+
+
 @dataclass(frozen=True)
 class HttpPrometheusScalarReader:
     """Read one scalar from an aggregate, server-owned PromQL expression."""
@@ -802,9 +1085,11 @@ class HttpPrometheusScalarReader:
         if not 0.1 <= self.timeout_seconds <= 10:
             raise ValueError("Prometheus timeout is outside the bound")
 
-    async def scalar(self, query: str, *, at: datetime) -> float | None:
+    async def _instant(self, query: str, *, at: datetime) -> Mapping[str, Any]:
         if not 1 <= len(query) <= 4096 or any(value in query.casefold() for value in ("tenant", "principal", "token")):
             raise ValueError("Prometheus query is outside the server-owned bound")
+        if at.tzinfo is None or at.utcoffset() is None:
+            raise ValueError("Prometheus query timestamp must be timezone-aware")
         try:
             async with httpx.AsyncClient(
                 base_url=self.base_url,
@@ -823,7 +1108,13 @@ class HttpPrometheusScalarReader:
             body = _mapping(response.json())
             if body.get("status") != "success":
                 raise AdminAdapterUnavailableError("Prometheus returned an unsuccessful query")
-            data = _mapping(body.get("data"))
+            return _mapping(body.get("data"))
+        except (httpx.HTTPError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise AdminAdapterUnavailableError("Prometheus query transport failed") from exc
+
+    async def scalar(self, query: str, *, at: datetime) -> float | None:
+        try:
+            data = await self._instant(query, at=at)
             result_type = data.get("resultType")
             result = data.get("result")
             sample: object | None = None
@@ -846,10 +1137,141 @@ class HttpPrometheusScalarReader:
             if value < 0 or value != value or value in {float("inf"), float("-inf")}:
                 raise AdminAdapterUnavailableError("Prometheus scalar is invalid")
             return value
-        except (httpx.HTTPError, json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+        except ValueError as exc:
             if isinstance(exc, AdminAdapterUnavailableError):
                 raise
-            raise AdminAdapterUnavailableError("Prometheus query transport failed") from exc
+            raise AdminAdapterUnavailableError("Prometheus scalar is invalid") from exc
+
+    async def model_vector(
+        self,
+        query: str,
+        *,
+        at: datetime,
+        model_ids: tuple[str, ...],
+    ) -> Mapping[str, float]:
+        if len(model_ids) > 256 or len(model_ids) != len(set(model_ids)) or any(not model_id for model_id in model_ids):
+            raise ValueError("Prometheus model vector request is outside the bound")
+        data = await self._instant(query, at=at)
+        if data.get("resultType") != "vector":
+            raise AdminAdapterUnavailableError("Prometheus model query did not return a vector")
+        result = _sequence(data.get("result"))
+        if len(result) > len(model_ids):
+            raise AdminAdapterUnavailableError("Prometheus model query exceeded its series bound")
+        allowed = frozenset(model_ids)
+        values: dict[str, float] = {}
+        try:
+            for series_value in result:
+                series = _mapping(series_value)
+                metric = _mapping(series.get("metric"))
+                if set(metric) != {"model"}:
+                    raise AdminAdapterUnavailableError("Prometheus model query returned an unexpected label set")
+                model_id = metric.get("model")
+                pair = _sequence(series.get("value"))
+                if not isinstance(model_id, str) or model_id not in allowed or model_id in values:
+                    raise AdminAdapterUnavailableError("Prometheus model query returned an invalid model label")
+                if len(pair) != 2 or not isinstance(pair[1], str):
+                    raise AdminAdapterUnavailableError("Prometheus model sample shape is invalid")
+                value = float(pair[1])
+                if value < 0 or value != value or value in {float("inf"), float("-inf")}:
+                    raise AdminAdapterUnavailableError("Prometheus model sample is invalid")
+                values[model_id] = value
+        except ValueError as exc:
+            if isinstance(exc, AdminAdapterUnavailableError):
+                raise
+            raise AdminAdapterUnavailableError("Prometheus model sample is invalid") from exc
+        return values
+
+
+class PrometheusModelMetricsAdminAdapter:
+    """Join fixed aggregate and grouped PromQL into the model-metric contract."""
+
+    def __init__(
+        self,
+        reader: PrometheusModelMetricsReader,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self.reader = reader
+        self.clock = clock or (lambda: datetime.now(UTC))
+
+    @staticmethod
+    def _integer(value: float | None, *, required: bool) -> int | None:
+        if value is None:
+            if required:
+                raise AdminAdapterUnavailableError("Prometheus terminal-operation series is unavailable")
+            return None
+        integer = int(value)
+        if float(integer) != value:
+            raise AdminAdapterUnavailableError("Prometheus terminal-operation sample is not an integer")
+        return integer
+
+    async def snapshot(
+        self,
+        model_ids: tuple[str, ...],
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> AdminPrometheusSnapshot:
+        if len(model_ids) > 256 or len(model_ids) != len(set(model_ids)) or any(not model_id for model_id in model_ids):
+            raise ValueError("admin Prometheus model request is outside the bound")
+        if (
+            from_at.tzinfo is None
+            or from_at.utcoffset() is None
+            or to_at.tzinfo is None
+            or to_at.utcoffset() is None
+            or from_at >= to_at
+        ):
+            raise ValueError("admin Prometheus range is invalid")
+        window = int((to_at - from_at).total_seconds())
+        aggregate_queries = PrometheusQueryTemplates.for_window(model_id=None, seconds=window)
+        vector_queries = PrometheusQueryTemplates.by_model_for_window(seconds=window)
+        names = tuple(aggregate_queries)
+        results = await asyncio.gather(
+            *(self.reader.scalar(aggregate_queries[name], at=to_at) for name in names),
+            *(self.reader.model_vector(vector_queries[name], at=to_at, model_ids=model_ids) for name in names),
+            return_exceptions=True,
+        )
+        aggregate_values: dict[str, float | None] = {}
+        vector_values: dict[str, Mapping[str, float]] = {}
+        for name, value in zip(names, results[: len(names)], strict=True):
+            aggregate_values[name] = value if isinstance(value, float | int) else None
+        for name, value in zip(names, results[len(names) :], strict=True):
+            vector_values[name] = value if isinstance(value, Mapping) else {}
+
+        requests_per_second = aggregate_values["requests_per_second"]
+        error_rate = aggregate_values["error_rate"]
+        if requests_per_second is None or error_rate is None:
+            raise AdminAdapterUnavailableError("Prometheus required model-metric series is unavailable")
+        terminal_operations = self._integer(aggregate_values["terminal_operations"], required=True)
+        assert terminal_operations is not None
+        observed_at = self.clock()
+        if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+            raise RuntimeError("admin adapter clock must be timezone-aware")
+
+        def metric(name: str, model_id: str) -> float | None:
+            return vector_values[name].get(model_id)
+
+        return AdminPrometheusSnapshot(
+            observed_at=observed_at.astimezone(UTC),
+            models=[
+                AdminPrometheusModel(
+                    model_id=model_id,
+                    requests_per_second=metric("requests_per_second", model_id),
+                    terminal_operations=self._integer(metric("terminal_operations", model_id), required=False),
+                    error_rate=metric("error_rate", model_id),
+                    latency_p50_seconds=metric("latency_p50_seconds", model_id),
+                    latency_p95_seconds=metric("latency_p95_seconds", model_id),
+                    latency_p99_seconds=metric("latency_p99_seconds", model_id),
+                )
+                for model_id in model_ids
+            ],
+            requests_per_second=float(requests_per_second),
+            terminal_operations=terminal_operations,
+            error_rate=float(error_rate),
+            latency_p50_seconds=aggregate_values["latency_p50_seconds"],
+            latency_p95_seconds=aggregate_values["latency_p95_seconds"],
+            latency_p99_seconds=aggregate_values["latency_p99_seconds"],
+        )
 
 
 @dataclass(frozen=True)

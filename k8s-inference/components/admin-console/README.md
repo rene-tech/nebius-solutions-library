@@ -1,17 +1,19 @@
-# FS2 Serve admin console: inventory and vertical-slice contract
+# FS2 Serve admin console
 
-This directory contains the sealed design input and a task-owned read-only
-operator-console preview. The user accepted the proposed React/TypeScript/Vite
-stack on 2026-08-30. The preview implements the shared shell, Overview, Models,
-Model detail, Operations, and Operation detail against the versioned same-origin
-BFF. Production session/RBAC, image/Helm packaging, and retained rollout remain
-separate acceptance gates.
+This directory contains the React/TypeScript operator console and its sealed
+design inputs. The console implements Overview, Models, Model detail,
+Operations, Operation detail, Users and API keys, Capacity and queues,
+Observability, Configuration, and Audit against the versioned same-origin BFF.
+It exchanges the cluster's admin bootstrap credential for a Secure, HttpOnly,
+SameSite operator session and applies the server-published viewer, operator, and
+administrator roles.
 
-The recommended first implementation is deliberately small: an authenticated
-same-origin admin BFF plus Overview, Models, and Model detail pages. The BFF
-joins the durable PostgreSQL ledger, catalog identity, current Kubernetes state,
-and bounded Prometheus data. The browser never receives Kubernetes, database,
-Prometheus, Loki, or cloud credentials.
+The BFF joins the durable PostgreSQL ledger, catalog identity, current
+Kubernetes state, and bounded Prometheus data. The browser never receives
+Kubernetes, database, Prometheus, Loki, or cloud credentials. Missing or stale
+sources stay explicit: model support, cluster enablement, observed runtime state,
+and metric availability are rendered as separate facts rather than collapsed
+into a healthy or zero value.
 
 ## Design inputs
 
@@ -78,18 +80,19 @@ npx vite preview --mode fixture --host 127.0.0.1
 Fixture mode is local-only Vite middleware and is not enabled by the production
 build. It must never be used as a deployment image.
 
-## Gates before retained rollout
+## Retained rollout acceptance
 
-1. Define browser authentication and operator RBAC. The current single
-   bootstrap admin bearer token must not be placed in browser storage or
-   JavaScript. Recommendation: existing gateway authentication plus an
-   HTTP-only same-site session exchanged by the BFF, with viewer/operator/admin
-   roles mapped server-side.
-2. Reconcile and package the read-only FastAPI projection, static image, Helm
-   route, and Terraform release as one retained rollout with an explicit
-   rollback target.
-3. Supply a licensed Nebius asset package or explicitly approve the neutral FS2
+1. Deploy the static image and same-origin BFF through the published HTTPS admin
+   endpoint. Do not deploy the Vite fixture mode.
+2. Confirm the runtime is wired to reviewed Kubernetes and Prometheus adapters,
+   then verify real model states, operations, capacity, observability, users,
+   API-key lifecycle, configuration handoff, and audit in a browser.
+3. Confirm login with the admin bootstrap token, cookie renewal/expiry, role
+   boundaries, logout, and correlated error messages. An inference or MCP API
+   key is intentionally not an admin login credential.
+4. Supply a licensed Nebius asset package or explicitly approve the neutral FS2
    wordmark. Do not scrape visual tokens or copy public assets into source.
 
-The neutral functional shell and source-only browser acceptance do not depend
-on those retained-rollout gates.
+The unit route matrix uses backend-shaped envelopes and covers all console
+routes, but it is not evidence of a live rollout. Record the deployed image
+digest, endpoint, cluster context, and browser acceptance separately.

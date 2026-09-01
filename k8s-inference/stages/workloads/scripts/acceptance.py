@@ -20,11 +20,11 @@ authority = urlsplit(origin).netloc
 internal_url = os.environ["FS2_INTERNAL_URL"].rstrip("/")
 admin_token = os.environ["FS2_ADMIN_TOKEN"]
 context = ssl.create_default_context()
-context.check_hostname = False
-context.verify_mode = ssl.CERT_NONE  # disposable staging IP-ACME certificate
 
 
-def request(path: str, *, token: str, body: dict[str, object] | None = None) -> dict[str, object]:
+def request(
+    path: str, *, token: str, body: dict[str, object] | None = None
+) -> dict[str, object]:
     payload = None if body is None else json.dumps(body).encode("utf-8")
     headers = {
         "Authorization": f"Bearer {token}",
@@ -80,6 +80,7 @@ models = request("/v1/models", token=pat)
 if not isinstance(models.get("data"), list) or not models["data"]:
     raise RuntimeError("authenticated model catalog is empty")
 
+
 async def discover_tools() -> int:
     async with httpx2.AsyncClient(
         headers={
@@ -89,7 +90,7 @@ async def discover_tools() -> int:
         },
         follow_redirects=False,
         trust_env=False,
-        verify=False,
+        verify=True,
     ) as transport:
         async with Client(
             streamable_http_client(f"{base_url}/mcp", http_client=transport),
@@ -98,11 +99,17 @@ async def discover_tools() -> int:
             if session.protocol_version != "2026-07-28":
                 raise RuntimeError("MCP protocol negotiation failed")
             listed = await session.list_tools()
-            if listed.ttl_ms != 0 or listed.cache_scope != "private" or not listed.tools:
+            if (
+                listed.ttl_ms != 0
+                or listed.cache_scope != "private"
+                or not listed.tools
+            ):
                 raise RuntimeError("authenticated MCP tool discovery is invalid")
             return len(listed.tools)
 
 
 tool_count = asyncio.run(discover_tools())
 
-print(json.dumps({"models": len(models["data"]), "mcp_tools": tool_count}, sort_keys=True))
+print(
+    json.dumps({"models": len(models["data"]), "mcp_tools": tool_count}, sort_keys=True)
+)

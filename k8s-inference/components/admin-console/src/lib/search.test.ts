@@ -17,7 +17,20 @@ describe("shared context navigation", () => {
     );
   });
 
-  it("drops overlong context values before they reach a request or link", () => {
-    expect(sharedContextParams(new URLSearchParams({ project: "x".repeat(257) })).toString()).toBe("");
+  it("uses the backend's exact context bounds before values reach a request or link", () => {
+    const accepted = new URLSearchParams({
+      project: "p".repeat(128),
+      cluster: "c".repeat(128),
+      region: "r".repeat(64),
+      timezone: "t".repeat(64),
+    });
+    expect(sharedContextParams(accepted).toString()).toBe(accepted.toString());
+
+    expect(sharedContextParams(new URLSearchParams({
+      project: "p".repeat(129),
+      cluster: "c".repeat(129),
+      region: "r".repeat(65),
+      timezone: "t".repeat(65),
+    })).toString()).toBe("");
   });
 });

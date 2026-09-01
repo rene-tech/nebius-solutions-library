@@ -227,6 +227,7 @@ locals {
     enable_cold_start_keepers       = var.deployment.models.cold_start_keepers
     enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
     acme_email                      = var.deployment.edge.acme_email
+    acme_environment                = var.deployment.edge.acme_environment
     run_acceptance_job              = var.deployment.acceptance.create_probe_job
     control_plane_image = {
       repository = var.deployment.applications.control_plane.repository
@@ -268,7 +269,12 @@ locals {
     selected_accelerator_pool_ids   = sort(keys(local.effective_pool_capacities))
     custom_accelerator_pools        = local.using_custom_accelerator_pools
     selected_model_ids              = local.selected_model_ids
+    selected_model_placements       = local.selected_model_placements
     selected_model_replica_ceilings = local.selected_model_replica_ceilings
+    admin_configuration = {
+      enabled = true
+      source  = "derived-terraform-baseline"
+    }
     artifact_delivery = {
       mode                  = var.deployment.artifacts.registry_policy.mode
       repository_prefix     = var.deployment.artifacts.registry_policy.repository_prefix

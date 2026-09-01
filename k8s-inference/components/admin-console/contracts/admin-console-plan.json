@@ -183,8 +183,7 @@
         "AutoscalerStatePanel"
       ],
       "bff": [
-        "/admin/api/v1/capacity",
-        "/admin/api/v1/queues"
+        "/admin/api/v1/capacity"
       ],
       "vertical_slice": false
     },
@@ -199,7 +198,7 @@
         "UnavailableCapabilityNotice"
       ],
       "bff": [
-        "/admin/api/v1/observability/capabilities"
+        "/admin/api/v1/observability"
       ],
       "vertical_slice": false
     },
@@ -216,7 +215,13 @@
         "RollbackTarget"
       ],
       "bff": [
-        "/admin/api/v1/configuration"
+        "/admin/api/v1/configuration",
+        "/admin/api/v1/configuration:diff",
+        "/admin/api/v1/configuration:validate",
+        "/admin/api/v1/configuration:plan",
+        "/admin/api/v1/configuration:reconcile",
+        "/admin/api/v1/configuration/reconciliations/{reconciliation_id}",
+        "/admin/api/v1/configuration:rollback"
       ],
       "vertical_slice": false
     },
@@ -485,7 +490,7 @@
       "GET /admin/api/v1/overview",
       "GET /admin/api/v1/models",
       "GET /admin/api/v1/models/{model_id}",
-      "GET /admin/api/v1/observability/capabilities"
+      "GET /admin/api/v1/observability"
     ],
     "excluded_until_owned": [
       "frontend framework and build pipeline",

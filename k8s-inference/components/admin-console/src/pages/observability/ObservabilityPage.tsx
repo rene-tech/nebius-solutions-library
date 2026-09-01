@@ -47,11 +47,11 @@ export function ObservabilityPage() {
   const requestedOperation = searchParams.get("operation_id");
   const modelsQuery = useQuery({
     queryKey: ["admin-observability-model-options", contextSearch],
-    queryFn: ({ signal }) => adminApi.models(context, signal),
+    queryFn: ({ signal }) => adminApi.models(context, { limit: 256 }, signal),
   });
   const operationsQuery = useQuery({
     queryKey: ["admin-observability-operation-options", contextSearch],
-    queryFn: ({ signal }) => adminApi.operations(context, signal),
+    queryFn: ({ signal }) => adminApi.operations(context, { limit: 200 }, signal),
   });
   const modelIds = new Set(modelsQuery.data?.data.items.map((item) => item.identity.id) ?? []);
   const operationIds = new Set(operationsQuery.data?.data.items.map((item) => item.id) ?? []);
@@ -63,8 +63,11 @@ export function ObservabilityPage() {
     queryFn: ({ signal }) => adminApi.observability(context, { modelId, operationId }, signal),
     enabled: selectorsReady,
   });
-  const ignoredFilter = (requestedModel !== null && modelId === undefined && modelsQuery.isFetched)
-    || (requestedOperation !== null && operationId === undefined && operationsQuery.isFetched);
+  const selectorValidationUnavailable = (requestedModel !== null && modelsQuery.isError)
+    || (requestedOperation !== null && operationsQuery.isError);
+  const ignoredFilter = (requestedModel !== null && modelId === undefined && modelsQuery.isFetched && !modelsQuery.isError)
+    || (requestedOperation !== null && operationId === undefined && operationsQuery.isFetched && !operationsQuery.isError);
+  const optionsUnavailable = modelsQuery.isError || operationsQuery.isError;
 
   function updateFilter(key: "model_id" | "operation_id", value: string) {
     const next = new URLSearchParams(searchParams);
@@ -85,6 +88,7 @@ export function ObservabilityPage() {
         <span className="toolbar__summary">Only selected model and operation identifiers are sent to server-owned dashboards.</span>
       </section>
       {ignoredFilter ? <div className="freshness-notice" role="status"><strong>Unsafe or unknown filter ignored</strong><span>Select a model or recent operation from the server-published options.</span></div> : null}
+      {selectorValidationUnavailable ? <div className="freshness-notice" role="status"><strong>Requested filter was not applied</strong><span>The server-published selector list is unavailable, so the console safely requested all-scope telemetry instead.</span></div> : optionsUnavailable ? <div className="freshness-notice" role="status"><strong>Some filter options are unavailable</strong><span>All-scope observability remains available; retry this page before selecting a missing model or operation.</span></div> : null}
 
       <DataBoundary data={query.data} error={query.error} pending={query.isPending || !selectorsReady}>
         {({ data }) => (
@@ -96,7 +100,7 @@ export function ObservabilityPage() {
               <MetricCard label="OTel export failures" value={data.signals.otel_export_failures_per_second} />
             </section>
             <section className="observability-grid" aria-label="Observability components">
-              {data.components.map((component) => <ComponentCard component={component} key={component.id} />)}
+              {data.components.length ? data.components.map((component) => <ComponentCard component={component} key={component.id} />) : <div className="state-panel state-panel--empty">No observability components were published for this cluster.</div>}
             </section>
           </>
         )}

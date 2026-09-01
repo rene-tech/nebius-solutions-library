@@ -244,7 +244,7 @@ variable "admin_configuration_base_etag" {
 }
 
 variable "admin_configuration_bootstrap_baseline_accepted" {
-  description = "Explicit reviewer acceptance that a receipt-free first revision matches the deployed static profile/catalog baseline. This is not inferred by Terraform."
+  description = "Wrapper-owned acknowledgement that a receipt-free first revision was deterministically derived from the same tfvars, accelerator-pool output, routes, and canonical catalog as this deployment."
   type        = bool
   default     = false
 }
@@ -418,12 +418,15 @@ resource "kubernetes_config_map_v1" "admin_configuration" {
           toset(keys(var.admin_configuration.models)),
         )) == 0
       )
-      error_message = "admin_configuration models must exactly match the selected, already-qualified canonical routes."
+      error_message = "admin_configuration models must exactly match the tfvars-selected canonical routes."
     }
 
     precondition {
-      condition     = var.model_scaling_mode == "keda"
-      error_message = "admin_configuration requires KEDA to remain the sole routed Deployment replica owner."
+      condition = (
+        !local.admin_configuration_receipt_enabled ||
+        var.model_scaling_mode == "keda"
+      )
+      error_message = "A reviewed admin configuration change requires KEDA to remain the sole routed Deployment replica owner; a receipt-free baseline may truthfully describe a static deployment."
     }
 
     precondition {
@@ -441,6 +444,7 @@ resource "kubernetes_config_map_v1" "admin_configuration" {
 
     precondition {
       condition = (
+        !local.admin_configuration_receipt_enabled ||
         length(setsubtract(var.hot_model_ids, toset([
           for model_id, model in var.admin_configuration.models : model_id
           if model.enabled && model.autoscaling.min_replicas > 0

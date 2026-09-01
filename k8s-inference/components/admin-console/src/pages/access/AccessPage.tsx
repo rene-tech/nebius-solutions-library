@@ -21,6 +21,7 @@ import {
   measurementDescription,
   rolePermits,
 } from "../../lib/access";
+import { sharedContextParams } from "../../lib/search";
 import {
   CreateKeyDialog,
   CreatePrincipalDialog,
@@ -76,11 +77,16 @@ function ScopeList({ values, label }: { values: string[]; label: string }) {
 function UsageCell({ apiKey }: { apiKey: AdminApiKey }) {
   const inputDescription = measurementDescription(apiKey.usage.input_tokens);
   const outputDescription = measurementDescription(apiKey.usage.output_tokens);
+  const gpuQualifier = apiKey.usage.estimated_gpu_seconds.state === "estimated"
+    ? " estimated"
+    : apiKey.usage.estimated_gpu_seconds.state === "unavailable"
+      ? ""
+      : " accounted";
   return (
     <div className="dense-stack">
       <strong>{apiKey.usage.terminal_operations.toLocaleString()} operations</strong>
       <span title={measurementDescription(apiKey.usage.estimated_gpu_seconds)}>
-        {formatAccessMeasurement(apiKey.usage.estimated_gpu_seconds)} estimated
+        {formatAccessMeasurement(apiKey.usage.estimated_gpu_seconds)}{gpuQualifier}
       </span>
       <span title={inputDescription}>In {formatAccessMeasurement(apiKey.usage.input_tokens)}</span>
       <span title={outputDescription}>Out {formatAccessMeasurement(apiKey.usage.output_tokens)}</span>
@@ -265,7 +271,8 @@ export function AccessPage() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const fixedTenant = session.principal.tenant_id;
-  const selectedTenant = fixedTenant ?? boundedTenant(searchParams.get("tenant"));
+  const requestedTenant = searchParams.get("tenant");
+  const selectedTenant = fixedTenant ?? boundedTenant(requestedTenant);
   const canOperate = rolePermits(session.principal.role, "operator");
   const canAdminister = rolePermits(session.principal.role, "admin");
 
@@ -291,9 +298,15 @@ export function AccessPage() {
   const allKeys = keyQuery.data?.data.items ?? [];
   const keyDataAvailable = keyQuery.data !== undefined;
   const principalDataAvailable = principalQuery.data !== undefined;
+  const enabledPrincipalCount = principalQuery.data?.data.items.filter((principal) => principal.enabled).length ?? 0;
   const activeKeys = allKeys.filter((apiKey) => apiKey.state === "active").length;
   const operations = allKeys.reduce((sum, apiKey) => sum + apiKey.usage.terminal_operations, 0);
-  const gpuSeconds = allKeys.reduce((sum, apiKey) => sum + (apiKey.usage.estimated_gpu_seconds.value ?? 0), 0);
+  const gpuUsageAvailable = keyDataAvailable && allKeys.every((apiKey) => apiKey.usage.estimated_gpu_seconds.value !== null);
+  const gpuSeconds = gpuUsageAvailable
+    ? allKeys.reduce((sum, apiKey) => sum + (apiKey.usage.estimated_gpu_seconds.value as number), 0)
+    : null;
+  const accessNavigation = sharedContextParams(searchParams);
+  if (selectedTenant) accessNavigation.set("tenant", selectedTenant);
 
   function open(next: DialogState) {
     setActionError(null);
@@ -400,7 +413,7 @@ export function AccessPage() {
   }
 
   function changeTenant(value: string) {
-    const next = new URLSearchParams(searchParams);
+    const next = new URLSearchParams(sharedContextParams(searchParams));
     value ? next.set("tenant", value) : next.delete("tenant");
     setSearchParams(next);
   }
@@ -411,7 +424,7 @@ export function AccessPage() {
         <AccessMetric detail="Visible in the selected tenant scope" label="Principals" value={principalDataAvailable ? principals.length.toLocaleString() : "—"} />
         <AccessMetric detail={keyDataAvailable ? `${allKeys.length.toLocaleString()} total keys` : "Key projection unavailable"} label="Active keys" value={keyDataAvailable ? activeKeys.toLocaleString() : "—"} />
         <AccessMetric detail="Terminal ledger facts" label="Operations" value={keyDataAvailable ? operations.toLocaleString() : "—"} />
-        <AccessMetric detail="Admission accounting estimate" label="GPU usage" value={keyDataAvailable ? `${gpuSeconds.toLocaleString()} GPU-s` : "—"} />
+        <AccessMetric detail={gpuUsageAvailable ? "Admission accounting estimate" : "GPU accounting is unavailable for one or more visible keys"} label="GPU usage" value={gpuSeconds === null ? "—" : `${gpuSeconds.toLocaleString()} GPU-s`} />
       </section>
 
       <div className="toolbar toolbar--wrap">
@@ -419,10 +432,12 @@ export function AccessPage() {
         {fixedTenant === null ? <label>Tenant<input maxLength={120} onChange={(event) => changeTenant(event.target.value)} placeholder="All tenants" value={selectedTenant ?? ""} /></label> : <span className="quiet-chip">Tenant {fixedTenant}</span>}
         <span className="toolbar__summary">Signed in as {session.principal.role}</span>
         {canAdminister ? <button className="button" onClick={() => open({ kind: "create-principal" })} type="button">Add principal</button> : null}
-        {canOperate ? <button className="button button--primary" onClick={() => open({ kind: "create-key" })} type="button">Create API key</button> : null}
+        {canOperate ? <button className="button button--primary" disabled={!principalDataAvailable || enabledPrincipalCount === 0} onClick={() => open({ kind: "create-key" })} title={!principalDataAvailable ? "Principal inventory must load before a key can be issued" : enabledPrincipalCount === 0 ? "Create or enable a principal before issuing a key" : undefined} type="button">Create API key</button> : null}
       </div>
 
       {!canOperate ? <div className="inline-notice" role="status">Viewer access is read-only. An operator can create, edit, rotate and revoke API keys; an administrator can also manage principals.</div> : null}
+      {canOperate && principalDataAvailable && enabledPrincipalCount === 0 ? <div className="inline-notice inline-notice--warning" role="status">No enabled principal is available in this tenant scope. Create or enable a principal before issuing an API key.</div> : null}
+      {fixedTenant === null && requestedTenant !== null && selectedTenant === undefined ? <div className="freshness-notice" role="status"><strong>Invalid tenant filter ignored</strong><span>Tenant identifiers must be 1–120 letters, numbers, dots, underscores or hyphens.</span></div> : null}
 
       <section className="page-stack" aria-labelledby="principals-heading">
         <div className="section-heading"><div><span className="eyebrow">Identity</span><h2 id="principals-heading">Users and service principals</h2></div><span className="quiet-chip">{principals.length} shown</span></div>
@@ -440,7 +455,7 @@ export function AccessPage() {
       </section>
 
       <section className="page-stack" aria-labelledby="keys-heading">
-        <div className="section-heading"><div><span className="eyebrow">Runtime access</span><h2 id="keys-heading">Scoped API keys</h2></div><Link className="text-link" to={{ pathname: "/admin/audit", search: searchParams.toString() }}>View access audit</Link></div>
+        <div className="section-heading"><div><span className="eyebrow">Runtime access</span><h2 id="keys-heading">Scoped API keys</h2></div><Link className="text-link" to={{ pathname: "/admin/audit", search: accessNavigation.toString() }}>View access audit</Link></div>
         <DataBoundary data={keyQuery.data} error={keyQuery.error} pending={keyQuery.isPending} empty={!keyQuery.isPending && keys.length === 0}>
           {() => (
             <KeyTable

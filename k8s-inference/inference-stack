@@ -24,6 +24,17 @@ REPOSITORY_ROOT = SOLUTION_ROOT.parent
 INFRA_ROOT = SOLUTION_ROOT / "stages" / "infrastructure"
 FOUNDATION_ROOT = SOLUTION_ROOT / "stages" / "foundation"
 WORKLOADS_ROOT = SOLUTION_ROOT / "stages" / "workloads"
+CATALOG_ROOT = SOLUTION_ROOT / "catalog" / "runtime"
+MODEL_ROUTES_PATH = (
+    SOLUTION_ROOT
+    / "components"
+    / "control-plane"
+    / "contracts"
+    / "all-models-live-services.json"
+)
+POOL_PROFILES_PATH = (
+    SOLUTION_ROOT / "catalog" / "profiles" / "accelerator-pool-profiles.json"
+)
 INTERNAL_EDGE_PROXY = WORKLOADS_ROOT / "scripts" / "internal_edge_proxy.py"
 STAGE_COMPLETION_OUTPUTS = {
     "infrastructure": "accelerator_pool_contract",
@@ -132,7 +143,9 @@ def terraform_init(
     environment: Mapping[str, str],
 ) -> None:
     if backend.is_symlink():
-        raise DeploymentError(f"Terraform backend path must not be a symlink: {backend}")
+        raise DeploymentError(
+            f"Terraform backend path must not be a symlink: {backend}"
+        )
     run(
         [
             terraform,
@@ -256,7 +269,9 @@ def planned_output(document: Mapping[str, Any], name: str) -> Any:
     try:
         return document["planned_values"]["outputs"][name]["value"]
     except (KeyError, TypeError) as exc:
-        raise DeploymentError(f"configuration plan did not produce output {name!r}") from exc
+        raise DeploymentError(
+            f"configuration plan did not produce output {name!r}"
+        ) from exc
 
 
 def plan_changes_managed_resources_or_outputs(document: Mapping[str, Any]) -> bool:
@@ -282,8 +297,12 @@ def source_commit() -> str:
         env=clean_environment(),
     )
     commit = result.stdout.strip()
-    if len(commit) != 40 or any(character not in "0123456789abcdef" for character in commit):
-        raise DeploymentError("the source checkout does not have an exact Git commit identity")
+    if len(commit) != 40 or any(
+        character not in "0123456789abcdef" for character in commit
+    ):
+        raise DeploymentError(
+            "the source checkout does not have an exact Git commit identity"
+        )
     return commit
 
 
@@ -320,9 +339,7 @@ def preflight_accelerators(
     contract: Mapping[str, Any],
 ) -> None:
     """Validate project-local platform, preset, capacity, and driver facts live."""
-    pools = contract["stages"]["infrastructure"].get(
-        "custom_accelerator_pools", {}
-    )
+    pools = contract["stages"]["infrastructure"].get("custom_accelerator_pools", {})
     if not pools:
         raise DeploymentError(
             "live preflight requires deployment.accelerator_pools; checked-in profile pools are evidence-backed but not a substitute for current capacity"
@@ -330,9 +347,7 @@ def preflight_accelerators(
 
     project_id = contract["target"]["project_id"]
     target_region = contract["target"]["region"]
-    kubernetes_version = contract["stages"]["infrastructure"][
-        "kubernetes_version"
-    ]
+    kubernetes_version = contract["stages"]["infrastructure"]["kubernetes_version"]
     checked: list[dict[str, Any]] = []
     for pool_id, pool in sorted(pools.items()):
         platform_result = run(
@@ -368,16 +383,14 @@ def preflight_accelerators(
             raise DeploymentError(
                 f"accelerator pool {pool_id!r}: gpus_per_node={pool['gpus_per_node']} differs from the live preset value {advertised_gpu_count}"
             )
-        if (
-            pool["capacity_type"] == "preemptible"
-            and not platform.get("status", {}).get("allowed_for_preemptibles", False)
-        ):
+        if pool["capacity_type"] == "preemptible" and not platform.get(
+            "status", {}
+        ).get("allowed_for_preemptibles", False):
             raise DeploymentError(
                 f"accelerator pool {pool_id!r}: platform {pool['platform']!r} does not allow preemptible capacity in this project"
             )
-        if (
-            pool["topology"]["mode"] == "gpu_cluster"
-            and not preset.get("allow_gpu_clustering", False)
+        if pool["topology"]["mode"] == "gpu_cluster" and not preset.get(
+            "allow_gpu_clustering", False
         ):
             raise DeploymentError(
                 f"accelerator pool {pool_id!r}: preset {pool['preset']!r} is not GPU-cluster capable"
@@ -416,10 +429,7 @@ def preflight_accelerators(
                 driver["mode"] == "managed"
                 and item.get("drivers_preset") == driver.get("preset")
             )
-            or (
-                driver["mode"] == "operator"
-                and not item.get("drivers_preset")
-            )
+            or (driver["mode"] == "operator" and not item.get("drivers_preset"))
             for item in items
         )
         if not compatible:
@@ -455,9 +465,7 @@ def preflight_accelerators(
                 group = json.loads(group_result.stdout)
                 metadata = group.get("metadata", {})
                 status = group.get("status", {})
-                affinity = status.get("resource_affinity", {}).get(
-                    "compute_v1", {}
-                )
+                affinity = status.get("resource_affinity", {}).get("compute_v1", {})
                 if (
                     metadata.get("id") != reservation_id
                     or status.get("state") != "STATE_ACTIVE"
@@ -472,9 +480,7 @@ def preflight_accelerators(
                 usage_text = str(status.get("usage_percentage", ""))
                 if (
                     not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", limit_text)
-                    or not re.fullmatch(
-                        r"[0-9]+(?:\.[0-9]+)?", usage_units_text
-                    )
+                    or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", usage_units_text)
                     or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", usage_text)
                 ):
                     raise DeploymentError(
@@ -500,9 +506,9 @@ def preflight_accelerators(
                         "current_limit": current_limit,
                         "usage_gpu_units": usage_gpu_units,
                         "usage_fraction": usage_fraction,
-                        "active_until": status.get("current_continuous_interval", {}).get(
-                            "end_time"
-                        ),
+                        "active_until": status.get(
+                            "current_continuous_interval", {}
+                        ).get("end_time"),
                     }
                 )
             if total_gpu_units + 1e-9 < required_gpu_units:
@@ -561,11 +567,11 @@ def require_deployable_images(contract: Mapping[str, Any]) -> None:
                 f"{label} image still uses a .invalid source-build placeholder"
             )
         if digest == f"sha256:{'0' * 64}":
-            raise DeploymentError(f"{label} image still uses the zero digest placeholder")
-        if policy == "regional-mirror":
-            split_digest_reference(
-                f"{repository}@{digest}", label=label
+            raise DeploymentError(
+                f"{label} image still uses the zero digest placeholder"
             )
+        if policy == "regional-mirror":
+            split_digest_reference(f"{repository}@{digest}", label=label)
 
     selected_models = set(contract["selected_model_ids"])
     model_images = workloads.get("model_image_overrides", {})
@@ -640,8 +646,7 @@ def selected_image_artifacts(
     """Return the complete selected source-to-target image closure."""
     expected_policy = contract["artifact_delivery"]
     if (
-        registry_delivery.get("schema")
-        != "fs2-serve.nebius.ai/registry-delivery/v1"
+        registry_delivery.get("schema") != "fs2-serve.nebius.ai/registry-delivery/v1"
         or registry_delivery.get("mode") != expected_policy["mode"]
         or registry_delivery.get("repository_prefix")
         != expected_policy["repository_prefix"]
@@ -651,15 +656,15 @@ def selected_image_artifacts(
         )
     target = registry_delivery.get("target_registry")
     if not isinstance(target, dict):
-        raise DeploymentError("the infrastructure registry-delivery output is malformed")
+        raise DeploymentError(
+            "the infrastructure registry-delivery output is malformed"
+        )
     target_region = contract["target"]["region"]
     target_registry_id = str(target.get("id", ""))
     target_fqdn = str(target.get("fqdn", "")).rstrip("/")
     target_root = str(target.get("repository_root", "")).rstrip("/")
     expected_fqdn = f"cr.{target_region}.nebius.cloud"
-    expected_root = (
-        f"{expected_fqdn}/{target_registry_id.removeprefix('registry-')}"
-    )
+    expected_root = f"{expected_fqdn}/{target_registry_id.removeprefix('registry-')}"
     if (
         not re.fullmatch(r"registry-[a-z0-9]+", target_registry_id)
         or target.get("project_id") != contract["target"]["project_id"]
@@ -689,9 +694,7 @@ def selected_image_artifacts(
     artifacts: list[dict[str, str]] = []
     target_sources: dict[str, str] = {}
     for name, source_reference in sources:
-        source_repository, digest = split_digest_reference(
-            source_reference, label=name
-        )
+        source_repository, digest = split_digest_reference(source_reference, label=name)
         relative_repository = source_repository_path(source_repository)
         target_repository = "/".join(
             part for part in (target_root, prefix, relative_repository) if part
@@ -703,7 +706,9 @@ def selected_image_artifacts(
                 f"{target_repository}"
             )
         target_sources[target_repository] = source_repository
-        target_tag = f"{target_repository}:mirror-sha256-{digest.removeprefix('sha256:')}"
+        target_tag = (
+            f"{target_repository}:mirror-sha256-{digest.removeprefix('sha256:')}"
+        )
         artifacts.append(
             {
                 "name": name,
@@ -751,6 +756,282 @@ def rewritten_workloads(
     return workloads
 
 
+def canonical_sha256(value: object) -> str:
+    """Match the control-plane configuration ETag and Terraform jsonencode digest."""
+
+    payload = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _admin_catalog() -> Any:
+    """Load the validated packaged catalog without requiring an installed wheel."""
+
+    catalog_path = str(CATALOG_ROOT)
+    added = catalog_path not in sys.path
+    if added:
+        sys.path.insert(0, catalog_path)
+    try:
+        from fs2_serve_catalog.loader import load_catalog
+
+        return load_catalog(CATALOG_ROOT)
+    except (ImportError, OSError, ValueError) as exc:
+        raise DeploymentError(
+            "the canonical model catalog cannot derive the admin baseline"
+        ) from exc
+    finally:
+        if added:
+            sys.path.remove(catalog_path)
+
+
+def _admin_pool_ids(
+    contract: Mapping[str, Any],
+    workloads: Mapping[str, Any],
+    pools: Mapping[str, Any],
+    *,
+    model_id: str,
+    accelerator_class: str,
+) -> list[str]:
+    override = workloads.get("model_pool_overrides", {}).get(model_id)
+    if isinstance(override, str) and override:
+        candidates = [override]
+    else:
+        placement = contract.get("selected_model_placements", {}).get(model_id, {})
+        compatible = (
+            placement.get("compatible_pool_ids", [])
+            if isinstance(placement, Mapping)
+            else []
+        )
+        candidates = [value for value in compatible if isinstance(value, str)]
+    candidates = [value for value in candidates if value in pools]
+    if not candidates:
+        normalized = accelerator_class.casefold().replace("_", "-")
+        candidates = sorted(
+            pool_id
+            for pool_id, pool in pools.items()
+            if str(pool.get("accelerator_class", "")).casefold().replace("_", "-")
+            == normalized
+        )
+    if not candidates:
+        raise DeploymentError(
+            f"model {model_id!r} has no selected accelerator pool; set deployment.models.pool_overrides"
+        )
+    return sorted(dict.fromkeys(candidates))
+
+
+def _admin_scaling(
+    workloads: Mapping[str, Any],
+    model_id: str,
+) -> dict[str, int]:
+    mode = workloads.get("model_scaling_mode")
+    if mode not in {"keda", "static"}:
+        raise DeploymentError("admin baseline requires a supported model scaling mode")
+    configured = workloads.get("model_scaling_overrides", {}).get(model_id, {})
+    if not isinstance(configured, Mapping):
+        raise DeploymentError(f"model {model_id!r} has an invalid scaling override")
+    if mode == "static":
+        return {
+            "min_replicas": 1,
+            "max_replicas": 1,
+            "target_queue_depth": 1,
+            "polling_interval_seconds": int(workloads["keda_polling_interval_seconds"]),
+            "cooldown_seconds": int(workloads["keda_cooldown_period_seconds"]),
+        }
+    hot = model_id in workloads.get("hot_model_ids", [])
+    return {
+        "min_replicas": int(configured.get("min_replicas", 1 if hot else 0)),
+        "max_replicas": int(configured.get("max_replicas", 1)),
+        "target_queue_depth": int(configured.get("target_queue_depth", 1)),
+        "polling_interval_seconds": int(
+            configured.get(
+                "polling_interval_seconds", workloads["keda_polling_interval_seconds"]
+            )
+        ),
+        "cooldown_seconds": int(
+            configured.get(
+                "cooldown_seconds", workloads["keda_cooldown_period_seconds"]
+            )
+        ),
+    }
+
+
+def derived_admin_configuration(
+    contract: Mapping[str, Any],
+    dynamic: Mapping[str, Any],
+    workloads: Mapping[str, Any],
+) -> tuple[dict[str, Any], str, dict[str, dict[str, int]]]:
+    """Project the same tfvars-selected pools, routes, and immutable artifacts into the admin API."""
+
+    accelerator_contract = dynamic.get("accelerator_pool_contract")
+    if not isinstance(accelerator_contract, Mapping):
+        raise DeploymentError(
+            "the accelerator-pool output is unavailable for the admin baseline"
+        )
+    raw_pools = accelerator_contract.get("pools")
+    if not isinstance(raw_pools, Mapping) or not raw_pools:
+        raise DeploymentError(
+            "the accelerator-pool output contains no pools for the admin baseline"
+        )
+
+    catalog = _admin_catalog()
+    try:
+        routes_document = json.loads(MODEL_ROUTES_PATH.read_text(encoding="utf-8"))
+        pool_profiles = json.loads(POOL_PROFILES_PATH.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DeploymentError(
+            "the admin baseline support contracts are unreadable"
+        ) from exc
+    routes = routes_document.get("routes", {})
+    profile_name = contract.get("profiles", {}).get("accelerators")
+    queue = pool_profiles.get("profiles", {}).get(profile_name, {}).get("queue", {})
+    local_queue = str(queue.get("local_queue_name", "fs2-models-async"))
+
+    pools: dict[str, Any] = {}
+    for pool_id, raw_pool in sorted(raw_pools.items()):
+        if not isinstance(raw_pool, Mapping):
+            raise DeploymentError(f"accelerator pool {pool_id!r} is malformed")
+        capacity = raw_pool.get("capacity", {})
+        node = raw_pool.get("node", {})
+        resource_api = raw_pool.get("resource_api", {})
+        scheduling = raw_pool.get("scheduling", {})
+        selectors = scheduling.get("stable_node_labels", {})
+        tolerations = scheduling.get("tolerations", [])
+        pools[str(pool_id)] = {
+            "resource_name": str(resource_api.get("resource_name", "nvidia.com/gpu")),
+            "accelerator_class": str(raw_pool.get("accelerator_class", "")),
+            "capacity_type": str(capacity.get("type", "regular")),
+            "accelerators_per_node": int(node.get("gpus_per_node", 0)),
+            "min_nodes": int(capacity.get("min_nodes", 0)),
+            "max_nodes": int(capacity.get("max_nodes", 0)),
+            "node_selector": {
+                str(key): str(value)
+                for key, value in sorted(selectors.items())
+                if isinstance(key, str) and isinstance(value, str)
+            },
+            "tolerations": [
+                {
+                    "key": str(item.get("key", "")),
+                    "operator": str(item.get("operator", "Equal")),
+                    "value": item.get("value"),
+                    "effect": item.get("effect"),
+                    "toleration_seconds": item.get("toleration_seconds"),
+                }
+                for item in tolerations
+                if isinstance(item, Mapping)
+            ],
+        }
+
+    model_images = workloads.get("model_image_overrides", {})
+    selected_model_ids = contract.get("selected_model_ids", [])
+    scaling = {
+        model_id: _admin_scaling(workloads, model_id) for model_id in selected_model_ids
+    }
+    models: dict[str, Any] = {}
+    for model_id in selected_model_ids:
+        if (
+            model_id not in catalog.records
+            or model_id not in catalog.acquisition_plans
+            or model_id not in catalog.semantic_requests
+        ):
+            raise DeploymentError(
+                f"model {model_id!r} lacks canonical admin configuration identities"
+            )
+        value = catalog.records[model_id].to_dict()
+        route = routes.get(model_id)
+        image_reference = model_images.get(model_id)
+        if not isinstance(route, Mapping) or not isinstance(image_reference, str):
+            raise DeploymentError(f"model {model_id!r} lacks a deployed route or image")
+        image_repository, image_digest = split_digest_reference(
+            image_reference,
+            label=f"admin configuration model/{model_id}",
+        )
+        gpu = value["resources"]["gpu"]
+        pool_ids = _admin_pool_ids(
+            contract,
+            workloads,
+            raw_pools,
+            model_id=model_id,
+            accelerator_class=str(gpu["class"]),
+        )
+        selected_pool_features = [
+            raw_pools[pool_id].get("features", {}) for pool_id in pool_ids
+        ]
+        cache_tier = (
+            "node-local"
+            if any(
+                item.get("local_cache") == "node-local"
+                for item in selected_pool_features
+            )
+            else "shared-filesystem"
+            if any(
+                item.get("shared_filesystem") is True for item in selected_pool_features
+            )
+            else "object-store"
+        )
+        mcp = route.get("mcp", {})
+        mcp_enabled = bool(isinstance(mcp, Mapping) and mcp.get("enabled") is True)
+        readiness_timeout = int(value["interface"]["readiness"]["timeout_seconds"])
+        acquisition_sha256 = canonical_sha256(
+            catalog.acquisition_plans[model_id].to_dict()
+        )
+        models[model_id] = {
+            "model_id": model_id,
+            "enabled": True,
+            "placement": {
+                "pool_ids": pool_ids,
+                "accelerators": int(gpu["count"]),
+                "topology_policy": "single-node",
+            },
+            "autoscaling": scaling[model_id],
+            "queue": {
+                "local_queue": local_queue,
+                "priority_class": "default",
+                "max_queue_seconds": 7200,
+            },
+            "snapshot": {
+                "strategy": "disabled",
+                "cache_tier": cache_tier,
+                "restore_timeout_seconds": max(600, readiness_timeout),
+                "parallelism": 1,
+                "require_semantic_check": True,
+            },
+            "mcp": {
+                "exposed": mcp_enabled,
+                "tool_name": str(mcp["tool_name"]) if mcp_enabled else None,
+            },
+            "rate": {
+                "requests_per_minute": None,
+                "concurrent_requests": 1,
+                "accelerator_seconds_per_day": None,
+            },
+            "artifact": {
+                "image_repository": image_repository,
+                "image_digest": image_digest,
+                "model_revision": str(value["model"]["source"]["revision"]),
+                "artifact_manifest_sha256": value["cache"]["artifact"].get(
+                    "manifest_digest"
+                ),
+                "acquisition_contract_sha256": acquisition_sha256,
+                "provenance_sha256": catalog.records[model_id].digest,
+                "semantic_health_contract_sha256": catalog.semantic_requests[
+                    model_id
+                ].digest,
+            },
+        }
+
+    configuration = {
+        "schema_version": "fs2.admin-configuration/v1",
+        "pools": pools,
+        "models": models,
+    }
+    return configuration, canonical_sha256(configuration), scaling
+
+
 def merge_docker_config(base: Any, extra: Any) -> dict[str, Any]:
     """Merge Docker auth documents without logging or persisting credentials."""
     if not isinstance(base, dict) or not isinstance(extra, dict):
@@ -760,7 +1041,9 @@ def merge_docker_config(base: Any, extra: Any) -> dict[str, Any]:
         base_values = merged.get(key, {})
         extra_values = extra.get(key, {})
         if not isinstance(base_values, dict) or not isinstance(extra_values, dict):
-            raise DeploymentError(f"registry Docker configuration {key} must be an object")
+            raise DeploymentError(
+                f"registry Docker configuration {key} must be an object"
+            )
         merged[key] = {**base_values, **extra_values}
     for key, value in extra.items():
         if key not in {"auths", "credHelpers"}:
@@ -797,7 +1080,9 @@ def registry_client_environment(
         try:
             base = json.loads(base_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
-            raise DeploymentError("the existing Docker configuration is not valid JSON") from exc
+            raise DeploymentError(
+                "the existing Docker configuration is not valid JSON"
+            ) from exc
 
     with tempfile.TemporaryDirectory(prefix="fs2-registry-auth-") as temporary:
         temporary_root = Path(temporary)
@@ -898,7 +1183,10 @@ def mirror_selected_images(
                         raise DeploymentError(
                             f"upstream digest mismatch for {artifact['name']}; refusing to deploy"
                         )
-                    print(f"Mirroring {artifact['name']} into the regional registry.", file=sys.stderr)
+                    print(
+                        f"Mirroring {artifact['name']} into the regional registry.",
+                        file=sys.stderr,
+                    )
                     crane_copy(
                         args.crane,
                         artifact["source_reference"],
@@ -906,14 +1194,15 @@ def mirror_selected_images(
                         environment,
                     )
                     status = "copied"
-                if crane_digest(args.crane, artifact["target_tag"], environment) != expected:
+                if (
+                    crane_digest(args.crane, artifact["target_tag"], environment)
+                    != expected
+                ):
                     raise DeploymentError(
                         f"post-copy tag verification failed for {artifact['name']}"
                     )
                 if (
-                    crane_digest(
-                        args.crane, artifact["target_reference"], environment
-                    )
+                    crane_digest(args.crane, artifact["target_reference"], environment)
                     != expected
                 ):
                     raise DeploymentError(
@@ -1133,7 +1422,9 @@ def infrastructure_outputs(
     state, _, _ = stage_paths(run_root, "infrastructure")
     terraform_init(terraform, INFRA_ROOT, state, environment)
     cluster_id = terraform_json_output(terraform, INFRA_ROOT, "cluster_id", environment)
-    cluster_name = terraform_json_output(terraform, INFRA_ROOT, "cluster_name", environment)
+    cluster_name = terraform_json_output(
+        terraform, INFRA_ROOT, "cluster_name", environment
+    )
     kubeconfig, kube_system_uid = ensure_kubeconfig(
         nebius=nebius,
         nebius_profile=nebius_profile,
@@ -1149,9 +1440,7 @@ def infrastructure_outputs(
         terraform, INFRA_ROOT, "registry_delivery_contract", environment
     )
     if registry_delivery is None:
-        registry_delivery = legacy_registry_delivery_contract(
-            contract, target_contract
-        )
+        registry_delivery = legacy_registry_delivery_contract(contract, target_contract)
     return {
         "run_root": str(run_root.resolve()),
         "kubeconfig_path": str(kubeconfig.resolve()),
@@ -1200,6 +1489,21 @@ def write_downstream_variables(
         **identity,
         "public_edge_contract": dynamic["public_edge_contract"],
     }
+    admin_contract = contract.get("admin_configuration", {})
+    if isinstance(admin_contract, Mapping) and admin_contract.get("enabled") is True:
+        configuration, configuration_sha256, scaling = derived_admin_configuration(
+            contract,
+            dynamic,
+            workloads,
+        )
+        workloads.update(
+            {
+                "admin_configuration": configuration,
+                "admin_configuration_sha256": configuration_sha256,
+                "admin_configuration_bootstrap_baseline_accepted": True,
+                "model_scaling_overrides": scaling,
+            }
+        )
     if foundation["grafana_publication"]["enabled"]:
         edge = dynamic["public_edge_contract"]
         origin = edge.get("public_origin")
@@ -1310,9 +1614,7 @@ def state_ready(
     state, _, _ = stage_paths(run_root, stage)
     if not state.exists():
         return False
-    environment = stage_environment(
-        run_root, stage, contract, include_secrets=False
-    )
+    environment = stage_environment(run_root, stage, contract, include_secrets=False)
     terraform_init(terraform, stage_root(stage), state, environment)
     result = subprocess.run(
         [
@@ -1344,9 +1646,7 @@ def state_has_resources(
     state, _, _ = stage_paths(run_root, stage)
     if not state.exists():
         return False
-    environment = stage_environment(
-        run_root, stage, contract, include_secrets=False
-    )
+    environment = stage_environment(run_root, stage, contract, include_secrets=False)
     terraform_init(terraform, stage_root(stage), state, environment)
     return bool(state_addresses(terraform, stage_root(stage), environment))
 
@@ -1421,7 +1721,9 @@ def plan_stack(
             contract=contract,
             variable_file=infrastructure_variables,
         )
-        print("Planned infrastructure. Apply it before foundation can be planned against the new API server.")
+        print(
+            "Planned infrastructure. Apply it before foundation can be planned against the new API server."
+        )
         return
 
     _, infrastructure_plan, _ = plan_stage(
@@ -1668,18 +1970,12 @@ def internal_proxy_command(
         cluster_name=cluster_name,
     )
 
-    if (
-        not isinstance(public_edge, dict)
-        or public_edge.get("mode") != "internal-only"
-    ):
+    if not isinstance(public_edge, dict) or public_edge.get("mode") != "internal-only":
         raise DeploymentError(
             "this deployment has a public edge and does not require an operator proxy"
         )
     port_forward = public_edge.get("port_forward")
-    if (
-        not isinstance(port_forward, dict)
-        or port_forward.get("enabled") is not True
-    ):
+    if not isinstance(port_forward, dict) or port_forward.get("enabled") is not True:
         raise DeploymentError("the Terraform port-forward contract is malformed")
     expected = {
         "bind_address": "127.0.0.1",
@@ -1697,7 +1993,9 @@ def internal_proxy_command(
             int(port_forward["operator_proxy_port"]),
         ]
     except (KeyError, TypeError, ValueError) as exc:
-        raise DeploymentError("the Terraform port-forward contract is malformed") from exc
+        raise DeploymentError(
+            "the Terraform port-forward contract is malformed"
+        ) from exc
     application_origin = f"http://localhost:{local_ports[2]}"
     operator_endpoint = f"http://127.0.0.1:{local_ports[2]}"
     if (
@@ -1711,7 +2009,9 @@ def internal_proxy_command(
         "admin_web_interface_url": f"{application_origin}/admin/",
     }
     if endpoints != expected_endpoints:
-        raise DeploymentError("the workload endpoint outputs do not match the edge contract")
+        raise DeploymentError(
+            "the workload endpoint outputs do not match the edge contract"
+        )
 
     return [
         sys.executable,

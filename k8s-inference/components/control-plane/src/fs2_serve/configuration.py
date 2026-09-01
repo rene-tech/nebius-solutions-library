@@ -603,10 +603,32 @@ class ConfigurationService:
         The first baseline has no prior revision to diff. Production may call
         this only for the immutable ConfigMap rendered by the workloads root;
         static deployed-value equivalence remains a required live acceptance
-        input and is not inferred from this catalog validation.
+        input and is not inferred from this catalog validation. An observed
+        placement on an accelerator that lacks catalog qualification is
+        retained as a warning only at this bootstrap boundary. It does not add
+        qualification, and every later proposal/plan remains fail closed.
         """
 
-        return await self._validate_desired(desired)
+        validation = await self._validate_desired(desired)
+        issues = [
+            issue.model_copy(
+                update={
+                    "severity": ValidationSeverity.WARNING,
+                    "message": (
+                        "Terraform baseline is running on an accelerator without catalog qualification; "
+                        "later proposals remain blocked"
+                    ),
+                }
+            )
+            if issue.code == "unsupported_accelerator_placement"
+            else issue
+            for issue in validation.issues
+        ]
+        return ConfigurationValidation(
+            valid=not any(issue.severity == ValidationSeverity.ERROR for issue in issues),
+            proposed_etag=validation.proposed_etag,
+            issues=issues,
+        )
 
     async def diff(self, proposal: ConfigurationProposal) -> ConfigurationDiff:
         current = await self._require_base(proposal.base_etag)

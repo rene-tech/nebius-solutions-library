@@ -96,9 +96,10 @@ deployment = {
     # Public mode allocates a static Nebius IPv4 address and makes the MCP and
     # admin outputs usable without a local proxy. Replace the contact address
     # and restrict source_cidrs for your production access policy.
-    mode         = "public"
-    source_cidrs = ["0.0.0.0/0"]
-    acme_email   = "operator@example.com"
+    mode             = "public"
+    source_cidrs     = ["0.0.0.0/0"]
+    acme_email       = "operator@example.com"
+    acme_environment = "production"
   }
 
   observability = {

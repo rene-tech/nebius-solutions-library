@@ -342,6 +342,14 @@ class PostgresStore:
             await connection.execute(
                 f"GRANT SELECT ON fs2_schema_migrations,fs2_reporting_terminal_totals TO {quoted_runtime}"
             )
+            # API-key inventory joins runtime-owned token identities to a
+            # narrow, payload-free usage projection. Column grants keep the
+            # runtime role unable to inspect tenant/principal/model facts or
+            # mutate the append-only accounting ledger.
+            await connection.execute(
+                f"GRANT SELECT (operation_id,token_id,estimated_gpu_seconds,input_tokens,output_tokens,modality_usage) "
+                f"ON fs2_usage_facts TO {quoted_runtime}"
+            )
             await connection.execute(f"GRANT SELECT ON fs2_activation_intents TO {quoted_runtime}")
             await connection.execute(f"GRANT SELECT ON fs2_activation_controller_status TO {quoted_runtime}")
             await connection.execute(

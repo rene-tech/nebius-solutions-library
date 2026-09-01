@@ -88,10 +88,15 @@ class Settings(BaseSettings):
         pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
     )
     admin_kueue_api_version: Literal["v1beta1", "v1beta2"] = "v1beta2"
+    admin_kubernetes_cache_ttl_seconds: float = Field(default=15, ge=1, le=60)
     admin_prometheus_url: str | None = Field(default=None, max_length=2048)
     admin_observability_config_file: Path | None = None
     admin_adapter_timeout_seconds: float = Field(default=2.0, ge=0.1, le=10)
     admin_source_max_age_seconds: float = Field(default=90.0, ge=1, le=3600)
+    admin_context_project: str | None = Field(default=None, min_length=1, max_length=128)
+    admin_context_cluster: str | None = Field(default=None, min_length=1, max_length=128)
+    admin_context_region: str | None = Field(default=None, min_length=1, max_length=64)
+    admin_context_label: str | None = Field(default=None, min_length=1, max_length=200)
     admin_configuration_file: Path | None = None
     admin_configuration_receipt_file: Path | None = None
     public_base_url: str = Field(default="https://inference.example.invalid", min_length=1, max_length=2048)
@@ -175,6 +180,13 @@ class Settings(BaseSettings):
         }
         if len(database_roles) != 4:
             raise ValueError("reporting, runtime, maintenance, and activation database roles must differ")
+        context_identity = (self.admin_context_project, self.admin_context_cluster, self.admin_context_region)
+        if any(value is not None for value in context_identity) and not all(
+            value is not None for value in context_identity
+        ):
+            raise ValueError("admin context project, cluster, and region must be configured together")
+        if self.admin_context_label is not None and not all(value is not None for value in context_identity):
+            raise ValueError("admin context label requires a complete context identity")
         return self
 
     def public_transport_allowlists(self) -> tuple[tuple[str, ...], tuple[str, ...]]:

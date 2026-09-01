@@ -23,7 +23,7 @@ reason; it is never emitted as numeric zero.
   encrypted content, HMACs, idempotency keys, trace context, backend error
   detail, Pod/node/GPU UUIDs, and raw credentials.
 - `KubernetesAdminAdapter` accepts only a bounded tuple of canonical model IDs
-  and returns typed replica/semantic-health/capacity summaries. An implementation
+  and returns typed replica/serving-health/capacity summaries. An implementation
   must use an allow-listed informer/cache; it must not return Kubernetes objects
   or credentials. `CachedKubernetesAdminAdapter` supplies a 1..60 second,
   model-set-keyed cache around that typed boundary.
@@ -32,11 +32,25 @@ reason; it is never emitted as numeric zero.
   vocabulary. There is no free-form PromQL endpoint and no principal, tenant,
   token, prompt, or response label.
 
-The default Kubernetes and Prometheus adapters fail closed as unavailable.
-That default is intentional: installing this code alone cannot invent live
-state or acquire cluster/metrics credentials. The capacity/observability
-workstream owns the cached live implementations and their service-account and
-network-policy reconciliation.
+The default Kubernetes and Prometheus adapters still fail closed when live
+sources are disabled. When the read adapters are enabled, production runtime
+composition injects `KubernetesModelStateAdminAdapter` behind the bounded cache
+and `PrometheusModelMetricsAdminAdapter` beside the capacity and observability
+adapters. The Kubernetes adapter joins only canonical model IDs across
+Deployments, Services, Pods, and GPU Nodes. The Prometheus adapter executes six
+global and six `model`-grouped server-owned queries regardless of catalog size.
+It never constructs one query per model.
+
+Kubernetes reconciliation treats a Deployment plus Service at zero desired
+replicas as cold; a non-failing rollout below its desired replica count as
+loading; and only a Ready Pod selected by the model Service as ready/hot.
+Replica failure, progress-deadline failure, crash loops, image pull failures,
+and nonzero container exits are unhealthy. Missing Deployment or Service
+evidence remains unknown. Catalog compatibility is evaluated separately and
+still takes precedence as unsupported. The contract-compatible
+`semantic_healthy` field in this adapter is therefore Kubernetes serving
+health, not proof that an application-level semantic probe ran. Request-level
+semantic outcomes remain durable operation evidence.
 
 ## Status and failure behavior
 
@@ -60,22 +74,22 @@ correlation.
 
 Before deploying the admin UI, the retained release owner must:
 
-1. Construct `AdminReadService` in the control-plane runtime with one
-   `AdminContextConfig` derived from runtime configuration, not hard-coded
-   region or GPU values.
-2. Inject the reviewed Kubernetes cache and bounded Prometheus adapter from the
-   capacity/observability workstream. The service account must remain GET/LIST/
-   WATCH-only for its exact allow-list.
-3. Replace the temporary bootstrap-admin dependency with the operator-session
-   and RBAC dependency owned by the access workstream. Never place the bootstrap
-   token in browser JavaScript or storage.
+1. Configure `FS2_ADMIN_CONTEXT_PROJECT`, `FS2_ADMIN_CONTEXT_CLUSTER`, and
+   `FS2_ADMIN_CONTEXT_REGION` together. `FS2_ADMIN_CONTEXT_LABEL` is optional.
+2. Enable the Kubernetes reader and Prometheus URL. The model-namespace Role
+   must allow `list` on `apps/deployments` and core `services` and `pods`; the
+   ClusterRole must allow `list` on core `nodes`. Set
+   `FS2_ADMIN_KUBERNETES_CACHE_TTL_SECONDS` within 1..60 seconds (default 15).
+   The exact Prometheus service remains private.
+3. Verify the bootstrap credential is accepted only by the same-origin session
+   exchange and that every admin route then enforces the server-side operator
+   session and role. Never place the bootstrap token in browser storage.
 4. Generate frontend types from the immutable image's
    `/internal/openapi.json`, compare the six routes with
    `contracts/admin-api-v1.json`, and fail the build on drift.
 5. Reconcile the Helm/Terraform image digest and settings, render/plan first,
    then run same-origin host/origin, auth, partial-source, redaction, cursor,
-   and fixed-window acceptance. No shared-cluster rollout is part of this
-   implementation slice.
+   fixed-window, and non-placeholder live-state acceptance.
 
 ## Verification
 

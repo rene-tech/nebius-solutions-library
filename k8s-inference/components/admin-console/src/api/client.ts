@@ -8,6 +8,8 @@ import type {
   AdminOperationDetail,
   AdminOperationList,
   AdminOverview,
+  ModelState,
+  OperationState,
 } from "./types";
 import type {
   AdminApiKey,
@@ -37,12 +39,26 @@ import type {
 import { sharedContextParams } from "../lib/search";
 
 const API_PREFIX = "/admin/api/v1";
+const queryValueMaximum: Readonly<Record<string, number>> = {
+  limit: 3,
+  state: 11,
+  search: 128,
+  cursor: 512,
+  tenant_id: 120,
+  model_id: 128,
+  principal_id: 200,
+  api_key_prefix: 64,
+  status: 10,
+  error_code: 64,
+  operation_id: 36,
+};
 
 export class AdminApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly requestId: string | null,
+    readonly code: string | null = null,
   ) {
     super(message);
     this.name = "AdminApiError";
@@ -52,7 +68,8 @@ export class AdminApiError extends Error {
 function boundedParams(input?: URLSearchParams, extra?: Record<string, string | undefined>) {
   const output = sharedContextParams(input ?? new URLSearchParams());
   Object.entries(extra ?? {}).forEach(([key, value]) => {
-    if (value && value.length <= 512) output.set(key, value);
+    const maximum = queryValueMaximum[key];
+    if (value && maximum !== undefined && value.length <= maximum) output.set(key, value);
   });
   return output;
 }
@@ -64,18 +81,60 @@ function isEnvelope(value: unknown): value is AdminEnvelope<unknown> {
 }
 
 async function problemFor(response: Response): Promise<AdminApiError> {
-  const requestId = response.headers.get("x-request-id");
-  let message = `Admin API request failed (${response.status})`;
+  let requestId = response.headers.get("x-request-id");
+  let code: string | null = null;
+  const fallback: Record<number, string> = {
+    400: "The admin request was rejected.",
+    401: "Authentication was rejected.",
+    403: "Your operator role does not permit this action.",
+    404: "The requested admin resource was not found.",
+    409: "The requested change conflicts with current state.",
+    422: "The admin request failed validation.",
+    429: "The admin service is rate limiting requests.",
+    502: "The admin gateway returned an invalid response.",
+    503: "The admin service is temporarily unavailable.",
+  };
+  let message = fallback[response.status] ?? `Admin API request failed (${response.status}).`;
   try {
     const payload: unknown = await response.json();
     if (payload && typeof payload === "object") {
-      const detail = (payload as Record<string, unknown>).detail;
+      const candidate = payload as Record<string, unknown>;
+      const nested = candidate.error && typeof candidate.error === "object"
+        ? candidate.error as Record<string, unknown>
+        : null;
+      const detail = candidate.detail ?? nested?.message;
+      const responseCode = candidate.code ?? nested?.type;
+      const bodyRequestId = candidate.request_id;
       if (typeof detail === "string" && detail.length > 0 && detail.length <= 320) message = detail;
+      if (typeof responseCode === "string" && responseCode.length > 0 && responseCode.length <= 64) code = responseCode;
+      if (!requestId && typeof bodyRequestId === "string" && bodyRequestId.length <= 64) requestId = bodyRequestId;
     }
   } catch {
     // A bounded generic error is safer than reflecting an arbitrary response.
   }
-  return new AdminApiError(message, response.status, requestId);
+  return new AdminApiError(message, response.status, requestId, code);
+}
+
+export interface ModelQuery {
+  state?: ModelState;
+  search?: string;
+  limit?: number;
+}
+
+export interface OperationQuery {
+  cursor?: string;
+  tenantId?: string;
+  modelId?: string;
+  principalId?: string;
+  apiKeyPrefix?: string;
+  status?: OperationState;
+  errorCode?: string;
+  limit?: number;
+}
+
+function boundedLimit(value: number | undefined, maximum: number, fallback: number): string {
+  if (value === undefined || !Number.isInteger(value)) return String(fallback);
+  return String(Math.min(Math.max(value, 1), maximum));
 }
 
 interface EnvelopeRequest {
@@ -155,12 +214,25 @@ export const adminApi = {
     request<AdminContextData>("/context", context, undefined, signal),
   overview: (context: URLSearchParams, signal?: AbortSignal) =>
     request<AdminOverview>("/overview", context, undefined, signal),
-  models: (context: URLSearchParams, signal?: AbortSignal) =>
-    request<AdminModelList>("/models", context, { limit: "100" }, signal),
+  models: (context: URLSearchParams, filters: ModelQuery = {}, signal?: AbortSignal) =>
+    request<AdminModelList>("/models", context, {
+      limit: boundedLimit(filters.limit, 256, 200),
+      state: filters.state,
+      search: filters.search,
+    }, signal),
   model: (modelId: string, context: URLSearchParams, signal?: AbortSignal) =>
     request<AdminModelDetail>(`/models/${encodeURIComponent(modelId)}`, context, undefined, signal),
-  operations: (context: URLSearchParams, signal?: AbortSignal) =>
-    request<AdminOperationList>("/operations", context, { limit: "100" }, signal),
+  operations: (context: URLSearchParams, filters: OperationQuery = {}, signal?: AbortSignal) =>
+    request<AdminOperationList>("/operations", context, {
+      limit: boundedLimit(filters.limit, 200, 100),
+      cursor: filters.cursor,
+      tenant_id: filters.tenantId,
+      model_id: filters.modelId,
+      principal_id: filters.principalId,
+      api_key_prefix: filters.apiKeyPrefix,
+      status: filters.status,
+      error_code: filters.errorCode,
+    }, signal),
   operation: (operationId: string, context: URLSearchParams, signal?: AbortSignal) =>
     request<AdminOperationDetail>(
       `/operations/${encodeURIComponent(operationId)}`,

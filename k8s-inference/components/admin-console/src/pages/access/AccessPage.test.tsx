@@ -76,4 +76,23 @@ describe("Access page", () => {
     expect(screen.getByText("key adapter unavailable")).toBeInTheDocument();
     expect(screen.getByText("Request request-test")).toBeInTheDocument();
   });
+
+  it("does not report zero GPU usage when any visible key lacks accounting", async () => {
+    const unavailableKey = structuredClone(testKey);
+    unavailableKey.usage.estimated_gpu_seconds = {
+      value: null,
+      unit: "gpu-seconds",
+      state: "unavailable",
+      reason: "admission accounting is unavailable",
+    };
+    vi.spyOn(adminApi, "principals").mockResolvedValue(testEnvelope({ items: [tenantPrincipal] }));
+    vi.spyOn(adminApi, "keys").mockResolvedValue(testEnvelope({ items: [unavailableKey] }));
+    renderPage();
+
+    await screen.findByText("Agent A key");
+    const gpuCard = screen.getByText("GPU usage").closest("div");
+    expect(gpuCard).toHaveTextContent("—");
+    expect(gpuCard).toHaveTextContent("GPU accounting is unavailable");
+    expect(screen.getByTitle("admission accounting is unavailable")).toHaveTextContent("—");
+  });
 });

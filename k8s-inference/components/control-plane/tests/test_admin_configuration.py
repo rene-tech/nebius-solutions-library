@@ -40,6 +40,7 @@ from fs2_serve.configuration_models import (
     ReconciliationPhase,
     SnapshotConfiguration,
     TerraformApplyReceipt,
+    ValidationSeverity,
 )
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.store import ConflictError
@@ -268,6 +269,61 @@ async def test_heterogeneous_capacity_is_representable_and_unsupported_placement
         principal(OperatorRole.VIEWER),
     )
     assert "placement_exceeds_node" in {issue.code for issue in rejected.issues}
+
+
+@pytest.mark.asyncio
+async def test_unsupported_accelerator_is_bootstrap_warning_but_proposals_stay_fail_closed() -> None:
+    initial, catalog = qualified_configuration()
+    pool_id = next(iter(initial.pools))
+    unsupported_pool = initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h100-sxm5-80gb"})
+    observed_baseline = initial.model_copy(update={"pools": {pool_id: unsupported_pool}})
+    service = ConfigurationService(repository=InMemoryConfigurationRepository(initial), catalog=catalog)
+
+    bootstrap = await service.validate_bootstrap(observed_baseline)
+    placement_issue = next(issue for issue in bootstrap.issues if issue.code == "unsupported_accelerator_placement")
+    assert bootstrap.valid
+    assert placement_issue.severity is ValidationSeverity.WARNING
+    assert "without catalog qualification" in placement_issue.message
+
+    proposal = ConfigurationProposal(base_etag=configuration_etag(initial), desired=observed_baseline)
+    validation = await service.validate(proposal, principal(OperatorRole.VIEWER))
+    placement_issue = next(issue for issue in validation.issues if issue.code == "unsupported_accelerator_placement")
+    assert not validation.valid
+    assert placement_issue.severity is ValidationSeverity.ERROR
+
+    plan = await service.plan(proposal, principal(OperatorRole.OPERATOR))
+    placement_issue = next(
+        issue for issue in plan.validation.issues if issue.code == "unsupported_accelerator_placement"
+    )
+    assert plan.state is ConfigurationPlanState.REJECTED
+    assert placement_issue.severity is ValidationSeverity.ERROR
+    assert plan.artifacts == [] and plan.terraform.variables == {}
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_warning_does_not_downgrade_immutable_identity_mismatch() -> None:
+    initial, catalog = qualified_configuration()
+    pool_id = next(iter(initial.pools))
+    model_id = next(iter(initial.models))
+    unsupported_pool = initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h100-sxm5-80gb"})
+    mismatched_model = initial.models[model_id].model_copy(
+        update={
+            "artifact": initial.models[model_id].artifact.model_copy(
+                update={"model_revision": "unqualified-runtime-revision"}
+            )
+        }
+    )
+    baseline = initial.model_copy(update={"pools": {pool_id: unsupported_pool}, "models": {model_id: mismatched_model}})
+
+    validation = await ConfigurationService(
+        repository=InMemoryConfigurationRepository(initial),
+        catalog=catalog,
+    ).validate_bootstrap(baseline)
+
+    assert not validation.valid
+    severities = {issue.code: issue.severity for issue in validation.issues}
+    assert severities["unsupported_accelerator_placement"] is ValidationSeverity.WARNING
+    assert severities["catalog_revision_mismatch"] is ValidationSeverity.ERROR
 
 
 @pytest.mark.asyncio

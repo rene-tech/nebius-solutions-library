@@ -16,6 +16,17 @@ data "kubernetes_service_v1" "kubernetes_api" {
   }
 }
 
+# Cilium enforces this egress after Service DNAT on Nebius Managed Kubernetes.
+# Discover the ready control-plane endpoints instead of assuming the Service
+# ClusterIP remains the packet destination. Exact ready endpoint routes aid
+# diagnosis; the target-contract private subnet is the stable rotation fallback.
+data "kubernetes_resources" "kubernetes_api_endpoint_slices" {
+  api_version    = "discovery.k8s.io/v1"
+  kind           = "EndpointSlice"
+  namespace      = "default"
+  label_selector = "kubernetes.io/service-name=kubernetes"
+}
+
 data "kubernetes_config_map_v1" "foundation_contract" {
   metadata {
     name      = "fs2-terraform-cluster-contract"
@@ -143,12 +154,14 @@ resource "terraform_data" "cluster_contract" {
         data.kubernetes_service_v1.kubernetes_api.metadata[0].name == "kubernetes" &&
         data.kubernetes_service_v1.kubernetes_api.metadata[0].namespace == "default" &&
         can(cidrhost(local.kubernetes_api_service_cidr, 0)) &&
+        length(local.kubernetes_api_endpoint_ips) >= 1 &&
+        alltrue([for cidr in local.kubernetes_api_egress_cidrs : can(cidrhost(cidr, 0))]) &&
         (
           length(var.admin_kubernetes_api_cidrs) == 0 ||
-          var.admin_kubernetes_api_cidrs == local.kubernetes_api_service_cidrs
+          var.admin_kubernetes_api_cidrs == local.kubernetes_api_egress_cidrs
         )
       )
-      error_message = "Grafana and the admin reader must use the exact default/kubernetes spec.clusterIP as one /32 or /128; an optional supplied CIDR is an assertion and must match it."
+      error_message = "Grafana and the admin reader require the default/kubernetes Service IP, ready API endpoint host routes, and target-contract private subnet fallback; an optional supplied CIDR set is an assertion and must match the complete set."
     }
     precondition {
       condition = (

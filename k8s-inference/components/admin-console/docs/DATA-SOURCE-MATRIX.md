@@ -15,7 +15,7 @@ labels. Aggregate metric identities are joined to the durable ledger server-side
 | Product field | Primary source/API | Live state | Required BFF behavior / gap |
 |---|---|---|---|
 | Model identity, revision, runtime, immutable image/model, GPU compatibility, endpoint/MCP exposure | Catalog package and contracts | Available | Preserve immutable identities; treat compatibility outcome separately from live health. |
-| Hot/loading/queued/cold/unhealthy/unsupported | Catalog + PostgreSQL activation/queue + Kubernetes replicas + semantic health | Adapter required | Apply documented status precedence and freshness; replica readiness alone is not hotness. |
+| Hot/loading/queued/cold/unhealthy/unsupported | Catalog + PostgreSQL activation/queue + Kubernetes Deployments/Services/Pods | Implemented; rollout required | Production composition uses the bounded live adapter. A Ready Pod must also be selected by the model Service. This is serving health, not an application semantic probe; request semantic outcomes remain separate durable evidence. |
 | Requests/s and outcomes | Prometheus `fs2_serve_requests_total`; reconcile terminal total with `fs2_usage_facts` | Available | Bounded model/outcome labels only. |
 | End-to-end latency | `fs2_serve_request_duration_seconds`; per-operation timestamps | Aggregate available | Quantiles are operational estimates; do not assign histogram quantiles to individual operations. |
 | TTFT | First-output timestamp + histogram | Missing | Schema and instrumentation do not exist; return `null`/`not_instrumented`. |

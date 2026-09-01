@@ -132,9 +132,10 @@ or client-side port forwarding is required:
 
 ```hcl
 edge = {
-  mode         = "public"
-  source_cidrs = ["0.0.0.0/0"] # Restrict this for your production access policy.
-  acme_email   = "operator@example.com"
+  mode             = "public"
+  source_cidrs     = ["0.0.0.0/0"] # Restrict this for your production access policy.
+  acme_email       = "operator@example.com"
+  acme_environment = "production"
 }
 ```
 
@@ -159,9 +160,11 @@ copies them into `port_forward_contract`; `mcp_endpoint_url` and
 port. No HCL or script edits are required to give another deployment a
 non-conflicting local endpoint tuple.
 
-The current public-edge fixture uses the disposable staging IP-ACME issuer, so
-its URL is an acceptance endpoint rather than a browser-trusted production
-hostname. `internal-only` does not expose a public listener. Run
+Public edge uses the Let's Encrypt production IP-ACME directory by default, so
+successful acceptance requires a browser-trusted certificate. Set
+`acme_environment = "staging"` explicitly only for issuance testing;
+staging certificates intentionally fail the trusted-TLS acceptance probe.
+`internal-only` does not expose a public listener. Run
 `inference-stack proxy` only for `internal-only` mode after `apply` to start the
 two run-scoped Kubernetes port-forwards and the same-origin loopback proxy
 described by `port_forward_contract`. Keep that foreground process running

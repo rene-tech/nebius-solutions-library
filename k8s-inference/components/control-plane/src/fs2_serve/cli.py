@@ -11,15 +11,27 @@ import uvicorn
 from fastapi import FastAPI
 from fs2_serve_catalog.loader import load_catalog
 
-from .admin import AdminReadService
+from .admin import (
+    AdminContextConfig,
+    AdminReadService,
+    CachedKubernetesAdminAdapter,
+    CapacityAdminAdapter,
+    KubernetesAdminAdapter,
+    ObservabilityAdminAdapter,
+    PrometheusAdminAdapter,
+)
 from .admin_adapters import (
     HttpKubernetesListReader,
     HttpPrometheusScalarReader,
     KubernetesCapacityAdminAdapter,
     KubernetesCapacityConfig,
+    KubernetesModelStateAdminAdapter,
+    KubernetesModelStateConfig,
+    PrometheusModelMetricsAdminAdapter,
     PrometheusObservabilityAdminAdapter,
     PrometheusObservabilityConfig,
 )
+from .admin_models import AdminContextOption
 from .admission import AdmissionService
 from .api import AppRuntime, create_app
 from .auth import OperatorSessionService, PepperRing, TokenService
@@ -62,6 +74,77 @@ async def _store(settings: Settings) -> PostgresStore:
         hasher,
         settings.payload_ttl_seconds,
     )
+
+
+def _admin_read_dependencies(
+    settings: Settings,
+) -> tuple[
+    KubernetesAdminAdapter | None,
+    PrometheusAdminAdapter | None,
+    CapacityAdminAdapter | None,
+    ObservabilityAdminAdapter | None,
+    AdminContextConfig,
+]:
+    kubernetes: KubernetesAdminAdapter | None = None
+    capacity: CapacityAdminAdapter | None = None
+    if settings.admin_capacity_enabled:
+        kubernetes_reader = HttpKubernetesListReader(
+            base_url=settings.admin_kubernetes_api_url,
+            token_file=settings.admin_kubernetes_token_file,
+            ca_file=settings.admin_kubernetes_ca_file,
+            timeout_seconds=settings.admin_adapter_timeout_seconds,
+        )
+        kubernetes = CachedKubernetesAdminAdapter(
+            KubernetesModelStateAdminAdapter(
+                kubernetes_reader,
+                config=KubernetesModelStateConfig(
+                    model_namespace=settings.admin_kubernetes_model_namespace,
+                ),
+            ),
+            ttl_seconds=settings.admin_kubernetes_cache_ttl_seconds,
+        )
+        capacity = KubernetesCapacityAdminAdapter(
+            kubernetes_reader,
+            config=KubernetesCapacityConfig(
+                model_namespace=settings.admin_kubernetes_model_namespace,
+                system_namespace=settings.admin_kubernetes_system_namespace,
+                kueue_api_version=settings.admin_kueue_api_version,
+            ),
+        )
+    prometheus: PrometheusAdminAdapter | None = None
+    observability: ObservabilityAdminAdapter | None = None
+    if settings.admin_prometheus_url is not None:
+        prometheus_reader = HttpPrometheusScalarReader(
+            base_url=settings.admin_prometheus_url,
+            timeout_seconds=settings.admin_adapter_timeout_seconds,
+        )
+        prometheus = PrometheusModelMetricsAdminAdapter(prometheus_reader)
+        observability_config = (
+            PrometheusObservabilityConfig.from_file(settings.admin_observability_config_file)
+            if settings.admin_observability_config_file is not None
+            else PrometheusObservabilityConfig()
+        )
+        observability = PrometheusObservabilityAdminAdapter(
+            prometheus_reader,
+            config=observability_config,
+        )
+    context = AdminContextConfig()
+    if (
+        settings.admin_context_project is not None
+        and settings.admin_context_cluster is not None
+        and settings.admin_context_region is not None
+    ):
+        context = AdminContextConfig(
+            options=(
+                AdminContextOption(
+                    project=settings.admin_context_project,
+                    cluster=settings.admin_context_cluster,
+                    region=settings.admin_context_region,
+                    label=settings.admin_context_label or settings.admin_context_cluster,
+                ),
+            )
+        )
+    return kubernetes, prometheus, capacity, observability, context
 
 
 async def build_runtime(settings: Settings) -> AppRuntime:
@@ -114,40 +197,15 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         wait_poll_max_seconds=settings.wait_poll_max_seconds,
         route_refresh=route_revalidator.refresh,
     )
-    capacity = None
-    if settings.admin_capacity_enabled:
-        capacity = KubernetesCapacityAdminAdapter(
-            HttpKubernetesListReader(
-                base_url=settings.admin_kubernetes_api_url,
-                token_file=settings.admin_kubernetes_token_file,
-                ca_file=settings.admin_kubernetes_ca_file,
-                timeout_seconds=settings.admin_adapter_timeout_seconds,
-            ),
-            config=KubernetesCapacityConfig(
-                model_namespace=settings.admin_kubernetes_model_namespace,
-                system_namespace=settings.admin_kubernetes_system_namespace,
-                kueue_api_version=settings.admin_kueue_api_version,
-            ),
-        )
-    observability = None
-    if settings.admin_prometheus_url is not None:
-        observability_config = (
-            PrometheusObservabilityConfig.from_file(settings.admin_observability_config_file)
-            if settings.admin_observability_config_file is not None
-            else PrometheusObservabilityConfig()
-        )
-        observability = PrometheusObservabilityAdminAdapter(
-            HttpPrometheusScalarReader(
-                base_url=settings.admin_prometheus_url,
-                timeout_seconds=settings.admin_adapter_timeout_seconds,
-            ),
-            config=observability_config,
-        )
+    kubernetes, prometheus, capacity, observability, contexts = _admin_read_dependencies(settings)
     admin_read = AdminReadService(
         registry=registry,
         store=store,
+        kubernetes=kubernetes,
+        prometheus=prometheus,
         capacity=capacity,
         observability=observability,
+        contexts=contexts,
         source_max_age_seconds=settings.admin_source_max_age_seconds,
         adapter_timeout_seconds=settings.admin_adapter_timeout_seconds,
     )
