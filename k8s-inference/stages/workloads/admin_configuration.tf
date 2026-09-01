@@ -430,7 +430,7 @@ resource "kubernetes_config_map_v1" "admin_configuration" {
     }
 
     precondition {
-      condition = var.model_scaling_overrides == {
+      condition = jsonencode(var.model_scaling_overrides) == jsonencode({
         for model_id, model in var.admin_configuration.models : model_id => {
           min_replicas             = model.autoscaling.min_replicas
           max_replicas             = model.autoscaling.max_replicas
@@ -438,7 +438,7 @@ resource "kubernetes_config_map_v1" "admin_configuration" {
           polling_interval_seconds = model.autoscaling.polling_interval_seconds
           cooldown_seconds         = model.autoscaling.cooldown_seconds
         }
-      }
+      })
       error_message = "model_scaling_overrides must exactly match the reviewed admin_configuration."
     }
 
