@@ -28,12 +28,42 @@ variable "admin_observability_links" {
       url                     = string
       verified_external_route = bool
     })
+    otel = object({
+      url                     = string
+      verified_external_route = bool
+    })
+    dcgm = object({
+      url                     = string
+      verified_external_route = bool
+    })
+    kueue = object({
+      url                     = string
+      verified_external_route = bool
+    })
+    keda = object({
+      url                     = string
+      verified_external_route = bool
+    })
+    alertmanager = object({
+      url                     = string
+      verified_external_route = bool
+    })
+    tempo = object({
+      url                     = string
+      verified_external_route = bool
+    })
   })
   default = {
     allowed_hosts = []
     grafana       = { url = "", verified_external_route = false }
     prometheus    = { url = "", verified_external_route = false }
     loki          = { url = "", verified_external_route = false }
+    otel          = { url = "", verified_external_route = false }
+    dcgm          = { url = "", verified_external_route = false }
+    kueue         = { url = "", verified_external_route = false }
+    keda          = { url = "", verified_external_route = false }
+    alertmanager  = { url = "", verified_external_route = false }
+    tempo         = { url = "", verified_external_route = false }
   }
 
   validation {
@@ -42,6 +72,12 @@ variable "admin_observability_links" {
         var.admin_observability_links.grafana,
         var.admin_observability_links.prometheus,
         var.admin_observability_links.loki,
+        var.admin_observability_links.otel,
+        var.admin_observability_links.dcgm,
+        var.admin_observability_links.kueue,
+        var.admin_observability_links.keda,
+        var.admin_observability_links.alertmanager,
+        var.admin_observability_links.tempo,
         ] : (
         (link.url == "" && !link.verified_external_route) ||
         (
@@ -68,6 +104,12 @@ variable "admin_observability_links" {
         var.admin_observability_links.grafana,
         var.admin_observability_links.prometheus,
         var.admin_observability_links.loki,
+        var.admin_observability_links.otel,
+        var.admin_observability_links.dcgm,
+        var.admin_observability_links.kueue,
+        var.admin_observability_links.keda,
+        var.admin_observability_links.alertmanager,
+        var.admin_observability_links.tempo,
         ] : link.url == "" || contains(
         var.admin_observability_links.allowed_hosts,
         try(regex("^https://([^/:]+)", link.url)[0], ""),

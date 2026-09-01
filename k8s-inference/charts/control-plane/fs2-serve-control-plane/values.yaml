@@ -52,6 +52,37 @@ adminConfiguration:
   receiptKey: ""
   sha256: ""
 
+# Idempotent initialization of the Terraform-owned client PAT. The raw token
+# remains in a Kubernetes Secret and Terraform state; Helm receives only the
+# Secret reference plus its least-privilege policy.
+bootstrapAccess:
+  enabled: false
+  secretName: ""
+  tokenKey: token
+  principalId: terraform-bootstrap-client
+  tenantId: ""
+  name: Terraform bootstrap MCP and inference
+  scopes:
+    - catalog.read
+    - inference.invoke
+    - mcp.invoke
+    - operations.read
+    - operations.result
+    - operations.cancel
+    - operations.acknowledge
+    - use.nonclinical
+    - use.noncommercial
+  models: ["*"]
+  maxConcurrency: 32
+  activeDeadlineSeconds: 300
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 serviceAccounts:
   runtime:
     create: true
@@ -62,6 +93,10 @@ serviceAccounts:
     name: ""
     annotations: {}
   migration:
+    create: true
+    name: ""
+    annotations: {}
+  bootstrap:
     create: true
     name: ""
     annotations: {}
@@ -305,6 +340,10 @@ adminReadAdapters:
     label: ""
   capacity:
     enabled: false
+    # Empty keeps the provider-specific projection unavailable. Terraform sets
+    # the exact managed service owner only when it also mounts a reviewed pool
+    # configuration containing the min/max contract.
+    nodeScalerProvider: ""
     kubernetesApiUrl: https://kubernetes.default.svc
     tokenExpirationSeconds: 600
     modelNamespace: fs2-models
@@ -331,6 +370,24 @@ adminReadAdapters:
         url: ""
         verifiedExternalRoute: false
       loki:
+        url: ""
+        verifiedExternalRoute: false
+      otel:
+        url: ""
+        verifiedExternalRoute: false
+      dcgm:
+        url: ""
+        verifiedExternalRoute: false
+      kueue:
+        url: ""
+        verifiedExternalRoute: false
+      keda:
+        url: ""
+        verifiedExternalRoute: false
+      alertmanager:
+        url: ""
+        verifiedExternalRoute: false
+      tempo:
         url: ""
         verifiedExternalRoute: false
 

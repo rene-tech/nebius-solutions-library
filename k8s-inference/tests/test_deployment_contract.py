@@ -914,7 +914,18 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("selected_runtime_ports = [", locals_source)
         self.assertIn("format(\"%05d\", local.selected_routes[model_id].service.port)", locals_source)
         self.assertIn("ports = local.selected_runtime_ports", control_plane_source)
+        self.assertIn(
+            'nodeScalerProvider = local.admin_configuration_enabled ? "nebius-managed-node-group-autoscaler" : ""',
+            control_plane_source,
+        )
         self.assertIn("port >= 1 && port <= 65535", catalog_source)
+
+    def test_loki_is_scraped_and_publishes_its_grafana_dashboards(self) -> None:
+        values = yaml.safe_load(
+            (DEPLOY_ROOT / "stages/foundation/values/loki.yaml").read_text(encoding="utf-8")
+        )
+        self.assertIs(values["monitoring"]["serviceMonitor"]["enabled"], True)
+        self.assertIs(values["monitoring"]["dashboards"]["enabled"], True)
 
     def test_lean_route_config_map_name_covers_its_complete_data_map(self) -> None:
         locals_source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(

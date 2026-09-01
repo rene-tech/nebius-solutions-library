@@ -265,20 +265,31 @@ async def test_http_prometheus_model_vector_rejects_unapproved_labels() -> None:
 
 
 def test_production_admin_composition_wires_context_and_all_live_adapters() -> None:
+    from test_admin_configuration import qualified_configuration
+
+    configuration, _ = qualified_configuration()
     settings = Settings(
         admin_capacity_enabled=True,
+        admin_node_scaler_provider="nebius-managed-node-group-autoscaler",
         admin_prometheus_url="http://prometheus.fs2-observability.svc:9090",
         admin_context_project="project-test",
         admin_context_cluster="cluster-test",
         admin_context_region="eu-test1",
         admin_context_label="Test inference cluster",
     )
-    kubernetes, prometheus, capacity, observability, contexts = _admin_read_dependencies(settings)
+    kubernetes, prometheus, capacity, observability, contexts = _admin_read_dependencies(
+        settings,
+        initial_configuration=configuration,
+    )
 
     assert isinstance(kubernetes, CachedKubernetesAdminAdapter)
     assert isinstance(kubernetes.delegate, KubernetesModelStateAdminAdapter)
     assert isinstance(prometheus, PrometheusModelMetricsAdminAdapter)
     assert isinstance(capacity, KubernetesCapacityAdminAdapter)
+    assert capacity.config.node_scaler_provider == "nebius-managed-node-group-autoscaler"
+    assert [(pool.pool_id, pool.min_nodes, pool.max_nodes) for pool in capacity.config.node_scaler_pools] == [
+        (pool_id, pool.min_nodes, pool.max_nodes) for pool_id, pool in sorted(configuration.pools.items())
+    ]
     assert isinstance(observability, PrometheusObservabilityAdminAdapter)
     assert contexts.options[0].model_dump() == {
         "project": "project-test",
@@ -293,6 +304,8 @@ def test_admin_context_settings_are_all_or_nothing() -> None:
         Settings(admin_context_project="project-test")
     with pytest.raises(ValueError, match="requires a complete"):
         Settings(admin_context_label="Incomplete cluster")
+    with pytest.raises(ValueError, match="requires the capacity adapter"):
+        Settings(admin_node_scaler_provider="nebius-managed-node-group-autoscaler")
 
 
 def test_composition_is_fail_closed_when_live_sources_are_disabled() -> None:

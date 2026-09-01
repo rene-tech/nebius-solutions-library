@@ -18,6 +18,7 @@ from fs2_serve.admin_adapters import (
     KubernetesCapacityAdminAdapter,
     KubernetesCapacityConfig,
     KubernetesResourceNotFoundError,
+    ManagedNodeScalerPoolContract,
     ObservabilityLinkConfig,
     PrometheusObservabilityAdminAdapter,
     PrometheusObservabilityConfig,
@@ -82,7 +83,10 @@ def _pod(ordinal: int) -> dict[str, Any]:
 
 
 class FakeKubernetesReader:
-    def __init__(self, values: dict[str, list[dict[str, Any]] | BaseException]) -> None:
+    def __init__(
+        self,
+        values: dict[str, list[dict[str, Any]] | dict[str, Any] | BaseException],
+    ) -> None:
         self.values = values
         self.paths: list[str] = []
 
@@ -91,10 +95,19 @@ class FakeKubernetesReader:
         value = self.values[path]
         if isinstance(value, BaseException):
             raise value
+        assert isinstance(value, list)
+        return value
+
+    async def get(self, path: str) -> dict[str, Any]:
+        self.paths.append(path)
+        value = self.values[path]
+        if isinstance(value, BaseException):
+            raise value
+        assert isinstance(value, dict)
         return value
 
 
-def _kubernetes_values() -> dict[str, list[dict[str, Any]] | BaseException]:
+def _kubernetes_values() -> dict[str, list[dict[str, Any]] | dict[str, Any] | BaseException]:
     nodes = [
         _node(index, gpu_class, "preemptible" if index % 2 else "regular", 8 if index < 5 else 1)
         for index, gpu_class in enumerate(GPU_CLASSES)
@@ -135,6 +148,21 @@ def _kubernetes_values() -> dict[str, list[dict[str, Any]] | BaseException]:
     }
     prefix = "/apis/kueue.x-k8s.io/v1beta2"
     return {
+        "/api/v1/namespaces/kube-system/configmaps/cluster-autoscaler-status": {
+            "metadata": _metadata("cluster-autoscaler-status", namespace="kube-system"),
+            "data": {
+                "status": (
+                    "autoscalerStatus: Running\n"
+                    "clusterWide:\n"
+                    "  health:\n"
+                    '    lastProbeTime: "2026-08-30T12:00:00Z"\n'
+                    "    status: Healthy\n"
+                    "  scaleDown:\n"
+                    "    status: NoCandidates\n"
+                    "nodeGroups: []\n"
+                )
+            },
+        },
         "/api/v1/nodes": nodes,
         "/api/v1/namespaces/fs2-models/pods": [_pod(index) for index in range(len(nodes))],
         f"{prefix}/resourceflavors": [
@@ -210,6 +238,206 @@ async def test_mixed_gpu_capacity_is_dynamic_estimated_and_never_infers_health()
     assert hpa.desired_replicas.value == 0
     assert hpa.current_replicas.value is None
     assert snapshot.data.node_scaler.state == AdminSourceState.UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_managed_node_scaler_uses_exact_pool_bounds_and_provider_pool_label_fallback() -> None:
+    values = _kubernetes_values()
+    nodes = values["/api/v1/nodes"]
+    assert isinstance(nodes, list)
+    labels = nodes[0]["metadata"]["labels"]
+    labels.pop("capacity.fs2.nebius/pool")
+    labels["accelerator.fs2.nebius/pool-id"] = "elastic-h100"
+
+    snapshot = await KubernetesCapacityAdminAdapter(
+        FakeKubernetesReader(values),
+        config=KubernetesCapacityConfig(
+            node_scaler_provider="nebius-managed-node-group-autoscaler",
+            node_scaler_pools=(
+                ManagedNodeScalerPoolContract(pool_id="elastic-h100", min_nodes=1, max_nodes=2),
+                ManagedNodeScalerPoolContract(pool_id="scale-to-zero", min_nodes=0, max_nodes=4),
+            ),
+        ),
+        clock=lambda: FIXED_NOW,
+    ).snapshot()
+
+    h100 = next(pool for pool in snapshot.data.node_pools.items if pool.gpu_class == "H100")
+    assert h100.pool_label == "elastic-h100"
+    scaler = snapshot.data.node_scaler
+    assert scaler.state == AdminSourceState.AVAILABLE
+    assert scaler.provider == "nebius-managed-node-group-autoscaler"
+    assert scaler.configured is True
+    assert scaler.healthy is True
+    assert scaler.observed_at == FIXED_NOW
+    assert scaler.reason is None
+
+
+@pytest.mark.asyncio
+async def test_managed_node_scaler_prefers_exact_pool_id_over_semantic_classification() -> None:
+    values = _kubernetes_values()
+    nodes = values["/api/v1/nodes"]
+    assert isinstance(nodes, list)
+    labels = nodes[0]["metadata"]["labels"]
+    labels["capacity.fs2.nebius/pool"] = "burst"
+    labels["accelerator.fs2.nebius/pool-id"] = "b300-preemptible-8x"
+
+    snapshot = await KubernetesCapacityAdminAdapter(
+        FakeKubernetesReader(values),
+        config=KubernetesCapacityConfig(
+            node_scaler_provider="nebius-managed-node-group-autoscaler",
+            node_scaler_pools=(ManagedNodeScalerPoolContract(pool_id="b300-preemptible-8x", min_nodes=1, max_nodes=2),),
+        ),
+        clock=lambda: FIXED_NOW,
+    ).snapshot()
+
+    h100 = next(pool for pool in snapshot.data.node_pools.items if pool.gpu_class == "H100")
+    assert h100.pool_label == "b300-preemptible-8x"
+    assert snapshot.data.node_scaler.state == AdminSourceState.AVAILABLE
+    assert snapshot.data.node_scaler.healthy is True
+
+
+@pytest.mark.asyncio
+async def test_managed_node_scaler_fails_closed_when_provider_probe_is_stale() -> None:
+    values = _kubernetes_values()
+    status = values["/api/v1/namespaces/kube-system/configmaps/cluster-autoscaler-status"]
+    assert isinstance(status, dict)
+    status["data"]["status"] = status["data"]["status"].replace("2026-08-30T12:00:00Z", "2026-08-30T11:00:00Z")
+
+    snapshot = await KubernetesCapacityAdminAdapter(
+        FakeKubernetesReader(values),
+        config=KubernetesCapacityConfig(
+            node_scaler_provider="nebius-managed-node-group-autoscaler",
+            node_scaler_pools=(ManagedNodeScalerPoolContract(pool_id="pool-0", min_nodes=1, max_nodes=2),),
+        ),
+        clock=lambda: FIXED_NOW,
+    ).snapshot()
+
+    assert snapshot.data.node_scaler.state == AdminSourceState.UNAVAILABLE
+    assert snapshot.data.node_scaler.healthy is None
+    assert snapshot.data.node_scaler.reason == "managed cluster-autoscaler health evidence is stale"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("old", "new", "expected_reason"),
+    [
+        ("status: Healthy", "status: Unhealthy", "managed cluster-autoscaler reports Unhealthy"),
+        ("autoscalerStatus: Running", "autoscalerStatus: Stopped", "managed cluster-autoscaler is not Running"),
+    ],
+)
+async def test_managed_node_scaler_reports_provider_unhealthy_without_failing_the_snapshot(
+    old: str,
+    new: str,
+    expected_reason: str,
+) -> None:
+    values = _kubernetes_values()
+    status = values["/api/v1/namespaces/kube-system/configmaps/cluster-autoscaler-status"]
+    assert isinstance(status, dict)
+    status["data"]["status"] = status["data"]["status"].replace(old, new, 1)
+
+    snapshot = await KubernetesCapacityAdminAdapter(
+        FakeKubernetesReader(values),
+        config=KubernetesCapacityConfig(
+            node_scaler_provider="nebius-managed-node-group-autoscaler",
+            node_scaler_pools=(ManagedNodeScalerPoolContract(pool_id="pool-0", min_nodes=1, max_nodes=2),),
+        ),
+        clock=lambda: FIXED_NOW,
+    ).snapshot()
+
+    assert snapshot.data.node_scaler.state == AdminSourceState.AVAILABLE
+    assert snapshot.data.node_scaler.healthy is False
+    assert snapshot.data.node_scaler.reason == expected_reason
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("reported_status", "expected_reason"),
+    [
+        ("Degraded", "managed cluster-autoscaler health state is unsupported"),
+        ("A" * 256, "managed cluster-autoscaler health evidence is malformed"),
+    ],
+)
+async def test_managed_node_scaler_rejects_unknown_or_unbounded_provider_health_state(
+    reported_status: str,
+    expected_reason: str,
+) -> None:
+    values = _kubernetes_values()
+    status = values["/api/v1/namespaces/kube-system/configmaps/cluster-autoscaler-status"]
+    assert isinstance(status, dict)
+    status["data"]["status"] = status["data"]["status"].replace(
+        "status: Healthy",
+        f"status: {reported_status}",
+        1,
+    )
+
+    snapshot = await KubernetesCapacityAdminAdapter(
+        FakeKubernetesReader(values),
+        config=KubernetesCapacityConfig(
+            node_scaler_provider="nebius-managed-node-group-autoscaler",
+            node_scaler_pools=(ManagedNodeScalerPoolContract(pool_id="pool-0", min_nodes=1, max_nodes=2),),
+        ),
+        clock=lambda: FIXED_NOW,
+    ).snapshot()
+
+    assert snapshot.data.node_scaler.state == AdminSourceState.UNAVAILABLE
+    assert snapshot.data.node_scaler.healthy is None
+    assert snapshot.data.node_scaler.reason == expected_reason
+    assert reported_status not in (snapshot.data.node_scaler.reason or "")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("pool_id", "min_nodes", "max_nodes"),
+    [
+        ("pool-5", 1, 1),  # observed node is not Ready
+        ("pool-0", 0, 0),  # observed count exceeds max_nodes
+        ("missing-pool", 1, 2),  # observed count is below min_nodes
+    ],
+)
+async def test_managed_node_scaler_is_available_but_unhealthy_outside_bounds_or_readiness(
+    pool_id: str,
+    min_nodes: int,
+    max_nodes: int,
+) -> None:
+    snapshot = await KubernetesCapacityAdminAdapter(
+        FakeKubernetesReader(_kubernetes_values()),
+        config=KubernetesCapacityConfig(
+            node_scaler_provider="nebius-managed-node-group-autoscaler",
+            node_scaler_pools=(
+                ManagedNodeScalerPoolContract(pool_id=pool_id, min_nodes=min_nodes, max_nodes=max_nodes),
+            ),
+        ),
+        clock=lambda: FIXED_NOW,
+    ).snapshot()
+
+    scaler = snapshot.data.node_scaler
+    assert scaler.state == AdminSourceState.AVAILABLE
+    assert scaler.configured is True
+    assert scaler.healthy is False
+    assert scaler.observed_at == FIXED_NOW
+    assert scaler.reason == "managed node-pool bounds or readiness are unhealthy"
+
+
+@pytest.mark.asyncio
+async def test_managed_node_scaler_is_honestly_unavailable_without_node_evidence() -> None:
+    values = _kubernetes_values()
+    values["/api/v1/nodes"] = RuntimeError("sensitive transport detail")
+    snapshot = await KubernetesCapacityAdminAdapter(
+        FakeKubernetesReader(values),
+        config=KubernetesCapacityConfig(
+            node_scaler_provider="nebius-managed-node-group-autoscaler",
+            node_scaler_pools=(ManagedNodeScalerPoolContract(pool_id="pool-0", min_nodes=0, max_nodes=2),),
+        ),
+        clock=lambda: FIXED_NOW,
+    ).snapshot()
+
+    scaler = snapshot.data.node_scaler
+    assert scaler.state == AdminSourceState.UNAVAILABLE
+    assert scaler.provider == "nebius-managed-node-group-autoscaler"
+    assert scaler.configured is True
+    assert scaler.healthy is None
+    assert scaler.observed_at is None
+    assert "sensitive" not in (scaler.reason or "")
 
 
 @pytest.mark.asyncio

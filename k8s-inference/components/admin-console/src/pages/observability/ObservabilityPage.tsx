@@ -29,7 +29,7 @@ function ComponentCard({ component }: { component: AdminObservabilityComponent }
       </dl>
       {component.reason ? <p className="component-reason">{component.reason}</p> : null}
       {launch ? (
-        <a className="button observability-launch" href={launch} rel="noopener noreferrer" target="_blank">Open {component.display_name}<span className="sr-only"> in a new tab</span></a>
+        <a aria-label={`Open ${component.display_name}${component.id === "grafana" ? "" : " in Grafana"}`} className="button observability-launch" href={launch} rel="noopener noreferrer" target="_blank">{component.id === "grafana" ? "Open Grafana" : "Open in Grafana"}<span className="sr-only"> in a new tab</span></a>
       ) : (
         <div className="launch-disabled" role="status">
           {suppressed ? "Launch suppressed: the response failed browser safety checks." : component.launch.reason ?? "No verified launch is available."}

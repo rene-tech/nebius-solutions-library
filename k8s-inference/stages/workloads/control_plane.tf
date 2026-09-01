@@ -68,7 +68,8 @@ locals {
         label   = var.cluster_name
       }
       capacity = {
-        enabled = true
+        enabled            = true
+        nodeScalerProvider = local.admin_configuration_enabled ? "nebius-managed-node-group-autoscaler" : ""
       }
       observability = {
         enabled       = true
@@ -86,6 +87,30 @@ locals {
           loki = {
             url                   = var.admin_observability_links.loki.url
             verifiedExternalRoute = var.admin_observability_links.loki.verified_external_route
+          }
+          otel = {
+            url                   = var.admin_observability_links.otel.url
+            verifiedExternalRoute = var.admin_observability_links.otel.verified_external_route
+          }
+          dcgm = {
+            url                   = var.admin_observability_links.dcgm.url
+            verifiedExternalRoute = var.admin_observability_links.dcgm.verified_external_route
+          }
+          kueue = {
+            url                   = var.admin_observability_links.kueue.url
+            verifiedExternalRoute = var.admin_observability_links.kueue.verified_external_route
+          }
+          keda = {
+            url                   = var.admin_observability_links.keda.url
+            verifiedExternalRoute = var.admin_observability_links.keda.verified_external_route
+          }
+          alertmanager = {
+            url                   = var.admin_observability_links.alertmanager.url
+            verifiedExternalRoute = var.admin_observability_links.alertmanager.verified_external_route
+          }
+          tempo = {
+            url                   = var.admin_observability_links.tempo.url
+            verifiedExternalRoute = var.admin_observability_links.tempo.verified_external_route
           }
         }
       }
@@ -144,6 +169,7 @@ resource "helm_release" "control_plane" {
     file("${local.fs2_root}/charts/control-plane/control-plane.values.yaml"),
     yamlencode(local.control_plane_overrides),
     yamlencode(local.admin_control_plane_overrides),
+    yamlencode(local.bootstrap_access_overrides),
   ]
 
   depends_on = [
@@ -155,6 +181,7 @@ resource "helm_release" "control_plane" {
     kubernetes_secret_v1.token_pepper,
     kubernetes_secret_v1.route_attestors,
     kubernetes_secret_v1.admin,
+    kubernetes_secret_v1.bootstrap_access,
     kubernetes_config_map_v1.serving_bindings,
     kubernetes_config_map_v1.lean_routes,
     kubernetes_config_map_v1.admin_configuration,

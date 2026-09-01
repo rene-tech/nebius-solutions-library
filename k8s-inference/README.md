@@ -14,6 +14,12 @@ dependency order:
 The cluster remains running after `apply` so it can be tested. It is removed
 only by an explicit `destroy`.
 
+Model configuration is currently accepted through the deployment contract,
+but its target architecture is a live Kubernetes-native reconciler so operators
+can change the hot floor, ceiling, placement, cache policy, and exposure without
+running Terraform. See [Dynamic model configuration](DYNAMIC_MODEL_CONFIGURATION.md)
+for the researched ownership boundary and migration plan.
+
 ## Accelerator and qualification boundary
 
 `deployment.accelerator_pools` is an open map. Each entry declares the Nebius
@@ -109,9 +115,8 @@ NEBIUS_PROFILE=sandbox ./inference-stack status --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars
 ```
 
-After a deployment, `apply`, `status`, and `output` print the two
-customer entry points as top-level JSON fields. `output` is the narrowest
-machine-readable interface because it emits only these fields:
+After a deployment, `apply` and `status` print only the two non-secret customer
+entry points as top-level JSON fields:
 
 ```json
 {
@@ -120,12 +125,30 @@ machine-readable interface because it emits only these fields:
 }
 ```
 
-These values come from the exact non-secret Terraform outputs in the workloads
-state. They are resolved only after the infrastructure stage has allocated the
-edge address. An `internal-only` deployment emits loopback URLs instead; those
-are usable only while the run-scoped operator proxy from the workloads
-`port_forward_contract` is active. The wrapper reads only these two named
-outputs; it does not enumerate or print sensitive workload outputs.
+These values come from exact named Terraform outputs in the workloads state.
+They are resolved only after the infrastructure stage has allocated the edge
+address. An `internal-only` deployment emits loopback URLs instead; those are
+usable only while the run-scoped operator proxy from the workloads
+`port_forward_contract` is active.
+
+The explicit `inference-stack output` command is the credential handoff. It
+prints the sensitive `access_bundle`, including the admin URL and bootstrap
+token, MCP and `/v1` URLs plus their scoped PAT, Grafana URL and native-login
+credentials, cluster/project/region identity, and the kubeconfig command:
+
+```json
+{
+  "schema": "fs2-serve.nebius.ai/access-bundle/v1",
+  "cluster": {"project_id": "project-...", "region": "...", "cluster_id": "mk8scluster-..."},
+  "endpoints": {"admin_portal_url": "https://.../admin/", "mcp_url": "https://.../mcp", "inference_base_url": "https://.../v1", "grafana_url": "https://.../admin/observability/grafana"},
+  "credentials": {"admin_bootstrap_token": "<redacted>", "mcp_inference_token": "<redacted>", "grafana": {"username": "<redacted>", "password": "<redacted>"}}
+}
+```
+
+Run it only in a private terminal and do not pipe its output to logs, CI
+artifacts, tickets, or shell history. The credentials necessarily live in the
+protected run-owned Terraform state; automatic `apply` and `status` output
+remain non-secret.
 
 The shipped example selects a shared public endpoint, so no foreground process
 or client-side port forwarding is required:
@@ -208,15 +231,25 @@ does not create Nebius Managed PostgreSQL. Its database, admin bootstrap
 credential, encryption material, and PAT verifier state are therefore part of
 the cluster lifecycle and protected Terraform/Kubernetes state boundary.
 
-Use the admin interface's **Access / API keys** area to issue a revocable PAT
-with only the required models, scopes, concurrency, request, and GPU-time
-budgets. The bootstrap admin credential is a sensitive workloads Terraform
-output and is intentionally excluded from `inference-stack output`; retrieve it
-only from the protected run state for the initial operator handoff. Store a new
-PAT in an owner-only (`0600`) file because its value is returned once. Clients
-send it as `Authorization: Bearer <PAT>` to the printed OpenAI-compatible and
-MCP endpoint. Never put the bootstrap credential or PAT in tfvars, source,
-shell history, Task Deck cards, or acceptance receipts.
+Terraform creates a separate, scoped bootstrap PAT and a Helm post-install /
+post-upgrade job idempotently provisions its digest and policy in the durable
+control-plane token store. It has a wildcard model policy so later live-catalog
+additions work without credential rotation, but remains bounded to one tenant
+and the MCP, inference, catalog, operation-lifecycle, and declared-use scopes.
+The admin token is deliberately not valid for `/mcp` or `/v1`.
+An intentionally revoked or expired Terraform bootstrap PAT stays inactive:
+the next Helm upgrade fails closed instead of silently reactivating it. Rotate
+the Terraform-owned token material before that upgrade by applying with both
+`-replace=random_id.bootstrap_access_token_id` and
+`-replace=random_password.bootstrap_access_token_secret` through the same
+protected workloads-stage workflow.
+
+For ongoing users, use the admin interface's **Access / API keys** area to issue
+revocable PATs with only the required models, scopes, concurrency, request, and
+GPU-time budgets. UI-created and rotated key values retain one-time disclosure:
+store each in an owner-only (`0600`) file when shown. Clients send a PAT as
+`Authorization: Bearer <PAT>`. Never put any bootstrap credential or PAT in
+tfvars, source, shell history, Task Deck cards, or acceptance receipts.
 
 The default run directory is a private XDG state path derived from the absolute
 tfvars path. Reusing the same path resumes the same staged deployment. To make

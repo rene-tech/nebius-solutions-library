@@ -42,6 +42,11 @@ app.kubernetes.io/component: maintenance
 app.kubernetes.io/component: migration
 {{- end -}}
 
+{{- define "fs2-serve.bootstrapAccessSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: bootstrap-access
+{{- end -}}
+
 {{- define "fs2-serve.serviceAccountName" -}}
 {{- $root := .root -}}
 {{- $component := .component -}}
@@ -207,6 +212,10 @@ app.kubernetes.io/component: migration
   value: {{ .Values.adminReadAdapters.capacity.kueueApiVersion | quote }}
 - name: FS2_ADMIN_KUBERNETES_CACHE_TTL_SECONDS
   value: {{ .Values.adminReadAdapters.kubernetesCacheTtlSeconds | quote }}
+{{- if .Values.adminReadAdapters.capacity.nodeScalerProvider }}
+- name: FS2_ADMIN_NODE_SCALER_PROVIDER
+  value: {{ .Values.adminReadAdapters.capacity.nodeScalerProvider | quote }}
+{{- end }}
 {{- end }}
 {{- if .Values.adminReadAdapters.observability.enabled }}
 - name: FS2_ADMIN_PROMETHEUS_URL

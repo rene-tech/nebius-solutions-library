@@ -2270,6 +2270,11 @@ def test_capacity_adapter_has_short_lived_token_and_exact_list_only_rbac() -> No
     system_role = next(
         item for (namespace, name), item in roles.items() if namespace == "fs2-system" and name.endswith("-system")
     )
+    autoscaler_status_role = next(
+        item
+        for (namespace, name), item in roles.items()
+        if namespace == "kube-system" and name.endswith("-cluster-autoscaler-status")
+    )
     assert model_role["rules"] == [
         {"apiGroups": [""], "resources": ["pods", "services"], "verbs": ["list"]},
         {"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["list"]},
@@ -2292,6 +2297,14 @@ def test_capacity_adapter_has_short_lived_token_and_exact_list_only_rbac() -> No
             "verbs": ["list"],
         }
     ]
+    assert autoscaler_status_role["rules"] == [
+        {
+            "apiGroups": [""],
+            "resources": ["configmaps"],
+            "resourceNames": ["cluster-autoscaler-status"],
+            "verbs": ["get"],
+        }
+    ]
     rbac_json = json.dumps([cluster_role, *roles.values()])
     for forbidden in ("watch", "create", "update", "patch", "delete", "secrets", "pods/log", "pods/exec"):
         assert forbidden not in rbac_json
@@ -2303,6 +2316,62 @@ def test_capacity_adapter_has_short_lived_token_and_exact_list_only_rbac() -> No
         rule for rule in runtime_policy["spec"]["egress"] if rule["ports"] == [{"port": 443, "protocol": "TCP"}]
     )
     assert api_egress["to"] == [{"ipBlock": {"cidr": "192.0.2.10/32"}}]
+
+
+def test_managed_node_scaler_provider_is_bound_to_the_mounted_pool_contract() -> None:
+    digest = "d" * 64
+    documents = render(
+        "--set",
+        "adminReadAdapters.capacity.enabled=true",
+        "--set-string",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+        "--set",
+        "adminReadAdapters.capacity.nodeScalerProvider=nebius-managed-node-group-autoscaler",
+        "--set",
+        "adminConfiguration.enabled=true",
+        "--set",
+        f"adminConfiguration.configMapName=fs2-admin-configuration-{digest[:16]}",
+        "--set",
+        f"adminConfiguration.sha256={digest}",
+    )
+    container = gateway_deployment(documents)["spec"]["template"]["spec"]["containers"][0]
+    environment = {item["name"]: item["value"] for item in container["env"] if "value" in item}
+    assert environment["FS2_ADMIN_NODE_SCALER_PROVIDER"] == "nebius-managed-node-group-autoscaler"
+    assert environment["FS2_ADMIN_CONFIGURATION_FILE"] == "/etc/fs2-serve/admin/admin-configuration.json"
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        (
+            (
+                "--set",
+                "adminReadAdapters.capacity.nodeScalerProvider=nebius-managed-node-group-autoscaler",
+            ),
+            "requires the capacity adapter",
+        ),
+        (
+            (
+                "--set",
+                "adminReadAdapters.capacity.enabled=true",
+                "--set-string",
+                "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+                "--set",
+                "adminReadAdapters.capacity.nodeScalerProvider=nebius-managed-node-group-autoscaler",
+            ),
+            "requires the exact adminConfiguration pool contract",
+        ),
+    ],
+)
+def test_managed_node_scaler_rejects_incomplete_chart_wiring(extra: tuple[str, ...], expected: str) -> None:
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and bounded adversarial values
+        render_command(*extra),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert expected in result.stderr
 
 
 @pytest.mark.parametrize(

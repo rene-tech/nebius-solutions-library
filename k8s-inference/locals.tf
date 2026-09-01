@@ -248,8 +248,14 @@ locals {
         url                     = ""
         verified_external_route = false
       }
-      prometheus = { url = "", verified_external_route = false }
-      loki       = { url = "", verified_external_route = false }
+      prometheus   = { url = "", verified_external_route = false }
+      loki         = { url = "", verified_external_route = false }
+      otel         = { url = "", verified_external_route = false }
+      dcgm         = { url = "", verified_external_route = false }
+      kueue        = { url = "", verified_external_route = false }
+      keda         = { url = "", verified_external_route = false }
+      alertmanager = { url = "", verified_external_route = false }
+      tempo        = { url = "", verified_external_route = false }
     }
   }
 

@@ -642,8 +642,13 @@ class AdminNodeScalerProjection(StrictModel):
 
     @model_validator(mode="after")
     def validate_state(self) -> AdminNodeScalerProjection:
-        if self.state == AdminSourceState.AVAILABLE and (self.reason is not None or self.configured is not True):
-            raise ValueError("available node scaler must be configured without an unavailable reason")
+        if self.state == AdminSourceState.AVAILABLE and (
+            self.configured is not True
+            or self.healthy is None
+            or (self.healthy and self.reason is not None)
+            or (not self.healthy and self.reason is None)
+        ):
+            raise ValueError("available node scaler must have a configured, explained health result")
         if self.state != AdminSourceState.AVAILABLE and self.reason is None:
             raise ValueError("unavailable node scaler must include a reason")
         return self

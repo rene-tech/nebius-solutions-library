@@ -41,6 +41,11 @@ loki:
   storage: {type: filesystem}
 lokiCanary: {enabled: false}
 minio: {enabled: false}
+monitoring:
+  dashboards:
+    enabled: true
+  serviceMonitor:
+    enabled: true
 querier: {replicas: 0}
 queryFrontend: {replicas: 0}
 queryScheduler: {replicas: 0}

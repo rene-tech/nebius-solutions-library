@@ -5,6 +5,7 @@
     "image",
     "adminConsole",
     "adminConfiguration",
+    "bootstrapAccess",
     "serviceAccounts",
     "catalog",
     "federation",
@@ -190,13 +191,113 @@
       },
       "additionalProperties": false
     },
+    "bootstrapAccess": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "secretName",
+        "tokenKey",
+        "principalId",
+        "tenantId",
+        "name",
+        "scopes",
+        "models",
+        "maxConcurrency",
+        "activeDeadlineSeconds",
+        "resources"
+      ],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "secretName": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"
+        },
+        "tokenKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9](?:[-A-Za-z0-9_.]*[A-Za-z0-9])?$"
+        },
+        "principalId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$"
+        },
+        "tenantId": {
+          "type": "string",
+          "maxLength": 120,
+          "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+        },
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "scopes": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "catalog.read",
+              "inference.invoke",
+              "mcp.invoke",
+              "operations.read",
+              "operations.result",
+              "operations.cancel",
+              "operations.acknowledge",
+              "tokens.manage",
+              "audit.read",
+              "tenant.admin",
+              "use.nonclinical",
+              "use.noncommercial"
+            ]
+          }
+        },
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 128}
+        },
+        "maxConcurrency": {"type": "integer", "minimum": 1, "maximum": 100},
+        "activeDeadlineSeconds": {"type": "integer", "minimum": 30, "maximum": 3600},
+        "resources": {
+          "type": "object",
+          "required": ["requests", "limits"],
+          "properties": {
+            "requests": {
+              "type": "object",
+              "required": ["cpu", "memory"],
+              "properties": {
+                "cpu": {"type": "string", "minLength": 1, "maxLength": 32},
+                "memory": {"type": "string", "minLength": 1, "maxLength": 32}
+              },
+              "additionalProperties": false
+            },
+            "limits": {
+              "type": "object",
+              "required": ["cpu", "memory"],
+              "properties": {
+                "cpu": {"type": "string", "minLength": 1, "maxLength": 32},
+                "memory": {"type": "string", "minLength": 1, "maxLength": 32}
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "serviceAccounts": {
       "type": "object",
-      "required": ["runtime", "maintenance", "migration"],
+      "required": ["runtime", "maintenance", "migration", "bootstrap"],
       "properties": {
         "runtime": {"$ref": "#/$defs/serviceAccount"},
         "maintenance": {"$ref": "#/$defs/serviceAccount"},
-        "migration": {"$ref": "#/$defs/serviceAccount"}
+        "migration": {"$ref": "#/$defs/serviceAccount"},
+        "bootstrap": {"$ref": "#/$defs/serviceAccount"}
       },
       "additionalProperties": false
     },
@@ -359,9 +460,10 @@
         },
         "capacity": {
           "type": "object",
-          "required": ["enabled", "kubernetesApiUrl", "tokenExpirationSeconds", "modelNamespace", "systemNamespace", "kueueApiVersion"],
+          "required": ["enabled", "nodeScalerProvider", "kubernetesApiUrl", "tokenExpirationSeconds", "modelNamespace", "systemNamespace", "kueueApiVersion"],
           "properties": {
             "enabled": {"type": "boolean"},
+            "nodeScalerProvider": {"enum": ["", "nebius-managed-node-group-autoscaler"]},
             "kubernetesApiUrl": {
               "type": "string",
               "minLength": 1,
@@ -397,7 +499,7 @@
           },
           "links": {
               "type": "object",
-              "required": ["allowedHosts", "grafana", "prometheus", "loki"],
+              "required": ["allowedHosts", "grafana", "prometheus", "loki", "otel", "dcgm", "kueue", "keda", "alertmanager", "tempo"],
               "properties": {
                 "allowedHosts": {
                   "type": "array",
@@ -412,7 +514,13 @@
                 },
                 "grafana": {"$ref": "#/$defs/adminObservabilityLink"},
                 "prometheus": {"$ref": "#/$defs/adminObservabilityLink"},
-                "loki": {"$ref": "#/$defs/adminObservabilityLink"}
+                "loki": {"$ref": "#/$defs/adminObservabilityLink"},
+                "otel": {"$ref": "#/$defs/adminObservabilityLink"},
+                "dcgm": {"$ref": "#/$defs/adminObservabilityLink"},
+                "kueue": {"$ref": "#/$defs/adminObservabilityLink"},
+                "keda": {"$ref": "#/$defs/adminObservabilityLink"},
+                "alertmanager": {"$ref": "#/$defs/adminObservabilityLink"},
+                "tempo": {"$ref": "#/$defs/adminObservabilityLink"}
               },
               "additionalProperties": false
             }

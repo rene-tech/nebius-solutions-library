@@ -155,7 +155,7 @@ async def test_supported_autoscaling_change_stops_at_a_reviewed_terraform_handof
     assert forbidden.value.status_code == 403
 
     plan = await service.plan(proposal, principal(OperatorRole.OPERATOR))
-    assert plan.state is ConfigurationPlanState.VALID
+    assert plan.state is ConfigurationPlanState.VALID, plan.validation.issues
     assert plan.validation.issues == []
     assert plan.terraform.required and plan.terraform.state == "review-required"
     assert plan.terraform.variables["model_scaling_mode"] == "keda"
@@ -298,6 +298,92 @@ async def test_unsupported_accelerator_is_bootstrap_warning_but_proposals_stay_f
     assert plan.state is ConfigurationPlanState.REJECTED
     assert placement_issue.severity is ValidationSeverity.ERROR
     assert plan.artifacts == [] and plan.terraform.variables == {}
+
+
+@pytest.mark.asyncio
+async def test_existing_unqualified_placement_can_change_scaling_without_changing_hardware() -> None:
+    initial, catalog = qualified_configuration()
+    pool_id = next(iter(initial.pools))
+    model_id = next(iter(initial.models))
+    unsupported_pool = initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h100-sxm5-80gb"})
+    observed_baseline = initial.model_copy(update={"pools": {pool_id: unsupported_pool}})
+    repository = InMemoryConfigurationRepository(observed_baseline)
+    service = ConfigurationService(repository=repository, catalog=catalog)
+    assert observed_baseline.models[model_id].enabled is True
+    assert observed_baseline.models[model_id].autoscaling.min_replicas == 0
+    scaled_model = observed_baseline.models[model_id].model_copy(
+        update={
+            "autoscaling": observed_baseline.models[model_id].autoscaling.model_copy(
+                update={"min_replicas": 1 if observed_baseline.models[model_id].autoscaling.min_replicas == 0 else 0}
+            )
+        }
+    )
+    scaled = observed_baseline.model_copy(update={"models": {model_id: scaled_model}})
+    proposal = ConfigurationProposal(base_etag=configuration_etag(observed_baseline), desired=scaled)
+
+    validation = await service.validate(proposal, principal(OperatorRole.VIEWER))
+    placement_issue = next(issue for issue in validation.issues if issue.code == "unsupported_accelerator_placement")
+    assert validation.valid
+    assert placement_issue.severity is ValidationSeverity.WARNING
+    assert "does not change" in placement_issue.message
+
+    plan = await service.plan(proposal, principal(OperatorRole.OPERATOR))
+    assert plan.state is ConfigurationPlanState.VALID, plan.validation.issues
+    assert plan.terraform.required is True
+
+    changed_selector_pool = unsupported_pool.model_copy(
+        update={"node_selector": {"accelerator.fs2.nebius/pool-id": "different-h100-pool"}}
+    )
+    changed_selector = scaled.model_copy(update={"pools": {pool_id: changed_selector_pool}})
+    selector_rejected = await service.validate(
+        ConfigurationProposal(base_etag=configuration_etag(observed_baseline), desired=changed_selector),
+        principal(OperatorRole.VIEWER),
+    )
+    assert not selector_rejected.valid
+    assert (
+        next(issue for issue in selector_rejected.issues if issue.code == "unsupported_accelerator_placement").severity
+        is ValidationSeverity.ERROR
+    )
+
+    moved_pool = unsupported_pool.model_copy(update={"accelerator_class": "nvidia-b300-sxm"})
+    moved = scaled.model_copy(update={"pools": {pool_id: moved_pool}})
+    rejected = await service.validate(
+        ConfigurationProposal(base_etag=configuration_etag(observed_baseline), desired=moved),
+        principal(OperatorRole.VIEWER),
+    )
+    assert not rejected.valid
+    assert (
+        next(issue for issue in rejected.issues if issue.code == "unsupported_accelerator_placement").severity
+        is ValidationSeverity.ERROR
+    )
+
+
+@pytest.mark.asyncio
+async def test_disabled_unqualified_model_cannot_be_activated_by_grandfathering() -> None:
+    initial, catalog = qualified_configuration()
+    pool_id = next(iter(initial.pools))
+    model_id = next(iter(initial.models))
+    unsupported_pool = initial.pools[pool_id].model_copy(update={"accelerator_class": "nvidia-h100-sxm5-80gb"})
+    disabled_model = initial.models[model_id].model_copy(update={"enabled": False})
+    observed_baseline = initial.model_copy(
+        update={"pools": {pool_id: unsupported_pool}, "models": {model_id: disabled_model}}
+    )
+    enabled = observed_baseline.model_copy(
+        update={"models": {model_id: disabled_model.model_copy(update={"enabled": True})}}
+    )
+    service = ConfigurationService(
+        repository=InMemoryConfigurationRepository(observed_baseline),
+        catalog=catalog,
+    )
+
+    validation = await service.validate(
+        ConfigurationProposal(base_etag=configuration_etag(observed_baseline), desired=enabled),
+        principal(OperatorRole.VIEWER),
+    )
+
+    placement_issue = next(issue for issue in validation.issues if issue.code == "unsupported_accelerator_placement")
+    assert not validation.valid
+    assert placement_issue.severity is ValidationSeverity.ERROR
 
 
 @pytest.mark.asyncio

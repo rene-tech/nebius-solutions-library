@@ -82,14 +82,26 @@
 {{- end }}
 {{- end }}
 {{- $secretNames := list .Values.secrets.database.name .Values.secrets.migrationsDatabase.name .Values.secrets.maintenanceDatabase.name .Values.secrets.payloadKeyring.name .Values.secrets.ledgerHmacKeyring.name .Values.secrets.tokenPepper.name .Values.secrets.routeAttestors.name .Values.secrets.admin.name .Values.federation.secretName }}
+{{- if .Values.bootstrapAccess.enabled }}
+{{- $secretNames = append $secretNames .Values.bootstrapAccess.secretName }}
+{{- end }}
 {{- if ne (len $secretNames) (len (uniq $secretNames)) }}
-{{- fail "runtime, migration, maintenance, cryptographic, admin, and federation credentials must use distinct Secret objects" }}
+{{- fail "runtime, migration, maintenance, cryptographic, admin, federation, and bootstrap credentials must use distinct Secret objects" }}
 {{- end }}
 {{- $runtimeServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
 {{- $maintenanceServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "maintenance") }}
 {{- $migrationServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "migration") }}
 {{- if or (eq $runtimeServiceAccount $maintenanceServiceAccount) (eq $runtimeServiceAccount $migrationServiceAccount) (eq $maintenanceServiceAccount $migrationServiceAccount) }}
 {{- fail "runtime, maintenance, and migration must use distinct service accounts" }}
+{{- end }}
+{{- if .Values.bootstrapAccess.enabled }}
+{{- $bootstrapServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "bootstrap") }}
+{{- if has $bootstrapServiceAccount (list $runtimeServiceAccount $maintenanceServiceAccount $migrationServiceAccount) }}
+{{- fail "bootstrap access must use a distinct service account" }}
+{{- end }}
+{{- if not .Values.networkPolicy.enabled }}
+{{- fail "bootstrapAccess requires networkPolicy.enabled=true" }}
+{{- end }}
 {{- end }}
 {{- range .Values.networkPolicy.federationCidrs }}
 {{- if not (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$|^[0-9A-Fa-f:]+/128$" .) }}
@@ -101,6 +113,12 @@
 {{- end }}
 {{- if and .Values.adminReadAdapters.capacity.enabled (eq (len .Values.networkPolicy.kubernetesApiCidrs) 0) }}
 {{- fail "adminReadAdapters.capacity requires at least one bounded networkPolicy.kubernetesApiCidrs destination" }}
+{{- end }}
+{{- if and .Values.adminReadAdapters.capacity.nodeScalerProvider (not .Values.adminReadAdapters.capacity.enabled) }}
+{{- fail "adminReadAdapters.capacity.nodeScalerProvider requires the capacity adapter" }}
+{{- end }}
+{{- if and .Values.adminReadAdapters.capacity.nodeScalerProvider (not .Values.adminConfiguration.enabled) }}
+{{- fail "adminReadAdapters.capacity.nodeScalerProvider requires the exact adminConfiguration pool contract" }}
 {{- end }}
 {{- if or (lt (.Values.adminReadAdapters.adapterTimeoutSeconds | float64) 0.1) (gt (.Values.adminReadAdapters.adapterTimeoutSeconds | float64) 10.0) }}
 {{- fail "adminReadAdapters.adapterTimeoutSeconds must be between 0.1 and 10 seconds" }}

@@ -606,7 +606,10 @@ class ConfigurationService:
         input and is not inferred from this catalog validation. An observed
         placement on an accelerator that lacks catalog qualification is
         retained as a warning only at this bootstrap boundary. It does not add
-        qualification, and every later proposal/plan remains fail closed.
+        qualification. Later proposals may tune consumed non-placement
+        settings only while the exact enabled placement remains unchanged;
+        placement changes and activation of a previously disabled unqualified
+        model remain blocked.
         """
 
         validation = await self._validate_desired(desired)
@@ -616,7 +619,7 @@ class ConfigurationService:
                     "severity": ValidationSeverity.WARNING,
                     "message": (
                         "Terraform baseline is running on an accelerator without catalog qualification; "
-                        "later proposals remain blocked"
+                        "placement changes and later activation of a disabled model remain blocked"
                     ),
                 }
             )
@@ -647,8 +650,8 @@ class ConfigurationService:
         proposal: ConfigurationProposal,
         actor: OperatorPrincipal,
     ) -> ConfigurationValidation:
-        await self._require_base(proposal.base_etag)
-        result = await self._validate_desired(proposal.desired)
+        current = await self._require_base(proposal.base_etag)
+        result = await self._validate_proposal(current, proposal.desired)
         await self._audit("validate", actor, result.proposed_etag)
         return result
 
@@ -750,7 +753,8 @@ class ConfigurationService:
         audit_action: Literal["plan", "rollback"],
     ) -> ConfigurationPlan:
         diff = await self.diff(proposal)
-        validation = await self._validate_desired(proposal.desired)
+        current = await self._require_base(proposal.base_etag)
+        validation = await self._validate_proposal(current, proposal.desired)
         issues = list(validation.issues)
         unsupported_paths = sorted(
             {
@@ -889,6 +893,76 @@ class ConfigurationService:
         return ConfigurationValidation(
             valid=not any(item.severity == ValidationSeverity.ERROR for item in issues),
             proposed_etag=etag,
+            issues=issues,
+        )
+
+    async def _validate_proposal(
+        self,
+        current: ConfigurationRevision,
+        desired: PlatformConfiguration,
+    ) -> ConfigurationValidation:
+        """Grandfather only an unchanged, Terraform-observed qualification gap.
+
+        A cluster may deliberately bootstrap an exact runtime on hardware that
+        has not yet received a catalog qualification receipt. Operators must
+        still be able to tune autoscaling, queues, and other consumed settings
+        around that running placement. Moving the model, changing its GPU
+        shape, or introducing a new unqualified placement remains an error.
+        """
+
+        validation = await self._validate_desired(desired)
+
+        def placement_signature(configuration: PlatformConfiguration, model_id: str) -> object:
+            model = configuration.models.get(model_id)
+            if model is None:
+                return None
+            return (
+                model.placement.model_dump(mode="json"),
+                tuple(
+                    (
+                        pool_id,
+                        configuration.pools[pool_id].resource_name,
+                        configuration.pools[pool_id].accelerator_class,
+                        configuration.pools[pool_id].capacity_type,
+                        configuration.pools[pool_id].accelerators_per_node,
+                        configuration.pools[pool_id].node_selector,
+                        tuple(configuration.pools[pool_id].tolerations),
+                    )
+                    for pool_id in model.placement.pool_ids
+                ),
+            )
+
+        def placement_is_grandfathered(model_id: str) -> bool:
+            current_model = current.effective.models.get(model_id)
+            desired_model = desired.models.get(model_id)
+            if current_model is None or desired_model is None:
+                return False
+            if desired_model.enabled and not current_model.enabled:
+                return False
+            return placement_signature(current.effective, model_id) == placement_signature(desired, model_id)
+
+        grandfathered_paths = {
+            f"$.models.{model_id}.placement.pool_ids"
+            for model_id in desired.models
+            if placement_is_grandfathered(model_id)
+        }
+        issues = [
+            issue.model_copy(
+                update={
+                    "severity": ValidationSeverity.WARNING,
+                    "message": (
+                        "existing Terraform-observed placement remains without catalog qualification; "
+                        "this proposal does not change its accelerator placement"
+                    ),
+                }
+            )
+            if issue.code == "unsupported_accelerator_placement" and issue.path in grandfathered_paths
+            else issue
+            for issue in validation.issues
+        ]
+        return ConfigurationValidation(
+            valid=not any(issue.severity == ValidationSeverity.ERROR for issue in issues),
+            proposed_etag=validation.proposed_etag,
             issues=issues,
         )
 

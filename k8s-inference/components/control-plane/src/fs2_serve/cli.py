@@ -27,6 +27,7 @@ from .admin_adapters import (
     KubernetesCapacityConfig,
     KubernetesModelStateAdminAdapter,
     KubernetesModelStateConfig,
+    ManagedNodeScalerPoolContract,
     PrometheusModelMetricsAdminAdapter,
     PrometheusObservabilityAdminAdapter,
     PrometheusObservabilityConfig,
@@ -45,9 +46,11 @@ from .configuration import (
     load_platform_configuration,
     load_terraform_apply_receipt,
 )
+from .configuration_models import PlatformConfiguration
 from .crypto import KeyedHasher, PayloadCipher
 from .federation import FederationRouter
 from .mcp_server import mount_mcp
+from .models import TokenCreate
 from .postgres import PostgresMaintenanceStore, PostgresStore
 from .postgresql_release import render_postgresql_release_contract
 from .registry import Registry
@@ -78,6 +81,8 @@ async def _store(settings: Settings) -> PostgresStore:
 
 def _admin_read_dependencies(
     settings: Settings,
+    *,
+    initial_configuration: PlatformConfiguration | None = None,
 ) -> tuple[
     KubernetesAdminAdapter | None,
     PrometheusAdminAdapter | None,
@@ -109,6 +114,17 @@ def _admin_read_dependencies(
                 model_namespace=settings.admin_kubernetes_model_namespace,
                 system_namespace=settings.admin_kubernetes_system_namespace,
                 kueue_api_version=settings.admin_kueue_api_version,
+                node_scaler_provider=settings.admin_node_scaler_provider,
+                node_scaler_pools=tuple(
+                    ManagedNodeScalerPoolContract(
+                        pool_id=pool_id,
+                        min_nodes=pool.min_nodes,
+                        max_nodes=pool.max_nodes,
+                    )
+                    for pool_id, pool in sorted(initial_configuration.pools.items())
+                )
+                if initial_configuration is not None
+                else (),
             ),
         )
     prometheus: PrometheusAdminAdapter | None = None
@@ -197,7 +213,15 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         wait_poll_max_seconds=settings.wait_poll_max_seconds,
         route_refresh=route_revalidator.refresh,
     )
-    kubernetes, prometheus, capacity, observability, contexts = _admin_read_dependencies(settings)
+    initial_configuration = (
+        load_platform_configuration(settings.admin_configuration_file)
+        if settings.admin_configuration_file is not None
+        else None
+    )
+    kubernetes, prometheus, capacity, observability, contexts = _admin_read_dependencies(
+        settings,
+        initial_configuration=initial_configuration,
+    )
     admin_read = AdminReadService(
         registry=registry,
         store=store,
@@ -212,8 +236,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     configure_tracing(settings.otlp_endpoint)
     configuration_service: ConfigurationService | None = None
     configuration_sync_error: str | None = None
-    if settings.admin_configuration_file is not None:
-        initial_configuration = load_platform_configuration(settings.admin_configuration_file)
+    if initial_configuration is not None:
         canonical_catalog = load_catalog(settings.catalog_dir, repo_root=settings.repo_root)
         configuration_repository = StoreConfigurationRepository(store)
         configuration_service = ConfigurationService(
@@ -315,6 +338,33 @@ async def wait_schema(settings: Settings) -> None:
     )
 
 
+async def bootstrap_access(settings: Settings) -> None:
+    """Idempotently seed the Terraform-owned MCP/inference bootstrap PAT."""
+
+    await PostgresStore.wait_for_schema(
+        settings.database_url,
+        settings.migrations_dir,
+        settings.schema_wait_seconds,
+    )
+    store = await _store(settings)
+    try:
+        service = TokenService(store, PepperRing.from_file(settings.token_pepper_file))
+        await service.ensure_provisioned(
+            settings.bootstrap_access_token(),
+            TokenCreate(
+                principal_id=settings.bootstrap_access_principal_id,
+                tenant_id=settings.bootstrap_access_tenant_id,
+                scopes=settings.bootstrap_access_scopes,
+                models=settings.bootstrap_access_models,
+                max_concurrency=settings.bootstrap_access_max_concurrency,
+                name=settings.bootstrap_access_name,
+            ),
+            created_by="terraform-bootstrap",
+        )
+    finally:
+        await store.close()
+
+
 def validate(settings: Settings) -> None:
     registry = Registry.load(
         settings.catalog_dir,
@@ -351,6 +401,7 @@ def main() -> None:
             "maintenance",
             "migrate",
             "wait-schema",
+            "bootstrap-access",
             "validate",
             "postgresql-release-contract",
         ),
@@ -370,6 +421,7 @@ def main() -> None:
             "maintenance": maintain,
             "migrate": migrate,
             "wait-schema": wait_schema,
+            "bootstrap-access": bootstrap_access,
         }[args.command]
         asyncio.run(action(settings))
 

@@ -344,7 +344,10 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
         text=True,
         timeout=60,
     )
-    assert "{serve,maintenance,migrate,wait-schema,validate,postgresql-release-contract}" in completed.stdout
+    assert (
+        "{serve,maintenance,migrate,wait-schema,bootstrap-access,validate,postgresql-release-contract}"
+        in completed.stdout
+    )
     emitted_contract = subprocess.run(  # noqa: S603 - clean-wheel CLI and fixed command.
         [str(cli), "postgresql-release-contract"],
         cwd=tmp_path,

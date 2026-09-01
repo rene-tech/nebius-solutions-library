@@ -9,7 +9,7 @@ import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -63,6 +63,11 @@ MAX_KUBERNETES_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_KUBERNETES_ITEMS = 4096
 MAX_KUBERNETES_PAGES = 16
 MAX_PROMETHEUS_RESPONSE_BYTES = 512 * 1024
+MAX_NODE_SCALER_STATUS_BYTES = 512 * 1024
+NODE_SCALER_STATUS_MAX_AGE = timedelta(minutes=5)
+NODE_SCALER_STATUS_PATH = "/api/v1/namespaces/kube-system/configmaps/cluster-autoscaler-status"
+NODE_SCALER_HEALTH_STATUSES = frozenset({"Healthy", "Unhealthy"})
+NODE_SCALER_HEALTH_STATUS_MAX_LENGTH = 32
 _NAMESPACE = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
 _GPU_RESOURCE = re.compile(r"^(?:nvidia\.com/(?:gpu|mig-[A-Za-z0-9_.-]+)|amd\.com/gpu|gpu\.intel\.com/(?:i915|xe))$")
 _SAFE_COMPONENT = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
@@ -142,6 +147,8 @@ class KubernetesResourceNotFoundError(AdminAdapterUnavailableError):
 class KubernetesListReader(Protocol):
     async def list(self, path: str) -> list[Mapping[str, Any]]: ...
 
+    async def get(self, path: str) -> Mapping[str, Any]: ...
+
 
 @dataclass(frozen=True)
 class HttpKubernetesListReader:
@@ -166,23 +173,54 @@ class HttpKubernetesListReader:
         if not 0.1 <= self.timeout_seconds <= 10:
             raise ValueError("Kubernetes timeout is outside the bound")
 
-    async def list(self, path: str) -> list[Mapping[str, Any]]:
-        if not path.startswith("/") or "?" in path or "#" in path or ".." in path:
-            raise ValueError("Kubernetes resource path is invalid")
+    def _headers(self) -> dict[str, str]:
         try:
             token = self.token_file.read_text(encoding="utf-8").strip()
         except OSError as exc:
             raise AdminAdapterUnavailableError("Kubernetes service-account token is unavailable") from exc
         if not 32 <= len(token) <= 16 * 1024:
             raise AdminAdapterUnavailableError("Kubernetes service-account token is invalid")
-        headers = {"authorization": f"Bearer {token}", "accept": "application/json"}
+        return {"authorization": f"Bearer {token}", "accept": "application/json"}
+
+    @staticmethod
+    def _validate_path(path: str) -> None:
+        if not path.startswith("/") or "?" in path or "#" in path or ".." in path:
+            raise ValueError("Kubernetes resource path is invalid")
+
+    async def get(self, path: str) -> Mapping[str, Any]:
+        self._validate_path(path)
+        timeout = httpx.Timeout(self.timeout_seconds)
+        try:
+            async with httpx.AsyncClient(
+                base_url=self.base_url,
+                headers=self._headers(),
+                verify=str(self.ca_file),
+                timeout=timeout,
+                trust_env=False,
+            ) as client:
+                response = await client.get(path)
+                if response.status_code == 404:
+                    raise KubernetesResourceNotFoundError("Kubernetes API resource is not installed")
+                if response.status_code != 200 or len(response.content) > self.max_response_bytes:
+                    raise AdminAdapterUnavailableError("Kubernetes API get failed")
+                if "json" not in response.headers.get("content-type", "").lower():
+                    raise AdminAdapterUnavailableError("Kubernetes API response is not JSON")
+                value = response.json()
+                if not isinstance(value, Mapping):
+                    raise AdminAdapterUnavailableError("Kubernetes API object shape is invalid")
+                return value
+        except (httpx.HTTPError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise AdminAdapterUnavailableError("Kubernetes API transport failed") from exc
+
+    async def list(self, path: str) -> list[Mapping[str, Any]]:
+        self._validate_path(path)
         items: list[Mapping[str, Any]] = []
         continuation = ""
         timeout = httpx.Timeout(self.timeout_seconds)
         try:
             async with httpx.AsyncClient(
                 base_url=self.base_url,
-                headers=headers,
+                headers=self._headers(),
                 verify=str(self.ca_file),
                 timeout=timeout,
                 trust_env=False,
@@ -218,11 +256,43 @@ class HttpKubernetesListReader:
 
 
 @dataclass(frozen=True)
+class ManagedNodeScalerPoolContract:
+    """Exact bounded pool limits from the mounted admin configuration."""
+
+    pool_id: str
+    min_nodes: int
+    max_nodes: int
+
+    def __post_init__(self) -> None:
+        if not 1 <= len(self.pool_id) <= 128:
+            raise ValueError("managed node-scaler pool identifier is outside the bound")
+        if (
+            isinstance(self.min_nodes, bool)
+            or isinstance(self.max_nodes, bool)
+            or not isinstance(self.min_nodes, int)
+            or not isinstance(self.max_nodes, int)
+            or not 0 <= self.min_nodes <= self.max_nodes <= 10000
+        ):
+            raise ValueError("managed node-scaler pool bounds are invalid")
+
+
+@dataclass(frozen=True)
+class ManagedNodeScalerProbe:
+    """Bounded evidence published by the managed cluster autoscaler."""
+
+    state: AdminSourceState
+    healthy: bool | None
+    observed_at: datetime | None = None
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class KubernetesCapacityConfig:
     model_namespace: str = "fs2-models"
     system_namespace: str = "fs2-system"
     kueue_api_version: str = "v1beta2"
     semantic_pool_label: str = "capacity.fs2.nebius/pool"
+    pool_label_fallbacks: tuple[str, ...] = ("accelerator.fs2.nebius/pool-id",)
     gpu_class_label_keys: tuple[str, ...] = (
         "nvidia.com/gpu.product",
         "nebius.com/gpu-name",
@@ -234,15 +304,39 @@ class KubernetesCapacityConfig:
         "cloud.google.com/gke-spot",
         "nebius.com/preemptible",
     )
+    node_scaler_provider: str | None = None
+    node_scaler_pools: tuple[ManagedNodeScalerPoolContract, ...] = ()
 
     def __post_init__(self) -> None:
         if _NAMESPACE.fullmatch(self.model_namespace) is None or _NAMESPACE.fullmatch(self.system_namespace) is None:
             raise ValueError("admin Kubernetes namespace is invalid")
         if self.kueue_api_version not in {"v1beta1", "v1beta2"}:
             raise ValueError("unsupported Kueue API version")
-        label_keys = (*self.gpu_class_label_keys, *self.capacity_type_label_keys, self.semantic_pool_label)
+        label_keys = (
+            *self.gpu_class_label_keys,
+            *self.capacity_type_label_keys,
+            self.semantic_pool_label,
+            *self.pool_label_fallbacks,
+        )
         if any(not 1 <= len(value) <= 253 for value in label_keys):
             raise ValueError("admin node label key is outside the bound")
+        if len(self.node_scaler_pools) > 128:
+            raise ValueError("managed node-scaler pool contract exceeds its bound")
+        pool_ids = [pool.pool_id for pool in self.node_scaler_pools]
+        if len(pool_ids) != len(set(pool_ids)):
+            raise ValueError("managed node-scaler pool identifiers must be unique")
+        if self.node_scaler_provider not in {None, "nebius-managed-node-group-autoscaler"}:
+            raise ValueError("unsupported managed node-scaler provider")
+        if self.node_scaler_pools and self.node_scaler_provider is None:
+            raise ValueError("managed node-scaler pools require a provider")
+
+    @property
+    def pool_label_keys(self) -> tuple[str, ...]:
+        # The provider pool ID is the authoritative identity used by the exact
+        # Terraform pool contract. Semantic labels such as ``hot`` or ``burst``
+        # are useful classifications, but multiple real node groups may share
+        # one and therefore cannot drive node-scaler health.
+        return (*self.pool_label_fallbacks, self.semantic_pool_label)
 
 
 def _capacity_type(labels: Mapping[str, object], config: KubernetesCapacityConfig) -> AdminCapacityType:
@@ -575,11 +669,12 @@ class KubernetesCapacityAdminAdapter:
         self.clock = clock or (lambda: datetime.now(UTC))
 
     async def snapshot(self) -> AdminCapacitySnapshot:
-        node_pools, kueue, hpa, keda = await asyncio.gather(
+        node_pools, kueue, hpa, keda, node_scaler_probe = await asyncio.gather(
             self._node_pools(),
             self._kueue(),
             self._hpa(),
             self._keda(),
+            self._node_scaler_probe(),
         )
         now = self.clock()
         if now.tzinfo is None or now.utcoffset() is None:
@@ -590,13 +685,180 @@ class KubernetesCapacityAdminAdapter:
                 node_pools=node_pools,
                 kueue=kueue,
                 autoscaling=AdminAutoscalingProjection(hpa=hpa, keda=keda),
-                node_scaler=AdminNodeScalerProjection(
-                    state=AdminSourceState.UNAVAILABLE,
-                    configured=None,
-                    healthy=None,
-                    reason="provider node-scaler adapter is not configured",
+                node_scaler=self._node_scaler(
+                    node_pools,
+                    node_scaler_probe,
+                    observed_at=now.astimezone(UTC),
                 ),
             ),
+        )
+
+    async def _node_scaler_probe(self) -> ManagedNodeScalerProbe:
+        if self.config.node_scaler_provider is None:
+            return ManagedNodeScalerProbe(
+                state=AdminSourceState.UNAVAILABLE,
+                healthy=None,
+                reason="managed node-scaler provider is not configured",
+            )
+        try:
+            config_map = await self.reader.get(NODE_SCALER_STATUS_PATH)
+        except (AdminAdapterUnavailableError, AttributeError):
+            return ManagedNodeScalerProbe(
+                state=AdminSourceState.UNAVAILABLE,
+                healthy=None,
+                reason="managed cluster-autoscaler status is unavailable",
+            )
+        status = _mapping(config_map.get("data")).get("status")
+        if not isinstance(status, str) or not status or len(status.encode()) > MAX_NODE_SCALER_STATUS_BYTES:
+            return ManagedNodeScalerProbe(
+                state=AdminSourceState.UNAVAILABLE,
+                healthy=None,
+                reason="managed cluster-autoscaler status is malformed",
+            )
+        cluster_match = re.search(r"(?ms)^clusterWide:\n(?P<body>.*?)(?=^nodeGroups:|\Z)", status)
+        health_match = (
+            re.search(r"(?ms)^  health:\n(?P<body>.*?)(?=^  [A-Za-z]|\Z)", cluster_match.group("body"))
+            if cluster_match is not None
+            else None
+        )
+        health_body = health_match.group("body") if health_match is not None else ""
+        health_status = re.search(
+            rf"(?m)^    status: ([A-Za-z]{{1,{NODE_SCALER_HEALTH_STATUS_MAX_LENGTH}}})[ \t]*$",
+            health_body,
+        )
+        probe_time = re.search(r'(?m)^    lastProbeTime: "([^"]+)"\s*$', health_body)
+        running = re.search(r"(?m)^autoscalerStatus: Running\s*$", status) is not None
+        if health_status is None or probe_time is None:
+            return ManagedNodeScalerProbe(
+                state=AdminSourceState.UNAVAILABLE,
+                healthy=None,
+                reason="managed cluster-autoscaler health evidence is malformed",
+            )
+        try:
+            observed_at = datetime.fromisoformat(probe_time.group(1).replace("Z", "+00:00")).astimezone(UTC)
+        except ValueError:
+            return ManagedNodeScalerProbe(
+                state=AdminSourceState.UNAVAILABLE,
+                healthy=None,
+                reason="managed cluster-autoscaler probe time is malformed",
+            )
+        now = self.clock()
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise RuntimeError("admin adapter clock must be timezone-aware")
+        age = now.astimezone(UTC) - observed_at
+        if age < -timedelta(minutes=1) or age > NODE_SCALER_STATUS_MAX_AGE:
+            return ManagedNodeScalerProbe(
+                state=AdminSourceState.UNAVAILABLE,
+                healthy=None,
+                observed_at=observed_at,
+                reason="managed cluster-autoscaler health evidence is stale",
+            )
+        reported_health = health_status.group(1)
+        if reported_health not in NODE_SCALER_HEALTH_STATUSES:
+            return ManagedNodeScalerProbe(
+                state=AdminSourceState.UNAVAILABLE,
+                healthy=None,
+                observed_at=observed_at,
+                reason="managed cluster-autoscaler health state is unsupported",
+            )
+        healthy = running and reported_health == "Healthy"
+        reason = None
+        if not running:
+            reason = "managed cluster-autoscaler is not Running"
+        elif reported_health != "Healthy":
+            reason = f"managed cluster-autoscaler reports {reported_health}"
+        return ManagedNodeScalerProbe(
+            state=AdminSourceState.AVAILABLE,
+            healthy=healthy,
+            observed_at=observed_at,
+            reason=reason,
+        )
+
+    def _node_scaler(
+        self,
+        node_pools: AdminNodePoolInventory,
+        probe: ManagedNodeScalerProbe,
+        *,
+        observed_at: datetime,
+    ) -> AdminNodeScalerProjection:
+        provider = self.config.node_scaler_provider
+        contracts = self.config.node_scaler_pools
+        if provider is None:
+            return AdminNodeScalerProjection(
+                state=AdminSourceState.UNAVAILABLE,
+                configured=False,
+                healthy=None,
+                reason="managed node-scaler provider is not configured",
+            )
+        if not contracts:
+            return AdminNodeScalerProjection(
+                state=AdminSourceState.UNAVAILABLE,
+                provider=provider,
+                configured=False,
+                healthy=None,
+                reason="managed node-scaler pool contract is unavailable",
+            )
+        if probe.state != AdminSourceState.AVAILABLE or probe.healthy is None:
+            return AdminNodeScalerProjection(
+                state=AdminSourceState.UNAVAILABLE,
+                provider=provider,
+                configured=True,
+                healthy=None,
+                observed_at=probe.observed_at,
+                reason=probe.reason or "managed cluster-autoscaler health evidence is unavailable",
+            )
+        if node_pools.state != AdminSourceState.AVAILABLE:
+            return AdminNodeScalerProjection(
+                state=AdminSourceState.UNAVAILABLE,
+                provider=provider,
+                configured=True,
+                healthy=None,
+                reason="Kubernetes node evidence for the managed node scaler is unavailable",
+            )
+
+        observed: defaultdict[str, list[int]] = defaultdict(lambda: [0, 0])
+        configured_pool_ids = {contract.pool_id for contract in contracts}
+        for pool in node_pools.items:
+            if pool.pool_label not in configured_pool_ids:
+                continue
+            total = pool.nodes.total.value
+            ready = pool.nodes.ready.value
+            if (
+                pool.nodes.total.state != AdminValueState.AVAILABLE
+                or pool.nodes.ready.state != AdminValueState.AVAILABLE
+                or total is None
+                or ready is None
+                or total < 0
+                or ready < 0
+                or not total.is_integer()
+                or not ready.is_integer()
+            ):
+                return AdminNodeScalerProjection(
+                    state=AdminSourceState.UNAVAILABLE,
+                    provider=provider,
+                    configured=True,
+                    healthy=None,
+                    reason="Kubernetes managed node-pool counts are incomplete",
+                )
+            observed[pool.pool_label][0] += int(total)
+            observed[pool.pool_label][1] += int(ready)
+
+        bounds_healthy = all(
+            contract.min_nodes <= observed[contract.pool_id][0] <= contract.max_nodes
+            and observed[contract.pool_id][1] == observed[contract.pool_id][0]
+            for contract in contracts
+        )
+        healthy = probe.healthy and bounds_healthy
+        reason = probe.reason
+        if probe.healthy and not bounds_healthy:
+            reason = "managed node-pool bounds or readiness are unhealthy"
+        return AdminNodeScalerProjection(
+            state=AdminSourceState.AVAILABLE,
+            provider=provider,
+            configured=True,
+            healthy=healthy,
+            observed_at=probe.observed_at or observed_at,
+            reason=reason,
         )
 
     async def _node_pools(self) -> AdminNodePoolInventory:
@@ -637,7 +899,7 @@ class KubernetesCapacityAdminAdapter:
         for node in nodes:
             metadata = _mapping(node.get("metadata"))
             labels = _mapping(metadata.get("labels"))
-            pool_label = _first_label(labels, (self.config.semantic_pool_label,))
+            pool_label = _first_label(labels, self.config.pool_label_keys)
             instance_type = _first_label(labels, ("node.kubernetes.io/instance-type",))
             gpu_class = _first_label(labels, self.config.gpu_class_label_keys)
             key = (pool_label, instance_type, gpu_class, _capacity_type(labels, self.config))
@@ -1632,8 +1894,18 @@ class PrometheusObservabilityAdminAdapter:
         )
         if configured is not None and launchable:
             launch = AdminObservabilityLaunch(enabled=True, url=configured)
+        elif component.installed is False:
+            launch = AdminObservabilityLaunch(enabled=False, reason="component is not installed")
         elif configured is None:
-            launch = AdminObservabilityLaunch(enabled=False, reason="operator UI is not configured")
+            reason = {
+                "prometheus": "raw Prometheus stays private; configure the verified Grafana Explore route",
+                "loki": "raw Loki stays private; configure the verified Grafana Explore route",
+                "otel": "OpenTelemetry has no direct operator UI; configure a verified Grafana dashboard route",
+                "dcgm": "DCGM has no direct operator UI; configure a verified Grafana dashboard route",
+                "kueue": "Kueue has no direct operator UI; configure a verified Grafana dashboard route",
+                "keda": "KEDA has no direct operator UI; configure a verified Grafana dashboard route",
+            }.get(component.id, "no verified operator UI route is configured")
+            launch = AdminObservabilityLaunch(enabled=False, reason=reason)
         else:
             launch = AdminObservabilityLaunch(enabled=False, reason="component health or data probe did not pass")
         return component.model_copy(update={"launch": launch})

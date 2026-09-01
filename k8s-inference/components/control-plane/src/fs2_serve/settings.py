@@ -13,6 +13,8 @@ from urllib.parse import SplitResult, urlsplit
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .models import ModelId, Scope
+
 _PUBLIC_HOST_MAX_LENGTH = 253
 _PUBLIC_URL_MAX_LENGTH = 2048
 _DNS_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
@@ -71,6 +73,36 @@ class Settings(BaseSettings):
     ledger_hmac_keyring_file: Path = Path("/var/run/secrets/fs2-serve/ledger-hmac-keyring.json")
     route_attestors_file: Path | None = Path("/var/run/secrets/fs2-serve/attestors/route-attestors.json")
     admin_token_file: Path = Path("/var/run/secrets/fs2-serve/admin-token")
+    bootstrap_access_token_file: Path = Path("/var/run/secrets/fs2-serve/bootstrap-access-token")
+    bootstrap_access_principal_id: str = Field(
+        default="terraform-bootstrap-client",
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$",
+    )
+    bootstrap_access_tenant_id: str = Field(
+        default="terraform-bootstrap",
+        min_length=1,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+    )
+    bootstrap_access_name: str = Field(default="Terraform bootstrap MCP and inference", min_length=1, max_length=120)
+    bootstrap_access_scopes: set[Scope] = Field(
+        default_factory=lambda: {
+            Scope.CATALOG_READ,
+            Scope.INFERENCE_INVOKE,
+            Scope.MCP_INVOKE,
+            Scope.OPERATIONS_READ,
+            Scope.OPERATIONS_RESULT,
+            Scope.OPERATIONS_CANCEL,
+            Scope.OPERATIONS_ACKNOWLEDGE,
+            Scope.USE_NONCLINICAL,
+            Scope.USE_NONCOMMERCIAL,
+        },
+        min_length=1,
+    )
+    bootstrap_access_models: set[ModelId] = Field(default_factory=lambda: {"*"}, min_length=1)
+    bootstrap_access_max_concurrency: int = Field(default=32, ge=1, le=100)
     admin_capacity_enabled: bool = False
     admin_kubernetes_api_url: str = Field(default="https://kubernetes.default.svc", max_length=2048)
     admin_kubernetes_token_file: Path = Path("/var/run/secrets/fs2-serve/admin-kubernetes/token")
@@ -89,6 +121,7 @@ class Settings(BaseSettings):
     )
     admin_kueue_api_version: Literal["v1beta1", "v1beta2"] = "v1beta2"
     admin_kubernetes_cache_ttl_seconds: float = Field(default=15, ge=1, le=60)
+    admin_node_scaler_provider: Literal["nebius-managed-node-group-autoscaler"] | None = None
     admin_prometheus_url: str | None = Field(default=None, max_length=2048)
     admin_observability_config_file: Path | None = None
     admin_adapter_timeout_seconds: float = Field(default=2.0, ge=0.1, le=10)
@@ -187,6 +220,11 @@ class Settings(BaseSettings):
             raise ValueError("admin context project, cluster, and region must be configured together")
         if self.admin_context_label is not None and not all(value is not None for value in context_identity):
             raise ValueError("admin context label requires a complete context identity")
+        if self.admin_node_scaler_provider is not None and not self.admin_capacity_enabled:
+            raise ValueError("admin node-scaler provider requires the capacity adapter")
+        required_bootstrap_scopes = {Scope.CATALOG_READ, Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE}
+        if not required_bootstrap_scopes.issubset(self.bootstrap_access_scopes):
+            raise ValueError("bootstrap access requires catalog.read, inference.invoke, and mcp.invoke")
         return self
 
     def public_transport_allowlists(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -223,6 +261,15 @@ class Settings(BaseSettings):
 
     def admin_token(self) -> bytes:
         return self._read_secret(self.admin_token_file, minimum=32)
+
+    def bootstrap_access_token(self) -> str:
+        raw = self._read_secret(self.bootstrap_access_token_file, minimum=64)
+        if len(raw) > 256:
+            raise ValueError("bootstrap access token exceeds the bearer-token bound")
+        try:
+            return raw.decode("ascii")
+        except UnicodeDecodeError as exc:
+            raise ValueError("bootstrap access token must be ASCII") from exc
 
     def trusted_route_attestors(self) -> Mapping[str, str] | None:
         """Load the bounded public trust root used for signed route evidence."""

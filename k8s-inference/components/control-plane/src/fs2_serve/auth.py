@@ -15,9 +15,9 @@ from uuid import UUID, uuid4
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
-from .access_models import BOOTSTRAP_OPERATOR_PRINCIPAL_ID, OperatorSession
+from .access_models import BOOTSTRAP_OPERATOR_PRINCIPAL_ID, AdminApiKeyPolicyPatch, OperatorSession
 from .models import OperationView, Principal, Scope, TokenCreate, TokenIssued, TokenView
-from .store import NotFoundError, Store
+from .store import ConflictError, NotFoundError, Store
 
 TOKEN_MARKER = "fs2_pat"  # noqa: S105 - public token format marker, not a credential
 MAX_PAT_LENGTH = 256
@@ -138,6 +138,90 @@ class TokenService:
             fingerprint=fingerprint,
         )
         return TokenIssued(**view.model_dump(), token=token)
+
+    async def ensure_provisioned(self, token: str, request: TokenCreate, *, created_by: str) -> TokenView:
+        """Create or reconcile one externally generated bootstrap PAT.
+
+        Terraform owns the opaque material so it can return the credential after
+        apply.  Only its Argon2id digest and bounded metadata enter the token
+        store.  Re-running this method is safe: immutable ownership must match,
+        while the scoped policy is reconciled for Helm upgrades.
+        """
+
+        now = datetime.now(UTC)
+        if request.expires_at is not None and request.expires_at <= now:
+            raise ValueError("expires_at must be in the future")
+        token_id, prefix = self._parse(token)
+        fingerprint = hashlib.sha256(token.encode()).hexdigest()
+        stored = await self.store.token_for_verification(token_id)
+        if stored is None:
+            pepper_key_id = self._peppers.active_key_id
+            digest = self._hasher.hash(self._prehash(token, pepper_key_id))
+            try:
+                return await self.store.issue_token(
+                    token_id=token_id,
+                    prefix=prefix,
+                    pepper_key_id=pepper_key_id,
+                    digest=digest,
+                    request=request,
+                    created_by=created_by,
+                    fingerprint=fingerprint,
+                )
+            except ConflictError:
+                # A concurrent post-install/upgrade hook may have inserted the
+                # same deterministic token between the read and insert.
+                stored = await self.store.token_for_verification(token_id)
+                if stored is None:
+                    raise
+
+        view, digest = stored
+        if not secrets.compare_digest(prefix, view.prefix):
+            raise AuthenticationError("bootstrap token identity conflicts with stored token")
+        if view.fingerprint is not None and not secrets.compare_digest(fingerprint, view.fingerprint):
+            raise AuthenticationError("bootstrap token identity conflicts with stored token")
+        try:
+            valid = self._hasher.verify(digest, self._prehash(token, view.pepper_key_id))
+        except (InvalidHashError, VerifyMismatchError) as exc:
+            raise AuthenticationError("bootstrap token identity conflicts with stored token") from exc
+        if not valid or view.revoked_at is not None or (view.expires_at is not None and view.expires_at <= now):
+            raise AuthenticationError("bootstrap token is inactive")
+        if view.principal_id != request.principal_id or view.tenant_id != request.tenant_id:
+            raise AuthenticationError("bootstrap token ownership conflicts with stored token")
+
+        desired_scopes = sorted(str(scope) for scope in request.scopes)
+        desired_models = sorted(request.models)
+        changes: dict[str, Any] = {}
+        for name in (
+            "name",
+            "expires_at",
+            "request_budget",
+            "gpu_seconds_budget",
+            "max_concurrency",
+        ):
+            if getattr(view, name) != getattr(request, name):
+                changes[name] = getattr(request, name)
+        if view.scopes != desired_scopes:
+            changes["scopes"] = set(request.scopes)
+        if view.models != desired_models:
+            changes["models"] = set(request.models)
+        if (
+            view.rate_limit_requests != request.rate_limit_requests
+            or view.rate_window_seconds != request.rate_window_seconds
+        ):
+            changes["rate_limit_requests"] = request.rate_limit_requests
+            changes["rate_window_seconds"] = request.rate_window_seconds
+        if changes:
+            view = await self.store.update_token_policy(
+                token_id,
+                request=AdminApiKeyPolicyPatch(**changes),
+                actor=created_by,
+            )
+        if view.pepper_key_id != self._peppers.active_key_id:
+            active_id = self._peppers.active_key_id
+            replacement = self._hasher.hash(self._prehash(token, active_id))
+            await self.store.rehash_token(view.id, pepper_key_id=active_id, digest=replacement)
+            view = view.model_copy(update={"pepper_key_id": active_id})
+        return view
 
     async def verify(self, token: str) -> Principal:
         token_id, expected_prefix = self._parse(token)

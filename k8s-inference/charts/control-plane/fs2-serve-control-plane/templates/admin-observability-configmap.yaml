@@ -1,7 +1,7 @@
 {{- if .Values.adminReadAdapters.observability.enabled }}
 {{- $links := dict }}
 {{- $linkValues := .Values.adminReadAdapters.observability.links }}
-{{- range $component := list "grafana" "prometheus" "loki" }}
+{{- range $component := list "grafana" "prometheus" "loki" "otel" "dcgm" "kueue" "keda" "alertmanager" "tempo" }}
 {{- $link := index $linkValues $component }}
 {{- if and $link.url (not $link.verifiedExternalRoute) }}
 {{- fail (printf "adminReadAdapters.observability.links.%s.url requires verifiedExternalRoute=true" $component) }}

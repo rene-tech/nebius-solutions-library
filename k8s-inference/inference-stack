@@ -1532,8 +1532,32 @@ def write_downstream_variables(
                 "url": f"{origin}/admin/observability/grafana",
                 "verified_external_route": True,
             },
-            "prometheus": {"url": "", "verified_external_route": False},
-            "loki": {"url": "", "verified_external_route": False},
+            "prometheus": {
+                "url": f"{origin}/admin/observability/grafana/explore",
+                "verified_external_route": True,
+            },
+            "loki": {
+                "url": f"{origin}/admin/observability/grafana/explore",
+                "verified_external_route": True,
+            },
+            "otel": {
+                "url": f"{origin}/admin/observability/grafana/dashboards",
+                "verified_external_route": True,
+            },
+            "dcgm": {
+                "url": f"{origin}/admin/observability/grafana/dashboards",
+                "verified_external_route": True,
+            },
+            "kueue": {
+                "url": f"{origin}/admin/observability/grafana/dashboards",
+                "verified_external_route": True,
+            },
+            "keda": {
+                "url": f"{origin}/admin/observability/grafana/dashboards",
+                "verified_external_route": True,
+            },
+            "alertmanager": {"url": "", "verified_external_route": False},
+            "tempo": {"url": "", "verified_external_route": False},
         }
     foundation_path = run_root / "foundation.tfvars.json"
     workloads_path = run_root / "workloads.tfvars.json"
@@ -1603,6 +1627,26 @@ def workload_endpoint_outputs(
             terraform, WORKLOADS_ROOT, "admin_web_interface_url", environment
         ),
     }
+
+
+def workload_access_bundle(
+    terraform: str,
+    run_root: Path,
+    contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Read the explicit sensitive connection bundle from workloads state."""
+
+    environment = stage_environment(
+        run_root, "workloads", contract, include_secrets=False
+    )
+    bundle = terraform_json_output(
+        terraform, WORKLOADS_ROOT, "access_bundle", environment
+    )
+    if not isinstance(bundle, dict) or bundle.get("schema") != "fs2-serve.nebius.ai/access-bundle/v1":
+        raise DeploymentError("the workloads access bundle is missing or malformed")
+    if not all(isinstance(bundle.get(key), dict) for key in ("cluster", "endpoints", "credentials", "mcp_access")):
+        raise DeploymentError("the workloads access bundle is missing or malformed")
+    return bundle
 
 
 def state_ready(
@@ -1915,14 +1959,14 @@ def output_stack(
     run_root: Path,
     contract: Mapping[str, Any],
 ) -> None:
-    """Print only the stable non-secret entry points from a completed deployment."""
+    """Print the intentionally requested sensitive post-apply access bundle."""
     if not state_ready(args.terraform, run_root, "workloads", contract):
         raise DeploymentError(
             "workloads are not applied; run inference-stack apply before requesting endpoints"
         )
     print(
         json.dumps(
-            workload_endpoint_outputs(args.terraform, run_root, contract),
+            workload_access_bundle(args.terraform, run_root, contract),
             indent=2,
         )
     )

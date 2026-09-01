@@ -379,8 +379,32 @@ class InferenceStackTests(unittest.TestCase):
                         "url": "https://192.0.2.20/admin/observability/grafana",
                         "verified_external_route": True,
                     },
-                    "prometheus": {"url": "", "verified_external_route": False},
-                    "loki": {"url": "", "verified_external_route": False},
+                    "prometheus": {
+                        "url": "https://192.0.2.20/admin/observability/grafana/explore",
+                        "verified_external_route": True,
+                    },
+                    "loki": {
+                        "url": "https://192.0.2.20/admin/observability/grafana/explore",
+                        "verified_external_route": True,
+                    },
+                    "otel": {
+                        "url": "https://192.0.2.20/admin/observability/grafana/dashboards",
+                        "verified_external_route": True,
+                    },
+                    "dcgm": {
+                        "url": "https://192.0.2.20/admin/observability/grafana/dashboards",
+                        "verified_external_route": True,
+                    },
+                    "kueue": {
+                        "url": "https://192.0.2.20/admin/observability/grafana/dashboards",
+                        "verified_external_route": True,
+                    },
+                    "keda": {
+                        "url": "https://192.0.2.20/admin/observability/grafana/dashboards",
+                        "verified_external_route": True,
+                    },
+                    "alertmanager": {"url": "", "verified_external_route": False},
+                    "tempo": {"url": "", "verified_external_route": False},
                 },
             )
 
@@ -839,39 +863,45 @@ class InferenceStackTests(unittest.TestCase):
             )
         )
 
-    def test_output_emits_only_the_two_non_secret_workload_endpoints(self) -> None:
-        endpoint_values = {
-            "mcp_endpoint_url": "https://192.0.2.12/mcp",
-            "admin_web_interface_url": "https://192.0.2.12/admin/",
+    def test_output_explicitly_emits_the_sensitive_access_bundle(self) -> None:
+        access_bundle = {
+            "schema": "fs2-serve.nebius.ai/access-bundle/v1",
+            "cluster": {"cluster_id": "mk8scluster-test"},
+            "endpoints": {
+                "mcp_url": "https://192.0.2.12/mcp",
+                "inference_base_url": "https://192.0.2.12/v1",
+            },
+            "credentials": {"mcp_inference_token": "test-only-token"},
+            "mcp_access": {"scopes": ["mcp.invoke", "inference.invoke"]},
         }
         output = io.StringIO()
         with (
             mock.patch.object(STACK, "state_ready", return_value=True),
             mock.patch.object(
                 STACK,
-                "workload_endpoint_outputs",
-                return_value=endpoint_values,
-            ) as workload_endpoint_outputs,
+                "workload_access_bundle",
+                return_value=access_bundle,
+            ) as workload_access_bundle,
             redirect_stdout(output),
         ):
             STACK.output_stack(arguments(), Path("/private/test-run"), contract())
 
-        self.assertEqual(json.loads(output.getvalue()), endpoint_values)
-        workload_endpoint_outputs.assert_called_once_with(
+        self.assertEqual(json.loads(output.getvalue()), access_bundle)
+        workload_access_bundle.assert_called_once_with(
             "terraform-test", Path("/private/test-run"), contract()
         )
 
     def test_output_rejects_an_incomplete_workloads_stage(self) -> None:
         with (
             mock.patch.object(STACK, "state_ready", return_value=False),
-            mock.patch.object(STACK, "workload_endpoint_outputs") as endpoint_outputs,
+            mock.patch.object(STACK, "workload_access_bundle") as access_bundle,
         ):
             with self.assertRaisesRegex(
                 STACK.DeploymentError,
                 "run inference-stack apply",
             ):
                 STACK.output_stack(arguments(), Path("/private/test-run"), contract())
-        endpoint_outputs.assert_not_called()
+        access_bundle.assert_not_called()
 
     def test_internal_proxy_command_uses_only_terraform_owned_runtime_contract(
         self,
