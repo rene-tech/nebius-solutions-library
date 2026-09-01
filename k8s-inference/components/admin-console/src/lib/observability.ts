@@ -4,7 +4,6 @@ const credentialLikeParameter = /^(?:access_?token|api_?key|authorization|bearer
 
 export function verifiedObservabilityLaunch(component: AdminObservabilityComponent): string | null {
   if (!component.launch.enabled || !component.launch.url) return null;
-  if (component.id === "prometheus" || component.id === "otel") return null;
   try {
     const parsed = new URL(component.launch.url);
     if (
@@ -15,7 +14,7 @@ export function verifiedObservabilityLaunch(component: AdminObservabilityCompone
       component.launch.url.length > 2048
     ) return null;
     if ([...parsed.searchParams.keys()].some((key) => credentialLikeParameter.test(key))) return null;
-    if (component.id === "loki" && !/(?:^|\/)grafana(?:\/|$)/i.test(parsed.pathname)) return null;
+    if (component.id !== "grafana" && !/(?:^|\/)grafana(?:\/|$)/i.test(parsed.pathname)) return null;
     return component.launch.url;
   } catch {
     return null;

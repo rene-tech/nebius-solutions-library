@@ -34,9 +34,9 @@ describe("Observability page", () => {
     renderPage();
 
     expect(await screen.findByRole("link", { name: /Open Grafana/ })).toHaveAttribute("href", "https://console.example.test/admin/observability/grafana/");
+    expect(screen.getByRole("link", { name: /Open Prometheus/ })).toHaveAttribute("href", "https://console.example.test/admin/observability/grafana/explore");
     expect(screen.getByRole("link", { name: /Open Loki/ })).toHaveAttribute("href", expect.stringContaining("/grafana/explore"));
-    expect(screen.queryByRole("link", { name: /Open Prometheus/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Open OpenTelemetry/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Open OpenTelemetry/ })).toHaveAttribute("href", "https://console.example.test/admin/observability/grafana/dashboards");
     expect(screen.getAllByText("Absent").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
     expect(screen.getAllByText("0 items/second")).toHaveLength(2);
@@ -47,16 +47,19 @@ describe("Observability page", () => {
     prepare();
     const adversarial = structuredClone(observabilityFixture);
     const prometheus = adversarial.components.find((item) => item.id === "prometheus")!;
-    prometheus.launch = { enabled: true, url: "https://prometheus.example.test/graph?api_key=leak", reason: null };
+    prometheus.launch = { enabled: true, url: "https://console.example.test/admin/observability/grafana/explore?api_key=leak", reason: null };
     const loki = adversarial.components.find((item) => item.id === "loki")!;
     loki.launch = { enabled: true, url: "https://loki.example.test/ready", reason: null };
+    const otel = adversarial.components.find((item) => item.id === "otel")!;
+    otel.launch = { enabled: true, url: "https://otel.example.test/metrics", reason: null };
     vi.spyOn(adminApi, "observability").mockResolvedValue(testEnvelope(adversarial));
     renderPage();
 
     await screen.findByRole("link", { name: /Open Grafana/ });
     expect(screen.queryByRole("link", { name: /Open Prometheus/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Open Loki/ })).not.toBeInTheDocument();
-    expect(screen.getAllByText(/Launch suppressed/)).toHaveLength(2);
+    expect(screen.queryByRole("link", { name: /Open OpenTelemetry/ })).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Launch suppressed/)).toHaveLength(3);
   });
 
   it("sends only server-published model and operation identifiers as context", async () => {
