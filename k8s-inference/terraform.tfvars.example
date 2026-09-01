@@ -93,13 +93,12 @@ deployment = {
   }
 
   edge = {
-    mode         = "internal-only"
-    source_cidrs = []
-    port_forward_ports = {
-      control_plane = 18080
-      admin_console = 18081
-      operator_proxy = 18082
-    }
+    # Public mode allocates a static Nebius IPv4 address and makes the MCP and
+    # admin outputs usable without a local proxy. Replace the contact address
+    # and restrict source_cidrs for your production access policy.
+    mode         = "public"
+    source_cidrs = ["0.0.0.0/0"]
+    acme_email   = "operator@example.com"
   }
 
   observability = {

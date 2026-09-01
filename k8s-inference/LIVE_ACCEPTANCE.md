@@ -51,9 +51,14 @@ likewise tfvars inputs.
 ## Endpoint contract
 
 Terraform exposes `mcp_endpoint_url` and `admin_web_interface_url` as workload
-outputs. These accepted deployments use `edge.mode = "internal-only"`, so the
-URLs are intentionally loopback endpoints. The operator starts their
-foreground transport with:
+outputs. The initial dual-cluster acceptance used `edge.mode = "internal-only"`.
+The retained H100 deployment was subsequently converged through the same
+Terraform interface to `edge.mode = "public"` on 2026-09-01; its outputs now
+contain the allocated public IP and require no foreground process or local port
+forward. The retained B300 acceptance remains internal-only.
+
+For an internal-only deployment, the operator starts its foreground transport
+with:
 
 ```bash
 ./inference-stack proxy --var-file /private/path/terraform.tfvars \
@@ -64,6 +69,15 @@ The proxy reads only named non-secret Terraform outputs, creates the two
 Kubernetes port-forwards described by the Terraform contract, and terminates
 them on shutdown. A remote tester must tunnel the operator-proxy port over SSH,
 or deploy `edge.mode = "public"`.
+
+The H100 public-edge acceptance created only the Terraform-owned IPv4 allocation
+and worker ingress rule before updating the existing control-plane Helm release
+in place. The Envoy Gateway and both HTTPRoutes reported accepted/programmed,
+the staging IP certificate became Ready, `/admin/` returned HTTP 200 over HTTPS,
+unauthenticated `/v1/models` returned HTTP 401, and an authenticated MCP stream
+returned HTTP 200. All previous loopback proxy and port-forward processes were
+then stopped. The exact address and credentials remain in the private run state,
+not in this public repository.
 
 ## Live evidence
 

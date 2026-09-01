@@ -107,7 +107,6 @@ NEBIUS_PROFILE=sandbox ./inference-stack plan --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack apply --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack status --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars
-NEBIUS_PROFILE=sandbox ./inference-stack proxy --var-file terraform.tfvars
 ```
 
 After a deployment, `apply`, `status`, and `output` print the two
@@ -128,9 +127,20 @@ are usable only while the run-scoped operator proxy from the workloads
 `port_forward_contract` is active. The wrapper reads only these two named
 outputs; it does not enumerate or print sensitive workload outputs.
 
-Each internal-only deployment may reserve its own loopback tuple in the same
-customer tfvars file. The defaults remain `18080`, `18081`, and `18082`; use a
-different tuple for another concurrently operated cluster:
+The shipped example selects a shared public endpoint, so no foreground process
+or client-side port forwarding is required:
+
+```hcl
+edge = {
+  mode         = "public"
+  source_cidrs = ["0.0.0.0/0"] # Restrict this for your production access policy.
+  acme_email   = "operator@example.com"
+}
+```
+
+For an explicitly internal-only development deployment, reserve a loopback
+tuple in the same customer tfvars file. The defaults remain `18080`, `18081`,
+and `18082`; use a different tuple for another concurrently operated cluster:
 
 ```hcl
 edge = {
@@ -152,13 +162,14 @@ non-conflicting local endpoint tuple.
 The current public-edge fixture uses the disposable staging IP-ACME issuer, so
 its URL is an acceptance endpoint rather than a browser-trusted production
 hostname. `internal-only` does not expose a public listener. Run
-`inference-stack proxy` after `apply` to start the two run-scoped Kubernetes
-port-forwards and the same-origin loopback proxy described by
-`port_forward_contract`. Keep that foreground process running while using the
-emitted MCP and admin links; stop it with `Ctrl-C`. Separate deployments can run
-concurrently when their `edge.port_forward_ports` tuples differ. These loopback
-URLs are reachable only from the machine running the proxy; use an SSH tunnel
-for remote testing or select `edge.mode = "public"` for a shared endpoint.
+`inference-stack proxy` only for `internal-only` mode after `apply` to start the
+two run-scoped Kubernetes port-forwards and the same-origin loopback proxy
+described by `port_forward_contract`. Keep that foreground process running
+while using the emitted MCP and admin links; stop it with `Ctrl-C`. Separate
+deployments can run concurrently when their `edge.port_forward_ports` tuples
+differ. These loopback URLs are reachable only from the machine running the
+proxy; use an SSH tunnel for remote testing or select `edge.mode = "public"` for
+a shared endpoint.
 
 `validate` creates no cloud resources. On a new run, `plan` stops after the
 infrastructure plan because foundation providers cannot safely plan until the
