@@ -101,12 +101,14 @@ output "academic_assets" {
       claim         = local.academic_assets_contract.runtime_claim.name
       storage_gib   = local.academic_assets_contract.runtime_claim.storage_gib
       storage_class = local.academic_assets_contract.runtime_claim.storage_class
+      lifecycle     = local.academic_assets_contract.runtime_claim.lifecycle
       mount_root    = local.academic_assets_contract.delivery.mount_root
     }
     retained_quarantine_volume = {
       enabled   = local.academic_assets_contract.legacy_quarantine_claim.enabled
       namespace = local.academic_assets_contract.legacy_quarantine_claim.namespace
       claim     = local.academic_assets_contract.legacy_quarantine_claim.name
+      retained  = local.academic_assets_contract.legacy_quarantine_claim.retain
       mountable = false
     }
     embeds_licensed_bytes     = local.academic_assets_contract.delivery.embed_licensed_bytes

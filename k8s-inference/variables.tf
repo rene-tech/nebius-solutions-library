@@ -1089,9 +1089,15 @@ variable "academic_assets" {
     namespace           = optional(string, "fs2-academic-poc")
     runtime_pvc_name    = optional(string, "academic-assets-runtime-rwx")
     runtime_storage_gib = optional(number, 128)
-    storage_class       = optional(string, "csi-mounted-fs-path-sc")
-    access_mode         = optional(string, "ReadWriteMany")
-    mount_root          = optional(string, "/opt/fs2/academic")
+
+    # retained    the claim holds licensed bytes that must survive; Terraform refuses
+    #             to destroy or replace it.
+    # disposable  the claim belongs to a throwaway acceptance environment and must
+    #             tear down cleanly with the rest of it.
+    runtime_claim_lifecycle = optional(string, "retained")
+    storage_class           = optional(string, "csi-mounted-fs-path-sc")
+    access_mode             = optional(string, "ReadWriteMany")
+    mount_root              = optional(string, "/opt/fs2/academic")
 
     # Licensed bytes are staged under this shared non-root group and read through a
     # supplemental group, so a runtime image running as its own uid can read them
@@ -1154,6 +1160,11 @@ variable "academic_assets" {
   validation {
     condition     = var.academic_assets.runtime_storage_gib >= 16
     error_message = "The academic runtime volume needs at least 16 GiB for the pinned parameters, wheel and installed tree."
+  }
+
+  validation {
+    condition     = contains(["retained", "disposable"], var.academic_assets.runtime_claim_lifecycle)
+    error_message = "academic_assets.runtime_claim_lifecycle must be \"retained\" or \"disposable\"."
   }
 
   validation {

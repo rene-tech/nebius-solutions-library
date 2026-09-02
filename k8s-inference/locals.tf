@@ -298,6 +298,7 @@ locals {
       storage_gib   = var.academic_assets.runtime_storage_gib
       storage_class = var.academic_assets.storage_class
       access_mode   = var.academic_assets.access_mode
+      lifecycle     = var.academic_assets.runtime_claim_lifecycle
     }
     legacy_quarantine_claim = {
       enabled     = var.academic_assets.legacy_quarantine.enabled

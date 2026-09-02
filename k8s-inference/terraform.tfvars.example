@@ -332,6 +332,12 @@ academic_assets = {
   namespace           = "fs2-academic-poc"
   runtime_pvc_name    = "academic-assets-runtime-rwx"
   runtime_storage_gib = 128
+
+  # "retained" for a long-lived cluster holding verified licensed bytes: Terraform
+  # refuses to destroy or replace the claim. Use "disposable" for a throwaway
+  # acceptance cluster so it tears down cleanly, and set legacy_quarantine.retain
+  # to false there as well.
+  runtime_claim_lifecycle = "retained"
   storage_class       = "csi-mounted-fs-path-sc"
   mount_root          = "/opt/fs2/academic"
 
@@ -342,6 +348,7 @@ academic_assets = {
   deny_egress_during_offline_validation = true
 
   # Retained, never runtime-mountable. Holds the rejected PyRosetta 2025.24 archive.
+  # Set retain = false only where the copy is genuinely disposable.
   legacy_quarantine = {
     enabled  = true
     retain   = true

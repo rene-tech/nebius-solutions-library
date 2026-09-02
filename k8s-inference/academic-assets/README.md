@@ -108,15 +108,30 @@ existing generations report `InvalidContract` until the evidence is replayed wit
 
 ## Infrastructure
 
-Terraform owns the namespace, the tenant-private claim, the retained quarantine
-claim and the deny-egress policy. **A fresh deployment needs no manual step**:
-`terraform apply` creates everything from the `academic_assets` block in tfvars,
-which inherits project and region from `deployment.target`.
+Terraform owns the namespace, the tenant-private claim, the quarantine claim and
+the deny-egress policy, implemented in `modules/academic-assets`. **A fresh
+deployment needs no manual step**: `terraform apply` creates everything from the
+`academic_assets` block in tfvars, which inherits project and region from
+`deployment.target`.
+
+Each claim declares its own lifecycle, because Terraform requires `prevent_destroy`
+to be a constant:
+
+| Lifecycle | Use | Behaviour |
+|---|---|---|
+| `retained` | Long-lived cluster holding verified licensed bytes | Terraform refuses to destroy or replace the claim |
+| `disposable` | Throwaway acceptance environment | Tears down cleanly with the rest of the environment |
+
+Set `runtime_claim_lifecycle`, and `legacy_quarantine.retain` for the quarantine
+copy. The two lifecycles are separate, mutually exclusive resources; outputs
+coalesce whichever is active, so consumers never need to know which was chosen.
 
 `scripts/adopt-live-resources.sh` is only for a claim that already holds verified
-bytes, where recreation would provision an empty volume and discard them. It is
-idempotent: addresses already in state are skipped, and objects that are not live
-are left for `apply` to create.
+bytes, where recreation would provision an empty volume and discard them. It binds
+to an explicit `TF_DATA_DIR`, initialises the backend before reading state, routes
+each flag to the subcommand that accepts it, and addresses the resource matching
+the selected lifecycle. It is idempotent: addresses already in state are skipped,
+and objects that are not live are left for `apply` to create.
 
 ## Portability
 
@@ -141,3 +156,10 @@ Runs contract and schema validation, the unit and executable script suites, the
 anti-drift check that pins each stage validator to its published JSON Schema, and
 a confidentiality scan of the working tree for licensed artifacts, credentials
 and signed URLs.
+
+The Terraform claim-lifecycle contract has its own provider-mocked plan, state and
+destroy tests:
+
+```bash
+terraform -chdir=../modules/academic-assets test
+```

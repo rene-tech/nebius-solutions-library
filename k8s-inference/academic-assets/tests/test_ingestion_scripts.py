@@ -599,6 +599,42 @@ class AdoptionBackendTests(unittest.TestCase):
         for call in calls:
             self.assertIn(f"TF_DATA_DIR={self.data_dir}", call)
 
+    def test_import_addresses_the_selected_lifecycle_resource(self) -> None:
+        """Retained and disposable claims are separate resources; import must name the live one."""
+
+        for lifecycle in ("retained", "disposable"):
+            with self.subTest(lifecycle=lifecycle):
+                self.calls.unlink(missing_ok=True)
+                self._write_stub("terraform", exit_for_state_show=1)
+                result = self.run_adopt(
+                    "--data-dir", str(self.data_dir),
+                    "--runtime-lifecycle", lifecycle,
+                    "--legacy-lifecycle", lifecycle,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                # printf %q escapes the index brackets; compare on the unescaped text.
+                printed = result.stdout.replace("\\", "")
+                self.assertIn(
+                    f"module.academic_assets.kubernetes_persistent_volume_claim_v1."
+                    f"academic_assets_runtime_{lifecycle}[0]",
+                    printed,
+                )
+                other = "disposable" if lifecycle == "retained" else "retained"
+                self.assertNotIn(f"academic_assets_runtime_{other}[0]", printed)
+
+    def test_module_prefix_can_be_dropped_when_targeting_the_module_directly(self) -> None:
+        self._write_stub("terraform", exit_for_state_show=1)
+        result = self.run_adopt("--data-dir", str(self.data_dir), "--module-prefix", "")
+        self.assertEqual(0, result.returncode, result.stderr)
+        printed = result.stdout.replace("\\", "")
+        self.assertIn("kubernetes_persistent_volume_claim_v1.academic_assets_runtime_retained[0]", printed)
+        self.assertNotIn("module.academic_assets.", printed)
+
+    def test_an_unknown_lifecycle_is_refused(self) -> None:
+        result = self.run_adopt("--data-dir", str(self.data_dir), "--runtime-lifecycle", "permanent")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("retained or disposable", result.stderr)
+
     def test_backend_config_without_an_explicit_data_dir_is_refused(self) -> None:
         result = self.run_adopt("--backend-config", f"path={self.state}")
         self.assertNotEqual(0, result.returncode)

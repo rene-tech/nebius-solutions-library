@@ -27,6 +27,11 @@ Usage: adopt-live-resources.sh [options]
   --var-file FILE         Terraform var file, repeatable (passed to import only)
   --backend-config VALUE  backend configuration, repeatable (passed to init only)
   --state FILE            explicit state file (passed to state and import)
+  --module-prefix PREFIX  module address holding the resources (default module.academic_assets;
+                          pass "" when targeting the module directly)
+  --runtime-lifecycle L   retained (default) or disposable; selects which claim resource
+                          the import addresses, matching the tfvars contract
+  --legacy-lifecycle L    retained (default) or disposable for the quarantine claim
   --no-init               skip terraform init (only when the caller already ran it)
   --kubeconfig FILE       kubeconfig used for the liveness probe
   --context NAME          kube context used for the liveness probe
@@ -46,6 +51,10 @@ chdir="${here}/stages/workloads"
 data_dir="${TF_DATA_DIR:-}"
 kubeconfig="${FS2_ACADEMIC_KUBECONFIG:-}"
 context="${FS2_ACADEMIC_KUBE_CONTEXT:-}"
+module_prefix="module.academic_assets"
+runtime_lifecycle="retained"
+legacy_lifecycle="retained"
+module_prefix_set=false
 # Each Terraform subcommand accepts a different set of flags. Keeping them apart
 # is what stops an invalid argument from aborting adoption midway:
 #   init   -backend-config
@@ -63,6 +72,9 @@ while [ $# -gt 0 ]; do
     --var-file) import_args+=("-var-file=$2"); shift 2 ;;
     --backend-config) backend_args+=("-backend-config=$2"); shift 2 ;;
     --state) state_args+=("-state=$2"); import_args+=("-state=$2"); shift 2 ;;
+    --module-prefix) module_prefix="$2"; module_prefix_set=true; shift 2 ;;
+    --runtime-lifecycle) runtime_lifecycle="$2"; shift 2 ;;
+    --legacy-lifecycle) legacy_lifecycle="$2"; shift 2 ;;
     --no-init) run_init=false; shift ;;
     --kubeconfig) kubeconfig="$2"; shift 2 ;;
     --context) context="$2"; shift 2 ;;
@@ -89,6 +101,29 @@ else
   echo "skipping init at caller's request"
 fi
 
+for selected in "${runtime_lifecycle}" "${legacy_lifecycle}"; do
+  case "${selected}" in
+    retained | disposable) ;;
+    *)
+      echo "lifecycle must be retained or disposable, got: ${selected}" >&2
+      exit 2
+      ;;
+  esac
+done
+
+# Resources are mutually exclusive by lifecycle, so the import has to name the one
+# that actually exists in configuration.
+runtime_resource="kubernetes_persistent_volume_claim_v1.academic_assets_runtime_${runtime_lifecycle}[0]"
+legacy_resource="kubernetes_persistent_volume_claim_v1.academic_assets_legacy_${legacy_lifecycle}[0]"
+namespace_resource="kubernetes_namespace_v1.academic_assets[0]"
+policy_resource="kubernetes_network_policy_v1.academic_offline_validation[0]"
+
+if [ "${module_prefix_set}" = true ] && [ -z "${module_prefix}" ]; then
+  prefix=""
+else
+  prefix="${module_prefix}."
+fi
+
 namespace="${ACADEMIC_NAMESPACE:-fs2-academic-poc}"
 runtime_pvc="${ACADEMIC_RUNTIME_PVC:-academic-assets-runtime-rwx}"
 legacy_namespace="${ACADEMIC_LEGACY_NAMESPACE:-fs2-models}"
@@ -100,10 +135,10 @@ if [ -n "${context}" ]; then kubectl_args+=(--context "${context}"); fi
 
 # address | live kind | live namespace | live name | terraform import id
 targets=(
-  "kubernetes_namespace_v1.academic_assets[0]|namespace||${namespace}|${namespace}"
-  "kubernetes_persistent_volume_claim_v1.academic_assets_runtime[0]|pvc|${namespace}|${runtime_pvc}|${namespace}/${runtime_pvc}"
-  "kubernetes_persistent_volume_claim_v1.academic_assets_legacy_quarantine[0]|pvc|${legacy_namespace}|${legacy_pvc}|${legacy_namespace}/${legacy_pvc}"
-  "kubernetes_network_policy_v1.academic_offline_validation[0]|networkpolicy|${namespace}|academic-offline-validation-deny-egress|${namespace}/academic-offline-validation-deny-egress"
+  "${prefix}${namespace_resource}|namespace||${namespace}|${namespace}"
+  "${prefix}${runtime_resource}|pvc|${namespace}|${runtime_pvc}|${namespace}/${runtime_pvc}"
+  "${prefix}${legacy_resource}|pvc|${legacy_namespace}|${legacy_pvc}|${legacy_namespace}/${legacy_pvc}"
+  "${prefix}${policy_resource}|networkpolicy|${namespace}|academic-offline-validation-deny-egress|${namespace}/academic-offline-validation-deny-egress"
 )
 
 already=0

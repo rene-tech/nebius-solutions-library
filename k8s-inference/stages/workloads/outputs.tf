@@ -335,41 +335,10 @@ output "sensitive_state_notice" {
 
 output "academic_assets" {
   description = "Tenant-private academic asset delivery: identities a runtime needs to mount the exact licensed assets."
-  value = {
-    enabled   = var.academic_assets.enabled
-    namespace = one(kubernetes_namespace_v1.academic_assets[*].metadata[0].name)
-    runtime_claim = {
-      name       = one(kubernetes_persistent_volume_claim_v1.academic_assets_runtime[*].metadata[0].name)
-      uid        = one(kubernetes_persistent_volume_claim_v1.academic_assets_runtime[*].metadata[0].uid)
-      mount_root = var.academic_assets.delivery.mount_root
-      read_only  = true
-    }
-    legacy_quarantine_claim = {
-      enabled   = var.academic_assets.legacy_quarantine_claim.enabled
-      namespace = var.academic_assets.legacy_quarantine_claim.namespace
-      name      = one(kubernetes_persistent_volume_claim_v1.academic_assets_legacy_quarantine[*].metadata[0].name)
-      retained  = var.academic_assets.legacy_quarantine_claim.retain
-      mountable = false
-    }
-    offline_validation_egress_denied = length(kubernetes_network_policy_v1.academic_offline_validation) > 0
+  value       = module.academic_assets.academic_assets
+}
 
-    # A consuming pod reads licensed bytes by joining the asset group; it never needs
-    # to run as the staging uid and the bytes are never world-readable.
-    consumer_pod_contract = {
-      supplemental_groups = [var.academic_assets.delivery.asset_gid]
-      mount_path          = var.academic_assets.delivery.mount_root
-      read_only           = true
-      world_readable      = var.academic_assets.delivery.world_readable
-    }
-    embeds_licensed_bytes = var.academic_assets.delivery.embed_licensed_bytes
-    tenant_id             = var.academic_assets.tenant_id
-    institution_id        = var.academic_assets.institution_id
-    asset_mounts = {
-      for key, asset in var.academic_assets.assets : key => {
-        model_id   = asset.model_id
-        mount_path = "${var.academic_assets.delivery.mount_root}/${key}"
-        source     = asset.relative_path
-      }
-    }
-  }
+output "academic_assets_managed_addresses" {
+  description = "Terraform addresses of the selected academic claims, for adopting already-populated storage."
+  value       = module.academic_assets.managed_addresses
 }
