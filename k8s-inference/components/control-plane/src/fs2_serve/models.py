@@ -41,6 +41,7 @@ class Scope(StrEnum):
     MCP_INVOKE = "mcp.invoke"
     OPERATIONS_READ = "operations.read"
     OPERATIONS_RESULT = "operations.result"
+    ARTIFACTS_WRITE = "artifacts.write"
     OPERATIONS_CANCEL = "operations.cancel"
     OPERATIONS_ACKNOWLEDGE = "operations.acknowledge"
     TOKENS_MANAGE = "tokens.manage"
