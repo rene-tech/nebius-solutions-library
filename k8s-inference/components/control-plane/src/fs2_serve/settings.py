@@ -178,6 +178,11 @@ class Settings(BaseSettings):
     max_request_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
     max_response_bytes: int = Field(default=128 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
     payload_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
+    artifact_store_endpoint: str = "https://storage.eu-north1.nebius.cloud"
+    artifact_store_bucket: str = "fs2-scientific-artifacts"
+    artifact_store_region: str = "eu-north1"
+    artifact_store_access_key: str = ""
+    artifact_store_secret_key: str = ""
     operation_retention_seconds: int = Field(default=604800, ge=3600, le=2592000)
     pat_retention_seconds: int = Field(default=604800, ge=3600, le=2592000)
     audit_retention_seconds: int = Field(default=2592000, ge=3600, le=31536000)

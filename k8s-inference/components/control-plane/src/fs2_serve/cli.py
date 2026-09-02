@@ -62,6 +62,12 @@ from .postgresql_release import render_postgresql_release_contract
 from .registry import Registry
 from .route_revalidation import RouteRevalidator
 from .runtime import RuntimeClient
+from .scientific_artifacts import (
+    PostgresArtifactRepository,
+    S3CompatibleArtifactHandleSigner,
+    S3CompatibleArtifactObjectStore,
+    ScientificArtifactService,
+)
 from .settings import Settings
 from .store import ConflictError
 from .telemetry import Metrics, configure_tracing
@@ -220,6 +226,21 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         secret_root=settings.federation_secret_dir,
     )
     store = await _store(settings)
+    artifact_store = S3CompatibleArtifactObjectStore(
+        endpoint=settings.artifact_store_endpoint, bucket=settings.artifact_store_bucket,
+        region=settings.artifact_store_region, access_key=settings.artifact_store_access_key,
+        secret_key=settings.artifact_store_secret_key,
+    )
+    artifact_signer = S3CompatibleArtifactHandleSigner(
+        endpoint=settings.artifact_store_endpoint, bucket=settings.artifact_store_bucket,
+        region=settings.artifact_store_region, access_key=settings.artifact_store_access_key,
+        secret_key=settings.artifact_store_secret_key,
+    )
+    artifact_service = ScientificArtifactService(
+        repository=PostgresArtifactRepository(store.pool), object_store=artifact_store,
+        signer=artifact_signer,
+        allowed_media_types={"application/octet-stream", "application/json", "chemical/x-pdb", "text/plain"},
+    )
     peppers = PepperRing.from_file(settings.token_pepper_file)
     tokens = TokenService(store, peppers)
     model_deployment_preview: ModelDeploymentPreviewService | None = None
@@ -358,6 +379,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         model_deployment_read=model_deployment_read,
         model_deployment_mutation=model_deployment_mutation,
         model_deployment_bridge=model_deployment_bridge,
+        artifact_service=artifact_service,
     )
 
 
