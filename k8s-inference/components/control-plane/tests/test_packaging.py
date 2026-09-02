@@ -254,7 +254,7 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
         "88239e15fef20d10c515611d6c9336364a06d9752c475401de56af890c74ec4f"
     )
     assert hashlib.sha256((migration_dir / "0015_scientific_batch_controller.sql").read_bytes()).hexdigest() == (
-        "21dc337408082d9b5d8f1584b66c2cb2fa8186d6c48716d09d340b1814d1bc5d"
+        "459ee647dfa4857ffffad7a4384c25395803becc441a9dda5e84ac8d099ab444"
     )
     dockerfile = (CONTROL_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert dockerfile.count("WORKDIR /workspace/k8s-inference/components/control-plane") == 2
@@ -365,7 +365,8 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
         timeout=60,
     )
     assert (
-        "{serve,maintenance,migrate,wait-schema,bootstrap-access,validate,postgresql-release-contract,model-controller}"
+        "{serve,maintenance,migrate,wait-schema,bootstrap-access,validate,postgresql-release-contract,"
+        "model-controller,scientific-materialize,scientific-collect,scientific-prepare-workspace}"
         in completed.stdout
     )
     emitted_contract = subprocess.run(  # noqa: S603 - clean-wheel CLI and fixed command.

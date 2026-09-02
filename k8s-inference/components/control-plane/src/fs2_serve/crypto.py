@@ -137,7 +137,4 @@ class KeyedHasher:
         or logging the caller-provided idempotency key.
         """
 
-        return tuple(
-            (key_id, self.digest_for(key_id, value, context=context))
-            for key_id in sorted(self._keys)
-        )
+        return tuple((key_id, self.digest_for(key_id, value, context=context)) for key_id in sorted(self._keys))

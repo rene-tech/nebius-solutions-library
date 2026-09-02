@@ -826,8 +826,7 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
         "verbs": ["get", "list", "watch"],
     } in model_role["rules"]
     assert not any(
-        document["kind"] in {"ClusterRole", "ClusterRoleBinding"}
-        and "model-controller" in document["metadata"]["name"]
+        document["kind"] in {"ClusterRole", "ClusterRoleBinding"} and "model-controller" in document["metadata"]["name"]
         for document in documents
     )
     leader_role = named[("Role", "fs2-serve-control-plane-model-controller-leader")]
@@ -842,10 +841,7 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert next(rule for rule in egress if rule["ports"] == [{"port": 443, "protocol": "TCP"}])["to"] == [
         {"ipBlock": {"cidr": "10.0.0.1/32"}}
     ]
-    assert any(
-        rule["ports"] == [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}]
-        for rule in egress
-    )
+    assert any(rule["ports"] == [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}] for rule in egress)
     assert any(rule["ports"] == [{"port": 9090, "protocol": "TCP"}] for rule in egress)
 
 
@@ -859,8 +855,14 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
         "--set",
         "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
+        "--set",
+        "artifactService.enabled=true",
+        "--set",
+        "artifactService.credentialsSecretName=scientific-artifact-credentials",
         "--set-string",
         "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+        "--set-string",
+        "networkPolicy.artifactStoreCidrs[0]=192.0.2.20/32",
     )
     named = {(document["kind"], document["metadata"]["name"]): document for document in documents}
     pod = gateway_deployment(documents)["spec"]["template"]["spec"]
@@ -869,13 +871,18 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     assert pod["automountServiceAccountToken"] is False
     assert environment["FS2_SCIENTIFIC_BATCH_ENABLED"]["value"] == "true"
     assert environment["FS2_SCIENTIFIC_BATCH_WRITES_ENABLED"]["value"] == "true"
-    assert environment["FS2_SCIENTIFIC_BATCH_CONTROLLER_ID"]["valueFrom"]["fieldRef"] == {
-        "fieldPath": "metadata.uid"
-    }
-    assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_FILE"]["value"].endswith(
-        "/kueue-scheduling.json"
-    )
+    assert environment["FS2_SCIENTIFIC_BATCH_CONTROLLER_ID"]["valueFrom"]["fieldRef"] == {"fieldPath": "metadata.uid"}
+    assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_FILE"]["value"].endswith("/kueue-scheduling.json")
     assert environment["FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE"]["value"].endswith("/execution-map.json")
+    assert environment["FS2_ARTIFACT_SERVICE_ENABLED"]["value"] == "true"
+    assert environment["FS2_ARTIFACT_STORE_ACCESS_KEY"]["valueFrom"]["secretKeyRef"] == {
+        "name": "scientific-artifact-credentials",
+        "key": "access-key",
+    }
+    assert environment["FS2_ARTIFACT_STORE_SECRET_KEY"]["valueFrom"]["secretKeyRef"] == {
+        "name": "scientific-artifact-credentials",
+        "key": "secret-key",
+    }
     volumes = {item["name"]: item for item in pod["volumes"]}
     token = volumes["scientific-batch-kubernetes"]["projected"]["sources"]
     assert token[0]["serviceAccountToken"] == {
@@ -897,17 +904,27 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
             "verbs": ["get", "create", "delete"],
         },
         {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]},
+        {"apiGroups": ["kueue.x-k8s.io"], "resources": ["workloads"], "verbs": ["get", "list"]},
     ]
     assert binding["subjects"] == [
         {"kind": "ServiceAccount", "name": "fs2-serve-control-plane-runtime", "namespace": "fs2-system"}
     ]
-    assert not any(document["kind"] in {"ClusterRole", "ClusterRoleBinding"} for document in documents)
-    api_egress = next(
+    flavor_role = named[("ClusterRole", "fs2-serve-control-plane-scientific-batch-flavors")]
+    assert flavor_role["rules"] == [
+        {"apiGroups": ["kueue.x-k8s.io"], "resources": ["resourceflavors"], "verbs": ["get"]}
+    ]
+    assert named[("ClusterRoleBinding", "fs2-serve-control-plane-scientific-batch-flavors")]["subjects"] == [
+        {"kind": "ServiceAccount", "name": "fs2-serve-control-plane-runtime", "namespace": "fs2-system"}
+    ]
+    tls_egress = [
         rule
         for rule in named[("NetworkPolicy", "fs2-serve-control-plane-runtime")]["spec"]["egress"]
         if rule["ports"] == [{"port": 443, "protocol": "TCP"}]
-    )
-    assert api_egress["to"] == [{"ipBlock": {"cidr": "192.0.2.10/32"}}]
+    ]
+    assert {rule["to"][0]["ipBlock"]["cidr"] for rule in tls_egress} >= {
+        "192.0.2.10/32",
+        "192.0.2.20/32",
+    }
 
 
 @pytest.mark.parametrize(
@@ -921,9 +938,16 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
                 "scientificBatch.enabled=true",
                 "--set",
                 "scientificBatch.writesEnabled=true",
+                "--set",
+                "artifactService.enabled=true",
+                "--set",
+                "artifactService.credentialsSecretName=artifact-credentials",
+                "--set-string",
+                "networkPolicy.artifactStoreCidrs[0]=192.0.2.20/32",
             ),
             "immutable scheduling-contract and execution-map ConfigMaps",
         ),
+        (("--set", "artifactService.enabled=true"), "existing credentials Secret"),
     ],
 )
 def test_scientific_batch_consumer_rejects_partial_enablement(extra: tuple[str, ...], expected: str) -> None:
@@ -2696,8 +2720,7 @@ def test_observability_adapter_accepts_installed_tempo_from_workloads_values_mer
     config_map = next(
         item
         for item in documents
-        if item["kind"] == "ConfigMap"
-        and item["metadata"]["name"] == "fs2-serve-control-plane-admin-observability"
+        if item["kind"] == "ConfigMap" and item["metadata"]["name"] == "fs2-serve-control-plane-admin-observability"
     )
     config = json.loads(config_map["data"]["config.json"])
     assert config["installed"] == {"alertmanager": False, "tempo": True}

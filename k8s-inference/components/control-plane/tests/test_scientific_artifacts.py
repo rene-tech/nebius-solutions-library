@@ -100,9 +100,10 @@ class SecretHandleSigner:
         storage_key: str,
         media_type: str,
         compression: ArtifactCompression | None,
+        expected_digest: str,
         expires_at: datetime,
     ) -> EphemeralHandle:
-        del compression
+        del compression, expected_digest
         self.signed.append(("PUT", storage_key))
         return EphemeralHandle(
             method="PUT",
@@ -129,9 +130,10 @@ class LeakyBoundarySigner(SecretHandleSigner):
         storage_key: str,
         media_type: str,
         compression: ArtifactCompression | None,
+        expected_digest: str,
         expires_at: datetime,
     ) -> EphemeralHandle:
-        del storage_key, media_type, compression, expires_at
+        del storage_key, media_type, compression, expected_digest, expires_at
         raise RuntimeError("SIGNER_CREDENTIAL_MUST_BE_SUPPRESSED")
 
     async def issue_download(self, *, storage_key: str, expires_at: datetime) -> EphemeralHandle:

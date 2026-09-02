@@ -8,7 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from pydantic import Field
 
-from .models import Principal, StrictModel
+from .models import Principal, Scope, StrictModel
 from .scientific_artifacts import (
     ArtifactAccess,
     ArtifactCompression,
@@ -33,7 +33,7 @@ CompressionInput = ArtifactCompression | Literal["none"]
 
 
 class ArtifactUploadBeginRequest(StrictModel):
-    """Public request fields; tenant identity is taken from the bearer principal."""
+    """Internal controller fields; tenant identity comes from the bearer principal."""
 
     upload_id: UUID
     operation_id: UUID
@@ -126,6 +126,7 @@ def scientific_artifact_router(
         request: ArtifactUploadBeginRequest,
         principal: Annotated[Principal, Depends(principal_dependency)],
     ) -> ArtifactUploadBeginResponse:
+        principal.require(Scope.INFERENCE_INVOKE)
         try:
             result: BeginUploadResult = await service.begin_upload(request.to_internal(principal))
         except ArtifactServiceError as error:
@@ -145,6 +146,7 @@ def scientific_artifact_router(
         upload_id: Annotated[UUID, Path()],
         principal: Annotated[Principal, Depends(principal_dependency)],
     ) -> ArtifactRefProjection:
+        principal.require(Scope.INFERENCE_INVOKE)
         try:
             artifact: ArtifactRecord = await service.finalize_upload(
                 FinalizeArtifactUpload(
@@ -167,6 +169,7 @@ def scientific_artifact_router(
         artifact_id: Annotated[UUID, Path()],
         principal: Annotated[Principal, Depends(principal_dependency)],
     ) -> ArtifactDownloadResponse:
+        principal.require(Scope.INFERENCE_INVOKE)
         try:
             result = await service.download(artifact_id, tenant_id=principal.tenant_id)
         except ArtifactServiceError as error:

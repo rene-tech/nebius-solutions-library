@@ -1,5 +1,6 @@
 """Deterministic staged scientific-batch controller contracts."""
 
+from .adapters import compile_adapter_run
 from .catalog_adapter import (
     CatalogProfileAdapterError,
     ScientificStageExpansion,
@@ -7,7 +8,10 @@ from .catalog_adapter import (
 )
 from .controller import ScientificBatchController
 from .models import (
+    AdapterExecutionPlan,
+    ArtifactAccessContext,
     ArtifactCommit,
+    ArtifactMaterialization,
     AttemptOutcome,
     BatchClaim,
     BatchEvent,
@@ -18,17 +22,25 @@ from .models import (
     ExecutionMode,
     FailureKind,
     LifecyclePhase,
+    MaterializationMode,
     PreemptionMode,
     ResourceClass,
+    RuntimeArtifactFile,
+    RuntimeArtifactLocalization,
+    SchedulingAdmission,
     SchedulingSnapshot,
     ScientificAttemptState,
     ScientificBatchPlan,
     ScientificBatchState,
+    ScientificInputAdmission,
+    ScientificInputArtifact,
     ScientificStagePlan,
     ScientificStageState,
     ServiceClass,
+    StageInvocation,
     StageSchedulingDecision,
     StageStatus,
+    VerifiedInputManifest,
     WorkloadKind,
     WorkloadObservation,
     WorkloadRef,
@@ -43,7 +55,10 @@ from .protocols import (
 )
 
 __all__ = [
+    "AdapterExecutionPlan",
+    "ArtifactAccessContext",
     "ArtifactCommit",
+    "ArtifactMaterialization",
     "AttemptOutcome",
     "BatchClaim",
     "BatchEvent",
@@ -59,12 +74,18 @@ __all__ = [
     "ExecutionMode",
     "FailureKind",
     "LifecyclePhase",
+    "MaterializationMode",
     "PreemptionMode",
     "ResourceClass",
+    "RuntimeArtifactFile",
+    "RuntimeArtifactLocalization",
     "SchedulingSnapshot",
+    "SchedulingAdmission",
     "ScientificBatchCluster",
     "ScientificBatchController",
     "ScientificBatchRepository",
+    "ScientificInputAdmission",
+    "ScientificInputArtifact",
     "ScientificAttemptState",
     "ScientificStageExpansion",
     "ScientificStageState",
@@ -72,10 +93,13 @@ __all__ = [
     "ScientificStagePlan",
     "ServiceClass",
     "StageStatus",
+    "StageInvocation",
+    "VerifiedInputManifest",
     "WorkloadKind",
     "WorkloadObservation",
     "WorkloadRef",
     "WorkloadResource",
     "WorkloadState",
     "scientific_plan_from_catalog_profile",
+    "compile_adapter_run",
 ]

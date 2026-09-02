@@ -2819,7 +2819,23 @@ async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_g
         ),
     )
     batches = PostgresScientificBatchRepository(postgres_store.pool)
+    input_artifact_id = uuid4()
+    input_digest = "sha256:" + "1" * 64
     async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            """
+            INSERT INTO fs2_scientific_artifacts(
+                id,operation_id,tenant_id,attempt,direction,digest,size_bytes,
+                media_type,storage_key,access_profile
+            ) VALUES($1,$2,$3,0,'input',$4,1,'application/json',$5,'public')
+            """,
+            input_artifact_id,
+            operation.id,
+            principal.tenant_id,
+            input_digest,
+            f"scientific/v1/tenants/{principal.tenant_id}/operations/{operation.id}/attempts/0/"
+            f"input/sha256/{input_digest.removeprefix('sha256:')}",
+        )
         assert await connection.fetchval(
             "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_batches','SELECT,INSERT')"
         )
@@ -2842,6 +2858,8 @@ async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_g
         operation_id=operation.id,
         tenant_id=principal.tenant_id,
         model_id="qwen3-8b",
+        variant_id="qwen3-8b-h100",
+        input_artifact_id=input_artifact_id,
         plan=plan,
         scheduling=scheduling,
     )
@@ -2849,6 +2867,8 @@ async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_g
         operation_id=operation.id,
         tenant_id=principal.tenant_id,
         model_id="qwen3-8b",
+        variant_id="qwen3-8b-h100",
+        input_artifact_id=input_artifact_id,
         plan=plan,
         scheduling=scheduling,
     ) == admitted

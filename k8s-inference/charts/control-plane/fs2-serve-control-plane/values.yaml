@@ -111,6 +111,17 @@ scientificBatch:
   apiTimeoutSeconds: "5"
   tokenExpirationSeconds: 600
 
+# Canonical artifact service used by scientific controller jobs. Credentials
+# are read only from an existing Secret; signed locations are never persisted.
+artifactService:
+  enabled: false
+  endpoint: https://storage.eu-north1.nebius.cloud
+  bucket: fs2-scientific-artifacts
+  region: eu-north1
+  credentialsSecretName: ""
+  accessKeyKey: access-key
+  secretKeyKey: secret-key
+
 # Idempotent initialization of the Terraform-owned client PAT. The raw token
 # remains in a Kubernetes Secret and Terraform state; Helm receives only the
 # Secret reference plus its least-privilege policy.
@@ -273,8 +284,8 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 6b7e92782d7d1b3b299c7b560342758be49366c4cc7344149aef2a3e407f05d8
-    migrationSetSha256: 4a119d6e14e4e124a318257628987f600230c7e834753ef402173dda1925ed95
+    contractPayloadSha256: 8c81e640cb0bf30df242363518d307af68a5a19ad20b4cb2eac8d7b7b9081b99
+    migrationSetSha256: cecfcd67151405ed5acf2b87c558051ff842a8a9a3a84f338e92142f49a7efc9
     migrationCount: 15
     firstMigrationVersion: 0001_initial.sql
     lastMigrationVersion: 0015_scientific_batch_controller.sql
@@ -379,6 +390,9 @@ networkPolicy:
   # Exact /32 or /128 private Kubernetes API endpoint addresses. Empty means
   # the controller has no API-server egress and cannot mutate workloads.
   kubernetesApiCidrs: []
+  # Exact object-store endpoint addresses. Empty keeps artifact handles and
+  # metadata inspection unavailable even when credentials exist.
+  artifactStoreCidrs: []
 
 serviceMonitor:
   enabled: false
