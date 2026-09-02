@@ -132,6 +132,69 @@ variable "deployment" {
       })
     }), {})
 
+    scheduling = optional(object({
+      cohort = optional(object({
+        enabled             = optional(bool, true)
+        name                = optional(string, "inference-shared")
+        fair_sharing_weight = optional(number, 1)
+      }), {})
+      cluster_queues = optional(map(object({
+        namespace              = optional(string, "fs2-models")
+        queueing_strategy      = optional(string, "BestEffortFIFO")
+        fair_sharing_weight    = optional(number, 1)
+        admission_fair_sharing = optional(bool, true)
+        flavor_order           = optional(list(string), [])
+        pool_quotas = optional(map(object({
+          nominal_quota   = optional(number, 0)
+          borrowing_limit = optional(number)
+          lending_limit   = optional(number)
+        })), {})
+        preemption = optional(object({
+          reclaim_within_cohort = optional(string, "Never")
+          within_cluster_queue  = optional(string, "Never")
+        }), {})
+      })), {})
+      local_queues = optional(map(object({
+        namespace           = optional(string, "fs2-models")
+        cluster_queue       = string
+        fair_sharing_weight = optional(number, 1)
+        model_ids           = optional(set(string), [])
+      })), {})
+      service_classes = optional(map(object({
+        workload_priority_class = string
+        priority                = number
+        default_local_queue     = optional(string)
+        preemption_mode         = optional(string, "restartable")
+        pool_preference         = optional(list(string), [])
+        })), {
+        platform-critical = {
+          workload_priority_class = "platform-critical"
+          priority                = 10000
+          preemption_mode         = "non-preemptible"
+        }
+        presentation = {
+          workload_priority_class = "presentation"
+          priority                = 1000
+          preemption_mode         = "restartable"
+        }
+        interactive = {
+          workload_priority_class = "interactive"
+          priority                = 100
+          preemption_mode         = "restartable"
+        }
+        customer-batch = {
+          workload_priority_class = "standard"
+          priority                = 0
+          preemption_mode         = "restartable"
+        }
+        bulk-backfill = {
+          workload_priority_class = "batch"
+          priority                = -100
+          preemption_mode         = "checkpointable"
+        }
+      })
+    }), {})
+
     acceleration = optional(object({
       model_express = optional(object({
         enabled          = optional(bool, false)
@@ -251,6 +314,40 @@ variable "deployment" {
   validation {
     condition     = var.deployment.schema_version == 1
     error_message = "deployment.schema_version must be 1."
+  }
+
+  validation {
+    condition = try(
+      (!var.deployment.scheduling.cohort.enabled || can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", var.deployment.scheduling.cohort.name))) &&
+      var.deployment.scheduling.cohort.fair_sharing_weight > 0 &&
+      alltrue([
+        for queue_name, queue in var.deployment.scheduling.cluster_queues :
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", queue_name)) &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", queue.namespace)) &&
+        contains(["BestEffortFIFO", "StrictFIFO"], queue.queueing_strategy) &&
+        queue.fair_sharing_weight > 0 &&
+        contains(["Never", "LowerPriority", "Any"], queue.preemption.reclaim_within_cohort) &&
+        contains(["Never", "LowerPriority", "LowerOrNewerEqualPriority"], queue.preemption.within_cluster_queue)
+      ]) &&
+      alltrue([
+        for queue_name, queue in var.deployment.scheduling.local_queues :
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", queue_name)) &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", queue.namespace)) &&
+        queue.fair_sharing_weight > 0
+      ]) &&
+      alltrue([
+        for class_name, class in var.deployment.scheduling.service_classes :
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", class_name)) &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", class.workload_priority_class)) &&
+        floor(class.priority) == class.priority &&
+        contains(["non-preemptible", "restartable", "checkpointable"], class.preemption_mode)
+        ]) && length(setsubtract(
+        toset(["platform-critical", "presentation", "interactive", "customer-batch", "bulk-backfill"]),
+        toset(keys(var.deployment.scheduling.service_classes)),
+      )) == 0,
+      false,
+    )
+    error_message = "scheduling must use DNS-safe queue/class names, supported Kueue queue/preemption policies, and positive fair-sharing weights; accelerator pool references and physical quota bounds are validated by the workloads stage."
   }
 
   validation {

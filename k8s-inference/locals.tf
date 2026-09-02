@@ -230,6 +230,7 @@ locals {
     keda_cooldown_period_seconds    = var.deployment.models.scaling.cooldown_period_seconds
     enable_cold_start_keepers       = var.deployment.models.cold_start_keepers
     enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
+    scheduling                      = var.deployment.scheduling
     model_express = {
       enabled         = var.deployment.acceleration.model_express.enabled
       deployment_mode = var.deployment.acceleration.model_express.deployment_mode

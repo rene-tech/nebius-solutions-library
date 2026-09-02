@@ -250,6 +250,11 @@ output "dcgm_attribution_contract" {
   }
 }
 
+output "scheduling_contract" {
+  description = "Validated non-secret Kueue cohort, queue, fair-sharing, quota, and service-class contract."
+  value       = module.kueue_scheduling.contract
+}
+
 output "managed_resource_count" {
   description = "Expected concrete managed-address count for exact plan review."
   value = (
@@ -272,6 +277,17 @@ output "managed_resource_count" {
     + (var.model_express.enabled ? 1 : 0)
     + (local.modelexpress_managed ? 2 : 0)
     + (local.modelexpress_nvcr_required ? 1 : 0)
+    # The scheduling module owns one validation resource. Stable queue/WPC
+    # addresses remain in the base count; only the cohort and additive policy
+    # objects increase the concrete address total.
+    + 1
+    + (module.kueue_scheduling.contract.cohort == null ? 0 : 1)
+    + (length(module.kueue_scheduling.contract.cluster_queues) - 1)
+    + (length(module.kueue_scheduling.contract.local_queues) - 1)
+    + length(setsubtract(
+      toset(keys(module.kueue_scheduling.contract.workload_priority_classes)),
+      toset(keys(var.model_controller.priority_classes)),
+    ))
   )
 }
 

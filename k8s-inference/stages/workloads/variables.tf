@@ -231,6 +231,73 @@ variable "enabled_model_ids" {
   }
 }
 
+variable "scheduling" {
+  description = "GPU-agnostic Kueue cohort, tenant/model lane, quota-floor, fair-sharing, and customer service-class policy. Empty queue maps preserve the stable inference-accelerators/inference-models objects."
+  type = object({
+    cohort = optional(object({
+      enabled             = optional(bool, true)
+      name                = optional(string, "inference-shared")
+      fair_sharing_weight = optional(number, 1)
+    }), {})
+    cluster_queues = optional(map(object({
+      namespace              = optional(string, "fs2-models")
+      queueing_strategy      = optional(string, "BestEffortFIFO")
+      fair_sharing_weight    = optional(number, 1)
+      admission_fair_sharing = optional(bool, true)
+      flavor_order           = optional(list(string), [])
+      pool_quotas = optional(map(object({
+        nominal_quota   = optional(number, 0)
+        borrowing_limit = optional(number)
+        lending_limit   = optional(number)
+      })), {})
+      preemption = optional(object({
+        reclaim_within_cohort = optional(string, "Never")
+        within_cluster_queue  = optional(string, "Never")
+      }), {})
+    })), {})
+    local_queues = optional(map(object({
+      namespace           = optional(string, "fs2-models")
+      cluster_queue       = string
+      fair_sharing_weight = optional(number, 1)
+      model_ids           = optional(set(string), [])
+    })), {})
+    service_classes = optional(map(object({
+      workload_priority_class = string
+      priority                = number
+      default_local_queue     = optional(string)
+      preemption_mode         = optional(string, "restartable")
+      pool_preference         = optional(list(string), [])
+      })), {
+      platform-critical = {
+        workload_priority_class = "platform-critical"
+        priority                = 10000
+        preemption_mode         = "non-preemptible"
+      }
+      presentation = {
+        workload_priority_class = "presentation"
+        priority                = 1000
+        preemption_mode         = "restartable"
+      }
+      interactive = {
+        workload_priority_class = "interactive"
+        priority                = 100
+        preemption_mode         = "restartable"
+      }
+      customer-batch = {
+        workload_priority_class = "standard"
+        priority                = 0
+        preemption_mode         = "restartable"
+      }
+      bulk-backfill = {
+        workload_priority_class = "batch"
+        priority                = -100
+        preemption_mode         = "checkpointable"
+      }
+    })
+  })
+  default = {}
+}
+
 variable "model_controller" {
   description = "Feature-gated dynamic ModelDeployment controller. Internal envelopes and renderer bundles are derived from the selected catalog, effective accelerator pools, queue, tenant, images, and scaling inputs."
   type = object({

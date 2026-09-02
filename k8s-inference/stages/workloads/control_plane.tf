@@ -74,6 +74,10 @@ locals {
       observability = {
         enabled       = true
         prometheusUrl = local.prometheus_server_address
+        installed = {
+          alertmanager = false
+          tempo        = true
+        }
         links = {
           allowedHosts = sort(tolist(var.admin_observability_links.allowed_hosts))
           grafana = {

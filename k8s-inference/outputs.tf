@@ -18,6 +18,12 @@ output "effective_configuration" {
     port_forward_ports         = var.deployment.edge.port_forward_ports
     model_scaling_mode         = var.deployment.models.scaling.mode
     hot_model_ids              = sort(tolist(var.deployment.models.scaling.hot))
+    scheduling = {
+      cohort_name         = var.deployment.scheduling.cohort.enabled ? var.deployment.scheduling.cohort.name : null
+      cluster_queue_names = sort(keys(var.deployment.scheduling.cluster_queues))
+      local_queue_names   = sort(keys(var.deployment.scheduling.local_queues))
+      service_classes     = sort(keys(var.deployment.scheduling.service_classes))
+    }
     dynamic_models = {
       enabled                                        = var.deployment.dynamic_models.enabled
       writes_enabled                                 = var.deployment.dynamic_models.writes_enabled

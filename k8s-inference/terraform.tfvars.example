@@ -119,6 +119,38 @@ deployment = {
     # handoff instead; set handoff_receipt there and omit fresh_install.
   }
 
+  # Optional Kueue policy for multiple customer/model lanes. Pool keys are the
+  # accelerator_pools IDs above. Nominal quotas are operator-selected GPU
+  # floors; Terraform assigns all unreserved physical capacity to the cohort so
+  # queues can borrow it. Omit this block to retain the stable single queue.
+  # scheduling = {
+  #   cohort = { enabled = true, name = "inference-shared" }
+  #   cluster_queues = {
+  #     customer-batch = {
+  #       fair_sharing_weight = 4
+  #       pool_quotas = {
+  #         "pool-id-from-accelerator-pools" = { nominal_quota = 1 }
+  #       }
+  #       preemption = {
+  #         reclaim_within_cohort = "LowerPriority"
+  #         within_cluster_queue  = "LowerPriority"
+  #       }
+  #     }
+  #   }
+  #   local_queues = {
+  #     customer-primary = {
+  #       cluster_queue       = "customer-batch"
+  #       fair_sharing_weight = 4
+  #       model_ids           = ["one-selected-model-id"]
+  #     }
+  #     customer-secondary = {
+  #       cluster_queue       = "customer-batch"
+  #       fair_sharing_weight = 1
+  #       model_ids           = ["another-selected-model-id"]
+  #     }
+  #   }
+  # }
+
   # Optional operator acceleration. ModelExpress is not a customer-facing
   # fast-start level: benchmark evidence must still qualify L1-L4 for each
   # exact model/image/template/pool/config tuple. The selected runtime image

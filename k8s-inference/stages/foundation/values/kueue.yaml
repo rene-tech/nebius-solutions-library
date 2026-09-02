@@ -22,6 +22,17 @@ managerConfig:
     clientConnection:
       qps: 50
       burst: 100
+    # ClusterQueue weights govern cross-tenant borrowing. LocalQueue weights
+    # independently govern historical-usage admission within each queue. The
+    # defaults are intentionally slow-moving enough for event and PoC bursts
+    # while still converging after sustained batch use.
+    fairSharing:
+      preemptionStrategies:
+        - LessThanOrEqualToFinalShare
+        - LessThanInitialShare
+    admissionFairSharing:
+      usageHalfLifeTime: 168h
+      usageSamplingInterval: 5m
     integrations:
       frameworks:
         - batch/job

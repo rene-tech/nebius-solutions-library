@@ -12,26 +12,6 @@ config:
     health_check: {endpoint: "${env:MY_POD_IP}:13133"}
   processors:
     batch: {send_batch_size: 1024, timeout: 5s}
-    k8sattributes:
-      auth_type: serviceAccount
-      extract:
-        labels:
-          - {from: pod, key: fs2.nebius.ai/model-id, tag_name: fs2.model.id}
-          - {from: pod, key: fs2.nebius.ai/workload-id, tag_name: fs2.workload.id}
-          - {from: pod, key: fs2.nebius.ai/attempt-id, tag_name: fs2.attempt.id}
-          - {from: pod, key: fs2.nebius.ai/tenant-id, tag_name: fs2.tenant.id}
-          - {from: pod, key: fs2.nebius.ai/service-class, tag_name: fs2.service.class}
-          - {from: pod, key: fs2.nebius.ai/local-queue, tag_name: fs2.kueue.local_queue}
-        metadata:
-          - k8s.namespace.name
-          - k8s.pod.name
-          - k8s.pod.uid
-          - k8s.container.name
-          - k8s.node.name
-      passthrough: false
-      pod_association:
-        - sources:
-            - {from: resource_attribute, name: k8s.pod.uid}
     memory_limiter: {check_interval: 5s, limit_percentage: 75, spike_limit_percentage: 20}
     resource/sanitize:
       attributes:
@@ -40,13 +20,6 @@ config:
         - {action: delete, key: http.request.header.authorization}
         - {action: delete, key: http.response.header.set-cookie}
   receivers:
-    filelog:
-      exclude: [/var/log/pods/fs2-observability_*/*/*.log]
-      include: [/var/log/pods/fs2-*_*/*/*.log]
-      include_file_name: false
-      include_file_path: true
-      operators: [{id: container-parser, type: container}]
-      start_at: end
     jaeger: null
     otlp: null
     prometheus: null
@@ -56,24 +29,23 @@ config:
     pipelines:
       logs:
         exporters: [otlp]
-        processors: [memory_limiter, k8sattributes, resource/sanitize, batch]
-        receivers: [filelog]
+        processors: [memory_limiter, resource/sanitize, batch]
+        receivers: []
       metrics: null
       traces: null
-fullnameOverride: fs2-otel-node
+fullnameOverride: fs2-otel-cluster
 image:
   repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s
   tag: 0.159.0
-mode: daemonset
+mode: deployment
+nodeSelector:
+  workload.fs2.nebius/system: "true"
+podDisruptionBudget: {enabled: false}
 podSecurityContext:
   fsGroup: 10001
   runAsGroup: 10001
   runAsNonRoot: true
   runAsUser: 10001
-  # Nebius kubelet log roots/files are 0750/0640 root:root. Grant only the
-  # supplemental read group; the collector remains non-root with a read-only
-  # hostPath, read-only root filesystem, and no Linux capabilities.
-  supplementalGroups: [0]
   seccompProfile: {type: RuntimeDefault}
 ports:
   jaeger-compact: {enabled: false}
@@ -84,14 +56,10 @@ ports:
   otlp-http: {enabled: false}
   zipkin: {enabled: false}
 presets:
-  kubernetesAttributes:
+  kubernetesEvents:
     enabled: true
-    extractAllPodAnnotations: false
-    extractAllPodLabels: false
-  logsCollection:
-    enabled: true
-    includeCollectorLogs: false
-    storeCheckpoints: false
+    useK8sEventsReceiver: false
+replicaCount: 1
 resources:
   limits: {cpu: 500m, memory: 512Mi}
   requests: {cpu: 50m, memory: 128Mi}
@@ -102,5 +70,3 @@ securityContext:
 serviceMonitor:
   enabled: true
   metricsEndpoints: [{interval: 30s, port: metrics}]
-tolerations:
-  - operator: Exists

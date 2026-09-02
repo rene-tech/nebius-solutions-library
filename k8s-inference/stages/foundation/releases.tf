@@ -356,7 +356,10 @@ resource "helm_release" "otel_gateway" {
 
   values = [file("${path.module}/values/otel-gateway.yaml")]
 
-  depends_on = [helm_release.loki]
+  depends_on = [
+    helm_release.loki,
+    helm_release.tempo,
+  ]
 }
 
 resource "helm_release" "otel_node" {

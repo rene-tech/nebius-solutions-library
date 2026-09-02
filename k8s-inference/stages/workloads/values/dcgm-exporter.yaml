@@ -19,12 +19,16 @@ serviceMonitor:
   enabled: true
   interval: 30s
   scrapeTimeout: 25s
+  # dcgm-exporter already emits the workload namespace/pod/container labels.
+  # Preserve those canonical values instead of replacing them with the
+  # ServiceMonitor target's fs2-observability identity.
+  honorLabels: true
   metricRelabelings:
-    # Preserve the bounded workload labels and pod identity required to join
-    # GPU samples to models. Drop only infrastructure/request identities that
-    # are not part of that attribution contract.
+    # Keep GPU UUID and Pod UID: both are required for exact device-to-attempt
+    # lifecycle joins. Request/principal identity belongs in OTel/SQL, never in
+    # the high-frequency Prometheus label set.
     - action: labeldrop
-      regex: '(?i)^(uuid|gpu_uuid|hostname|operation|operation_id|principal|token|tenant)$'
+      regex: '(?i)^(operation(_id)?|principal(_id)?|token(_id)?|tenant(_id)?|request(_id)?)$'
 kubernetes:
   enablePodLabels: true
   enablePodUID: true

@@ -36,28 +36,36 @@ locals {
       label => pool.scheduling.stable_node_labels[label]
     }
   }
-  queue_flavors = [
-    for pool_id in local.accelerator_pool_ids : {
-      name = local.selected_queue_pools[pool_id].scheduling.resource_flavor_name
-      resources = concat(
-        local.selected_queue_pools[pool_id].node.vcpu_count == null ? [] : [{
-          name         = "cpu"
-          nominalQuota = tostring(local.selected_queue_pools[pool_id].node.vcpu_count * local.selected_queue_pools[pool_id].capacity.max_nodes)
-        }],
-        local.selected_queue_pools[pool_id].node.memory_gib == null ? [] : [{
-          name         = "memory"
-          nominalQuota = "${local.selected_queue_pools[pool_id].node.memory_gib * local.selected_queue_pools[pool_id].capacity.max_nodes}Gi"
-        }],
-        [{
-          name         = local.selected_queue_pools[pool_id].accelerator.resource_api.resource_name
-          nominalQuota = tostring(local.selected_queue_pools[pool_id].node.gpus_per_node * local.selected_queue_pools[pool_id].capacity.max_nodes)
-        }],
-      )
+  queue_accelerator_pools = {
+    for pool_id, pool in local.selected_queue_pools : pool_id => {
+      flavor_name   = pool.scheduling.resource_flavor_name
+      resource_name = pool.accelerator.resource_api.resource_name
+      # Kueue budgets the selected extended accelerator resource. Core resource
+      # fit remains the Kubernetes scheduler's responsibility, matching the
+      # foundation controller configuration.
+      capacity = pool.node.gpus_per_node * pool.capacity.max_nodes
     }
-  ]
-  queue_covered_resources = sort(distinct(flatten([
-    for flavor in local.queue_flavors : [for resource in flavor.resources : resource.name]
-  ])))
+  }
+  queue_default = {
+    cluster_queue_name = local.selected_accelerator_pool_profile.queue.cluster_queue_name
+    local_queue_name   = local.selected_accelerator_pool_profile.queue.local_queue_name
+    namespace          = "fs2-models"
+    queueing_strategy  = local.selected_accelerator_pool_profile.queue.queueing_strategy
+  }
+  queue_common_annotations = {
+    "fs2-serve.nebius.ai/accelerator-contract-sha256" = local.accelerator_pool_contract_sha256
+  }
+}
+
+module "kueue_scheduling" {
+  source = "../../modules/kueue-scheduling"
+
+  pools                 = local.queue_accelerator_pools
+  default_queue         = local.queue_default
+  scheduling            = var.scheduling
+  base_priority_classes = var.model_controller.priority_classes
+  labels                = local.common_labels
+  annotations           = local.queue_common_annotations
 }
 
 moved {
@@ -127,67 +135,65 @@ resource "kubernetes_manifest" "accelerator_flavor" {
 }
 
 resource "kubernetes_manifest" "async_cluster_queue" {
-  manifest = {
-    apiVersion = "kueue.x-k8s.io/v1beta2"
-    kind       = "ClusterQueue"
-    metadata = {
-      name   = local.selected_accelerator_pool_profile.queue.cluster_queue_name
-      labels = local.common_labels
-      annotations = {
-        "fs2-serve.nebius.ai/accelerator-contract-sha256" = local.accelerator_pool_contract_sha256
-        "fs2-serve.nebius.ai/accelerator-pool-ids"        = join(",", local.accelerator_pool_ids)
-      }
-    }
-    spec = {
-      namespaceSelector = {
-        matchLabels = { "kubernetes.io/metadata.name" = "fs2-models" }
-      }
-      queueingStrategy = local.selected_accelerator_pool_profile.queue.queueing_strategy
-      resourceGroups = [{
-        coveredResources = local.queue_covered_resources
-        flavors          = local.queue_flavors
-      }]
-      stopPolicy = "None"
-    }
+  manifest = module.kueue_scheduling.contract.cluster_queues[local.queue_default.cluster_queue_name]
+  depends_on = [
+    kubernetes_manifest.accelerator_cohort,
+    kubernetes_manifest.accelerator_flavor,
+  ]
+}
+
+resource "kubernetes_manifest" "accelerator_cohort" {
+  for_each = module.kueue_scheduling.contract.cohort == null ? {} : {
+    (module.kueue_scheduling.contract.cohort.metadata.name) = module.kueue_scheduling.contract.cohort
   }
+
+  manifest   = each.value
   depends_on = [kubernetes_manifest.accelerator_flavor]
 }
 
-resource "kubernetes_manifest" "model_local_queue" {
-  manifest = {
-    apiVersion = "kueue.x-k8s.io/v1beta2"
-    kind       = "LocalQueue"
-    metadata = {
-      name      = local.selected_accelerator_pool_profile.queue.local_queue_name
-      namespace = "fs2-models"
-      labels    = local.common_labels
-      annotations = {
-        "fs2-serve.nebius.ai/accelerator-contract-sha256" = local.accelerator_pool_contract_sha256
-      }
-    }
-    spec = { clusterQueue = local.selected_accelerator_pool_profile.queue.cluster_queue_name }
+resource "kubernetes_manifest" "additional_cluster_queue" {
+  for_each = {
+    for queue_name, manifest in module.kueue_scheduling.contract.cluster_queues :
+    queue_name => manifest if queue_name != local.queue_default.cluster_queue_name
   }
+
+  manifest = each.value
+  depends_on = [
+    kubernetes_manifest.accelerator_cohort,
+    kubernetes_manifest.accelerator_flavor,
+  ]
+}
+
+resource "kubernetes_manifest" "model_local_queue" {
+  manifest   = module.kueue_scheduling.contract.local_queues[local.queue_default.local_queue_name]
   depends_on = [kubernetes_manifest.async_cluster_queue]
 }
 
-resource "kubernetes_manifest" "model_workload_priority" {
-  for_each = var.model_controller.priority_classes
-
-  manifest = {
-    apiVersion = "kueue.x-k8s.io/v1beta2"
-    kind       = "WorkloadPriorityClass"
-    metadata = {
-      name   = each.key
-      labels = local.common_labels
-    }
-    value       = each.value
-    description = "FS2 inference ${each.key} workload priority"
+resource "kubernetes_manifest" "additional_local_queue" {
+  for_each = {
+    for queue_name, manifest in module.kueue_scheduling.contract.local_queues :
+    queue_name => manifest if queue_name != local.queue_default.local_queue_name
   }
+
+  manifest = each.value
+  depends_on = [
+    kubernetes_manifest.additional_cluster_queue,
+    kubernetes_manifest.async_cluster_queue,
+  ]
+}
+
+resource "kubernetes_manifest" "model_workload_priority" {
+  for_each = module.kueue_scheduling.contract.workload_priority_classes
+
+  manifest = each.value
 
   field_manager {
     force_conflicts = false
     name            = "fs2-${var.run_id}-queue-priorities"
   }
 
-  depends_on = [kubernetes_manifest.model_local_queue]
+  depends_on = [
+    kubernetes_manifest.additional_local_queue,
+    kubernetes_manifest.model_local_queue,
+  ]
 }

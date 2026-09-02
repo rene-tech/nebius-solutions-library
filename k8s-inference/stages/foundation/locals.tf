@@ -130,6 +130,7 @@ locals {
     kube_prometheus_stack = "88.5.4"
     loki                  = "7.3.0"
     opentelemetry         = "0.171.0"
+    tempo                 = "1.24.4"
   }
 
   kubeconfig                  = yamldecode(file(var.kubeconfig_path))

@@ -1,0 +1,35 @@
+fullnameOverride: fs2-tempo
+replicas: 1
+tempo:
+  tag: 2.9.0
+  reportingEnabled: false
+  retention: 168h
+  resources:
+    limits: {cpu: "2", memory: 4Gi}
+    requests: {cpu: 250m, memory: 512Mi}
+  receivers:
+    otlp:
+      protocols:
+        grpc: {endpoint: "0.0.0.0:4317"}
+        http: {endpoint: "0.0.0.0:4318"}
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities: {drop: [ALL]}
+    readOnlyRootFilesystem: false
+serviceMonitor:
+  enabled: true
+  interval: 30s
+persistence:
+  enabled: true
+  enableStatefulSetAutoDeletePVC: false
+  storageClassName: compute-csi-default-sc
+  accessModes: [ReadWriteOnce]
+  size: 50Gi
+nodeSelector:
+  workload.fs2.nebius/system: "true"
+securityContext:
+  fsGroup: 10001
+  runAsGroup: 10001
+  runAsNonRoot: true
+  runAsUser: 10001
+  seccompProfile: {type: RuntimeDefault}

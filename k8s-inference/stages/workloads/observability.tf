@@ -7,10 +7,11 @@ locals {
     local.grafana_publication.service_name,
     "-monitoring-grafana",
   )
-  grafana_loki_instance_label = "${local.grafana_observability_release_prefix}-loki"
-  grafana_loki_datasource_uid = "fs2-${var.run_id}-loki"
-  grafana_loki_datasource_url = "http://fs2-loki.fs2-observability.svc.cluster.local:3100"
-  grafana_internal_url        = "http://${local.grafana_publication.service_name}.fs2-observability.svc.cluster.local"
+  grafana_loki_instance_label  = "${local.grafana_observability_release_prefix}-loki"
+  grafana_loki_datasource_uid  = "fs2-${var.run_id}-loki"
+  grafana_loki_datasource_url  = "http://fs2-loki.fs2-observability.svc.cluster.local:3100"
+  grafana_tempo_instance_label = "${local.grafana_observability_release_prefix}-tempo"
+  grafana_internal_url         = "http://${local.grafana_publication.service_name}.fs2-observability.svc.cluster.local"
 }
 
 resource "kubernetes_network_policy_v1" "grafana_observability_egress" {
@@ -22,7 +23,7 @@ resource "kubernetes_network_policy_v1" "grafana_observability_egress" {
 
   # Grafana is the only public observability pane. Its data plane and datasource
   # sidecar need only DNS, the canonical in-cluster Kubernetes API Service,
-  # the reporting database, Prometheus, and Loki.
+  # the reporting database, Prometheus, Loki, and Tempo.
   spec {
     pod_selector {
       match_labels = {
@@ -125,6 +126,21 @@ resource "kubernetes_network_policy_v1" "grafana_observability_egress" {
         protocol = "TCP"
       }
     }
+
+    egress {
+      to {
+        pod_selector {
+          match_labels = {
+            "app.kubernetes.io/instance" = local.grafana_tempo_instance_label
+            "app.kubernetes.io/name"     = "tempo"
+          }
+        }
+      }
+      ports {
+        port     = "3200"
+        protocol = "TCP"
+      }
+    }
   }
 
   lifecycle {
@@ -162,6 +178,7 @@ resource "helm_release" "dcgm_exporter" {
     file("${path.module}/values/dcgm-exporter.yaml"),
     yamlencode({
       imagePullSecrets = [{ name = kubernetes_secret_v1.dcgm_exporter_nvcrio[0].metadata[0].name }]
+      arguments        = local.dcgm_cadence_profile.helmValues.arguments
       config           = local.dcgm_cadence_profile.helmValues.config
       serviceMonitor = merge(
         local.dcgm_cadence_profile.helmValues.serviceMonitor,

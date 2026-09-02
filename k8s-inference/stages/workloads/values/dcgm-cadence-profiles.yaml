@@ -4,19 +4,25 @@ campaignMetrics:
   - DCGM_FI_DEV_FB_USED
 profiles:
   standard:
-    attributionMetricCollectionInterval: 30s
-    minimumNominalWindowSeconds: 60
+    attributionMetricCollectionInterval: 5s
+    minimumNominalWindowSeconds: 10
     helmValues:
+      arguments:
+        - --collect-interval
+        - "5000"
       config:
         enabled: false
       serviceMonitor:
-        interval: 30s
-        scrapeTimeout: 25s
-        metricRelabelings: []
+        interval: 5s
+        scrapeTimeout: 4s
+        metricRelabelings:
+          - action: labeldrop
+            regex: '(?i)^(operation(_id)?|principal(_id)?|token(_id)?|tenant(_id)?|request(_id)?)$'
   coldStartCampaign:
     attributionMetricCollectionInterval: 1s
     minimumNominalWindowSeconds: 2
     helmValues:
+      arguments: []
       config:
         enabled: true
         create: true
@@ -40,3 +46,5 @@ profiles:
             sourceLabels:
               - __name__
             regex: DCGM_FI_DEV_(GPU_UTIL|FB_USED)
+          - action: labeldrop
+            regex: '(?i)^(operation(_id)?|principal(_id)?|token(_id)?|tenant(_id)?|request(_id)?)$'

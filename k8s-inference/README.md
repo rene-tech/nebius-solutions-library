@@ -25,6 +25,9 @@ ownership boundary, current renderer, and optional extension points. See
 clock boundaries, automatic policy, and evidence requirements.
 [NVIDIA ModelExpress](docs/MODELEXPRESS.md) documents the optional P2P loader,
 its exact runtime qualification, Terraform switch, metrics, and rollback.
+[Shared GPU scheduling and lifecycle telemetry](docs/QUEUE_AND_GPU_TELEMETRY.md)
+documents Kueue floors/borrowing, customer service classes, exact correlation
+labels, DCGM cadence, and the OTel/Loki/Tempo data path.
 
 ## Accelerator and qualification boundary
 
@@ -309,6 +312,7 @@ The top-level variable is `deployment`:
 | `accelerator_pools` | Open map of GPU platform/preset, capacity, optional capacity-block reservation, topology, driver, local-storage, and node-floor/ceiling settings. |
 | `models` | Profile or explicit selection, KEDA/static scaling, hot-model floor, and per-model scaling overrides. |
 | `dynamic_models` | Optional live controller gate, exclusive workload owner, and initial model IDs. Internal envelope and renderer JSON is derived, not customer-authored. |
+| `scheduling` | Optional GPU-neutral Kueue Cohort, queue floors, borrowing/preemption, fair-sharing weights, model lanes, and five customer service classes. |
 | `storage.shared_cache` | Optional shared model-cache size/type/block-size override. |
 | `artifacts.external_registry_ids` | Same-tenant registries whose immutable images need run-scoped node-pull viewer access. Terraform creates a project-scoped reader group beside each registry, including registries in another project or region. |
 | `artifacts.registry_policy` | Defaults to `regional-mirror`; optional prefix controls the target repository namespace. `direct-source` is an explicit opt-out that leaves runtime pulls pointed at upstream registries. |

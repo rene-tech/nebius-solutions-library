@@ -19,7 +19,7 @@ output "cluster_contract" {
 
 output "managed_resource_count" {
   description = "Expected managed Terraform address count for plan review."
-  value       = 26 + (nonsensitive(var.bootstrap_grafana_credentials == null) ? 0 : 1)
+  value       = 29 + (nonsensitive(var.bootstrap_grafana_credentials == null) ? 0 : 1)
 }
 
 output "component_versions" {

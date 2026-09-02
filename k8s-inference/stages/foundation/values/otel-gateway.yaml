@@ -15,6 +15,11 @@ config:
       endpoint: http://fs2-loki.fs2-observability.svc.cluster.local:3100/otlp
       retry_on_failure: {enabled: true, initial_interval: 1s, max_elapsed_time: 60s, max_interval: 10s}
       sending_queue: {enabled: true, queue_size: 2048}
+    otlp/tempo:
+      endpoint: fs2-tempo.fs2-observability.svc.cluster.local:4317
+      retry_on_failure: {enabled: true, initial_interval: 1s, max_elapsed_time: 60s, max_interval: 10s}
+      sending_queue: {enabled: true, queue_size: 2048}
+      tls: {insecure: true}
     prometheus:
       enable_open_metrics: true
       endpoint: "${env:MY_POD_IP}:8889"
@@ -26,10 +31,10 @@ config:
     memory_limiter: {check_interval: 5s, limit_percentage: 75, spike_limit_percentage: 20}
     resource/sanitize:
       attributes:
-        - {action: delete, key: enduser.id}
-        - {action: delete, key: user.id}
-        - {action: delete, key: tenant.id}
-        - {action: delete, key: api.key.id}
+        # Opaque user/tenant/API-key IDs are correlation dimensions, not
+        # credentials. Keep them; remove only credential values and headers.
+        - {action: delete, key: api.key}
+        - {action: delete, key: api.key.value}
         - {action: delete, key: http.request.header.authorization}
         - {action: delete, key: http.response.header.set-cookie}
   receivers:
@@ -52,7 +57,7 @@ config:
         processors: [memory_limiter, resource/sanitize, batch]
         receivers: [otlp, spanmetrics]
       traces:
-        exporters: [spanmetrics]
+        exporters: [spanmetrics, otlp/tempo]
         processors: [memory_limiter, resource/sanitize, batch]
         receivers: [otlp]
 fullnameOverride: fs2-otel-gateway
