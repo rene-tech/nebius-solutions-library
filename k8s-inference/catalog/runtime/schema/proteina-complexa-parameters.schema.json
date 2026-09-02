@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/proteina-complexa-parameters/v1",
+  "title": "Proteina-Complexa scientific run parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "variant",
+    "target_id",
+    "run_name",
+    "seed",
+    "num_samples",
+    "diffusion_steps"
+  ],
+  "properties": {
+    "variant": {
+      "enum": [
+        "protein-target",
+        "ligand-target",
+        "ame"
+      ]
+    },
+    "target_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+    },
+    "run_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "num_samples": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1024
+    },
+    "diffusion_steps": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2000
+    }
+  }
+}

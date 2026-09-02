@@ -9,14 +9,15 @@ import json
 import os
 import re
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping
+from typing import Any
 from urllib.parse import urlsplit
 
 from .loader import (
-    CatalogError,
     MODEL_ID,
+    CatalogError,
     _exact,
     _load_json,
     _positive_int,
@@ -25,11 +26,15 @@ from .loader import (
     strong_sha256,
 )
 
-
 ARTIFACT_MANIFEST_SCHEMA = "fs2-serve.nebius.ai/artifact-manifest/v1"
+SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA = "fs2-serve.nebius.ai/scientific-artifact-manifest/v1"
 ARTIFACT_KINDS = {"weights", "nim-cache", "snapshot"}
 SAFE_URI_SCHEMES = {"sfs", "pvc", "nvme", "ngc", "hf", "oci"}
 OWNER = re.compile(r"^[a-z0-9](?:[-a-z0-9./]*[a-z0-9])?$")
+SCIENTIFIC_ARTIFACT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+SCIENTIFIC_ARTIFACT_NAME = re.compile(r"^[a-z][a-z0-9_.-]{0,127}$")
+SCIENTIFIC_SEMANTIC_TYPE = re.compile(r"^[a-z][a-z0-9_.-]*/v[1-9][0-9]*$")
+SCIENTIFIC_MEDIA_TYPE = re.compile(r"^[a-z0-9][a-z0-9.+-]*/[A-Za-z0-9][A-Za-z0-9.+_-]*$")
 
 
 def _nonnegative_int(value: Any, label: str) -> int:
@@ -132,6 +137,118 @@ class ArtifactManifest:
 
     def to_dict(self) -> dict[str, Any]:
         return copy.deepcopy(dict(self._value))
+
+
+@dataclass(frozen=True)
+class ScientificArtifactPointer:
+    """Storage-independent public ``artifact-pointer/v1`` value."""
+
+    artifact_id: str
+    sha256: str
+    size_bytes: int
+    media_type: str
+    compression: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        value: dict[str, Any] = {
+            "artifact_id": self.artifact_id,
+            "sha256": self.sha256,
+            "size_bytes": self.size_bytes,
+            "media_type": self.media_type,
+        }
+        if self.compression is not None:
+            value["compression"] = self.compression
+        return value
+
+
+@dataclass(frozen=True)
+class ScientificArtifactEntry:
+    """One logical name from a resolved scientific artifact manifest."""
+
+    name: str
+    semantic_type: str
+    artifact: ScientificArtifactPointer
+
+
+def scientific_artifact_pointer_from_value(
+    value: Any, *, label: str = "scientific artifact pointer"
+) -> ScientificArtifactPointer:
+    """Validate the canonical public pointer without resolving a storage path."""
+
+    if not isinstance(value, dict):
+        raise CatalogError(f"{label} must be an object")
+    expected = {"artifact_id", "sha256", "size_bytes", "media_type"}
+    if "compression" in value:
+        expected.add("compression")
+    item = _exact(value, expected, label)
+    artifact_id = item["artifact_id"]
+    if not isinstance(artifact_id, str) or SCIENTIFIC_ARTIFACT_ID.fullmatch(artifact_id) is None:
+        raise CatalogError(f"{label}.artifact_id is invalid")
+    digest = strong_sha256(item["sha256"], f"{label}.sha256")
+    size_bytes = _nonnegative_int(item["size_bytes"], f"{label}.size_bytes")
+    media_type = item["media_type"]
+    if not isinstance(media_type, str) or len(media_type) > 128 or SCIENTIFIC_MEDIA_TYPE.fullmatch(media_type) is None:
+        raise CatalogError(f"{label}.media_type is invalid")
+    compression = item.get("compression")
+    if compression is not None and compression not in {"gzip", "zstd", "none"}:
+        raise CatalogError(f"{label}.compression is invalid")
+    return ScientificArtifactPointer(
+        artifact_id=artifact_id,
+        sha256=digest,
+        size_bytes=size_bytes,
+        media_type=media_type,
+        compression=compression,
+    )
+
+
+def scientific_artifact_manifest_entries(
+    value: Any,
+) -> dict[str, ScientificArtifactEntry]:
+    """Validate a resolved canonical manifest and index it by logical name."""
+
+    manifest = _exact(value, {"schema", "manifest_id", "entries"}, "scientific artifact manifest")
+    if manifest["schema"] != SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA:
+        raise CatalogError("scientific artifact manifest schema is unsupported")
+    manifest_id = manifest["manifest_id"]
+    if not isinstance(manifest_id, str) or SCIENTIFIC_ARTIFACT_ID.fullmatch(manifest_id) is None:
+        raise CatalogError("scientific artifact manifest_id is invalid")
+    raw_entries = manifest["entries"]
+    if not isinstance(raw_entries, list) or not 1 <= len(raw_entries) <= 10000:
+        raise CatalogError("scientific artifact manifest entries are invalid")
+    entries: dict[str, ScientificArtifactEntry] = {}
+    for index, raw in enumerate(raw_entries):
+        item = _exact(
+            raw,
+            {"name", "semantic_type", "artifact"},
+            f"scientific artifact manifest entries[{index}]",
+        )
+        name = item["name"]
+        semantic_type = item["semantic_type"]
+        if not isinstance(name, str) or SCIENTIFIC_ARTIFACT_NAME.fullmatch(name) is None or name in entries:
+            raise CatalogError("scientific artifact manifest logical name is invalid or duplicated")
+        if (
+            not isinstance(semantic_type, str)
+            or len(semantic_type) > 128
+            or SCIENTIFIC_SEMANTIC_TYPE.fullmatch(semantic_type) is None
+        ):
+            raise CatalogError("scientific artifact manifest semantic_type is invalid")
+        entries[name] = ScientificArtifactEntry(
+            name=name,
+            semantic_type=semantic_type,
+            artifact=scientific_artifact_pointer_from_value(
+                item["artifact"], label=f"scientific artifact manifest entries[{index}].artifact"
+            ),
+        )
+    return entries
+
+
+def verify_scientific_artifact_payload(pointer: ScientificArtifactPointer, payload: bytes) -> None:
+    """Verify bytes returned by the authorized resolver against a public pointer."""
+
+    if not isinstance(payload, bytes):
+        raise CatalogError("scientific artifact resolver did not return bytes")
+    if len(payload) != pointer.size_bytes or hashlib.sha256(payload).hexdigest() != pointer.sha256:
+        raise CatalogError("scientific artifact bytes differ from their public pointer")
 
 
 def _validate_manifest(value: dict[str, Any], *, path: Path | None) -> ArtifactManifest:

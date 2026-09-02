@@ -1,0 +1,17 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-protein-structure",
+  "service_class": "interactive",
+  "input_manifest": {
+    "artifact_id": "manifest.esmfold2-fast.short",
+    "sha256": "289a90918c01d3ec431139bac714471674278a05a79775b9e01b03d40d07cb7a",
+    "size_bytes": 512,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "parameters": {
+    "sequence": "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ",
+    "mode": "single-sequence",
+    "seed": 2
+  }
+}

@@ -1,0 +1,274 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "scientific-batch",
+  "model": {
+    "id": "proteinmpnn",
+    "variant_id": "upstream-8907e667",
+    "display_name": "ProteinMPNN upstream",
+    "family": "scientific-protein",
+    "source": {
+      "kind": "git",
+      "repository": "dauparas/ProteinMPNN",
+      "revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+      "review": {
+        "url": "https://github.com/dauparas/ProteinMPNN/tree/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+        "revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+        "summary": "Qualified upstream source-tree identity for a distinct batch variant of canonical model ID proteinmpnn."
+      },
+      "license": {
+        "id": "MIT",
+        "state": "verified",
+        "notes": "Code and repository-owned weights are MIT."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The qualified source tree contains the required weights."
+      }
+    },
+    "artifacts": [
+      {
+        "artifact_id": "proteinmpnn-vanilla-and-soluble",
+        "kind": "weights",
+        "source": {
+          "kind": "source-tree",
+          "repository": "dauparas/ProteinMPNN",
+          "revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+          "release_id": null
+        },
+        "required_files": [
+          "ca_model_weights/v_48_002.pt",
+          "ca_model_weights/v_48_010.pt",
+          "ca_model_weights/v_48_020.pt",
+          "soluble_model_weights/v_48_002.pt",
+          "soluble_model_weights/v_48_010.pt",
+          "soluble_model_weights/v_48_020.pt",
+          "soluble_model_weights/v_48_030.pt",
+          "vanilla_model_weights/v_48_002.pt",
+          "vanilla_model_weights/v_48_010.pt",
+          "vanilla_model_weights/v_48_020.pt",
+          "vanilla_model_weights/v_48_030.pt"
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard",
+        "content_digest_sha256": "43085c02e220bedf3a7edb089c290c0440a390c6993d3b6530be07ef1af515ae",
+        "total_size_bytes": 73322441,
+        "file_manifest": [
+          {
+            "path": "ca_model_weights/v_48_002.pt",
+            "size_bytes": 6624011,
+            "sha256": "ec038b44a987d7c8351b6ed887c82a2370d54e45e55a6bdaf508a729cef0340e"
+          },
+          {
+            "path": "ca_model_weights/v_48_010.pt",
+            "size_bytes": 6624011,
+            "sha256": "cdb50498d45578d20b271fa7817b8cd8bfde3875ad69dbd3f5e4b5dd3e588301"
+          },
+          {
+            "path": "ca_model_weights/v_48_020.pt",
+            "size_bytes": 6624011,
+            "sha256": "f28f40170e21858c5ff31ef50b6e63414ff76dc331b19f85aa8586a12031744a"
+          },
+          {
+            "path": "soluble_model_weights/v_48_002.pt",
+            "size_bytes": 6681301,
+            "sha256": "0877f840978fe770be6fcec025784d8f50c438571db3260c05e41aa207a7c448"
+          },
+          {
+            "path": "soluble_model_weights/v_48_010.pt",
+            "size_bytes": 6681301,
+            "sha256": "79562f7444f72c84595a1c96010713864865a616f4f3967633493041e169fa6e"
+          },
+          {
+            "path": "soluble_model_weights/v_48_020.pt",
+            "size_bytes": 6681301,
+            "sha256": "7af52d090172c230c7f0e9d21e02203f6b3a38b16db58d3c7a3960e0a9a6e31a"
+          },
+          {
+            "path": "soluble_model_weights/v_48_030.pt",
+            "size_bytes": 6681301,
+            "sha256": "1dd63f1e9fc68a133cc9ef859edf43b489e5ac581cb5624e0b9ec848ff062421"
+          },
+          {
+            "path": "vanilla_model_weights/v_48_002.pt",
+            "size_bytes": 6681301,
+            "sha256": "925f2ca1007bf9b02e0e7f420ff00eb91f50fcc2722f64b42e644ae95adaa131"
+          },
+          {
+            "path": "vanilla_model_weights/v_48_010.pt",
+            "size_bytes": 6681301,
+            "sha256": "db866fae956a28661f926053d630610c55e9fc4bc03922f2aeeb98a37435ccce"
+          },
+          {
+            "path": "vanilla_model_weights/v_48_020.pt",
+            "size_bytes": 6681301,
+            "sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd"
+          },
+          {
+            "path": "vanilla_model_weights/v_48_030.pt",
+            "size_bytes": 6681301,
+            "sha256": "c34b7bfb38418ea30989fda3314f4781ac4e3920f9825731cf555f1fed44ac66"
+          }
+        ]
+      }
+    ],
+    "default_variant": false
+  },
+  "runtime": {
+    "template": "scientific-batch",
+    "kind": "custom",
+    "version": "8907e667-candidate",
+    "image": {
+      "logical_repository": "cancer-immunotherapy/proteinmpnn-upstream",
+      "digest": null,
+      "state": "build-required"
+    },
+    "command": [
+      "python3",
+      "/opt/proteinmpnn/protein_mpnn_run.py"
+    ],
+    "args": [
+      "--path_to_model_weights={MODEL_PATH}",
+      "--jsonl_path={REQUEST_PATH}",
+      "--out_folder={OUTPUT_PATH}"
+    ],
+    "environment": {}
+  },
+  "resources": {
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "4Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "2",
+      "memory": "8Gi",
+      "ephemeral_storage": "4Gi"
+    },
+    "limits": {
+      "cpu": "8",
+      "memory": "32Gi",
+      "ephemeral_storage": "16Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_resource_name": "nvidia.com/gpu",
+    "compatible_pool_ids": [
+      "h100-reserved-8x",
+      "h100-1x"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    }
+  },
+  "serving": null,
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": {
+      "id": "fs2-serve.nebius.ai/proteinmpnn-upstream-8907e667-parameters/v1",
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "num_sequences",
+          "sampling_temperature",
+          "seed"
+        ],
+        "properties": {
+          "num_sequences": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "sampling_temperature": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        }
+      }
+    },
+    "operations": [
+      "design-sequence"
+    ],
+    "service_classes": [
+      "customer-batch",
+      "bulk-backfill"
+    ],
+    "access_profile": "standard",
+    "access_state": "not-required",
+    "stages": [
+      {
+        "id": "design",
+        "needs": [],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "2",
+            "memory": "8Gi",
+            "ephemeral_storage": "4Gi"
+          },
+          "limits": {
+            "cpu": "8",
+            "memory": "32Gi",
+            "ephemeral_storage": "16Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 256,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      }
+    ],
+    "storage": [],
+    "retry": {
+      "max_attempts": 3,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 30
+    },
+    "semantic_validation": {
+      "validator_id": "proteinmpnn-upstream-8907e667",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_proteinmpnn_upstream",
+      "description": "Submit an explicit upstream ProteinMPNN sequence-design run."
+    }
+  },
+  "policy": {
+    "commercial_use": "allowed",
+    "non_clinical": true,
+    "limitations": [
+      "The canonical ProteinMPNN NIM record remains unchanged; NIM artifact parity is not claimed.",
+      "No runtime image, H100 qualification, or semantic receipt exists."
+    ],
+    "fast_start": {
+      "requested_level": "Off",
+      "state": "candidate-unqualified",
+      "cache_strategy": "shared-pvc"
+    }
+  }
+}

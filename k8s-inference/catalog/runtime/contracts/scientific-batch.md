@@ -2,8 +2,9 @@
 
 This directory defines the review boundary for asynchronous scientific model
 workloads. It does not deploy a controller, submit Kubernetes resources, expose
-a route, or qualify a model. Checked-in source observations are explicitly
-`candidate` / `unqualified`.
+a route, or qualify a runtime. Checked-in exact source revisions are
+source-qualified, while every generated workload profile remains explicitly
+`candidate-unqualified` and non-invocable.
 
 ## Runtime shape
 
@@ -13,8 +14,8 @@ a route, or qualify a model. Checked-in source observations are explicitly
 | `boltzgen` | scientific batch | Independent, shardable Kueue Jobs per documented pipeline stage | Output directory contract, parseable structures, finite confidence/design metrics, requested design count accounted for |
 | `mosaic` | scientific batch | Workflow-expanded independent Jobs; JobSet only for an actually coupled distributed stage | Resolve the provisional `escalante-bio/mosaic` backend, validate typed composite configuration and declared output inventory |
 | `bindcraft` | scientific batch | Independent trajectory/design Jobs followed by scoring/ranking Jobs | Parseable designs, requested target-chain identity, finite ranking metrics, complete trajectory accounting |
-| `rfdiffusion-upstream` | scientific batch for campaigns; the existing `rfdiffusion` NIM and any bounded HTTP adapter remain distinct backend identities | Independent design shards; JobSet only for an explicitly gang-coupled runtime | Contig/motif contract honored, parseable structures, requested design indices complete |
-| `esmfold2` / `esmfold2-fast` | hybrid HTTP and scientific batch | HTTP for bounded single requests; independent Jobs for bulk FASTA shards | Input sequences map one-to-one to parseable structures with finite confidence values; fast is a distinct backend identity |
+| `rfdiffusion` / `upstream-v1-1-0` | scientific batch campaign variant; the existing canonical `rfdiffusion` NIM stays intact | Independent design shards; JobSet only for an explicitly gang-coupled runtime | Contig/motif contract honored, parseable structures, requested design indices complete |
+| `esmfold2` / `esmfold2-fast` | scientific batch candidate | Independent Jobs; Fast accepts only a protein single sequence | Input sequences map one-to-one to parseable structures with finite confidence values; Fast rejects MSA, ligand, nucleic-acid, modified-residue, and CCD semantics |
 | `protenix-v2` | scientific batch | Independent prediction Jobs, optionally preceded by separately admitted data/search stages | Input entities map to predicted structures; confidence/result files parse; exact v2 backend and artifacts match execution identity |
 | `alphafold3` | scientific batch | CPU/data-pipeline and GPU-inference Jobs as separate stages; JobSet only for a coupled implementation | Official input/output contracts parse; requested seeds/samples are accounted for; confidence/structure files are internally consistent |
 
@@ -28,9 +29,11 @@ creating downstream work, allowing the earlier stage to release quota.
 
 The intended API is:
 
-- `POST /v1/models/{model_id}:submit` with
+- `POST /v1/models/{model_id}/variants/{variant_id}:submit` with
   `fs2-serve.nebius.ai/scientific-run-request/v1` and an `Idempotency-Key`
   header;
+- `POST /v1/models/{model_id}:submit` is only a convenience alias when the
+  catalog declares exactly one default variant;
 - `GET /v1/operations/{operation_id}` for durable state and the terminal
   `scientific-run-result/v1` document;
 - `GET /v1/operations/{operation_id}/events` for ordered phase/attempt events;
@@ -41,10 +44,12 @@ the same API. A candidate profile is discoverable but has `invocable=false`.
 The MCP server must not create Jobs itself or reinterpret free-form prompts as
 runtime command lines.
 
-An idempotency record binds tenant/principal, model ID, operation, canonical
+An idempotency record binds tenant/principal, model ID, variant ID, operation, canonical
 request digest, and `Idempotency-Key`. Repeating the tuple returns the original
 `operation_id`; reusing the key with different content returns a conflict.
-`operation_id`, `batch_id`, and `workload_id` remain stable across retry, while
+`model_id` and `variant_id` are retained in the operation, execution identity,
+workload, event, and telemetry joins. Route/default/MCP identities must be
+collision-checked before exposure. `operation_id`, `batch_id`, and `workload_id` remain stable across retry, while
 each execution receives a new `attempt_id`. The result records Kueue Workload,
 Kubernetes Job/Pod/Node, and GPU identities without placing long IDs in labels.
 
@@ -105,13 +110,16 @@ scope, but their access facts are admission prerequisites rather than model
 performance identity. A controller must fail closed before Job creation unless
 the tenant has an exact access receipt; credentials never appear in a profile,
 request, result, label, event, or log. Open binder and OpenFold-family
-alternatives must use distinct model IDs and backend identities—there is no
-silent fallback.
+alternatives must use explicit variant IDs and backend identities—there is no
+silent fallback or substitution.
 
 ## Candidate source evidence
 
-`scientific-source-candidate-receipts.json` pins the upstream HEAD values
-observed on 2026-09-02. These are starting points for review, not qualification.
+`scientific-source-candidate-receipts.json` is generated from the same canonical
+ModelDefinitions as the workload profiles and pins the source-qualified exact
+revisions reviewed on 2026-09-02. Source qualification does not qualify a
+runtime, artifact materialization, license acceptance, hardware tuple,
+semantics, or production readiness.
 Primary project documentation supporting the proposed workflow classification:
 
 - [Proteina-Complexa](https://github.com/NVIDIA-BioNeMo/Proteina-Complexa)
@@ -125,9 +133,9 @@ Primary project documentation supporting the proposed workflow classification:
   generation and its PyRosetta installation/access dependency.
 - [RFdiffusion](https://github.com/RosettaCommons/RFdiffusion) documents
   independent design generation and contig/motif inputs.
-- [ESM](https://github.com/Biohub/esm) is the candidate source family for the
-  requested ESMFold identities; exact ESMFold2 and Fast artifacts must still be
-  established.
+- [ESM](https://github.com/Biohub/esm) is the exact source family for the two
+  requested ESMFold identities; their profiles pin the distinct Hugging Face
+  repositories, revisions, and complete offline file sets.
 - [Protenix](https://github.com/bytedance/Protenix) documents file-oriented
   structure-prediction inference.
 - [AlphaFold 3 performance guidance](https://github.com/google-deepmind/alphafold3/blob/main/docs/performance.md),

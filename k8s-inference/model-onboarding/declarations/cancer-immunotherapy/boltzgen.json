@@ -1,0 +1,510 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "scientific-batch",
+  "model": {
+    "id": "boltzgen",
+    "variant_id": "upstream-v0-3-2",
+    "display_name": "BoltzGen 0.3.2",
+    "family": "scientific-protein",
+    "source": {
+      "kind": "git",
+      "repository": "HannesStark/boltzgen",
+      "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+      "review": {
+        "url": "https://github.com/HannesStark/boltzgen/tree/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "summary": "Qualified v0.3.2 release source, distinct from the moving branch head."
+      },
+      "license": {
+        "id": "MIT",
+        "state": "verified",
+        "notes": "Qualified code and artifact metadata declare MIT."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The exact weight repository is public and anonymous access is expected."
+      }
+    },
+    "artifacts": [
+      {
+        "artifact_id": "boltzgen-checkpoints",
+        "kind": "weights",
+        "source": {
+          "kind": "huggingface",
+          "repository": "boltzgen/boltzgen-1",
+          "revision": "c1be29e1f82ffcc72264f64b993c43fb4e0d17f0",
+          "release_id": null
+        },
+        "required_files": [
+          "boltz2_aff.ckpt",
+          "boltz2_conf_final.ckpt",
+          "boltzgen1_adherence.ckpt",
+          "boltzgen1_diverse.ckpt",
+          "boltzgen1_ifold.ckpt",
+          "boltzgen1_structuretrained_small.ckpt"
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard",
+        "content_digest_sha256": "b8831a6b22eefd8222d123fb9675815d004a6cec4c9bfe990e48ccb1fb529900",
+        "total_size_bytes": 10234382415,
+        "file_manifest": [
+          {
+            "path": "boltz2_aff.ckpt",
+            "size_bytes": 2061914091,
+            "sha256": "6dc13d488015666d3c3fdffd29fab54d72e4f2597b654f996cdcf5937feab090"
+          },
+          {
+            "path": "boltz2_conf_final.ckpt",
+            "size_bytes": 2087255089,
+            "sha256": "525a51ef306da7282a54d23a4a5b91212fc60d0ff6b23b56dd6351de3b387530"
+          },
+          {
+            "path": "boltzgen1_adherence.ckpt",
+            "size_bytes": 1930858014,
+            "sha256": "ac7078b3dc13064c68e0c3fd542e5bc538c33558bf6607f65e499eb336ca5e5d"
+          },
+          {
+            "path": "boltzgen1_diverse.ckpt",
+            "size_bytes": 1930847192,
+            "sha256": "360af8bd6e59527ff6ec25dd81253967f3bd3567d200053b10680634751f8e3c"
+          },
+          {
+            "path": "boltzgen1_ifold.ckpt",
+            "size_bytes": 12582656,
+            "sha256": "dd4cf108c94471bdc3a326b7b180fa3854dc019110fae780208c30b50bd56578"
+          },
+          {
+            "path": "boltzgen1_structuretrained_small.ckpt",
+            "size_bytes": 2210925373,
+            "sha256": "e2455b6ff5156218ef3999be894d1a8e4574f0531cefcd9d67d9c1d2d015937b"
+          }
+        ]
+      },
+      {
+        "artifact_id": "boltzgen-inference-molecules",
+        "kind": "reference-data",
+        "source": {
+          "kind": "huggingface",
+          "repository": "boltzgen/inference-data",
+          "revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+          "release_id": null
+        },
+        "required_files": [
+          "mols.zip"
+        ],
+        "content_digest_sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+        "total_size_bytes": 391401102,
+        "file_manifest": [
+          {
+            "path": "mols.zip",
+            "size_bytes": 391401102,
+            "sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53"
+          }
+        ],
+        "supply_state": "unresolved",
+        "handling": "restricted-quarantine"
+      }
+    ],
+    "default_variant": true
+  },
+  "runtime": {
+    "template": "scientific-batch",
+    "kind": "custom",
+    "version": "0.3.2-candidate",
+    "image": {
+      "logical_repository": "cancer-immunotherapy/boltzgen",
+      "digest": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
+      "state": "digest-pinned"
+    },
+    "command": [
+      "boltzgen"
+    ],
+    "args": [
+      "configure",
+      "{PARAMETERS_PATH}",
+      "--output={OUTPUT_PATH}",
+      "--devices=1",
+      "--moldir={REFERENCE_DATA_PATH}"
+    ],
+    "environment": {
+      "HF_HUB_OFFLINE": "1"
+    }
+  },
+  "resources": {
+    "host_ram_min_bytes": 68719476736,
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "16Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "8",
+      "memory": "64Gi",
+      "ephemeral_storage": "16Gi"
+    },
+    "limits": {
+      "cpu": "32",
+      "memory": "160Gi",
+      "ephemeral_storage": "64Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_resource_name": "nvidia.com/gpu",
+    "compatible_pool_ids": [
+      "h100-reserved-8x",
+      "h100-1x"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    }
+  },
+  "serving": null,
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": {
+      "id": "fs2-serve.nebius.ai/boltzgen-parameters/v1",
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://fs2-serve.nebius.ai/schema/boltzgen-parameters/v1",
+        "title": "BoltzGen scientific run parameters",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "protocol",
+          "batches"
+        ],
+        "properties": {
+          "protocol": {
+            "enum": [
+              "protein-anything",
+              "peptide-anything",
+              "protein-small_molecule",
+              "nanobody-anything",
+              "antibody-anything",
+              "protein-redesign"
+            ]
+          },
+          "batches": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "shard_id",
+                "num_designs",
+                "budget",
+                "reuse_completed"
+              ],
+              "properties": {
+                "shard_id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+                  "maxLength": 32
+                },
+                "num_designs": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000
+                },
+                "budget": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000
+                },
+                "reuse_completed": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "operations": [
+      "design-binders"
+    ],
+    "service_classes": [
+      "customer-batch",
+      "bulk-backfill"
+    ],
+    "access_profile": "standard",
+    "access_state": "not-required",
+    "stages": [
+      {
+        "id": "configure",
+        "needs": [],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "24",
+            "memory": "128Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "id": "design",
+        "needs": [
+          "configure"
+        ],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "24",
+            "memory": "128Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "id": "inverse-folding",
+        "needs": [
+          "design"
+        ],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "24",
+            "memory": "128Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "id": "folding",
+        "needs": [
+          "inverse-folding"
+        ],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "24",
+            "memory": "128Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "id": "design-folding",
+        "needs": [
+          "folding"
+        ],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "24",
+            "memory": "128Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "id": "affinity",
+        "needs": [
+          "design-folding"
+        ],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "24",
+            "memory": "128Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "id": "analysis",
+        "needs": [
+          "affinity"
+        ],
+        "resource_class": "cpu",
+        "resources": {
+          "gpu_count": 0,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "160Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "none",
+        "preemption_mode": "non_preemptible"
+      },
+      {
+        "id": "filtering",
+        "needs": [
+          "analysis"
+        ],
+        "resource_class": "cpu",
+        "resources": {
+          "gpu_count": 0,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "160Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "none",
+        "preemption_mode": "non_preemptible"
+      }
+    ],
+    "storage": [
+      {
+        "id": "boltzgen-run-artifacts",
+        "purpose": "run-artifacts",
+        "minimum_bytes": 107374182400,
+        "access_mode": "ReadWriteMany",
+        "read_only": false,
+        "stages": [
+          "configure",
+          "design",
+          "inverse-folding",
+          "folding",
+          "design-folding",
+          "affinity",
+          "analysis",
+          "filtering"
+        ]
+      },
+      {
+        "id": "boltzgen-inference-molecules",
+        "purpose": "reference-data",
+        "minimum_bytes": 1073741824,
+        "access_mode": "ReadWriteMany",
+        "read_only": true,
+        "stages": [
+          "configure",
+          "design",
+          "inverse-folding",
+          "folding",
+          "design-folding",
+          "affinity"
+        ]
+      }
+    ],
+    "retry": {
+      "max_attempts": 2,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 60
+    },
+    "semantic_validation": {
+      "validator_id": "boltzgen-upstream-v0-3-2",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_boltzgen",
+      "description": "Submit a typed BoltzGen binder-design campaign."
+    }
+  },
+  "policy": {
+    "commercial_use": "allowed",
+    "non_clinical": true,
+    "limitations": [
+      "The exact checkpoint manifest and image digest are retained, but inference-molecule terms and archive expansion remain unresolved; no qualified deployment registry binding, H100 receipt, long-run stall receipt, or semantic receipt exists."
+    ],
+    "fast_start": {
+      "requested_level": "Off",
+      "state": "candidate-unqualified",
+      "cache_strategy": "shared-pvc"
+    }
+  }
+}
