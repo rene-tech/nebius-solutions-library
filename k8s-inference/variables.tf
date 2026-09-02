@@ -98,11 +98,10 @@ variable "deployment" {
       image_overrides = optional(map(string), {})
       pool_overrides  = optional(map(string), {})
       scaling = optional(object({
-        mode                       = optional(string, "keda")
-        hot                        = optional(set(string), [])
-        polling_interval_seconds   = optional(number, 5)
-        cooldown_period_seconds    = optional(number, 300)
-        fallback_failure_threshold = optional(number, 3)
+        mode                     = optional(string, "keda")
+        hot                      = optional(set(string), [])
+        polling_interval_seconds = optional(number, 5)
+        cooldown_period_seconds  = optional(number, 300)
         overrides = optional(map(object({
           min_replicas             = number
           max_replicas             = number
@@ -112,6 +111,20 @@ variable "deployment" {
         })), {})
       }), {})
       cold_start_keepers = optional(bool, true)
+    }), {})
+
+    dynamic_models = optional(object({
+      enabled             = optional(bool, false)
+      writes_enabled      = optional(bool, false)
+      workload_owner      = optional(string, "terraform")
+      bootstrap_model_ids = optional(set(string), [])
+      fresh_install       = optional(bool, false)
+      handoff_receipt     = optional(string)
+      priority_classes = optional(map(number), {
+        interactive = 100
+        standard    = 0
+        batch       = -100
+      })
     }), {})
 
     storage = optional(object({
@@ -514,12 +527,66 @@ variable "deployment" {
       var.deployment.models.scaling.polling_interval_seconds <= 60 &&
       floor(var.deployment.models.scaling.cooldown_period_seconds) == var.deployment.models.scaling.cooldown_period_seconds &&
       var.deployment.models.scaling.cooldown_period_seconds >= 5 &&
-      var.deployment.models.scaling.cooldown_period_seconds <= 7200 &&
-      floor(var.deployment.models.scaling.fallback_failure_threshold) == var.deployment.models.scaling.fallback_failure_threshold &&
-      var.deployment.models.scaling.fallback_failure_threshold >= 1 &&
-      var.deployment.models.scaling.fallback_failure_threshold <= 20
+      var.deployment.models.scaling.cooldown_period_seconds <= 7200
     )
-    error_message = "models.scaling contains an invalid mode, hot floor, polling, cooldown, or fallback value."
+    error_message = "models.scaling contains an invalid mode, hot floor, polling, or cooldown value."
+  }
+
+  validation {
+    condition = try(
+      contains(["terraform", "released", "controller"], var.deployment.dynamic_models.workload_owner) &&
+      (
+        var.deployment.dynamic_models.enabled || (
+          !var.deployment.dynamic_models.writes_enabled &&
+          var.deployment.dynamic_models.workload_owner == "terraform" &&
+          length(var.deployment.dynamic_models.bootstrap_model_ids) == 0 &&
+          !var.deployment.dynamic_models.fresh_install &&
+          var.deployment.dynamic_models.handoff_receipt == null
+        )
+      ) &&
+      (
+        var.deployment.dynamic_models.workload_owner == "terraform" ? (
+          !var.deployment.dynamic_models.writes_enabled &&
+          length(var.deployment.dynamic_models.bootstrap_model_ids) == 0 &&
+          !var.deployment.dynamic_models.fresh_install &&
+          var.deployment.dynamic_models.handoff_receipt == null
+          ) : var.deployment.dynamic_models.workload_owner == "released" ? (
+          var.deployment.dynamic_models.enabled &&
+          !var.deployment.dynamic_models.writes_enabled &&
+          length(var.deployment.dynamic_models.bootstrap_model_ids) == 0 &&
+          !var.deployment.dynamic_models.fresh_install &&
+          var.deployment.dynamic_models.handoff_receipt == null
+          ) : (
+          var.deployment.dynamic_models.enabled &&
+          var.deployment.dynamic_models.writes_enabled &&
+          var.deployment.models.scaling.mode == "keda" &&
+          (var.deployment.dynamic_models.fresh_install != (var.deployment.dynamic_models.handoff_receipt != null)) &&
+          (var.deployment.dynamic_models.handoff_receipt == null || can(regex("^sha256:[0-9a-f]{64}$", var.deployment.dynamic_models.handoff_receipt)))
+        )
+      ) &&
+      length(setsubtract(
+        var.deployment.dynamic_models.bootstrap_model_ids,
+        var.deployment.models.selection == "profile" ?
+        toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).profiles[var.deployment.profiles.models].canonical_routes) :
+        var.deployment.models.enabled,
+      )) == 0,
+      false,
+    )
+    error_message = "dynamic_models must use one exclusive ownership mode: terraform (read-only controller), released (first cutover apply), or controller (write mode with KEDA and exactly one of fresh_install or a release handoff_receipt); bootstrap IDs must be selected models."
+  }
+
+  validation {
+    condition = try(
+      length(var.deployment.dynamic_models.priority_classes) > 0 &&
+      contains(keys(var.deployment.dynamic_models.priority_classes), "standard") &&
+      alltrue([
+        for name, value in var.deployment.dynamic_models.priority_classes :
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", name)) &&
+        floor(value) == value && value >= -2147483648 && value <= 2147483647
+      ]),
+      false,
+    )
+    error_message = "dynamic_models.priority_classes must contain standard and map DNS-subdomain names to signed 32-bit integer Kueue priorities."
   }
 
   validation {

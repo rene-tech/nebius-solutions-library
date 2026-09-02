@@ -28,7 +28,7 @@ model runtime in one migration.
 | KServe `InferenceService` / `ServingRuntime` | Scientific, imaging, embedding, and custom HTTP/gRPC runtimes | Used where the LLM API is the wrong abstraction |
 | Gateway API Inference Extension and llm-d | Request-aware routing using queue, KV-cache, LoRA, and load signals | Routing and scheduling within a running model service |
 | KEDA or KServe workload-variant autoscaling | Replica floor/ceiling, event-driven activation, and scale from zero where the chosen runtime supports it | Pod replicas, not cloud node-group limits |
-| Kueue | Admission, quotas, fairness, and preemption for cache-fill, warm-up, benchmark, batch, and multi-node jobs | It is not the replica controller for a long-running serving Deployment |
+| Kueue | Admission, quotas, ResourceFlavor selection, fairness, and preemption for batch jobs and individual serving Deployment Pods | KEDA/Deployment remain replica owners; Kueue gates each Pod and accounts quota |
 | KServe `LocalModelCache` plus FS2 cache/snapshot adapters | Durable-to-node-local artifact localization and explicit readiness | Cache presence is separate from a hot GPU replica |
 | NVIDIA Dynamo Kubernetes Platform | Optional optimized backend for qualified large-model profiles, including disaggregation and snapshot-aware startup | Not the universal customer API; non-NVIDIA and non-LLM runtimes remain supported |
 | ModelMesh | Optional high-density loading for many small, compatible models | Not the default for very large multi-GPU models |
@@ -105,6 +105,59 @@ Terraform-defined pool maximum. Operators must see the phases separately:
 admitted, node pending, artifact localizing, runtime starting, warming, ready,
 draining, and failed.
 
+### Implemented heterogeneous elasticity
+
+`poolRefs` is a bounded policy set inside the Terraform-owned envelope, not a
+request for one arbitrarily chosen largest pool. The legacy renderer partitions
+the single global interval `[0, maxReplicas]` into exact-pool workload segments:
+
+- fixed hot segments consume only regular/reserved pools whenever the policy
+  contains one; an all-preemptible policy necessarily keeps its floor there;
+- autoscaled burst segments consume preemptible pools first;
+- if the requested ceiling is larger than preemptible capacity, separately
+  bounded regular-pool overflow segments use the remaining declared capacity;
+- a single-pool policy retains one Deployment and one KEDA scale owner; and
+- `maxReplicas == minReplicas` produces a fixed Deployment and no ScaledObject.
+
+The server-authoritative create option defaults `poolRefs` to every compatible
+pool so a newly selected model immediately receives both durable hot placement
+and preemptible burst where available. The admin form exposes those choices as
+independent checkboxes; an operator may deliberately narrow the non-empty set.
+
+The envelope must give every pool the unique
+`accelerator.fs2.nebius/pool-id=<poolRef>` node selector. Each generated
+Deployment has that exact selector and the pool's accelerator resource name.
+Kueue evaluates the required placement against ResourceFlavor
+labels before admitting each Deployment Pod, so a hot segment cannot be
+admitted against a preemptible flavor when compatible regular pools are in the
+policy (an all-preemptible policy necessarily keeps its floor there), and a
+burst segment cannot consume the reserved pool unless it is the explicit
+regular-overflow segment. A requested ordinary or scheduled hot floor that is
+larger than the selected regular capacity fails as an infrastructure-required
+change instead of spilling silently onto preemptible nodes. Every burst
+Deployment has exactly one KEDA ScaledObject. Its PromQL demand interval is
+offset and capped, so multiple HPAs cannot double-count demand and their maximum
+replicas plus the fixed floor equals the model's global `maxReplicas` exactly.
+
+The primary Service selects the controller's model identity across all hot and
+burst Pods. Controller discovery, rollout readiness, draining, and replica
+status aggregate every segment; `status.placements` exposes each Deployment's
+pool, role, desired, ready, and available counts. This is GPU-neutral: pools may
+use different accelerator resource names because each segment renders the
+resource request from its own envelope record. During drain, the controller
+retains the observed fixed-hot boundary and autoscaled total until active work
+is proven absent, so withdrawing publication cannot silently replace a hot
+workload with a burst workload.
+
+Warm windows are controller-evaluated rather than duplicated as KEDA cron
+triggers. On every bounded reconciliation poll, the controller evaluates the
+validated cron expression in its IANA time zone and applies `durationSeconds`
+to the fixed hot segments. This supports durations that cannot be represented
+faithfully as a second cron expression and leaves KEDA as the sole owner of
+burst scale subresources. Queue and WorkloadPriorityClass labels are present on
+every generated Deployment; `maxQueueSeconds` remains the FS2 operation
+admission deadline rather than being misrepresented as a Kueue Pod timeout.
+
 ## Ownership and safety rules
 
 Avoiding dual ownership is essential:
@@ -131,6 +184,80 @@ change can create a signed revision immediately; environments that require
 review can configure the same controller to accept only revisions promoted by
 their GitOps pipeline.
 
+## Terraform bootstrap contract
+
+The implemented root input is intentionally small. Customers select the model
+catalog, model IDs, image overrides, pool overrides, KEDA floor/ceiling, and GPU
+pools once; `deployment.dynamic_models` only selects the writer and optional
+initial desired revisions:
+
+```hcl
+dynamic_models = {
+  enabled             = true
+  writes_enabled      = true
+  workload_owner      = "controller"
+  bootstrap_model_ids = ["qwen3-8b"]
+  fresh_install       = true
+}
+```
+
+Terraform derives the controller's immutable `InfrastructureEnvelope` and
+`LegacyTemplateBundle` documents from the effective accelerator-pool contract,
+selected catalog records, digest-pinned mirrored images, rendered manifests,
+tenant, LocalQueue, and model scaling settings. Neither JSON document is a
+tfvars input. Pool resource names and selectors come from the generic
+accelerator contract, so H100, H200, B200, B300, GB300, RTX PRO, MIG, and mixed
+clusters use the same path once the exact model/runtime placement is qualified.
+
+Qualification is a strict join, not an inference. A model enters the controller
+envelope only when its catalog cache has a real `platform-verified` artifact
+manifest, the immutable base catalog source is qualified and license/entitlement
+checked, the retained runtime projection matches its exact revision, image
+digest and Service, the accelerator compatibility binding is enabled and
+hardware-validated, and the renderer uses that same digest-pinned image.
+Missing NIM cache manifests and declaration-only GPU candidates are never
+replaced by synthetic digests. They remain on the static Terraform path and
+appear with explicit failed checks in `dynamic_model_contract.ineligible_models`.
+The envelope keeps the artifact revision and manifest digest as one immutable
+map entry and carries `scaleToZeroQualified` independently; runtime admission
+must reject a zero floor when retained elasticity evidence is false.
+
+Initial desired revisions are submitted by a bounded in-cluster bootstrap Job
+through the same authenticated `plan-preview` and `apply` endpoints as the
+admin console. The Job is create-only: if a model already has a durable desired
+revision with the same immutable model and tenant identity, it leaves that
+revision untouched. A bootstrap request with a zero hot floor is rejected until
+the retained projection explicitly qualifies elasticity; set the model hot or a
+positive `min_replicas` override when only runtime qualification exists.
+
+The ownership modes are mutually exclusive:
+
+- `terraform`: existing serving manifests and ScaledObjects remain under
+  Terraform; controller writes and bootstrap must be off.
+- `released`: renderer-supported serving objects and static routes for the
+  qualified controller subset are absent. Terraform retains unqualified models
+  and unsupported infrastructure/security GVKs. It also retains every
+  per-model shared-cache PVC so localized weights survive the cutover.
+  Controller writes remain off. The completed apply emits a content-bound
+  handoff receipt.
+- `controller`: Terraform does not render those qualified serving identities;
+  ineligible models remain statically owned. A fresh install must say
+  `fresh_install = true`; an existing deployment must instead supply the exact
+  receipt emitted by the prior `released` apply.
+
+This conservative existing-cluster transition avoids double ownership but is
+not yet the zero-downtime Claim protocol described below: the controller still
+rejects Claim without a live UID/state/field-manager verifier. Operators must
+drain before the release apply. The limitation is explicit rather than silently
+stealing fields or pretending a destructive Terraform removal was adoption.
+Before a dynamic desired revision exists, rollback by restoring
+`workload_owner = "terraform"`, clearing bootstrap/fresh/receipt and applying.
+After one exists, drain and delete it through the admin API and wait for its
+owned resources to disappear before returning that model to Terraform.
+Before removing a selected model from tfvars, disable or delete its durable live
+revision through the admin API; bootstrap is intentionally create-only and
+Terraform does not become the ongoing desired-state writer.
+
 ## Delivery sequence
 
 1. Add the versioned `ModelDeployment` CRD, status conditions, admission rules,
@@ -148,9 +275,10 @@ their GitOps pipeline.
    FS2 API.
 4. Add llm-d and Dynamo renderer profiles only after live qualification on the
    target GPU/model matrix. Keep the current renderer as a supported fallback.
-5. Make Kueue admission explicit for localization, warm-up, benchmark, batch,
-   and multi-node startup jobs; verify that interactive request queueing remains
-   visible and bounded while a zero-hot model activates.
+5. Extend the implemented Kueue Deployment-Pod admission and exact
+   ResourceFlavor placement to localization, warm-up, benchmark, batch, and
+   multi-node startup jobs; keep interactive request queueing visible and
+   bounded while a zero-hot model activates.
 
 Acceptance requires an authenticated operator to add a reviewed model, change
 its hot floor from zero to one and back, observe a node scale from zero, see the
@@ -166,6 +294,7 @@ unqualified accelerator placement is rejected without cloud mutation.
 - [Gateway API Inference Extension `InferencePool`](https://gateway-api-inference-extension.sigs.k8s.io/api-types/inferencepool)
 - [llm-d architecture](https://llm-d.ai/docs/architecture)
 - [Kueue and supported workload integrations](https://kueue.sigs.k8s.io/)
+- [Kueue Deployment integration](https://kueue.sigs.k8s.io/docs/tasks/run/deployment/)
 - [Kueue `ResourceFlavor`](https://kueue.sigs.k8s.io/docs/concepts/resource_flavor/)
 - [KEDA scaling concepts](https://keda.sh/docs/2.20/concepts/)
 - [LeaderWorkerSet concepts](https://lws.sigs.k8s.io/docs/concepts/)

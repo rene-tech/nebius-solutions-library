@@ -25,6 +25,45 @@ resource "helm_release" "cert_manager" {
   depends_on = [helm_release.envoy_gateway]
 }
 
+# The infrastructure stage attaches the same Nebius shared filesystem to every
+# worker and mounts it at /mnt/fs2cache. This cluster-scoped CSI driver turns
+# that existing mount into dynamically provisioned ReadWriteMany volumes. The
+# release name is deliberately stable: the upstream chart derives the public
+# csi-mounted-fs-path-sc StorageClass name from it, and model bundles bind that
+# exact class without making it the cluster default for databases or logs.
+resource "helm_release" "filesystem_csi" {
+  name             = "csi-mounted-fs-path"
+  namespace        = data.kubernetes_namespace_v1.kube_system.metadata[0].name
+  repository       = "oci://cr.eu-north1.nebius.cloud/mk8s/helm"
+  chart            = "csi-mounted-fs-path"
+  version          = local.chart_versions.filesystem_csi
+  create_namespace = false
+  atomic           = true
+  cleanup_on_fail  = true
+  wait             = true
+  timeout          = 900
+
+  values = [yamlencode({
+    dataDir = "/mnt/fs2cache/csi-mounted-fs-path-data/"
+    affinity = {
+      nodeAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = {
+          nodeSelectorTerms = [{
+            matchExpressions = [{
+              key      = "storage.fs2.nebius/shared-cache"
+              operator = "In"
+              values   = ["true"]
+            }]
+          }]
+        }
+      }
+    }
+    tolerations = [{ operator = "Exists" }]
+  })]
+
+  depends_on = [terraform_data.cluster_contract]
+}
+
 resource "helm_release" "cloudnative_pg" {
   name             = "fs2-${var.run_id}-cloudnative-pg"
   namespace        = kubernetes_namespace_v1.platform["cnpg-system"].metadata[0].name
@@ -84,8 +123,8 @@ resource "helm_release" "kueue" {
 
 # KEDA is installed once by the foundation. Static workloads leave it dormant;
 # the explicit keda workload mode creates one ScaledObject per routed model.
-# Kueue remains restricted to asynchronous Jobs/Workloads and never shares
-# replica ownership with serving Deployments.
+# Kueue's Deployment integration gates each serving Pod against its exact-pool
+# ResourceFlavor quota; KEDA remains the only writer of burst replica counts.
 resource "helm_release" "keda" {
   name             = "fs2-${var.run_id}-keda"
   namespace        = kubernetes_namespace_v1.platform["keda"].metadata[0].name

@@ -8,6 +8,7 @@ import { useSession } from "../auth/SessionContext";
 const navigation = [
   ["Overview", "/admin", "OV"],
   ["Models", "/admin/models", "MO"],
+  ["Live model config", "/admin/model-deployments", "LC"],
   ["Operations", "/admin/operations", "OP"],
   ["Users & API keys", "/admin/access", "AK"],
   ["Capacity & queues", "/admin/capacity", "CQ"],
@@ -17,6 +18,8 @@ const navigation = [
 ] as const;
 
 function titleFor(pathname: string) {
+  if (pathname === "/admin/model-deployments/new") return "Draft model deployment";
+  if (/^\/admin\/model-deployments\/[^/]+/.test(pathname)) return "Model deployment";
   if (/^\/admin\/models\/[^/]+/.test(pathname)) return "Model detail";
   if (/^\/admin\/operations\/[^/]+/.test(pathname)) return "Operation detail";
   return navigation.find(([, path]) => path === pathname)?.[0] ?? "FS2 Serve";

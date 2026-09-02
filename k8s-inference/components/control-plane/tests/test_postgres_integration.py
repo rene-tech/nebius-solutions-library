@@ -313,6 +313,10 @@ async def test_model_deployment_revisions_idempotency_status_and_audit_are_durab
 
     second_observation = observation(revision=2, etag=second.etag)
     await postgres_store.model_deployment_append_status(second_observation)
+    with pytest.raises(ConflictError, match="older than current status"):
+        await postgres_store.model_deployment_append_status(
+            first_observation.model_copy(update={"observation_id": uuid4()})
+        )
     observed = await service.status(
         namespace="fs2-models",
         name="qwen-live",
@@ -602,7 +606,7 @@ async def test_real_postgres_rejects_extra_or_reordered_applied_migration_ledger
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
-async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0012(
+async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0013(
     postgres_store: PostgresStore,
     tmp_path: Path,
 ) -> None:
@@ -658,7 +662,15 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 await before_connection.fetchval("SELECT to_regclass('public.fs2_operator_principals')")
                 == "fs2_operator_principals"
             )
-            assert await before_connection.fetchval("SELECT to_regclass('public.fs2_model_deployments')") is None
+            assert (
+                await before_connection.fetchval("SELECT to_regclass('public.fs2_model_deployments')")
+                == "fs2_model_deployments"
+            )
+            assert not await before_connection.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name='fs2_operations' "
+                "AND column_name='dispatch_snapshot')"
+            )
         finally:
             await before_connection.close()
 
@@ -672,7 +684,7 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 )
             }
             assert {version: after[version] for version in before} == before
-            assert list(after)[-1] == "0012_model_deployments.sql"
+            assert list(after)[-1] == "0013_durable_dynamic_dispatch.sql"
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_activation_model_fences')")
                 == "fs2_activation_model_fences"
@@ -689,6 +701,11 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_model_deployments')")
                 == "fs2_model_deployments"
+            )
+            assert await upgraded_connection.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name='fs2_operations' "
+                "AND column_name='dispatch_snapshot')"
             )
         finally:
             await upgraded_connection.close()

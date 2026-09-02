@@ -57,7 +57,7 @@
 {{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "2b9fc5a5da6c84cea32fcbee16ea1cba023023199c822f3d03b29f77c9bef0c4") (ne .Values.migration.releaseContract.migrationSetSha256 "d1e3c41432d2ab6cdbeec21c55aba7f079a93cf576a43f490290cdfc0fb43122") (ne (int .Values.migration.releaseContract.migrationCount) 12) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0012_model_deployments.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "3a977a1c29f338233eb017454ee3d07bf505c31db909bccc05a2524388ad3da2") (ne .Values.migration.releaseContract.migrationSetSha256 "081ae3ea6ddc3a0efd8b86151352d7b2f2ebc8de4d07a1e078bcb24b1c0f66cf") (ne (int .Values.migration.releaseContract.migrationCount) 13) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0013_durable_dynamic_dispatch.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}
@@ -119,6 +119,9 @@
 {{- end }}
 {{- if and .Values.adminReadAdapters.capacity.nodeScalerProvider (not .Values.adminConfiguration.enabled) }}
 {{- fail "adminReadAdapters.capacity.nodeScalerProvider requires the exact adminConfiguration pool contract" }}
+{{- end }}
+{{- if and .Values.modelController.writesEnabled (not .Values.adminReadAdapters.capacity.enabled) }}
+{{- fail "modelController.writesEnabled requires adminReadAdapters.capacity for the runtime Kubernetes credential" }}
 {{- end }}
 {{- if or (lt (.Values.adminReadAdapters.adapterTimeoutSeconds | float64) 0.1) (gt (.Values.adminReadAdapters.adapterTimeoutSeconds | float64) 10.0) }}
 {{- fail "adminReadAdapters.adapterTimeoutSeconds must be between 0.1 and 10 seconds" }}

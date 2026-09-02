@@ -287,7 +287,14 @@ class OperationView(StrictModel):
 class ClaimedOperation(OperationView):
     request_content_type: str
     traceparent: str | None = None
+    dispatch_snapshot: str | None = Field(default=None, max_length=262_144)
     worker_id: str
+
+
+class DynamicAdmissionFence(StrictModel):
+    namespace: str = Field(min_length=1, max_length=63)
+    name: str = Field(min_length=1, max_length=253)
+    etag: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
 
 
 class OperationResult(StrictModel):

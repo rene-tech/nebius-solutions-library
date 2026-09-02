@@ -18,6 +18,15 @@ output "effective_configuration" {
     port_forward_ports         = var.deployment.edge.port_forward_ports
     model_scaling_mode         = var.deployment.models.scaling.mode
     hot_model_ids              = sort(tolist(var.deployment.models.scaling.hot))
-    registry_policy            = local.deployment_contract.artifact_delivery
+    dynamic_models = {
+      enabled             = var.deployment.dynamic_models.enabled
+      writes_enabled      = var.deployment.dynamic_models.writes_enabled
+      workload_owner      = var.deployment.dynamic_models.workload_owner
+      bootstrap_model_ids = sort(tolist(var.deployment.dynamic_models.bootstrap_model_ids))
+      fresh_install       = var.deployment.dynamic_models.fresh_install
+      handoff_receipt_set = var.deployment.dynamic_models.handoff_receipt != null
+      priority_classes    = var.deployment.dynamic_models.priority_classes
+    }
+    registry_policy = local.deployment_contract.artifact_delivery
   }
 }

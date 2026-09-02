@@ -44,6 +44,8 @@ describe("Configuration page", () => {
     expect(await screen.findByText("qwen3-8b")).toBeInTheDocument();
     expect(screen.getAllByText("Read-only · not applicable").length).toBeGreaterThan(1);
     expect(screen.getByText(/only minimum\/maximum replicas/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Add a qualified model" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Draft model deployment" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create Terraform handoff" })).not.toBeInTheDocument();
     expect(screen.getByText(/Administrator role required/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /apply/i })).not.toBeInTheDocument();
@@ -66,6 +68,7 @@ describe("Configuration page", () => {
     renderPage("operator");
 
     await screen.findByText("qwen3-8b");
+    expect(screen.getByRole("link", { name: "Draft model deployment" })).toHaveAttribute("href", "/admin/model-deployments/new");
     changeCooldown();
     fireEvent.click(screen.getByRole("button", { name: "Create Terraform handoff" }));
     await waitFor(() => expect(plan).toHaveBeenCalledOnce());

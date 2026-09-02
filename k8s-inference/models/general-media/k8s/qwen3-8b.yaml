@@ -34,46 +34,365 @@ metadata:
     app.kubernetes.io/part-of: fs2-serve
 data:
   localize.py: |
-    import hashlib, json, os
-    from pathlib import Path
+    from __future__ import annotations
+
+    import errno
+    import fcntl
+    import hashlib
+    import json
+    import os
+    import shutil
+    import stat
+    import sys
+    import time
+    import uuid
+    from concurrent.futures import ThreadPoolExecutor
+    from pathlib import Path, PurePosixPath
+
     from huggingface_hub import snapshot_download
 
-    lock = json.loads(Path("/contract/model.lock.json").read_text())
-    model = lock["model"]
-    target = Path("/models/qwen3-8b")
-    target.mkdir(parents=True, exist_ok=True)
-    snapshot_download(
-        repo_id=model["repo_id"],
-        revision=model["revision"],
-        local_dir=target,
-        allow_patterns=[item["path"] for item in model["files"]],
+    RECEIPT_SCHEMA = "fs2-serve.nebius.ai/shared-cache-localization-receipt/v2"
+    LOCK_PATH = Path(os.getenv("FS2_MODEL_LOCK_PATH", "/contract/model.lock.json"))
+    CACHE_ROOT = Path(os.getenv("FS2_CACHE_ROOT", "/models"))
+    HF_CACHE_ROOT = Path(
+        os.getenv(
+            "FS2_HF_CACHE_ROOT",
+            str(Path(os.getenv("HF_HOME", str(CACHE_ROOT / ".cache" / "huggingface"))) / "hub"),
+        )
     )
-    actual = {
-        p.relative_to(target).as_posix()
-        for p in target.rglob("*")
-        if p.is_file()
-        and ".cache" not in p.parts
-        and p.name != "localization-receipt.json"
-    }
-    expected = {item["path"] for item in model["files"]}
-    if actual != expected:
-        raise RuntimeError(f"inventory mismatch: missing={sorted(expected-actual)} unexpected={sorted(actual-expected)}")
-    total = 0
-    for item in model["files"]:
-        path = target / item["path"]
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        if path.stat().st_size != item["size"] or digest != item["sha256"]:
-            raise RuntimeError(f"artifact mismatch: {item['path']}")
-        total += path.stat().st_size
-    if total != model["total_size_bytes"]:
-        raise RuntimeError("total artifact size mismatch")
-    Path("/models/localization-receipt.json").write_text(json.dumps({"revision": model["revision"], "total_size_bytes": total}, sort_keys=True))
+
+
+    def canonical_bytes(value: object) -> bytes:
+        return (
+            json.dumps(
+                value,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+                allow_nan=False,
+            ).encode()
+            + b"\n"
+        )
+
+
+    def load_model() -> dict[str, object]:
+        lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+        if lock.get("schema_version") != 2 or set(lock) != {"schema_version", "model"}:
+            raise RuntimeError("unsupported model lock schema")
+        model = lock["model"]
+        required = {
+            "id",
+            "repo_id",
+            "revision",
+            "artifact_manifest_digest",
+            "content_digest",
+            "total_size_bytes",
+            "files",
+        }
+        if not isinstance(model, dict) or set(model) != required:
+            raise RuntimeError("model lock fields differ from the closed contract")
+        if not all(
+            isinstance(model[key], str) and model[key]
+            for key in ("id", "repo_id", "revision")
+        ):
+            raise RuntimeError("model identity is invalid")
+        for key in ("artifact_manifest_digest", "content_digest"):
+            value = model[key]
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(character not in "0123456789abcdef" for character in value)
+            ):
+                raise RuntimeError(f"{key} is not a lowercase SHA-256 digest")
+        files = model["files"]
+        if not isinstance(files, list) or not files:
+            raise RuntimeError("model lock has no files")
+        normalized = []
+        for item in files:
+            if not isinstance(item, dict) or set(item) != {"path", "size", "sha256"}:
+                raise RuntimeError("model file entry differs from the closed contract")
+            path = PurePosixPath(item["path"])
+            if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+                raise RuntimeError(f"unsafe model file path: {item['path']}")
+            if not isinstance(item["size"], int) or item["size"] < 0:
+                raise RuntimeError(f"invalid model file size: {item['path']}")
+            digest = item["sha256"]
+            if (
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+            ):
+                raise RuntimeError(f"invalid model file digest: {item['path']}")
+            normalized.append(
+                {"path": path.as_posix(), "bytes": item["size"], "sha256": digest}
+            )
+        if [item["path"] for item in normalized] != sorted(
+            {item["path"] for item in normalized}
+        ):
+            raise RuntimeError("model files must be unique and sorted")
+        if sum(item["bytes"] for item in normalized) != model["total_size_bytes"]:
+            raise RuntimeError("total artifact size differs from the model lock")
+        if hashlib.sha256(canonical_bytes(normalized)).hexdigest() != model["content_digest"]:
+            raise RuntimeError("content digest differs from the model lock")
+        return model
+
+
+    def expected_receipt(model: dict[str, object]) -> dict[str, object]:
+        return {
+            "schema": RECEIPT_SCHEMA,
+            "model_id": model["id"],
+            "repository": model["repo_id"],
+            "revision": model["revision"],
+            "artifact_manifest_digest": model["artifact_manifest_digest"],
+            "content_digest": model["content_digest"],
+            "file_count": len(model["files"]),
+            "total_size_bytes": model["total_size_bytes"],
+            "payload_relative_path": "payload",
+            "verification": "full-file-sha256-before-atomic-publication",
+        }
+
+
+    def safe_sha256(path: Path) -> str:
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode):
+                raise RuntimeError(f"model entry is not a regular file: {path}")
+            digest = hashlib.sha256()
+            with os.fdopen(descriptor, "rb", closefd=False) as stream:
+                for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+                    digest.update(chunk)
+            return digest.hexdigest()
+        finally:
+            os.close(descriptor)
+
+
+    def materialize_regular_files(
+        source_root: Path,
+        destination: Path,
+        files: list[dict[str, object]],
+        *,
+        allowed_root: Path,
+    ) -> None:
+        allowed = allowed_root.resolve()
+        for item in files:
+            source = (source_root / item["path"]).resolve(strict=True)
+            try:
+                source.relative_to(allowed)
+            except ValueError:
+                raise RuntimeError(f"model source escaped its cache root: {item['path']}") from None
+            info = source.stat()
+            if not stat.S_ISREG(info.st_mode) or info.st_size != item["size"]:
+                raise RuntimeError(f"model source is not the expected regular file: {item['path']}")
+            target = destination / item["path"]
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
+            try:
+                os.link(source, target)
+            except OSError as error:
+                if error.errno not in {
+                    errno.EXDEV,
+                    errno.EPERM,
+                    errno.EOPNOTSUPP,
+                    errno.ENOTSUP,
+                }:
+                    raise
+                # Copy only when the source and publication path cannot share
+                # a regular-file hardlink on the selected storage backend.
+                shutil.copyfile(source, target)
+
+
+    def lightweight_inventory(payload: Path, files: list[dict[str, object]]) -> bool:
+        if payload.is_symlink() or not payload.is_dir():
+            return False
+        for item in files:
+            candidate = payload / item["path"]
+            try:
+                info = candidate.lstat()
+            except FileNotFoundError:
+                return False
+            if not stat.S_ISREG(info.st_mode) or info.st_size != item["size"]:
+                return False
+        return True
+
+
+    def receipt_matches(
+        receipt_path: Path,
+        payload: Path,
+        model: dict[str, object],
+    ) -> bool:
+        try:
+            info = receipt_path.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 16384:
+                return False
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        return receipt == expected_receipt(model) and lightweight_inventory(
+            payload, model["files"]
+        )
+
+
+    def verify_payload(payload: Path, model: dict[str, object], workers: int) -> None:
+        actual = []
+        for candidate in sorted(payload.rglob("*")):
+            relative = candidate.relative_to(payload).as_posix()
+            info = candidate.lstat()
+            if stat.S_ISDIR(info.st_mode):
+                continue
+            if not stat.S_ISREG(info.st_mode):
+                raise RuntimeError(f"model tree contains a non-regular entry: {relative}")
+            actual.append(relative)
+        expected = [item["path"] for item in model["files"]]
+        if actual != expected:
+            raise RuntimeError(
+                f"inventory mismatch: missing={sorted(set(expected)-set(actual))} "
+                f"unexpected={sorted(set(actual)-set(expected))}"
+            )
+
+        def verify_one(item: dict[str, object]) -> None:
+            candidate = payload / item["path"]
+            if candidate.stat().st_size != item["size"] or safe_sha256(candidate) != item["sha256"]:
+                raise RuntimeError(f"artifact mismatch: {item['path']}")
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            list(executor.map(verify_one, model["files"]))
+
+
+    def acquire_lock(descriptor: int) -> None:
+        deadline = time.monotonic() + int(os.getenv("FS2_CACHE_LOCK_TIMEOUT_SECONDS", "3600"))
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("timed out waiting for the shared model-cache writer")
+                time.sleep(0.5)
+
+
+    def resolve_huggingface_snapshot(
+        model: dict[str, object], workers: int
+    ) -> tuple[Path, str]:
+        arguments = {
+            "repo_id": model["repo_id"],
+            "revision": model["revision"],
+            "cache_dir": HF_CACHE_ROOT,
+            "allow_patterns": [item["path"] for item in model["files"]],
+            "max_workers": workers,
+            "token": False,
+        }
+        try:
+            return Path(snapshot_download(**arguments, local_files_only=True)), "huggingface-local-cache"
+        except Exception:
+            return Path(snapshot_download(**arguments)), "huggingface-download"
+
+
+    def main() -> int:
+        started = time.monotonic()
+        model = load_model()
+        workers = min(32, max(1, int(os.getenv("FS2_LOCALIZATION_WORKERS", "16"))))
+        model_root = CACHE_ROOT / model["id"]
+        content_root = model_root / "sha256" / model["content_digest"]
+        payload = content_root / "payload"
+        receipt_path = content_root / "localization-receipt.json"
+        if receipt_matches(receipt_path, payload, model):
+            print(json.dumps({"outcome": "cache-hit", "elapsed_seconds": time.monotonic() - started}))
+            return 0
+
+        lock_root = model_root / ".locks"
+        lock_root.mkdir(parents=True, exist_ok=True, mode=0o750)
+        lock_path = lock_root / f"{model['content_digest']}.lock"
+        descriptor = os.open(
+            lock_path,
+            os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
+            0o640,
+        )
+        try:
+            acquire_lock(descriptor)
+            if receipt_matches(receipt_path, payload, model):
+                print(json.dumps({"outcome": "cache-hit-after-wait", "elapsed_seconds": time.monotonic() - started}))
+                return 0
+            if content_root.exists():
+                raise RuntimeError(
+                    "content address exists without its exact immutable receipt; refusing to mutate it"
+                )
+            staging_parent = model_root / ".staging"
+            staging_parent.mkdir(parents=True, exist_ok=True, mode=0o750)
+            staging = staging_parent / f"{model['content_digest']}-{uuid.uuid4()}"
+            staging_payload = staging / "payload"
+            staging_payload.mkdir(parents=True, mode=0o750)
+            try:
+                source_kind = "huggingface"
+                legacy_text = os.getenv("FS2_LEGACY_PAYLOAD_ROOT")
+                legacy = Path(legacy_text) if legacy_text else None
+                legacy_ready = legacy is not None and lightweight_inventory(
+                    legacy, model["files"]
+                )
+                if legacy_ready:
+                    try:
+                        materialize_regular_files(
+                            legacy,
+                            staging_payload,
+                            model["files"],
+                            allowed_root=legacy,
+                        )
+                        verify_payload(staging_payload, model, workers)
+                        source_kind = "verified-legacy-payload"
+                    except Exception:
+                        shutil.rmtree(staging_payload)
+                        staging_payload.mkdir(mode=0o750)
+                        legacy_ready = False
+                if not legacy_ready:
+                    returned, source_kind = resolve_huggingface_snapshot(model, workers)
+                    materialize_regular_files(
+                        returned,
+                        staging_payload,
+                        model["files"],
+                        allowed_root=HF_CACHE_ROOT,
+                    )
+                    verify_payload(staging_payload, model, workers)
+                receipt_tmp = staging / ".localization-receipt.json.tmp"
+                with receipt_tmp.open("wb") as stream:
+                    stream.write(canonical_bytes(expected_receipt(model)))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(receipt_tmp, staging / "localization-receipt.json")
+                content_root.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
+                os.replace(staging, content_root)
+            except Exception:
+                if staging.exists():
+                    shutil.rmtree(staging)
+                raise
+        finally:
+            os.close(descriptor)
+        print(
+            json.dumps(
+                {
+                    "outcome": "localized",
+                    "source": source_kind,
+                    "elapsed_seconds": time.monotonic() - started,
+                }
+            )
+        )
+        return 0
+
+
+    if __name__ == "__main__":
+        try:
+            raise SystemExit(main())
+        except Exception as error:
+            print(f"localization failed: {error}", file=sys.stderr, flush=True)
+            raise
   model.lock.json: |
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "model": {
+        "id": "qwen3-8b",
         "repo_id": "Qwen/Qwen3-8B",
         "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+        "artifact_manifest_digest": "2cf721c69d9e1b66860274de129f0dd486172ef1dad289483ea891dab5b80806",
+        "content_digest": "5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d",
         "total_size_bytes": 16397461266,
         "files": [
           {"path":".gitattributes","size":1570,"sha256":"34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930"},
@@ -108,7 +427,9 @@ metadata:
     app.kubernetes.io/part-of: fs2-serve
     app.kubernetes.io/version: b968826d9c46dd6066d109eabc6255188de91218
   annotations:
+    fs2.nebius/cache-content-path: /models/qwen3-8b/sha256/5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d/payload
     fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+    fs2.nebius/localization-receipt-schema: fs2-serve.nebius.ai/shared-cache-localization-receipt/v2
     fs2.nebius/model-content-digest: sha256:5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d
     fs2.nebius/runtime-image-digest: sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
 spec:
@@ -122,7 +443,9 @@ spec:
     metadata:
       labels: *labels
       annotations:
+        fs2.nebius/cache-content-path: /models/qwen3-8b/sha256/5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d/payload
         fs2.nebius/compile-cache-abi: driver-580.173.02-sm103
+        fs2.nebius/localization-receipt-schema: fs2-serve.nebius.ai/shared-cache-localization-receipt/v2
         fs2.nebius/model-content-digest: sha256:5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d
         fs2.nebius/model-revision: b968826d9c46dd6066d109eabc6255188de91218
         fs2.nebius/runtime-image-digest: sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
@@ -150,6 +473,8 @@ spec:
           image: registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
           command: [python3, /contract/localize.py]
           env:
+            - {name: FS2_LEGACY_PAYLOAD_ROOT, value: /models/qwen3-8b}
+            - {name: FS2_LOCALIZATION_WORKERS, value: "16"}
             - {name: HF_HUB_DISABLE_TELEMETRY, value: "1"}
             - {name: HF_HOME, value: /models/.cache/huggingface}
           resources:
@@ -164,7 +489,7 @@ spec:
       containers:
         - name: vllm
           image: registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
-          args: [/models/qwen3-8b, --served-model-name, qwen3-8b, Qwen/Qwen3-8B, --host, 0.0.0.0, --port, "8000", --dtype, bfloat16, --tensor-parallel-size, "1", --max-model-len, "32768", --gpu-memory-utilization, "0.80", --generation-config, vllm, --enable-prefix-caching]
+          args: [/models/qwen3-8b/sha256/5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d/payload, --served-model-name, qwen3-8b, Qwen/Qwen3-8B, --host, 0.0.0.0, --port, "8000", --dtype, bfloat16, --tensor-parallel-size, "1", --max-model-len, "32768", --gpu-memory-utilization, "0.80", --generation-config, vllm, --enable-prefix-caching]
           env:
             - {name: HF_HUB_OFFLINE, value: "1"}
             - {name: TRANSFORMERS_OFFLINE, value: "1"}

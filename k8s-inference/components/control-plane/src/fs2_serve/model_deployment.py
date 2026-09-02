@@ -13,10 +13,14 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Any, Literal, Protocol
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import ConfigDict, Field, StringConstraints, model_validator
+from croniter import CroniterBadCronError, croniter
+from pydantic import AwareDatetime, ConfigDict, Field, StringConstraints, model_validator
 from pydantic.alias_generators import to_camel
 
 from .models import StrictModel
@@ -28,6 +32,15 @@ FIELD_MANAGER = "fs2-model-controller"
 SPEC_DIGEST_ANNOTATION = "fs2-serve.nebius.ai/spec-digest"
 MODEL_DEPLOYMENT_LABEL = "fs2-serve.nebius.ai/model-deployment"
 MODEL_ID_LABEL = "fs2-serve.nebius.ai/model-id"
+KUEUE_QUEUE_LABEL = "kueue.x-k8s.io/queue-name"
+KUEUE_PRIORITY_LABEL = "kueue.x-k8s.io/priority-class"
+EFFECTIVE_HOT_FLOOR_ANNOTATION = "fs2-serve.nebius.ai/effective-hot-floor"
+WORKLOAD_POOL_ANNOTATION = "fs2-serve.nebius.ai/workload-pool-ref"
+WORKLOAD_ROLE_ANNOTATION = "fs2-serve.nebius.ai/workload-role"
+WORKLOAD_SEGMENT_CAPACITY_ANNOTATION = "fs2-serve.nebius.ai/workload-segment-capacity"
+WORKLOAD_SEGMENT_OFFSET_ANNOTATION = "fs2-serve.nebius.ai/workload-segment-offset"
+WORKLOAD_ROLE_LABEL = "fs2-serve.nebius.ai/workload-role"
+POOL_ID_NODE_LABEL = "accelerator.fs2.nebius/pool-id"
 
 SHA256_DIGEST_PATTERN = r"^sha256:[a-f0-9]{64}$"
 DNS_LABEL_PATTERN = r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$"
@@ -36,6 +49,7 @@ DNS_SUBDOMAIN_PATTERN = (
     r"(?:\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$"
 )
 MODEL_REF_PATTERN = r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$"
+SUPPORTED_DYNAMIC_POLICY_REF = "tenant-default.v1"
 IMAGE_DIGEST_PATTERN = r"^[^\s@]+@sha256:[a-f0-9]{64}$"
 
 PoolRef = Annotated[str, StringConstraints(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)]
@@ -161,6 +175,18 @@ class WarmWindowSpec(KubernetesModel):
     time_zone: str = Field(min_length=1, max_length=64)
     duration_seconds: int = Field(ge=60, le=604800)
     min_replicas: int = Field(ge=1, le=10000)
+
+    @model_validator(mode="after")
+    def valid_schedule(self) -> WarmWindowSpec:
+        try:
+            zone = ZoneInfo(self.time_zone)
+        except ZoneInfoNotFoundError:
+            raise ValueError("warm window timeZone must be an IANA time zone") from None
+        try:
+            croniter(self.schedule, datetime.now(zone)).get_prev(datetime)
+        except (CroniterBadCronError, KeyError, TypeError, ValueError):
+            raise ValueError("warm window schedule must be a valid cron expression") from None
+        return self
 
 
 class AvailabilitySpec(KubernetesModel):
@@ -354,29 +380,69 @@ class PoolEnvelope(KubernetesModel):
     pool_id: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
     accelerator_class: str = Field(min_length=1, max_length=128)
     resource_name: str = Field(min_length=1, max_length=253)
-    capacity_type: str = Field(min_length=1, max_length=64)
+    capacity_type: Literal["regular", "preemptible"]
     accelerators_per_node: int = Field(ge=1, le=64)
     min_nodes: int = Field(ge=0, le=10000)
     max_nodes: int = Field(ge=0, le=10000)
-    node_selector: dict[str, str] = Field(default_factory=dict, max_length=32)
+    node_selector: dict[str, str] = Field(min_length=1, max_length=32)
     tolerations: list[dict[str, str | int]] = Field(default_factory=list, max_length=32)
 
     @model_validator(mode="after")
     def valid_capacity(self) -> PoolEnvelope:
         if self.max_nodes < self.min_nodes:
             raise ValueError("pool maxNodes must be greater than or equal to minNodes")
+        if self.node_selector.get(POOL_ID_NODE_LABEL) != self.pool_id:
+            raise ValueError("pool nodeSelector must contain its exact accelerator pool identity")
         return self
 
 
 class ModelQualification(KubernetesModel):
     model_ref: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
     runtime_profile: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
+    artifact_revisions: dict[str, str] = Field(min_length=1, max_length=64)
     artifact_manifest_digests: list[str] = Field(min_length=1, max_length=64)
     runtime_images: list[str] = Field(min_length=1, max_length=64)
     accelerator_classes: list[str] = Field(min_length=1, max_length=128)
     max_accelerators_per_replica: int = Field(ge=1, le=64)
     template_digests: list[str] = Field(min_length=1, max_length=64)
+    template_refs: dict[str, str] = Field(min_length=1, max_length=64)
+    template_cache_tiers: dict[str, CacheTier] = Field(min_length=1, max_length=64)
+    open_ai_qualified: bool = Field(alias="openAIQualified")
+    mcp_tool_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[a-z][a-z0-9_]*$",
+    )
     snapshot_digests: list[str] = Field(default_factory=list, max_length=64)
+    scale_to_zero_qualified: bool
+
+    @model_validator(mode="after")
+    def exact_artifacts(self) -> ModelQualification:
+        revision_pattern = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+\-]*$")
+        if any(
+            len(revision) > 256 or revision_pattern.fullmatch(revision) is None for revision in self.artifact_revisions
+        ):
+            raise ValueError("qualification artifact revision is invalid")
+        if any(re.fullmatch(SHA256_DIGEST_PATTERN, digest) is None for digest in self.artifact_revisions.values()):
+            raise ValueError("qualification artifact digest is invalid")
+        if set(self.artifact_revisions.values()) != set(self.artifact_manifest_digests):
+            raise ValueError("qualified artifact revisions and manifest digests must describe the same set")
+        if (
+            len(set(self.template_digests)) != len(self.template_digests)
+            or len(set(self.template_refs.values())) != len(self.template_refs)
+            or set(self.template_refs.values()) != set(self.template_digests)
+            or any(len(name) > 253 or re.fullmatch(DNS_SUBDOMAIN_PATTERN, name) is None for name in self.template_refs)
+            or any(re.fullmatch(SHA256_DIGEST_PATTERN, digest) is None for digest in self.template_refs.values())
+        ):
+            raise ValueError("qualified template names and digests must form one exact mapping")
+        if set(self.template_cache_tiers) != set(self.template_digests):
+            raise ValueError("every qualified template digest must have one exact cache tier")
+        if len(set(self.snapshot_digests)) != len(self.snapshot_digests) or any(
+            re.fullmatch(SHA256_DIGEST_PATTERN, digest) is None for digest in self.snapshot_digests
+        ):
+            raise ValueError("qualification snapshot digests must be unique SHA-256 identities")
+        return self
 
 
 class InfrastructureEnvelope(KubernetesModel):
@@ -441,6 +507,65 @@ def validate_model_deployment(
                     )
                 )
 
+    if spec.policy.policy_ref != SUPPORTED_DYNAMIC_POLICY_REF:
+        issues.append(
+            _issue(
+                "policy_ref_unsupported",
+                "$.spec.policy.policyRef",
+                "this controller version implements only tenant-default.v1",
+                owner="live-control-plane",
+            )
+        )
+    if spec.policy.rate_policy_ref is not None:
+        issues.append(
+            _issue(
+                "rate_policy_ref_unsupported",
+                "$.spec.policy.ratePolicyRef",
+                "model-specific rate policies are not implemented; use API-key request and concurrency limits",
+                owner="live-control-plane",
+            )
+        )
+
+    if spec.artifact.storage_ref is not None:
+        issues.append(
+            _issue(
+                "artifact_storage_ref_unsupported",
+                "$.spec.artifact.storageRef",
+                "external artifact storage references are not rendered by legacy-manifest-v1; omit storageRef",
+                owner="live-control-plane",
+            )
+        )
+    if spec.placement.topology_policy is TopologyPolicy.HIGH_BANDWIDTH_DOMAIN:
+        issues.append(
+            _issue(
+                "topology_policy_unsupported",
+                "$.spec.placement.topologyPolicy",
+                "HighBandwidthDomain placement is not rendered by legacy-manifest-v1; use SingleNode or Any",
+                owner="live-control-plane",
+            )
+        )
+    if spec.cache.snapshot_preference is not SnapshotPreference.NEVER:
+        issues.append(
+            _issue(
+                "snapshot_restore_unsupported",
+                "$.spec.cache.snapshotPreference",
+                "snapshot restore is not rendered by legacy-manifest-v1; use Never and omit snapshotRef",
+                owner="live-control-plane",
+            )
+        )
+
+    canonical_model_ids = set(envelope.qualifications)
+    for index, alias in enumerate(spec.exposure.open_ai_aliases):
+        if alias in canonical_model_ids:
+            issues.append(
+                _issue(
+                    "openai_alias_conflicts_catalog",
+                    f"$.spec.exposure.openAIAliases[{index}]",
+                    "OpenAI alias collides with a canonical catalog model ID; omit it or choose a distinct alias",
+                    owner="live-control-plane",
+                )
+            )
+
     qualification = envelope.qualifications.get(spec.model_ref)
     if qualification is None:
         issues.append(
@@ -461,12 +586,25 @@ def validate_model_deployment(
                     owner="live-control-plane",
                 )
             )
-        if spec.artifact.manifest_digest not in qualification.artifact_manifest_digests:
+        if qualification.artifact_revisions.get(spec.artifact.revision) != spec.artifact.manifest_digest:
             issues.append(
                 _issue(
-                    "artifact_digest_unqualified",
-                    "$.spec.artifact.manifestDigest",
-                    "artifact manifest digest is not qualified for this model",
+                    "artifact_revision_unqualified",
+                    "$.spec.artifact",
+                    "artifact revision and manifest digest are not an exact qualified pair",
+                    owner="live-control-plane",
+                )
+            )
+        if (
+            spec.lifecycle.desired_state is DesiredState.ENABLED
+            and spec.availability.min_replicas == 0
+            and not qualification.scale_to_zero_qualified
+        ):
+            issues.append(
+                _issue(
+                    "scale_to_zero_unqualified",
+                    "$.spec.availability.minReplicas",
+                    "scale-to-zero is not qualified for this model/runtime tuple",
                     owner="live-control-plane",
                 )
             )
@@ -479,12 +617,48 @@ def validate_model_deployment(
                     owner="live-control-plane",
                 )
             )
-        if spec.runtime.template_ref.digest not in qualification.template_digests:
+        if spec.exposure.open_ai and not qualification.open_ai_qualified:
             issues.append(
                 _issue(
-                    "template_digest_unqualified",
-                    "$.spec.runtime.templateRef.digest",
-                    "runtime template digest is not qualified for this model",
+                    "openai_exposure_unqualified",
+                    "$.spec.exposure.openAI",
+                    "OpenAI exposure is not qualified for this model runtime",
+                    owner="live-control-plane",
+                )
+            )
+        if spec.exposure.mcp and qualification.mcp_tool_name is None:
+            issues.append(
+                _issue(
+                    "mcp_exposure_unqualified",
+                    "$.spec.exposure.mcp",
+                    "MCP exposure is not qualified for this model runtime",
+                    owner="live-control-plane",
+                )
+            )
+        elif spec.exposure.mcp and spec.exposure.mcp_tool_name != qualification.mcp_tool_name:
+            issues.append(
+                _issue(
+                    "mcp_tool_name_unqualified",
+                    "$.spec.exposure.mcpToolName",
+                    "MCP tool name differs from the exact qualified catalog identity",
+                    owner="live-control-plane",
+                )
+            )
+        if qualification.template_refs.get(spec.runtime.template_ref.name) != spec.runtime.template_ref.digest:
+            issues.append(
+                _issue(
+                    "template_ref_unqualified",
+                    "$.spec.runtime.templateRef",
+                    "runtime template name and digest are not an exact qualified pair",
+                    owner="live-control-plane",
+                )
+            )
+        elif qualification.template_cache_tiers[spec.runtime.template_ref.digest] is not spec.cache.tier:
+            issues.append(
+                _issue(
+                    "cache_tier_unqualified",
+                    "$.spec.cache.tier",
+                    "cache tier does not match the exact qualified runtime template",
                     owner="live-control-plane",
                 )
             )
@@ -545,7 +719,10 @@ def validate_model_deployment(
         pool.pool_id: (pool.accelerators_per_node // spec.placement.accelerators_per_replica) * pool.max_nodes
         for pool in known_pools
     }
-    possible_replicas = max(pool_replica_capacity.values(), default=0)
+    # Every admitted pool becomes an independently bounded workload segment.
+    # Summing is safe here: the renderer never asks two autoscalers to own the
+    # same Deployment and each segment is pinned to exactly one pool.
+    possible_replicas = sum(pool_replica_capacity.values())
     if known_pools and spec.availability.max_replicas > possible_replicas:
         issues.append(
             _issue(
@@ -556,6 +733,26 @@ def validate_model_deployment(
             )
         )
         terraform_inputs.update(f"accelerator_pools.{pool.pool_id}.max_nodes" for pool in known_pools)
+
+    # If the policy selects durable and preemptible capacity together, every
+    # configured hot floor (including a future warm window) must fit entirely
+    # on the durable side. Otherwise the label "hot" would falsely promise a
+    # non-preemptible floor while the renderer placed part of it on spot nodes.
+    regular_pools = [pool for pool in known_pools if pool.capacity_type == "regular"]
+    maximum_hot_floor = max(
+        [spec.availability.min_replicas, *(window.min_replicas for window in spec.availability.warm_windows)]
+    )
+    regular_replica_capacity = sum(pool_replica_capacity[pool.pool_id] for pool in regular_pools)
+    if regular_pools and maximum_hot_floor > regular_replica_capacity:
+        issues.append(
+            _issue(
+                "regular_hot_capacity_infrastructure_required",
+                "$.spec.availability",
+                "hot and warm-window replica floors exceed the selected regular pool capacity",
+                owner="terraform",
+            )
+        )
+        terraform_inputs.update(f"accelerator_pools.{pool.pool_id}.max_nodes" for pool in regular_pools)
 
     requested_accelerators = spec.availability.max_replicas * spec.placement.accelerators_per_replica
     if requested_accelerators > envelope.max_accelerators_per_model:
@@ -608,9 +805,22 @@ def validate_model_deployment(
     )
     admitted_pool_ref = None
     if disposition is ValidationDisposition.ACCEPTED and known_pools:
+        # The compatibility field is the first pool used by the placement
+        # planner. A regular pool is the deterministic home for the hot floor;
+        # scale-to-zero models start with the largest preemptible segment.
         admitted_pool_ref = sorted(
             known_pools,
-            key=lambda pool: (-pool_replica_capacity[pool.pool_id], pool.pool_id),
+            key=lambda pool: (
+                0
+                if spec.availability.min_replicas > 0 and pool.capacity_type != "preemptible"
+                else 1
+                if spec.availability.min_replicas > 0
+                else 0
+                if pool.capacity_type == "preemptible"
+                else 1,
+                -pool_replica_capacity[pool.pool_id],
+                pool.pool_id,
+            ),
         )[0].pool_id
     return ValidationDecision(
         disposition=disposition,
@@ -627,13 +837,22 @@ class RenderContext(KubernetesModel):
     uid: str | None = Field(default=None, min_length=1, max_length=128)
     generation: int = Field(ge=1)
     pool: PoolEnvelope
+    eligible_pools: list[PoolEnvelope] = Field(default_factory=list, max_length=32)
     prometheus_server_address: str = Field(min_length=1, max_length=2048)
+    evaluation_time: AwareDatetime = Field(default_factory=lambda: datetime.now(UTC))
+    minimum_total_replicas_override: int | None = Field(default=None, ge=0, le=10000)
+    hot_floor_override: int | None = Field(default=None, ge=0, le=10000)
     preview: bool = False
 
     @model_validator(mode="after")
     def owner_required_for_apply(self) -> RenderContext:
         if not self.preview and self.uid is None:
             raise ValueError("a non-preview render requires the ModelDeployment UID")
+        pools = self.eligible_pools or [self.pool]
+        if len({item.pool_id for item in pools}) != len(pools):
+            raise ValueError("render context eligible pools must be unique")
+        if self.pool.pool_id not in {item.pool_id for item in pools}:
+            raise ValueError("render context primary pool must be eligible")
         return self
 
 
@@ -648,11 +867,22 @@ class RenderedResource(KubernetesModel):
     force_conflicts: Literal[False] = False
 
 
+class RenderedServiceEndpoint(KubernetesModel):
+    namespace: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
+    service_name: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
+    service_port: int = Field(ge=1, le=65535)
+
+    @property
+    def identity(self) -> str:
+        return f"v1/Service/{self.namespace}/{self.service_name}"
+
+
 class RenderPlan(KubernetesModel):
     renderer: str = Field(min_length=1, max_length=128)
     spec_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
     render_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
     resources: list[RenderedResource] = Field(min_length=1, max_length=256)
+    endpoint: RenderedServiceEndpoint
 
 
 class ModelRenderer(Protocol):
@@ -667,6 +897,8 @@ class LegacyTemplateBundle(KubernetesModel):
     template_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
     primary_workload_name: str = Field(min_length=1, max_length=253, pattern=DNS_SUBDOMAIN_PATTERN)
     runtime_container_name: str = Field(min_length=1, max_length=253, pattern=DNS_LABEL_PATTERN)
+    primary_service_name: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
+    primary_service_port: int = Field(ge=1, le=65535)
     resources: list[dict[str, Any]] = Field(min_length=1, max_length=255)
 
 
@@ -712,7 +944,9 @@ def _derived_name(prefix: str, name: str, *, maximum: int = 253) -> str:
     return f"{prefix}{stem}-{suffix}"
 
 
-def _label_value(value: str) -> str:
+def bounded_label_value(value: str) -> str:
+    """Return the stable Kubernetes label identity used for model ownership."""
+
     if len(value) <= 63:
         return value
     suffix = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
@@ -723,6 +957,231 @@ def _label_value(value: str) -> str:
 def _metric_name(model_ref: str) -> str:
     suffix = re.sub(r"[^A-Za-z0-9_:]", "_", model_ref)
     return f"fs2_operation_demand_{suffix}"
+
+
+def operation_demand_promql(model_ref: str) -> str:
+    """Count every active state once, independent of gateway scrape replicas."""
+
+    if re.fullmatch(MODEL_REF_PATTERN, model_ref) is None:
+        raise ValueError("model reference cannot be embedded in PromQL")
+    return (
+        f'sum(max by (model, state) (fs2_serve_operations{{model="{model_ref}",'
+        'state=~"queued|activating|running"})) OR vector(0)'
+    )
+
+
+def effective_hot_floor(spec: AvailabilitySpec, *, at: datetime) -> int:
+    """Resolve recurring warm windows at one explicit reconciliation instant."""
+
+    floor = spec.min_replicas
+    for window in spec.warm_windows:
+        local_now = at.astimezone(ZoneInfo(window.time_zone))
+        # A one-microsecond offset includes a start that lands exactly on the
+        # current instant while keeping croniter's previous-occurrence API.
+        started_at = croniter(window.schedule, local_now + timedelta(microseconds=1)).get_prev(datetime)
+        if started_at <= local_now < started_at + timedelta(seconds=window.duration_seconds):
+            floor = max(floor, window.min_replicas)
+    return min(floor, spec.max_replicas)
+
+
+def scaled_object_name(model_deployment_name: str) -> str:
+    """Return a stable ScaledObject name that leaves room for KEDA's HPA prefix."""
+
+    return _derived_name("fs2-model-", model_deployment_name, maximum=253 - len("keda-hpa-"))
+
+
+def scaled_object_hpa_name(model_deployment_name: str) -> str:
+    return f"keda-hpa-{scaled_object_name(model_deployment_name)}"
+
+
+@dataclass(frozen=True)
+class _WorkloadSegment:
+    """One exact-pool slice of the global replica interval."""
+
+    pool: PoolEnvelope
+    role: Literal["hot", "burst"]
+    fixed_replicas: int | None
+    minimum_replicas: int
+    maximum_replicas: int
+    demand_offset: int
+
+    @property
+    def autoscaled(self) -> bool:
+        return self.fixed_replicas is None
+
+
+def _pool_replica_capacity(pool: PoolEnvelope, accelerators_per_replica: int) -> int:
+    return (pool.accelerators_per_node // accelerators_per_replica) * pool.max_nodes
+
+
+def _ordered_hot_pools(pools: Sequence[PoolEnvelope], accelerators_per_replica: int) -> list[PoolEnvelope]:
+    return sorted(
+        pools,
+        key=lambda pool: (
+            pool.capacity_type == "preemptible",
+            -_pool_replica_capacity(pool, accelerators_per_replica),
+            pool.pool_id,
+        ),
+    )
+
+
+def _ordered_burst_pools(pools: Sequence[PoolEnvelope], accelerators_per_replica: int) -> list[PoolEnvelope]:
+    return sorted(
+        pools,
+        key=lambda pool: (
+            pool.capacity_type != "preemptible",
+            -_pool_replica_capacity(pool, accelerators_per_replica),
+            pool.pool_id,
+        ),
+    )
+
+
+def _workload_segments(
+    spec: ModelDeploymentSpec,
+    context: RenderContext,
+    *,
+    hot_floor: int,
+) -> list[_WorkloadSegment]:
+    """Partition the global replica range without duplicate scale ownership.
+
+    A single-pool model retains the conventional one-Deployment KEDA shape.
+    A heterogeneous policy gets fixed hot segments on regular capacity and
+    independently autoscaled burst segments on preemptible capacity first.
+    Every later segment observes a disjoint demand interval.
+    """
+
+    pools = context.eligible_pools or [context.pool]
+    by_id = {pool.pool_id: pool for pool in pools}
+    if set(by_id) != set(spec.placement.pool_refs):
+        raise ValueError("render context pools differ from the admitted placement")
+    if any(_pool_replica_capacity(pool, spec.placement.accelerators_per_replica) <= 0 for pool in pools):
+        raise ValueError("an admitted pool has no usable replica capacity")
+
+    if spec.lifecycle.desired_state is not DesiredState.ENABLED:
+        return [
+            _WorkloadSegment(
+                pool=context.pool,
+                role="hot",
+                fixed_replicas=0,
+                minimum_replicas=0,
+                maximum_replicas=0,
+                demand_offset=0,
+            )
+        ]
+
+    if len(pools) == 1:
+        pool = pools[0]
+        if hot_floor == spec.availability.max_replicas:
+            return [
+                _WorkloadSegment(
+                    pool=pool,
+                    role="hot",
+                    fixed_replicas=hot_floor,
+                    minimum_replicas=hot_floor,
+                    maximum_replicas=hot_floor,
+                    demand_offset=0,
+                )
+            ]
+        minimum = max(hot_floor, context.minimum_total_replicas_override or 0)
+        return [
+            _WorkloadSegment(
+                pool=pool,
+                role="burst",
+                fixed_replicas=None,
+                minimum_replicas=min(minimum, spec.availability.max_replicas),
+                maximum_replicas=spec.availability.max_replicas,
+                demand_offset=0,
+            )
+        ]
+
+    pool_remaining = {
+        pool.pool_id: _pool_replica_capacity(pool, spec.placement.accelerators_per_replica) for pool in pools
+    }
+    segments: list[_WorkloadSegment] = []
+    floor_remaining = hot_floor
+    regular_pools = [pool for pool in pools if pool.capacity_type == "regular"]
+    hot_pools = regular_pools or list(pools)
+    for pool in _ordered_hot_pools(hot_pools, spec.placement.accelerators_per_replica):
+        allocated = min(floor_remaining, pool_remaining[pool.pool_id])
+        if allocated > 0:
+            segments.append(
+                _WorkloadSegment(
+                    pool=pool,
+                    role="hot",
+                    fixed_replicas=allocated,
+                    minimum_replicas=allocated,
+                    maximum_replicas=allocated,
+                    demand_offset=0,
+                )
+            )
+            floor_remaining -= allocated
+            pool_remaining[pool.pool_id] -= allocated
+        if floor_remaining == 0:
+            break
+    if floor_remaining:
+        raise ValueError("hot replica floor exceeds admitted pool capacity")
+
+    # Keep a stable zero-replica hot identity for a configured warm window so
+    # entering the window scales an existing Deployment instead of replacing
+    # the entire workload topology.
+    if hot_floor == 0 and spec.availability.warm_windows:
+        anchor = _ordered_hot_pools(pools, spec.placement.accelerators_per_replica)[0]
+        segments.append(
+            _WorkloadSegment(
+                pool=anchor,
+                role="hot",
+                fixed_replicas=0,
+                minimum_replicas=0,
+                maximum_replicas=0,
+                demand_offset=0,
+            )
+        )
+
+    burst_remaining = spec.availability.max_replicas - hot_floor
+    demand_offset = hot_floor
+    requested_total_floor = max(hot_floor, context.minimum_total_replicas_override or 0)
+    autoscaled_floor_remaining = min(
+        requested_total_floor - hot_floor,
+        burst_remaining,
+    )
+    for pool in _ordered_burst_pools(pools, spec.placement.accelerators_per_replica):
+        capacity = min(burst_remaining, pool_remaining[pool.pool_id])
+        if capacity <= 0:
+            continue
+        minimum = min(autoscaled_floor_remaining, capacity)
+        segments.append(
+            _WorkloadSegment(
+                pool=pool,
+                role="burst",
+                fixed_replicas=None,
+                minimum_replicas=minimum,
+                maximum_replicas=capacity,
+                demand_offset=demand_offset,
+            )
+        )
+        demand_offset += capacity
+        burst_remaining -= capacity
+        autoscaled_floor_remaining -= minimum
+        if burst_remaining == 0:
+            break
+    if burst_remaining:
+        raise ValueError("global replica maximum exceeds admitted pool capacity")
+    return segments
+
+
+def _segmented_operation_demand_promql(
+    model_ref: str,
+    *,
+    offset_replicas: int,
+    capacity_replicas: int,
+    target_queue_depth: int,
+) -> str:
+    base = operation_demand_promql(model_ref)
+    if offset_replicas == 0:
+        return base
+    lower = offset_replicas * target_queue_depth
+    upper = capacity_replicas * target_queue_depth
+    return f"clamp_max(clamp_min(({base}) - {lower}, 0), {upper})"
 
 
 class LegacyManifestRenderer:
@@ -754,10 +1213,21 @@ class LegacyManifestRenderer:
         labels = {
             "app.kubernetes.io/managed-by": "fs2-model-controller",
             "app.kubernetes.io/part-of": "fs2-serve",
-            MODEL_DEPLOYMENT_LABEL: _label_value(context.name),
-            MODEL_ID_LABEL: _label_value(spec.model_ref),
+            MODEL_DEPLOYMENT_LABEL: bounded_label_value(context.name),
+            MODEL_ID_LABEL: bounded_label_value(spec.model_ref),
         }
-        annotations = {SPEC_DIGEST_ANNOTATION: spec_digest(spec)}
+        hot_floor = effective_hot_floor(spec.availability, at=context.evaluation_time)
+        if context.hot_floor_override is not None:
+            hot_floor = min(
+                max(hot_floor, context.hot_floor_override),
+                spec.availability.max_replicas,
+            )
+        annotations = {
+            SPEC_DIGEST_ANNOTATION: spec_digest(spec),
+            EFFECTIVE_HOT_FLOOR_ANNOTATION: str(hot_floor),
+        }
+        segments = _workload_segments(spec, context, hot_floor=hot_floor)
+        multi_pool_layout = len(context.eligible_pools or [context.pool]) > 1
         owner_references: list[dict[str, Any]] = []
         if context.uid is not None:
             owner_references = [
@@ -774,6 +1244,9 @@ class LegacyManifestRenderer:
         rendered: list[dict[str, Any]] = []
         seen: set[tuple[str, str, str, str]] = set()
         primary_found = False
+        primary_service_found = False
+        primary_template: dict[str, Any] | None = None
+        primary_selector_labels: set[str] = set()
         for source in bundle.resources:
             manifest = copy.deepcopy(source)
             identity = _resource_identity(manifest)
@@ -810,7 +1283,6 @@ class LegacyManifestRenderer:
                 deployment_spec = manifest.get("spec")
                 if not isinstance(deployment_spec, dict):
                     raise ValueError("primary Deployment spec is missing")
-                deployment_spec["replicas"] = 0
                 deployment_spec["progressDeadlineSeconds"] = spec.rollout.progress_deadline_seconds
                 deployment_spec["strategy"] = (
                     {
@@ -826,61 +1298,185 @@ class LegacyManifestRenderer:
                 pod_spec = deployment_spec.get("template", {}).get("spec")
                 if not isinstance(pod_spec, dict):
                     raise ValueError("primary Deployment Pod spec is missing")
-                pod_spec["nodeSelector"] = dict(context.pool.node_selector)
-                pod_spec["tolerations"] = copy.deepcopy(context.pool.tolerations)
+                pod_metadata = deployment_spec.get("template", {}).get("metadata")
+                if not isinstance(pod_metadata, dict):
+                    raise ValueError("primary Deployment Pod metadata is missing")
+                pod_metadata["labels"] = {**pod_metadata.get("labels", {}), **labels}
+                pod_metadata["annotations"] = {**pod_metadata.get("annotations", {}), **annotations}
                 containers = pod_spec.get("containers")
                 if not isinstance(containers, list):
                     raise ValueError("primary Deployment containers are missing")
                 matches = [
-                    container
-                    for container in containers
-                    if container.get("name") == bundle.runtime_container_name
+                    container for container in containers if container.get("name") == bundle.runtime_container_name
                 ]
                 if len(matches) != 1:
                     raise ValueError("runtime container identity is ambiguous")
-                container = matches[0]
-                container["image"] = spec.runtime.image
-                resources = container.setdefault("resources", {})
-                for field in ("requests", "limits"):
-                    values = resources.setdefault(field, {})
-                    stale_gpu_names = [
-                        key
-                        for key in values
-                        if key.endswith("/gpu") and key != context.pool.resource_name
-                    ]
-                    for stale in stale_gpu_names:
-                        del values[stale]
-                    values[context.pool.resource_name] = str(spec.placement.accelerators_per_replica)
+                selector = deployment_spec.get("selector")
+                if not isinstance(selector, Mapping):
+                    raise ValueError("primary Deployment selector is missing")
+                selector_labels = selector.get("matchLabels", {})
+                if not isinstance(selector_labels, Mapping):
+                    raise ValueError("primary Deployment matchLabels selector is invalid")
+                primary_selector_labels = {str(value) for value in selector_labels}
+                primary_template = manifest
+                continue
+            if kind == "Service" and name == bundle.primary_service_name:
+                ports = manifest.get("spec", {}).get("ports", [])
+                if (
+                    not isinstance(ports, list)
+                    or sum(
+                        isinstance(port, Mapping) and port.get("port") == bundle.primary_service_port for port in ports
+                    )
+                    != 1
+                ):
+                    raise ValueError("primary Service does not expose the exact qualified port")
+                if multi_pool_layout:
+                    service_spec = manifest.get("spec")
+                    if not isinstance(service_spec, dict):
+                        raise ValueError("primary Service spec is missing")
+                    service_spec["selector"] = {
+                        MODEL_DEPLOYMENT_LABEL: bounded_label_value(context.name),
+                    }
+                primary_service_found = True
             rendered.append(manifest)
 
         if not primary_found:
             raise ValueError("legacy template primary workload is missing")
+        if not primary_service_found:
+            raise ValueError("legacy template primary Service is missing")
+        if primary_template is None:
+            raise ValueError("legacy template primary workload is missing")
 
-        if spec.lifecycle.desired_state is DesiredState.ENABLED:
+        known_gpu_resources = {pool.resource_name for pool in (context.eligible_pools or [context.pool])}
+        for segment in segments:
+            workload = copy.deepcopy(primary_template)
+            workload_metadata = workload["metadata"]
+            deployment_spec = workload["spec"]
+            pod_template = deployment_spec["template"]
+            pod_metadata = pod_template["metadata"]
+            pod_spec = pod_template["spec"]
+            segment_identity = bounded_label_value(f"{segment.role}-{segment.pool.pool_id}")
+            workload_name = (
+                bundle.primary_workload_name
+                if not multi_pool_layout
+                else _derived_name(
+                    "",
+                    f"{bundle.primary_workload_name}-{segment.role}-{segment.pool.pool_id}",
+                )
+            )
+            workload_metadata["name"] = workload_name
+            workload_metadata["labels"] = {
+                **workload_metadata.get("labels", {}),
+                KUEUE_QUEUE_LABEL: spec.queue.local_queue,
+                KUEUE_PRIORITY_LABEL: spec.queue.priority_class,
+                WORKLOAD_ROLE_LABEL: segment_identity,
+            }
+            workload_metadata["annotations"] = {
+                **workload_metadata.get("annotations", {}),
+                WORKLOAD_POOL_ANNOTATION: segment.pool.pool_id,
+                WORKLOAD_ROLE_ANNOTATION: segment.role,
+                WORKLOAD_SEGMENT_CAPACITY_ANNOTATION: str(segment.maximum_replicas),
+                WORKLOAD_SEGMENT_OFFSET_ANNOTATION: str(segment.demand_offset),
+            }
+            if multi_pool_layout:
+                deployment_spec["selector"] = {
+                    "matchLabels": {
+                        MODEL_DEPLOYMENT_LABEL: bounded_label_value(context.name),
+                        WORKLOAD_ROLE_LABEL: segment_identity,
+                    }
+                }
+                template_labels = {
+                    key: value
+                    for key, value in pod_metadata.get("labels", {}).items()
+                    if key not in primary_selector_labels
+                }
+                pod_metadata["labels"] = {
+                    **template_labels,
+                    **labels,
+                    WORKLOAD_ROLE_LABEL: segment_identity,
+                }
+            pod_metadata["annotations"] = {
+                **pod_metadata.get("annotations", {}),
+                WORKLOAD_POOL_ANNOTATION: segment.pool.pool_id,
+                WORKLOAD_ROLE_ANNOTATION: segment.role,
+                WORKLOAD_SEGMENT_CAPACITY_ANNOTATION: str(segment.maximum_replicas),
+                WORKLOAD_SEGMENT_OFFSET_ANNOTATION: str(segment.demand_offset),
+            }
+            pod_spec["nodeSelector"] = dict(segment.pool.node_selector)
+            pod_spec["tolerations"] = copy.deepcopy(segment.pool.tolerations)
+            affinity = pod_spec.get("affinity")
+            if affinity is not None:
+                if not isinstance(affinity, dict):
+                    raise ValueError("primary Deployment affinity is invalid")
+                affinity.pop("nodeAffinity", None)
+                if not affinity:
+                    pod_spec.pop("affinity", None)
+            runtime_containers = [
+                container
+                for container in pod_spec["containers"]
+                if container.get("name") == bundle.runtime_container_name
+            ]
+            container = runtime_containers[0]
+            container["image"] = spec.runtime.image
+            resources = container.setdefault("resources", {})
+            for field in ("requests", "limits"):
+                values = resources.setdefault(field, {})
+                stale_gpu_names = [
+                    resource_name
+                    for resource_name in values
+                    if resource_name != segment.pool.resource_name
+                    and (resource_name in known_gpu_resources or resource_name.endswith("/gpu"))
+                ]
+                for stale in stale_gpu_names:
+                    del values[stale]
+                values[segment.pool.resource_name] = str(spec.placement.accelerators_per_replica)
+            if segment.autoscaled:
+                # KEDA owns only this segment's scale subresource. The model
+                # controller owns every other field and never writes replicas
+                # after the verified HPA handoff.
+                deployment_spec.pop("replicas", None)
+            else:
+                deployment_spec["replicas"] = segment.fixed_replicas
+            rendered.append(workload)
+
+            if not segment.autoscaled:
+                continue
+            scaler_name = (
+                scaled_object_name(context.name) if not multi_pool_layout else scaled_object_name(workload_name)
+            )
+            scaler_labels = {
+                **labels,
+                WORKLOAD_ROLE_LABEL: segment_identity,
+            }
+            scaler_annotations = {
+                **annotations,
+                WORKLOAD_POOL_ANNOTATION: segment.pool.pool_id,
+                WORKLOAD_ROLE_ANNOTATION: segment.role,
+                WORKLOAD_SEGMENT_CAPACITY_ANNOTATION: str(segment.maximum_replicas),
+                WORKLOAD_SEGMENT_OFFSET_ANNOTATION: str(segment.demand_offset),
+            }
             scaler: dict[str, Any] = {
                 "apiVersion": "keda.sh/v1alpha1",
                 "kind": "ScaledObject",
                 "metadata": {
-                    "name": _derived_name("fs2-model-", context.name),
+                    "name": scaler_name,
                     "namespace": context.namespace,
-                    "labels": labels,
-                    "annotations": annotations,
+                    "labels": scaler_labels,
+                    "annotations": scaler_annotations,
                 },
                 "spec": {
                     "scaleTargetRef": {
                         "apiVersion": "apps/v1",
                         "kind": "Deployment",
-                        "name": bundle.primary_workload_name,
+                        "name": workload_name,
                     },
                     "pollingInterval": spec.availability.polling_interval_seconds,
-                    "cooldownPeriod": spec.availability.cooldown_seconds,
-                    "minReplicaCount": spec.availability.min_replicas,
-                    "maxReplicaCount": spec.availability.max_replicas,
-                    "fallback": {
-                        "failureThreshold": 3,
-                        "replicas": max(1, spec.availability.min_replicas),
-                        "behavior": "static",
-                    },
+                    "cooldownPeriod": max(
+                        spec.availability.idle_seconds,
+                        spec.availability.cooldown_seconds,
+                    ),
+                    "minReplicaCount": segment.minimum_replicas,
+                    "maxReplicaCount": segment.maximum_replicas,
                     "triggers": [
                         {
                             "type": "prometheus",
@@ -888,9 +1484,11 @@ class LegacyManifestRenderer:
                             "metadata": {
                                 "serverAddress": context.prometheus_server_address,
                                 "metricName": _metric_name(spec.model_ref),
-                                "query": (
-                                    f'max(fs2_serve_operations{{model="{spec.model_ref}",'
-                                    'state=~"queued|activating|running"}) OR vector(0)'
+                                "query": _segmented_operation_demand_promql(
+                                    spec.model_ref,
+                                    offset_replicas=segment.demand_offset,
+                                    capacity_replicas=segment.maximum_replicas,
+                                    target_queue_depth=spec.availability.target_queue_depth,
                                 ),
                                 "threshold": str(spec.availability.target_queue_depth),
                                 "activationThreshold": "0",
@@ -904,6 +1502,7 @@ class LegacyManifestRenderer:
                 scaler["metadata"]["ownerReferences"] = owner_references
             rendered.append(scaler)
 
+        if spec.lifecycle.desired_state is DesiredState.ENABLED:
             if spec.exposure.open_ai or spec.exposure.mcp:
                 publication: dict[str, Any] = {
                     "apiVersion": "v1",
@@ -919,9 +1518,7 @@ class LegacyManifestRenderer:
                         "model_id": spec.model_ref,
                         "tenant_id": spec.tenant_id,
                         "openai": str(spec.exposure.open_ai).lower(),
-                        "openai_aliases_json": json.dumps(
-                            sorted(spec.exposure.open_ai_aliases), separators=(",", ":")
-                        ),
+                        "openai_aliases_json": json.dumps(sorted(spec.exposure.open_ai_aliases), separators=(",", ":")),
                         "mcp": str(spec.exposure.mcp).lower(),
                         "mcp_tool_name": spec.exposure.mcp_tool_name or "",
                         "policy_ref": spec.policy.policy_ref,
@@ -931,6 +1528,9 @@ class LegacyManifestRenderer:
                 if owner_references:
                     publication["metadata"]["ownerReferences"] = owner_references
                 rendered.append(publication)
+
+        if len(rendered) > 256:
+            raise ValueError("rendered resource inventory exceeds the controller bound")
 
         resources = []
         for manifest in sorted(rendered, key=_resource_identity):
@@ -960,6 +1560,11 @@ class LegacyManifestRenderer:
             spec_digest=spec_digest(spec),
             render_digest=canonical_digest(resource_contract),
             resources=resources,
+            endpoint=RenderedServiceEndpoint(
+                namespace=context.namespace,
+                service_name=bundle.primary_service_name,
+                service_port=bundle.primary_service_port,
+            ),
         )
 
 
@@ -1026,6 +1631,24 @@ class DrainObservation(KubernetesModel):
             and self.active_operations == 0
             and self.observed_replicas == 0
             and self.ready_replicas == 0
+        )
+
+    @property
+    def preserve_runtime(self) -> bool:
+        """Keep compute alive until active work is proven absent.
+
+        Unknown operation evidence is fail-safe while a Deployment may still
+        be running.  A positively observed zero-replica runtime is not brought
+        back merely because Prometheus is temporarily unavailable.
+        """
+
+        if self.active_operations is not None:
+            return self.active_operations > 0
+        return (
+            self.observed_replicas is None
+            or self.ready_replicas is None
+            or self.observed_replicas > 0
+            or self.ready_replicas > 0
         )
 
 
@@ -1144,6 +1767,9 @@ def plan_reconciliation(
         )
     if validation.admitted_pool_ref != render_context.pool.pool_id:
         raise ValueError("render context pool differs from the deterministic admitted pool")
+    context_pool_refs = {pool.pool_id for pool in (render_context.eligible_pools or [render_context.pool])}
+    if context_pool_refs != set(spec.placement.pool_refs):
+        raise ValueError("render context eligible pools differ from the admitted placement")
 
     if spec.adoption.mode is AdoptionMode.OBSERVE:
         return ReconcilePlan(
@@ -1178,17 +1804,45 @@ def plan_reconciliation(
             )
 
     effective_spec = spec
-    if deleting and spec.lifecycle.desired_state is DesiredState.ENABLED:
-        effective_spec = spec.model_copy(
-            update={
-                "lifecycle": LifecycleSpec(desired_state=DesiredState.DRAINING),
-                "availability": spec.availability.model_copy(
-                    update={"min_replicas": 0, "warm_windows": []}
-                ),
-            }
-        )
+    effective_context = render_context
+    drain_requested = deleting or spec.lifecycle.desired_state is not DesiredState.ENABLED
+    if drain_requested:
+        preserve_runtime = drain_observation is None or drain_observation.preserve_runtime
+        if preserve_runtime:
+            observed_floor = 1
+            if drain_observation is not None and drain_observation.observed_replicas is not None:
+                observed_floor = max(observed_floor, drain_observation.observed_replicas)
+            effective_spec = spec.model_copy(
+                update={
+                    # Keep the scaler and runtime, but deliberately omit the
+                    # publication intent so no new admissions can enter.
+                    "lifecycle": LifecycleSpec(desired_state=DesiredState.ENABLED),
+                    "exposure": spec.exposure.model_copy(
+                        update={
+                            "open_ai": False,
+                            "open_ai_aliases": [],
+                            "mcp": False,
+                            "mcp_tool_name": None,
+                        }
+                    ),
+                    "availability": spec.availability.model_copy(
+                        update={"max_replicas": max(spec.availability.max_replicas, observed_floor)}
+                    ),
+                }
+            )
+            # Preserve the exact observed total without moving the hot/burst
+            # boundary. This keeps active operations on their existing role
+            # Deployment while the publication is withdrawn.
+            effective_context = render_context.model_copy(update={"minimum_total_replicas_override": observed_floor})
+        else:
+            effective_spec = spec.model_copy(
+                update={
+                    "lifecycle": LifecycleSpec(desired_state=DesiredState.DRAINING),
+                    "availability": spec.availability.model_copy(update={"min_replicas": 0, "warm_windows": []}),
+                }
+            )
 
-    render = renderer.render(effective_spec, render_context)
+    render = renderer.render(effective_spec, effective_context)
     observed_by_identity = _resource_map(observed)
     desired_by_identity = {
         f"{item.api_version}/{item.kind}/{item.namespace}/{item.name}": item for item in render.resources
@@ -1218,12 +1872,7 @@ def plan_reconciliation(
         item
         for item in render.resources
         if (
-            (
-                seen := observed_by_identity.get(
-                    f"{item.api_version}/{item.kind}/{item.namespace}/{item.name}"
-                )
-            )
-            is None
+            (seen := observed_by_identity.get(f"{item.api_version}/{item.kind}/{item.namespace}/{item.name}")) is None
             or seen.digest != item.digest
         )
     ]
@@ -1253,9 +1902,7 @@ def plan_reconciliation(
             for identity, item in observed_by_identity.items()
             if item.controller_owner_uid == render_context.uid and not item.deleting
         )
-        owned_remaining = any(
-            item.controller_owner_uid == render_context.uid for item in observed_by_identity.values()
-        )
+        owned_remaining = any(item.controller_owner_uid == render_context.uid for item in observed_by_identity.values())
         return ReconcilePlan(
             action=ReconcileAction.DELETE if owned else ReconcileAction.NOOP,
             target_generation=generation,

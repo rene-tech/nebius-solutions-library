@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -78,6 +78,8 @@ def observation(
     now = datetime.now(UTC)
     return ModelDeploymentStatusObservation(
         observation_id=uuid4(),
+        source_uid="modeldeployment-uid-1",
+        source_resource_version=str(revision),
         namespace="fs2-models",
         name=name,
         tenant_id=tenant_id,
@@ -204,6 +206,24 @@ async def test_history_tenant_pagination_and_status_never_invent_current_observa
 
     second_observation = observation(revision=2, etag=second.value.etag)
     await store.model_deployment_append_status(second_observation)
+    delayed = second_observation.model_copy(
+        update={
+            "observation_id": uuid4(),
+            "observed_at": second_observation.observed_at - timedelta(seconds=1),
+            "status": second_observation.status.model_copy(
+                update={
+                    "last_reconcile_time": second_observation.status.last_reconcile_time
+                    - timedelta(seconds=1)
+                }
+            ),
+        }
+    )
+    with pytest.raises(ConflictError, match="older than current status"):
+        await store.model_deployment_append_status(delayed)
+    with pytest.raises(ConflictError, match="older than current status"):
+        await store.model_deployment_append_status(
+            first_observation.model_copy(update={"observation_id": uuid4()})
+        )
     current_status = await service.status(
         namespace="fs2-models",
         name="qwen-live",
@@ -211,6 +231,7 @@ async def test_history_tenant_pagination_and_status_never_invent_current_observa
     )
     assert current_status.state is ModelDeploymentStatusAvailability.OBSERVED
     assert current_status.observation == second_observation
+    assert len(store.model_deployment_status_events[("fs2-models", "qwen-live")]) == 2
 
 
 def test_authenticated_read_routes_are_tenant_scoped_and_writers_stay_unmounted(

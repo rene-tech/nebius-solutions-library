@@ -282,6 +282,44 @@ a { color: inherit; }
 .handoff-identities { margin-bottom: 16px; }
 .handoff-field { display: grid; gap: 6px; color: var(--fs2-text-muted); font-size: 12px; font-weight: 650; }
 .handoff-field textarea { width: 100%; min-height: 260px; resize: vertical; padding: 10px; color: var(--fs2-text-primary); background: var(--fs2-surface-raised); border: 1px solid var(--fs2-border-strong); border-radius: var(--fs2-radius-sm); font-family: var(--fs2-mono); font-size: 10px; line-height: 1.5; }
+
+.model-deployment-intro, .model-deployment-action-bar, .mutation-gate { display: flex; justify-content: space-between; align-items: center; gap: 28px; }
+.model-deployment-intro h2, .mutation-gate h2 { margin: 3px 0 0; font-size: 20px; }
+.model-deployment-intro p, .model-deployment-action-bar span, .mutation-gate p { max-width: 760px; margin: 7px 0 0; color: var(--fs2-text-muted); }
+.model-deployment-action-bar span { display: block; }
+.model-deployment-form { display: grid; gap: 16px; }
+.model-deployment-form-section { min-width: 0; margin: 0; padding: 18px; background: var(--fs2-surface-default); border: 1px solid var(--fs2-border); border-radius: var(--fs2-radius-md); box-shadow: var(--fs2-shadow); }
+.model-deployment-form-section > legend { padding: 0 7px; font-size: 16px; font-weight: 720; }
+.model-deployment-form-section > p { margin: 0 0 15px; color: var(--fs2-text-muted); font-size: 12px; }
+.model-deployment-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.model-deployment-form-grid label { min-width: 0; display: grid; align-content: end; gap: 5px; color: var(--fs2-text-muted); font-size: 11px; font-weight: 650; }
+.model-deployment-form-grid label small { min-height: 15px; font-size: 9px; font-weight: 400; }
+.model-deployment-form-grid input:not([type="checkbox"]), .model-deployment-form-grid select { width: 100%; min-height: 39px; padding: 7px 9px; color: var(--fs2-text-primary); background: #fff; border: 1px solid var(--fs2-border-strong); border-radius: var(--fs2-radius-sm); }
+.model-deployment-form-grid input:disabled, .model-deployment-form-grid select:disabled { color: var(--fs2-text-muted); background: var(--fs2-surface-raised); }
+.accelerator-pool-fieldset { min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--fs2-border); border-radius: var(--fs2-radius-sm); }
+.accelerator-pool-fieldset legend { padding: 0 5px; color: var(--fs2-text-muted); font-size: 11px; font-weight: 650; }
+.accelerator-pool-fieldset > small { display: block; margin-top: 8px; color: var(--fs2-text-muted); font-size: 9px; }
+.checkbox-stack { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px 14px; }
+.checkbox-stack .checkbox-field { min-width: 0; align-self: stretch; color: var(--fs2-text-primary); font-weight: 500; }
+.checkbox-stack .checkbox-field span { min-width: 0; overflow-wrap: anywhere; }
+.warm-window-list { display: grid; gap: 12px; margin-bottom: 12px; }
+.warm-window { padding: 14px; background: var(--fs2-surface-raised); border: 1px solid var(--fs2-border); border-radius: var(--fs2-radius-sm); }
+.warm-window .button { align-self: end; }
+.runtime-phase-track { display: grid; grid-template-columns: repeat(6, minmax(90px, 1fr)); gap: 6px; overflow-x: auto; }
+.runtime-phase { min-width: 90px; padding: 7px 8px; color: var(--fs2-text-muted); background: var(--fs2-surface-raised); border: 1px solid var(--fs2-border); border-radius: var(--fs2-radius-sm); font-size: 9px; text-align: center; }
+.runtime-phase--current { color: #155f37; background: var(--fs2-accent-soft); border-color: #76bd90; font-weight: 750; }
+.condition-list { display: grid; gap: 8px; }
+.condition-list > div { display: grid; grid-template-columns: 190px 210px minmax(0, 1fr); align-items: center; gap: 10px; padding: 9px 10px; background: var(--fs2-surface-raised); border: 1px solid var(--fs2-border); border-radius: var(--fs2-radius-sm); font-size: 11px; }
+.resource-table--model-deployments { min-width: 1380px; }
+.resource-table--render-preview { min-width: 1050px; }
+.resource-table--history { min-width: 940px; }
+.resource-table--render-preview code, .resource-table--history code { display: block; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mutation-gate { background: var(--fs2-unknown-soft); border-style: dashed; }
+.mutation-controls { display: grid; justify-items: end; gap: 10px; }
+.compact-field { display: grid; gap: 5px; color: var(--fs2-text-muted); font-size: 12px; font-weight: 680; }
+.compact-field select { min-width: 190px; }
+.mutation-confirmation { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.mutation-confirmation > div:first-child { display: grid; gap: 4px; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 
 @media (max-width: 1199px) {
@@ -302,6 +340,7 @@ a { color: inherit; }
   .checkbox-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .configuration-autoscaling { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .configuration-intro, .reconciliation-panel { grid-template-columns: 1fr; }
+  .model-deployment-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .reconciliation-panel > .configuration-actions, .reconciliation-panel > .inline-notice { grid-column: auto; }
 }
 
@@ -340,6 +379,11 @@ a { color: inherit; }
   .audit-intro p { margin-top: 10px; }
   .configuration-pool-grid, .configuration-autoscaling { grid-template-columns: 1fr; }
   .configuration-deferred, .rollback-panel { display: grid; }
+  .model-deployment-intro, .model-deployment-action-bar, .mutation-gate, .mutation-confirmation { display: grid; }
+  .mutation-controls { justify-items: stretch; }
+  .compact-field select { width: 100%; min-width: 0; }
+  .model-deployment-form-grid { grid-template-columns: 1fr; }
+  .condition-list > div { grid-template-columns: 1fr; }
   .rollback-control { min-width: 0; display: grid; width: 100%; }
   .configuration-issue { grid-template-columns: 1fr; }
   .configuration-page > .inline-notice .button { display: block; margin: 10px 0 0; }

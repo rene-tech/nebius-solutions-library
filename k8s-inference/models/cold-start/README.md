@@ -108,23 +108,21 @@ only after a reviewed local-PV/PVC lifecycle binds the exact node, PVC UID, and
 activation generation. Raw local-disk formatting, `hostPath`, and an
 unreviewed node-local directory remain forbidden.
 
-Qwen3-8B deliberately stays on its first, separate protected Retain
-provider-block PVC cohort. Its exact 15-file acquisition Job must be the sole
-writer, close the writer handoff, and then let the runtime mount the same PVC
-read-only. Do not point the current ephemeral live Qwen Deployment at the PVC
-or shared SFS by hand. The image keeper can warm the vLLM image now; persistent
-weights become active only after the existing provider-block admission and
-replacement-node qualification pass. A later distinct writable PVC is needed
-for a persistent Qwen compile cache because the admitted weights claim is
-read-only.
+The historical Qwen3-8B provider-block acquisition and qualification cohort
+remains distinct evidence and is not relabeled. The portable Qwen3-8B and
+Cosmos3-Nano Deployment templates now use a conventional inline localizer that
+is valid on both their checked-in RWO PVCs and the deployment renderer's shared
+RWX PVC. It serializes the first writer, verifies the exact artifact once,
+publishes the payload and deterministic receipt atomically, and mounts the
+result read-only in the runtime. Later replicas perform only receipt plus
+path/type/size checks, so they do not redownload or rehash model weights. The
+full protocol is documented in
+[`../general-media/SHARED_CACHE_FAST_START.md`](../general-media/SHARED_CACHE_FAST_START.md).
 
-Cosmos3-Nano also uses its own provider-block RWO PVC in the checked-in
-conventional manifest. The cold-start matrix binds its exact model-content and
-runtime-image digests, one-GPU request, service, and storage mode, but records
-no FS2 timing or latency claim. That manifest downloads into the model-specific
-PVC at runtime; it does not yet consume the catalog's content-addressed shared
-SFS artifact or a local-NVMe weight path. Those mechanisms remain blocked until
-their integration and replacement-node behavior produce exact receipts.
+This path does not claim local-NVMe weight placement, a persistent compiler
+cache, or GPU-process snapshot restore. The cold-start matrix still records no
+new timing result until the rendered shared-filesystem path is benchmarked and
+its replacement-node behavior produces retained evidence.
 
 NIM cache ownership is unchanged. NIM artifacts stay under the NIM Operator's
 `NIMCache`; the FS2 localizer must never write those paths.

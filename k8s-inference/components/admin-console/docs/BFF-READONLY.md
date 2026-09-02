@@ -1,10 +1,11 @@
 # Read-only admin BFF implementation and rollout handoff
 
-The control plane now owns six typed, versioned `GET` projections under
+The initial read-only slice owns six typed, versioned `GET` projections under
 `/admin/api/v1`: context, overview, model list, model detail, operation list,
-and operation detail. Their compact frontend handoff is
-`contracts/admin-api-v1.json`; FastAPI remains the schema authority at
-`/internal/openapi.json`.
+and operation detail. The same API now also owns session, access, capacity,
+observability, configuration, and feature-gated ModelDeployment routes. Their
+compact frontend handoff is `contracts/admin-api-v1.json`; FastAPI remains the
+schema authority at `/internal/openapi.json`.
 
 Every successful response is `{meta,data}`. `meta` carries the selected
 server-authorized project/cluster/region/time context, generation time,
@@ -31,6 +32,13 @@ reason; it is never emitted as numeric zero.
   range. `PrometheusQueryTemplates` demonstrates the fixed server-owned PromQL
   vocabulary. There is no free-form PromQL endpoint and no principal, tenant,
   token, prompt, or response label.
+- The existing ModelDeployment mutation-capabilities response is also the only
+  Add Model configuration authority. Its `configuration_options` are derived
+  from the installed `InfrastructureEnvelope` and carry exact qualified
+  artifact, runtime, template, placement, queue, priority, and tenant defaults.
+  The server emits only defaults accepted by the live validator and includes
+  the envelope revision. Incomplete or unplaceable tuples are omitted; the
+  browser does not invent a fallback or accept manually copied digests.
 
 The default Kubernetes and Prometheus adapters still fail closed when live
 sources are disabled. When the read adapters are enabled, production runtime
@@ -85,7 +93,7 @@ Before deploying the admin UI, the retained release owner must:
    exchange and that every admin route then enforces the server-side operator
    session and role. Never place the bootstrap token in browser storage.
 4. Generate frontend types from the immutable image's
-   `/internal/openapi.json`, compare the six routes with
+   `/internal/openapi.json`, compare the fully enabled route profile with
    `contracts/admin-api-v1.json`, and fail the build on drift.
 5. Reconcile the Helm/Terraform image digest and settings, render/plan first,
    then run same-origin host/origin, auth, partial-source, redaction, cursor,

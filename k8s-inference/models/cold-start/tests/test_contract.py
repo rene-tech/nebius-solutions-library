@@ -476,7 +476,7 @@ class ColdStartContractTest(unittest.TestCase):
                     "fs2-models/shared-cache-pvc", plan["required_prerequisites"]
                 )
 
-    def test_qwen_uses_a_restart_safe_provider_block_cold_cache(self) -> None:
+    def test_qwen_uses_a_restart_safe_content_addressed_cold_cache(self) -> None:
         path = FS2_ROOT / "models" / "general-media" / "k8s" / "qwen3-8b.yaml"
         resources = documents(path)
         claim = next(
@@ -498,8 +498,28 @@ class ColdStartContractTest(unittest.TestCase):
             resource for resource in resources if resource["kind"] == "ConfigMap"
         )
         localizer = config["data"]["localize.py"]
-        self.assertIn('p.name != "localization-receipt.json"', localizer)
         self.assertIn("snapshot_download(", localizer)
+        self.assertIn("fcntl.flock", localizer)
+        self.assertIn('"outcome": "cache-hit"', localizer)
+        self.assertIn("full-file-sha256-before-atomic-publication", localizer)
+        self.assertIn("os.replace(staging, content_root)", localizer)
+        lock = json.loads(config["data"]["model.lock.json"])["model"]
+        self.assertEqual(
+            "2cf721c69d9e1b66860274de129f0dd486172ef1dad289483ea891dab5b80806",
+            lock["artifact_manifest_digest"],
+        )
+        self.assertEqual(
+            "5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d",
+            lock["content_digest"],
+        )
+        runtime = named(pod["containers"], "vllm")
+        self.assertEqual(
+            "/models/qwen3-8b/sha256/"
+            "5b0f0f64ddb02ee2deeed4772968b9e2139a922acc9b9bb9c3488d23c678971d/"
+            "payload",
+            runtime["args"][0],
+        )
+        self.assertTrue(named(runtime["volumeMounts"], "model")["readOnly"])
 
     def test_general_media_compile_caches_use_existing_pvcs_and_exact_keys(self) -> None:
         manifests = {

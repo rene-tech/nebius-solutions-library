@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { adminApi, AdminApiError } from "../../api/client";
 import type {
   ConfigurationDiff,
@@ -440,8 +441,8 @@ export function ConfigurationPage() {
             ))}
 
             <section className="panel configuration-deferred" aria-labelledby="add-model-title">
-              <div><span className="eyebrow">Catalog extension</span><h2 id="add-model-title">Add or remove a model</h2><p>Deferred / not applicable in this UI. Model membership requires catalog identity, acquisition, provenance and semantic-health contracts before a Terraform consumer can be proven.</p></div>
-              <ReadOnlyBadge />
+              <div><span className="eyebrow">Qualified model deployment</span><h2 id="add-model-title">Add a qualified model</h2><p>Operators can deploy models whose exact artifact, runtime, template and accelerator tuple is already qualified by the installed infrastructure envelope. Catalog onboarding and capacity changes remain version-controlled infrastructure work.</p></div>
+              {rolePermits(session.principal.role, "operator") ? <Link className="button button--primary" to="/admin/model-deployments/new">Draft model deployment</Link> : <ReadOnlyBadge />}
             </section>
 
             <section className="panel section-stack" aria-labelledby="review-actions-title">

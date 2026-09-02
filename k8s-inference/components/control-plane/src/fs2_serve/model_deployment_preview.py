@@ -71,7 +71,7 @@ class ModelDeploymentValidationPreview(StrictModel):
     current_revision: int | None = None
     current_etag: str | None = Field(default=None, pattern=ETAG_PATTERN)
     decision: ValidationDecision
-    mutation_supported: Literal[False] = False
+    mutation_supported: bool = False
 
 
 class ModelDeploymentRenderPreview(StrictModel):
@@ -87,7 +87,7 @@ class ModelDeploymentRenderPreview(StrictModel):
     render: RenderPlan | None = None
     created_at: datetime
     expires_at: datetime
-    mutation_supported: Literal[False] = False
+    mutation_supported: bool = False
     blocked_actions: list[Literal["apply", "adopt", "delete"]] = ["apply", "adopt", "delete"]
 
 
@@ -108,6 +108,25 @@ class InMemoryModelDeploymentPreviewState:
     async def current(self, *, namespace: str, name: str) -> ModelDeploymentCurrent | None:
         item = self._records.get((namespace, name))
         return item.model_copy(deep=True) if item is not None else None
+
+
+class RepositoryModelDeploymentPreviewState:
+    """Adapt the durable current-revision repository to the preview seam."""
+
+    def __init__(self, repository: Any) -> None:
+        self.repository = repository
+
+    async def current(self, *, namespace: str, name: str) -> ModelDeploymentCurrent | None:
+        value = await self.repository.current(namespace=namespace, name=name, tenant_id=None)
+        if value is None:
+            return None
+        return ModelDeploymentCurrent(
+            name=value.name,
+            namespace=value.namespace,
+            revision=value.revision,
+            etag=value.etag,
+            spec=value.spec,
+        )
 
 
 class ModelDeploymentPreviewAudit(Protocol):
@@ -158,6 +177,7 @@ class ModelDeploymentPreviewService:
         prometheus_server_address: str,
         audit: ModelDeploymentPreviewAudit | None = None,
         namespace: str = "fs2-models",
+        mutation_supported: bool = False,
     ) -> None:
         self.envelope = envelope
         self.renderer = renderer
@@ -165,6 +185,7 @@ class ModelDeploymentPreviewService:
         self.prometheus_server_address = prometheus_server_address
         self.audit = audit
         self.namespace = namespace
+        self.mutation_supported = mutation_supported
 
     async def _current(
         self,
@@ -184,9 +205,7 @@ class ModelDeploymentPreviewService:
             )
         if require_etag:
             if current is None and proposal.base_etag is not None:
-                raise ModelDeploymentPreviewProblemError(
-                    409, "stale_model_etag", "model does not exist at base ETag"
-                )
+                raise ModelDeploymentPreviewProblemError(409, "stale_model_etag", "model does not exist at base ETag")
             if current is not None and proposal.base_etag != current.etag:
                 raise ModelDeploymentPreviewProblemError(
                     409, "stale_model_etag", "model changed after the preview base"
@@ -210,6 +229,7 @@ class ModelDeploymentPreviewService:
             current_revision=current.revision if current is not None else None,
             current_etag=current.etag if current is not None else None,
             decision=decision,
+            mutation_supported=self.mutation_supported,
         )
 
     async def plan(
@@ -224,10 +244,14 @@ class ModelDeploymentPreviewService:
             current=current.spec if current is not None else None,
         )
         if decision.disposition is ValidationDisposition.REJECTED:
+            live_issues = [issue for issue in decision.issues if issue.owner == "live-control-plane"]
+            details = "; ".join(f"{issue.code} at {issue.path}: {issue.message}" for issue in live_issues[:8])
+            if len(live_issues) > 8:
+                details = f"{details}; {len(live_issues) - 8} additional validation issue(s)"
             raise ModelDeploymentPreviewProblemError(
                 422,
                 "model_deployment_rejected",
-                "model deployment failed live-policy or qualification validation",
+                f"model deployment failed live-policy or qualification validation: {details}",
             )
         render = None
         if decision.disposition is ValidationDisposition.ACCEPTED:
@@ -242,6 +266,9 @@ class ModelDeploymentPreviewService:
                         uid=None,
                         generation=(current.revision + 1 if current is not None else 1),
                         pool=pool,
+                        eligible_pools=[
+                            self.envelope.pools[pool_ref] for pool_ref in proposal.spec.placement.pool_refs
+                        ],
                         prometheus_server_address=self.prometheus_server_address,
                         preview=True,
                     ),
@@ -263,6 +290,8 @@ class ModelDeploymentPreviewService:
             render=render,
             created_at=now,
             expires_at=now + PREVIEW_TTL,
+            mutation_supported=self.mutation_supported,
+            blocked_actions=[] if self.mutation_supported else ["apply", "adopt", "delete"],
         )
         if self.audit is not None:
             await self.audit.record(
@@ -287,6 +316,7 @@ def model_deployment_preview_router(
     operator_dependency: Callable[..., Any],
     envelope: Callable[[Any], AdminEnvelope[Any]],
     problem_responses: dict[int | str, dict[str, Any]],
+    writer_enabled: bool = False,
 ) -> APIRouter:
     router = APIRouter(dependencies=[Depends(operator_dependency)])
 
@@ -334,27 +364,29 @@ def model_deployment_preview_router(
         except ModelDeploymentPreviewProblemError as exc:
             raise translate(exc) from None
 
-    async def writer_disabled(request: Request, action: str) -> None:
-        await authorize(request, OperatorRole.ADMIN, f"model_deployment.{action}")
-        raise AdminProblemError(
-            501,
-            "model_deployment_writer_disabled",
-            "dynamic model mutation remains feature-gated; only validation and render preview are available",
-        )
+    if not writer_enabled:
 
-    @router.post("/admin/api/v1/model-deployments:apply", responses=problem_responses)
-    async def apply_disabled(request: Request, body: BlockedMutationRequest) -> None:
-        del body
-        await writer_disabled(request, "apply")
+        async def writer_disabled(request: Request, action: str) -> None:
+            await authorize(request, OperatorRole.ADMIN, f"model_deployment.{action}")
+            raise AdminProblemError(
+                501,
+                "model_deployment_writer_disabled",
+                "dynamic model mutation remains feature-gated; only validation and render preview are available",
+            )
 
-    @router.post("/admin/api/v1/model-deployments/{name}:adopt", responses=problem_responses)
-    async def adopt_disabled(request: Request, name: str, body: BlockedMutationRequest) -> None:
-        del name, body
-        await writer_disabled(request, "adopt")
+        @router.post("/admin/api/v1/model-deployments:apply", responses=problem_responses)
+        async def apply_disabled(request: Request, body: BlockedMutationRequest) -> None:
+            del body
+            await writer_disabled(request, "apply")
 
-    @router.delete("/admin/api/v1/model-deployments/{name}", responses=problem_responses)
-    async def delete_disabled(request: Request, name: str) -> None:
-        del name
-        await writer_disabled(request, "delete")
+        @router.post("/admin/api/v1/model-deployments/{name}:adopt", responses=problem_responses)
+        async def adopt_disabled(request: Request, name: str, body: BlockedMutationRequest) -> None:
+            del name, body
+            await writer_disabled(request, "adopt")
+
+        @router.delete("/admin/api/v1/model-deployments/{name}", responses=problem_responses)
+        async def delete_disabled(request: Request, name: str) -> None:
+            del name
+            await writer_disabled(request, "delete")
 
     return router

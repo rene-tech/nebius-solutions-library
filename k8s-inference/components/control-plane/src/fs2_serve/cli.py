@@ -50,6 +50,11 @@ from .configuration_models import PlatformConfiguration
 from .crypto import KeyedHasher, PayloadCipher
 from .federation import FederationRouter
 from .mcp_server import mount_mcp
+from .model_deployment_admin import ModelDeploymentReadService, StoreModelDeploymentRepository
+from .model_deployment_bridge import ModelDeploymentRuntimeBridge
+from .model_deployment_controller import ControllerFiles, run_model_controller
+from .model_deployment_mutation import HttpKubernetesDesiredWriter, ModelDeploymentMutationService
+from .model_deployment_preview import ModelDeploymentPreviewService, RepositoryModelDeploymentPreviewState
 from .models import TokenCreate
 from .postgres import PostgresMaintenanceStore, PostgresStore
 from .postgresql_release import render_postgresql_release_contract
@@ -188,6 +193,49 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     store = await _store(settings)
     peppers = PepperRing.from_file(settings.token_pepper_file)
     tokens = TokenService(store, peppers)
+    model_deployment_preview: ModelDeploymentPreviewService | None = None
+    model_deployment_read: ModelDeploymentReadService | None = None
+    model_deployment_mutation: ModelDeploymentMutationService | None = None
+    model_deployment_bridge: ModelDeploymentRuntimeBridge | None = None
+    if settings.model_controller_enabled:
+        controller_files = ControllerFiles.load(
+            settings.model_controller_envelope_file,
+            settings.model_controller_bundles_file,
+        )
+        model_repository = StoreModelDeploymentRepository(store)
+        model_deployment_read = ModelDeploymentReadService(model_repository)
+        model_deployment_preview = ModelDeploymentPreviewService(
+            envelope=controller_files.infrastructure_envelope,
+            renderer=controller_files.renderer(),
+            state=RepositoryModelDeploymentPreviewState(model_repository),
+            prometheus_server_address=settings.model_controller_prometheus_server_address,
+            namespace=settings.model_controller_namespace,
+            mutation_supported=settings.model_controller_writes_enabled,
+        )
+        if settings.model_controller_writes_enabled:
+            kubernetes_models = HttpKubernetesDesiredWriter(
+                base_url=settings.admin_kubernetes_api_url,
+                token_file=settings.admin_kubernetes_token_file,
+                ca_file=settings.admin_kubernetes_ca_file,
+                namespace=settings.model_controller_namespace,
+                timeout_seconds=settings.model_controller_api_timeout_seconds,
+            )
+            model_deployment_mutation = ModelDeploymentMutationService(
+                repository=model_repository,
+                writer=kubernetes_models,
+                envelope=controller_files.infrastructure_envelope,
+                namespace=settings.model_controller_namespace,
+            )
+            model_deployment_bridge = ModelDeploymentRuntimeBridge(
+                repository=model_repository,
+                writer=kubernetes_models,
+                source=kubernetes_models,
+                registry=registry,
+                interval_seconds=settings.model_controller_poll_seconds,
+                route_ttl_seconds=max(30.0, settings.model_controller_poll_seconds * 3),
+                namespace=settings.model_controller_namespace,
+                close_source=kubernetes_models.close,
+            )
     # Canonical catalog metadata remains observable when promotion deliberately
     # leaves zero routable models. Request and queue series are still populated
     # only from durable admitted operations.
@@ -198,6 +246,15 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         max_response_bytes=settings.max_response_bytes,
         federation=federation,
     )
+    async def refresh_routes() -> bool:
+        if not await route_revalidator.refresh():
+            return False
+        dynamic_healthy = True
+        if model_deployment_bridge is not None:
+            dynamic_healthy = await model_deployment_bridge.refresh()
+        metrics.sync_models(registry.list())
+        return dynamic_healthy and bool(registry.validation_health()["healthy"])
+
     admission = AdmissionService(
         registry=registry,
         store=store,
@@ -211,7 +268,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         max_sync_waiters=settings.max_sync_waiters,
         wait_poll_initial_seconds=settings.wait_poll_initial_seconds,
         wait_poll_max_seconds=settings.wait_poll_max_seconds,
-        route_refresh=route_revalidator.refresh,
+        route_refresh=refresh_routes,
     )
     initial_configuration = (
         load_platform_configuration(settings.admin_configuration_file)
@@ -285,6 +342,10 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         admin_read=admin_read,
         configuration=configuration_service,
         configuration_sync_error=configuration_sync_error,
+        model_deployment_preview=model_deployment_preview,
+        model_deployment_read=model_deployment_read,
+        model_deployment_mutation=model_deployment_mutation,
+        model_deployment_bridge=model_deployment_bridge,
     )
 
 
@@ -404,6 +465,7 @@ def main() -> None:
             "bootstrap-access",
             "validate",
             "postgresql-release-contract",
+            "model-controller",
         ),
         nargs="?",
         default="serve",
@@ -422,6 +484,7 @@ def main() -> None:
             "migrate": migrate,
             "wait-schema": wait_schema,
             "bootstrap-access": bootstrap_access,
+            "model-controller": run_model_controller,
         }[args.command]
         asyncio.run(action(settings))
 

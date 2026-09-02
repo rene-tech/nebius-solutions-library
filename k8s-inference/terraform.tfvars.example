@@ -83,13 +83,33 @@ deployment = {
     enabled   = []
     scaling = {
       mode                       = "keda"
-      hot                        = []
+      # Retained elasticity evidence is still pending, so bootstrap examples
+      # keep their dynamically managed model hot instead of claiming scale-to-zero.
+      hot                        = ["qwen3-8b"]
       polling_interval_seconds   = 5
       cooldown_period_seconds    = 300
-      fallback_failure_threshold = 3
       overrides                  = {}
     }
     cold_start_keepers = true
+  }
+
+  # Live model lifecycle is configured only here. Terraform derives the
+  # internal pool envelope and renderer bundles from the model, accelerator,
+  # queue, tenant, image, and scaling choices above.
+  #
+  # For a fresh cluster, seed these models through the authenticated admin API.
+  # Other selected catalog models can then be added from the admin console.
+  dynamic_models = {
+    enabled             = true
+    writes_enabled      = true
+    workload_owner      = "controller"
+    # Only models with a platform-verified artifact, exact retained runtime,
+    # and hardware-qualified accelerator tuple may be bootstrapped. Cosmos
+    # remains Terraform-owned until that retained qualification is promoted.
+    bootstrap_model_ids = ["qwen3-8b"]
+    fresh_install       = true
+    # Existing clusters use the documented terraform -> released -> controller
+    # handoff instead; set handoff_receipt there and omit fresh_install.
   }
 
   edge = {

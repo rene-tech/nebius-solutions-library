@@ -41,6 +41,10 @@ EXPECTED_MIGRATIONS: Final = (
         "0012_model_deployments.sql",
         "bf4dfbff463a88f3be1cc04e452900d4eff9c18024161069d7beb281229f3eef",
     ),
+    (
+        "0013_durable_dynamic_dispatch.sql",
+        "4daf1a47abd864c04f30dc48149a0c74b46aac1332c12ef40df518b2dea8b9ad",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

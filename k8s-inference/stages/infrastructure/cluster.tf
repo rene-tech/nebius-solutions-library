@@ -1,4 +1,17 @@
 locals {
+  shared_cache_mount_path           = "/mnt/fs2cache"
+  shared_cache_cloud_init_user_data = <<-YAML
+    #cloud-config
+    package_update: false
+    package_upgrade: false
+    mounts:
+      - [fs2cache, ${local.shared_cache_mount_path}, virtiofs, "defaults,nofail", 0, 2]
+    runcmd:
+      - [modprobe, fuse]
+      - [mkdir, -p, ${local.shared_cache_mount_path}]
+      - [mount, -a]
+      - [mkdir, -p, ${local.shared_cache_mount_path}/csi-mounted-fs-path-data]
+  YAML
   filesystem_attachment = [{
     attach_mode = "READ_WRITE"
     mount_tag   = "fs2cache"
@@ -101,10 +114,11 @@ resource "nebius_mk8s_v1_node_group" "system" {
   template = {
     metadata = {
       labels = {
-        "workload.fs2.nebius/system" = "true"
-        "capacity.fs2.nebius/type"   = local.effective_system_pool.capacity
-        "capacity.fs2.nebius/pool"   = "system"
-        "lifecycle.fs2.nebius/run"   = var.run_id
+        "workload.fs2.nebius/system"      = "true"
+        "capacity.fs2.nebius/type"        = local.effective_system_pool.capacity
+        "capacity.fs2.nebius/pool"        = "system"
+        "lifecycle.fs2.nebius/run"        = var.run_id
+        "storage.fs2.nebius/shared-cache" = "true"
       }
     }
     boot_disk = {
@@ -119,8 +133,9 @@ resource "nebius_mk8s_v1_node_group" "system" {
       platform = local.effective_system_pool.platform
       preset   = local.effective_system_pool.preset
     }
-    service_account_id = nebius_iam_v1_service_account.nodepull.id
-    underlay_required  = false
+    service_account_id   = nebius_iam_v1_service_account.nodepull.id
+    underlay_required    = false
+    cloud_init_user_data = local.shared_cache_cloud_init_user_data
   }
 
   depends_on = [
@@ -165,11 +180,18 @@ resource "nebius_mk8s_v1_node_group" "gpu" {
 
   template = {
     metadata = {
-      labels = merge(each.value.scheduling.stable_node_labels, each.value.features.mig.mode == "none" ? {} : {
-        "nvidia.com/mig.config" = each.value.features.mig.config
-        }, {
-        "lifecycle.fs2.nebius/run" = var.run_id
-      })
+      labels = merge(
+        each.value.scheduling.stable_node_labels,
+        each.value.features.mig.mode == "none" ? {} : {
+          "nvidia.com/mig.config" = each.value.features.mig.config
+        },
+        each.value.features.shared_filesystem ? {
+          "storage.fs2.nebius/shared-cache" = "true"
+        } : {},
+        {
+          "lifecycle.fs2.nebius/run" = var.run_id
+        },
+      )
     }
     taints = each.value.scheduling.taints
     boot_disk = {
@@ -188,8 +210,9 @@ resource "nebius_mk8s_v1_node_group" "gpu" {
       policy          = each.value.provider.reservation_policy
       reservation_ids = length(try(each.value.provider.reservation_ids, [])) > 0 ? each.value.provider.reservation_ids : null
     }
-    service_account_id = nebius_iam_v1_service_account.nodepull.id
-    underlay_required  = false
+    service_account_id   = nebius_iam_v1_service_account.nodepull.id
+    underlay_required    = false
+    cloud_init_user_data = each.value.features.shared_filesystem ? local.shared_cache_cloud_init_user_data : null
     resources = {
       platform = each.value.provider.platform
       preset   = each.value.provider.preset
@@ -288,10 +311,16 @@ resource "nebius_mk8s_v1_node_group" "nvlink_rack" {
 
   template = {
     metadata = {
-      labels = merge(each.value.pool.scheduling.stable_node_labels, {
-        "lifecycle.fs2.nebius/run"         = var.run_id
-        "nebius.com/nvlink-instance-group" = nebius_compute_v1_nvl_instance_group.rack[each.key].id
-      })
+      labels = merge(
+        each.value.pool.scheduling.stable_node_labels,
+        each.value.pool.features.shared_filesystem ? {
+          "storage.fs2.nebius/shared-cache" = "true"
+        } : {},
+        {
+          "lifecycle.fs2.nebius/run"         = var.run_id
+          "nebius.com/nvlink-instance-group" = nebius_compute_v1_nvl_instance_group.rack[each.key].id
+        },
+      )
     }
     boot_disk = {
       size_gibibytes = each.value.pool.node.boot_disk.size_gib
@@ -313,8 +342,9 @@ resource "nebius_mk8s_v1_node_group" "nvlink_rack" {
       policy          = each.value.pool.provider.reservation_policy
       reservation_ids = length(try(each.value.pool.provider.reservation_ids, [])) > 0 ? each.value.pool.provider.reservation_ids : null
     }
-    service_account_id = nebius_iam_v1_service_account.nodepull.id
-    underlay_required  = false
+    service_account_id   = nebius_iam_v1_service_account.nodepull.id
+    underlay_required    = false
+    cloud_init_user_data = each.value.pool.features.shared_filesystem ? local.shared_cache_cloud_init_user_data : null
     resources = {
       platform = each.value.pool.provider.platform
       preset   = each.value.pool.provider.preset

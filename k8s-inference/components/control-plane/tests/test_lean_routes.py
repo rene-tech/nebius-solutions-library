@@ -299,7 +299,7 @@ def test_terraform_route_sets_disable_the_activation_controller_handshake(
         assert public["active_runtime"]["kind"] == "independent-runtime"
         assert public["qualification"]["kind"] == "reviewed-evidence-snapshot"
         assert public["qualification"]["states"]["runtime_ready"] is True
-        assert public["qualification"]["observed_at"] == "2026-08-30T13:44:39Z"
+        assert public["qualification"]["observed_at"] == inventory["qualification"]["observed_at"]
         assert public["policy"]["non_clinical"] is True
         cxr = _model_view(registry.get("nv-reason-cxr-3b"))
         assert cxr["policy"]["non_clinical"] is True

@@ -91,7 +91,7 @@
       "id": "models",
       "path": "/admin/models",
       "label": "Models",
-      "page": "ModelListPage",
+      "page": "ModelsPage",
       "components": [
         "ModelFilters",
         "ModelResourceTable",
@@ -122,10 +122,74 @@
       "vertical_slice": true
     },
     {
+      "id": "model-deployments",
+      "path": "/admin/model-deployments",
+      "label": "Model deployments",
+      "page": "ModelDeploymentsPage",
+      "components": [
+        "ModelDeploymentFilters",
+        "ModelDeploymentResourceTable",
+        "ObservedStateChip",
+        "DeploymentPagination"
+      ],
+      "bff": [
+        "/admin/api/v1/model-deployments",
+        "/admin/api/v1/model-deployments/{name}/status"
+      ],
+      "vertical_slice": false
+    },
+    {
+      "id": "model-deployment-new",
+      "path": "/admin/model-deployments/new",
+      "label": "New model deployment",
+      "page": "ModelDeploymentWorkspacePage",
+      "components": [
+        "QualifiedModelSelector",
+        "ModelDeploymentForm",
+        "ValidationDecisionPanel",
+        "RenderPlanPanel",
+        "MutationCapabilityGate"
+      ],
+      "bff": [
+        "/admin/api/v1/model-deployments:capabilities",
+        "/admin/api/v1/model-deployments:validate-preview",
+        "/admin/api/v1/model-deployments:plan-preview",
+        "/admin/api/v1/model-deployments:apply"
+      ],
+      "vertical_slice": false
+    },
+    {
+      "id": "model-deployment-detail",
+      "path": "/admin/model-deployments/:deploymentName",
+      "label": "Model deployment detail",
+      "page": "ModelDeploymentWorkspacePage",
+      "components": [
+        "ModelDeploymentForm",
+        "RuntimeStatusPanel",
+        "RevisionHistory",
+        "ValidationDecisionPanel",
+        "RenderPlanPanel",
+        "MutationCapabilityGate"
+      ],
+      "bff": [
+        "/admin/api/v1/model-deployments/{name}",
+        "/admin/api/v1/model-deployments/{name}/history",
+        "/admin/api/v1/model-deployments/{name}/status",
+        "/admin/api/v1/model-deployments:capabilities",
+        "/admin/api/v1/model-deployments:validate-preview",
+        "/admin/api/v1/model-deployments:plan-preview",
+        "/admin/api/v1/model-deployments:apply",
+        "/admin/api/v1/model-deployments/{name}:drain",
+        "/admin/api/v1/model-deployments/{name}:rollback",
+        "/admin/api/v1/model-deployments/{name}:reconcile"
+      ],
+      "vertical_slice": false
+    },
+    {
       "id": "operations",
       "path": "/admin/operations",
       "label": "Operations",
-      "page": "OperationListPage",
+      "page": "OperationsPage",
       "components": [
         "OperationFilters",
         "OperationResourceTable",
@@ -504,6 +568,11 @@
     "contract-shape",
     "unique-routes",
     "same-origin-bff-boundary",
+    "plan-bff-paths-in-api-contract",
+    "no-nonexistent-bff-paths",
+    "model-deployment-route-contract",
+    "qualified-model-options-fail-closed",
+    "client-query-bounds",
     "no-browser-infrastructure-credentials",
     "status-precedence-fixtures",
     "unknown-never-rendered-as-zero",

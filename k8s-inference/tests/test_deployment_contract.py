@@ -240,6 +240,22 @@ class DeploymentContractTests(unittest.TestCase):
             contract["stages"]["workloads"]["model_image_overrides"],
             {"proteinmpnn": runtime_catalog["runtime"]["image"]["reference"]},
         )
+        self.assertEqual(
+            contract["stages"]["workloads"]["model_controller"],
+            {
+                "enabled": False,
+                "writes_enabled": False,
+                "workload_owner": "terraform",
+                "bootstrap_model_ids": [],
+                "fresh_install": False,
+                "handoff_receipt": None,
+                "priority_classes": {
+                    "interactive": 100,
+                    "standard": 0,
+                    "batch": -100,
+                },
+            },
+        )
         self.assertEqual(contract["artifact_delivery"]["mode"], "regional-mirror")
         self.assertEqual(contract["artifact_delivery"]["repository_prefix"], "")
         self.assertIn(
@@ -293,6 +309,179 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(
             outputs["effective_configuration"]["port_forward_ports"],
             contract["stages"]["infrastructure"]["port_forward_local_ports"],
+        )
+
+    def test_dynamic_model_tfvars_normalize_without_internal_json(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-dynamic-model-test",
+            "target": self.catalog_target(),
+            "profiles": {"models": "full_catalog"},
+            "models": {
+                "selection": "explicit",
+                "enabled": ["qwen3-8b"],
+                "scaling": {"mode": "keda", "hot": ["qwen3-8b"]},
+            },
+            "dynamic_models": {
+                "enabled": True,
+                "writes_enabled": True,
+                "workload_owner": "controller",
+                "bootstrap_model_ids": ["qwen3-8b"],
+                "fresh_install": True,
+            },
+        }
+        variable_file = self._write_configuration("dynamic-models", deployment)
+        outputs = self._planned_outputs(variable_file, "dynamic-models")
+        dynamic = outputs["deployment_contract"]["stages"]["workloads"][
+            "model_controller"
+        ]
+
+        self.assertEqual(
+            dynamic,
+            {
+                "enabled": True,
+                "writes_enabled": True,
+                "workload_owner": "controller",
+                "bootstrap_model_ids": ["qwen3-8b"],
+                "fresh_install": True,
+                "handoff_receipt": None,
+                "priority_classes": {
+                    "interactive": 100,
+                    "standard": 0,
+                    "batch": -100,
+                },
+            },
+        )
+        self.assertNotIn("infrastructure_envelope_json", dynamic)
+        self.assertNotIn("renderer_bundles_json", dynamic)
+
+    def test_dynamic_model_ownership_rejects_a_concurrent_writer(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-invalid-owner-test",
+            "target": self.catalog_target(),
+            "models": {"selection": "profile", "scaling": {"mode": "keda"}},
+            "dynamic_models": {
+                "enabled": True,
+                "writes_enabled": True,
+                "workload_owner": "terraform",
+            },
+        }
+        variable_file = self._write_configuration("invalid-owner", deployment)
+        result, _ = self._plan_file(variable_file, "invalid-owner")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("dynamic_models must use one exclusive ownership mode", result.stderr)
+
+    def test_dynamic_model_workload_contract_is_derived_and_single_writer(self) -> None:
+        controller_source = (
+            DEPLOY_ROOT / "stages/workloads/model_controller.tf"
+        ).read_text(encoding="utf-8")
+        workload_locals = (DEPLOY_ROOT / "stages/workloads/locals.tf").read_text(
+            encoding="utf-8"
+        )
+        models_source = (DEPLOY_ROOT / "stages/workloads/models.tf").read_text(
+            encoding="utf-8"
+        )
+        root_variables = (DEPLOY_ROOT / "variables.tf").read_text(encoding="utf-8")
+
+        self.assertNotIn("infrastructure_envelope_json", root_variables)
+        self.assertNotIn("renderer_bundles_json", root_variables)
+        self.assertIn("model_controller_pool_envelope", controller_source)
+        self.assertIn("model_controller_qualifications", controller_source)
+        self.assertIn("model_controller_bundle_resources", controller_source)
+        self.assertIn("model_controller_expected_handoff_receipt", controller_source)
+        controller_owned_gvks = controller_source.split(
+            "model_controller_supported_template_gvks = toset([", 1
+        )[1].split("])" , 1)[0]
+        self.assertNotIn('"v1/PersistentVolumeClaim"', controller_owned_gvks)
+        self.assertIn(
+            'document.manifest.kind == "PersistentVolumeClaim"', controller_source
+        )
+        self.assertIn('cache.artifact.state == "platform-verified"', controller_source)
+        self.assertIn('support.state == "qualified"', controller_source)
+        self.assertIn('binding.state == "hardware-validated"', controller_source)
+        self.assertIn("model_controller_qualification_rows", controller_source)
+        self.assertIn("model_controller_ineligible_reasons", controller_source)
+        self.assertIn("artifactRevisions", controller_source)
+        self.assertIn("scaleToZeroQualified", controller_source)
+        self.assertNotIn("sha256(jsonencode({ source = model.model.source", controller_source)
+        self.assertIn(
+            "!contains(local.model_controller_dynamic_model_ids, model_id)",
+            workload_locals,
+        )
+        self.assertIn(
+            "sum(max by (model, state) (fs2_serve_operations",
+            workload_locals,
+        )
+        self.assertNotIn("fallback = {", models_source)
+        self.assertNotIn("fallback_failure_threshold", root_variables)
+        self.assertIn(
+            'implementation_sha256 = filesha256("${path.module}/model_controller.tf")',
+            controller_source,
+        )
+        self.assertIn(
+            '!contains(local.model_controller_dynamic_model_ids, document.model_id)',
+            controller_source,
+        )
+        self.assertIn(
+            "for_each = local.terraform_owned_model_manifests", models_source
+        )
+        self.assertIn(
+            "for_each = local.terraform_owned_model_scalers", models_source
+        )
+        self.assertIn(
+            '"/admin/api/v1/model-deployments:plan-preview"', controller_source
+        )
+        self.assertIn(
+            '"/admin/api/v1/model-deployments:apply"', controller_source
+        )
+        self.assertNotIn('kind = "ModelDeployment"', controller_source)
+
+    def test_model_cache_is_shared_rwx_without_changing_the_default_storage_class(
+        self,
+    ) -> None:
+        infrastructure = (
+            DEPLOY_ROOT / "stages/infrastructure/cluster.tf"
+        ).read_text(encoding="utf-8")
+        foundation = (DEPLOY_ROOT / "stages/foundation/releases.tf").read_text(
+            encoding="utf-8"
+        )
+        workload_locals = (DEPLOY_ROOT / "stages/workloads/locals.tf").read_text(
+            encoding="utf-8"
+        )
+        controller = (
+            DEPLOY_ROOT / "stages/workloads/model_controller.tf"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('shared_cache_mount_path', infrastructure)
+        self.assertIn('"storage.fs2.nebius/shared-cache" = "true"', infrastructure)
+        self.assertIn(
+            "each.value.features.shared_filesystem ? local.shared_cache_cloud_init_user_data : null",
+            infrastructure,
+        )
+        self.assertIn('name             = "csi-mounted-fs-path"', foundation)
+        self.assertIn(
+            'repository       = "oci://cr.eu-north1.nebius.cloud/mk8s/helm"',
+            foundation,
+        )
+        self.assertIn('key      = "storage.fs2.nebius/shared-cache"', foundation)
+        self.assertNotIn("is-default-class", foundation)
+        self.assertIn('accessModes      = ["ReadWriteMany"]', workload_locals)
+        self.assertIn(
+            'storageClassName = "csi-mounted-fs-path-sc"', workload_locals
+        )
+        self.assertIn("shared_cache_claim_names", workload_locals)
+        self.assertIn(
+            "claimName = local.shared_cache_claim_names[volume.persistentVolumeClaim.claimName]",
+            workload_locals,
+        )
+        self.assertIn(
+            "model_controller_bundle_requires_shared_cache", controller
+        )
+        self.assertIn(
+            "!local.model_controller_bundle_requires_shared_cache[model_id] || pool.features.shared_filesystem",
+            controller,
         )
 
     def test_regional_mirror_rejects_tag_only_model_override(self) -> None:

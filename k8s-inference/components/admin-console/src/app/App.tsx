@@ -11,6 +11,8 @@ import { AuditPage } from "../pages/audit/AuditPage";
 import { CapacityPage } from "../pages/capacity/CapacityPage";
 import { ObservabilityPage } from "../pages/observability/ObservabilityPage";
 import { ConfigurationPage } from "../pages/configuration/ConfigurationPage";
+import { ModelDeploymentsPage } from "../pages/modelDeployments/ModelDeploymentsPage";
+import { ModelDeploymentWorkspacePage } from "../pages/modelDeployments/ModelDeploymentWorkspacePage";
 
 export function App() {
   return (
@@ -20,6 +22,9 @@ export function App() {
           <Route index element={<OverviewPage />} />
           <Route path="models" element={<ModelsPage />} />
           <Route path="models/:modelId" element={<ModelDetailPage />} />
+          <Route path="model-deployments" element={<ModelDeploymentsPage />} />
+          <Route path="model-deployments/new" element={<ModelDeploymentWorkspacePage create />} />
+          <Route path="model-deployments/:deploymentName" element={<ModelDeploymentWorkspacePage />} />
           <Route path="operations" element={<OperationsPage />} />
           <Route path="operations/:operationId" element={<OperationDetailPage />} />
           <Route path="access" element={<AccessPage />} />

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { adminApi, AdminApiError } from "./client";
+import { modelDeploymentSpecFixture } from "../test/modelDeploymentFixtures";
 
 const response = {
   meta: {
@@ -95,6 +96,34 @@ describe("same-origin admin API boundary", () => {
       "/admin/api/v1/models?limit=200",
       "/admin/api/v1/operations?limit=100",
       "/admin/api/v1/observability",
+    ]);
+  });
+
+  it("accepts a model search at the server's exact 128-character boundary", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(response), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const search = "s".repeat(128);
+
+    await adminApi.models(new URLSearchParams(), { search });
+
+    const [rawUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const url = new URL(rawUrl, "https://admin.test.invalid");
+    expect(url.searchParams.get("search")).toBe(search);
+    expect(url.searchParams.get("limit")).toBe("200");
+  });
+
+  it("clamps access page sizes and falls back for non-integer limits", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(response), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await adminApi.audit(undefined, 1001);
+    await adminApi.audit(undefined, Number.NaN);
+    await adminApi.audit(undefined, 1.5);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/admin/api/v1/audit?limit=1000",
+      "/admin/api/v1/audit?limit=200",
+      "/admin/api/v1/audit?limit=200",
     ]);
   });
 
@@ -224,5 +253,86 @@ describe("same-origin admin API boundary", () => {
       expect((init as RequestInit).credentials).toBe("same-origin");
       expect(String((init as RequestInit).body)).not.toContain("credential");
     }
+  });
+
+  it("uses bounded ModelDeployment reads and keeps desired state in preview bodies", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(response), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const identity = { namespace: "fs2-models", tenantId: "tenant-fixture" };
+    const proposal = {
+      name: "qwen-live",
+      namespace: "fs2-models",
+      base_etag: `sha256:${"e".repeat(64)}`,
+      spec: modelDeploymentSpecFixture,
+    };
+
+    await adminApi.modelDeployments({ ...identity, after: "cosmos-live", limit: 999 });
+    await adminApi.modelDeployment("qwen-live", identity);
+    await adminApi.modelDeploymentHistory("qwen-live", { ...identity, beforeRevision: 12, limit: 999 });
+    await adminApi.modelDeploymentStatus("qwen-live", identity);
+    await adminApi.validateModelDeployment(proposal);
+    await adminApi.planModelDeployment(proposal);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/admin/api/v1/model-deployments?namespace=fs2-models&tenant_id=tenant-fixture&after=cosmos-live&limit=200",
+      "/admin/api/v1/model-deployments/qwen-live?namespace=fs2-models&tenant_id=tenant-fixture",
+      "/admin/api/v1/model-deployments/qwen-live/history?namespace=fs2-models&tenant_id=tenant-fixture&before_revision=12&limit=200",
+      "/admin/api/v1/model-deployments/qwen-live/status?namespace=fs2-models&tenant_id=tenant-fixture",
+      "/admin/api/v1/model-deployments:validate-preview",
+      "/admin/api/v1/model-deployments:plan-preview",
+    ]);
+    for (const [, init] of fetchMock.mock.calls.slice(-2)) {
+      expect((init as RequestInit).method).toBe("POST");
+      expect((init as RequestInit).credentials).toBe("same-origin");
+      expect(JSON.parse(String((init as RequestInit).body))).toEqual(proposal);
+    }
+  });
+
+  it("uses the capability and mutation routes with exact stateless request bodies", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(response), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const proposal = {
+      name: "qwen-live",
+      namespace: "fs2-models",
+      base_etag: `sha256:${"e".repeat(64)}`,
+      spec: modelDeploymentSpecFixture,
+    };
+    const apply = {
+      preview_id: "22222222-2222-4222-8222-222222222222",
+      proposed_etag: `sha256:${"f".repeat(64)}`,
+      proposal,
+      idempotency_key: "model-apply-33333333-3333-4333-8333-333333333333",
+    };
+    const action = {
+      base_etag: proposal.base_etag,
+      idempotency_key: "model-drain-44444444-4444-4444-8444-444444444444",
+    };
+    const rollback = {
+      ...action,
+      idempotency_key: "model-rollback-55555555-5555-4555-8555-555555555555",
+      target_revision: 1,
+    };
+    const reconcile = { expected_etag: `sha256:${"f".repeat(64)}` };
+
+    await adminApi.modelDeploymentCapabilities();
+    await adminApi.applyModelDeployment(apply);
+    await adminApi.drainModelDeployment("qwen-live", action);
+    await adminApi.rollbackModelDeployment("qwen-live", rollback);
+    await adminApi.reconcileModelDeployment("qwen-live", reconcile);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/admin/api/v1/model-deployments:capabilities",
+      "/admin/api/v1/model-deployments:apply",
+      "/admin/api/v1/model-deployments/qwen-live:drain",
+      "/admin/api/v1/model-deployments/qwen-live:rollback",
+      "/admin/api/v1/model-deployments/qwen-live:reconcile",
+    ]);
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).method).toBe("GET");
+    expect(fetchMock.mock.calls.slice(1).map(([, init]) => (init as RequestInit).method)).toEqual([
+      "POST", "POST", "POST", "POST",
+    ]);
+    expect(fetchMock.mock.calls.slice(1).map(([, init]) => JSON.parse(String((init as RequestInit).body)))).toEqual([
+      apply, action, rollback, reconcile,
+    ]);
   });
 });

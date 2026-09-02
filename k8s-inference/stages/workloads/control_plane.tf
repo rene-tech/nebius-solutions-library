@@ -115,6 +115,16 @@ locals {
         }
       }
     }
+    modelController = {
+      enabled                             = var.model_controller.enabled
+      writesEnabled                       = var.model_controller.writes_enabled
+      infrastructureEnvelopeConfigMapName = local.model_controller_envelope_name
+      rendererBundlesConfigMapName        = local.model_controller_bundles_name
+      prometheusServerAddress             = local.prometheus_server_address
+      admission = {
+        enabled = var.model_controller.writes_enabled
+      }
+    }
     publicLoadBalancer = {
       enabled               = local.public_edge_enabled
       targetProjectId       = var.project_id
@@ -186,6 +196,8 @@ resource "helm_release" "control_plane" {
     kubernetes_config_map_v1.serving_bindings,
     kubernetes_config_map_v1.lean_routes,
     kubernetes_config_map_v1.admin_configuration,
+    kubernetes_config_map_v1.model_controller_envelope,
+    kubernetes_config_map_v1.model_controller_bundles,
     kubernetes_manifest.model,
   ]
 }

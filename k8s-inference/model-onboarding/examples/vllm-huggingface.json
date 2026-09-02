@@ -77,7 +77,7 @@
       "h100-preemptible"
     ],
     "required_node_labels": {
-      "accelerator.fs2.nebius/class": "nvidia-h100-sxm-80gb"
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
     }
   },
   "serving": {

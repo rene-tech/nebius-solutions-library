@@ -1,0 +1,42 @@
+{{- if and .Values.modelController.enabled .Values.modelController.admission.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-delete
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["inference.fs2.nebius.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["DELETE"]
+        resources: ["modeldeployments"]
+        scope: Namespaced
+  validations:
+    - expression: >-
+        !has(oldObject.metadata.finalizers) ||
+        !oldObject.metadata.finalizers.exists(f, f == 'inference.fs2.nebius.ai/model-cleanup') ||
+        oldObject.spec.adoption.mode == 'Observe' ||
+        (oldObject.spec.lifecycle.desiredState == 'Draining' &&
+         has(oldObject.status) && has(oldObject.status.observedGeneration) &&
+         oldObject.status.observedGeneration == oldObject.metadata.generation &&
+         has(oldObject.status.phase) && oldObject.status.phase == 'Cold')
+      message: ModelDeployment deletion requires an observed complete drain before finalizer cleanup
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-delete
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  policyName: {{ include "fs2-serve.fullname" . }}-model-controller-delete
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Values.modelController.modelNamespace }}
+{{- end }}

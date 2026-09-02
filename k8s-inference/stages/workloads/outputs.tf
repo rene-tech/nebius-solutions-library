@@ -150,17 +150,54 @@ output "deployment_contract" {
   }
 }
 
+output "dynamic_model_handoff_receipt" {
+  description = "Copy this non-secret receipt into deployment.dynamic_models.handoff_receipt only after the explicit workload_owner=released apply has completed."
+  value = (
+    var.model_controller.workload_owner == "released" ?
+    local.model_controller_expected_handoff_receipt :
+    null
+  )
+}
+
+output "dynamic_model_contract" {
+  description = "Non-secret derived controller ownership, catalog, bootstrap, and immutable contract identities."
+  value = {
+    enabled                     = var.model_controller.enabled
+    writes_enabled              = var.model_controller.writes_enabled
+    workload_owner              = var.model_controller.workload_owner
+    catalog_model_ids           = local.selected_model_ids
+    controller_model_ids        = local.model_controller_dynamic_model_ids
+    bootstrap_model_ids         = sort(tolist(var.model_controller.bootstrap_model_ids))
+    ineligible_models           = local.model_controller_ineligible_reasons
+    static_ineligible_model_ids = sort(keys(local.model_controller_ineligible_reasons))
+    envelope_revision           = var.model_controller.enabled ? local.model_controller_envelope.revision : null
+    renderer_bundles_sha256     = var.model_controller.enabled ? sha256(local.model_controller_bundles_json) : null
+    terraform_manifest_count    = length(local.terraform_owned_model_manifests)
+    terraform_scaler_count      = length(local.terraform_owned_model_scalers)
+    bootstrap_job_enabled       = local.model_controller_bootstrap_enabled
+    unsupported_gvks_retained = sort(distinct([
+      for document in values(local.terraform_owned_model_manifests) : "${document.manifest.apiVersion}/${document.manifest.kind}"
+      if(
+        var.model_controller.workload_owner != "terraform" &&
+        !contains(
+          local.model_controller_supported_template_gvks,
+          "${document.manifest.apiVersion}/${document.manifest.kind}",
+        )
+      )
+    ]))
+  }
+}
+
 output "model_autoscaling_contract" {
   description = "Non-secret replica-owner, hot-floor, timing, and exact route-to-Deployment contract."
   value = {
-    mode                       = var.model_scaling_mode
-    replica_owner              = var.model_scaling_mode == "keda" ? "keda" : "terraform"
-    activation_handshake       = "disabled-lean-route"
-    hot_model_ids              = sort(tolist(var.hot_model_ids))
-    polling_interval_seconds   = var.keda_polling_interval_seconds
-    cooldown_period_seconds    = var.keda_cooldown_period_seconds
-    fallback_failure_threshold = var.keda_fallback_failure_threshold
-    prometheus_server_address  = var.model_scaling_mode == "keda" ? local.prometheus_server_address : null
+    mode                      = var.model_scaling_mode
+    replica_owner             = var.model_scaling_mode == "keda" ? "keda" : "terraform"
+    activation_handshake      = "disabled-lean-route"
+    hot_model_ids             = sort(tolist(var.hot_model_ids))
+    polling_interval_seconds  = var.keda_polling_interval_seconds
+    cooldown_period_seconds   = var.keda_cooldown_period_seconds
+    prometheus_server_address = var.model_scaling_mode == "keda" ? local.prometheus_server_address : null
     targets = {
       for model_id, target in local.model_scalers : model_id => {
         deployment   = target.deployment
@@ -192,14 +229,16 @@ output "managed_resource_count" {
   value = (
     # Profile-independent identity, credential, database, queue, control-plane,
     # and Grafana egress addresses. Profile-shaped collections stay explicit.
-    46 +
+    47 +
     (local.ngc_api_key_required ? 1 : 0) +
     (local.model_nvcr_credentials_required ? 1 : 0) +
     (local.dcgm_nvcr_credentials_required ? 1 : 0) +
     (var.deployment_profile == "full_catalog" ? 1 : 0) +
-    length(local.model_manifests) +
+    length(local.terraform_owned_model_manifests) +
     length(local.keeper_manifests) +
-    length(local.model_scalers) +
+    length(local.terraform_owned_model_scalers) +
+    (var.model_controller.enabled ? 2 : 0) +
+    (local.model_controller_bootstrap_enabled ? 3 : 0) +
     (local.admin_configuration_enabled ? 1 : 0) +
     (data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled ? 2 : 0) +
     (var.run_acceptance_job ? 4 : 0) +

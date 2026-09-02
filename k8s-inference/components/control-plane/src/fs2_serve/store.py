@@ -44,6 +44,7 @@ from .models import (
     AuditEvent,
     ClaimedActivationIntent,
     ClaimedOperation,
+    DynamicAdmissionFence,
     OperationResult,
     OperationStatus,
     OperationView,
@@ -280,6 +281,8 @@ class Store(Protocol):
         model_revision: str,
         reserved_gpu_seconds: float,
         max_attempts: int,
+        dispatch_snapshot: str | None = None,
+        dynamic_fence: DynamicAdmissionFence | None = None,
     ) -> OperationView: ...
 
     async def get_operation(self, operation_id: UUID, *, tenant_id: str | None = None) -> OperationView: ...

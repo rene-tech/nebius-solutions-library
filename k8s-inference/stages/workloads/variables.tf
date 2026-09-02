@@ -231,6 +231,74 @@ variable "enabled_model_ids" {
   }
 }
 
+variable "model_controller" {
+  description = "Feature-gated dynamic ModelDeployment controller. Internal envelopes and renderer bundles are derived from the selected catalog, effective accelerator pools, queue, tenant, images, and scaling inputs."
+  type = object({
+    enabled             = bool
+    writes_enabled      = bool
+    workload_owner      = string
+    bootstrap_model_ids = set(string)
+    fresh_install       = bool
+    handoff_receipt     = optional(string)
+    priority_classes    = map(number)
+  })
+  default = {
+    enabled             = false
+    writes_enabled      = false
+    workload_owner      = "terraform"
+    bootstrap_model_ids = []
+    fresh_install       = false
+    handoff_receipt     = null
+    priority_classes = {
+      interactive = 100
+      standard    = 0
+      batch       = -100
+    }
+  }
+
+  validation {
+    condition = try(
+      contains(["terraform", "released", "controller"], var.model_controller.workload_owner) &&
+      (
+        var.model_controller.workload_owner == "terraform" ? (
+          !var.model_controller.writes_enabled &&
+          length(var.model_controller.bootstrap_model_ids) == 0 &&
+          !var.model_controller.fresh_install &&
+          var.model_controller.handoff_receipt == null
+          ) : var.model_controller.workload_owner == "released" ? (
+          var.model_controller.enabled &&
+          !var.model_controller.writes_enabled &&
+          length(var.model_controller.bootstrap_model_ids) == 0 &&
+          !var.model_controller.fresh_install &&
+          var.model_controller.handoff_receipt == null
+          ) : (
+          var.model_controller.enabled &&
+          var.model_controller.writes_enabled &&
+          var.model_scaling_mode == "keda" &&
+          (var.model_controller.fresh_install != (var.model_controller.handoff_receipt != null))
+        )
+      ) &&
+      (var.model_controller.enabled || var.model_controller.workload_owner == "terraform") &&
+      length(setsubtract(
+        var.model_controller.bootstrap_model_ids,
+        var.enabled_model_ids == null ?
+        toset(try(jsondecode(file("${path.module}/../../catalog/profiles/model-profiles.json")).profiles[var.deployment_profile].canonical_routes, [])) :
+        var.enabled_model_ids,
+      )) == 0 &&
+      (var.model_controller.handoff_receipt == null || can(regex("^sha256:[0-9a-f]{64}$", var.model_controller.handoff_receipt))) &&
+      length(var.model_controller.priority_classes) > 0 &&
+      contains(keys(var.model_controller.priority_classes), "standard") &&
+      alltrue([
+        for name, value in var.model_controller.priority_classes :
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", name)) &&
+        floor(value) == value && value >= -2147483648 && value <= 2147483647
+      ]),
+      false,
+    )
+    error_message = "model_controller must preserve one owner: terraform is read-only, released is the explicit removal phase, and controller requires writes, KEDA, a selected bootstrap subset, and exactly one of fresh_install or a valid handoff receipt."
+  }
+}
+
 variable "model_image_overrides" {
   description = "Canonical model ID to deployable OCI image reference. It replaces only placeholder runtime images in that model's manifests."
   type        = map(string)
@@ -340,7 +408,7 @@ variable "keda_cooldown_period_seconds" {
 }
 
 variable "keda_fallback_failure_threshold" {
-  description = "Consecutive Prometheus failures before KEDA fails open to one replica for the affected model."
+  description = "Deprecated compatibility input. Ignored because a Prometheus outage must not wake every zero-hot model."
   type        = number
   default     = 3
 

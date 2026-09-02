@@ -55,12 +55,12 @@
               "evidence": "immutable upstream vLLM-Omni one-B300 recipe at eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c; vendor/community evidence, not an FS2 platform measurement"
             },
             {
-              "accelerator_class": "nvidia-h100-sxm-80gb",
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
               "pool_template": "unbound-h100",
-              "state": "historical-evidence-only",
-              "enabled": false,
+              "state": "hardware-validated",
+              "enabled": true,
               "catalog_b300_state": null,
-              "evidence": "immutable NVIDIA model card at 7a312c868bcce8e40b3eb40861300a9d0ba3fde1 reports H100 testing; vendor evidence, not an FS2 platform measurement"
+              "evidence": "catalog/profiles/evidence/h100-qwen-cosmos-runtime-qualification-20260902.json@sha256:0d66f4fab33908b15a9a89bc9977752e21c9f819307198ac72d3e770ee8b208f"
             }
           ],
           "qualification_candidates": []
@@ -385,17 +385,17 @@
               "enabled": true,
               "catalog_b300_state": "qualified",
               "evidence": "catalog resources.gpu.b300_state and exact reviewed placement"
+            },
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": null,
+              "evidence": "catalog/profiles/evidence/h100-qwen-cosmos-runtime-qualification-20260902.json@sha256:0d66f4fab33908b15a9a89bc9977752e21c9f819307198ac72d3e770ee8b208f"
             }
           ],
           "qualification_candidates": [
-            {
-              "accelerator_class": "nvidia-h100-sxm-80gb",
-              "pool_template": "unbound-h100",
-              "state": "declared-unvalidated",
-              "enabled": false,
-              "catalog_b300_state": null,
-              "evidence": null
-            },
             {
               "accelerator_class": "nvidia-h200-sxm-141gb",
               "pool_template": "unbound-h200",

@@ -110,6 +110,16 @@ class ModelDeploymentPublicationStatus(StrictModel):
     observed_at: AwareDatetime | None = None
 
 
+class ModelDeploymentEndpointStatus(StrictModel):
+    """Exact controller-observed Service identity used for route publication."""
+
+    namespace: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
+    service_name: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
+    service_port: int = Field(ge=1, le=65535)
+    uid: str = Field(min_length=1, max_length=128)
+    digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
+
+
 class ModelDeploymentAdoptionStatus(StrictModel):
     state: ModelDeploymentAdoptionState
     receipt_digest: str | None = Field(default=None, pattern=SHA256_DIGEST_PATTERN)
@@ -124,6 +134,15 @@ class ModelDeploymentResourceStatus(StrictModel):
     uid: str = Field(min_length=1, max_length=128)
     generation: int = Field(ge=0)
     digest: str | None = Field(default=None, pattern=SHA256_DIGEST_PATTERN)
+
+
+class ModelDeploymentPlacementStatus(StrictModel):
+    deployment_name: str = Field(min_length=1, max_length=253, pattern=DNS_SUBDOMAIN_PATTERN)
+    pool_ref: str = Field(min_length=1, max_length=128)
+    role: Literal["hot", "burst"]
+    desired: int | None = Field(default=None, ge=0)
+    ready: int | None = Field(default=None, ge=0)
+    available: int | None = Field(default=None, ge=0)
 
 
 class ModelDeploymentInfrastructureHandoff(StrictModel):
@@ -169,9 +188,12 @@ class ModelDeploymentObservedStatus(StrictModel):
     render_digest: str | None = Field(default=None, pattern=SHA256_DIGEST_PATTERN)
     active_revision: str | None = Field(default=None, min_length=1, max_length=256)
     admitted_pool_ref: str | None = Field(default=None, min_length=1, max_length=128)
+    eligible_pool_refs: list[str] = Field(default_factory=list, max_length=32)
+    placements: list[ModelDeploymentPlacementStatus] = Field(default_factory=list, max_length=64)
     replicas: ModelDeploymentReplicaStatus | None = None
     cache: ModelDeploymentCacheStatus | None = None
     publication: ModelDeploymentPublicationStatus | None = None
+    endpoint: ModelDeploymentEndpointStatus | None = None
     adoption: ModelDeploymentAdoptionStatus | None = None
     resources: list[ModelDeploymentResourceStatus] = Field(default_factory=list, max_length=256)
     infrastructure_handoff: ModelDeploymentInfrastructureHandoff | None = None
@@ -181,6 +203,10 @@ class ModelDeploymentObservedStatus(StrictModel):
 
     @model_validator(mode="after")
     def unique_status_maps(self) -> ModelDeploymentObservedStatus:
+        if len(self.eligible_pool_refs) != len(set(self.eligible_pool_refs)):
+            raise ValueError("eligible pool references must be unique")
+        if len({item.deployment_name for item in self.placements}) != len(self.placements):
+            raise ValueError("placement deployment names must be unique")
         if len({item.identity for item in self.resources}) != len(self.resources):
             raise ValueError("resource status identities must be unique")
         if len({item.type for item in self.conditions}) != len(self.conditions):
@@ -260,12 +286,41 @@ def model_deployment_audit_target(namespace: str, name: str) -> str:
 
 class ModelDeploymentStatusObservation(StrictModel):
     observation_id: UUID
+    source_uid: str = Field(min_length=1, max_length=128)
+    source_resource_version: str = Field(min_length=1, max_length=128)
     namespace: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
     name: str = Field(min_length=1, max_length=253, pattern=DNS_SUBDOMAIN_PATTERN)
     tenant_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
     revision: int = Field(ge=1)
     status: ModelDeploymentObservedStatus
     observed_at: AwareDatetime
+
+
+def model_deployment_status_precedes(
+    candidate: ModelDeploymentStatusObservation,
+    current: ModelDeploymentStatusObservation,
+) -> bool:
+    """Return whether accepting ``candidate`` would regress the status pointer.
+
+    Kubernetes generations are monotonic for the protected ModelDeployment
+    identity.  Within one generation, the controller-owned reconcile timestamp
+    is the ordering fence.  The immutable event is still retained only when it
+    can safely become the latest operator view.
+    """
+
+    if candidate.source_uid != current.source_uid:
+        # A recreated CR legitimately resets generation.  The bridge already
+        # proves the exact desired annotations and spec digest; its strictly
+        # newer reconcile timestamp prevents an old UID racing back in.
+        return candidate.observed_at <= current.observed_at
+    if (
+        candidate.source_resource_version == current.source_resource_version
+        and candidate.observation_id != current.observation_id
+    ):
+        return True
+    candidate_generation = candidate.status.observed_generation
+    current_generation = current.status.observed_generation
+    return candidate_generation < current_generation or candidate.observed_at <= current.observed_at
 
 
 class ModelDeploymentList(StrictModel):

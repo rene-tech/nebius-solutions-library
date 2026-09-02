@@ -17,6 +17,8 @@ from .registry import OperationalModel
 
 
 class Metrics:
+    _MAX_MODELS = 4096
+
     def __init__(self, models: Iterable[OperationalModel]) -> None:
         self.registry = CollectorRegistry(auto_describe=True)
         self.request_total = Gauge(
@@ -85,9 +87,20 @@ class Metrics:
             ("model",),
             registry=self.registry,
         )
-        self._models = {model.id: model for model in models}
+        self._models: dict[str, OperationalModel] = {}
         self._accounting_labels: set[tuple[str, str, str]] = set()
-        for model in self._models.values():
+        self._queue_models: set[str] = set()
+        self.sync_models(models)
+
+    def sync_models(self, models: Iterable[OperationalModel]) -> None:
+        """Refresh bounded model metadata after an atomic registry update."""
+
+        values = {model.id: model for model in models}
+        if len(values) > self._MAX_MODELS or len(set(self._models) | set(values)) > self._MAX_MODELS:
+            raise ValueError("model metric cardinality exceeds the configured bound")
+        self._models.update(values)
+        self._queue_models.update(values)
+        for model in values.values():
             self.model_info.labels(model.id).info(
                 {
                     # The canonical catalog can retain blocked records whose
@@ -139,14 +152,31 @@ class Metrics:
             self.gpu_seconds.labels(model_id, model.gateway.gpu_class).set(gpu_by_model.get(model_id, 0.0))
 
     def set_queue(self, counts: dict[tuple[str, str], int]) -> None:
+        """Project durable queue demand, including live-added model IDs.
+
+        Dynamic ModelDeployments are admitted after the process-local Metrics
+        object is constructed.  KEDA consumes this gauge to activate a cold
+        runtime, so limiting the projection to the startup catalog would leave
+        every live-added model permanently at zero demand.  Retaining the
+        previously observed IDs also lets us explicitly clear their active
+        states after the final operation leaves the queue.
+        """
+
         states = ("queued", "activating", "running", "succeeded", "failed", "cancelled", "preempted", "expired")
-        for model in self._models:
+        observed_models = {model_id for model_id, _state in counts}
+        queue_models = self._queue_models | observed_models
+        for model in queue_models:
             for state in states:
                 self.queue.labels(model, state).set(counts.get((model, state), 0))
+        self._queue_models = queue_models
 
     def set_queue_age(self, ages: dict[str, float]) -> None:
-        for model in self._models:
+        queue_models = self._queue_models | set(ages)
+        if len(queue_models) > self._MAX_MODELS:
+            raise ValueError("queue age metric cardinality exceeds the configured bound")
+        for model in queue_models:
             self.queue_age.labels(model).set(ages.get(model, 0))
+        self._queue_models = queue_models
 
     def render(self) -> bytes:
         return generate_latest(self.registry)

@@ -283,6 +283,7 @@ The top-level variable is `deployment`:
 | `cluster` | Kubernetes version, API CIDR allowlist, and optional regular CPU system-pool shape. |
 | `accelerator_pools` | Open map of GPU platform/preset, capacity, optional capacity-block reservation, topology, driver, local-storage, and node-floor/ceiling settings. |
 | `models` | Profile or explicit selection, KEDA/static scaling, hot-model floor, and per-model scaling overrides. |
+| `dynamic_models` | Optional live controller gate, exclusive workload owner, and initial model IDs. Internal envelope and renderer JSON is derived, not customer-authored. |
 | `storage.shared_cache` | Optional shared model-cache size/type/block-size override. |
 | `artifacts.external_registry_ids` | Same-tenant registries whose immutable images need run-scoped node-pull viewer access. Terraform creates a project-scoped reader group beside each registry, including registries in another project or region. |
 | `artifacts.registry_policy` | Defaults to `regional-mirror`; optional prefix controls the target repository namespace. `direct-source` is an explicit opt-out that leaves runtime pulls pointed at upstream registries. |
@@ -298,6 +299,70 @@ For another project, add `project_name`, `network.network_name`,
 the provider. Custom accelerator pools additionally go through the live
 platform and Managed Kubernetes compatibility preflight.
 
+### Live model ownership and bootstrap
+
+For a new cluster, `dynamic_models.workload_owner = "controller"` removes only
+qualified per-model serving objects and static routes from Terraform's
+ownership. Models missing any exact artifact, retained runtime, base catalog,
+accelerator, or renderer evidence remain statically Terraform-owned and are
+reported in `dynamic_model_contract.ineligible_models`. The solution derives
+immutable GPU-neutral pool envelopes and renderer bundles from the selected
+models and accelerator pools, then seeds only
+`bootstrap_model_ids` through the authenticated admin preview/apply API. Each
+seed therefore has a PostgreSQL revision, ETag, audit event, and Kubernetes
+projection; Terraform does not write a bare `ModelDeployment` CR. A completed
+bootstrap Job preserves an existing desired revision instead of overwriting a
+later admin change.
+
+```hcl
+models = {
+  selection = "explicit"
+  enabled   = ["cosmos3-nano", "qwen3-8b"]
+  scaling   = { mode = "keda", hot = ["qwen3-8b"] }
+}
+
+dynamic_models = {
+  enabled             = true
+  writes_enabled      = true
+  workload_owner      = "controller"
+  # qwen3-8b currently has the retained artifact/runtime/B300 tuple. Cosmos
+  # stays on the static path until equivalent platform evidence is promoted.
+  bootstrap_model_ids = ["qwen3-8b"]
+  fresh_install       = true
+}
+```
+
+For an existing Terraform-owned model deployment, do not set
+`fresh_install = true`. Use the explicit two-apply handoff:
+
+1. Enable the controller with `workload_owner = "terraform"` and
+   `writes_enabled = false` to install and review the derived contracts while
+   current workloads remain unchanged.
+2. Drain model traffic, set `workload_owner = "released"`, and apply. This
+   removes only Deployment, Service, ServiceAccount, and ConfigMap objects for
+   the exact qualified controller subset plus their Terraform-owned
+   ScaledObjects. Shared-cache PVCs remain Terraform-owned and are retained, so
+   already localized weights survive the bounded serving-resource cutover. It
+   also retains unqualified models and Terraform-owned NetworkPolicies, and
+   keeps controller writes off.
+3. Read the non-secret workloads output `dynamic_model_handoff_receipt`. Set
+   `workload_owner = "controller"`, `writes_enabled = true`, the desired
+   `bootstrap_model_ids`, and `handoff_receipt` to that exact value, then apply.
+
+The release step is deliberately explicit and may cause a bounded service
+interruption. The current controller does not claim live Terraform objects: its
+adoption verifier remains fail-closed, so the solution never enables two SSA
+writers for one resource. A future receipt-backed, UID-preserving Claim flow
+can replace this conservative cutover without changing the tfvars model.
+If the controller apply has not created a desired revision, rollback is simply
+`workload_owner = "terraform"`, writes/bootstrap/fresh/receipt cleared, then an
+apply to recreate the static objects. After a desired revision exists, first
+drain and delete it through the admin API and wait for its owned resources to
+disappear before returning that model to Terraform ownership.
+Before removing a model from the selected catalog, disable or delete its live
+desired revision in the admin API; Terraform intentionally does not interpret a
+catalog removal as authorization to mutate durable live configuration.
+
 `models.selection = "profile"` enables every route in `profiles.models` and
 requires an empty `models.enabled` set. `models.selection = "explicit"` enables
 only the listed routes, all of which must belong to that profile. A hot model
@@ -309,6 +374,18 @@ workload stage rewrites the Deployment selector, architecture, and toleration
 from that pool contract. Per-model KEDA maxima may be greater than one, but
 cannot exceed the GPUs available across compatible pools at their configured
 `max_nodes` ceilings.
+
+After controller ownership is enabled, an admin may select multiple compatible
+Terraform-declared `poolRefs` for one model. The renderer keeps the hot floor on
+exact regular/reserved pool selectors (and rejects an oversized regular floor),
+then creates independently bounded
+KEDA segments on exact preemptible pool selectors; regular overflow is a
+separate segment only when the requested global ceiling needs it. The Service
+selects all segments, while controller status aggregates them. No two writers
+own the same Deployment scale subresource, and the sum of the fixed floor and
+all segment maxima is exactly `maxReplicas`. Single-pool configurations retain
+the conventional one-Deployment behavior. See
+[Dynamic model configuration](DYNAMIC_MODEL_CONFIGURATION.md#implemented-heterogeneous-elasticity).
 
 `local_nvme = true` requests host-local disks. With
 `local_nvme_mode = "kubelet-ephemeral"`, Managed Kubernetes combines them into

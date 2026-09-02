@@ -252,16 +252,15 @@ def test_projection_names_eight_independent_variants_three_exact_nims_and_policy
         "non_clinical": True,
         "commercial_use": "prohibited",
     }
-    previously_retained = [row for model_id, row in rows.items() if model_id != "cosmos3-nano"]
-    assert all(row["states"]["runtime_ready"] for row in previously_retained)
-    assert all(row["states"]["semantic_qualified"] for row in previously_retained)
-    assert all(row["states"]["http_mcp_qualified"] for row in previously_retained)
+    assert all(row["states"]["runtime_ready"] for row in rows.values())
+    assert all(row["states"]["semantic_qualified"] for row in rows.values())
+    assert all(row["states"]["http_mcp_qualified"] for row in rows.values())
     assert rows["cosmos3-nano"]["states"] == {
         "registered": True,
         "route_active": True,
-        "runtime_ready": False,
-        "semantic_qualified": False,
-        "http_mcp_qualified": False,
+        "runtime_ready": True,
+        "semantic_qualified": True,
+        "http_mcp_qualified": True,
         "cold_start_qualified": False,
         "elasticity_qualified": False,
     }

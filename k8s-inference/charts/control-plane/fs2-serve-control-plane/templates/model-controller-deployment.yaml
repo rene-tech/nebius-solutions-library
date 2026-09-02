@@ -1,0 +1,255 @@
+{{- if .Values.modelController.enabled }}
+{{- $controller := .Values.modelController }}
+{{- if ne $controller.systemNamespace .Release.Namespace }}
+{{- fail "modelController.systemNamespace must equal the Helm release namespace" }}
+{{- end }}
+{{- if ne $controller.modelNamespace "fs2-models" }}
+{{- fail "modelController.modelNamespace must be the dedicated fs2-models namespace" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" $controller.infrastructureEnvelopeConfigMapName) }}
+{{- fail "modelController.infrastructureEnvelopeConfigMapName is required when enabled" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" $controller.rendererBundlesConfigMapName) }}
+{{- fail "modelController.rendererBundlesConfigMapName is required when enabled" }}
+{{- end }}
+{{- if not .Values.networkPolicy.enabled }}
+{{- fail "modelController requires networkPolicy.enabled=true" }}
+{{- end }}
+{{- if eq (len .Values.networkPolicy.kubernetesApiCidrs) 0 }}
+{{- fail "modelController requires bounded networkPolicy.kubernetesApiCidrs" }}
+{{- end }}
+{{- if and $controller.writesEnabled (not $controller.admission.enabled) }}
+{{- fail "modelController.writesEnabled requires deletion admission safeguards" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: model-controller
+spec:
+  replicas: {{ $controller.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.modelControllerSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.modelControllerSelectorLabels" . | nindent 8 }}
+      annotations:
+        fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+    spec:
+      serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "controller") }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: model-controller
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["model-controller"]
+          ports:
+            - name: metrics
+              containerPort: {{ $controller.service.port }}
+              protocol: TCP
+          env:
+            {{- include "fs2-serve.databaseEnv" . | nindent 12 }}
+            - name: FS2_MODEL_CONTROLLER_ENABLED
+              value: "true"
+            - name: FS2_MODEL_CONTROLLER_WRITES_ENABLED
+              value: {{ $controller.writesEnabled | quote }}
+            - name: FS2_MODEL_CONTROLLER_NAMESPACE
+              value: {{ $controller.modelNamespace | quote }}
+            - name: FS2_MODEL_CONTROLLER_SYSTEM_NAMESPACE
+              value: {{ $controller.systemNamespace | quote }}
+            - name: FS2_MODEL_CONTROLLER_LEASE_NAME
+              value: {{ $controller.leaseName | quote }}
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: FS2_MODEL_CONTROLLER_HOLDER_IDENTITY
+              value: "$(POD_NAMESPACE)/$(POD_NAME):$(POD_UID)"
+            - name: FS2_MODEL_CONTROLLER_API_URL
+              value: "https://kubernetes.default.svc"
+            - name: FS2_MODEL_CONTROLLER_TOKEN_FILE
+              value: /var/run/secrets/fs2-model-controller/token
+            - name: FS2_MODEL_CONTROLLER_CA_FILE
+              value: /var/run/secrets/fs2-model-controller/ca.crt
+            - name: FS2_MODEL_CONTROLLER_ENVELOPE_FILE
+              value: /etc/fs2-model-controller/infrastructure-envelope.json
+            - name: FS2_MODEL_CONTROLLER_BUNDLES_FILE
+              value: /etc/fs2-model-controller/renderer-bundles.json
+            - name: FS2_MODEL_CONTROLLER_PROMETHEUS_SERVER_ADDRESS
+              value: {{ $controller.prometheusServerAddress | quote }}
+            - name: FS2_MODEL_CONTROLLER_LEASE_DURATION_SECONDS
+              value: {{ $controller.leaseDurationSeconds | quote }}
+            - name: FS2_MODEL_CONTROLLER_POLL_SECONDS
+              value: {{ $controller.pollSeconds | quote }}
+            - name: FS2_MODEL_CONTROLLER_QUEUE_CAPACITY
+              value: {{ $controller.queueCapacity | quote }}
+            - name: FS2_MODEL_CONTROLLER_WORKERS
+              value: {{ $controller.workers | quote }}
+            - name: FS2_MODEL_CONTROLLER_API_TIMEOUT_SECONDS
+              value: {{ $controller.apiTimeoutSeconds | quote }}
+            - name: FS2_MODEL_CONTROLLER_HEALTH_PORT
+              value: {{ $controller.service.port | quote }}
+            - name: FS2_LOG_LEVEL
+              value: {{ .Values.config.logLevel | default "INFO" | quote }}
+          volumeMounts:
+            {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 12 }}
+            - name: kubernetes-api
+              mountPath: /var/run/secrets/fs2-model-controller
+              readOnly: true
+            - name: infrastructure-envelope
+              mountPath: /etc/fs2-model-controller/infrastructure-envelope.json
+              subPath: {{ $controller.infrastructureEnvelopeKey }}
+              readOnly: true
+            - name: renderer-bundles
+              mountPath: /etc/fs2-model-controller/renderer-bundles.json
+              subPath: {{ $controller.rendererBundlesKey }}
+              readOnly: true
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: metrics
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: metrics
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            {{- toYaml $controller.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) | nindent 8 }}
+        - name: kubernetes-api
+          projected:
+            defaultMode: 0400
+            sources:
+              - serviceAccountToken:
+                  expirationSeconds: {{ $controller.tokenExpirationSeconds }}
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+        - name: infrastructure-envelope
+          configMap:
+            name: {{ $controller.infrastructureEnvelopeConfigMapName }}
+            items:
+              - key: {{ $controller.infrastructureEnvelopeKey }}
+                path: {{ $controller.infrastructureEnvelopeKey }}
+        - name: renderer-bundles
+          configMap:
+            name: {{ $controller.rendererBundlesConfigMapName }}
+            items:
+              - key: {{ $controller.rendererBundlesKey }}
+                path: {{ $controller.rendererBundlesKey }}
+      {{- with $controller.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $controller.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $controller.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: model-controller
+spec:
+  selector:
+    {{- include "fs2-serve.modelControllerSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: metrics
+      port: {{ $controller.service.port }}
+      targetPort: metrics
+      protocol: TCP
+{{- if $controller.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ $controller.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.modelControllerSelectorLabels" . | nindent 6 }}
+{{- end }}
+{{- if .Values.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.labels" . | nindent 6 }}
+      app.kubernetes.io/component: model-controller
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      scheme: http
+{{- end }}
+{{- end }}

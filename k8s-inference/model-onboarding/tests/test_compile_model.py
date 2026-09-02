@@ -126,7 +126,7 @@ class ModelOnboardingCompilerTests(unittest.TestCase):
         )
         self.assertEqual(
             pod["nodeSelector"]["accelerator.fs2.nebius/class"],
-            "nvidia-h100-sxm-80gb",
+            "nvidia-h100-sxm5-80gb",
         )
         self.assertIn("/model-cache/content", pod["containers"][0]["args"])
 

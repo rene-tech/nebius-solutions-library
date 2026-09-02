@@ -7,7 +7,7 @@
     "blocked": "Negative evidence or an unavailable provider realization prevents placement."
   },
   "accelerator_classes": {
-    "nvidia-h100-sxm-80gb": {
+    "nvidia-h100-sxm5-80gb": {
       "vendor": "nvidia",
       "product": "H100 SXM 80GB",
       "architecture": "hopper",
@@ -183,11 +183,11 @@
       "id": "unbound-h100",
       "enabled": false,
       "state": "declared-unvalidated",
-      "accelerator_class": "nvidia-h100-sxm-80gb",
+      "accelerator_class": "nvidia-h100-sxm5-80gb",
       "provider": {"name": "unbound", "platform": null, "preset": null, "node_group_name_suffix": null, "node_group_label": null, "os": null, "driver": {"owner": "unbound", "preset": null}, "reservation_policy": null},
       "node": {"gpus_per_node": null, "gpu_memory_gb_nominal": 80, "vcpu_count": null, "memory_gib": null, "host_architectures": [], "topology": "provider-specific-unverified", "boot_disk": null, "drain_timeout": null},
       "capacity": {"allowed_modes": ["regular", "preemptible"], "default_mode": "unbound", "scale_from_zero": false},
-      "scheduling": {"stable_node_labels": {"accelerator.fs2.nebius/class": "nvidia-h100-sxm-80gb", "accelerator.fs2.nebius/pool-id": "unbound-h100"}, "resource_flavor_name": "fs2-unbound-h100", "taints": [], "tolerations": [], "forbidden_scale_zero_selectors": ["kubernetes.io/arch"]},
+      "scheduling": {"stable_node_labels": {"accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb", "accelerator.fs2.nebius/pool-id": "unbound-h100"}, "resource_flavor_name": "fs2-unbound-h100", "taints": [], "tolerations": [], "forbidden_scale_zero_selectors": ["kubernetes.io/arch"]},
       "features": {"mig": {"mode": "unvalidated", "resource_strategy": null}, "local_storage": {"mode": "unvalidated", "provider_config": null}, "shared_filesystem": false, "local_cache": "unvalidated", "gpu_snapshot": "candidate-unvalidated"},
       "region_availability": [],
       "evidence": {"hardware_state": "declared-unvalidated", "reference": null}

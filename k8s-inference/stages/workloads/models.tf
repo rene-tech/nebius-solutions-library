@@ -1,5 +1,5 @@
 resource "kubernetes_manifest" "model" {
-  for_each = local.model_manifests
+  for_each = local.terraform_owned_model_manifests
 
   manifest = each.value.manifest
 
@@ -35,7 +35,7 @@ resource "kubernetes_manifest" "model" {
 }
 
 resource "kubernetes_manifest" "model_scaler" {
-  for_each = local.model_scalers
+  for_each = local.terraform_owned_model_scalers
 
   manifest = {
     apiVersion = "keda.sh/v1alpha1"
@@ -59,11 +59,8 @@ resource "kubernetes_manifest" "model_scaler" {
       cooldownPeriod  = each.value.cooldown_seconds
       minReplicaCount = each.value.min_replicas
       maxReplicaCount = each.value.max_replicas
-      fallback = {
-        failureThreshold = var.keda_fallback_failure_threshold
-        replicas         = 1
-        behavior         = "static"
-      }
+      # No KEDA fallback is configured. A Prometheus outage must not wake every
+      # zero-hot model and exhaust the accelerator pools.
       # KEDA's default is false. Do not send the optional advanced field:
       # KEDA 2.20 canonicalizes an explicit false to an omitted value, which
       # makes kubernetes_manifest provider 3.2.1 report false -> null as an

@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/h100-runtime-qualification-receipt/v1",
+  "title": "FS2 exact H100 runtime qualification receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "authority",
+    "observed_at",
+    "cluster",
+    "accelerator",
+    "source_evidence",
+    "models"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/h100-runtime-qualification-receipt/v1"},
+    "authority": {"const": "reviewed-live-runtime-qualification"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "cluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id_sha256", "context", "project_id", "region", "namespace"],
+      "properties": {
+        "id_sha256": {"$ref": "#/$defs/digest"},
+        "context": {"const": "k8s-inference-h100"},
+        "project_id": {"const": "project-e00rene"},
+        "region": {"const": "eu-north1"},
+        "namespace": {"const": "fs2-models"}
+      }
+    },
+    "accelerator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "pool_id",
+        "capacity_type",
+        "product",
+        "memory_gb",
+        "compute_capability",
+        "driver_version",
+        "cuda_version",
+        "host_architecture"
+      ],
+      "properties": {
+        "class": {"const": "nvidia-h100-sxm5-80gb"},
+        "pool_id": {"const": "h100-1x"},
+        "capacity_type": {"const": "preemptible"},
+        "product": {"const": "NVIDIA H100 80GB HBM3"},
+        "memory_gb": {"const": 80},
+        "compute_capability": {"const": "9.0"},
+        "driver_version": {"const": "580.159.04"},
+        "cuda_version": {"const": "13.0"},
+        "host_architecture": {"const": "amd64"}
+      }
+    },
+    "source_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prior_http_mcp_acceptance_sha256",
+        "public_http_mcp_sha256",
+        "direct_semantic_sha256"
+      ],
+      "properties": {
+        "prior_http_mcp_acceptance_sha256": {"$ref": "#/$defs/digest"},
+        "public_http_mcp_sha256": {"$ref": "#/$defs/digest"},
+        "direct_semantic_sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "models": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"$ref": "#/$defs/model"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "shaDigest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_id",
+        "revision",
+        "artifact_manifest_digest",
+        "runtime_image_digest",
+        "deployment",
+        "pod",
+        "service",
+        "endpoint_slice",
+        "node",
+        "gpu_uuid_sha256",
+        "http_request_sha256",
+        "direct_request_sha256",
+        "runtime_ready",
+        "semantic_qualified",
+        "http_mcp_qualified",
+        "restart_count"
+      ],
+      "properties": {
+        "model_id": {"enum": ["cosmos3-nano", "qwen3-8b"]},
+        "revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "artifact_manifest_digest": {"$ref": "#/$defs/shaDigest"},
+        "runtime_image_digest": {"$ref": "#/$defs/shaDigest"},
+        "deployment": {"$ref": "#/$defs/identity"},
+        "pod": {"$ref": "#/$defs/identity"},
+        "service": {"$ref": "#/$defs/identity"},
+        "endpoint_slice": {"$ref": "#/$defs/identity"},
+        "node": {"$ref": "#/$defs/nodeIdentity"},
+        "gpu_uuid_sha256": {"$ref": "#/$defs/digest"},
+        "http_request_sha256": {"$ref": "#/$defs/digest"},
+        "direct_request_sha256": {"$ref": "#/$defs/digest"},
+        "runtime_ready": {"const": true},
+        "semantic_qualified": {"const": true},
+        "http_mcp_qualified": {"const": true},
+        "restart_count": {"const": 0}
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "uid"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "uid": {"type": "string", "format": "uuid"}
+      }
+    },
+    "nodeIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name_sha256", "uid"],
+      "properties": {
+        "name_sha256": {"$ref": "#/$defs/digest"},
+        "uid": {"type": "string", "format": "uuid"}
+      }
+    }
+  }
+}

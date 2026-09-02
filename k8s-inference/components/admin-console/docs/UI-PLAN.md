@@ -10,6 +10,7 @@ All pages live below `/admin` and share five stable regions:
 | FS2 Serve            +-----------------------------------------------------+
 | Overview             | Breadcrumbs + page title + freshness + actions     |
 | Models               +-----------------------------------------------------+
+| Model deployments    |                                                     |
 | Operations           |                                                     |
 | Users & API keys     | Responsive page content                            |
 | Capacity & queues    |                                                     |
@@ -36,18 +37,45 @@ are FS2 layout choices, not claimed Nebius design tokens.
 
 ## Routes and page composition
 
-| Route | Page | Required components | Initial BFF read |
+| Route | Page | Required components | BFF contract |
 |---|---|---|---|
 | `/admin` | `OverviewPage` | `FleetHealthTiles`, `ModelStateSummary`, `DemandAndLatencyChart`, `QueueCapacityPanel`, `AlertAndChangeFeed` | `GET /admin/api/v1/overview` |
-| `/admin/models` | `ModelListPage` | `ModelFilters`, `ModelResourceTable`, `HotnessChip`, `FreshnessBadge` | `GET /admin/api/v1/models` |
+| `/admin/models` | `ModelsPage` | `ModelFilters`, `ModelResourceTable`, `HotnessChip`, `FreshnessBadge` | `GET /admin/api/v1/models` |
 | `/admin/models/:modelId` | `ModelDetailPage` | `ModelIdentityHeader`, `RuntimeStatePanel`, `PerformancePanel`, `ReplicaAndPlacementTable`, `SnapshotCachePanel`, `SemanticHealthPanel` | `GET /admin/api/v1/models/{model_id}` |
-| `/admin/operations` | `OperationListPage` | `OperationFilters`, `OperationResourceTable`, `TimingBreakdown`, `ErrorClassChip` | `GET /admin/api/v1/operations` |
+| `/admin/model-deployments` | `ModelDeploymentsPage` | `ModelDeploymentFilters`, `ModelDeploymentResourceTable`, `ObservedStateChip`, `DeploymentPagination` | `GET /admin/api/v1/model-deployments`, `GET /admin/api/v1/model-deployments/{name}/status` |
+| `/admin/model-deployments/new` | `ModelDeploymentWorkspacePage` | `QualifiedModelSelector`, `ModelDeploymentForm`, `ValidationDecisionPanel`, `RenderPlanPanel`, `MutationCapabilityGate` | `GET /admin/api/v1/model-deployments:capabilities`; `POST` validate-preview, plan-preview, and apply routes |
+| `/admin/model-deployments/:deploymentName` | `ModelDeploymentWorkspacePage` | `ModelDeploymentForm`, `RuntimeStatusPanel`, `RevisionHistory`, `ValidationDecisionPanel`, `RenderPlanPanel`, `MutationCapabilityGate` | `GET` desired revision, history, status, and capabilities; `POST` validate-preview, plan-preview, apply, drain, rollback, and reconcile routes |
+| `/admin/operations` | `OperationsPage` | `OperationFilters`, `OperationResourceTable`, `TimingBreakdown`, `ErrorClassChip` | `GET /admin/api/v1/operations` |
 | `/admin/operations/:operationId` | `OperationDetailPage` | `OperationIdentityHeader`, `OperationTimeline`, `AttemptTable`, `ContextualObservabilityLinks` | `GET /admin/api/v1/operations/{operation_id}` |
 | `/admin/access` | `AccessPage` | `PrincipalTable`, `ApiKeyTable`, `ScopeSummary`, `UsageAttributionPanel` | `GET /admin/api/v1/principals`, `GET /admin/api/v1/keys` |
-| `/admin/capacity` | `CapacityPage` | `GpuPoolTable`, `CapacityTypeChip`, `QueueTable`, `PendingWorkloadTable`, `AutoscalerStatePanel` | `GET /admin/api/v1/capacity`, `GET /admin/api/v1/queues` |
-| `/admin/observability` | `ObservabilityPage` | `ComponentHealthGrid`, `ContextualLaunchCard`, `UnavailableCapabilityNotice` | `GET /admin/api/v1/observability/capabilities` |
-| `/admin/configuration` | `ConfigurationPage` | `ConfigurationResourceTable`, `ProposedDiff`, `ValidationResults`, `ReconciliationTimeline`, `RollbackTarget` | `GET /admin/api/v1/configuration` |
+| `/admin/capacity` | `CapacityPage` | `GpuPoolTable`, `CapacityTypeChip`, `QueueTable`, `PendingWorkloadTable`, `AutoscalerStatePanel` | `GET /admin/api/v1/capacity` |
+| `/admin/observability` | `ObservabilityPage` | `ComponentHealthGrid`, `ContextualLaunchCard`, `UnavailableCapabilityNotice` | `GET /admin/api/v1/observability` |
+| `/admin/configuration` | `ConfigurationPage` | `ConfigurationResourceTable`, `ProposedDiff`, `ValidationResults`, `ReconciliationTimeline`, `RollbackTarget` | `GET` configuration and reconciliation status; `POST` diff, validate, plan, reconcile, and rollback routes |
 | `/admin/audit` | `AuditPage` | `AuditFilters`, `AuditEventTable`, `AuditDetailDrawer` | `GET /admin/api/v1/audit` |
+
+Configuration and ModelDeployment routes are feature-gated by the corresponding
+server-side services. ModelDeployment mutation controls additionally require
+the writer capability; the UI fails closed when capabilities are absent. The
+exact route groups and disabled behavior are sealed in
+`contracts/admin-api-v1.json`.
+
+### Qualified Add Model defaults
+
+The create workspace never asks an operator to discover or copy artifact,
+runtime-image, or renderer-template digests. Its `Qualified model` selector is
+populated only from `configuration_options` in the mutation-capabilities
+response. Every option is tied to `configuration_revision`, contains a default
+`ModelDeploymentSpec` already accepted by the installed
+`InfrastructureEnvelope`, and restricts pool, queue, priority-class, and tenant
+choices to that envelope. Missing, malformed, unpinned, or unplaceable tuples
+are omitted, and an unavailable or empty capability response leaves creation
+disabled without a browser-generated fallback.
+
+Selecting another qualified model replaces the server-owned model/artifact/
+runtime/template/placement/cache tuple. Operator policy remains editable:
+hot floor and ceiling, queue priority, rollout, OpenAI/MCP publication,
+visibility, and allowed principals. A zero hot floor is offered only when the
+exact option declares `scale_to_zero_qualified=true`.
 
 Every filter is URL-addressable. Shared query keys are `project`, `cluster`,
 `region`, `from`, `to`, and `timezone`; page-specific filters append stable
@@ -71,7 +99,7 @@ It is read-only and introduces these typed projections:
 - `GET /admin/api/v1/models/{model_id}` — the list projection plus endpoints,
   MCP exposure, runtime variant, activation evidence, placement, snapshot/cache
   metadata, semantic health, and metric summaries.
-- `GET /admin/api/v1/observability/capabilities` — only verified components,
+- `GET /admin/api/v1/observability` — only verified components,
   health, freshness, and runtime-generated launch URLs. A component with no UI
   or failed discovery is disabled with a reason.
 
@@ -79,12 +107,14 @@ The BFF response envelope is consistent:
 
 ```json
 {
-  "api_version": "fs2.admin/v1",
-  "generated_at": "RFC3339 timestamp",
-  "context": {"project": "...", "cluster": "...", "region": "..."},
-  "freshness": {"state": "fresh|stale|partial", "sources": []},
-  "data": {},
-  "warnings": []
+  "meta": {
+    "schema_version": "fs2.admin-api/v1",
+    "generated_at": "RFC3339 timestamp",
+    "context": {"project": "...", "cluster": "...", "region": "..."},
+    "sources": [],
+    "warnings": []
+  },
+  "data": {}
 }
 ```
 
@@ -117,7 +147,7 @@ must join the PostgreSQL activation ledger and semantic-health evidence.
 
 ## Observability launches
 
-Launch URLs are runtime configuration returned by the capability endpoint;
+Launch URLs are runtime configuration returned by the observability projection;
 none are committed here. Grafana, Prometheus, and Loki are verified and may be
 enabled. The selected cluster/model/operation/time context is encoded only in
 allow-listed variables or query templates. OTel has no operator UI. DCGM is
@@ -139,11 +169,11 @@ disabled until their individual discovery checks pass.
 - Desktop and tablet browser acceptance checks overflow, visible focus, target
   size, heading hierarchy, label association, and no uncaught console errors.
 
-## Deliberately deferred
+## Remaining ownership boundary
 
-Operations search, principal directory, key lifecycle, configuration mutation,
-and deployment are not in the read-only slice. The current token endpoints can
-issue/list/revoke but do not provide a browser session, principal directory,
-key naming, last-use, rotation lineage, or rate windows. Configuration must
-enter the existing declarative renderer/reconciler and Terraform plan workflow;
-the UI must never patch generated Kubernetes resources directly.
+The initial read-only slice has since been extended with operations, access,
+configuration, and ModelDeployment workflows. Onboarding a new catalog model,
+adding accelerator pools or queues, and changing Terraform-owned infrastructure
+remain outside live admin mutation. Those changes must first update the retained
+qualification and `InfrastructureEnvelope`; the UI never fabricates evidence or
+patches generated Kubernetes resources directly.

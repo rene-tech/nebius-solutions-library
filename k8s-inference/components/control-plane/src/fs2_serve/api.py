@@ -68,6 +68,8 @@ from .auth import (
 from .configuration import ConfigurationService
 from .configuration_routes import configuration_router
 from .model_deployment_admin import ModelDeploymentReadService, model_deployment_read_router
+from .model_deployment_bridge import ModelDeploymentRuntimeBridge
+from .model_deployment_mutation import ModelDeploymentMutationService, model_deployment_mutation_router
 from .model_deployment_preview import ModelDeploymentPreviewService, model_deployment_preview_router
 from .models import (
     MAX_IDEMPOTENCY_KEY_LENGTH,
@@ -168,11 +170,16 @@ class AppRuntime:
     configuration_sync_error: str | None = None
     model_deployment_preview: ModelDeploymentPreviewService | None = None
     model_deployment_read: ModelDeploymentReadService | None = None
+    model_deployment_mutation: ModelDeploymentMutationService | None = None
+    model_deployment_bridge: ModelDeploymentRuntimeBridge | None = None
 
     async def revalidate_routes(self) -> bool:
-        if self.route_revalidator is None:
-            return bool(self.registry.validation_health()["healthy"])
-        return await self.route_revalidator.refresh()
+        if self.route_revalidator is not None and not await self.route_revalidator.refresh():
+            return False
+        dynamic_healthy = True
+        if self.model_deployment_bridge is not None:
+            dynamic_healthy = await self.model_deployment_bridge.refresh()
+        return dynamic_healthy and bool(self.registry.validation_health()["healthy"])
 
 
 class TrustedEdgeMiddleware:
@@ -367,11 +374,15 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if runtime.route_revalidator is not None:
             await runtime.route_revalidator.start()
+        if runtime.model_deployment_bridge is not None:
+            await runtime.model_deployment_bridge.start()
         if runtime.settings.run_workers:
             await runtime.admission.start()
         try:
             yield
         finally:
+            if runtime.model_deployment_bridge is not None:
+                await runtime.model_deployment_bridge.close()
             if runtime.route_revalidator is not None:
                 await runtime.route_revalidator.close()
             await runtime.admission.close()
@@ -694,6 +705,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         )
         if not federation_health["ready"]:
             return _error(503, "federation_unavailable", "a federated upstream circuit is open")
+        dynamic_model_health = (
+            runtime.model_deployment_bridge.health() if runtime.model_deployment_bridge is not None else None
+        )
         return JSONResponse(
             {
                 "status": "ready",
@@ -702,11 +716,13 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 "activation": {"required": activation_required, "ready": activation_ready},
                 "admission": worker_health,
                 "federation": federation_health,
+                **({"dynamic_models": dynamic_model_health} if dynamic_model_health is not None else {}),
             }
         )
 
     @app.get("/metrics", include_in_schema=False)
     async def metrics() -> Response:
+        runtime.metrics.sync_models(runtime.registry.list())
         runtime.metrics.set_terminal_accounting(await runtime.store.terminal_accounting())
         runtime.metrics.set_queue(await runtime.store.queue_counts())
         runtime.metrics.set_queue_age(await runtime.store.oldest_queue_age())
@@ -716,7 +732,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     async def models(identity: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
         identity.require(Scope.CATALOG_READ)
         await runtime.revalidate_routes()
-        visible = runtime.registry.allowed(identity.models)
+        visible = runtime.registry.allowed_for_principal(identity, surface="openai")
         return {"object": "list", "data": [_model_view(model) for model in visible]}
 
     async def invoke(
@@ -960,10 +976,12 @@ def create_app(runtime: AppRuntime) -> FastAPI:
 
     @app.post("/admin/v1/tokens", response_model=TokenIssued)
     async def issue_token(payload: TokenCreateRequest, actor: Annotated[str, Depends(admin)]) -> TokenIssued:
-        for model_id in payload.models:
-            if model_id != "*":
-                runtime.registry.get(model_id, require_enabled=False)
-        return await runtime.tokens.issue(TokenCreate.model_validate(payload.model_dump()), created_by=actor)
+        canonical_models = {
+            model_id if model_id == "*" else runtime.registry.get(model_id, require_enabled=False).id
+            for model_id in payload.models
+        }
+        canonical = payload.model_copy(update={"models": canonical_models})
+        return await runtime.tokens.issue(TokenCreate.model_validate(canonical.model_dump()), created_by=actor)
 
     @app.get("/admin/v1/tokens", response_model=list[TokenView])
     async def list_tokens(
@@ -1043,10 +1061,13 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         payload: AdminApiKeyCreate,
         identity: Annotated[OperatorPrincipal, Depends(operator)],
     ) -> AdminEnvelope[AdminApiKeyDisclosure]:
-        for model_id in payload.models:
-            if model_id != "*":
-                runtime.registry.get(model_id, require_enabled=False)
-        return access_envelope(await admin_access.issue_key(identity, payload))
+        canonical_models = {
+            model_id if model_id == "*" else runtime.registry.get(model_id, require_enabled=False).id
+            for model_id in payload.models
+        }
+        return access_envelope(
+            await admin_access.issue_key(identity, payload.model_copy(update={"models": canonical_models}))
+        )
 
     @app.patch(
         "/admin/api/v1/keys/{token_id}",
@@ -1059,9 +1080,11 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         identity: Annotated[OperatorPrincipal, Depends(operator)],
     ) -> AdminEnvelope[AdminApiKey]:
         if payload.models is not None:
-            for model_id in payload.models:
-                if model_id != "*":
-                    runtime.registry.get(model_id, require_enabled=False)
+            canonical_models = {
+                model_id if model_id == "*" else runtime.registry.get(model_id, require_enabled=False).id
+                for model_id in payload.models
+            }
+            payload = payload.model_copy(update={"models": canonical_models})
         return access_envelope(await admin_access.update_key_policy(identity, token_id, payload))
 
     @app.post(
@@ -1276,6 +1299,18 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         app.include_router(
             model_deployment_preview_router(
                 service=runtime.model_deployment_preview,
+                access=admin_access,
+                operator_dependency=operator,
+                envelope=access_envelope,
+                problem_responses=admin_problem_responses,
+                writer_enabled=runtime.model_deployment_mutation is not None,
+            )
+        )
+
+    if runtime.model_deployment_mutation is not None:
+        app.include_router(
+            model_deployment_mutation_router(
+                service=runtime.model_deployment_mutation,
                 access=admin_access,
                 operator_dependency=operator,
                 envelope=access_envelope,

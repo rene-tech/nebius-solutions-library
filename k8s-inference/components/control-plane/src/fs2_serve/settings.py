@@ -132,6 +132,46 @@ class Settings(BaseSettings):
     admin_context_label: str | None = Field(default=None, min_length=1, max_length=200)
     admin_configuration_file: Path | None = None
     admin_configuration_receipt_file: Path | None = None
+    # Experimental dynamic-model controller. Both gates are false by default;
+    # the independent writer gate prevents an accidentally started process
+    # from acquiring a Lease or mutating Kubernetes.
+    model_controller_enabled: bool = False
+    model_controller_writes_enabled: bool = False
+    model_controller_namespace: str = Field(
+        default="fs2-models",
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+    )
+    model_controller_system_namespace: str = Field(
+        default="fs2-system",
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+    )
+    model_controller_lease_name: str = Field(
+        default="fs2-model-controller",
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+    )
+    model_controller_holder_identity: str | None = Field(default=None, min_length=1, max_length=253)
+    model_controller_api_url: str = Field(default="https://kubernetes.default.svc", min_length=1, max_length=2048)
+    model_controller_token_file: Path = Path("/var/run/secrets/fs2-model-controller/token")
+    model_controller_ca_file: Path = Path("/var/run/secrets/fs2-model-controller/ca.crt")
+    model_controller_envelope_file: Path = Path("/etc/fs2-model-controller/infrastructure-envelope.json")
+    model_controller_bundles_file: Path = Path("/etc/fs2-model-controller/renderer-bundles.json")
+    model_controller_prometheus_server_address: str = Field(
+        default="http://fs2-monitoring-prometheus.fs2-observability.svc:9090",
+        min_length=1,
+        max_length=2048,
+    )
+    model_controller_lease_duration_seconds: int = Field(default=15, ge=5, le=120)
+    model_controller_poll_seconds: float = Field(default=5, ge=0.5, le=60)
+    model_controller_queue_capacity: int = Field(default=256, ge=1, le=10000)
+    model_controller_workers: int = Field(default=2, ge=1, le=16)
+    model_controller_api_timeout_seconds: float = Field(default=5, ge=0.5, le=30)
+    model_controller_health_port: int = Field(default=8081, ge=1024, le=65535)
     public_base_url: str = Field(default="https://inference.example.invalid", min_length=1, max_length=2048)
     public_authority_mode: Literal["dns", "ip"] = "dns"
     authorization_server_url: str = "https://identity.example.invalid"
@@ -222,6 +262,14 @@ class Settings(BaseSettings):
             raise ValueError("admin context label requires a complete context identity")
         if self.admin_node_scaler_provider is not None and not self.admin_capacity_enabled:
             raise ValueError("admin node-scaler provider requires the capacity adapter")
+        if self.model_controller_writes_enabled and not self.model_controller_enabled:
+            raise ValueError("model controller writes require the controller feature gate")
+        if self.model_controller_writes_enabled and not self.admin_capacity_enabled:
+            raise ValueError("dynamic model writes require the projected Kubernetes admin adapter credential")
+        if not self.model_controller_api_url.startswith("https://"):
+            raise ValueError("model controller Kubernetes API URL must use HTTPS")
+        if self.model_controller_workers > self.model_controller_queue_capacity:
+            raise ValueError("model controller workers cannot exceed queue capacity")
         required_bootstrap_scopes = {Scope.CATALOG_READ, Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE}
         if not required_bootstrap_scopes.issubset(self.bootstrap_access_scopes):
             raise ValueError("bootstrap access requires catalog.read, inference.invoke, and mcp.invoke")

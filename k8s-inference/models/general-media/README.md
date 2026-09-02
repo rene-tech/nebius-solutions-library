@@ -26,11 +26,13 @@ readiness, and metrics. Initial public/MCP acceptance uses one bounded 448x256,
 envelope below the control-plane response ceiling. This synchronous envelope is
 for small acceptance artifacts; production media delivery should use an
 object-backed asynchronous result instead of carrying large 720p videos through
-MCP. The bootstrap Deployment's RWO Hugging Face cache does not yet consume the
-catalog's content-addressed shared-SFS artifact and does not claim that weights
-are served from local NVMe. Pool placement is supplied by the model profile or
-overridden through `models.pool_overrides`; the manifest itself has no
-GPU-family node selector.
+MCP. Its exact 68-file artifact and Qwen3-8B's exact 15-file artifact are now
+localized once into immutable content addresses. Concurrent replicas share an
+atomic receipt and skip both download and full-payload hashing on a warm cache.
+See [SHARED_CACHE_FAST_START.md](SHARED_CACHE_FAST_START.md) for the writer,
+receipt, recovery, and qualification boundaries. Pool placement is supplied by
+the model profile or overridden through `models.pool_overrides`; the Cosmos
+manifest itself has no GPU-family node selector.
 
 All medical-model outputs are research-only and non-clinical. Live deployment
 evidence and immutable image bindings are recorded under `evidence/`.

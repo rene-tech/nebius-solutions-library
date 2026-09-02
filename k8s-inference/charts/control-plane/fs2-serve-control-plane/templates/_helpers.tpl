@@ -47,6 +47,11 @@ app.kubernetes.io/component: migration
 app.kubernetes.io/component: bootstrap-access
 {{- end -}}
 
+{{- define "fs2-serve.modelControllerSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: model-controller
+{{- end -}}
+
 {{- define "fs2-serve.serviceAccountName" -}}
 {{- $root := .root -}}
 {{- $component := .component -}}
@@ -216,6 +221,24 @@ app.kubernetes.io/component: bootstrap-access
 - name: FS2_ADMIN_NODE_SCALER_PROVIDER
   value: {{ .Values.adminReadAdapters.capacity.nodeScalerProvider | quote }}
 {{- end }}
+{{- if .Values.modelController.enabled }}
+- name: FS2_MODEL_CONTROLLER_ENABLED
+  value: "true"
+- name: FS2_MODEL_CONTROLLER_WRITES_ENABLED
+  value: {{ .Values.modelController.writesEnabled | quote }}
+- name: FS2_MODEL_CONTROLLER_NAMESPACE
+  value: {{ .Values.modelController.modelNamespace | quote }}
+- name: FS2_MODEL_CONTROLLER_ENVELOPE_FILE
+  value: /etc/fs2-serve/model-controller/infrastructure-envelope.json
+- name: FS2_MODEL_CONTROLLER_BUNDLES_FILE
+  value: /etc/fs2-serve/model-controller/renderer-bundles.json
+- name: FS2_MODEL_CONTROLLER_PROMETHEUS_SERVER_ADDRESS
+  value: {{ .Values.modelController.prometheusServerAddress | quote }}
+- name: FS2_MODEL_CONTROLLER_POLL_SECONDS
+  value: {{ .Values.modelController.pollSeconds | quote }}
+- name: FS2_MODEL_CONTROLLER_API_TIMEOUT_SECONDS
+  value: {{ .Values.modelController.apiTimeoutSeconds | quote }}
+{{- end }}
 {{- end }}
 {{- if .Values.adminReadAdapters.observability.enabled }}
 - name: FS2_ADMIN_PROMETHEUS_URL
@@ -344,6 +367,16 @@ app.kubernetes.io/component: bootstrap-access
   readOnly: true
 {{- end }}
 {{- end }}
+{{- if .Values.modelController.enabled }}
+- name: model-controller-envelope
+  mountPath: /etc/fs2-serve/model-controller/infrastructure-envelope.json
+  subPath: {{ .Values.modelController.infrastructureEnvelopeKey }}
+  readOnly: true
+- name: model-controller-bundles
+  mountPath: /etc/fs2-serve/model-controller/renderer-bundles.json
+  subPath: {{ .Values.modelController.rendererBundlesKey }}
+  readOnly: true
+{{- end }}
 {{- end -}}
 
 {{- define "fs2-serve.cryptoVolumes" -}}
@@ -456,5 +489,19 @@ app.kubernetes.io/component: bootstrap-access
       - key: {{ .Values.adminConfiguration.receiptKey }}
         path: {{ .Values.adminConfiguration.receiptKey }}
       {{- end }}
+{{- end }}
+{{- if .Values.modelController.enabled }}
+- name: model-controller-envelope
+  configMap:
+    name: {{ .Values.modelController.infrastructureEnvelopeConfigMapName }}
+    items:
+      - key: {{ .Values.modelController.infrastructureEnvelopeKey }}
+        path: {{ .Values.modelController.infrastructureEnvelopeKey }}
+- name: model-controller-bundles
+  configMap:
+    name: {{ .Values.modelController.rendererBundlesConfigMapName }}
+    items:
+      - key: {{ .Values.modelController.rendererBundlesKey }}
+        path: {{ .Values.modelController.rendererBundlesKey }}
 {{- end }}
 {{- end -}}

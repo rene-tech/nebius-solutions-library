@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -18,6 +19,9 @@ class AdminConsolePlanTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.plan = json.loads(
             (ROOT / "contracts" / "admin-console-plan.json").read_text()
+        )
+        cls.api_contract = json.loads(
+            (ROOT / "contracts" / "admin-api-v1.json").read_text()
         )
         cls.inventory = json.loads(
             (ROOT / "acceptance" / "inventory.fixture.json").read_text()
@@ -110,27 +114,154 @@ class AdminConsolePlanTests(unittest.TestCase):
             )
         )
 
-    def test_route_inventory_matches_executable_bff_paths(self) -> None:
+    def test_plan_bff_paths_are_sealed_by_the_admin_api_contract(self) -> None:
         endpoints = {
             endpoint
             for route in self.plan["routes"]
             for endpoint in route["bff"]
         }
+        contract_routes = {
+            (route["method"], route["path"])
+            for route in self.api_contract["routes"]
+        }
+        contract_paths = {path for _, path in contract_routes}
+        self.assertEqual(len(contract_routes), len(self.api_contract["routes"]))
+        self.assertTrue(endpoints.issubset(contract_paths))
         self.assertNotIn("/admin/api/v1/queues", endpoints)
         self.assertNotIn("/admin/api/v1/observability/capabilities", endpoints)
+        self.assertNotIn("/admin/api/v1/queues", contract_paths)
+        self.assertNotIn(
+            "/admin/api/v1/observability/capabilities", contract_paths
+        )
         self.assertIn("/admin/api/v1/capacity", endpoints)
         self.assertIn("/admin/api/v1/observability", endpoints)
-        self.assertTrue(
-            {
-                "/admin/api/v1/configuration",
-                "/admin/api/v1/configuration:diff",
-                "/admin/api/v1/configuration:validate",
-                "/admin/api/v1/configuration:plan",
-                "/admin/api/v1/configuration:reconcile",
+
+        configuration_routes = {
+            ("GET", "/admin/api/v1/configuration"),
+            ("POST", "/admin/api/v1/configuration:diff"),
+            ("POST", "/admin/api/v1/configuration:validate"),
+            ("POST", "/admin/api/v1/configuration:plan"),
+            ("POST", "/admin/api/v1/configuration:reconcile"),
+            (
+                "GET",
                 "/admin/api/v1/configuration/reconciliations/{reconciliation_id}",
-                "/admin/api/v1/configuration:rollback",
-            }.issubset(endpoints)
+            ),
+            ("POST", "/admin/api/v1/configuration:rollback"),
+        }
+        self.assertTrue(configuration_routes.issubset(contract_routes))
+        self.assertTrue(
+            {path for _, path in configuration_routes}.issubset(endpoints)
         )
+
+        model_deployment_routes = {
+            ("GET", "/admin/api/v1/model-deployments"),
+            ("GET", "/admin/api/v1/model-deployments/{name}"),
+            ("GET", "/admin/api/v1/model-deployments/{name}/history"),
+            ("GET", "/admin/api/v1/model-deployments/{name}/status"),
+            ("POST", "/admin/api/v1/model-deployments:validate-preview"),
+            ("POST", "/admin/api/v1/model-deployments:plan-preview"),
+            ("GET", "/admin/api/v1/model-deployments:capabilities"),
+            ("POST", "/admin/api/v1/model-deployments:apply"),
+            ("POST", "/admin/api/v1/model-deployments/{name}:drain"),
+            ("POST", "/admin/api/v1/model-deployments/{name}:rollback"),
+            ("POST", "/admin/api/v1/model-deployments/{name}:reconcile"),
+        }
+        self.assertTrue(model_deployment_routes.issubset(contract_routes))
+        self.assertTrue(
+            {path for _, path in model_deployment_routes}.issubset(endpoints)
+        )
+        feature_paths = {
+            path
+            for group in self.api_contract["feature_gated_route_groups"]
+            for path in group["paths"]
+        }
+        self.assertEqual(
+            feature_paths,
+            {path for _, path in configuration_routes | model_deployment_routes},
+        )
+        disabled_only = {
+            (route["method"], route["path"], route["status"], route["code"])
+            for route in self.api_contract["feature_disabled_problem_routes"]
+        }
+        self.assertEqual(
+            disabled_only,
+            {
+                (
+                    "POST",
+                    "/admin/api/v1/model-deployments:apply",
+                    501,
+                    "model_deployment_writer_disabled",
+                ),
+                (
+                    "POST",
+                    "/admin/api/v1/model-deployments/{name}:adopt",
+                    501,
+                    "model_deployment_writer_disabled",
+                ),
+                (
+                    "DELETE",
+                    "/admin/api/v1/model-deployments/{name}",
+                    501,
+                    "model_deployment_writer_disabled",
+                ),
+            },
+        )
+
+    def test_qualified_model_options_are_sealed_to_installed_evidence(self) -> None:
+        contract = self.api_contract["model_deployment_configuration_options"]
+        contract_paths = {route["path"] for route in self.api_contract["routes"]}
+        self.assertEqual(
+            contract["endpoint"],
+            "/admin/api/v1/model-deployments:capabilities",
+        )
+        self.assertIn(contract["endpoint"], contract_paths)
+        self.assertIn("installed InfrastructureEnvelope", contract["authority"])
+        self.assertEqual(contract["source_revision_field"], "configuration_revision")
+        self.assertEqual(
+            set(contract["option_fields"]),
+            {
+                "model_ref",
+                "suggested_name",
+                "namespace",
+                "default_spec",
+                "pool_choices",
+                "local_queue_choices",
+                "priority_class_choices",
+                "tenant_choices",
+                "scale_to_zero_qualified",
+            },
+        )
+        self.assertIn("accepted disposition", contract["default_invariant"])
+        self.assertIn("omitted", contract["failure_contract"])
+        self.assertIn("never fabricates", contract["failure_contract"])
+        self.assertIn(
+            "qualified-model-options-fail-closed",
+            self.plan["acceptance_cases"],
+        )
+
+    def test_client_bounds_match_the_live_query_contract(self) -> None:
+        bounds = self.api_contract["bounds"]
+        self.assertEqual(bounds["maximum_model_search_characters"], 128)
+        self.assertEqual(bounds["maximum_model_page_size"], 256)
+        self.assertEqual(bounds["maximum_operation_page_size"], 200)
+        self.assertEqual(bounds["maximum_access_page_size"], 1000)
+        self.assertEqual(bounds["maximum_model_deployment_namespace_characters"], 63)
+        self.assertEqual(bounds["maximum_model_deployment_name_characters"], 253)
+        self.assertEqual(bounds["maximum_model_deployment_page_size"], 200)
+
+    def test_plan_pages_match_the_executable_react_routes(self) -> None:
+        source = (ROOT / "src" / "app" / "App.tsx").read_text()
+        for route in self.plan["routes"]:
+            with self.subTest(route=route["id"]):
+                if route["path"] == "/admin":
+                    pattern = rf'<Route\s+index\s+element=\{{<{route["page"]}\s*/>\}}'
+                else:
+                    relative_path = route["path"].removeprefix("/admin/")
+                    pattern = (
+                        rf'<Route\s+path="{re.escape(relative_path)}"\s+'
+                        rf'element=\{{<{route["page"]}(?:\s|/>)'
+                    )
+                self.assertRegex(source, pattern)
 
 
 if __name__ == "__main__":

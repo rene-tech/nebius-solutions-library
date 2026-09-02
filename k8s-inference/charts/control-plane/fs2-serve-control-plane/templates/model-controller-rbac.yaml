@@ -1,0 +1,83 @@
+{{- if .Values.modelController.enabled }}
+{{- $serviceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "controller") }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-models
+  namespace: {{ .Values.modelController.modelNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["inference.fs2.nebius.ai"]
+    resources: ["modeldeployments"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["inference.fs2.nebius.ai"]
+    resources: ["modeldeployments/status", "modeldeployments/finalizers"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["configmaps", "persistentvolumeclaims", "services", "serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["keda.sh"]
+    resources: ["scaledobjects"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-models
+  namespace: {{ .Values.modelController.modelNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $serviceAccount }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-models
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-leader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: [{{ .Values.modelController.leaseName | quote }}]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-leader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $serviceAccount }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-leader
+{{- end }}

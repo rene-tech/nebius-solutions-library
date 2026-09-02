@@ -38,11 +38,12 @@ decides where or when a pod runs.
 | --- | --- | --- | --- |
 | Cluster, node groups, pool min/max, capacity reservations, VPC, storage classes, registry | Terraform | Controller, admin API | Live requests outside these envelopes return `InfrastructureRequired`. |
 | CRDs, controller Deployment/RBAC, upstream operators, Gateway, database, observability | Terraform | Platform workloads | Installing a capability is an infrastructure change. |
+| Per-model shared-cache PVC | Terraform | Model controller and runtime Pods | The live API selects an already qualified template/cache tier; it never deletes cache infrastructure during serving ownership handoff. |
 | `ModelDeployment.spec` | Authenticated admin API using Kubernetes optimistic concurrency | Controller, audit writer | Human `kubectl` writes are policy-dependent; the admin API remains the supported mutation path. |
 | `ModelDeployment.status` and finalizer | FS2 model controller | Admin API, catalogs, metrics | Status is never copied from desired state without observation. |
 | Generated Deployment, Service, KEDA, warm/cache Job, route and publication binding | FS2 model controller, field manager `fs2-model-controller` | Kubernetes controllers | Terraform and users do not patch generated objects. |
 | Deployment replica count when KEDA is selected | KEDA-generated HPA via `/scale` | FS2 controller | The FS2 controller owns scaler policy, not the live replica value. |
-| Queue admission and job quota state | Kueue | FS2 controller, admin API | Kueue handles jobs/admission, not serving Deployment replicas. |
+| Queue admission and accelerator quota state | Kueue | FS2 controller, admin API | Kueue's Deployment integration admits each exact-pool hot or burst Pod against the matching ResourceFlavor; KEDA remains the sole burst replica-count writer. |
 | Gateway route status | Gateway controller | FS2 controller, admin API | FS2 owns desired route; Gateway owns route status. |
 | Artifact/cache state | Cache/localization controller or Job, projected into `ModelDeployment.status` by FS2 | Admin API | Cached and Ready are independent states. |
 | Model revisions, approvals, idempotency and audit | PostgreSQL transaction owned by the admin backend | Admin API, auditors | Append-only history; not a scheduler or readiness source. |

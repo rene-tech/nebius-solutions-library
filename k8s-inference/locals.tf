@@ -223,7 +223,6 @@ locals {
     model_scaling_overrides         = var.deployment.models.scaling.overrides
     keda_polling_interval_seconds   = var.deployment.models.scaling.polling_interval_seconds
     keda_cooldown_period_seconds    = var.deployment.models.scaling.cooldown_period_seconds
-    keda_fallback_failure_threshold = var.deployment.models.scaling.fallback_failure_threshold
     enable_cold_start_keepers       = var.deployment.models.cold_start_keepers
     enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
     acme_email                      = var.deployment.edge.acme_email
@@ -256,6 +255,15 @@ locals {
       keda         = { url = "", verified_external_route = false }
       alertmanager = { url = "", verified_external_route = false }
       tempo        = { url = "", verified_external_route = false }
+    }
+    model_controller = {
+      enabled             = var.deployment.dynamic_models.enabled
+      writes_enabled      = var.deployment.dynamic_models.writes_enabled
+      workload_owner      = var.deployment.dynamic_models.workload_owner
+      bootstrap_model_ids = sort(tolist(var.deployment.dynamic_models.bootstrap_model_ids))
+      fresh_install       = var.deployment.dynamic_models.fresh_install
+      handoff_receipt     = var.deployment.dynamic_models.handoff_receipt
+      priority_classes    = var.deployment.dynamic_models.priority_classes
     }
   }
 

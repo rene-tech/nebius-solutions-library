@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
@@ -642,6 +642,12 @@ def test_openapi_matches_typed_versioned_admin_contract(registry: Any, cipher: A
         repository=InMemoryConfigurationRepository(initial),
         catalog=configuration_catalog,
     )
+    # OpenAPI is generated from endpoint annotations; concrete services are not
+    # invoked here. Enable every feature-gated admin router so this assertion
+    # seals the complete production contract instead of only the base routes.
+    runtime.model_deployment_preview = cast(Any, object())
+    runtime.model_deployment_read = cast(Any, object())
+    runtime.model_deployment_mutation = cast(Any, object())
     schema = create_app(runtime).openapi()
     contract = json.loads(
         (Path(__file__).resolve().parents[2] / "admin-console" / "contracts" / "admin-api-v1.json").read_text(
@@ -674,7 +680,13 @@ def test_openapi_matches_typed_versioned_admin_contract(registry: Any, cipher: A
     for route in contract["routes"]:
         operation = schema["paths"][route["path"]][route["method"].lower()]
         responses = operation["responses"]
-        assert str(route["success_status"]) in responses
+        success_response = responses[str(route["success_status"])]
+        expected_data_schema = route["data_schema"]
+        if expected_data_schema is None:
+            assert "content" not in success_response
+        else:
+            success_schema = success_response["content"]["application/json"]["schema"]
+            assert expected_data_schema in success_schema["$ref"]
         for status_code in contract["problem"]["status_codes"]:
             response = responses[str(status_code)]
             assert response["content"]["application/problem+json"]["schema"] == {
@@ -685,8 +697,8 @@ def test_openapi_matches_typed_versioned_admin_contract(registry: Any, cipher: A
                 "format": "uuid",
             }
         if route.get("secret_disclosure") == "one-time":
-            success_schema = responses[str(route["success_status"])]["content"]["application/json"]["schema"]
-            assert "AdminApiKeyDisclosure" in success_schema["$ref"]
+            disclosure_schema = success_response["content"]["application/json"]["schema"]
+            assert "AdminApiKeyDisclosure" in disclosure_schema["$ref"]
             assert route["cache_control"] == "no-store"
     assert contract["model_states"] == [state.value for state in AdminModelState]
     assert contract["compatibility_supported_states"] == ["qualified", "lean-live-verified"]

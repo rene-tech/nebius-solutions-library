@@ -19,7 +19,7 @@ checked on 2026-08-27 against the official release and installation sources:
 | [Envoy Gateway](https://github.com/envoyproxy/gateway/releases/tag/v1.8.3) | 1.8.3 | Gateway-source-aligned patch on the Kubernetes 1.35-compatible 1.8 line. |
 | [cert-manager](https://github.com/cert-manager/cert-manager/releases/tag/v1.21.1) | 1.21.1 | Chart declares Kubernetes `>=1.22`; Gateway API support is enabled. |
 | [KEDA](https://github.com/kedacore/keda/releases/tag/v2.20.2) | 2.20.2 | Chart declares Kubernetes `>=1.23`; no persistent ScaledObject is installed here. |
-| [Kueue](https://github.com/kubernetes-sigs/kueue/releases/tag/v0.17.8) | 0.17.8 | Maintained Kubernetes 1.35 pin; asynchronous Jobs only. |
+| [Kueue](https://github.com/kubernetes-sigs/kueue/releases/tag/v0.17.8) | 0.17.8 | Maintained Kubernetes 1.35 pin; workload Jobs plus independent Pod admission for serving Deployments. |
 | [KServe](https://github.com/kserve/kserve/releases/tag/v0.20.0) | 0.20.0 | [Standard mode](https://kserve.github.io/website/docs/admin-guide/kubernetes-deployment), with Knative, LocalModelCache, and LLM alpha controllers absent. |
 
 `lock.env` pins the downloaded manifest/chart bytes. Direct controller and
@@ -56,8 +56,11 @@ The owned namespaces are `envoy-gateway-system`, `cert-manager`, `keda`,
 `kueue-system`, and `kserve`. Every controller is constrained to the regular
 CPU system pool. KServe has ingress creation and Istio virtual hosts disabled;
 the gateway release owns application Gateways and routes. Kueue has no durable
-ClusterQueue or ResourceFlavor; model lanes own namespaced LocalQueues and use
-Kueue only for asynchronous work.
+ClusterQueue or ResourceFlavor in this addon-only stage; the workload stage owns
+those durable objects. Foundation additionally proves the Kueue Deployment
+admission webhooks with a non-persisting server-side dry run. Dynamic serving
+Deployments then use the queue label for independent Pod admission, while KEDA
+continues to own their scale subresources.
 
 The smoke script creates the disposable `fs2-addon-smoke` namespace and proves:
 

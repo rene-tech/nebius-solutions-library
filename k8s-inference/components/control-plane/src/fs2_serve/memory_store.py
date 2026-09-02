@@ -47,7 +47,7 @@ from .configuration_models import (
     TerraformApplyReceipt,
 )
 from .crypto import Ciphertext, KeyedHasher, PayloadCipher
-from .model_deployment import spec_digest
+from .model_deployment import DesiredState, spec_digest
 from .model_deployment_records import (
     ModelDeploymentAppendRequest,
     ModelDeploymentAppendResult,
@@ -56,6 +56,7 @@ from .model_deployment_records import (
     ModelDeploymentStatusObservation,
     model_deployment_append_payload,
     model_deployment_audit_target,
+    model_deployment_status_precedes,
 )
 from .models import (
     ActivationAction,
@@ -67,6 +68,7 @@ from .models import (
     AuditEvent,
     ClaimedActivationIntent,
     ClaimedOperation,
+    DynamicAdmissionFence,
     ModalityUsage,
     OperationResult,
     OperationStatus,
@@ -104,6 +106,7 @@ class _Operation:
     request: Ciphertext | None
     content_type: str
     traceparent: str | None
+    dispatch_snapshot: str | None = None
     response_hmac_key_id: str | None = None
     response_hmac: str | None = None
     response: Ciphertext | None = None
@@ -1260,6 +1263,9 @@ class MemoryStore:
                 or revision.etag != observation.status.spec_digest
             ):
                 raise ConflictError("model deployment observation has no matching desired revision")
+            events = self.model_deployment_status_events.get((observation.namespace, observation.name), [])
+            if events and model_deployment_status_precedes(observation, events[-1]):
+                raise ConflictError("model deployment observation is older than current status")
             value = observation.model_copy(deep=True)
             self.model_deployment_status_events.setdefault(
                 (observation.namespace, observation.name), []
@@ -1341,6 +1347,8 @@ class MemoryStore:
         model_revision: str,
         reserved_gpu_seconds: float,
         max_attempts: int,
+        dispatch_snapshot: str | None = None,
+        dynamic_fence: DynamicAdmissionFence | None = None,
     ) -> OperationView:
         async with self._activation_mutation_lock(admission.model_id):
             return await self._append_operation(
@@ -1349,6 +1357,8 @@ class MemoryStore:
                 model_revision=model_revision,
                 reserved_gpu_seconds=reserved_gpu_seconds,
                 max_attempts=max_attempts,
+                dispatch_snapshot=dispatch_snapshot,
+                dynamic_fence=dynamic_fence,
             )
 
     async def _append_operation(
@@ -1359,6 +1369,8 @@ class MemoryStore:
         model_revision: str,
         reserved_gpu_seconds: float,
         max_attempts: int,
+        dispatch_snapshot: str | None,
+        dynamic_fence: DynamicAdmissionFence | None,
     ) -> OperationView:
         async with self._lock:
             token = self.tokens.get(principal.token_id)
@@ -1390,6 +1402,22 @@ class MemoryStore:
                 ):
                     raise ConflictError("idempotency key is already bound to a different request")
                 return self._metadata(existing_row, reused=True)
+            if (dynamic_fence is None) != (dispatch_snapshot is None):
+                raise ConflictError("dynamic admission fence and dispatch snapshot must be supplied together")
+            if dynamic_fence is not None:
+                revisions = self.model_deployment_revisions.get(
+                    (dynamic_fence.namespace, dynamic_fence.name),
+                    [],
+                )
+                desired = revisions[-1] if revisions else None
+                if (
+                    desired is None
+                    or desired.etag != dynamic_fence.etag
+                    or desired.tenant_id != principal.tenant_id
+                    or desired.spec.model_ref != admission.model_id
+                    or desired.spec.lifecycle.desired_state is not DesiredState.ENABLED
+                ):
+                    raise ConflictError("dynamic model no longer accepts admissions")
             hmac_key_id, request_hmac = self.hasher.digest(admission.request_body, context="fs2-serve.request/v1")
             rate_started = token.view.rate_window_started_at
             rate_requests = token.view.rate_window_requests
@@ -1443,6 +1471,7 @@ class MemoryStore:
                 request=encrypted,
                 content_type=admission.request_content_type,
                 traceparent=admission.traceparent,
+                dispatch_snapshot=dispatch_snapshot,
             )
             self.operations[operation_id] = row
             self.idempotency[key] = operation_id
@@ -1543,6 +1572,7 @@ class MemoryStore:
                     **self._metadata(row).model_dump(),
                     request_content_type=row.content_type,
                     traceparent=row.traceparent,
+                    dispatch_snapshot=row.dispatch_snapshot,
                     worker_id=worker_id,
                 )
             return None

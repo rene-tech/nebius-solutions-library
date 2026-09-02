@@ -232,8 +232,10 @@ locals {
         var.model_scaling_overrides[model_id].cooldown_seconds,
         var.keda_cooldown_period_seconds,
       )
-      metric_name      = "fs2_operation_demand_${replace(model_id, "-", "_")}"
-      prometheus_query = "max(fs2_serve_operations{model=\"${model_id}\",state=~\"queued|activating|running\"}) OR vector(0)"
+      metric_name = "fs2_operation_demand_${replace(model_id, "-", "_")}"
+      # Replica-scraped gauges repeat each operation state. Max deduplicates
+      # replicas per state; sum then preserves simultaneous queued/active work.
+      prometheus_query = "sum(max by (model, state) (fs2_serve_operations{model=\"${model_id}\",state=~\"queued|activating|running\"})) OR vector(0)"
     })
   }
   model_autoscaling_config_map_data = var.model_scaling_mode == "keda" ? {
@@ -419,8 +421,59 @@ locals {
   # Deployments always bootstrap at a stable zero: the ScaledObject, rather
   # than a changing Terraform manifest, establishes any configured hot floor.
   # Static mode leaves every checked-in manifest unchanged.
-  model_documents = [
+  shared_cache_claim_names = {
+    for document in local.placement_overridden_model_documents :
+    document.manifest.metadata.name => format(
+      "%s-rwx-%s",
+      substr(document.manifest.metadata.name, 0, min(49, length(document.manifest.metadata.name))),
+      substr(sha256(document.manifest.metadata.name), 0, 8),
+    ) if document.manifest.kind == "PersistentVolumeClaim"
+  }
+  shared_cache_model_documents = [
     for document in local.placement_overridden_model_documents : merge(document, {
+      manifest = jsondecode(
+        document.manifest.kind == "PersistentVolumeClaim" ?
+        jsonencode(merge(document.manifest, {
+          metadata = merge(document.manifest.metadata, {
+            name = local.shared_cache_claim_names[document.manifest.metadata.name]
+          })
+          spec = merge(document.manifest.spec, {
+            accessModes      = ["ReadWriteMany"]
+            storageClassName = "csi-mounted-fs-path-sc"
+          })
+        })) :
+        document.manifest.kind == "Deployment" && anytrue([
+          for volume in try(document.manifest.spec.template.spec.volumes, []) :
+          contains(
+            keys(local.shared_cache_claim_names),
+            try(volume.persistentVolumeClaim.claimName, ""),
+          )
+        ]) ?
+        jsonencode(merge(document.manifest, {
+          spec = merge(document.manifest.spec, {
+            template = merge(document.manifest.spec.template, {
+              spec = merge(document.manifest.spec.template.spec, {
+                volumes = [
+                  for volume in document.manifest.spec.template.spec.volumes :
+                  contains(
+                    keys(local.shared_cache_claim_names),
+                    try(volume.persistentVolumeClaim.claimName, ""),
+                    ) ? merge(volume, {
+                      persistentVolumeClaim = merge(volume.persistentVolumeClaim, {
+                        claimName = local.shared_cache_claim_names[volume.persistentVolumeClaim.claimName]
+                      })
+                  }) : volume
+                ]
+              })
+            })
+          })
+        })) :
+        jsonencode(document.manifest)
+      )
+    })
+  ]
+  model_documents = [
+    for document in local.shared_cache_model_documents : merge(document, {
       manifest = jsondecode(document.autoscaled ? jsonencode(merge(document.manifest, {
         spec = merge(document.manifest.spec, {
           replicas = 0
@@ -618,7 +671,10 @@ locals {
         accelerator_class = local.effective_model_placements[model_id].required_node_labels["accelerator.fs2.nebius/class"]
         pool_id           = try(local.effective_model_placements[model_id].required_node_labels["accelerator.fs2.nebius/pool-id"], null)
       }
-    })]
+      }) if(
+      var.model_controller.workload_owner == "terraform" ||
+      !contains(local.model_controller_dynamic_model_ids, model_id)
+    )]
   }
   lean_routes_config_map_data = {
     "lean-routes.json"              = jsonencode(local.lean_routes)

@@ -37,7 +37,14 @@ from .models import (
 from .registry import OperationalModel
 from .store import NotFoundError
 
-CORE_TOOLS = {"list_models", "get_operation", "get_operation_result", "cancel_operation", "acknowledge_operation"}
+CORE_TOOLS = {
+    "list_models",
+    "invoke_model",
+    "get_operation",
+    "get_operation_result",
+    "cancel_operation",
+    "acknowledge_operation",
+}
 MCP_HTTP_PATH = "/mcp"
 MCP_CHILD_MOUNT_PATH = "/"
 MCP_STREAMABLE_HTTP_PATH = MCP_HTTP_PATH
@@ -196,7 +203,7 @@ def _protocol_tool_names(model: OperationalModel) -> set[str]:
 
 def _model_tool_names(runtime: AppRuntime, principal: Principal) -> set[str]:
     names: set[str] = set()
-    for model in runtime.registry.allowed(principal.models):
+    for model in runtime.registry.allowed_for_principal(principal, surface="mcp"):
         names.update(_protocol_tool_names(model))
     return names
 
@@ -204,12 +211,18 @@ def _model_tool_names(runtime: AppRuntime, principal: Principal) -> set[str]:
 class MCPAuthorizationMiddleware:
     def __init__(self, runtime: AppRuntime) -> None:
         self.runtime = runtime
+        self._sync_tools: Callable[[], None] | None = None
+
+    def set_tool_sync(self, callback: Callable[[], None]) -> None:
+        self._sync_tools = callback
 
     async def __call__(self, ctx: ServerRequestContext[Any, Any], call_next: CallNext) -> HandlerResult:
         try:
             principal = _principal() if ctx.method not in {"initialize", "notifications/initialized"} else None
             if ctx.method in {"tools/list", "tools/call"}:
                 await self.runtime.revalidate_routes()
+                if self._sync_tools is not None:
+                    self._sync_tools()
             if ctx.method == "tools/call" and principal is not None:
                 name = str((ctx.params or {}).get("name", ""))
                 if name not in CORE_TOOLS and name not in _model_tool_names(self.runtime, principal):
@@ -282,6 +295,7 @@ async def _admit(
 
 
 def build_mcp_server(runtime: AppRuntime) -> MCPServer:
+    authorization = MCPAuthorizationMiddleware(runtime)
     server = MCPServer(
         "fs2-serve",
         title="fs2-serve model gateway",
@@ -300,13 +314,63 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         # It must never be shared across PATs or kept after a route receipt
         # expires, even though the 2026 protocol permits response caching.
         cache_hints={"tools/list": CacheHint(ttl_ms=0, scope="private")},
-        middleware=[MCPAuthorizationMiddleware(runtime)],
+        middleware=[authorization],
     )
 
     async def list_models() -> dict[str, Any]:
         principal = _principal()
         principal.require(Scope.CATALOG_READ)
-        return {"object": "list", "data": [_model_view(model) for model in runtime.registry.allowed(principal.models)]}
+        return {
+            "object": "list",
+            "data": [
+                _model_view(model)
+                for model in runtime.registry.allowed_for_principal(principal, surface="mcp")
+            ],
+        }
+
+    async def invoke_model(
+        model_id: str,
+        protocol: str,
+        payload: dict[str, Any],
+        ctx: Context,
+        idempotency_key: str | None = None,
+        wait_seconds: float = 0,
+    ) -> dict[str, Any]:
+        """Invoke any currently authorized model discovered by ``list_models``.
+
+        Model-specific convenience tools are fixed when the MCP process starts.
+        This generic tool resolves the atomic live registry at call time, so a
+        newly added ModelDeployment is immediately usable without restarting
+        every MCP replica.
+        """
+
+        principal = _principal()
+        await runtime.revalidate_routes()
+        try:
+            model = runtime.registry.get(model_id)
+            runtime.registry.authorize_principal(
+                model,
+                principal,
+                requested_model_id=model_id,
+                surface="mcp",
+            )
+            operation = runtime.registry.operation_for_protocol(model, protocol)
+        except (KeyError, PermissionError, ValueError):
+            raise MCPError(code=INVALID_PARAMS, message="model or protocol is outside token policy") from None
+        try:
+            traceparent = (ctx.headers or {}).get("traceparent")
+        except ValueError:
+            traceparent = None
+        return await _admit(
+            runtime,
+            model_id=model_id,
+            protocol=protocol,
+            operation=operation,
+            payload=payload,
+            idempotency_key=idempotency_key,
+            wait_seconds=wait_seconds,
+            traceparent=traceparent,
+        )
 
     async def get_operation(operation_id: UUID) -> dict[str, Any]:
         return (await _metadata(runtime, _principal(), operation_id)).model_dump(mode="json")
@@ -333,13 +397,32 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         await runtime.store.purge_operation_payload(operation.id, tenant_id=principal.tenant_id)
         return (await runtime.store.get_operation(operation.id, tenant_id=principal.tenant_id)).model_dump(mode="json")
 
-    for function in (list_models, get_operation, get_operation_result, cancel_operation, acknowledge_operation):
+    for function in (
+        list_models,
+        invoke_model,
+        get_operation,
+        get_operation_result,
+        cancel_operation,
+        acknowledge_operation,
+    ):
         server.add_tool(function, name=function.__name__, meta={"fs2_core": True})
 
-    def handler(model_id: str, protocol: str, operation: str) -> Callable[..., Awaitable[dict[str, Any]]]:
-        async def invoke_model(
+    def named_handler(tool_name: str) -> Callable[..., Awaitable[dict[str, Any]]]:
+        async def invoke_named_model(
             payload: dict[str, Any], ctx: Context, idempotency_key: str | None = None, wait_seconds: float = 0
         ) -> dict[str, Any]:
+            principal = _principal()
+            await runtime.revalidate_routes()
+            matches = [
+                (model, protocol)
+                for model in runtime.registry.allowed_for_principal(principal, surface="mcp")
+                for protocol in model.gateway.protocols
+                if f"{model.binding.mcp_tool_name}_{protocol.replace('-', '_')}" == tool_name
+            ]
+            if len(matches) != 1:
+                raise MCPError(code=INVALID_PARAMS, message="model tool is unavailable or ambiguous")
+            model, protocol = matches[0]
+            operation = runtime.registry.operation_for_protocol(model, protocol)
             try:
                 traceparent = (ctx.headers or {}).get("traceparent")
             except ValueError:
@@ -348,7 +431,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                 traceparent = None
             return await _admit(
                 runtime,
-                model_id=model_id,
+                model_id=model.id,
                 protocol=protocol,
                 operation=operation,
                 payload=payload,
@@ -357,34 +440,45 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                 traceparent=traceparent,
             )
 
-        return invoke_model
+        return invoke_named_model
 
-    # Register latent canonical tools as well as currently active ones. The
-    # authorization middleware filters every list/call against the latest
-    # atomic route snapshot, so expiry hides them immediately while a newly
-    # valid binding can recover without restarting the MCP process.
-    for model in runtime.registry.list():
-        if model.gateway.binding is None or not model.gateway.mcp_discoverable:
-            continue
-        if len(model.gateway.policy_operations) != 1:
-            continue
-        for protocol in model.gateway.protocols:
-            operation = model.gateway.policy_operations[0]
-            name = f"{model.binding.mcp_tool_name}_{protocol.replace('-', '_')}"
-            model_view = _model_view(model)
-            server.add_tool(
-                handler(model.id, protocol, operation),
-                name=name,
-                title=f"{model.gateway.display_name} ({protocol})",
-                description=model.binding.mcp_description,
-                meta={
-                    "fs2_model_id": model.id,
-                    "fs2_protocol": protocol,
-                    "fs2_model_revision": model.model_revision,
-                    "fs2_active_runtime": model_view["active_runtime"],
-                    "fs2_qualification": model_view["qualification"],
-                },
-            )
+    registered_names = set(CORE_TOOLS)
+
+    def sync_model_tools() -> None:
+        # Tool handlers resolve their model from the current registry on every
+        # call.  Keeping old names registered is therefore safe: middleware
+        # hides withdrawn names, and a later reuse cannot dispatch to stale
+        # model identity.  The cap bounds operator-driven name churn; the
+        # generic invoke_model tool remains available beyond it.
+        for model in runtime.registry.list(enabled_only=True):
+            if len(registered_names) >= 4096:
+                return
+            if not model.gateway.mcp_discoverable or not model.gateway.mcp_invocable:
+                continue
+            if len(model.gateway.policy_operations) != 1 or not model.binding.mcp_enabled:
+                continue
+            for protocol in model.gateway.protocols:
+                name = f"{model.binding.mcp_tool_name}_{protocol.replace('-', '_')}"
+                if name in registered_names:
+                    continue
+                model_view = _model_view(model)
+                server.add_tool(
+                    named_handler(name),
+                    name=name,
+                    title=f"{model.gateway.display_name} ({protocol})",
+                    description=model.binding.mcp_description,
+                    meta={
+                        "fs2_model_id": model.id,
+                        "fs2_protocol": protocol,
+                        "fs2_model_revision": model.model_revision,
+                        "fs2_active_runtime": model_view["active_runtime"],
+                        "fs2_qualification": model_view["qualification"],
+                    },
+                )
+                registered_names.add(name)
+
+    authorization.set_tool_sync(sync_model_tools)
+    sync_model_tools()
     return server
 
 

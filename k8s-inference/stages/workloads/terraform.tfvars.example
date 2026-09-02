@@ -33,7 +33,18 @@ model_scaling_mode = "static"
 hot_model_ids      = []
 # keda_polling_interval_seconds      = 5
 # keda_cooldown_period_seconds       = 300
-# keda_fallback_failure_threshold    = 3
+
+# The root deployment contract normally generates this value. Never hand-build
+# the controller's infrastructure envelope or renderer JSON. The default keeps
+# legacy model objects under Terraform ownership and disables Kubernetes writes.
+# model_controller = {
+#   enabled             = true
+#   writes_enabled      = true
+#   workload_owner      = "controller"
+#   bootstrap_model_ids = ["proteinmpnn"]
+#   fresh_install       = true
+#   handoff_receipt     = null
+# }
 
 # Terraform discovers the canonical in-cluster API endpoint from
 # default/kubernetes.spec.clusterIP and renders its exact /32 or /128. This

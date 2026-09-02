@@ -10,9 +10,11 @@
   "include": [
     "vite.config.ts",
     "src/api/configurationTypes.ts",
+    "src/api/modelDeploymentTypes.ts",
     "src/api/types.ts",
     "src/test/browserFixtures.ts",
     "src/test/capacityObservabilityFixtures.ts",
-    "src/test/configurationFixtures.ts"
+    "src/test/configurationFixtures.ts",
+    "src/test/modelDeploymentFixtures.ts"
   ]
 }

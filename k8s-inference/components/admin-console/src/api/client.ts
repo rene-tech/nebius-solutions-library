@@ -36,6 +36,23 @@ import type {
   RollbackPlan,
   RollbackRequest,
 } from "./configurationTypes";
+import type {
+  ModelDeploymentActionRequest,
+  ModelDeploymentApplyRequest,
+  ModelDeploymentHistory,
+  ModelDeploymentIdentityQuery,
+  ModelDeploymentList,
+  ModelDeploymentListQuery,
+  ModelDeploymentMutationCapabilities,
+  ModelDeploymentMutationResult,
+  ModelDeploymentPreviewProposal,
+  ModelDeploymentReconcileRequest,
+  ModelDeploymentRenderPreview,
+  ModelDeploymentRevision,
+  ModelDeploymentRollbackRequest,
+  ModelDeploymentStatusView,
+  ModelDeploymentValidationPreview,
+} from "./modelDeploymentTypes";
 import { sharedContextParams } from "../lib/search";
 
 const API_PREFIX = "/admin/api/v1";
@@ -51,6 +68,8 @@ const queryValueMaximum: Readonly<Record<string, number>> = {
   status: 10,
   error_code: 64,
   operation_id: 36,
+  namespace: 63,
+  after: 253,
 };
 
 export class AdminApiError extends Error {
@@ -91,6 +110,7 @@ async function problemFor(response: Response): Promise<AdminApiError> {
     409: "The requested change conflicts with current state.",
     422: "The admin request failed validation.",
     429: "The admin service is rate limiting requests.",
+    501: "This admin capability is not implemented by the current control plane.",
     502: "The admin gateway returned an invalid response.",
     503: "The admin service is temporarily unavailable.",
   };
@@ -182,9 +202,16 @@ async function request<T>(
 }
 
 function accessQuery(tenantId?: string, limit = 200): URLSearchParams {
-  const query = new URLSearchParams({ limit: String(Math.min(Math.max(limit, 1), 1000)) });
+  const query = new URLSearchParams({ limit: boundedLimit(limit, 1000, 200) });
   if (tenantId && tenantId.length <= 120) query.set("tenant_id", tenantId);
   return query;
+}
+
+function modelDeploymentQuery(filters: ModelDeploymentIdentityQuery): URLSearchParams {
+  return boundedParams(undefined, {
+    namespace: filters.namespace,
+    tenant_id: filters.tenantId,
+  });
 }
 
 async function noContentRequest(path: string, method: "DELETE", signal?: AbortSignal): Promise<void> {
@@ -285,6 +312,85 @@ export const adminApi = {
     ),
   rollbackConfiguration: (payload: RollbackRequest, signal?: AbortSignal) =>
     envelopeRequest<RollbackPlan>("/configuration:rollback", {
+      method: "POST",
+      body: payload,
+      signal,
+    }),
+  modelDeployments: (filters: ModelDeploymentListQuery = {}, signal?: AbortSignal) =>
+    envelopeRequest<ModelDeploymentList>("/model-deployments", {
+      query: boundedParams(undefined, {
+        namespace: filters.namespace,
+        tenant_id: filters.tenantId,
+        after: filters.after,
+        limit: boundedLimit(filters.limit, 200, 100),
+      }),
+      signal,
+    }),
+  modelDeployment: (
+    name: string,
+    filters: ModelDeploymentIdentityQuery = {},
+    signal?: AbortSignal,
+  ) => envelopeRequest<ModelDeploymentRevision>(`/model-deployments/${encodeURIComponent(name)}`, {
+    query: modelDeploymentQuery(filters),
+    signal,
+  }),
+  modelDeploymentHistory: (
+    name: string,
+    filters: ModelDeploymentIdentityQuery & { beforeRevision?: number; limit?: number } = {},
+    signal?: AbortSignal,
+  ) => {
+    const query = modelDeploymentQuery(filters);
+    if (filters.beforeRevision !== undefined && Number.isInteger(filters.beforeRevision) && filters.beforeRevision >= 2) {
+      query.set("before_revision", String(filters.beforeRevision));
+    }
+    query.set("limit", boundedLimit(filters.limit, 200, 100));
+    return envelopeRequest<ModelDeploymentHistory>(`/model-deployments/${encodeURIComponent(name)}/history`, {
+      query,
+      signal,
+    });
+  },
+  modelDeploymentStatus: (
+    name: string,
+    filters: ModelDeploymentIdentityQuery = {},
+    signal?: AbortSignal,
+  ) => envelopeRequest<ModelDeploymentStatusView>(`/model-deployments/${encodeURIComponent(name)}/status`, {
+    query: modelDeploymentQuery(filters),
+    signal,
+  }),
+  validateModelDeployment: (proposal: ModelDeploymentPreviewProposal, signal?: AbortSignal) =>
+    envelopeRequest<ModelDeploymentValidationPreview>("/model-deployments:validate-preview", {
+      method: "POST",
+      body: proposal,
+      signal,
+    }),
+  planModelDeployment: (proposal: ModelDeploymentPreviewProposal, signal?: AbortSignal) =>
+    envelopeRequest<ModelDeploymentRenderPreview>("/model-deployments:plan-preview", {
+      method: "POST",
+      body: proposal,
+      signal,
+    }),
+  modelDeploymentCapabilities: (signal?: AbortSignal) =>
+    envelopeRequest<ModelDeploymentMutationCapabilities>("/model-deployments:capabilities", { signal }),
+  applyModelDeployment: (payload: ModelDeploymentApplyRequest, signal?: AbortSignal) =>
+    envelopeRequest<ModelDeploymentMutationResult>("/model-deployments:apply", {
+      method: "POST",
+      body: payload,
+      signal,
+    }),
+  drainModelDeployment: (name: string, payload: ModelDeploymentActionRequest, signal?: AbortSignal) =>
+    envelopeRequest<ModelDeploymentMutationResult>(`/model-deployments/${encodeURIComponent(name)}:drain`, {
+      method: "POST",
+      body: payload,
+      signal,
+    }),
+  rollbackModelDeployment: (name: string, payload: ModelDeploymentRollbackRequest, signal?: AbortSignal) =>
+    envelopeRequest<ModelDeploymentMutationResult>(`/model-deployments/${encodeURIComponent(name)}:rollback`, {
+      method: "POST",
+      body: payload,
+      signal,
+    }),
+  reconcileModelDeployment: (name: string, payload: ModelDeploymentReconcileRequest, signal?: AbortSignal) =>
+    envelopeRequest<ModelDeploymentMutationResult>(`/model-deployments/${encodeURIComponent(name)}:reconcile`, {
       method: "POST",
       body: payload,
       signal,

@@ -5,6 +5,7 @@
     "image",
     "adminConsole",
     "adminConfiguration",
+    "modelController",
     "bootstrapAccess",
     "serviceAccounts",
     "catalog",
@@ -290,14 +291,114 @@
       },
       "additionalProperties": false
     },
+    "modelController": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "writesEnabled",
+        "replicaCount",
+        "modelNamespace",
+        "systemNamespace",
+        "leaseName",
+        "infrastructureEnvelopeConfigMapName",
+        "infrastructureEnvelopeKey",
+        "rendererBundlesConfigMapName",
+        "rendererBundlesKey",
+        "prometheusServerAddress",
+        "leaseDurationSeconds",
+        "pollSeconds",
+        "queueCapacity",
+        "workers",
+        "apiTimeoutSeconds",
+        "tokenExpirationSeconds",
+        "service",
+        "podDisruptionBudget",
+        "admission",
+        "resources",
+        "nodeSelector",
+        "tolerations",
+        "affinity"
+      ],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "writesEnabled": {"type": "boolean"},
+        "replicaCount": {"type": "integer", "minimum": 2, "maximum": 20},
+        "modelNamespace": {"const": "fs2-models"},
+        "systemNamespace": {"const": "fs2-system"},
+        "leaseName": {"$ref": "#/$defs/dnsName"},
+        "infrastructureEnvelopeConfigMapName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "infrastructureEnvelopeKey": {"const": "infrastructure-envelope.json"},
+        "rendererBundlesConfigMapName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "rendererBundlesKey": {"const": "renderer-bundles.json"},
+        "prometheusServerAddress": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^http://[a-z0-9.-]+:9090$"
+        },
+        "leaseDurationSeconds": {"type": "integer", "minimum": 5, "maximum": 120},
+        "pollSeconds": {"type": "string", "pattern": "^([1-9][0-9]?|0\\.[5-9])(?:\\.[0-9]+)?$"},
+        "queueCapacity": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "workers": {"type": "integer", "minimum": 1, "maximum": 16},
+        "apiTimeoutSeconds": {"type": "string", "pattern": "^([1-9][0-9]?|0\\.[5-9])(?:\\.[0-9]+)?$"},
+        "tokenExpirationSeconds": {"type": "integer", "minimum": 600, "maximum": 3600},
+        "service": {
+          "type": "object",
+          "required": ["port"],
+          "properties": {"port": {"type": "integer", "minimum": 1024, "maximum": 65535}},
+          "additionalProperties": false
+        },
+        "podDisruptionBudget": {
+          "type": "object",
+          "required": ["enabled", "minAvailable"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "minAvailable": {"type": "integer", "minimum": 1, "maximum": 19}
+          },
+          "additionalProperties": false
+        },
+        "admission": {
+          "type": "object",
+          "required": ["enabled"],
+          "properties": {"enabled": {"type": "boolean"}},
+          "additionalProperties": false
+        },
+        "resources": {
+          "type": "object",
+          "required": ["requests", "limits"],
+          "properties": {
+            "requests": {"$ref": "#/$defs/controllerResources"},
+            "limits": {"$ref": "#/$defs/controllerResources"}
+          },
+          "additionalProperties": false
+        },
+        "nodeSelector": {
+          "type": "object",
+          "maxProperties": 32,
+          "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 253}
+        },
+        "tolerations": {"type": "array", "maxItems": 32, "items": {"type": "object"}},
+        "affinity": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
     "serviceAccounts": {
       "type": "object",
-      "required": ["runtime", "maintenance", "migration", "bootstrap"],
+      "required": ["runtime", "maintenance", "migration", "bootstrap", "controller"],
       "properties": {
         "runtime": {"$ref": "#/$defs/serviceAccount"},
         "maintenance": {"$ref": "#/$defs/serviceAccount"},
         "migration": {"$ref": "#/$defs/serviceAccount"},
-        "bootstrap": {"$ref": "#/$defs/serviceAccount"}
+        "bootstrap": {"$ref": "#/$defs/serviceAccount"},
+        "controller": {"$ref": "#/$defs/serviceAccount"}
       },
       "additionalProperties": false
     },
@@ -564,11 +665,11 @@
           "required": ["schema", "contractPayloadSha256", "migrationSetSha256", "migrationCount", "firstMigrationVersion", "lastMigrationVersion", "namespaceRoleOwnershipSha256"],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "2b9fc5a5da6c84cea32fcbee16ea1cba023023199c822f3d03b29f77c9bef0c4"},
-            "migrationSetSha256": {"const": "d1e3c41432d2ab6cdbeec21c55aba7f079a93cf576a43f490290cdfc0fb43122"},
-            "migrationCount": {"const": 12},
+            "contractPayloadSha256": {"const": "3a977a1c29f338233eb017454ee3d07bf505c31db909bccc05a2524388ad3da2"},
+            "migrationSetSha256": {"const": "081ae3ea6ddc3a0efd8b86151352d7b2f2ebc8de4d07a1e078bcb24b1c0f66cf"},
+            "migrationCount": {"const": 13},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0012_model_deployments.sql"},
+            "lastMigrationVersion": {"const": "0013_durable_dynamic_dispatch.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false
@@ -1089,6 +1190,15 @@
     }
   ],
   "$defs": {
+    "controllerResources": {
+      "type": "object",
+      "required": ["cpu", "memory"],
+      "properties": {
+        "cpu": {"type": "string", "minLength": 1, "maxLength": 32},
+        "memory": {"type": "string", "minLength": 1, "maxLength": 32}
+      },
+      "additionalProperties": false
+    },
     "adminObservabilityLink": {
       "type": "object",
       "required": ["url", "verifiedExternalRoute"],

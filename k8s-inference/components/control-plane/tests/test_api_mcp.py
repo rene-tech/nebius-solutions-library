@@ -1586,6 +1586,20 @@ async def test_mcp_invocation_uses_admission_and_result_survives_status_cancel_u
         assert admitted["status"] == "succeeded" and admitted["result_available"] is True
         assert "result" not in admitted
 
+        generic = await server._tool_manager.call_tool(  # type: ignore[attr-defined]
+            "invoke_model",
+            {
+                "model_id": "qwen3-8b",
+                "protocol": "openai-chat",
+                "payload": {"model": "qwen3-8b", "messages": [{"role": "user", "content": "dynamic"}]},
+                "idempotency_key": "mcp-generic-route-key-0001",
+                "wait_seconds": 2,
+            },
+            context,
+            convert_result=False,
+        )
+        assert generic["status"] == "succeeded"
+
         result = await server._tool_manager.call_tool(  # type: ignore[attr-defined]
             "get_operation_result", {"operation_id": operation_id}, context, convert_result=False
         )

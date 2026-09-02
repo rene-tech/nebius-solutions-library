@@ -34,7 +34,7 @@ run "custom_h100_and_b300_standard_pools" {
       h100-regular = {
         platform          = "gpu-h100-sxm"
         preset            = "1gpu-16vcpu-200gb"
-        accelerator_class = "nvidia-h100-sxm-80gb"
+        accelerator_class = "nvidia-h100-sxm5-80gb"
         gpus_per_node     = 1
         capacity_type     = "regular"
         min_nodes         = 1
@@ -102,7 +102,7 @@ run "custom_operator_mig_pool" {
       h100-operator-mig = {
         platform          = "gpu-h100-sxm"
         preset            = "1gpu-16vcpu-200gb"
-        accelerator_class = "nvidia-h100-sxm-80gb"
+        accelerator_class = "nvidia-h100-sxm5-80gb"
         gpus_per_node     = 1
         resource_name     = "nvidia.com/mig-discovered-profile"
         capacity_type     = "preemptible"

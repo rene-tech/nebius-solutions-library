@@ -169,3 +169,25 @@ resource "kubernetes_manifest" "model_local_queue" {
   }
   depends_on = [kubernetes_manifest.async_cluster_queue]
 }
+
+resource "kubernetes_manifest" "model_workload_priority" {
+  for_each = var.model_controller.priority_classes
+
+  manifest = {
+    apiVersion = "kueue.x-k8s.io/v1beta2"
+    kind       = "WorkloadPriorityClass"
+    metadata = {
+      name   = each.key
+      labels = local.common_labels
+    }
+    value       = each.value
+    description = "FS2 inference ${each.key} workload priority"
+  }
+
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-${var.run_id}-queue-priorities"
+  }
+
+  depends_on = [kubernetes_manifest.model_local_queue]
+}

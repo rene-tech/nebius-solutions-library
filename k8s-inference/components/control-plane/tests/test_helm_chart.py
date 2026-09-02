@@ -732,6 +732,108 @@ def test_activation_controller_is_owned_by_the_separate_child_and_absent_from_th
         assert forbidden not in rendered
 
 
+def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> None:
+    documents = render(
+        "--set",
+        "modelController.enabled=true",
+        "--set",
+        "modelController.writesEnabled=true",
+        "--set",
+        "modelController.admission.enabled=true",
+        "--set",
+        "modelController.infrastructureEnvelopeConfigMapName=fs2-model-envelope",
+        "--set",
+        "modelController.rendererBundlesConfigMapName=fs2-model-bundles",
+        "--set",
+        "adminReadAdapters.capacity.enabled=true",
+        "--set",
+        "networkPolicy.kubernetesApiCidrs[0]=10.0.0.1/32",
+    )
+    named = {(document["kind"], document["metadata"]["name"]): document for document in documents}
+    deployment = named[("Deployment", "fs2-serve-control-plane-model-controller")]
+    pod = deployment["spec"]["template"]["spec"]
+    assert pod["serviceAccountName"] == "fs2-serve-control-plane-controller"
+    assert pod["automountServiceAccountToken"] is False
+    container = pod["containers"][0]
+    assert container["args"] == ["model-controller"]
+    environment = {item["name"]: item for item in container["env"]}
+    assert environment["FS2_MODEL_CONTROLLER_ENABLED"]["value"] == "true"
+    assert environment["FS2_MODEL_CONTROLLER_WRITES_ENABLED"]["value"] == "true"
+    assert environment["FS2_MODEL_CONTROLLER_HOLDER_IDENTITY"]["value"] == "$(POD_NAMESPACE)/$(POD_NAME):$(POD_UID)"
+    assert environment["FS2_DATABASE_URL"]["valueFrom"]["secretKeyRef"] == {
+        "name": "fs2-serve-database",
+        "key": "url",
+    }
+    assert {item["name"] for item in pod["volumes"]} == {
+        "database-ca",
+        "kubernetes-api",
+        "infrastructure-envelope",
+        "renderer-bundles",
+    }
+    token = next(item for item in pod["volumes"] if item["name"] == "kubernetes-api")
+    assert token["projected"]["sources"][0]["serviceAccountToken"] == {
+        "expirationSeconds": 600,
+        "path": "token",
+    }
+
+    model_role = named[("Role", "fs2-serve-control-plane-model-controller-models")]
+    assert model_role["metadata"]["namespace"] == "fs2-models"
+    assert all("secrets" not in rule["resources"] for rule in model_role["rules"])
+    assert {
+        "apiGroups": ["autoscaling"],
+        "resources": ["horizontalpodautoscalers"],
+        "verbs": ["get", "list", "watch"],
+    } in model_role["rules"]
+    assert not any(
+        document["kind"] in {"ClusterRole", "ClusterRoleBinding"}
+        and "model-controller" in document["metadata"]["name"]
+        for document in documents
+    )
+    leader_role = named[("Role", "fs2-serve-control-plane-model-controller-leader")]
+    assert leader_role["rules"][0]["resourceNames"] == ["fs2-model-controller"]
+
+    policy = named[("ValidatingAdmissionPolicy", "fs2-serve-control-plane-model-controller-delete")]
+    assert policy["spec"]["failurePolicy"] == "Fail"
+    assert policy["spec"]["matchConstraints"]["resourceRules"][0]["operations"] == ["DELETE"]
+    assert "observedGeneration == oldObject.metadata.generation" in policy["spec"]["validations"][0]["expression"]
+    network = named[("NetworkPolicy", "fs2-serve-control-plane-model-controller")]
+    egress = network["spec"]["egress"]
+    assert next(rule for rule in egress if rule["ports"] == [{"port": 443, "protocol": "TCP"}])["to"] == [
+        {"ipBlock": {"cidr": "10.0.0.1/32"}}
+    ]
+    assert any(
+        rule["ports"] == [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}]
+        for rule in egress
+    )
+    assert any(rule["ports"] == [{"port": 9090, "protocol": "TCP"}] for rule in egress)
+
+
+def test_dynamic_model_writer_requires_delete_admission_gate() -> None:
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
+        [
+            *render_command(
+                "--set",
+                "modelController.enabled=true",
+                "--set",
+                "modelController.writesEnabled=true",
+                "--set",
+                "modelController.infrastructureEnvelopeConfigMapName=fs2-model-envelope",
+                "--set",
+                "modelController.rendererBundlesConfigMapName=fs2-model-bundles",
+                "--set",
+                "adminReadAdapters.capacity.enabled=true",
+                "--set",
+                "networkPolicy.kubernetesApiCidrs[0]=10.0.0.1/32",
+            )
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "writesEnabled requires deletion admission safeguards" in result.stderr
+
+
 def test_gateway_chart_rejects_controller_owned_values_instead_of_silently_rendering_them() -> None:
     for override, expected in (
         ("activationController.replicas=2", "owned by the separate activation child"),

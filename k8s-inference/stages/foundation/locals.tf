@@ -122,6 +122,7 @@ locals {
     cert_manager          = "v1.21.1"
     cloudnative_pg        = "0.29.0"
     envoy_gateway         = "v1.8.3"
+    filesystem_csi        = "0.1.7"
     keda                  = "2.20.2"
     kueue                 = "0.17.8"
     kserve_crd            = "v0.20.0"

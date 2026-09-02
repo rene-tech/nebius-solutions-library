@@ -5,6 +5,14 @@ import {
   configurationPlan,
   configurationRevision,
 } from "./configurationFixtures.ts";
+import {
+  modelDeploymentAppliedFixture,
+  modelDeploymentMutationCapabilitiesFixture,
+  modelDeploymentPlanFixture,
+  modelDeploymentRevisionFixture,
+  modelDeploymentStatusFixture,
+  modelDeploymentValidationFixture,
+} from "./modelDeploymentFixtures.ts";
 
 const now = "2026-08-30T08:30:00Z";
 const context = {
@@ -192,5 +200,16 @@ export function browserFixture(path: string): unknown | undefined {
   if (path === "/admin/api/v1/configuration:reconcile") return envelope(awaitingStatus);
   if (path.startsWith("/admin/api/v1/configuration/reconciliations/")) return envelope(completedStatus);
   if (path === "/admin/api/v1/configuration:rollback") return envelope({ target_revision: 1, plan: configurationPlan() });
+  if (path === "/admin/api/v1/model-deployments") return envelope({ items: [modelDeploymentRevisionFixture], next_after: null });
+  if (path === "/admin/api/v1/model-deployments:capabilities") return envelope(modelDeploymentMutationCapabilitiesFixture);
+  if (path === "/admin/api/v1/model-deployments:validate-preview") return envelope(modelDeploymentValidationFixture);
+  if (path === "/admin/api/v1/model-deployments:plan-preview") return envelope(modelDeploymentPlanFixture);
+  if (path === "/admin/api/v1/model-deployments:apply") return envelope(modelDeploymentAppliedFixture);
+  if (path === "/admin/api/v1/model-deployments/qwen-live:drain") return envelope(modelDeploymentAppliedFixture);
+  if (path === "/admin/api/v1/model-deployments/qwen-live:rollback") return envelope(modelDeploymentAppliedFixture);
+  if (path === "/admin/api/v1/model-deployments/qwen-live:reconcile") return envelope(modelDeploymentAppliedFixture);
+  if (path === "/admin/api/v1/model-deployments/qwen-live/history") return envelope({ items: [modelDeploymentRevisionFixture, { ...modelDeploymentRevisionFixture, revision: 1, action: "create", previous_revision: null, created_at: "2026-09-02T07:00:00Z" }], next_before_revision: null });
+  if (path === "/admin/api/v1/model-deployments/qwen-live/status") return envelope(modelDeploymentStatusFixture);
+  if (path === "/admin/api/v1/model-deployments/qwen-live") return envelope(modelDeploymentRevisionFixture);
   return undefined;
 }

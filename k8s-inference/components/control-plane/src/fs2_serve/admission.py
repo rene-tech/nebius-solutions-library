@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import json
 import logging
 import socket
 from collections.abc import Awaitable, Callable
@@ -18,6 +19,7 @@ from .models import (
     ActivationIntentStatus,
     AdmissionRequest,
     ClaimedOperation,
+    DynamicAdmissionFence,
     OperationStatus,
     OperationView,
     Principal,
@@ -147,21 +149,64 @@ class AdmissionService:
         *,
         required_scope: str = "inference.invoke",
     ) -> OperationView:
-        principal.require(required_scope, admission.model_id)
+        principal.require(required_scope)
+        routes_fresh = True
         if self.route_refresh is not None:
-            await self.route_refresh()
+            routes_fresh = await self.route_refresh()
         model = self.registry.get(admission.model_id)
+        if not routes_fresh and model.dynamic_policy is not None:
+            raise RuntimeError("dynamic model route evidence is unavailable")
+        self.registry.authorize_principal(
+            model,
+            principal,
+            requested_model_id=admission.model_id,
+            surface="mcp" if required_scope == "mcp.invoke" else "openai",
+        )
         self.registry.authorize(model, principal.scopes)
         if admission.operation not in model.gateway.policy_operations:
             raise PermissionError("operation is outside model policy")
         if admission.protocol not in model.gateway.protocols:
             raise ValueError("model does not implement requested protocol")
+        request_body = admission.request_body
+        if admission.protocol.startswith("openai-"):
+            try:
+                payload = json.loads(request_body)
+                if not isinstance(payload, dict):
+                    raise ValueError
+                payload["model"] = model.id
+                request_body = json.dumps(
+                    payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode("utf-8")
+            except (TypeError, ValueError):
+                raise ValueError("OpenAI request payload is not canonical JSON") from None
+        canonical_admission = admission.model_copy(
+            update={"model_id": model.id, "request_body": request_body}
+        )
+        dynamic_policy = model.dynamic_policy
+        if dynamic_policy is not None:
+            queue_deadline = datetime.now(UTC) + timedelta(seconds=dynamic_policy.max_queue_seconds)
+            if canonical_admission.deadline_at is None or canonical_admission.deadline_at > queue_deadline:
+                canonical_admission = canonical_admission.model_copy(update={"deadline_at": queue_deadline})
         operation = await self.store.append_operation(
             principal=principal,
-            admission=admission,
+            admission=canonical_admission,
             model_revision=model.model_revision,
             reserved_gpu_seconds=model.gpu_seconds_reservation,
             max_attempts=model.max_attempts,
+            dispatch_snapshot=self.registry.dispatch_snapshot(model),
+            dynamic_fence=(
+                None
+                if dynamic_policy is None
+                else DynamicAdmissionFence(
+                    namespace=dynamic_policy.deployment_namespace,
+                    name=dynamic_policy.deployment_name,
+                    etag=dynamic_policy.etag,
+                )
+            ),
         )
         self._wake.set()
         return operation
@@ -459,7 +504,7 @@ class AdmissionService:
         )
 
     async def _execute_claim(self, claimed: ClaimedOperation) -> None:
-        model = self.registry.get(claimed.model_id, require_enabled=False)
+        model: OperationalModel | None = None
         try:
             model = await self._current_model(claimed)
             if model.binding.backend_class == "local-kubernetes" and model.binding.activation.enabled:
@@ -502,16 +547,16 @@ class AdmissionService:
                 usage=result.usage,
             )
         except PreemptedError as exc:
-            if await self._retry(model, claimed, exc):
+            if model is not None and await self._retry(model, claimed, exc):
                 return
             final = await self._terminal_failure(claimed, exc, status=OperationStatus.PREEMPTED)
         except RuntimeOperationError as exc:
-            if await self._retry(model, claimed, exc):
+            if model is not None and await self._retry(model, claimed, exc):
                 return
             final = await self._terminal_failure(claimed, exc)
         except (OSError, TimeoutError):
             failure = RuntimeOperationError("runtime unavailable")
-            if await self._retry(model, claimed, failure):
+            if model is not None and await self._retry(model, claimed, failure):
                 return
             final = await self._terminal_failure(claimed, failure)
         except StaleLeaseError:
@@ -564,12 +609,22 @@ class AdmissionService:
     async def _current_model(self, claimed: ClaimedOperation) -> OperationalModel:
         """Reopen route trust immediately before each outbound dispatch."""
 
-        if self.route_refresh is not None and not await self.route_refresh():
-            raise RouteUnavailableError("canonical route evidence is unavailable")
+        routes_fresh = self.route_refresh is None or await self.route_refresh()
         try:
-            model = self.registry.get(claimed.model_id)
+            model = self.registry.get_revision(
+                claimed.model_id,
+                claimed.model_revision,
+                allow_dynamic=routes_fresh,
+            )
         except (KeyError, RuntimeError):
-            raise RouteUnavailableError("canonical route evidence is unavailable") from None
-        if model.model_revision != claimed.model_revision:
-            raise RouteUnavailableError("canonical route revision changed after admission")
+            if not routes_fresh or claimed.dispatch_snapshot is None:
+                raise RouteUnavailableError("canonical route evidence is unavailable") from None
+            try:
+                model = self.registry.restore_dispatch_snapshot(
+                    claimed.dispatch_snapshot,
+                    model_id=claimed.model_id,
+                    revision=claimed.model_revision,
+                )
+            except (KeyError, RuntimeError, ValueError):
+                raise RouteUnavailableError("canonical route evidence is unavailable") from None
         return model

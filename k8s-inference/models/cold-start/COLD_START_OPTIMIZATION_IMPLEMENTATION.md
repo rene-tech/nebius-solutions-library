@@ -108,13 +108,15 @@ documented in `MODEL_CONTENT_IDENTITY_CLOSURE.md` and validated by the existing
 artifact-manifest implementation.
 
 Cosmos3-Nano binds its immutable upstream model manifest and runtime image to
-the one-GPU provider-block-PVC route. Its portable manifest deliberately omits
-a GPU-family-specific compile-cache ABI, so accelerated cache reuse remains
-blocked until the selected pool supplies and proves the exact ABI.
-It has no FS2 cold-start observation in the historical evidence table, so its
-first admitted work is a conventional baseline and not an optimization or
-performance claim. Shared SFS, local NVMe, OCI, and snapshot paths stay blocked
-until each has an exact integration and receipt.
+the one-GPU route. Its portable manifest deliberately omits a
+GPU-family-specific compile-cache ABI, so compiled-runtime cache reuse remains
+blocked until the selected pool supplies and proves the exact ABI. Its inline
+weight localizer now supports the rendered shared RWX cache with a single
+writer, exact full-hash verification before atomic publication, and a
+deterministic warm-hit receipt. This is conventional weight-cache reuse, not a
+GPU snapshot or a measured latency claim. It has no new FS2 cold-start
+observation in the historical evidence table, so the next admitted work must
+still establish the shared-filesystem baseline and replacement-node result.
 
 For `msa-search-pdb70`, `openfold2`, and `openfold3`, the exact runtime image
 and compile-cache ABI are recorded, but the model-content annotation remains

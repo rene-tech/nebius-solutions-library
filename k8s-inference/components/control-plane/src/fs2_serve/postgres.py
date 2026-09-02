@@ -48,7 +48,7 @@ from .configuration_models import (
     TerraformApplyReceipt,
 )
 from .crypto import Ciphertext, KeyedHasher, PayloadCipher
-from .model_deployment import ModelDeploymentSpec, spec_digest
+from .model_deployment import DesiredState, ModelDeploymentSpec, spec_digest
 from .model_deployment_records import (
     ModelDeploymentAppendRequest,
     ModelDeploymentAppendResult,
@@ -58,6 +58,7 @@ from .model_deployment_records import (
     ModelDeploymentStatusObservation,
     model_deployment_append_payload,
     model_deployment_audit_target,
+    model_deployment_status_precedes,
 )
 from .models import (
     ActivationIntent,
@@ -67,6 +68,7 @@ from .models import (
     AuditEvent,
     ClaimedActivationIntent,
     ClaimedOperation,
+    DynamicAdmissionFence,
     ModalityUsage,
     OperationResult,
     OperationStatus,
@@ -618,6 +620,8 @@ class PostgresStore:
     def _model_deployment_status(row: asyncpg.Record) -> ModelDeploymentStatusObservation:
         return ModelDeploymentStatusObservation(
             observation_id=row["observation_id"],
+            source_uid=row["source_uid"],
+            source_resource_version=row["source_resource_version"],
             namespace=row["namespace"],
             name=row["name"],
             tenant_id=row["tenant_id"],
@@ -2022,13 +2026,31 @@ class PostgresStore:
                 or revision["etag"] != observation.status.spec_digest
             ):
                 raise ConflictError("model deployment observation has no matching desired revision")
+            latest_row = await connection.fetchrow(
+                """
+                SELECT * FROM fs2_model_deployment_status_events
+                WHERE namespace=$1 AND name=$2
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                observation.namespace,
+                observation.name,
+            )
+            if latest_row is not None and model_deployment_status_precedes(
+                observation,
+                self._model_deployment_status(latest_row),
+            ):
+                raise ConflictError("model deployment observation is older than current status")
             row = await connection.fetchrow(
                 """
                 INSERT INTO fs2_model_deployment_status_events(
-                    observation_id,namespace,name,tenant_id,revision,spec_etag,status,observed_at
-                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *
+                    observation_id,source_uid,source_resource_version,namespace,name,tenant_id,
+                    revision,spec_etag,status,observed_at
+                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *
                 """,
                 observation.observation_id,
+                observation.source_uid,
+                observation.source_resource_version,
                 observation.namespace,
                 observation.name,
                 observation.tenant_id,
@@ -2154,6 +2176,8 @@ class PostgresStore:
         model_revision: str,
         reserved_gpu_seconds: float,
         max_attempts: int,
+        dispatch_snapshot: str | None = None,
+        dynamic_fence: DynamicAdmissionFence | None = None,
     ) -> OperationView:
         async with self.pool.acquire() as connection, connection.transaction():
             await self._token_lock(connection, principal.token_id)
@@ -2206,6 +2230,44 @@ class PostgresStore:
                 if comparable != incoming:
                     raise ConflictError("idempotency key is already bound to a different request")
                 return self._operation(existing, reused=True)
+            if (dynamic_fence is None) != (dispatch_snapshot is None):
+                raise ConflictError("dynamic admission fence and dispatch snapshot must be supplied together")
+            if dynamic_fence is not None:
+                await self._model_deployment_lock(
+                    connection,
+                    dynamic_fence.namespace,
+                    dynamic_fence.name,
+                )
+                desired_row = await connection.fetchrow(
+                    """
+                    SELECT deployment.tenant_id,deployment.current_etag,revision.spec
+                    FROM fs2_model_deployments deployment
+                    JOIN fs2_model_deployment_revisions revision
+                      ON revision.namespace=deployment.namespace
+                     AND revision.name=deployment.name
+                     AND revision.revision=deployment.current_revision
+                    WHERE deployment.namespace=$1 AND deployment.name=$2
+                    FOR UPDATE OF deployment
+                    """,
+                    dynamic_fence.namespace,
+                    dynamic_fence.name,
+                )
+                desired_spec = (
+                    None
+                    if desired_row is None
+                    else ModelDeploymentSpec.model_validate(
+                        _decode_configuration_json(desired_row["spec"], "model deployment desired state")
+                    )
+                )
+                if (
+                    desired_row is None
+                    or desired_spec is None
+                    or desired_row["current_etag"] != dynamic_fence.etag
+                    or desired_row["tenant_id"] != principal.tenant_id
+                    or desired_spec.model_ref != admission.model_id
+                    or desired_spec.lifecycle.desired_state is not DesiredState.ENABLED
+                ):
+                    raise ConflictError("dynamic model no longer accepts admissions")
             hmac_key_id, request_hmac = self.hasher.digest(admission.request_body, context="fs2-serve.request/v1")
             rate_started = token["rate_window_started_at"]
             rate_requests = token["rate_window_requests"]
@@ -2240,9 +2302,9 @@ class PostgresStore:
                         (id,tenant_id,principal_id,token_id,model_id,model_revision,protocol,operation,
                          idempotency_key,request_hmac_key_id,request_hmac,request_key_id,request_nonce,
                          request_ciphertext,request_content_type,traceparent,deadline_at,payload_expires_at,
-                         max_attempts,reserved_gpu_seconds)
+                         max_attempts,reserved_gpu_seconds,dispatch_snapshot)
                     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-                           clock_timestamp()+make_interval(secs=>$18::double precision),$19,$20)
+                           clock_timestamp()+make_interval(secs=>$18::double precision),$19,$20,$21::jsonb)
                     RETURNING *
                     """,
                     operation_id,
@@ -2265,6 +2327,7 @@ class PostgresStore:
                     self.payload_ttl_seconds,
                     max_attempts,
                     reserved_gpu_seconds,
+                    dispatch_snapshot,
                 )
             except asyncpg.UniqueViolationError as exc:
                 raise ConflictError("idempotency key raced with another request") from exc
@@ -2651,6 +2714,15 @@ class PostgresStore:
                     **metadata.model_dump(),
                     request_content_type=row["request_content_type"],
                     traceparent=row["traceparent"],
+                    dispatch_snapshot=(
+                        None
+                        if row["dispatch_snapshot"] is None
+                        else json.dumps(
+                            _decode_configuration_json(row["dispatch_snapshot"], "dynamic dispatch snapshot"),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                    ),
                     worker_id=worker_id,
                 )
         return None
