@@ -1,0 +1,406 @@
+{
+  "schema": "fs2-serve.nebius.ai/cancer-immunotherapy-live-acceptance-plan/v1",
+  "mode": "preparation-only",
+  "base": {
+    "git_commit": "c83b97c6f18b09f13b0623d20f6436398337085f",
+    "contracts": [
+      {
+        "path": "catalog/runtime/contracts/scientific-source-candidate-receipts.json",
+        "sha256": "d474580ab267453abe4a6634ac66afeb30b120d247fc8bd8597c9c91c9a028b6"
+      },
+      {
+        "path": "catalog/runtime/contracts/scientific-workload-profiles.json",
+        "sha256": "04463a9925523d03350549e7a4e18e5195e724748466b7427bc9736e37a02fdc"
+      },
+      {
+        "path": "components/admin-console/contracts/scientific-admin-fixture-v1.json",
+        "sha256": "d42e3da44fb15405d2fe2dc25c97096d8acdae85ead2d6fcb8a6b1a26049a750"
+      },
+      {
+        "path": "models/cancer-immunotherapy/model-source-qualification.json",
+        "sha256": "ad1f55425b7b7002e352a6c757593600ecb98cf9660002bb1f64a43fd8ec2c6a"
+      }
+    ]
+  },
+  "target": {
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "context": "k8s-inference-h100",
+    "accelerator": "nvidia-h100-sxm5-80gb",
+    "forbidden_targets": ["b300", "forge"],
+    "preparation_mutations_allowed": false
+  },
+  "requested_models": [
+    "alphafold3",
+    "bindcraft",
+    "boltzgen",
+    "esmfold2",
+    "esmfold2-fast",
+    "mosaic",
+    "proteina-complexa",
+    "protenix-v2",
+    "rfdiffusion"
+  ],
+  "models": [
+    {
+      "model_id": "alphafold3",
+      "role": "secondary",
+      "source_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+      "source_validator_pointer": "/models/alphafold3/semantic_validator",
+      "validator_id": "alphafold3-cif-confidence-v1",
+      "preparation_status": "blocked-by-external-access",
+      "seed": 101,
+      "service_classes": ["presentation", "interactive", "customer-batch", "bulk-backfill"],
+      "required_profile_fields": ["model_id", "state", "route_exposed", "source.revision", "runtime.image.digest", "workload.stages", "semantic_validation.validator_id", "artifacts"],
+      "rules": [
+        {"id": "af3-structure", "kind": "protein-structure", "patterns": ["**/*.cif"], "minimum": 1, "min_bytes": 1024, "min_atom_records": 10, "min_polymer_chains": 1},
+        {"id": "af3-confidence", "kind": "json-numerics", "patterns": ["**/*confidence*.json", "**/*summary*.json"], "minimum": 1, "min_bytes": 32, "min_finite_numbers": 1}
+      ],
+      "oracle_assertions": [
+        {"id": "af3-entity-counts", "assertion": "Ubiquitin and barnase-barstar output atom, residue, entity and chain counts match the frozen inputs."},
+        {"id": "af3-topology", "assertion": "Ubiquitin has the expected beta-grasp topology and passes the reviewed backbone RMSD threshold."},
+        {"id": "af3-interface", "assertion": "Barnase-barstar passes reviewed iPTM, ranking-score and interface-clash thresholds."},
+        {"id": "af3-finite", "assertion": "All coordinates and confidence values are finite and the structure is neither collapsed nor clashing."}
+      ],
+      "external_gate_categories": ["access", "license", "reference-data", "storage"],
+      "current_contract_gaps": ["No reviewed tenant-private AlphaFold3 access and artifact receipt is merged.", "The exact fixture bytes and numeric RMSD, iPTM and ranking-score thresholds are not defined in current main."]
+    },
+    {
+      "model_id": "bindcraft",
+      "role": "primary",
+      "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+      "source_validator_pointer": "/models/bindcraft/semantic_validator",
+      "validator_id": "bindcraft-pdl1-design-v1",
+      "preparation_status": "blocked-by-external-access",
+      "seed": 102,
+      "service_classes": ["presentation", "interactive", "customer-batch", "bulk-backfill"],
+      "required_profile_fields": ["model_id", "state", "route_exposed", "source.revision", "runtime.image.digest", "workload.stages", "semantic_validation.validator_id", "artifacts"],
+      "rules": [
+        {"id": "bindcraft-structure", "kind": "protein-structure", "patterns": ["**/*.pdb"], "minimum": 1, "min_bytes": 1024, "min_atom_records": 20, "min_polymer_chains": 2},
+        {"id": "bindcraft-ranking", "kind": "tabular-result", "patterns": ["**/*.csv"], "minimum": 1, "min_bytes": 32, "min_rows": 1}
+      ],
+      "oracle_assertions": [
+        {"id": "bindcraft-target", "assertion": "The accepted output has exactly target and binder chains and preserves target coordinates within the reviewed tolerance."},
+        {"id": "bindcraft-sequence", "assertion": "Binder length is 65 through 150 residues, contains no cysteine, and fixed distinct seeds produce distinct sequences."},
+        {"id": "bindcraft-hotspot", "assertion": "The designed binder contacts every required PD-L1 hotspot within the reviewed atomic-distance threshold."},
+        {"id": "bindcraft-pyrosetta", "assertion": "Interface count, buried surface area and energy values are real nonzero PyRosetta measurements and pass reviewed filters."}
+      ],
+      "external_gate_categories": ["access", "license"],
+      "current_contract_gaps": ["No reviewed PyRosetta academic access receipt is merged.", "The exact target-coordinate tolerance, hotspot cutoff and measured interface-score thresholds are not defined in current main."]
+    },
+    {
+      "model_id": "boltzgen",
+      "role": "primary",
+      "source_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+      "source_validator_pointer": "/models/boltzgen/semantic_validator",
+      "validator_id": "boltzgen-protein-design-v1",
+      "preparation_status": "blocked-by-integration",
+      "seed": 103,
+      "service_classes": ["presentation", "interactive", "customer-batch", "bulk-backfill"],
+      "required_profile_fields": ["model_id", "state", "route_exposed", "source.revision", "runtime.image.digest", "workload.stages", "semantic_validation.validator_id", "artifacts"],
+      "rules": [
+        {"id": "boltzgen-structures", "kind": "protein-structure", "patterns": ["**/*.pdb", "**/*.cif"], "minimum": 2, "min_bytes": 1024, "min_atom_records": 10, "min_polymer_chains": 1},
+        {"id": "boltzgen-ranking", "kind": "artifact-files", "patterns": ["**/*.csv", "**/*.json"], "minimum": 1, "min_bytes": 32}
+      ],
+      "oracle_assertions": [
+        {"id": "boltzgen-count", "assertion": "The pipeline produces the exact requested design and ranked-output counts for the frozen protocol."},
+        {"id": "boltzgen-refold", "assertion": "Each accepted design passes the reviewed design-to-refold RMSD threshold."},
+        {"id": "boltzgen-composition", "assertion": "Accepted sequences pass the reviewed maximum single-amino-acid fraction and have no unresolved residues."},
+        {"id": "boltzgen-interface", "assertion": "Interface-confidence metrics are finite, positive and above the reviewed acceptance floor."}
+      ],
+      "external_gate_categories": ["compatibility"],
+      "current_contract_gaps": ["No executable adapter, immutable image/artifact tuple or numeric design-quality validator is merged.", "The required longer H100 stall-regression case is not defined in current main."]
+    },
+    {
+      "model_id": "esmfold2",
+      "role": "secondary",
+      "source_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "source_validator_pointer": "/models/esmfold2/semantic_validator",
+      "validator_id": "esmfold2-sequence-fold-v1",
+      "preparation_status": "blocked-by-integration",
+      "seed": 104,
+      "service_classes": ["presentation", "interactive", "customer-batch", "bulk-backfill"],
+      "required_profile_fields": ["model_id", "state", "route_exposed", "source.revision", "runtime.image.digest", "workload.stages", "semantic_validation.validator_id", "artifacts"],
+      "rules": [
+        {"id": "esmfold2-structure", "kind": "protein-structure", "patterns": ["**/*.pdb", "**/*.cif"], "minimum": 1, "min_bytes": 1024, "min_atom_records": 10, "min_polymer_chains": 1},
+        {"id": "esmfold2-confidence", "kind": "json-numerics", "patterns": ["**/*.json"], "minimum": 1, "min_bytes": 16, "min_finite_numbers": 1}
+      ],
+      "oracle_assertions": [
+        {"id": "esmfold2-length", "assertion": "Output residue and atom counts match the frozen ubiquitin sequence and all coordinates are finite."},
+        {"id": "esmfold2-confidence-oracle", "assertion": "pLDDT, pTM and PAE are present and pass reviewed numeric bounds."},
+        {"id": "esmfold2-topology", "assertion": "The folded structure has the expected ubiquitin beta-grasp topology within the reviewed backbone threshold."},
+        {"id": "esmfold2-determinism", "assertion": "Repeated execution with the same seed agrees within the reviewed coordinate tolerance."}
+      ],
+      "external_gate_categories": ["compatibility"],
+      "current_contract_gaps": ["No exact ESMFold2 weight/image tuple or executable adapter is merged.", "The fixture bytes and numeric confidence, beta-grasp and deterministic-coordinate tolerances are not defined in current main."]
+    },
+    {
+      "model_id": "esmfold2-fast",
+      "role": "secondary",
+      "source_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "source_validator_pointer": "/models/esmfold2-fast/semantic_validator",
+      "validator_id": "esmfold2-fast-sequence-fold-v1",
+      "preparation_status": "blocked-by-integration",
+      "seed": 105,
+      "service_classes": ["presentation", "interactive", "customer-batch", "bulk-backfill"],
+      "required_profile_fields": ["model_id", "state", "route_exposed", "source.revision", "runtime.image.digest", "workload.stages", "semantic_validation.validator_id", "artifacts"],
+      "rules": [
+        {"id": "esmfold2-fast-structure", "kind": "protein-structure", "patterns": ["**/*.pdb", "**/*.cif"], "minimum": 1, "min_bytes": 1024, "min_atom_records": 10, "min_polymer_chains": 1},
+        {"id": "esmfold2-fast-confidence", "kind": "json-numerics", "patterns": ["**/*.json"], "minimum": 1, "min_bytes": 16, "min_finite_numbers": 1}
+      ],
+      "oracle_assertions": [
+        {"id": "esmfold2-fast-length", "assertion": "Output residue and atom counts match the same frozen ubiquitin input used by full ESMFold2."},
+        {"id": "esmfold2-fast-confidence-oracle", "assertion": "pLDDT, pTM and PAE are finite and pass reviewed numeric bounds."},
+        {"id": "esmfold2-fast-parity", "assertion": "Backbone deviation from the full ESMFold2 result remains inside the reviewed equivalence bound."},
+        {"id": "esmfold2-fast-latency", "assertion": "Paired prepared-node semantic latency improves on full ESMFold2 by the reviewed minimum without changing inputs or hardware."}
+      ],
+      "external_gate_categories": ["compatibility"],
+      "current_contract_gaps": ["No exact ESMFold2-Fast weight/image tuple or executable adapter is merged.", "The numeric backbone-equivalence and latency-improvement thresholds versus ESMFold2 are not defined in current main."]
+    },
+    {
+      "model_id": "mosaic",
+      "role": "primary",
+      "source_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+      "source_validator_pointer": "/models/mosaic/semantic_validator",
+      "validator_id": "mosaic-pdl1-objective-v1",
+      "preparation_status": "blocked-by-integration",
+      "seed": 106,
+      "service_classes": ["presentation", "interactive", "customer-batch", "bulk-backfill"],
+      "required_profile_fields": ["model_id", "state", "route_exposed", "source.revision", "runtime.image.digest", "workload.stages", "semantic_validation.validator_id", "artifacts"],
+      "rules": [
+        {"id": "mosaic-structures", "kind": "protein-structure", "patterns": ["**/*.pdb", "**/*.cif"], "minimum": 1, "min_bytes": 1024, "min_atom_records": 10, "min_polymer_chains": 1},
+        {"id": "mosaic-objectives", "kind": "json-numerics", "patterns": ["**/*.json"], "minimum": 1, "min_bytes": 16, "min_finite_numbers": 1}
+      ],
+      "oracle_assertions": [
+        {"id": "mosaic-checkpoints", "assertion": "The receipt proves the exact Boltz-2 and ProteinMPNN checkpoint digests were loaded."},
+        {"id": "mosaic-objective", "assertion": "The frozen objective improves by the reviewed amount from initial to final candidate."},
+        {"id": "mosaic-sequence", "assertion": "The 80-residue binder is non-homopolymeric and passes reviewed composition constraints."},
+        {"id": "mosaic-contact", "assertion": "The final design passes reviewed PD-L1 contact and independent refold thresholds."}
+      ],
+      "external_gate_categories": ["compatibility"],
+      "current_contract_gaps": ["No frozen PD-L1 input script, component checkpoint tuple or executable adapter is merged.", "Objective-improvement, contact and refold thresholds are not numeric in current main."]
+    },
+    {
+      "model_id": "proteina-complexa",
+      "role": "primary",
+      "source_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+      "source_validator_pointer": "/models/proteina-complexa/semantic_validator",
+      "validator_id": "proteina-complexa-pdl1-v1",
+      "preparation_status": "blocked-by-integration",
+      "seed": 107,
+      "service_classes": ["presentation", "interactive", "customer-batch", "bulk-backfill"],
+      "required_profile_fields": ["model_id", "state", "route_exposed", "source.revision", "runtime.image.digest", "workload.stages", "semantic_validation.validator_id", "artifacts"],
+      "rules": [
+        {"id": "complexa-structures", "kind": "protein-structure", "patterns": ["**/*.pdb"], "minimum": 1, "min_bytes": 1024, "min_atom_records": 20, "min_polymer_chains": 2},
+        {"id": "complexa-ranking", "kind": "tabular-result", "patterns": ["**/*.csv"], "minimum": 1, "min_bytes": 32, "min_rows": 1}
+      ],
+      "oracle_assertions": [
+        {"id": "complexa-stages", "assertion": "Generate, filter, evaluate and analyze stages each have a complete immutable stage manifest."},
+        {"id": "complexa-atomic", "assertion": "Generated target-binder PDBs contain full finite atomic coordinates and recoverable amino-acid sequences."},
+        {"id": "complexa-filter", "assertion": "At least one design passes the pipeline's reviewed success filter with real reward-model outputs."},
+        {"id": "complexa-refold", "assertion": "Accepted designs pass the reviewed backbone-to-refold self-consistency threshold."}
+      ],
+      "external_gate_categories": ["artifact", "reference-data", "compatibility"],
+      "current_contract_gaps": ["No reviewed AlphaFold2 and RoseTTAFold3 reward artifact manifests or executable four-stage adapter are merged.", "The refold self-consistency and pipeline acceptance thresholds are not numeric in current main."]
+    },
+    {
+      "model_id": "protenix-v2",
+      "role": "secondary",
+      "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+      "source_validator_pointer": "/models/protenix-v2/semantic_validator",
+      "validator_id": "protenix-v2-complex-fold-v1",
+      "preparation_status": "blocked-by-external-access",
+      "seed": 108,
+      "service_classes": ["presentation", "interactive", "customer-batch", "bulk-backfill"],
+      "required_profile_fields": ["model_id", "state", "route_exposed", "source.revision", "runtime.image.digest", "workload.stages", "semantic_validation.validator_id", "artifacts"],
+      "rules": [
+        {"id": "protenix-structure", "kind": "protein-structure", "patterns": ["**/*.cif", "**/*.pdb"], "minimum": 1, "min_bytes": 1024, "min_atom_records": 10, "min_polymer_chains": 1},
+        {"id": "protenix-confidence", "kind": "json-numerics", "patterns": ["**/*.json"], "minimum": 1, "min_bytes": 16, "min_finite_numbers": 1}
+      ],
+      "oracle_assertions": [
+        {"id": "protenix-identity", "assertion": "The runtime loads the exact Protenix v2 checkpoint; no Protenix v1 substitute can satisfy this row."},
+        {"id": "protenix-entities", "assertion": "The frozen 7r6r case returns the expected protein and two DNA chains with matching entity counts."},
+        {"id": "protenix-confidence-oracle", "assertion": "pLDDT, pTM and ipTM are finite and pass reviewed model-specific floors."},
+        {"id": "protenix-geometry", "assertion": "The duplex and protein-DNA groove geometry pass reviewed bounds, with no clash or NaN and seed diversity present."}
+      ],
+      "external_gate_categories": ["artifact", "access"],
+      "current_contract_gaps": ["The exact Protenix v2 checkpoint remains unavailable; the obtainable v1 checkpoint must never satisfy this row.", "No v2 adapter, artifact manifest, fixture digest or exact duplex-geometry validator is merged."]
+    },
+    {
+      "model_id": "rfdiffusion",
+      "role": "primary",
+      "source_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+      "source_validator_pointer": "/models/rfdiffusion/semantic_validator",
+      "validator_id": "rfdiffusion-binder-hotspot-v1",
+      "preparation_status": "blocked-by-integration",
+      "seed": 109,
+      "service_classes": ["presentation", "interactive", "customer-batch", "bulk-backfill"],
+      "required_profile_fields": ["model_id", "state", "route_exposed", "source.revision", "runtime.image.digest", "workload.stages", "semantic_validation.validator_id", "artifacts"],
+      "rules": [
+        {"id": "rfdiffusion-structures", "kind": "protein-structure", "patterns": ["**/*.pdb"], "minimum": 2, "min_bytes": 1024, "min_atom_records": 10, "min_polymer_chains": 1},
+        {"id": "rfdiffusion-distinct", "kind": "artifact-files", "patterns": ["**/*.trb", "**/*.json"], "minimum": 1, "min_bytes": 16}
+      ],
+      "oracle_assertions": [
+        {"id": "rfdiffusion-backbone", "assertion": "Designed residues are glycine-only backbone output with finite coordinates, correct chain count and preserved target coordinates."},
+        {"id": "rfdiffusion-geometry", "assertion": "Adjacent and non-adjacent C-alpha distances, compactness and secondary-structure content pass reviewed bounds."},
+        {"id": "rfdiffusion-hotspots", "assertion": "The binder contacts every frozen hotspot within the reviewed residue-distance threshold."},
+        {"id": "rfdiffusion-repeatability", "assertion": "Same-seed/noise-zero output repeats within tolerance while different design indices yield distinct backbones."}
+      ],
+      "external_gate_categories": ["access", "compatibility"],
+      "current_contract_gaps": ["The existing NIM/B300 smoke validator is not authority for the requested upstream H100 binder lane.", "Target-coordinate, C-alpha geometry, hotspot-distance and diversity thresholds are not fixed in current main."]
+    }
+  ],
+  "semantic_policy": {
+    "authoritative_adapter_receipt_required": true,
+    "structural_rules_are": "corruption-prechecks-only",
+    "numeric_thresholds_required": true,
+    "current_threshold_state": "missing-reviewed-model-specific-contracts"
+  },
+  "scenarios": [
+    {
+      "id": "semantic-model-lanes",
+      "purpose": "Run two deterministic retained inputs for each exact admitted model tuple and require model-specific semantic receipts.",
+      "tenants": ["acceptance-a"],
+      "service_classes": ["customer-batch"],
+      "model_selector": "each-requested",
+      "assertions": ["Both distinct inputs pass the authoritative adapter validator.", "Image, source, artifact, input, output and validator receipt digests are immutable and joined to one attempt."]
+    },
+    {
+      "id": "all-model-mixed-burst",
+      "purpose": "Overlap every requested primary and secondary lane with a bulk burst and customer-facing work.",
+      "tenants": ["acceptance-a", "acceptance-b"],
+      "service_classes": ["presentation", "interactive", "customer-batch", "bulk-backfill"],
+      "model_selector": "all-requested-mixed",
+      "assertions": ["Every admitted model has queued or active work in the same bounded observation window.", "Unrelated tenant workloads and capacity remain untouched."]
+    },
+    {
+      "id": "service-class-ordering",
+      "purpose": "Prove presentation and interactive requests overtake queued batch work without evicting protected presentation work.",
+      "tenants": ["acceptance-a"],
+      "service_classes": ["presentation", "interactive", "customer-batch", "bulk-backfill"],
+      "model_selector": "primary-only",
+      "assertions": ["Admission order follows the configured priority values when requests contend for the same flavor.", "Preemption follows the policy snapshot and never relies on submission timestamps alone."]
+    },
+    {
+      "id": "tenant-fair-sharing",
+      "purpose": "Prove two tenants make bounded progress under sustained same-class bulk demand.",
+      "tenants": ["acceptance-a", "acceptance-b"],
+      "service_classes": ["bulk-backfill"],
+      "model_selector": "all-requested-mixed",
+      "assertions": ["Both tenants receive admissions while both remain backlogged.", "Observed share and dominant-resource debt match the frozen Kueue policy snapshot."]
+    },
+    {
+      "id": "quota-borrow-reclaim",
+      "purpose": "Let idle quota be borrowed by bulk work, then prove timely reclaim for customer traffic.",
+      "tenants": ["acceptance-a", "acceptance-b"],
+      "service_classes": ["interactive", "customer-batch", "bulk-backfill"],
+      "model_selector": "primary-only",
+      "assertions": ["Borrowed quota is visible in Kueue status before reclaim.", "Reclaim selects only policy-eligible victims and the higher service class admits within its maximum queue bound."]
+    },
+    {
+      "id": "preemptible-recovery",
+      "purpose": "Observe an authorized task-owned preemptible loss and prove fenced retry; checkpoint resume is allowed only for an adapter with a reviewed resumable format.",
+      "tenants": ["acceptance-a"],
+      "service_classes": ["customer-batch"],
+      "model_selector": "one-checkpointable",
+      "assertions": ["The replacement attempt has a new attempt ID and cannot commit the predecessor output.", "A restartable stage restarts from its last committed stage input; resume is asserted only when the exact adapter has a qualified checkpoint contract.", "No failure injection occurs without a reviewed task-owned mechanism."]
+    },
+    {
+      "id": "control-plane-restart",
+      "purpose": "In a serialized maintenance window or isolated preview, restart the provenance-matched integrated control plane and prove durable request continuity and idempotent replay.",
+      "tenants": ["acceptance-a"],
+      "service_classes": ["interactive", "customer-batch"],
+      "model_selector": "secondary-only",
+      "assertions": ["Accepted operations survive process replacement without duplicate Jobs or artifacts.", "API, MCP and admin projections converge on the same durable operation state."]
+    }
+  ],
+  "timing": {
+    "clock": "utc-rfc3339-nanoseconds-from-authoritative-events",
+    "exploratory_attempts_per_level": 3,
+    "qualification_successes_per_level": 20,
+    "qualification_failures_allowed": 0,
+    "levels": ["fresh-node", "prepared-node", "container-image-local", "model-artifact-local", "runtime-checkpoint-restore", "gpu-memory-snapshot-restore", "warm-replica"],
+    "level_policies": [
+      {"level": "fresh-node", "preparation_state": "planned", "applicability_rule": "Use only the H100 preemptible pool after sibling work is quiescent; preserve fixed capacity-block nodes and unrelated tenants."},
+      {"level": "prepared-node", "preparation_state": "planned", "applicability_rule": "Require the same exact node/GPU class with the runtime Pod absent and retain a node-preparation receipt."},
+      {"level": "container-image-local", "preparation_state": "blocked-until-profile", "applicability_rule": "Require immutable imageID equality and prove image layers local while the model artifacts remain nonlocal."},
+      {"level": "model-artifact-local", "preparation_state": "blocked-until-profile", "applicability_rule": "Require exact content manifest equality and prove the runtime process and GPU state are absent."},
+      {"level": "runtime-checkpoint-restore", "preparation_state": "blocked-until-profile", "applicability_rule": "Applicable only when the reviewed model profile names a resumable checkpoint format and validation receipt."},
+      {"level": "gpu-memory-snapshot-restore", "preparation_state": "blocked-unsupported", "applicability_rule": "The H100 nodes advertise snapshot eligibility false; never relabel cache/checkpoint reuse as a GPU snapshot."},
+      {"level": "warm-replica", "preparation_state": "blocked-until-profile", "applicability_rule": "Require the same Ready Pod UID/runtime process and a second distinct semantic input."}
+    ],
+    "boundaries": [
+      {"id": "request-accepted", "source": "durable operation event", "definition": "The authenticated request and idempotency key first commit."},
+      {"id": "queue-entered", "source": "durable scientific run event", "definition": "The frozen service-class and scheduling snapshot commit."},
+      {"id": "workload-created", "source": "Kubernetes audit/resource creation timestamp", "definition": "The attempt-owned Job or JobSet UID is observed."},
+      {"id": "kueue-admitted", "source": "Kueue admission check and Workload condition", "definition": "Quota reservation names the exact ClusterQueue and ResourceFlavor."},
+      {"id": "pod-scheduled", "source": "PodScheduled condition transition", "definition": "The attempt Pod UID binds to a Node UID."},
+      {"id": "gpu-allocated", "source": "Pod container started plus device attribution", "definition": "The GPU UUID is first attributable to the attempt Pod UID."},
+      {"id": "image-loading-start", "source": "kubelet event", "definition": "The first Pulling event for an uncached image, or explicit not-applicable evidence."},
+      {"id": "image-ready", "source": "container status imageID", "definition": "The immutable image digest is locally usable by the attempt container."},
+      {"id": "artifact-ready", "source": "signed artifact localization event", "definition": "Every required content digest is verified in the attempt workspace."},
+      {"id": "restore-complete", "source": "runtime lifecycle span", "definition": "Checkpoint or GPU-memory restore completes, or the level is explicitly unsupported/not-applicable."},
+      {"id": "runtime-ready", "source": "readiness event", "definition": "The runtime can accept the deterministic semantic input."},
+      {"id": "semantic-first-result", "source": "durable semantic validation event", "definition": "The first result is committed and passes the exact model validator."},
+      {"id": "attempt-terminal", "source": "durable attempt event", "definition": "Output commit or terminal failure is fenced to the attempt."},
+      {"id": "gpu-released", "source": "DCGM/Kubernetes joined observation", "definition": "The attempt has no attributed GPU process and the Pod UID is terminal or absent."},
+      {"id": "cleanup-complete", "source": "UID-fenced cleanup receipt", "definition": "All task-owned ephemeral UIDs are absent and retained content-addressed artifacts remain."}
+    ]
+  },
+  "telemetry": {
+    "join_keys": ["tenant_id", "model_id", "operation_id", "run_id", "stage_id", "attempt_id", "pod_uid", "node_uid", "gpu_uuid"],
+    "phases": ["queue", "scheduling", "image_loading", "artifact_loading", "restoring", "compilation", "semantic_warmup", "active_compute", "workflow_wait", "allocated_idle", "resident_idle", "grace_drain", "teardown"],
+    "equations": [
+      "end_to_end_ns = queue + scheduling + image_loading + artifact_loading + restoring + compilation + semantic_warmup + active_compute + workflow_wait + allocated_idle + resident_idle + grace_drain + teardown",
+      "allocated_gpu_ns = active_compute_gpu + allocated_idle_gpu + resident_idle_gpu + grace_drain_gpu + reconciliation_delta_gpu",
+      "allocated_idle_gpu = image_loading_gpu + artifact_loading_gpu + restoring_gpu + compilation_gpu + semantic_warmup_gpu + workflow_wait_gpu + scheduler_hold_gpu + unattributed_gpu",
+      "reconciliation_delta_gpu must equal zero in integer nanoseconds before display rounding; DCGM samples corroborate activity and device identity but never define allocation boundaries",
+      "every retry and preemption is a distinct attempt; operation totals equal the sum of attempt totals without overlapping a GPU UUID interval twice"
+    ],
+    "tolerances": {
+      "phase_seconds_absolute": 0.0,
+      "gpu_seconds_absolute": 0.0,
+      "gpu_seconds_relative": 0.0
+    }
+  },
+  "surfaces": [
+    {"id": "external-tls", "assertion": "Every published endpoint has valid TLS and no insecure acceptance mode.", "evidence": ["certificate chain", "hostname verification", "HTTP redirect behavior"]},
+    {"id": "auth-boundary", "assertion": "Unauthenticated, wrong-tenant and insufficient-scope requests fail without existence disclosure.", "evidence": ["HTTP status and bounded body digest", "audit event"]},
+    {"id": "api-submit", "assertion": "Scientific API validates, idempotently submits and returns the durable operation identity.", "evidence": ["request digest", "response digest", "operation row"]},
+    {"id": "api-lifecycle", "assertion": "Get, events, cancellation and artifact-pointer routes expose one tenant-safe consistent lifecycle.", "evidence": ["responses", "event sequence", "artifact authorization result"]},
+    {"id": "mcp-discovery", "assertion": "MCP discovery exposes only admitted models and stable tool schemas.", "evidence": ["initialize response", "tools/list digest"]},
+    {"id": "mcp-invoke", "assertion": "MCP invocation shares API idempotency, authorization and durable operation state.", "evidence": ["tool call digest", "operation identity", "terminal result"]},
+    {"id": "admin-runs", "assertion": "Admin run list/detail display priority, access, attempts, lifecycle, artifacts and errors without payloads or secrets.", "evidence": ["authenticated response digests", "browser screenshot hashes", "access audit"]},
+    {"id": "admin-models", "assertion": "Admin model readiness is derived from live qualified contracts and distinguishes blockers from failures.", "evidence": ["authenticated response digest", "catalog digest", "live runtime identities"]},
+    {"id": "cross-surface-consistency", "assertion": "API, MCP and admin return the same operation/model/artifact identities and terminal state.", "evidence": ["canonical projections", "comparison receipt"]}
+  ],
+  "rollback": [
+    {"id": "capture-live-provenance", "assertion": "Record every shared deployment image tag, imageID digest, ReplicaSet revision and source commit before change.", "evidence": ["Deployment and ReplicaSet metadata", "registry manifest digest", "release receipt"]},
+    {"id": "preserve-sibling-features", "assertion": "The deploy commit contains currently deployed sibling work and all pre-existing public/admin/API/MCP features.", "evidence": ["git ancestry", "pre-deploy surface inventory", "post-deploy smoke comparison"]},
+    {"id": "record-rollback-target", "assertion": "Record the exact prior immutable image digest and configuration digest for each changed component.", "evidence": ["signed rollback manifest"]},
+    {"id": "database-compatibility", "assertion": "The previous control plane can read post-deploy durable state or a forward-only rollback exception is declared before deployment.", "evidence": ["migration compatibility test", "database backup identity"]},
+    {"id": "queue-policy-restore", "assertion": "Kueue objects can be restored by exact UID-independent manifests without deleting unrelated workloads.", "evidence": ["server-side diff", "rendered prior manifests"]},
+    {"id": "runtime-restore", "assertion": "Model runtime and route identities return to their prior digests without touching retained caches.", "evidence": ["rollout status", "imageID digest", "route smoke"]},
+    {"id": "rollback-smoke", "assertion": "Pre-existing user-visible models and task-owned scientific surfaces pass after rollback.", "evidence": ["same pre/post smoke case set", "response digests"]},
+    {"id": "terraform-convergence", "assertion": "After deployment or rollback, the reviewed root produces a saved zero-change plan in the exact workspace.", "evidence": ["backend and workspace identity", "saved plan digest", "zero resource changes"]}
+  ],
+  "cleanup": {
+    "selector_labels": [
+      "app.kubernetes.io/managed-by",
+      "fs2.nebius.ai/acceptance-run",
+      "fs2.nebius.ai/acceptance-scenario",
+      "fs2.nebius.ai/model-id",
+      "fs2.nebius.ai/workload-id",
+      "fs2.nebius.ai/attempt-id",
+      "fs2.nebius.ai/tenant-id",
+      "fs2.nebius.ai/service-class",
+      "fs2.nebius.ai/local-queue"
+    ],
+    "required_label_values": {
+      "app.kubernetes.io/managed-by": "fs2-live-acceptance"
+    },
+    "uid_fence_required": true,
+    "foreign_resources_action": "forbidden",
+    "retained_resources": ["content-addressed input manifests", "content-addressed output artifacts", "immutable acceptance receipts"]
+  }
+}

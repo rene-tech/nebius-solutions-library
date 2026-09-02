@@ -1,0 +1,383 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/cancer-immunotherapy-live-acceptance-plan/v1",
+  "title": "Cancer immunotherapy live acceptance plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "mode",
+    "base",
+    "target",
+    "requested_models",
+    "models",
+    "semantic_policy",
+    "scenarios",
+    "timing",
+    "telemetry",
+    "surfaces",
+    "rollback",
+    "cleanup"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/cancer-immunotherapy-live-acceptance-plan/v1"
+    },
+    "mode": {"const": "preparation-only"},
+    "base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git_commit", "contracts"],
+      "properties": {
+        "git_commit": {"$ref": "#/$defs/git_sha"},
+        "contracts": {
+          "type": "array",
+          "minItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "sha256": {"$ref": "#/$defs/sha256"}
+            }
+          }
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "region",
+        "context",
+        "accelerator",
+        "forbidden_targets",
+        "preparation_mutations_allowed"
+      ],
+      "properties": {
+        "project": {"const": "project-e00rene"},
+        "region": {"const": "eu-north1"},
+        "context": {"const": "k8s-inference-h100"},
+        "accelerator": {"const": "nvidia-h100-sxm5-80gb"},
+        "forbidden_targets": {
+          "type": "array",
+          "const": ["b300", "forge"]
+        },
+        "preparation_mutations_allowed": {"const": false}
+      }
+    },
+    "requested_models": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/dns_name"}
+    },
+    "models": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {"$ref": "#/$defs/model"}
+    },
+    "semantic_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authoritative_adapter_receipt_required", "structural_rules_are", "numeric_thresholds_required", "current_threshold_state"],
+      "properties": {
+        "authoritative_adapter_receipt_required": {"const": true},
+        "structural_rules_are": {"const": "corruption-prechecks-only"},
+        "numeric_thresholds_required": {"const": true},
+        "current_threshold_state": {"const": "missing-reviewed-model-specific-contracts"}
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 6,
+      "items": {"$ref": "#/$defs/scenario"}
+    },
+    "timing": {"$ref": "#/$defs/timing"},
+    "telemetry": {"$ref": "#/$defs/telemetry"},
+    "surfaces": {
+      "type": "array",
+      "minItems": 8,
+      "items": {"$ref": "#/$defs/check"}
+    },
+    "rollback": {
+      "type": "array",
+      "minItems": 8,
+      "items": {"$ref": "#/$defs/check"}
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selector_labels", "required_label_values", "uid_fence_required", "foreign_resources_action", "retained_resources"],
+      "properties": {
+        "selector_labels": {
+          "type": "array",
+          "minItems": 6,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "required_label_values": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["app.kubernetes.io/managed-by"],
+          "properties": {
+            "app.kubernetes.io/managed-by": {"const": "fs2-live-acceptance"}
+          }
+        },
+        "uid_fence_required": {"const": true},
+        "foreign_resources_action": {"const": "forbidden"},
+        "retained_resources": {
+          "type": "array",
+          "minItems": 3,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "git_sha": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "dns_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "assertion", "evidence"],
+      "properties": {
+        "id": {"$ref": "#/$defs/dns_name"},
+        "assertion": {"type": "string", "minLength": 1},
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "patterns", "minimum"],
+      "properties": {
+        "id": {"$ref": "#/$defs/dns_name"},
+        "kind": {
+          "enum": ["artifact-files", "protein-structure", "tabular-result", "json-numerics"]
+        },
+        "patterns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "minimum": {"type": "integer", "minimum": 1},
+        "min_bytes": {"type": "integer", "minimum": 1},
+        "min_atom_records": {"type": "integer", "minimum": 1},
+        "min_polymer_chains": {"type": "integer", "minimum": 1},
+        "min_rows": {"type": "integer", "minimum": 1},
+        "min_finite_numbers": {"type": "integer", "minimum": 1}
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_id",
+        "role",
+        "source_revision",
+        "source_validator_pointer",
+        "validator_id",
+        "preparation_status",
+        "seed",
+        "service_classes",
+        "required_profile_fields",
+        "rules",
+        "oracle_assertions",
+        "external_gate_categories",
+        "current_contract_gaps"
+      ],
+      "properties": {
+        "model_id": {"$ref": "#/$defs/dns_name"},
+        "role": {"enum": ["primary", "secondary"]},
+        "source_revision": {"$ref": "#/$defs/git_sha"},
+        "source_validator_pointer": {
+          "type": "string",
+          "pattern": "^/models/[a-z0-9-]+/semantic_validator$"
+        },
+        "validator_id": {"$ref": "#/$defs/dns_name"},
+        "preparation_status": {
+          "enum": ["blocked-by-integration", "blocked-by-external-access"]
+        },
+        "seed": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+        "service_classes": {
+          "type": "array",
+          "const": ["presentation", "interactive", "customer-batch", "bulk-backfill"]
+        },
+        "required_profile_fields": {
+          "type": "array",
+          "minItems": 8,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 2,
+          "items": {"$ref": "#/$defs/rule"}
+        },
+        "oracle_assertions": {
+          "type": "array",
+          "minItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "assertion"],
+            "properties": {
+              "id": {"$ref": "#/$defs/dns_name"},
+              "assertion": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "external_gate_categories": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["access", "license", "artifact", "reference-data", "compatibility", "storage"]}
+        },
+        "current_contract_gaps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "purpose", "tenants", "service_classes", "model_selector", "assertions"],
+      "properties": {
+        "id": {"$ref": "#/$defs/dns_name"},
+        "purpose": {"type": "string", "minLength": 1},
+        "tenants": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/dns_name"}
+        },
+        "service_classes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["presentation", "interactive", "customer-batch", "bulk-backfill"]}
+        },
+        "model_selector": {
+          "enum": ["each-requested", "all-requested-mixed", "primary-only", "secondary-only", "one-checkpointable", "one-restartable"]
+        },
+        "assertions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clock", "exploratory_attempts_per_level", "qualification_successes_per_level", "qualification_failures_allowed", "levels", "level_policies", "boundaries"],
+      "properties": {
+        "clock": {"const": "utc-rfc3339-nanoseconds-from-authoritative-events"},
+        "exploratory_attempts_per_level": {"const": 3},
+        "qualification_successes_per_level": {"const": 20},
+        "qualification_failures_allowed": {"const": 0},
+        "levels": {
+          "type": "array",
+          "minItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "fresh-node",
+              "prepared-node",
+              "container-image-local",
+              "model-artifact-local",
+              "runtime-checkpoint-restore",
+              "gpu-memory-snapshot-restore",
+              "warm-replica"
+            ]
+          }
+        },
+        "level_policies": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["level", "preparation_state", "applicability_rule"],
+            "properties": {
+              "level": {
+                "enum": [
+                  "fresh-node",
+                  "prepared-node",
+                  "container-image-local",
+                  "model-artifact-local",
+                  "runtime-checkpoint-restore",
+                  "gpu-memory-snapshot-restore",
+                  "warm-replica"
+                ]
+              },
+              "preparation_state": {"enum": ["planned", "blocked-until-profile", "blocked-unsupported"]},
+              "applicability_rule": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "boundaries": {
+          "type": "array",
+          "minItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "source", "definition"],
+            "properties": {
+              "id": {"$ref": "#/$defs/dns_name"},
+              "source": {"type": "string", "minLength": 1},
+              "definition": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["join_keys", "phases", "equations", "tolerances"],
+      "properties": {
+        "join_keys": {
+          "type": "array",
+          "const": ["tenant_id", "model_id", "operation_id", "run_id", "stage_id", "attempt_id", "pod_uid", "node_uid", "gpu_uuid"]
+        },
+        "phases": {
+          "type": "array",
+          "const": ["queue", "scheduling", "image_loading", "artifact_loading", "restoring", "compilation", "semantic_warmup", "active_compute", "workflow_wait", "allocated_idle", "resident_idle", "grace_drain", "teardown"]
+        },
+        "equations": {
+          "type": "array",
+          "minItems": 3,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "tolerances": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["phase_seconds_absolute", "gpu_seconds_absolute", "gpu_seconds_relative"],
+          "properties": {
+            "phase_seconds_absolute": {"type": "number", "minimum": 0},
+            "gpu_seconds_absolute": {"type": "number", "minimum": 0},
+            "gpu_seconds_relative": {"type": "number", "minimum": 0, "maximum": 1}
+          }
+        }
+      }
+    }
+  }
+}
