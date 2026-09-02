@@ -42,8 +42,10 @@ weights are on the shared filesystem, reached Ready in 91.169 seconds in the
 Narrowing a model's `poolRefs` to `h100-reserved-8x` through the admin console
 (live model policy, no Terraform) trades the preemptible cost saving for that
 faster warm-node activation; widening it again restores cheap preemptible burst.
-Both are routine, reversible live edits inside the existing Terraform-owned
-capacity envelope.
+Because placement is runtime material, the controller applies such a change as a
+cold cutover: the model is drained to zero, re-placed while cold, and re-enabled.
+That whole cutover is live and reversible inside the existing Terraform-owned
+capacity envelope, and never requires a Terraform run.
 
 ## Historical 2026-08-31 topology
 
