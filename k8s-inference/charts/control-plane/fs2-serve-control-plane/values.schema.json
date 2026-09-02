@@ -665,11 +665,11 @@
           "required": ["schema", "contractPayloadSha256", "migrationSetSha256", "migrationCount", "firstMigrationVersion", "lastMigrationVersion", "namespaceRoleOwnershipSha256"],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "3a977a1c29f338233eb017454ee3d07bf505c31db909bccc05a2524388ad3da2"},
-            "migrationSetSha256": {"const": "081ae3ea6ddc3a0efd8b86151352d7b2f2ebc8de4d07a1e078bcb24b1c0f66cf"},
-            "migrationCount": {"const": 13},
+            "contractPayloadSha256": {"const": "85ccac5ef465e21bb88e2232c3783967d5265bd16378af1506d1119cdcf354e8"},
+            "migrationSetSha256": {"const": "39536717cf8fbb35325bc7ccf0585247ace2f0b9446b3340724fecfab0e430c3"},
+            "migrationCount": {"const": 14},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0013_durable_dynamic_dispatch.sql"},
+            "lastMigrationVersion": {"const": "0014_scientific_artifact_results.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false

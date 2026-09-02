@@ -338,7 +338,7 @@ fs2-serve postgresql-release-contract
 ```
 
 The emitter verifies that the migration directory contains exactly the ordered
-`0001` through `0013` set, no missing/extra/renamed/symlinked file, and the
+`0001` through `0014` set, no missing/extra/renamed/symlinked file, and the
 contracted SHA-256 for every file. The migrator and `wait-schema` use the same
 validator. They also require the applied migration ledger to be an exact
 ordered prefix while an upgrade is running and the exact full set before a
@@ -346,13 +346,13 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`081ae3ea6ddc3a0efd8b86151352d7b2f2ebc8de4d07a1e078bcb24b1c0f66cf`,
-count `13`, first version `0001_initial.sql`, last version
-`0013_durable_dynamic_dispatch.sql`,
+`39536717cf8fbb35325bc7ccf0585247ace2f0b9446b3340724fecfab0e430c3`,
+count `14`, first version `0001_initial.sql`, last version
+`0014_scientific_artifact_results.sql`,
 and namespace/role ownership SHA-256
 `47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca`.
 The whole logical contract payload is SHA-256
-`3a977a1c29f338233eb017454ee3d07bf505c31db909bccc05a2524388ad3da2`.
+`85ccac5ef465e21bb88e2232c3783967d5265bd16378af1506d1119cdcf354e8`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not

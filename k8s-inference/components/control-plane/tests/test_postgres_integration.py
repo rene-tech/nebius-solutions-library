@@ -634,14 +634,14 @@ async def test_real_postgres_rejects_extra_or_reordered_applied_migration_ledger
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
-async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0013(
+async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0014(
     postgres_store: PostgresStore,
     tmp_path: Path,
 ) -> None:
     del postgres_store
     database_url = os.environ["FS2_TEST_DATABASE_URL"]
     admin_url, _ = database_url.rsplit("/", 1)
-    database_name = f"fs2_activation_upgrade_{uuid4().hex[:10]}"
+    database_name = f"fs2_scientific_artifact_upgrade_{uuid4().hex[:10]}"
     prior_dir = tmp_path / "prior-migrations"
     prior_dir.mkdir()
     for version, _ in EXPECTED_MIGRATIONS[:-1]:
@@ -694,11 +694,12 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 await before_connection.fetchval("SELECT to_regclass('public.fs2_model_deployments')")
                 == "fs2_model_deployments"
             )
-            assert not await before_connection.fetchval(
+            assert await before_connection.fetchval(
                 "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
                 "WHERE table_schema='public' AND table_name='fs2_operations' "
                 "AND column_name='dispatch_snapshot')"
             )
+            assert await before_connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')") is None
         finally:
             await before_connection.close()
 
@@ -712,7 +713,7 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 )
             }
             assert {version: after[version] for version in before} == before
-            assert list(after)[-1] == "0013_durable_dynamic_dispatch.sql"
+            assert list(after)[-1] == "0014_scientific_artifact_results.sql"
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_activation_model_fences')")
                 == "fs2_activation_model_fences"
@@ -734,6 +735,10 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
                 "WHERE table_schema='public' AND table_name='fs2_operations' "
                 "AND column_name='dispatch_snapshot')"
+            )
+            assert (
+                await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')")
+                == "fs2_scientific_artifacts"
             )
         finally:
             await upgraded_connection.close()
