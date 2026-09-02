@@ -11,8 +11,11 @@ dependency order:
 2. cluster foundation, queueing, and observability
 3. model workloads, autoscaling, control plane, MCP, and admin services
 
-The cluster remains running after `apply` so it can be tested. It is removed
-only by an explicit `destroy`.
+The cluster remains running after `apply` so it can be tested. An explicit
+`destroy` removes it only for a fully disposable contract. Retained reference
+storage intentionally turns that command into a reported downstream-only
+partial destroy until the protected data is adopted by a separate durable
+state.
 
 Routine model lifecycle is implemented through the authenticated admin API and
 the Kubernetes-native `ModelDeployment` reconciler. Operators can add, edit,
@@ -132,11 +135,17 @@ points as top-level JSON fields:
   "mcp_endpoint_url": "https://<allocated-public-ip>/mcp",
   "admin_web_interface_url": "https://<allocated-public-ip>/admin/",
   "inference_base_url": "https://<allocated-public-ip>/v1",
-  "grafana_url": "https://<allocated-public-ip>/admin/observability/grafana"
+  "grafana_url": "https://<allocated-public-ip>/admin/observability/grafana",
+  "reference_data": {"filesystem_id": "computefilesystem-...", "bucket_id": "storagebucket-...", "cpu_pool_id": "mk8snodegroup-...", "status_service": "fs2-reference-data-status.fs2-reference-data.svc.cluster.local:8080", "pipeline": {"job_name": "fs2-stage-af3-..."}},
+  "reference_data_contract": {"storage": {"schema": "fs2-serve.nebius.ai/reference-data-storage/v1"}, "plane": {"schema": "fs2-serve.nebius.ai/reference-data-configuration/v1"}}
 }
 ```
 
 `grafana_url` is `null` when external Grafana publication is disabled.
+`reference_data` and `reference_data_contract` are `null` when that plane is
+disabled. During the reviewed infrastructure-only transition, `status` still
+reports the retained storage/bucket/CPU identities and uses `plane: null` until
+the workloads state owns a live status service and immutable pipeline Job.
 
 These values come from exact named Terraform outputs in the workloads state.
 They are resolved only after the infrastructure stage has allocated the edge
@@ -154,7 +163,9 @@ credentials, cluster/project/region identity, and the kubeconfig command:
   "schema": "fs2-serve.nebius.ai/access-bundle/v1",
   "cluster": {"project_id": "project-...", "region": "...", "cluster_id": "mk8scluster-..."},
   "endpoints": {"admin_portal_url": "https://.../admin/", "mcp_url": "https://.../mcp", "inference_base_url": "https://.../v1", "grafana_url": "https://.../admin/observability/grafana"},
-  "credentials": {"admin_bootstrap_token": "<redacted>", "mcp_inference_token": "<redacted>", "inference_access_token": "<same scoped PAT>", "grafana": {"username": "<redacted>", "password": "<redacted>"}}
+  "credentials": {"admin_bootstrap_token": "<redacted>", "mcp_inference_token": "<redacted>", "inference_access_token": "<same scoped PAT>", "grafana": {"username": "<redacted>", "password": "<redacted>"}},
+  "reference_data": {"filesystem_id": "computefilesystem-...", "bucket_id": "storagebucket-...", "bucket_name": "...", "cpu_pool_id": "mk8snodegroup-...", "status_service": "...", "pipeline": {"job_name": "..."}},
+  "reference_data_contract": {"storage": {"schema": "fs2-serve.nebius.ai/reference-data-storage/v1"}, "plane": {"schema": "fs2-serve.nebius.ai/reference-data-configuration/v1"}}
 }
 ```
 
@@ -511,6 +522,22 @@ NEBIUS_PROFILE=sandbox ./inference-stack destroy --var-file terraform.tfvars
 
 Review the output and verify `status` before separately removing retained local
 evidence. The wrapper never deletes the run directory automatically.
+
+With `storage.reference_data.lifecycle.retention_mode = "retain"`, destroy is
+intentionally partial. It removes only workloads and foundation, leaves the
+entire infrastructure state untouched, and emits
+`status: "partial-destroy"` plus exact filesystem, bucket, CPU-pool and
+last-applied status/pipeline identities. The same non-secret receipt is written
+to `<run-root>/reference-data-retention.json`. Its adoption section is the gate:
+move the protected filesystem and versioned bucket to a separately owned durable
+state before attempting infrastructure teardown. The wrapper never reports a
+complete destroy while those protected resources remain.
+
+`retention_mode = "disposable"` is for fresh empty-volume acceptance only. It
+requires `forbid_deletion = false`; the wrapper destroys all three stages and
+reports `completion: "complete"`. A versioned bucket containing any object or
+old version is not promised deletable and must fail provider teardown rather
+than be reported destroyed.
 
 ## Acceptance checks
 

@@ -144,6 +144,7 @@ output "access_bundle" {
       status_service = module.reference_data[0].dynamic_configuration.status_service
       pipeline       = module.reference_data[0].dynamic_configuration.pipeline
     } : null
+    reference_data_contract = var.reference_data.enabled ? terraform_data.reference_data_contract[0].output : null
   }
 }
 

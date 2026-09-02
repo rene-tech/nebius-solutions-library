@@ -806,6 +806,18 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(
             2048, outputs["effective_configuration"]["reference_data"]["filesystem_size_gib"]
         )
+        self.assertEqual(
+            "downstream-only-infrastructure-retained",
+            outputs["effective_configuration"]["reference_data"]["destroy_completion"],
+        )
+        self.assertTrue(
+            outputs["effective_configuration"]["reference_data"]["adoption_required"]
+        )
+        self.assertTrue(
+            outputs["effective_configuration"]["reference_data"][
+                "filesystem_forbid_deletion"
+            ]
+        )
 
         infrastructure_source = (
             DEPLOY_ROOT / "stages/infrastructure/storage.tf"
@@ -815,6 +827,9 @@ class DeploymentContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         pipeline_source = (
             DEPLOY_ROOT / "reference-data/terraform/main.tf"
+        ).read_text(encoding="utf-8")
+        workload_outputs = (
+            DEPLOY_ROOT / "stages/workloads/outputs.tf"
         ).read_text(encoding="utf-8")
         self.assertIn('versioning_policy     = "ENABLED"', infrastructure_source)
         self.assertIn('forbid_deletion  = var.reference_data.filesystem.forbid_deletion', infrastructure_source)
@@ -827,6 +842,10 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn('"--object-store-prefix", "s3://${var.object_bucket_name}/reference-data"', pipeline_source)
         self.assertIn("spec = local.pipeline_job_contract.spec", pipeline_source)
         self.assertIn('path = "/healthz"', pipeline_source)
+        self.assertIn(
+            "reference_data_contract = var.reference_data.enabled ? terraform_data.reference_data_contract[0].output : null",
+            workload_outputs,
+        )
         self.assertIn(
             "local.reference_data_required_capacity",
             (DEPLOY_ROOT / "main.tf").read_text(encoding="utf-8"),

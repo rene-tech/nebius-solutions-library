@@ -160,7 +160,46 @@ def complete_access_bundle() -> dict:
             "scopes": ["mcp.invoke", "inference.invoke"],
         },
         "reference_data": None,
+        "reference_data_contract": None,
     }
+
+
+def complete_reference_access_bundle() -> dict:
+    bundle = complete_access_bundle()
+    bundle["reference_data"] = {
+        "lifecycle": {
+            "retention_mode": "retain",
+            "destroy_status": "partial-destroy-requires-adoption",
+            "destroy_completion": "downstream-only-infrastructure-retained",
+            "adoption_status": "ids-exported-for-explicit-state-adoption",
+        },
+        "filesystem_id": "computefilesystem-test",
+        "bucket_id": "storagebucket-test",
+        "bucket_name": "reference-data-test",
+        "cpu_pool_id": "mk8snodegroup-test",
+        "status_service": (
+            "fs2-reference-data-status.fs2-reference-data.svc.cluster.local:8080"
+        ),
+        "pipeline": {
+            "job_name": "fs2-stage-af3-123456789abc",
+            "state": "submitted-suspended-awaiting-kueue-admission",
+        },
+    }
+    bundle["reference_data_contract"] = {
+        "storage": {
+            "filesystem": {"id": bundle["reference_data"]["filesystem_id"]},
+            "object_storage": {
+                "id": bundle["reference_data"]["bucket_id"],
+                "name": bundle["reference_data"]["bucket_name"],
+            },
+            "cpu_pool": {"id": bundle["reference_data"]["cpu_pool_id"]},
+        },
+        "plane": {
+            "status_service": bundle["reference_data"]["status_service"],
+            "pipeline": bundle["reference_data"]["pipeline"],
+        },
+    }
+    return bundle
 
 
 def regional_contract() -> dict:
@@ -850,16 +889,24 @@ class InferenceStackTests(unittest.TestCase):
             "admin_web_interface_url": "https://192.0.2.10/admin/",
             "inference_base_url": "https://192.0.2.10/v1",
             "grafana_url": "https://192.0.2.10/admin/observability/grafana",
-            "reference_data": None,
+            "reference_data": {
+                "filesystem_id": "computefilesystem-test",
+                "bucket_id": "storagebucket-test",
+                "bucket_name": "reference-data-test",
+                "cpu_pool_id": "mk8snodegroup-test",
+                "status_service": None,
+                "pipeline": None,
+            },
+            "reference_data_contract": {
+                "storage": {"schema": "reference-storage-test/v1"},
+                "plane": {"schema": "reference-plane-test/v1"},
+            },
         }
 
         def fake_plan(*_args, **kwargs):
             stage = kwargs["stage"]
             planned_stages.append(stage)
             return Path(f"/{stage}.tfplan"), {}, {"stage": stage}
-
-        def fake_endpoint_output(_terraform, _root, name, _environment):
-            return endpoint_values[name]
 
         output = io.StringIO()
         with (
@@ -883,15 +930,9 @@ class InferenceStackTests(unittest.TestCase):
             mock.patch.object(STACK, "mirror_selected_images") as mirror_images,
             mock.patch.object(
                 STACK,
-                "terraform_json_output",
-                side_effect=fake_endpoint_output,
+                "workload_endpoint_outputs",
+                return_value=endpoint_values,
             ),
-            mock.patch.object(
-                STACK,
-                "terraform_optional_json_output",
-                return_value=endpoint_values["grafana_url"],
-            ),
-            mock.patch.object(STACK, "stage_environment", return_value={}),
             redirect_stdout(output),
         ):
             STACK.apply_stack(
@@ -934,6 +975,7 @@ class InferenceStackTests(unittest.TestCase):
             "inference_base_url": "https://192.0.2.11/v1",
             "grafana_url": "https://192.0.2.11/admin/observability/grafana",
             "reference_data": None,
+            "reference_data_contract": None,
         }
 
         def fake_endpoint_output(_terraform, _root, name, _environment):
@@ -995,6 +1037,7 @@ class InferenceStackTests(unittest.TestCase):
             "admin_web_interface_url": "https://192.0.2.11/admin/",
             "inference_base_url": "https://192.0.2.11/v1",
             "reference_data": None,
+            "reference_data_contract": None,
         }
         with (
             mock.patch.object(STACK, "stage_environment", return_value={}),
@@ -1028,6 +1071,20 @@ class InferenceStackTests(unittest.TestCase):
             "pipeline": {"job_name": "fs2-stage-af3-test", "state": "submitted-suspended-awaiting-kueue-admission"},
             "lifecycle": {"retention_mode": "retain"},
         }
+        reference_contract = {
+            "storage": {
+                "filesystem": {"id": reference_status["filesystem_id"]},
+                "object_storage": {
+                    "id": reference_status["bucket_id"],
+                    "name": reference_status["bucket_name"],
+                },
+                "cpu_pool": {"id": reference_status["cpu_pool_id"]},
+            },
+            "plane": {
+                "status_service": reference_status["status_service"],
+                "pipeline": reference_status["pipeline"],
+            },
+        }
         with (
             mock.patch.object(STACK, "stage_environment", return_value={}),
             mock.patch.object(
@@ -1038,13 +1095,14 @@ class InferenceStackTests(unittest.TestCase):
             mock.patch.object(
                 STACK,
                 "terraform_optional_json_output",
-                side_effect=[None, reference_status],
+                side_effect=[None, reference_status, reference_contract],
             ),
         ):
             values = STACK.workload_endpoint_outputs(
                 "terraform-test", Path("/private/test-run"), configuration
             )
         self.assertEqual(values["reference_data"], reference_status)
+        self.assertEqual(values["reference_data_contract"], reference_contract)
 
     def test_status_falls_back_to_live_reference_infrastructure_before_workloads_apply(
         self,
@@ -1063,8 +1121,14 @@ class InferenceStackTests(unittest.TestCase):
             "cpu_pool": {"id": "mk8snodegroup-test"},
             "lifecycle": {
                 "retention_mode": "retain",
-                "destroy_status": "blocked-retained",
+                "destroy_status": "partial-destroy-requires-adoption",
+                "destroy_completion": "downstream-only-infrastructure-retained",
             },
+        }
+        lifecycle = {
+            **storage_contract["lifecycle"],
+            "status": "managed-retained",
+            "adoption_status": "ids-exported-for-explicit-state-adoption",
         }
         output = io.StringIO()
         with tempfile.TemporaryDirectory(
@@ -1087,7 +1151,7 @@ class InferenceStackTests(unittest.TestCase):
                 mock.patch.object(
                     STACK,
                     "terraform_optional_json_output",
-                    side_effect=[storage_contract, None, None],
+                    side_effect=[storage_contract, lifecycle, None, None, None],
                 ),
                 mock.patch.object(
                     STACK,
@@ -1105,14 +1169,18 @@ class InferenceStackTests(unittest.TestCase):
                 "bucket_id": "storagebucket-test",
                 "bucket_name": "reference-data-test",
                 "cpu_pool_id": "mk8snodegroup-test",
-                "lifecycle": storage_contract["lifecycle"],
+                "lifecycle": lifecycle,
                 "status_service": None,
                 "pipeline": None,
             },
         )
+        self.assertEqual(
+            json.loads(output.getvalue())["reference_data_contract"],
+            {"storage": storage_contract, "plane": None},
+        )
 
     def test_output_explicitly_emits_the_sensitive_access_bundle(self) -> None:
-        access_bundle = complete_access_bundle()
+        access_bundle = complete_reference_access_bundle()
         output = io.StringIO()
         with (
             mock.patch.object(STACK, "state_ready", return_value=True),
@@ -1150,23 +1218,7 @@ class InferenceStackTests(unittest.TestCase):
             )
 
     def test_access_bundle_exposes_reference_storage_cpu_service_and_pipeline(self) -> None:
-        bundle = complete_access_bundle()
-        bundle["reference_data"] = {
-            "lifecycle": {
-                "retention_mode": "retain",
-                "destroy_status": "blocked-retained",
-                "adoption_status": "ids-exported-for-explicit-state-adoption",
-            },
-            "filesystem_id": "computefilesystem-test",
-            "bucket_id": "storagebucket-test",
-            "bucket_name": "reference-data-test",
-            "cpu_pool_id": "mk8snodegroup-test",
-            "status_service": "fs2-reference-data-status.fs2-reference-data.svc.cluster.local:8080",
-            "pipeline": {
-                "job_name": "fs2-stage-af3-123456789abc",
-                "state": "submitted-suspended-awaiting-kueue-admission",
-            },
-        }
+        bundle = complete_reference_access_bundle()
         with (
             mock.patch.object(STACK, "stage_environment", return_value={}),
             mock.patch.object(STACK, "terraform_json_output", return_value=bundle),
@@ -1176,6 +1228,26 @@ class InferenceStackTests(unittest.TestCase):
                     "terraform-test", Path("/private/test-run"), contract()
                 )["reference_data"],
                 bundle["reference_data"],
+            )
+            self.assertEqual(
+                STACK.workload_access_bundle(
+                    "terraform-test", Path("/private/test-run"), contract()
+                )["reference_data_contract"],
+                bundle["reference_data_contract"],
+            )
+
+    def test_access_bundle_rejects_reference_contract_identity_drift(self) -> None:
+        bundle = complete_reference_access_bundle()
+        bundle["reference_data_contract"]["storage"]["filesystem"]["id"] = (
+            "computefilesystem-wrong"
+        )
+        with (
+            mock.patch.object(STACK, "stage_environment", return_value={}),
+            mock.patch.object(STACK, "terraform_json_output", return_value=bundle),
+            self.assertRaisesRegex(STACK.DeploymentError, "missing or malformed"),
+        ):
+            STACK.workload_access_bundle(
+                "terraform-test", Path("/private/test-run"), contract()
             )
 
     def test_access_bundle_validation_rejects_missing_connection_fields(
@@ -1592,26 +1664,113 @@ class InferenceStackTests(unittest.TestCase):
         )
         mirror_images.assert_not_called()
 
-    def test_retained_reference_data_blocks_destroy_before_any_plan_or_apply(self) -> None:
+    def test_retained_reference_data_partially_destroys_and_emits_adoption_receipt(
+        self,
+    ) -> None:
         configuration = contract()
         configuration["stages"]["infrastructure"]["reference_data"] = {
             "enabled": True,
             "lifecycle": {"retention_mode": "retain"},
         }
-        with (
-            mock.patch.object(STACK, "write_infrastructure_variables") as write_vars,
-            mock.patch.object(STACK, "state_has_resources") as state_has_resources,
-            mock.patch.object(STACK, "plan_stage") as plan_stage,
-            mock.patch.object(STACK, "apply_plan") as apply_plan,
-            self.assertRaisesRegex(STACK.DeploymentError, "blocks full-stack destroy"),
-        ):
-            STACK.destroy_stack(
-                arguments(), Path("/private/test-run"), configuration, "e" * 40
-            )
+        configuration["stages"]["workloads"]["reference_data"] = {"enabled": True}
+        storage = {
+            "filesystem": {"id": "computefilesystem-retained"},
+            "object_storage": {
+                "id": "storagebucket-retained",
+                "name": "reference-data-retained",
+            },
+            "cpu_pool": {"id": "mk8snodegroup-retained"},
+        }
+        lifecycle = {
+            "retention_mode": "retain",
+            "status": "managed-retained",
+            "destroy_status": "partial-destroy-requires-adoption",
+            "destroy_completion": "downstream-only-infrastructure-retained",
+            "adoption_status": "ids-exported-for-explicit-state-adoption",
+        }
+        plane = {
+            "status_service": "fs2-reference-data-status.fs2-reference-data.svc:8080",
+            "pipeline": {"job_name": "fs2-stage-af3-retained"},
+        }
+        dynamic = dynamic_outputs(Path("/private/test-run"))
+        dynamic["reference_data_storage_contract"] = storage
+        dynamic["reference_data_lifecycle"] = lifecycle
+        workload_outputs = {
+            "reference_data": {
+                "filesystem_id": storage["filesystem"]["id"],
+                "bucket_id": storage["object_storage"]["id"],
+                "bucket_name": storage["object_storage"]["name"],
+                "cpu_pool_id": storage["cpu_pool"]["id"],
+                "lifecycle": lifecycle,
+                "status_service": plane["status_service"],
+                "pipeline": plane["pipeline"],
+            },
+            "reference_data_contract": {"storage": storage, "plane": plane},
+        }
+        planned_stages: list[str] = []
+
+        def fake_plan(*_args, **kwargs):
+            planned_stages.append(kwargs["stage"])
+            return Path(f"/{kwargs['stage']}-destroy.tfplan"), {}, {}
+
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory(prefix="retained-destroy-") as temporary:
+            run_root = Path(temporary)
+            dynamic["run_root"] = str(run_root)
+            dynamic["kubeconfig_path"] = str(run_root / "kubeconfig")
+            with (
+                mock.patch.object(
+                    STACK, "write_infrastructure_variables"
+                ) as write_vars,
+                mock.patch.object(STACK, "state_has_resources", return_value=True),
+                mock.patch.object(STACK, "state_ready", return_value=True),
+                mock.patch.object(
+                    STACK, "infrastructure_outputs", return_value=dynamic
+                ),
+                mock.patch.object(
+                    STACK,
+                    "write_downstream_variables",
+                    return_value=(Path("/foundation.json"), Path("/workloads.json")),
+                ),
+                mock.patch.object(
+                    STACK,
+                    "workload_endpoint_outputs",
+                    return_value=workload_outputs,
+                ),
+                mock.patch.object(STACK, "plan_stage", side_effect=fake_plan),
+                mock.patch.object(STACK, "apply_plan") as apply_plan,
+                redirect_stdout(output),
+            ):
+                STACK.destroy_stack(arguments(), run_root, configuration, "e" * 40)
+
+            receipt_path = run_root / "reference-data-retention.json"
+            self.assertTrue(receipt_path.is_file())
+            self.assertEqual(stat.S_IMODE(receipt_path.stat().st_mode), 0o600)
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+
         write_vars.assert_not_called()
-        state_has_resources.assert_not_called()
-        plan_stage.assert_not_called()
-        apply_plan.assert_not_called()
+        self.assertEqual(planned_stages, ["workloads", "foundation"])
+        self.assertEqual(
+            [call.args[1] for call in apply_plan.call_args_list],
+            [STACK.WORKLOADS_ROOT, STACK.FOUNDATION_ROOT],
+        )
+        self.assertEqual(receipt, json.loads(output.getvalue()))
+        self.assertEqual(receipt["status"], "partial-destroy")
+        self.assertEqual(receipt["retained_stages"], ["infrastructure"])
+        self.assertEqual(
+            receipt["reference_data"]["filesystem_id"],
+            "computefilesystem-retained",
+        )
+        self.assertIsNone(receipt["reference_data"]["status_service"])
+        self.assertEqual(
+            receipt["reference_data"]["last_applied"]["pipeline"],
+            plane["pipeline"],
+        )
+        self.assertIsNone(receipt["reference_data_contract"]["plane"])
+        self.assertEqual(
+            receipt["reference_data_contract"]["last_applied_plane"], plane
+        )
+        self.assertTrue(receipt["adoption"]["required_before_full_destroy"])
 
     def test_disposable_reference_data_keeps_acceptance_destroy_path(self) -> None:
         configuration = contract()
@@ -1619,20 +1778,42 @@ class InferenceStackTests(unittest.TestCase):
             "enabled": True,
             "lifecycle": {"retention_mode": "disposable"},
         }
+        planned_stages: list[str] = []
+
+        def fake_plan(*_args, **kwargs):
+            planned_stages.append(kwargs["stage"])
+            return Path(f"/{kwargs['stage']}-destroy.tfplan"), {}, {}
+
+        output = io.StringIO()
         with (
             mock.patch.object(
                 STACK, "write_infrastructure_variables", return_value=Path("/infra.json")
             ),
-            mock.patch.object(STACK, "state_has_resources", return_value=False),
-            mock.patch.object(STACK, "plan_stage") as plan_stage,
+            mock.patch.object(STACK, "state_has_resources", return_value=True),
+            mock.patch.object(STACK, "state_ready", return_value=True),
+            mock.patch.object(
+                STACK,
+                "infrastructure_outputs",
+                return_value=dynamic_outputs(Path("/private/test-run")),
+            ),
+            mock.patch.object(
+                STACK,
+                "write_downstream_variables",
+                return_value=(Path("/foundation.json"), Path("/workloads.json")),
+            ),
+            mock.patch.object(STACK, "plan_stage", side_effect=fake_plan),
             mock.patch.object(STACK, "apply_plan") as apply_plan,
-            redirect_stdout(io.StringIO()),
+            redirect_stdout(output),
         ):
             STACK.destroy_stack(
                 arguments(), Path("/private/test-run"), configuration, "e" * 40
             )
-        plan_stage.assert_not_called()
-        apply_plan.assert_not_called()
+        self.assertEqual(planned_stages, ["workloads", "foundation", "infrastructure"])
+        self.assertEqual(len(apply_plan.call_args_list), 3)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["status"], "destroyed")
+        self.assertEqual(result["completion"], "complete")
+        self.assertEqual(result["retained_stages"], [])
 
     def test_destroy_reuses_legacy_cached_downstream_inputs_without_mirroring(
         self,

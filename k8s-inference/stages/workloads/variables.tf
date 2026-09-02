@@ -108,9 +108,10 @@ variable "reference_data" {
       })
       public_msa_default = bool
       lifecycle = object({
-        retention_mode  = string
-        destroy_status  = string
-        adoption_status = string
+        retention_mode     = string
+        destroy_status     = string
+        destroy_completion = string
+        adoption_status    = string
         retained_ids = optional(object({
           filesystem = string
           bucket     = string
@@ -182,8 +183,14 @@ variable "reference_data" {
         contains(["retain", "disposable"], var.reference_data.storage_contract.lifecycle.retention_mode) &&
         (
           var.reference_data.storage_contract.lifecycle.retention_mode == "retain" ?
-          var.reference_data.storage_contract.lifecycle.destroy_status == "blocked-retained" :
-          var.reference_data.storage_contract.lifecycle.destroy_status == "eligible-only-while-bucket-empty"
+          (
+            var.reference_data.storage_contract.lifecycle.destroy_status == "partial-destroy-requires-adoption" &&
+            var.reference_data.storage_contract.lifecycle.destroy_completion == "downstream-only-infrastructure-retained"
+          ) :
+          (
+            var.reference_data.storage_contract.lifecycle.destroy_status == "eligible-only-while-bucket-empty" &&
+            var.reference_data.storage_contract.lifecycle.destroy_completion == "full-only-when-versioned-bucket-empty"
+          )
         ) &&
         !var.reference_data.storage_contract.public_msa_default &&
         length(var.reference_data.object_storage_access.access_key_id) >= 8 &&

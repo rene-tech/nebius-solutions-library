@@ -1736,6 +1736,13 @@ def workload_endpoint_outputs(
         if reference_enabled
         else None
     )
+    outputs["reference_data_contract"] = (
+        terraform_optional_json_output(
+            terraform, WORKLOADS_ROOT, "reference_data_contract", environment
+        )
+        if reference_enabled
+        else None
+    )
     return outputs
 
 
@@ -1760,6 +1767,7 @@ def workload_access_bundle(
     credentials = bundle.get("credentials")
     mcp_access = bundle.get("mcp_access")
     reference_data = bundle.get("reference_data")
+    reference_data_contract = bundle.get("reference_data_contract")
     if not all(
         isinstance(value, dict)
         for value in (cluster, endpoints, credentials, mcp_access)
@@ -1826,10 +1834,50 @@ def workload_access_bundle(
         if (
             not isinstance(lifecycle, dict)
             or lifecycle.get("retention_mode") not in {"retain", "disposable"}
+            or (
+                lifecycle.get("retention_mode") == "retain"
+                and (
+                    lifecycle.get("destroy_status")
+                    != "partial-destroy-requires-adoption"
+                    or lifecycle.get("destroy_completion")
+                    != "downstream-only-infrastructure-retained"
+                    or lifecycle.get("adoption_status")
+                    != "ids-exported-for-explicit-state-adoption"
+                )
+            )
+            or (
+                lifecycle.get("retention_mode") == "disposable"
+                and (
+                    lifecycle.get("destroy_status")
+                    != "eligible-only-while-bucket-empty"
+                    or lifecycle.get("destroy_completion")
+                    != "full-only-when-versioned-bucket-empty"
+                )
+            )
             or not isinstance(reference_data.get("pipeline"), (dict, type(None)))
             or not isinstance(reference_data.get("status_service"), (str, type(None)))
+            or not isinstance(reference_data_contract, dict)
         ):
             raise DeploymentError("the workloads access bundle is missing or malformed")
+        storage = reference_data_contract.get("storage")
+        plane = reference_data_contract.get("plane")
+        if (
+            not isinstance(storage, dict)
+            or not isinstance(plane, dict)
+            or storage.get("filesystem", {}).get("id")
+            != reference_data["filesystem_id"]
+            or storage.get("object_storage", {}).get("id")
+            != reference_data["bucket_id"]
+            or storage.get("object_storage", {}).get("name")
+            != reference_data["bucket_name"]
+            or storage.get("cpu_pool", {}).get("id")
+            != reference_data["cpu_pool_id"]
+            or plane.get("status_service") != reference_data["status_service"]
+            or plane.get("pipeline") != reference_data["pipeline"]
+        ):
+            raise DeploymentError("the workloads access bundle is missing or malformed")
+    elif reference_data_contract is not None:
+        raise DeploymentError("the workloads access bundle is missing or malformed")
     return bundle
 
 
@@ -2055,28 +2103,52 @@ def destroy_stack(
         .get("infrastructure", {})
         .get("reference_data", {})
     )
-    if (
+    retained_mode = (
         isinstance(reference_infrastructure, Mapping)
         and reference_infrastructure.get("enabled") is True
         and reference_infrastructure.get("lifecycle", {}).get("retention_mode")
         == "retain"
-    ):
-        raise DeploymentError(
-            "reference-data retention_mode=retain blocks full-stack destroy: "
-            "use inference-stack status/output to record the retained filesystem, "
-            "bucket and CPU-pool IDs, then explicitly adopt or migrate their state; "
-            "no resource was changed"
-        )
-    infrastructure_variables = write_infrastructure_variables(
-        run_root, contract, commit, args.nebius_profile
     )
     resources = {
         stage: state_has_resources(args.terraform, run_root, stage, contract)
         for stage in ("infrastructure", "foundation", "workloads")
     }
+    retain_infrastructure = retained_mode and resources["infrastructure"]
+    infrastructure_variables = (
+        None
+        if retain_infrastructure
+        else write_infrastructure_variables(
+            run_root, contract, commit, args.nebius_profile
+        )
+    )
     cached_foundation = run_root / "foundation.tfvars.json"
     cached_workloads = run_root / "workloads.tfvars.json"
     downstream: tuple[Path, Path] | None = None
+    dynamic: dict[str, Any] | None = None
+    if retain_infrastructure:
+        if not state_ready(args.terraform, run_root, "infrastructure", contract):
+            raise DeploymentError(
+                "retained reference infrastructure exists but its completion output "
+                "is unavailable; no resource was changed"
+            )
+        dynamic = infrastructure_outputs(
+            args.terraform,
+            run_root,
+            contract,
+            nebius=args.nebius,
+            nebius_profile=args.nebius_profile,
+            kubectl=args.kubectl,
+        )
+        if not isinstance(dynamic.get("reference_data_storage_contract"), Mapping):
+            raise DeploymentError(
+                "retained reference infrastructure is missing its non-secret storage "
+                "contract; no resource was changed"
+            )
+        if not isinstance(dynamic.get("reference_data_lifecycle"), Mapping):
+            raise DeploymentError(
+                "retained reference infrastructure is missing its lifecycle output; "
+                "no resource was changed"
+            )
     if resources["foundation"] or resources["workloads"]:
         if (
             cached_foundation.is_file()
@@ -2086,25 +2158,43 @@ def destroy_stack(
         ):
             downstream = (cached_foundation, cached_workloads)
         elif state_ready(args.terraform, run_root, "infrastructure", contract):
-            dynamic = infrastructure_outputs(
-                args.terraform,
-                run_root,
-                contract,
-                nebius=args.nebius,
-                nebius_profile=args.nebius_profile,
-                kubectl=args.kubectl,
-            )
+            if dynamic is None:
+                dynamic = infrastructure_outputs(
+                    args.terraform,
+                    run_root,
+                    contract,
+                    nebius=args.nebius,
+                    nebius_profile=args.nebius_profile,
+                    kubectl=args.kubectl,
+                )
             downstream = write_downstream_variables(run_root, contract, dynamic)
         else:
             raise DeploymentError(
                 "downstream resources exist but their private generated tfvars and a complete infrastructure handoff are both unavailable"
             )
 
-    for stage, variable_file in (
+    retained_workload_outputs: dict[str, Any] = {
+        "reference_data": None,
+        "reference_data_contract": None,
+    }
+    if (
+        retain_infrastructure
+        and resources["workloads"]
+        and state_ready(args.terraform, run_root, "workloads", contract)
+    ):
+        retained_workload_outputs = workload_endpoint_outputs(
+            args.terraform, run_root, contract
+        )
+
+    destroy_order: tuple[tuple[str, Path | None], ...] = (
         ("workloads", downstream[1] if downstream else None),
         ("foundation", downstream[0] if downstream else None),
-        ("infrastructure", infrastructure_variables),
-    ):
+    )
+    if not retain_infrastructure:
+        destroy_order += (("infrastructure", infrastructure_variables),)
+
+    destroyed_stages: list[str] = []
+    for stage, variable_file in destroy_order:
         if not resources[stage]:
             continue
         if variable_file is None:
@@ -2120,7 +2210,85 @@ def destroy_stack(
             destroy=True,
         )
         apply_plan(args.terraform, stage_root(stage), plan_path, environment)
-    print(f"Destroyed Terraform-owned stack resources. Evidence remains in {run_root}.")
+        destroyed_stages.append(stage)
+
+    if retain_infrastructure:
+        assert dynamic is not None
+        storage = dynamic["reference_data_storage_contract"]
+        lifecycle = dynamic["reference_data_lifecycle"]
+        applied_status = retained_workload_outputs.get("reference_data")
+        applied_contract = retained_workload_outputs.get("reference_data_contract")
+        last_applied_status_service = (
+            applied_status.get("status_service")
+            if isinstance(applied_status, Mapping)
+            else None
+        )
+        last_applied_pipeline = (
+            applied_status.get("pipeline")
+            if isinstance(applied_status, Mapping)
+            else None
+        )
+        last_applied_plane = (
+            applied_contract.get("plane")
+            if isinstance(applied_contract, Mapping)
+            else None
+        )
+        reference_data = {
+            "lifecycle": lifecycle,
+            "filesystem_id": storage.get("filesystem", {}).get("id"),
+            "bucket_id": storage.get("object_storage", {}).get("id"),
+            "bucket_name": storage.get("object_storage", {}).get("name"),
+            "cpu_pool_id": storage.get("cpu_pool", {}).get("id"),
+            "status_service": None,
+            "pipeline": None,
+            "last_applied": {
+                "status_service": last_applied_status_service,
+                "pipeline": last_applied_pipeline,
+            },
+        }
+        reference_data_contract = {
+            "storage": storage,
+            "plane": None,
+            "last_applied_plane": last_applied_plane,
+        }
+        receipt_path = run_root / "reference-data-retention.json"
+        result = {
+            "schema": "fs2-serve.nebius.ai/destroy-result/v1",
+            "status": "partial-destroy",
+            "completion": "downstream-destroyed-infrastructure-retained",
+            "destroyed_stages": destroyed_stages,
+            "retained_stages": ["infrastructure"],
+            "reference_data": reference_data,
+            "reference_data_contract": reference_data_contract,
+            "adoption": {
+                "required_before_full_destroy": True,
+                "status": lifecycle.get("adoption_status"),
+                "receipt_path": str(receipt_path),
+                "next_step": (
+                    "adopt or migrate the retained filesystem and bucket into a "
+                    "separate durable Terraform state before destroying infrastructure"
+                ),
+            },
+        }
+        private_json(receipt_path, result)
+        print(json.dumps(result, indent=2))
+        return
+
+    print(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/destroy-result/v1",
+                "status": "destroyed",
+                "completion": "complete",
+                "destroyed_stages": destroyed_stages,
+                "retained_stages": [],
+                "reference_data": None,
+                "reference_data_contract": None,
+                "evidence_root": str(run_root),
+            },
+            indent=2,
+        )
+    )
 
 
 def status_stack(
@@ -2131,6 +2299,7 @@ def status_stack(
     stages: dict[str, Any] = {}
     workloads_ready = False
     infrastructure_reference_data: Any | None = None
+    infrastructure_reference_data_contract: Any | None = None
     for stage in ("infrastructure", "foundation", "workloads"):
         state, _, _ = stage_paths(run_root, stage)
         if not state.exists():
@@ -2165,14 +2334,28 @@ def status_stack(
                 environment,
             )
             if isinstance(storage, Mapping):
+                lifecycle = terraform_optional_json_output(
+                    args.terraform,
+                    INFRA_ROOT,
+                    "reference_data_lifecycle",
+                    environment,
+                )
                 infrastructure_reference_data = {
-                    "lifecycle": storage.get("lifecycle"),
+                    "lifecycle": (
+                        lifecycle
+                        if isinstance(lifecycle, Mapping)
+                        else storage.get("lifecycle")
+                    ),
                     "filesystem_id": storage.get("filesystem", {}).get("id"),
                     "bucket_id": storage.get("object_storage", {}).get("id"),
                     "bucket_name": storage.get("object_storage", {}).get("name"),
                     "cpu_pool_id": storage.get("cpu_pool", {}).get("id"),
                     "status_service": None,
                     "pipeline": None,
+                }
+                infrastructure_reference_data_contract = {
+                    "storage": storage,
+                    "plane": None,
                 }
     endpoints = (
         workload_endpoint_outputs(args.terraform, run_root, contract)
@@ -2183,6 +2366,7 @@ def status_stack(
             "inference_base_url": None,
             "grafana_url": None,
             "reference_data": None,
+            "reference_data_contract": None,
         }
     )
     # A previously applied workloads state can remain otherwise complete while the
@@ -2195,6 +2379,13 @@ def status_stack(
         and infrastructure_reference_data is not None
     ):
         endpoints["reference_data"] = infrastructure_reference_data
+    if (
+        endpoints["reference_data_contract"] is None
+        and infrastructure_reference_data_contract is not None
+    ):
+        endpoints["reference_data_contract"] = (
+            infrastructure_reference_data_contract
+        )
     print(
         json.dumps(
             {"run_root": str(run_root), "stages": stages, **endpoints},

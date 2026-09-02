@@ -19,19 +19,26 @@ output "effective_configuration" {
     model_scaling_mode         = var.deployment.models.scaling.mode
     hot_model_ids              = sort(tolist(var.deployment.models.scaling.hot))
     reference_data = {
-      enabled                   = var.deployment.storage.reference_data.enabled
-      region                    = var.deployment.target.region
-      namespace                 = var.deployment.storage.reference_data.namespace
-      cpu_pool_nodes            = var.deployment.storage.reference_data.cpu_pool.node_count
-      cpu_pool_preset           = var.deployment.storage.reference_data.cpu_pool.preset
-      cpu_pool_schedulable      = var.deployment.storage.reference_data.cpu_pool.schedulable_capacity
-      retention_mode            = var.deployment.storage.reference_data.lifecycle.retention_mode
-      filesystem_size_gib       = var.deployment.storage.reference_data.filesystem.size_gib
-      object_storage_max_gib    = var.deployment.storage.reference_data.object_storage.max_size_gib
-      object_bucket_name        = local.reference_data_bucket_name
-      private_msa_default       = true
-      public_msa_opt_in_enabled = var.deployment.storage.reference_data.network.allow_public_msa_opt_in
-      staging_bundle            = var.deployment.storage.reference_data.pipeline.enabled ? var.deployment.storage.reference_data.pipeline.bundle_id : null
+      enabled              = var.deployment.storage.reference_data.enabled
+      region               = var.deployment.target.region
+      namespace            = var.deployment.storage.reference_data.namespace
+      cpu_pool_nodes       = var.deployment.storage.reference_data.cpu_pool.node_count
+      cpu_pool_preset      = var.deployment.storage.reference_data.cpu_pool.preset
+      cpu_pool_schedulable = var.deployment.storage.reference_data.cpu_pool.schedulable_capacity
+      retention_mode       = var.deployment.storage.reference_data.lifecycle.retention_mode
+      destroy_completion = (
+        var.deployment.storage.reference_data.lifecycle.retention_mode == "retain" ?
+        "downstream-only-infrastructure-retained" :
+        "full-only-when-versioned-bucket-empty"
+      )
+      adoption_required          = var.deployment.storage.reference_data.lifecycle.retention_mode == "retain"
+      filesystem_size_gib        = var.deployment.storage.reference_data.filesystem.size_gib
+      filesystem_forbid_deletion = var.deployment.storage.reference_data.filesystem.forbid_deletion
+      object_storage_max_gib     = var.deployment.storage.reference_data.object_storage.max_size_gib
+      object_bucket_name         = local.reference_data_bucket_name
+      private_msa_default        = true
+      public_msa_opt_in_enabled  = var.deployment.storage.reference_data.network.allow_public_msa_opt_in
+      staging_bundle             = var.deployment.storage.reference_data.pipeline.enabled ? var.deployment.storage.reference_data.pipeline.bundle_id : null
       accelerator_pool_mounts = sort([
         for pool_id, pool in var.deployment.accelerator_pools : pool_id
         if pool.reference_data_filesystem

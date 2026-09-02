@@ -185,11 +185,15 @@ GPU Jobs consume an immutable reference tree. The default is false, so enabling
 reference data cannot silently mutate future heterogeneous pools.
 
 Production uses `retention_mode = "retain"` with `forbid_deletion = true`.
-`inference-stack destroy` refuses before changing anything and `status`/`output`
-expose the retained filesystem/bucket IDs and adoption status. The
-`disposable` mode is limited to fresh empty-volume acceptance, requires
-`forbid_deletion = false`, and is deletable only while the versioned bucket is
-empty.
+`inference-stack destroy` removes the workload and foundation states but keeps
+the complete infrastructure state, reports `partial-destroy`, and writes a
+non-secret `reference-data-retention.json` adoption receipt containing the
+filesystem, bucket, CPU-pool and last-applied status/pipeline identities. It
+cannot claim full completion until the protected storage has been explicitly
+adopted or migrated into another durable state. The `disposable` mode is limited
+to fresh empty-volume acceptance, requires `forbid_deletion = false`, and is
+deletable only while the versioned bucket has no current objects or retained
+versions.
 
 `Dockerfile.stager` is the pinned CPU worker image. It contains only Python,
 zstd, CA roots and the AWS CLI; the reviewed staging program and selected
