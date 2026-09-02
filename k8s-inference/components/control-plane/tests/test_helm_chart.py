@@ -14,6 +14,7 @@ from fs2_serve_catalog.loader import load_catalog
 from fs2_serve_catalog.workloads import _metadata
 
 CHART = SOLUTION_ROOT / "charts/control-plane/fs2-serve-control-plane"
+WORKLOAD_VALUES = SOLUTION_ROOT / "charts/control-plane/control-plane.values.yaml"
 TEST_DIGEST = "sha256:" + "1" * 64
 TEST_REPOSITORY = "registry.nebius.cloud/unit/fs2-serve-control-plane"
 TEST_ADMIN_DIGEST = "sha256:" + "2" * 64
@@ -2593,6 +2594,25 @@ def test_observability_adapter_has_explicit_prometheus_peer_and_optional_config(
             "podSelector": {"matchLabels": {"app.kubernetes.io/name": "prometheus"}},
         }
     ]
+
+
+def test_observability_adapter_accepts_installed_tempo_from_workloads_values_merge() -> None:
+    documents = render(
+        "-f",
+        str(WORKLOAD_VALUES),
+        "--set",
+        "adminReadAdapters.observability.enabled=true",
+        "--set",
+        "adminReadAdapters.observability.installed.tempo=true",
+    )
+    config_map = next(
+        item
+        for item in documents
+        if item["kind"] == "ConfigMap"
+        and item["metadata"]["name"] == "fs2-serve-control-plane-admin-observability"
+    )
+    config = json.loads(config_map["data"]["config.json"])
+    assert config["installed"] == {"alertmanager": False, "tempo": True}
 
 
 def test_observability_link_requires_verified_allowlisted_https_route() -> None:

@@ -594,7 +594,7 @@
             "required": ["alertmanager", "tempo"],
             "properties": {
               "alertmanager": {"const": false},
-              "tempo": {"const": false}
+              "tempo": {"type": "boolean"}
             },
             "additionalProperties": false
           },
