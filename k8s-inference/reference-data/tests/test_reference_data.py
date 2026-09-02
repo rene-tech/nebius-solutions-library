@@ -125,7 +125,7 @@ class ReferenceDataContractTests(unittest.TestCase):
             for bundle_id in model.get("required_bundles", []) + model.get("optional_bundles", []):
                 self.assertIn(bundle_id, catalog["bundles"])
 
-    def test_stage_is_atomic_verifiable_and_idempotent(self) -> None:
+    def test_fresh_empty_volume_end_to_end_apply_is_atomic_verifiable_and_idempotent(self) -> None:
         source = self.work / "source.txt"
         source.write_text("PRIVATE-MSA-FIXTURE\n", encoding="utf-8")
         catalog_path = self._write_catalog(self._catalog(source))
@@ -407,6 +407,56 @@ class ReferenceDataContractTests(unittest.TestCase):
         env = resources["items"][1]["spec"]["template"]["spec"]["containers"][0]["env"]
         credential_names = {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"}
         self.assertTrue(all("valueFrom" in item for item in env if item["name"] in credential_names))
+
+    def test_monitoring_namespace_and_scrape_network_contract(self) -> None:
+        module = (REFERENCE_DATA / "terraform" / "main.tf").read_text(encoding="utf-8")
+        foundation = (
+            REFERENCE_DATA.parent / "stages" / "foundation" / "releases.tf"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"fs2-reference-data",', foundation)
+        self.assertIn('serviceMonitorNamespaceSelector = {', foundation)
+        self.assertIn('resource "kubernetes_network_policy_v1" "status_ingress"', module)
+        self.assertIn('default     = ["fs2-observability", "fs2-system"]', (
+            REFERENCE_DATA / "terraform" / "variables.tf"
+        ).read_text(encoding="utf-8"))
+        self.assertIn('port     = "8080"', module)
+        self.assertIn('namespace = kubernetes_namespace_v1.reference_data.metadata[0].name', module)
+
+    def test_pipeline_identity_covers_every_immutable_pod_input_family(self) -> None:
+        module = (REFERENCE_DATA / "terraform" / "main.tf").read_text(encoding="utf-8")
+        pod_template = module.split("pipeline_pod_template = {", 1)[1].split(
+            "pipeline_job_contract = {", 1
+        )[0]
+        job_contract = module.split("pipeline_job_contract = {", 1)[1].split(
+            "pipeline_identity =", 1
+        )[0]
+        for field in (
+            "metadata",
+            "spec",
+            "serviceAccountName",
+            "image",
+            "command",
+            "resources",
+            "nodeSelector",
+            "tolerations",
+            "env",
+            "volumeMounts",
+            "volumes",
+        ):
+            self.assertIn(field, pod_template)
+        for field in (
+            "namespace",
+            "generation",
+            "metadata",
+            "suspend",
+            "backoffLimit",
+            "activeDeadlineSeconds",
+            "ttlSecondsAfterFinished",
+        ):
+            self.assertIn(field, job_contract)
+        self.assertIn("template                = local.pipeline_pod_template", job_contract)
+        self.assertRegex(module, r"job\s*= local\.pipeline_job_contract")
+        self.assertIn("spec = local.pipeline_job_contract.spec", module)
 
 
 if __name__ == "__main__":

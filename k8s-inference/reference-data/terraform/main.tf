@@ -9,12 +9,163 @@ locals {
   source_catalog        = jsondecode(file("${path.module}/../source-catalog.json"))
   source_catalog_sha256 = filesha256("${path.module}/../source-catalog.json")
   selected_bundle       = local.source_catalog.bundles[var.pipeline.bundle_id]
-  pipeline_identity = substr(sha256(jsonencode({
-    bundle_id  = var.pipeline.bundle_id
-    revision   = local.selected_bundle.revision
-    catalog    = local.source_catalog_sha256
-    image      = var.pipeline.image
+  pipeline_command = [
+    "python", "/opt/fs2/reference-data/reference_data.py", "stage",
+    "--catalog", "/etc/fs2-stage/catalog.json",
+    "--bundle", var.pipeline.bundle_id,
+    "--root", "/reference-data",
+    "--object-store-prefix", "s3://${var.object_bucket_name}/reference-data",
+  ]
+  pipeline_resources = {
+    requests = {
+      cpu                 = var.pipeline.cpu
+      memory              = var.pipeline.memory
+      "ephemeral-storage" = var.pipeline.ephemeral_storage
+    }
+    limits = {
+      cpu                 = var.pipeline.cpu
+      memory              = var.pipeline.memory
+      "ephemeral-storage" = var.pipeline.ephemeral_storage
+    }
+  }
+  pipeline_tolerations = [{
+    key      = var.cpu_pool.taint.key
+    operator = "Equal"
+    value    = var.cpu_pool.taint.value
+    effect   = var.cpu_pool.taint.effect
+  }]
+  pipeline_catalog_name = "fs2-stage-af3-catalog-${substr(sha256(jsonencode({
+    bundle_id = var.pipeline.bundle_id
+    catalog   = local.source_catalog_sha256
+  })), 0, 12)}"
+  pipeline_pod_template = {
+    metadata = {
+      labels = merge(local.common_labels, {
+        "app.kubernetes.io/component"               = "reference-data-stager"
+        "reference-data.fs2.nebius.ai/bundle"       = var.pipeline.bundle_id
+        "reference-data.fs2.nebius.ai/network-mode" = "public-source-staging"
+      })
+    }
+    spec = {
+      restartPolicy                = "Never"
+      serviceAccountName           = "fs2-reference-data"
+      automountServiceAccountToken = false
+      enableServiceLinks           = false
+      nodeSelector                 = var.cpu_pool.node_labels
+      tolerations                  = local.pipeline_tolerations
+      securityContext = {
+        runAsNonRoot        = true
+        runAsUser           = 1000
+        runAsGroup          = 1000
+        fsGroup             = 1000
+        fsGroupChangePolicy = "OnRootMismatch"
+        seccompProfile      = { type = "RuntimeDefault" }
+      }
+      containers = [{
+        name            = "stager"
+        image           = var.pipeline.image
+        imagePullPolicy = "IfNotPresent"
+        command         = local.pipeline_command
+        env = [
+          {
+            name = "AWS_ACCESS_KEY_ID"
+            valueFrom = {
+              secretKeyRef = {
+                name = "fs2-reference-data-object-storage"
+                key  = "access-key-id"
+              }
+            }
+          },
+          {
+            name = "AWS_SECRET_ACCESS_KEY"
+            valueFrom = {
+              secretKeyRef = {
+                name = "fs2-reference-data-object-storage"
+                key  = "secret-access-key"
+              }
+            }
+          },
+          { name = "AWS_ENDPOINT_URL", value = "https://storage.${var.object_storage_region}.nebius.cloud" },
+          { name = "AWS_DEFAULT_REGION", value = var.object_storage_region },
+          { name = "HOME", value = "/work" },
+        ]
+        resources = local.pipeline_resources
+        securityContext = {
+          allowPrivilegeEscalation = false
+          readOnlyRootFilesystem   = true
+          capabilities             = { drop = ["ALL"] }
+        }
+        volumeMounts = [
+          { name = "reference-data", mountPath = "/reference-data" },
+          { name = "tools", mountPath = "/opt/fs2/reference-data", readOnly = true },
+          { name = "catalog", mountPath = "/etc/fs2-stage", readOnly = true },
+          { name = "work", mountPath = "/work" },
+        ]
+      }]
+      volumes = [
+        {
+          name = "reference-data"
+          hostPath = {
+            path = var.shared_filesystem_host_path
+            type = "Directory"
+          }
+        },
+        {
+          name = "tools"
+          configMap = {
+            name        = local.tools_config_map
+            defaultMode = 365
+          }
+        },
+        {
+          name = "catalog"
+          configMap = {
+            name        = local.pipeline_catalog_name
+            defaultMode = 292
+          }
+        },
+        {
+          name = "work"
+          emptyDir = {
+            sizeLimit = var.pipeline.ephemeral_storage
+          }
+        },
+      ]
+    }
+  }
+  # This secret-free value is the complete rendered Job input contract. The
+  # Job name changes whenever any pod-template or job-level field changes,
+  # avoiding an in-place batch/v1 Job update that Kubernetes must reject.
+  pipeline_job_contract = {
+    namespace  = var.namespace
     generation = var.pipeline.generation
+    metadata = {
+      labels = merge(local.common_labels, {
+        "app.kubernetes.io/component"               = "reference-data-stager"
+        "kueue.x-k8s.io/queue-name"                 = var.queue.local_queue
+        "kueue.x-k8s.io/priority-class"             = "batch"
+        "reference-data.fs2.nebius.ai/bundle"       = var.pipeline.bundle_id
+        "reference-data.fs2.nebius.ai/network-mode" = "public-source-staging"
+      })
+      annotations = {
+        "reference-data.fs2.nebius.ai/catalog-sha256" = local.source_catalog_sha256
+        "reference-data.fs2.nebius.ai/resumable"      = "true"
+        "reference-data.fs2.nebius.ai/checksums"      = "source-identity,sha256,tree-sha256"
+      }
+    }
+    spec = {
+      suspend                 = true
+      backoffLimit            = var.pipeline.backoff_limit
+      activeDeadlineSeconds   = var.pipeline.active_deadline_seconds
+      ttlSecondsAfterFinished = 604800
+      template                = local.pipeline_pod_template
+    }
+  }
+  pipeline_identity = substr(sha256(jsonencode({
+    bundle_id = var.pipeline.bundle_id
+    revision  = local.selected_bundle.revision
+    catalog   = local.source_catalog_sha256
+    job       = local.pipeline_job_contract
   })), 0, 12)
   object_bucket_name  = var.object_bucket_name
   object_endpoint     = "https://storage.${var.object_storage_region}.nebius.cloud"
@@ -296,7 +447,7 @@ resource "kubernetes_network_policy_v1" "public_source_staging" {
 resource "kubernetes_config_map_v1" "pipeline_catalog" {
   count = var.pipeline.enabled ? 1 : 0
   metadata {
-    name      = "fs2-stage-af3-${local.pipeline_identity}"
+    name      = local.pipeline_catalog_name
     namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
     labels = merge(local.common_labels, {
       "app.kubernetes.io/component" = "reference-data-stager"
@@ -324,144 +475,12 @@ resource "kubernetes_manifest" "pipeline" {
     apiVersion = "batch/v1"
     kind       = "Job"
     metadata = {
-      name      = "fs2-stage-af3-${local.pipeline_identity}"
-      namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
-      labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"               = "reference-data-stager"
-        "kueue.x-k8s.io/queue-name"                 = var.queue.local_queue
-        "kueue.x-k8s.io/priority-class"             = "batch"
-        "reference-data.fs2.nebius.ai/bundle"       = var.pipeline.bundle_id
-        "reference-data.fs2.nebius.ai/network-mode" = "public-source-staging"
-      })
-      annotations = {
-        "reference-data.fs2.nebius.ai/catalog-sha256" = local.source_catalog_sha256
-        "reference-data.fs2.nebius.ai/resumable"      = "true"
-        "reference-data.fs2.nebius.ai/checksums"      = "source-identity,sha256,tree-sha256"
-      }
+      name        = "fs2-stage-af3-${local.pipeline_identity}"
+      namespace   = kubernetes_namespace_v1.reference_data.metadata[0].name
+      labels      = local.pipeline_job_contract.metadata.labels
+      annotations = local.pipeline_job_contract.metadata.annotations
     }
-    spec = {
-      suspend                 = true
-      backoffLimit            = var.pipeline.backoff_limit
-      activeDeadlineSeconds   = var.pipeline.active_deadline_seconds
-      ttlSecondsAfterFinished = 604800
-      template = {
-        metadata = {
-          labels = merge(local.common_labels, {
-            "app.kubernetes.io/component"               = "reference-data-stager"
-            "reference-data.fs2.nebius.ai/bundle"       = var.pipeline.bundle_id
-            "reference-data.fs2.nebius.ai/network-mode" = "public-source-staging"
-          })
-        }
-        spec = {
-          restartPolicy                = "Never"
-          serviceAccountName           = kubernetes_service_account_v1.reference_data.metadata[0].name
-          automountServiceAccountToken = false
-          enableServiceLinks           = false
-          nodeSelector                 = var.cpu_pool.node_labels
-          tolerations = [{
-            key      = var.cpu_pool.taint.key
-            operator = "Equal"
-            value    = var.cpu_pool.taint.value
-            effect   = var.cpu_pool.taint.effect
-          }]
-          securityContext = {
-            runAsNonRoot        = true
-            runAsUser           = 1000
-            runAsGroup          = 1000
-            fsGroup             = 1000
-            fsGroupChangePolicy = "OnRootMismatch"
-            seccompProfile      = { type = "RuntimeDefault" }
-          }
-          containers = [{
-            name            = "stager"
-            image           = var.pipeline.image
-            imagePullPolicy = "IfNotPresent"
-            command = [
-              "python", "/opt/fs2/reference-data/reference_data.py", "stage",
-              "--catalog", "/etc/fs2-stage/catalog.json",
-              "--bundle", var.pipeline.bundle_id,
-              "--root", "/reference-data",
-              "--object-store-prefix", local.object_prefix,
-            ]
-            env = [
-              {
-                name = "AWS_ACCESS_KEY_ID"
-                valueFrom = {
-                  secretKeyRef = {
-                    name = kubernetes_secret_v1.object_storage.metadata[0].name
-                    key  = "access-key-id"
-                  }
-                }
-              },
-              {
-                name = "AWS_SECRET_ACCESS_KEY"
-                valueFrom = {
-                  secretKeyRef = {
-                    name = kubernetes_secret_v1.object_storage.metadata[0].name
-                    key  = "secret-access-key"
-                  }
-                }
-              },
-              { name = "AWS_ENDPOINT_URL", value = local.object_endpoint },
-              { name = "AWS_DEFAULT_REGION", value = var.object_storage_region },
-              { name = "HOME", value = "/work" },
-            ]
-            resources = {
-              requests = {
-                cpu                 = var.pipeline.cpu
-                memory              = var.pipeline.memory
-                "ephemeral-storage" = var.pipeline.ephemeral_storage
-              }
-              limits = {
-                cpu                 = var.pipeline.cpu
-                memory              = var.pipeline.memory
-                "ephemeral-storage" = var.pipeline.ephemeral_storage
-              }
-            }
-            securityContext = {
-              allowPrivilegeEscalation = false
-              readOnlyRootFilesystem   = true
-              capabilities             = { drop = ["ALL"] }
-            }
-            volumeMounts = [
-              { name = "reference-data", mountPath = "/reference-data" },
-              { name = "tools", mountPath = "/opt/fs2/reference-data", readOnly = true },
-              { name = "catalog", mountPath = "/etc/fs2-stage", readOnly = true },
-              { name = "work", mountPath = "/work" },
-            ]
-          }]
-          volumes = [
-            {
-              name = "reference-data"
-              hostPath = {
-                path = var.shared_filesystem_host_path
-                type = "Directory"
-              }
-            },
-            {
-              name = "tools"
-              configMap = {
-                name        = kubernetes_config_map_v1.tools.metadata[0].name
-                defaultMode = 365
-              }
-            },
-            {
-              name = "catalog"
-              configMap = {
-                name        = kubernetes_config_map_v1.pipeline_catalog[0].metadata[0].name
-                defaultMode = 292
-              }
-            },
-            {
-              name = "work"
-              emptyDir = {
-                sizeLimit = var.pipeline.ephemeral_storage
-              }
-            },
-          ]
-        }
-      }
-    }
+    spec = local.pipeline_job_contract.spec
   }
   computed_fields = [
     "metadata.annotations",

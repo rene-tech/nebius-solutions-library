@@ -21,7 +21,7 @@ infrastructure_contract = {
   capacity = {
     profile               = "full_catalog"
     floor_profile         = "zero"
-    maximum_gpus          = 22
+    maximum_gpus          = 23
     shared_cache_size_gib = 2048
     system = {
       capacity        = "regular"
@@ -37,7 +37,7 @@ infrastructure_contract = {
       preset        = "1gpu-24vcpu-346gb"
       gpus_per_node = 1
       min_nodes     = 0
-      max_nodes     = 6
+      max_nodes     = 7
       driver_preset = "cuda13.0"
       local_nvme    = false
     }

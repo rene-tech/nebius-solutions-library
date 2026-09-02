@@ -38,7 +38,9 @@ ALLOWED_TYPES = {
     "nebius_iam_v1_group",
     "nebius_iam_v1_group_membership",
     "nebius_iam_v1_access_permit",
+    "nebius_iam_v2_access_key",
     "nebius_registry_v1_registry",
+    "nebius_storage_v1_bucket",
     "nebius_compute_v1_filesystem",
     "nebius_vpc_v1_security_group",
     "nebius_vpc_v1_security_rule",
@@ -69,10 +71,36 @@ BASE_REQUIRED_ADDRESSES = {
     "nebius_mk8s_v1_node_group.system",
     *POOL_ADDRESSES.values(),
 }
+BASE_RESOURCE_TYPES = {
+    address: address.split(".", maxsplit=1)[0] for address in BASE_REQUIRED_ADDRESSES
+}
 
 PUBLIC_EDGE_ADDRESSES = {
     "nebius_vpc_v1_security_rule.workers_public_edge_ingress[0]",
     "nebius_vpc_v1_allocation.gateway[0]",
+}
+PUBLIC_EDGE_RESOURCE_TYPES = {
+    address: address.split(".", maxsplit=1)[0] for address in PUBLIC_EDGE_ADDRESSES
+}
+REFERENCE_DATA_COMMON_RESOURCE_TYPES = {
+    "nebius_iam_v1_service_account.reference_data[0]": "nebius_iam_v1_service_account",
+    "nebius_iam_v1_group.reference_data_writers[0]": "nebius_iam_v1_group",
+    "nebius_iam_v1_group_membership.reference_data_writer[0]": "nebius_iam_v1_group_membership",
+    "nebius_iam_v2_access_key.reference_data[0]": "nebius_iam_v2_access_key",
+    "nebius_mk8s_v1_node_group.reference_data[0]": "nebius_mk8s_v1_node_group",
+}
+REFERENCE_DATA_RESOURCE_TYPES = {
+    "disabled": {},
+    "retain": {
+        **REFERENCE_DATA_COMMON_RESOURCE_TYPES,
+        "nebius_compute_v1_filesystem.reference_data[0]": "nebius_compute_v1_filesystem",
+        "nebius_storage_v1_bucket.reference_data[0]": "nebius_storage_v1_bucket",
+    },
+    "disposable": {
+        **REFERENCE_DATA_COMMON_RESOURCE_TYPES,
+        "nebius_compute_v1_filesystem.reference_data_disposable[0]": "nebius_compute_v1_filesystem",
+        "nebius_storage_v1_bucket.reference_data_disposable[0]": "nebius_storage_v1_bucket",
+    },
 }
 REQUIRED_ADDRESSES = BASE_REQUIRED_ADDRESSES | PUBLIC_EDGE_ADDRESSES
 EDGE_MODES = {
@@ -87,7 +115,7 @@ ACCEPTANCE_MODES = {
     DEFAULT_ACCEPTANCE_MODE: {
         "capacity_profile": "full_catalog",
         "gpu_floor_profile": "zero",
-        "maximum_gpus": 22,
+        "maximum_gpus": 23,
         "shared_cache_size_gib": 2048,
         "required_addresses": frozenset(BASE_REQUIRED_ADDRESSES),
     },
@@ -109,6 +137,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-metadata", type=Path, required=True)
     parser.add_argument("--expected-project-id", required=True)
     parser.add_argument("--expected-source-commit", required=True)
+    parser.add_argument(
+        "--reference-data-mode",
+        choices=tuple(REFERENCE_DATA_RESOURCE_TYPES),
+        default="disabled",
+        help="Exact optional reference-data address/type/count contract.",
+    )
     parser.add_argument(
         "--acceptance-mode",
         choices=tuple(ACCEPTANCE_MODES),
@@ -216,6 +250,7 @@ def validate_run_metadata(
     expected_source_commit: str,
     acceptance_mode: str,
     public_edge_mode: str,
+    reference_data_mode: str,
 ) -> list[str]:
     metadata = json.loads(path.read_text(encoding="utf-8"))
     expected_labels = {
@@ -248,6 +283,10 @@ def validate_run_metadata(
         )
     if metadata.get("public_edge_mode") != public_edge_mode:
         errors.append("run metadata public_edge_mode differs from the reviewed edge mode")
+    if metadata.get("reference_data_mode") != reference_data_mode:
+        errors.append(
+            "run metadata reference_data_mode differs from the exact optional resource contract"
+        )
     if stat.S_IMODE(path.stat().st_mode) != 0o600:
         errors.append("run metadata file mode must be 0600")
     if stat.S_IMODE(plan_json.stat().st_mode) != 0o600:
@@ -299,6 +338,7 @@ def validate_plan_variables(
     expected_source_commit: str,
     acceptance_mode: str,
     public_edge_mode: str,
+    reference_data_mode: str,
 ) -> list[str]:
     mode = ACCEPTANCE_MODES[acceptance_mode]
     expected = {
@@ -314,6 +354,29 @@ def validate_plan_variables(
         if variable(document, name) != expected_value:
             errors.append(
                 f"plan variable {name} differs from the exact release contract"
+            )
+
+    reference_data = variable(document, "reference_data")
+    expected_enabled = reference_data_mode != "disabled"
+    if not isinstance(reference_data, dict):
+        errors.append("plan variable reference_data must be an object")
+        return errors
+    if reference_data.get("enabled") is not expected_enabled:
+        errors.append(
+            "plan variable reference_data.enabled differs from the exact optional resource contract"
+        )
+    if expected_enabled:
+        expected_forbid_deletion = reference_data_mode == "retain"
+        if nested(reference_data, "lifecycle", "retention_mode") != reference_data_mode:
+            errors.append(
+                "plan variable reference_data.lifecycle.retention_mode differs from the exact optional resource contract"
+            )
+        if (
+            nested(reference_data, "filesystem", "forbid_deletion")
+            is not expected_forbid_deletion
+        ):
+            errors.append(
+                "plan variable reference_data.filesystem.forbid_deletion differs from the selected lifecycle"
             )
     return errors
 
@@ -678,6 +741,10 @@ def main() -> int:
         if change.get("mode", "managed") == "managed"
     ]
     managed_by_address = {change.get("address", ""): change for change in managed}
+    if args.mode == "destroy" and args.reference_data_mode == "retain":
+        errors.append(
+            "retained reference data has no full-destroy plan; export IDs and explicitly adopt or migrate state"
+        )
     errors += validate_run_metadata(
         args.run_metadata,
         args.run_id,
@@ -686,6 +753,7 @@ def main() -> int:
         args.expected_source_commit,
         args.acceptance_mode,
         args.public_edge_mode,
+        args.reference_data_mode,
     )
     errors += validate_plan_variables(
         document,
@@ -693,6 +761,7 @@ def main() -> int:
         args.expected_source_commit,
         args.acceptance_mode,
         args.public_edge_mode,
+        args.reference_data_mode,
     )
 
     for forbidden_id in DENYLISTED_IDS | set(args.forbidden_id):
@@ -701,6 +770,7 @@ def main() -> int:
 
     required_addresses = set(ACCEPTANCE_MODES[args.acceptance_mode]["required_addresses"])
     required_addresses.update(EDGE_MODES[args.public_edge_mode])
+    required_addresses.update(REFERENCE_DATA_RESOURCE_TYPES[args.reference_data_mode])
     addresses = set(managed_by_address)
     if addresses != required_addresses:
         errors.append(
@@ -744,9 +814,23 @@ def main() -> int:
     for change in managed:
         address = change.get("address", "<unknown>")
         resource_type = change.get("type")
+        expected_resource_types = {
+            **BASE_RESOURCE_TYPES,
+            **(
+                PUBLIC_EDGE_RESOURCE_TYPES
+                if args.public_edge_mode == "public"
+                else {}
+            ),
+            **REFERENCE_DATA_RESOURCE_TYPES[args.reference_data_mode],
+        }
         actions = change.get("change", {}).get("actions", [])
         if resource_type not in ALLOWED_TYPES:
             errors.append(f"{address}: resource type {resource_type!r} is not allowed")
+        if expected_resource_types.get(address) != resource_type:
+            errors.append(
+                f"{address}: resource type {resource_type!r}, expected "
+                f"{expected_resource_types.get(address)!r}"
+            )
         if actions != expected_actions:
             errors.append(
                 f"{address}: actions {actions!r}, expected {expected_actions!r}"
@@ -760,9 +844,26 @@ def main() -> int:
             errors.append(f"{address}: name {name!r} is outside {expected_prefix!r}")
         labels = values.get("labels")
         if labels is not None:
+            retention = "ephemeral"
+            if address in {
+                "nebius_compute_v1_filesystem.reference_data[0]",
+                "nebius_storage_v1_bucket.reference_data[0]",
+            }:
+                retention = "durable"
+            elif address in {
+                "nebius_compute_v1_filesystem.reference_data_disposable[0]",
+                "nebius_storage_v1_bucket.reference_data_disposable[0]",
+            }:
+                retention = "disposable-empty-only"
+            elif address in {
+                "nebius_iam_v1_service_account.reference_data[0]",
+                "nebius_iam_v1_group.reference_data_writers[0]",
+                "nebius_iam_v2_access_key.reference_data[0]",
+            }:
+                retention = "durable"
             expected_labels = {
                 "environment": "fs2-disposable",
-                "retention": "ephemeral",
+                "retention": retention,
                 "run-id": args.run_id,
                 "task": "fs2-terraform-recipe",
             }

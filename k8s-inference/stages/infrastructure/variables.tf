@@ -316,6 +316,9 @@ variable "reference_data" {
   description = "Dedicated durable same-region filesystem and versioned object storage for immutable scientific reference data."
   type = object({
     enabled = bool
+    lifecycle = object({
+      retention_mode = string
+    })
     cpu_pool = object({
       platform        = string
       preset          = string
@@ -339,6 +342,9 @@ variable "reference_data" {
   })
   default = {
     enabled = false
+    lifecycle = {
+      retention_mode = "retain"
+    }
     cpu_pool = {
       platform        = "cpu-d3"
       preset          = "8vcpu-32gb"
@@ -364,6 +370,12 @@ variable "reference_data" {
   validation {
     condition = try(
       !var.reference_data.enabled || (
+        contains(["retain", "disposable"], var.reference_data.lifecycle.retention_mode) &&
+        (
+          var.reference_data.lifecycle.retention_mode == "retain" ?
+          var.reference_data.filesystem.forbid_deletion :
+          !var.reference_data.filesystem.forbid_deletion
+        ) &&
         can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", var.reference_data.cpu_pool.platform)) &&
         can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", var.reference_data.cpu_pool.preset)) &&
         floor(var.reference_data.cpu_pool.node_count) == var.reference_data.cpu_pool.node_count &&
@@ -391,7 +403,7 @@ variable "reference_data" {
       ),
       false,
     )
-    error_message = "enabled reference_data requires a bounded dedicated CPU pool, a valid bucket and dedicated filesystem/object capacity of 1611-65536 whole GiB."
+    error_message = "enabled reference_data requires exact retain+forbid_deletion or disposable+deletable lifecycle semantics, a bounded dedicated CPU pool, a valid bucket and dedicated filesystem/object capacity of 1611-65536 whole GiB."
   }
 }
 
@@ -425,7 +437,7 @@ variable "accelerator_pool_profile" {
 }
 
 variable "gpu_floor_profile" {
-  description = "Reviewed preemptible GPU warm floor. zero preserves scale-from-zero; full_catalog keeps the complete 22-GPU topology hot."
+  description = "Reviewed preemptible GPU warm floor. zero preserves scale-from-zero; full_catalog keeps the complete 23-GPU topology hot."
   type        = string
   default     = "zero"
 
@@ -497,10 +509,11 @@ variable "custom_accelerator_pools" {
       type     = optional(string, "NETWORK_SSD")
       size_gib = optional(number, 320)
     }), {})
-    local_nvme        = optional(bool, false)
-    local_nvme_mode   = optional(string, "raw")
-    shared_filesystem = optional(bool, true)
-    drain_timeout     = optional(string, "30m")
+    local_nvme                = optional(bool, false)
+    local_nvme_mode           = optional(string, "raw")
+    shared_filesystem         = optional(bool, true)
+    reference_data_filesystem = optional(bool, false)
+    drain_timeout             = optional(string, "30m")
     topology = optional(object({
       mode              = optional(string, "standalone")
       infiniband_fabric = optional(string)
@@ -731,6 +744,10 @@ locals {
           min_nodes = try(capacity.floor_nodes[var.gpu_floor_profile], -1)
           max_nodes = capacity.max_nodes
         }
+        features = merge(
+          local.accelerator_pool_contract.pool_templates[pool_id].features,
+          { reference_data_filesystem = false },
+        )
       },
     )
   }
@@ -816,9 +833,10 @@ locals {
           mode            = pool.local_nvme ? "host-local-nvme" : "none"
           provider_config = pool.local_nvme ? (pool.local_nvme_mode == "raw" ? "passthrough-none" : "kubelet-ephemeral") : "none"
         }
-        shared_filesystem = pool.shared_filesystem
-        local_cache       = pool.local_nvme ? "local-nvme" : (pool.shared_filesystem ? "shared-filesystem" : "none")
-        gpu_snapshot      = pool.local_nvme ? "candidate-unvalidated" : "ineligible"
+        shared_filesystem         = pool.shared_filesystem
+        reference_data_filesystem = pool.reference_data_filesystem
+        local_cache               = pool.local_nvme ? "local-nvme" : (pool.shared_filesystem ? "shared-filesystem" : "none")
+        gpu_snapshot              = pool.local_nvme ? "candidate-unvalidated" : "ineligible"
       }
       topology = pool.topology
       region_availability = [{

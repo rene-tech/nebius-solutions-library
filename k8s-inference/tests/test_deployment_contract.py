@@ -726,7 +726,7 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn('shared_cache_mount_path', infrastructure)
         self.assertIn('"storage.fs2.nebius/shared-cache" = "true"', infrastructure)
         self.assertIn(
-            "each.value.features.shared_filesystem ? local.shared_cache_cloud_init_user_data : null",
+            "try(each.value.features.reference_data_filesystem, false)",
             infrastructure,
         )
         self.assertIn('name             = "csi-mounted-fs-path"', foundation)
@@ -780,6 +780,7 @@ class DeploymentContractTests(unittest.TestCase):
         workloads = contract["stages"]["workloads"]["reference_data"]
 
         self.assertTrue(infrastructure["enabled"])
+        self.assertEqual("retain", infrastructure["lifecycle"]["retention_mode"])
         self.assertEqual("fs2-reference-data", workloads["namespace"])
         self.assertEqual("8vcpu-32gb", infrastructure["cpu_pool"]["preset"])
         self.assertEqual(1, infrastructure["cpu_pool"]["node_count"])
@@ -815,9 +816,28 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn('effect = "NO_SCHEDULE"', cluster_source)
         self.assertNotIn('"nvidia.com/gpu"', pipeline_source)
         self.assertIn('suspend                 = true', pipeline_source)
-        self.assertIn('"--object-store-prefix", local.object_prefix', pipeline_source)
-        self.assertRegex(pipeline_source, r"nodeSelector\s*= var\.cpu_pool\.node_labels")
+        self.assertIn('"--object-store-prefix", "s3://${var.object_bucket_name}/reference-data"', pipeline_source)
+        self.assertIn("spec = local.pipeline_job_contract.spec", pipeline_source)
         self.assertIn('path = "/healthz"', pipeline_source)
+
+    def test_reference_filesystem_attachment_is_explicit_per_accelerator_pool(self) -> None:
+        variables = (DEPLOY_ROOT / "variables.tf").read_text(encoding="utf-8")
+        infrastructure = (
+            DEPLOY_ROOT / "stages/infrastructure/cluster.tf"
+        ).read_text(encoding="utf-8")
+        pool_locals = (
+            DEPLOY_ROOT / "stages/infrastructure/variables.tf"
+        ).read_text(encoding="utf-8")
+        self.assertIn("reference_data_filesystem = optional(bool, false)", variables)
+        self.assertIn("reference_data_filesystem = optional(bool, false)", pool_locals)
+        self.assertIn(
+            "try(each.value.features.reference_data_filesystem, false) ? local.reference_data_filesystem_attachment : []",
+            infrastructure,
+        )
+        self.assertNotIn(
+            "each.value.features.shared_filesystem && var.reference_data.enabled",
+            infrastructure,
+        )
 
     def test_reference_data_capacity_below_af3_plus_one_tib_is_rejected(self) -> None:
         deployment = {
@@ -835,7 +855,7 @@ class DeploymentContractTests(unittest.TestCase):
         variable_file = self._write_configuration("reference-too-small", deployment)
         result, _ = self._plan_file(variable_file, "reference-too-small")
         self.assertNotEqual(0, result.returncode)
-        self.assertRegex(f"{result.stdout}\n{result.stderr}", r"at least 1611\s+GiB")
+        self.assertRegex(f"{result.stdout}\n{result.stderr}", r"at least\s+1611\s+GiB")
 
     def test_regional_mirror_rejects_tag_only_model_override(self) -> None:
         deployment = {
@@ -1654,6 +1674,7 @@ class DeploymentContractTests(unittest.TestCase):
                 "mig": {"config": None, "strategy": "none"},
                 "os": "ubuntu24.04",
                 "resource_name": "nvidia.com/gpu",
+                "reference_data_filesystem": False,
                 "shared_filesystem": True,
                 "topology": {
                     "infiniband_fabric": None,

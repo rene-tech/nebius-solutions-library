@@ -261,6 +261,7 @@ resource "helm_release" "monitoring" {
               operator = "In"
               values = [
                 "fs2-observability",
+                "fs2-reference-data",
                 "fs2-system",
                 "fs2-models",
                 "fs2-data",

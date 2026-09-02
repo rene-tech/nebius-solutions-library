@@ -24,12 +24,17 @@ output "effective_configuration" {
       namespace                 = var.deployment.storage.reference_data.namespace
       cpu_pool_nodes            = var.deployment.storage.reference_data.cpu_pool.node_count
       cpu_pool_preset           = var.deployment.storage.reference_data.cpu_pool.preset
+      retention_mode            = var.deployment.storage.reference_data.lifecycle.retention_mode
       filesystem_size_gib       = var.deployment.storage.reference_data.filesystem.size_gib
       object_storage_max_gib    = var.deployment.storage.reference_data.object_storage.max_size_gib
       object_bucket_name        = local.reference_data_bucket_name
       private_msa_default       = true
       public_msa_opt_in_enabled = var.deployment.storage.reference_data.network.allow_public_msa_opt_in
       staging_bundle            = var.deployment.storage.reference_data.pipeline.enabled ? var.deployment.storage.reference_data.pipeline.bundle_id : null
+      accelerator_pool_mounts = sort([
+        for pool_id, pool in var.deployment.accelerator_pools : pool_id
+        if pool.reference_data_filesystem
+      ])
     }
     scheduling = {
       cohort_name         = var.deployment.scheduling.cohort.enabled ? var.deployment.scheduling.cohort.name : null

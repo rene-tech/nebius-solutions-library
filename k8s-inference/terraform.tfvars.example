@@ -47,7 +47,10 @@ deployment = {
       gpu_memory_gb     = 288
       capacity_type     = "preemptible"
       min_nodes         = 0
-      max_nodes         = 6
+      max_nodes         = 7
+      # Opt in only accelerator pools whose running Jobs consume the immutable
+      # reference tree. Future heterogeneous pools remain false by default.
+      reference_data_filesystem = false
       driver = {
         mode   = "managed"
         preset = "cuda13.0"
@@ -72,6 +75,7 @@ deployment = {
       }
       local_nvme      = true
       local_nvme_mode = "kubelet-ephemeral"
+      reference_data_filesystem = false
       topology = {
         mode = "standalone"
       }
@@ -206,6 +210,11 @@ deployment = {
   # storage = {
   #   reference_data = {
   #     enabled = true
+  #     lifecycle = {
+  #       # retain blocks full-stack destroy and exports IDs for explicit adoption.
+  #       # disposable is for empty-volume acceptance only and requires forbid_deletion=false.
+  #       retention_mode = "retain"
+  #     }
   #     namespace = "fs2-reference-data"
   #     cpu_pool = {
   #       platform        = "cpu-d3"

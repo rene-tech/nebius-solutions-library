@@ -8,38 +8,47 @@ locals {
     package_upgrade: false
     mounts:
       - [fs2cache, ${local.shared_cache_mount_path}, virtiofs, "defaults,nofail", 0, 2]
-${var.reference_data.enabled ? format("      - [fs2reference, %s, virtiofs, \"defaults,nofail\", 0, 2]", local.reference_data_mount_path) : ""}
     runcmd:
       - [modprobe, fuse]
       - [mkdir, -p, ${local.shared_cache_mount_path}]
-${var.reference_data.enabled ? format("      - [mkdir, -p, %s]", local.reference_data_mount_path) : ""}
       - [mount, -a]
       - [mkdir, -p, ${local.shared_cache_mount_path}/csi-mounted-fs-path-data]
-${var.reference_data.enabled ? format("      - [install, -d, -m, \"0770\", -o, \"1000\", -g, \"1000\", %s]", local.reference_data_host_path) : ""}
   YAML
-  filesystem_attachment = concat(
-    [{
-      attach_mode = "READ_WRITE"
-      mount_tag   = "fs2cache"
-      existing_filesystem = {
-        id = nebius_compute_v1_filesystem.cache.id
-      }
-    }],
-    var.reference_data.enabled ? [{
-      attach_mode = "READ_WRITE"
-      mount_tag   = "fs2reference"
-      existing_filesystem = {
-        id = nebius_compute_v1_filesystem.reference_data[0].id
-      }
-    }] : [],
-  )
+  # Keep the four-space prefix byte-identical to the already-attached live
+  # templates while splitting reference attachment into an explicit pool flag.
+  shared_cache_reference_data_cloud_init_user_data = <<YAML
+    #cloud-config
+    package_update: false
+    package_upgrade: false
+    mounts:
+      - [fs2cache, ${local.shared_cache_mount_path}, virtiofs, "defaults,nofail", 0, 2]
+      - [fs2reference, ${local.reference_data_mount_path}, virtiofs, "defaults,nofail", 0, 2]
+    runcmd:
+      - [modprobe, fuse]
+      - [mkdir, -p, ${local.shared_cache_mount_path}]
+      - [mkdir, -p, ${local.reference_data_mount_path}]
+      - [mount, -a]
+      - [mkdir, -p, ${local.shared_cache_mount_path}/csi-mounted-fs-path-data]
+      - [install, -d, -m, "0770", -o, "1000", -g, "1000", ${local.reference_data_host_path}]
+YAML
+  filesystem_attachment = [{
+    attach_mode = "READ_WRITE"
+    mount_tag   = "fs2cache"
+    existing_filesystem = {
+      id = nebius_compute_v1_filesystem.cache.id
+    }
+  }]
   reference_data_filesystem_attachment = var.reference_data.enabled ? [{
     attach_mode = "READ_WRITE"
     mount_tag   = "fs2reference"
     existing_filesystem = {
-      id = nebius_compute_v1_filesystem.reference_data[0].id
+      id = local.reference_data_filesystem_id
     }
   }] : []
+  system_filesystem_attachment = concat(
+    local.filesystem_attachment,
+    local.reference_data_filesystem_attachment,
+  )
   reference_data_cloud_init_user_data = <<-YAML
     #cloud-config
     package_update: false
@@ -159,7 +168,7 @@ resource "nebius_mk8s_v1_node_group" "system" {
       size_gibibytes = local.effective_system_pool.boot_disk_gib
       type           = local.effective_system_pool.boot_disk_type
     }
-    filesystems        = local.filesystem_attachment
+    filesystems        = local.system_filesystem_attachment
     network_interfaces = local.worker_network_interfaces
     os                 = "ubuntu24.04"
     reservation_policy = { policy = "FORBID" }
@@ -169,7 +178,7 @@ resource "nebius_mk8s_v1_node_group" "system" {
     }
     service_account_id   = nebius_iam_v1_service_account.nodepull.id
     underlay_required    = false
-    cloud_init_user_data = local.shared_cache_cloud_init_user_data
+    cloud_init_user_data = var.reference_data.enabled ? local.shared_cache_reference_data_cloud_init_user_data : local.shared_cache_cloud_init_user_data
   }
 
   depends_on = [
@@ -279,7 +288,7 @@ resource "nebius_mk8s_v1_node_group" "gpu" {
         each.value.features.shared_filesystem ? {
           "storage.fs2.nebius/shared-cache" = "true"
         } : {},
-        each.value.features.shared_filesystem && var.reference_data.enabled ? {
+        try(each.value.features.reference_data_filesystem, false) && var.reference_data.enabled ? {
           "storage.fs2.nebius/reference-data" = "true"
         } : {},
         {
@@ -292,7 +301,10 @@ resource "nebius_mk8s_v1_node_group" "gpu" {
       size_gibibytes = each.value.node.boot_disk.size_gib
       type           = each.value.node.boot_disk.type
     }
-    filesystems = each.value.features.shared_filesystem ? local.filesystem_attachment : []
+    filesystems = concat(
+      each.value.features.shared_filesystem ? local.filesystem_attachment : [],
+      try(each.value.features.reference_data_filesystem, false) ? local.reference_data_filesystem_attachment : [],
+    )
     gpu_settings = each.value.provider.driver.owner == "provider-managed" ? {
       drivers_preset = each.value.provider.driver.preset
     } : null
@@ -304,9 +316,13 @@ resource "nebius_mk8s_v1_node_group" "gpu" {
       policy          = each.value.provider.reservation_policy
       reservation_ids = length(try(each.value.provider.reservation_ids, [])) > 0 ? each.value.provider.reservation_ids : null
     }
-    service_account_id   = nebius_iam_v1_service_account.nodepull.id
-    underlay_required    = false
-    cloud_init_user_data = each.value.features.shared_filesystem ? local.shared_cache_cloud_init_user_data : null
+    service_account_id = nebius_iam_v1_service_account.nodepull.id
+    underlay_required  = false
+    cloud_init_user_data = (
+      try(each.value.features.reference_data_filesystem, false) && var.reference_data.enabled ?
+      (each.value.features.shared_filesystem ? local.shared_cache_reference_data_cloud_init_user_data : local.reference_data_cloud_init_user_data) :
+      (each.value.features.shared_filesystem ? local.shared_cache_cloud_init_user_data : null)
+    )
     resources = {
       platform = each.value.provider.platform
       preset   = each.value.provider.preset
@@ -410,7 +426,7 @@ resource "nebius_mk8s_v1_node_group" "nvlink_rack" {
         each.value.pool.features.shared_filesystem ? {
           "storage.fs2.nebius/shared-cache" = "true"
         } : {},
-        each.value.pool.features.shared_filesystem && var.reference_data.enabled ? {
+        try(each.value.pool.features.reference_data_filesystem, false) && var.reference_data.enabled ? {
           "storage.fs2.nebius/reference-data" = "true"
         } : {},
         {
@@ -423,8 +439,11 @@ resource "nebius_mk8s_v1_node_group" "nvlink_rack" {
       size_gibibytes = each.value.pool.node.boot_disk.size_gib
       type           = each.value.pool.node.boot_disk.type
     }
-    taints      = each.value.pool.scheduling.taints
-    filesystems = each.value.pool.features.shared_filesystem ? local.filesystem_attachment : []
+    taints = each.value.pool.scheduling.taints
+    filesystems = concat(
+      each.value.pool.features.shared_filesystem ? local.filesystem_attachment : [],
+      try(each.value.pool.features.reference_data_filesystem, false) ? local.reference_data_filesystem_attachment : [],
+    )
     gpu_settings = {
       drivers_preset = each.value.pool.provider.driver.preset
     }
@@ -439,9 +458,13 @@ resource "nebius_mk8s_v1_node_group" "nvlink_rack" {
       policy          = each.value.pool.provider.reservation_policy
       reservation_ids = length(try(each.value.pool.provider.reservation_ids, [])) > 0 ? each.value.pool.provider.reservation_ids : null
     }
-    service_account_id   = nebius_iam_v1_service_account.nodepull.id
-    underlay_required    = false
-    cloud_init_user_data = each.value.pool.features.shared_filesystem ? local.shared_cache_cloud_init_user_data : null
+    service_account_id = nebius_iam_v1_service_account.nodepull.id
+    underlay_required  = false
+    cloud_init_user_data = (
+      try(each.value.pool.features.reference_data_filesystem, false) && var.reference_data.enabled ?
+      (each.value.pool.features.shared_filesystem ? local.shared_cache_reference_data_cloud_init_user_data : local.reference_data_cloud_init_user_data) :
+      (each.value.pool.features.shared_filesystem ? local.shared_cache_cloud_init_user_data : null)
+    )
     resources = {
       platform = each.value.pool.provider.platform
       preset   = each.value.pool.provider.preset

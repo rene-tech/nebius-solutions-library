@@ -82,10 +82,10 @@ class GpuTopologyContractTests(unittest.TestCase):
             self.cluster,
         )
         self.assertIn(
-            "taints      = each.value.pool.scheduling.taints", self.cluster
+            "taints = each.value.pool.scheduling.taints", self.cluster
         )
         self.assertIn(
-            "gpu_cluster        = try(length(trimspace(each.value.pool.topology.infiniband_fabric)) > 0, false) ? "
+            "gpu_cluster = try(length(trimspace(each.value.pool.topology.infiniband_fabric)) > 0, false) ? "
             "nebius_compute_v1_gpu_cluster.pool[each.value.pool_id] : null",
             self.cluster,
         )

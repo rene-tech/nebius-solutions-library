@@ -67,13 +67,22 @@ class DisposableTerraformContractTests(unittest.TestCase):
         self.assertNotIn('name      = "fs2-serve-', self.terraform)
 
     def test_lifecycle_is_ephemeral_and_cache_is_deletable(self) -> None:
+        storage = (ROOT / "storage.tf").read_text(encoding="utf-8")
+        cache = storage.split(
+            'resource "nebius_compute_v1_filesystem" "cache"', 1
+        )[1].split(
+            'resource "nebius_compute_v1_filesystem" "reference_data"', 1
+        )[0]
         self.assertIn('retention   = "ephemeral"', self.terraform)
         self.assertIn('forbid_deletion  = optional(bool, false)', self.terraform)
         self.assertIn(
             'forbid_deletion  = local.effective_shared_cache.forbid_deletion',
-            self.terraform,
+            cache,
         )
-        self.assertNotIn("prevent_destroy", self.terraform)
+        self.assertNotIn("prevent_destroy", cache)
+        self.assertEqual(storage.count("prevent_destroy = true"), 2)
+        self.assertEqual(storage.count('retention = "durable"'), 5)
+        self.assertIn('retention = "disposable-empty-only"', storage)
 
     def test_current_gpu_resources_derive_from_typed_b300_pool_profile(self) -> None:
         cluster = (ROOT / "cluster.tf").read_text(encoding="utf-8")
@@ -154,9 +163,9 @@ class DisposableTerraformContractTests(unittest.TestCase):
         profiles = (
             ROOT.parents[1] / "catalog/profiles/capacity-profiles.json"
         ).read_text(encoding="utf-8")
-        self.assertIn('"gpu_1x_max_nodes": 6', profiles)
+        self.assertIn('"gpu_1x_max_nodes": 7', profiles)
         self.assertIn('"gpu_8x_max_nodes": 2', profiles)
-        self.assertIn('"maximum_gpus": 22', profiles)
+        self.assertIn('"maximum_gpus": 23', profiles)
         self.assertIn('"shared_cache_size_gib": 2048', profiles)
 
     def test_public_catalog_contains_no_private_target_or_registry_identity(
@@ -263,9 +272,9 @@ class DisposableTerraformContractTests(unittest.TestCase):
         )
         selected = capacity["capacity_profiles"]["full_catalog"]
         self.assertEqual(selected["system_nodes"], 3)
-        self.assertEqual(selected["gpu_1x_max_nodes"], 6)
+        self.assertEqual(selected["gpu_1x_max_nodes"], 7)
         self.assertEqual(selected["gpu_8x_max_nodes"], 2)
-        self.assertEqual(selected["maximum_gpus"], 22)
+        self.assertEqual(selected["maximum_gpus"], 23)
         self.assertEqual(selected["shared_cache_size_gib"], 2048)
         zero_floor = capacity["floor_profiles"]["zero"]
         self.assertEqual(zero_floor["gpu_1x_min_nodes"], 0)
@@ -373,9 +382,13 @@ class DisposableTerraformContractTests(unittest.TestCase):
         )
         self.assertNotEqual(normalized_private_cidrs(with_extra), expected)
 
-        self.assertIn("target_subnet_private_cidrs = toset(flatten([", data)
+        self.assertIn("target_subnet_private_pool_cidrs = toset(flatten([", data)
         self.assertIn(
             "data.nebius_vpc_v1_subnet.target.status.ipv4_private_pools", data
+        )
+        self.assertIn(
+            "tolist(data.nebius_vpc_v1_subnet.target.status.ipv4_private_pools)",
+            data,
         )
         self.assertIn("try(tolist(pool.cidrs), [])", data)
         self.assertIn(
@@ -383,7 +396,12 @@ class DisposableTerraformContractTests(unittest.TestCase):
             "local.selected_target.private_subnet_cidr)",
             data,
         )
-        self.assertNotIn("status.ipv4_private_cidrs", data)
+        self.assertIn(
+            "length(local.target_subnet_private_pool_cidrs) > 0 ? "
+            "local.target_subnet_private_pool_cidrs",
+            data,
+        )
+        self.assertEqual(data.count("status.ipv4_private_cidrs"), 1)
 
     def test_read_only_preflight_filters_accept_cli_and_provider_shapes(
         self,
@@ -519,8 +537,11 @@ class DisposableTerraformContractTests(unittest.TestCase):
             "private_directory(run_root)",
             "lock_path.chmod(0o600)",
             "fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)",
-            "contract, _ = validate_configuration(args.terraform, variable_file, run_root)",
+            "contract, configuration_environment = validate_configuration(",
+            "args.terraform, variable_file, run_root",
             "destroy_stack(args, run_root, contract, commit)",
+            'reference_infrastructure.get("lifecycle", {}).get("retention_mode")',
+            '== "retain"',
         ):
             self.assertIn(exact_guard, wrapper)
 

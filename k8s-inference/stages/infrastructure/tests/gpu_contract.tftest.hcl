@@ -1,4 +1,66 @@
-mock_provider "nebius" {}
+mock_provider "nebius" {
+  mock_data "nebius_iam_v2_project" {
+    defaults = {
+      id        = "project-syntheticlocal"
+      parent_id = "tenant-syntheticlocal"
+      name      = "synthetic-local-project"
+      region    = "us-north1"
+      status    = { project_state = "ACTIVE" }
+    }
+  }
+  mock_data "nebius_vpc_v1_network" {
+    defaults = {
+      id     = "vpcnetwork-syntheticlocal"
+      name   = "synthetic-network"
+      status = { state = "READY" }
+    }
+  }
+  mock_data "nebius_vpc_v1_subnet" {
+    defaults = {
+      id         = "vpcsubnet-syntheticlocal"
+      name       = "synthetic-subnet"
+      network_id = "vpcnetwork-syntheticlocal"
+      status = {
+        state              = "READY"
+        ipv4_private_cidrs = ["10.104.0.0/13"]
+        ipv4_private_pools = {
+          cidrs   = ["10.104.0.0/13"]
+          pool_id = "vpcpool-syntheticlocal"
+        }
+      }
+    }
+  }
+  mock_resource "nebius_mk8s_v1_cluster" {
+    defaults = { id = "mk8scluster-syntheticlocal" }
+  }
+  mock_resource "nebius_mk8s_v1_node_group" {
+    defaults = { id = "mk8snodegroup-syntheticlocal" }
+  }
+  mock_resource "nebius_compute_v1_filesystem" {
+    defaults = { id = "computefilesystem-syntheticlocal" }
+  }
+  mock_resource "nebius_storage_v1_bucket" {
+    defaults = { id = "storagebucket-syntheticlocal" }
+  }
+  mock_resource "nebius_iam_v1_service_account" {
+    defaults = { id = "serviceaccount-syntheticlocal" }
+  }
+  mock_resource "nebius_iam_v1_group" {
+    defaults = { id = "group-syntheticlocal" }
+  }
+  mock_resource "nebius_iam_v1_group_membership" {
+    defaults = { id = "groupmembership-syntheticlocal" }
+  }
+  mock_resource "nebius_iam_v2_access_key" {
+    defaults = { id = "accesskey-syntheticlocal" }
+  }
+  mock_resource "nebius_vpc_v1_security_group" {
+    defaults = { id = "vpcsecuritygroup-syntheticlocal" }
+  }
+  mock_resource "nebius_registry_v1_registry" {
+    defaults = { id = "registry-syntheticlocal" }
+  }
+}
 
 variables {
   project_id    = "project-syntheticlocal"
@@ -178,5 +240,101 @@ run "two_rack_gb300_nvlink_pool" {
       terraform_data.gpu_software_contract.input.network_operator_enabled
     )
     error_message = "A two-rack GB300 pool must create two rack identities and require the cross-rack fabric stack."
+  }
+}
+
+run "enabled_reference_data_retained_provider_fixture" {
+  command = plan
+
+  plan_options {
+    target = [
+      nebius_compute_v1_filesystem.reference_data,
+      nebius_compute_v1_filesystem.reference_data_disposable,
+      nebius_storage_v1_bucket.reference_data,
+      nebius_storage_v1_bucket.reference_data_disposable,
+      nebius_mk8s_v1_node_group.reference_data,
+    ]
+  }
+
+  variables {
+    reference_data = {
+      enabled   = true
+      lifecycle = { retention_mode = "retain" }
+      cpu_pool = {
+        platform       = "cpu-d3", preset = "8vcpu-32gb", node_count = 1
+        boot_disk_type = "NETWORK_SSD", boot_disk_gib = 160
+        max_surge      = 1, max_unavailable = 0, drain_timeout = "15m"
+      }
+      filesystem = {
+        size_gib         = 2048, type = "NETWORK_SSD"
+        block_size_bytes = 4096, forbid_deletion = true
+      }
+      object_storage = {
+        bucket_name = "fs2-provider-fixture-retained", max_size_gib = 2048
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      length(nebius_compute_v1_filesystem.reference_data) == 1 &&
+      length(nebius_compute_v1_filesystem.reference_data_disposable) == 0 &&
+      length(nebius_storage_v1_bucket.reference_data) == 1 &&
+      length(nebius_storage_v1_bucket.reference_data_disposable) == 0 &&
+      length(nebius_mk8s_v1_node_group.reference_data) == 1
+    )
+    error_message = "Retained reference data must use the exact protected provider resource set."
+  }
+}
+
+run "fresh_empty_reference_storage_apply_acceptance" {
+  command = apply
+
+  plan_options {
+    target = [
+      nebius_compute_v1_filesystem.reference_data_disposable,
+      nebius_compute_v1_filesystem.reference_data,
+      nebius_storage_v1_bucket.reference_data_disposable,
+      nebius_storage_v1_bucket.reference_data,
+      nebius_mk8s_v1_node_group.reference_data,
+    ]
+  }
+
+  variables {
+    reference_data = {
+      enabled   = true
+      lifecycle = { retention_mode = "disposable" }
+      cpu_pool = {
+        platform       = "cpu-d3", preset = "8vcpu-32gb", node_count = 1
+        boot_disk_type = "NETWORK_SSD", boot_disk_gib = 160
+        max_surge      = 1, max_unavailable = 0, drain_timeout = "15m"
+      }
+      filesystem = {
+        size_gib         = 2048, type = "NETWORK_SSD"
+        block_size_bytes = 4096, forbid_deletion = false
+      }
+      object_storage = {
+        bucket_name = "fs2-provider-fixture-disposable", max_size_gib = 2048
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      length(nebius_compute_v1_filesystem.reference_data) == 0 &&
+      length(nebius_compute_v1_filesystem.reference_data_disposable) == 1 &&
+      length(nebius_storage_v1_bucket.reference_data) == 0 &&
+      length(nebius_storage_v1_bucket.reference_data_disposable) == 1 &&
+      length(nebius_mk8s_v1_node_group.reference_data) == 1
+    )
+    error_message = "Disposable empty-volume acceptance must use only deletable provider resources."
+  }
+
+  assert {
+    condition = (
+      nebius_compute_v1_filesystem.reference_data_disposable[0].forbid_deletion == false &&
+      nebius_storage_v1_bucket.reference_data_disposable[0].versioning_policy == "ENABLED"
+    )
+    error_message = "Fresh acceptance storage must be disposable but keep versioning enabled; teardown is valid only before objects are written."
   }
 }

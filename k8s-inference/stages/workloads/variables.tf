@@ -102,6 +102,15 @@ variable "reference_data" {
         minimum_size_gib                   = number
       })
       public_msa_default = bool
+      lifecycle = object({
+        retention_mode  = string
+        destroy_status  = string
+        adoption_status = string
+        retained_ids = optional(object({
+          filesystem = string
+          bucket     = string
+        }))
+      })
     }))
     object_storage_access = optional(object({
       access_key_id       = string
@@ -162,6 +171,12 @@ variable "reference_data" {
         var.reference_data.storage_contract.filesystem.size_gib >= var.reference_data.storage_contract.sizing.minimum_size_gib &&
         var.reference_data.storage_contract.object_storage.max_size_gib >= var.reference_data.storage_contract.sizing.minimum_size_gib &&
         var.reference_data.storage_contract.object_storage.versioning_policy == "ENABLED" &&
+        contains(["retain", "disposable"], var.reference_data.storage_contract.lifecycle.retention_mode) &&
+        (
+          var.reference_data.storage_contract.lifecycle.retention_mode == "retain" ?
+          var.reference_data.storage_contract.lifecycle.destroy_status == "blocked-retained" :
+          var.reference_data.storage_contract.lifecycle.destroy_status == "eligible-only-while-bucket-empty"
+        ) &&
         !var.reference_data.storage_contract.public_msa_default &&
         length(var.reference_data.object_storage_access.access_key_id) >= 8 &&
         can(regex("^[A-Za-z0-9_-]+$", var.reference_data.object_storage_access.access_key_id)) &&

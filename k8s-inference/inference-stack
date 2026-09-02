@@ -591,6 +591,22 @@ def require_deployable_images(contract: Mapping[str, Any]) -> None:
         if policy == "regional-mirror":
             split_digest_reference(image, label=f"model {model_id}")
 
+    reference_data = workloads.get("reference_data", {})
+    if isinstance(reference_data, Mapping) and reference_data.get("enabled") is True:
+        for component in ("status", "pipeline"):
+            configuration = reference_data.get(component, {})
+            if not isinstance(configuration, Mapping) or configuration.get("enabled") is not True:
+                continue
+            image = configuration.get("image")
+            if not isinstance(image, str) or image.split("/", 1)[0].endswith(".invalid"):
+                raise DeploymentError(
+                    f"reference-data {component} image is unresolved"
+                )
+            if policy == "regional-mirror":
+                split_digest_reference(
+                    image, label=f"reference-data {component}"
+                )
+
 
 def split_digest_reference(reference: str, *, label: str) -> tuple[str, str]:
     """Split one immutable OCI reference without accepting a tag-only source."""
@@ -689,6 +705,14 @@ def selected_image_artifacts(
         (f"model/{model_id}", workloads["model_image_overrides"][model_id])
         for model_id in contract["selected_model_ids"]
     )
+    reference_data = workloads.get("reference_data", {})
+    if isinstance(reference_data, Mapping) and reference_data.get("enabled") is True:
+        for component in ("status", "pipeline"):
+            configuration = reference_data.get(component, {})
+            if isinstance(configuration, Mapping) and configuration.get("enabled") is True:
+                sources.append(
+                    (f"reference-data/{component}", str(configuration["image"]))
+                )
 
     prefix = str(registry_delivery.get("repository_prefix", "")).strip("/")
     artifacts: list[dict[str, str]] = []
@@ -753,6 +777,19 @@ def rewritten_workloads(
         model_id: artifacts[f"model/{model_id}"]["target_reference"]
         for model_id in contract["selected_model_ids"]
     }
+    reference_data = workloads.get("reference_data")
+    if isinstance(reference_data, Mapping) and reference_data.get("enabled") is True:
+        rewritten_reference_data = dict(reference_data)
+        for component in ("status", "pipeline"):
+            configuration = rewritten_reference_data.get(component)
+            if not isinstance(configuration, Mapping) or configuration.get("enabled") is not True:
+                continue
+            rewritten_configuration = dict(configuration)
+            rewritten_configuration["image"] = artifacts[
+                f"reference-data/{component}"
+            ]["target_reference"]
+            rewritten_reference_data[component] = rewritten_configuration
+        workloads["reference_data"] = rewritten_reference_data
     return workloads
 
 
@@ -1465,6 +1502,13 @@ def infrastructure_outputs(
         if reference_data_enabled
         else None
     )
+    reference_data_lifecycle = (
+        terraform_optional_json_output(
+            terraform, INFRA_ROOT, "reference_data_lifecycle", environment
+        )
+        if reference_data_enabled
+        else None
+    )
     return {
         "run_root": str(run_root.resolve()),
         "nebius_profile": nebius_profile,
@@ -1488,6 +1532,7 @@ def infrastructure_outputs(
         ),
         "reference_data_storage_contract": reference_data_storage,
         "reference_data_object_storage_access": reference_data_access,
+        "reference_data_lifecycle": reference_data_lifecycle,
     }
 
 
@@ -1663,7 +1708,7 @@ def workload_endpoint_outputs(
     environment = stage_environment(
         run_root, "workloads", contract, include_secrets=False
     )
-    return {
+    outputs = {
         "mcp_endpoint_url": terraform_json_output(
             terraform, WORKLOADS_ROOT, "mcp_endpoint_url", environment
         ),
@@ -1677,6 +1722,21 @@ def workload_endpoint_outputs(
             terraform, WORKLOADS_ROOT, "grafana_url", environment
         ),
     }
+    reference_enabled = (
+        contract.get("stages", {})
+        .get("workloads", {})
+        .get("reference_data", {})
+        .get("enabled")
+        is True
+    )
+    outputs["reference_data"] = (
+        terraform_optional_json_output(
+            terraform, WORKLOADS_ROOT, "reference_data_status", environment
+        )
+        if reference_enabled
+        else None
+    )
+    return outputs
 
 
 def workload_access_bundle(
@@ -1699,6 +1759,7 @@ def workload_access_bundle(
     endpoints = bundle.get("endpoints")
     credentials = bundle.get("credentials")
     mcp_access = bundle.get("mcp_access")
+    reference_data = bundle.get("reference_data")
     if not all(
         isinstance(value, dict)
         for value in (cluster, endpoints, credentials, mcp_access)
@@ -1755,6 +1816,20 @@ def workload_access_bundle(
         or not {"mcp.invoke", "inference.invoke"}.issubset(scopes)
     ):
         raise DeploymentError("the workloads access bundle is missing or malformed")
+    if reference_data is not None:
+        if not isinstance(reference_data, dict) or not has_non_empty_strings(
+            reference_data,
+            ("filesystem_id", "bucket_id", "bucket_name", "cpu_pool_id"),
+        ):
+            raise DeploymentError("the workloads access bundle is missing or malformed")
+        lifecycle = reference_data.get("lifecycle")
+        if (
+            not isinstance(lifecycle, dict)
+            or lifecycle.get("retention_mode") not in {"retain", "disposable"}
+            or not isinstance(reference_data.get("pipeline"), (dict, type(None)))
+            or not isinstance(reference_data.get("status_service"), (str, type(None)))
+        ):
+            raise DeploymentError("the workloads access bundle is missing or malformed")
     return bundle
 
 
@@ -1975,6 +2050,23 @@ def destroy_stack(
     contract: Mapping[str, Any],
     commit: str,
 ) -> None:
+    reference_infrastructure = (
+        contract.get("stages", {})
+        .get("infrastructure", {})
+        .get("reference_data", {})
+    )
+    if (
+        isinstance(reference_infrastructure, Mapping)
+        and reference_infrastructure.get("enabled") is True
+        and reference_infrastructure.get("lifecycle", {}).get("retention_mode")
+        == "retain"
+    ):
+        raise DeploymentError(
+            "reference-data retention_mode=retain blocks full-stack destroy: "
+            "use inference-stack status/output to record the retained filesystem, "
+            "bucket and CPU-pool IDs, then explicitly adopt or migrate their state; "
+            "no resource was changed"
+        )
     infrastructure_variables = write_infrastructure_variables(
         run_root, contract, commit, args.nebius_profile
     )
@@ -2038,6 +2130,7 @@ def status_stack(
 ) -> None:
     stages: dict[str, Any] = {}
     workloads_ready = False
+    infrastructure_reference_data: Any | None = None
     for stage in ("infrastructure", "foundation", "workloads"):
         state, _, _ = stage_paths(run_root, stage)
         if not state.exists():
@@ -2056,6 +2149,31 @@ def status_stack(
         }
         if stage == "workloads":
             workloads_ready = complete
+        if (
+            stage == "infrastructure"
+            and complete
+            and contract.get("stages", {})
+            .get("infrastructure", {})
+            .get("reference_data", {})
+            .get("enabled")
+            is True
+        ):
+            storage = terraform_optional_json_output(
+                args.terraform,
+                INFRA_ROOT,
+                "reference_data_storage_contract",
+                environment,
+            )
+            if isinstance(storage, Mapping):
+                infrastructure_reference_data = {
+                    "lifecycle": storage.get("lifecycle"),
+                    "filesystem_id": storage.get("filesystem", {}).get("id"),
+                    "bucket_id": storage.get("object_storage", {}).get("id"),
+                    "bucket_name": storage.get("object_storage", {}).get("name"),
+                    "cpu_pool_id": storage.get("cpu_pool", {}).get("id"),
+                    "status_service": None,
+                    "pipeline": None,
+                }
     endpoints = (
         workload_endpoint_outputs(args.terraform, run_root, contract)
         if workloads_ready
@@ -2064,8 +2182,11 @@ def status_stack(
             "admin_web_interface_url": None,
             "inference_base_url": None,
             "grafana_url": None,
+            "reference_data": None,
         }
     )
+    if not workloads_ready and infrastructure_reference_data is not None:
+        endpoints["reference_data"] = infrastructure_reference_data
     print(
         json.dumps(
             {"run_root": str(run_root), "stages": stages, **endpoints},

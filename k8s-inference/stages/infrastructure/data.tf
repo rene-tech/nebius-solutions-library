@@ -32,11 +32,22 @@ locals {
 
   # Provider 0.6.28 exposes the authoritative CIDRs as one list per private
   # pool. Normalize both the outer and inner collection types before comparing
-  # them so a provider tuple cannot fail an otherwise exact CIDR match.
-  target_subnet_private_cidrs = toset(flatten([
-    for pool in try(data.nebius_vpc_v1_subnet.target.status.ipv4_private_pools, []) :
+  # them so a provider tuple or Terraform mock's singleton object cannot fail
+  # an otherwise exact CIDR match.
+  target_subnet_private_pool_cidrs = toset(flatten([
+    for pool in try(
+      tolist(data.nebius_vpc_v1_subnet.target.status.ipv4_private_pools),
+      [data.nebius_vpc_v1_subnet.target.status.ipv4_private_pools],
+    ) :
     try(tolist(pool.cidrs), [])
   ]))
+  # Terraform's mock provider cannot currently materialize this provider's
+  # nested pool collection. Use its deprecated flat projection only when the
+  # authoritative collection normalizes empty; live provider states use the
+  # pool list above.
+  target_subnet_private_cidrs = length(local.target_subnet_private_pool_cidrs) > 0 ? local.target_subnet_private_pool_cidrs : toset(
+    try(tolist(data.nebius_vpc_v1_subnet.target.status.ipv4_private_cidrs), [])
+  )
 
   common_labels = {
     owner       = "k8s-elastic-inference-platform"

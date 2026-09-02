@@ -37,6 +37,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
         gpu_floor_profile: str = "zero",
         acceptance_mode: str = VERIFY.DEFAULT_ACCEPTANCE_MODE,
         public_edge_mode: str = "public",
+        reference_data_mode: str = "disabled",
         port_forward_local_ports: dict[str, int] | None = None,
         topology_override: tuple[str, tuple[str, ...], object] | None = None,
         contract_override: tuple[tuple[str, ...], object] | None = None,
@@ -143,14 +144,38 @@ class InfrastructurePlanContractTests(unittest.TestCase):
             VERIFY.ACCEPTANCE_MODES[acceptance_mode]["required_addresses"]
         )
         required_addresses.update(VERIFY.EDGE_MODES[public_edge_mode])
+        required_addresses.update(
+            VERIFY.REFERENCE_DATA_RESOURCE_TYPES[reference_data_mode]
+        )
         for index, address in enumerate(sorted(required_addresses)):
-            resource_type = address.split(".", maxsplit=1)[0]
+            resource_type = {
+                **VERIFY.BASE_RESOURCE_TYPES,
+                **VERIFY.PUBLIC_EDGE_RESOURCE_TYPES,
+                **VERIFY.REFERENCE_DATA_RESOURCE_TYPES[reference_data_mode],
+            }[address]
             values = copy.deepcopy(values_by_address.get(address, {}))
             if resource_type != "terraform_data":
+                retention = "ephemeral"
+                if address in {
+                    "nebius_compute_v1_filesystem.reference_data[0]",
+                    "nebius_storage_v1_bucket.reference_data[0]",
+                }:
+                    retention = "durable"
+                elif address in {
+                    "nebius_compute_v1_filesystem.reference_data_disposable[0]",
+                    "nebius_storage_v1_bucket.reference_data_disposable[0]",
+                }:
+                    retention = "disposable-empty-only"
+                elif address in {
+                    "nebius_iam_v1_service_account.reference_data[0]",
+                    "nebius_iam_v1_group.reference_data_writers[0]",
+                    "nebius_iam_v2_access_key.reference_data[0]",
+                }:
+                    retention = "durable"
                 values.update(
                     {
                         "name": f"fs2-disposable-{run_id}-fixture",
-                        "labels": ownership_labels,
+                        "labels": {**ownership_labels, "retention": retention},
                     }
                 )
             change = {
@@ -178,6 +203,21 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 "gpu_floor_profile": {"value": gpu_floor_profile},
                 "gpu_driver_preset": {"value": "cuda13.0"},
                 "public_edge_mode": {"value": public_edge_mode},
+                "reference_data": {
+                    "value": {
+                        "enabled": reference_data_mode != "disabled",
+                        "lifecycle": {
+                            "retention_mode": (
+                                reference_data_mode
+                                if reference_data_mode != "disabled"
+                                else "retain"
+                            )
+                        },
+                        "filesystem": {
+                            "forbid_deletion": reference_data_mode != "disposable"
+                        },
+                    }
+                },
                 "public_edge_source_cidrs": {
                     "value": ["0.0.0.0/0"] if public_edge_mode == "public" else []
                 },
@@ -288,6 +328,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                     "capacity_profile": capacity_profile,
                     "gpu_floor_profile": gpu_floor_profile,
                     "public_edge_mode": public_edge_mode,
+                    "reference_data_mode": reference_data_mode,
                     "paths": {
                         "backend": str(root / "terraform.tfstate"),
                         "kubeconfig": str(root / "kubeconfig"),
@@ -311,6 +352,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
         expected_source_commit: str = EXPECTED_SOURCE_COMMIT,
         acceptance_mode: str = VERIFY.DEFAULT_ACCEPTANCE_MODE,
         public_edge_mode: str = "public",
+        reference_data_mode: str = "disabled",
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
@@ -331,6 +373,8 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 acceptance_mode,
                 "--public-edge-mode",
                 public_edge_mode,
+                "--reference-data-mode",
+                reference_data_mode,
             ],
             capture_output=True,
             text=True,
@@ -359,6 +403,107 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("exactly 14 disposable managed resources", result.stdout)
                 self.assertIn("edge=internal-only", result.stdout)
+
+    def test_enabled_reference_data_has_exact_optional_types_and_count(self) -> None:
+        for reference_data_mode in ("retain", "disposable"):
+            with self.subTest(mode=reference_data_mode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                os.chmod(root, 0o700)
+                fixture = self.fixture(
+                    root,
+                    mode="create",
+                    reference_data_mode=reference_data_mode,
+                )
+                result = self.invoke(
+                    *fixture,
+                    mode="create",
+                    reference_data_mode=reference_data_mode,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("exactly 23 disposable managed resources", result.stdout)
+
+    def test_retained_reference_data_rejects_full_destroy_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            os.chmod(root, 0o700)
+            fixture = self.fixture(
+                root,
+                mode="destroy",
+                reference_data_mode="retain",
+            )
+            result = self.invoke(
+                *fixture,
+                mode="destroy",
+                reference_data_mode="retain",
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("no full-destroy plan", result.stdout)
+
+    def test_enabled_reference_data_rejects_optional_resource_type_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            os.chmod(root, 0o700)
+            plan_path, metadata_path = self.fixture(
+                root,
+                mode="create",
+                reference_data_mode="disposable",
+            )
+            document = json.loads(plan_path.read_text(encoding="utf-8"))
+            target = next(
+                change
+                for change in document["resource_changes"]
+                if change["address"]
+                == "nebius_storage_v1_bucket.reference_data_disposable[0]"
+            )
+            target["type"] = "nebius_compute_v1_filesystem"
+            plan_path.write_text(json.dumps(document), encoding="utf-8")
+            result = self.invoke(
+                plan_path,
+                metadata_path,
+                mode="create",
+                reference_data_mode="disposable",
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("expected 'nebius_storage_v1_bucket'", result.stdout)
+
+    def test_reference_mode_must_match_plan_variables_and_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            os.chmod(root, 0o700)
+            plan_path, metadata_path = self.fixture(
+                root,
+                mode="create",
+                reference_data_mode="retain",
+            )
+            document = json.loads(plan_path.read_text(encoding="utf-8"))
+            document["variables"]["reference_data"]["value"]["lifecycle"][
+                "retention_mode"
+            ] = "disposable"
+            plan_path.write_text(json.dumps(document), encoding="utf-8")
+            result = self.invoke(
+                plan_path,
+                metadata_path,
+                mode="create",
+                reference_data_mode="retain",
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("lifecycle.retention_mode differs", result.stdout)
+
+            document["variables"]["reference_data"]["value"]["lifecycle"][
+                "retention_mode"
+            ] = "retain"
+            plan_path.write_text(json.dumps(document), encoding="utf-8")
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["reference_data_mode"] = "disposable"
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+            result = self.invoke(
+                plan_path,
+                metadata_path,
+                mode="create",
+                reference_data_mode="retain",
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("metadata reference_data_mode differs", result.stdout)
 
     def test_internal_only_accepts_a_distinct_second_cluster_port_tuple(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

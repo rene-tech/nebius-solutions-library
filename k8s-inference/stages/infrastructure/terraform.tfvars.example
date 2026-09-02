@@ -44,7 +44,7 @@ public_edge_mode = "public"
 # The cheap default keeps both preemptible GPU pools at zero. For the original
 # one-GPU smoke use gpu_floor_profile="representative". For the all-model gate
 # select capacity_profile="full_catalog"; use gpu_floor_profile="full_catalog"
-# only when the complete 6x1-B300 + 2x8-B300 topology should remain hot.
+# only when the complete 7x1-B300 + 2x8-B300 topology should remain hot.
 capacity_profile  = "minimal"
 gpu_floor_profile = "zero"
 

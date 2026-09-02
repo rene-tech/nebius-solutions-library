@@ -105,12 +105,12 @@ output "accelerator_pool_contract_sha256" {
 }
 
 output "owned_resource_ids" {
-  description = "Task-owned resources that must be absent after the supervised destroy."
+  description = "Terraform-owned resources expected absent after a supervised disposable destroy. Retained reference storage is deliberately excluded and reported by reference_data_lifecycle."
   value = {
     registry                  = nebius_registry_v1_registry.images.id
     shared_cache              = nebius_compute_v1_filesystem.cache.id
-    reference_data_filesystem = try(nebius_compute_v1_filesystem.reference_data[0].id, null)
-    reference_data_bucket     = try(nebius_storage_v1_bucket.reference_data[0].id, null)
+    reference_data_filesystem = var.reference_data.enabled && var.reference_data.lifecycle.retention_mode == "disposable" ? local.reference_data_filesystem_id : null
+    reference_data_bucket     = var.reference_data.enabled && var.reference_data.lifecycle.retention_mode == "disposable" ? local.reference_data_bucket_id : null
     reference_data_writer_sa  = try(nebius_iam_v1_service_account.reference_data[0].id, null)
     reference_data_access_key = try(nebius_iam_v2_access_key.reference_data[0].id, null)
     reference_data_cpu_pool   = try(nebius_mk8s_v1_node_group.reference_data[0].id, null)
@@ -150,7 +150,7 @@ output "reference_data_storage_contract" {
       }
     }
     filesystem = {
-      id               = nebius_compute_v1_filesystem.reference_data[0].id
+      id               = local.reference_data_filesystem_id
       size_gib         = var.reference_data.filesystem.size_gib
       type             = var.reference_data.filesystem.type
       block_size_bytes = var.reference_data.filesystem.block_size_bytes
@@ -160,19 +160,19 @@ output "reference_data_storage_contract" {
       uri              = "file://${local.reference_data_host_path}"
     }
     object_storage = {
-      id                = nebius_storage_v1_bucket.reference_data[0].id
-      name              = nebius_storage_v1_bucket.reference_data[0].name
+      id                = local.reference_data_bucket_id
+      name              = local.reference_data_bucket_name
       endpoint          = "https://storage.${local.selected_target.region}.nebius.cloud"
       max_size_gib      = var.reference_data.object_storage.max_size_gib
       versioning_policy = "ENABLED"
-      object_prefix     = "s3://${nebius_storage_v1_bucket.reference_data[0].name}/reference-data"
+      object_prefix     = "s3://${local.reference_data_bucket_name}/reference-data"
     }
     layout = {
-      blobs                 = "s3://${nebius_storage_v1_bucket.reference_data[0].name}/reference-data/blobs/sha256/<sha256>"
-      manifests             = "s3://${nebius_storage_v1_bucket.reference_data[0].name}/reference-data/manifests/sha256/<manifest-sha256>.json"
+      blobs                 = "s3://${local.reference_data_bucket_name}/reference-data/blobs/sha256/<sha256>"
+      manifests             = "s3://${local.reference_data_bucket_name}/reference-data/manifests/sha256/<manifest-sha256>.json"
       filesystem_datasets   = "file://${local.reference_data_host_path}/datasets/<bundle>/<revision>/sha256/<tree-sha256>"
-      preprocessing_inputs  = "s3://${nebius_storage_v1_bucket.reference_data[0].name}/inputs/sha256/<sha256>.<format>"
-      preprocessing_outputs = "s3://${nebius_storage_v1_bucket.reference_data[0].name}/preprocessing/<tenant>/<workload>/requests/sha256/<request-sha256>/results/sha256/<result-manifest-sha256>"
+      preprocessing_inputs  = "s3://${local.reference_data_bucket_name}/inputs/sha256/<sha256>.<format>"
+      preprocessing_outputs = "s3://${local.reference_data_bucket_name}/preprocessing/<tenant>/<workload>/requests/sha256/<request-sha256>/results/sha256/<result-manifest-sha256>"
     }
     sizing = {
       official_alphafold3_expanded_bytes = 630000000000
@@ -180,6 +180,30 @@ output "reference_data_storage_contract" {
       minimum_size_gib                   = 1611
     }
     public_msa_default = false
+    lifecycle = {
+      retention_mode  = var.reference_data.lifecycle.retention_mode
+      destroy_status  = var.reference_data.lifecycle.retention_mode == "retain" ? "blocked-retained" : "eligible-only-while-bucket-empty"
+      adoption_status = var.reference_data.lifecycle.retention_mode == "retain" ? "ids-exported-for-explicit-state-adoption" : "not-applicable"
+      retained_ids = var.reference_data.lifecycle.retention_mode == "retain" ? {
+        filesystem = local.reference_data_filesystem_id
+        bucket     = local.reference_data_bucket_id
+      } : null
+    }
+  } : null
+}
+
+output "reference_data_lifecycle" {
+  description = "Truthful retention/adoption contract. Retained production storage blocks destroy; disposable acceptance storage is deletable only while its versioned bucket is empty."
+  value = var.reference_data.enabled ? {
+    retention_mode  = var.reference_data.lifecycle.retention_mode
+    status          = var.reference_data.lifecycle.retention_mode == "retain" ? "managed-retained" : "managed-disposable-empty"
+    destroy_status  = var.reference_data.lifecycle.retention_mode == "retain" ? "blocked-retained" : "eligible-only-while-bucket-empty"
+    adoption_status = var.reference_data.lifecycle.retention_mode == "retain" ? "ids-exported-for-explicit-state-adoption" : "not-applicable"
+    resource_ids = {
+      filesystem = local.reference_data_filesystem_id
+      bucket     = local.reference_data_bucket_id
+      cpu_pool   = nebius_mk8s_v1_node_group.reference_data[0].id
+    }
   } : null
 }
 

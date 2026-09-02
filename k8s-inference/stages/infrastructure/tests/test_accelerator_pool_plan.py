@@ -211,7 +211,7 @@ class AcceleratorPoolPlanTests(unittest.TestCase):
             contract["pools"]["nebius-b300-preemptible-1x"]["capacity"][
                 "max_nodes"
             ],
-            6,
+            7,
         )
         self.assertIsNone(
             document["planned_values"]["outputs"]["infrastructure_contract"][

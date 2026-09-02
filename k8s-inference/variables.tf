@@ -76,10 +76,11 @@ variable "deployment" {
         type     = optional(string, "NETWORK_SSD")
         size_gib = optional(number, 320)
       }), {})
-      local_nvme        = optional(bool, false)
-      local_nvme_mode   = optional(string, "raw")
-      shared_filesystem = optional(bool, true)
-      drain_timeout     = optional(string, "30m")
+      local_nvme                = optional(bool, false)
+      local_nvme_mode           = optional(string, "raw")
+      shared_filesystem         = optional(bool, true)
+      reference_data_filesystem = optional(bool, false)
+      drain_timeout             = optional(string, "30m")
       topology = optional(object({
         mode              = optional(string, "standalone")
         infiniband_fabric = optional(string)
@@ -246,6 +247,9 @@ variable "deployment" {
       }))
       reference_data = optional(object({
         enabled = optional(bool, false)
+        lifecycle = optional(object({
+          retention_mode = optional(string, "retain")
+        }), {})
         cpu_pool = optional(object({
           platform        = optional(string, "cpu-d3")
           preset          = optional(string, "8vcpu-32gb")
@@ -630,6 +634,12 @@ variable "deployment" {
   validation {
     condition = try(
       !var.deployment.storage.reference_data.enabled || (
+        contains(["retain", "disposable"], var.deployment.storage.reference_data.lifecycle.retention_mode) &&
+        (
+          var.deployment.storage.reference_data.lifecycle.retention_mode == "retain" ?
+          var.deployment.storage.reference_data.filesystem.forbid_deletion :
+          !var.deployment.storage.reference_data.filesystem.forbid_deletion
+        ) &&
         can(regex("^[a-z0-9][a-z0-9-]{1,63}$", var.deployment.storage.reference_data.cpu_pool.platform)) &&
         can(regex("^[a-z0-9][a-z0-9-]{1,63}$", var.deployment.storage.reference_data.cpu_pool.preset)) &&
         floor(var.deployment.storage.reference_data.cpu_pool.node_count) == var.deployment.storage.reference_data.cpu_pool.node_count &&
@@ -671,7 +681,7 @@ variable "deployment" {
       ),
       false,
     )
-    error_message = "enabled storage.reference_data requires a bounded dedicated regular CPU pool, DNS-safe names and dedicated filesystem/object capacities of at least 1611 GiB (the 630 GB official AlphaFold3 expansion estimate plus 1 TiB headroom)."
+    error_message = "enabled storage.reference_data requires retain+forbid_deletion or disposable+deletable lifecycle semantics, a bounded dedicated regular CPU pool, DNS-safe names and dedicated filesystem/object capacities of at least 1611 GiB (the 630 GB official AlphaFold3 expansion estimate plus 1 TiB headroom)."
   }
 
   validation {

@@ -77,6 +77,8 @@ locals {
       split("/", var.deployment.applications.admin_console.repository)[0],
     ],
     [for image in values(local.effective_model_images) : split("/", image)[0]],
+    var.deployment.storage.reference_data.status.enabled ? [split("/", var.deployment.storage.reference_data.status.image)[0]] : [],
+    var.deployment.storage.reference_data.pipeline.enabled ? [split("/", var.deployment.storage.reference_data.pipeline.image)[0]] : [],
   )))
 
   # Nebius Managed Kubernetes builds the cluster-autoscaler template for a
@@ -212,6 +214,9 @@ locals {
     shared_cache = var.deployment.storage.shared_cache
     reference_data = {
       enabled = var.deployment.storage.reference_data.enabled
+      lifecycle = {
+        retention_mode = var.deployment.storage.reference_data.lifecycle.retention_mode
+      }
       cpu_pool = {
         platform        = var.deployment.storage.reference_data.cpu_pool.platform
         preset          = var.deployment.storage.reference_data.cpu_pool.preset

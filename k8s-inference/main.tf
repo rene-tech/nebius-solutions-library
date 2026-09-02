@@ -115,5 +115,13 @@ resource "terraform_data" "deployment_contract" {
       error_message = "The effective reference-data bucket name must be a globally valid 3-63 character object-storage name; set deployment.storage.reference_data.object_storage.bucket_name explicitly when the derived name is too long."
     }
 
+    precondition {
+      condition = alltrue([
+        for pool in values(var.deployment.accelerator_pools) :
+        !pool.reference_data_filesystem || var.deployment.storage.reference_data.enabled
+      ])
+      error_message = "An accelerator pool can opt into the reference-data filesystem only when storage.reference_data.enabled=true."
+    }
+
   }
 }

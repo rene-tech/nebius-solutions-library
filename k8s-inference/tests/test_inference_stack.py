@@ -159,6 +159,7 @@ def complete_access_bundle() -> dict:
             "tenant_id": "tenant-test",
             "scopes": ["mcp.invoke", "inference.invoke"],
         },
+        "reference_data": None,
     }
 
 
@@ -849,6 +850,7 @@ class InferenceStackTests(unittest.TestCase):
             "admin_web_interface_url": "https://192.0.2.10/admin/",
             "inference_base_url": "https://192.0.2.10/v1",
             "grafana_url": "https://192.0.2.10/admin/observability/grafana",
+            "reference_data": None,
         }
 
         def fake_plan(*_args, **kwargs):
@@ -931,6 +933,7 @@ class InferenceStackTests(unittest.TestCase):
             "admin_web_interface_url": "https://192.0.2.11/admin/",
             "inference_base_url": "https://192.0.2.11/v1",
             "grafana_url": "https://192.0.2.11/admin/observability/grafana",
+            "reference_data": None,
         }
 
         def fake_endpoint_output(_terraform, _root, name, _environment):
@@ -991,6 +994,7 @@ class InferenceStackTests(unittest.TestCase):
             "mcp_endpoint_url": "https://192.0.2.11/mcp",
             "admin_web_interface_url": "https://192.0.2.11/admin/",
             "inference_base_url": "https://192.0.2.11/v1",
+            "reference_data": None,
         }
         with (
             mock.patch.object(STACK, "stage_environment", return_value={}),
@@ -1011,6 +1015,36 @@ class InferenceStackTests(unittest.TestCase):
                 ),
                 {**required, "grafana_url": None},
             )
+
+    def test_status_output_reads_normal_reference_data_status_output(self) -> None:
+        configuration = contract()
+        configuration["stages"]["workloads"]["reference_data"] = {"enabled": True}
+        reference_status = {
+            "filesystem_id": "computefilesystem-test",
+            "bucket_id": "storagebucket-test",
+            "bucket_name": "reference-data-test",
+            "cpu_pool_id": "mk8snodegroup-test",
+            "status_service": "fs2-reference-data-status.fs2-reference-data.svc.cluster.local:8080",
+            "pipeline": {"job_name": "fs2-stage-af3-test", "state": "submitted-suspended-awaiting-kueue-admission"},
+            "lifecycle": {"retention_mode": "retain"},
+        }
+        with (
+            mock.patch.object(STACK, "stage_environment", return_value={}),
+            mock.patch.object(
+                STACK,
+                "terraform_json_output",
+                side_effect=["mcp", "admin", "inference"],
+            ),
+            mock.patch.object(
+                STACK,
+                "terraform_optional_json_output",
+                side_effect=[None, reference_status],
+            ),
+        ):
+            values = STACK.workload_endpoint_outputs(
+                "terraform-test", Path("/private/test-run"), configuration
+            )
+        self.assertEqual(values["reference_data"], reference_status)
 
     def test_output_explicitly_emits_the_sensitive_access_bundle(self) -> None:
         access_bundle = complete_access_bundle()
@@ -1048,6 +1082,35 @@ class InferenceStackTests(unittest.TestCase):
                     "terraform-test", Path("/private/test-run"), contract()
                 ),
                 bundle,
+            )
+
+    def test_access_bundle_exposes_reference_storage_cpu_service_and_pipeline(self) -> None:
+        bundle = complete_access_bundle()
+        bundle["reference_data"] = {
+            "lifecycle": {
+                "retention_mode": "retain",
+                "destroy_status": "blocked-retained",
+                "adoption_status": "ids-exported-for-explicit-state-adoption",
+            },
+            "filesystem_id": "computefilesystem-test",
+            "bucket_id": "storagebucket-test",
+            "bucket_name": "reference-data-test",
+            "cpu_pool_id": "mk8snodegroup-test",
+            "status_service": "fs2-reference-data-status.fs2-reference-data.svc.cluster.local:8080",
+            "pipeline": {
+                "job_name": "fs2-stage-af3-123456789abc",
+                "state": "submitted-suspended-awaiting-kueue-admission",
+            },
+        }
+        with (
+            mock.patch.object(STACK, "stage_environment", return_value={}),
+            mock.patch.object(STACK, "terraform_json_output", return_value=bundle),
+        ):
+            self.assertEqual(
+                STACK.workload_access_bundle(
+                    "terraform-test", Path("/private/test-run"), contract()
+                )["reference_data"],
+                bundle["reference_data"],
             )
 
     def test_access_bundle_validation_rejects_missing_connection_fields(
@@ -1464,6 +1527,48 @@ class InferenceStackTests(unittest.TestCase):
         )
         mirror_images.assert_not_called()
 
+    def test_retained_reference_data_blocks_destroy_before_any_plan_or_apply(self) -> None:
+        configuration = contract()
+        configuration["stages"]["infrastructure"]["reference_data"] = {
+            "enabled": True,
+            "lifecycle": {"retention_mode": "retain"},
+        }
+        with (
+            mock.patch.object(STACK, "write_infrastructure_variables") as write_vars,
+            mock.patch.object(STACK, "state_has_resources") as state_has_resources,
+            mock.patch.object(STACK, "plan_stage") as plan_stage,
+            mock.patch.object(STACK, "apply_plan") as apply_plan,
+            self.assertRaisesRegex(STACK.DeploymentError, "blocks full-stack destroy"),
+        ):
+            STACK.destroy_stack(
+                arguments(), Path("/private/test-run"), configuration, "e" * 40
+            )
+        write_vars.assert_not_called()
+        state_has_resources.assert_not_called()
+        plan_stage.assert_not_called()
+        apply_plan.assert_not_called()
+
+    def test_disposable_reference_data_keeps_acceptance_destroy_path(self) -> None:
+        configuration = contract()
+        configuration["stages"]["infrastructure"]["reference_data"] = {
+            "enabled": True,
+            "lifecycle": {"retention_mode": "disposable"},
+        }
+        with (
+            mock.patch.object(
+                STACK, "write_infrastructure_variables", return_value=Path("/infra.json")
+            ),
+            mock.patch.object(STACK, "state_has_resources", return_value=False),
+            mock.patch.object(STACK, "plan_stage") as plan_stage,
+            mock.patch.object(STACK, "apply_plan") as apply_plan,
+            redirect_stdout(io.StringIO()),
+        ):
+            STACK.destroy_stack(
+                arguments(), Path("/private/test-run"), configuration, "e" * 40
+            )
+        plan_stage.assert_not_called()
+        apply_plan.assert_not_called()
+
     def test_destroy_reuses_legacy_cached_downstream_inputs_without_mirroring(
         self,
     ) -> None:
@@ -1527,6 +1632,46 @@ class InferenceStackTests(unittest.TestCase):
         self.assertEqual(
             workloads["model_image_overrides"]["proteinmpnn"],
             f"{target_root}/fs2-models/proteinmpnn@sha256:{'c' * 64}",
+        )
+
+    def test_regional_mirror_includes_every_reference_data_runtime_image(self) -> None:
+        configuration = regional_contract()
+        configuration["stages"]["workloads"]["reference_data"] = {
+            "enabled": True,
+            "status": {
+                "enabled": True,
+                "image": "registry.example.net/fs2/reference-status@"
+                f"sha256:{'d' * 64}",
+            },
+            "pipeline": {
+                "enabled": True,
+                "image": "registry.example.net/fs2/reference-stager@"
+                f"sha256:{'e' * 64}",
+            },
+        }
+        dynamic = regional_dynamic(Path("/private/test-run"))
+        artifacts = {
+            item["name"]: item
+            for item in STACK.selected_image_artifacts(configuration, dynamic["registry_delivery_contract"])
+        }
+        self.assertEqual(
+            {"reference-data/status", "reference-data/pipeline"},
+            {name for name in artifacts if name.startswith("reference-data/")},
+        )
+        for name in ("reference-data/status", "reference-data/pipeline"):
+            self.assertTrue(
+                artifacts[name]["target_reference"].startswith(
+                    "cr.us-north1.nebius.cloud/test/"
+                )
+            )
+        workloads = STACK.rewritten_workloads(configuration, dynamic)
+        self.assertEqual(
+            workloads["reference_data"]["status"]["image"],
+            artifacts["reference-data/status"]["target_reference"],
+        )
+        self.assertEqual(
+            workloads["reference_data"]["pipeline"]["image"],
+            artifacts["reference-data/pipeline"]["target_reference"],
         )
 
     def test_regional_mirror_rejects_tag_only_model_source(self) -> None:

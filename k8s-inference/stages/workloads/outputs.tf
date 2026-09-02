@@ -134,6 +134,15 @@ output "access_bundle" {
       models          = local.bootstrap_access_models
       max_concurrency = 32
     }
+    reference_data = var.reference_data.enabled ? {
+      lifecycle      = var.reference_data.storage_contract.lifecycle
+      filesystem_id  = var.reference_data.storage_contract.filesystem.id
+      bucket_id      = var.reference_data.storage_contract.object_storage.id
+      bucket_name    = var.reference_data.storage_contract.object_storage.name
+      cpu_pool_id    = var.reference_data.storage_contract.cpu_pool.id
+      status_service = module.reference_data[0].dynamic_configuration.status_service
+      pipeline       = module.reference_data[0].dynamic_configuration.pipeline
+    } : null
   }
 }
 
@@ -258,6 +267,19 @@ output "scheduling_contract" {
 output "reference_data_contract" {
   description = "Same-region storage, private preprocessing and optional official staging-pipeline contract."
   value       = try(terraform_data.reference_data_contract[0].output, null)
+}
+
+output "reference_data_status" {
+  description = "Non-secret reference storage IDs, retention state, CPU placement, status service and immutable pipeline state for inference-stack status."
+  value = var.reference_data.enabled ? {
+    lifecycle      = var.reference_data.storage_contract.lifecycle
+    filesystem_id  = var.reference_data.storage_contract.filesystem.id
+    bucket_id      = var.reference_data.storage_contract.object_storage.id
+    bucket_name    = var.reference_data.storage_contract.object_storage.name
+    cpu_pool_id    = var.reference_data.storage_contract.cpu_pool.id
+    status_service = module.reference_data[0].dynamic_configuration.status_service
+    pipeline       = module.reference_data[0].dynamic_configuration.pipeline
+  } : null
 }
 
 output "managed_resource_count" {

@@ -7,11 +7,16 @@ from pathlib import Path
 TESTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TESTS))
 
-from verify_plan import REQUIRED_ADDRESSES  # noqa: E402
+from verify_plan import (  # noqa: E402
+    REFERENCE_DATA_RESOURCE_TYPES,
+    REQUIRED_ADDRESSES,
+)
 from verify_state import (  # noqa: E402
     ALLOWED_DATA_ADDRESSES,
     BASE_REQUIRED_MANAGED_ADDRESSES,
     PUBLIC_EDGE_MANAGED_ADDRESSES,
+    REFERENCE_DATA_MANAGED_ADDRESSES,
+    REFERENCE_DATA_MANAGED_RESOURCE_TYPES,
     REQUIRED_MANAGED_ADDRESSES,
     validate_addresses,
 )
@@ -70,6 +75,48 @@ class TerraformStateContractTests(unittest.TestCase):
         addresses.append(addresses[0])
         errors = validate_addresses(addresses, "create")
         self.assertTrue(any("duplicate state addresses" in error for error in errors))
+
+    def test_enabled_reference_modes_have_exact_optional_count(self) -> None:
+        for reference_data_mode in ("retain", "disposable"):
+            self.assertEqual(
+                REFERENCE_DATA_MANAGED_RESOURCE_TYPES[reference_data_mode],
+                REFERENCE_DATA_RESOURCE_TYPES[reference_data_mode],
+            )
+            addresses = sorted(
+                REQUIRED_MANAGED_ADDRESSES
+                | REFERENCE_DATA_MANAGED_ADDRESSES[reference_data_mode]
+                | ALLOWED_DATA_ADDRESSES
+            )
+            self.assertEqual(
+                validate_addresses(
+                    addresses,
+                    "create",
+                    reference_data_mode=reference_data_mode,
+                ),
+                [],
+            )
+            self.assertEqual(len(addresses), 26)
+
+    def test_retained_production_state_is_truthful_and_not_destroyed(self) -> None:
+        addresses = sorted(
+            REQUIRED_MANAGED_ADDRESSES
+            | REFERENCE_DATA_MANAGED_ADDRESSES["retain"]
+            | ALLOWED_DATA_ADDRESSES
+        )
+        self.assertEqual(
+            validate_addresses(
+                addresses, "retained", reference_data_mode="retain"
+            ),
+            [],
+        )
+        errors = validate_addresses([], "destroy", reference_data_mode="retain")
+        self.assertTrue(any("cannot satisfy" in error for error in errors))
+
+    def test_disposable_reference_acceptance_teardown_is_empty(self) -> None:
+        self.assertEqual(
+            validate_addresses([], "destroy", reference_data_mode="disposable"),
+            [],
+        )
 
 
 if __name__ == "__main__":

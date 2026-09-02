@@ -136,6 +136,7 @@ storage = {
   reference_data = {
     enabled = true
     namespace = "fs2-reference-data"
+    lifecycle = { retention_mode = "retain" }
     cpu_pool = {
       platform        = "cpu-d3"
       preset          = "8vcpu-32gb"
@@ -164,6 +165,18 @@ storage = {
   }
 }
 ```
+
+Accelerator attachment is independent of generic shared-cache attachment. Set
+`accelerator_pools.<id>.reference_data_filesystem = true` only for pools whose
+GPU Jobs consume an immutable reference tree. The default is false, so enabling
+reference data cannot silently mutate future heterogeneous pools.
+
+Production uses `retention_mode = "retain"` with `forbid_deletion = true`.
+`inference-stack destroy` refuses before changing anything and `status`/`output`
+expose the retained filesystem/bucket IDs and adoption status. The
+`disposable` mode is limited to fresh empty-volume acceptance, requires
+`forbid_deletion = false`, and is deletable only while the versioned bucket is
+empty.
 
 `Dockerfile.stager` is the pinned CPU worker image. It contains only Python,
 zstd, CA roots and the AWS CLI; the reviewed staging program and selected

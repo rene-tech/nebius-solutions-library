@@ -37,15 +37,19 @@ output "dynamic_configuration" {
     source_catalog_sha256       = filesha256("${path.module}/../source-catalog.json")
     requirements_sha256         = filesha256("${path.module}/../model-requirements.json")
     pipeline = var.pipeline.enabled ? {
-      job_name        = kubernetes_manifest.pipeline[0].manifest.metadata.name
-      bundle_id       = var.pipeline.bundle_id
-      revision        = local.selected_bundle.revision
-      upstream_commit = local.selected_bundle.upstream.revision
-      source_sha256   = local.selected_bundle.upstream.source_sha256
-      image           = var.pipeline.image
-      generation      = var.pipeline.generation
-      resumable       = true
-      checksum_policy = "source-identity+sha256+tree-sha256"
+      job_name                      = kubernetes_manifest.pipeline[0].manifest.metadata.name
+      job_namespace                 = var.namespace
+      identity                      = local.pipeline_identity
+      state                         = "submitted-suspended-awaiting-kueue-admission"
+      bundle_id                     = var.pipeline.bundle_id
+      revision                      = local.selected_bundle.revision
+      upstream_commit               = local.selected_bundle.upstream.revision
+      source_sha256                 = local.selected_bundle.upstream.source_sha256
+      image                         = var.pipeline.image
+      generation                    = var.pipeline.generation
+      resumable                     = true
+      checksum_policy               = "source-identity+sha256+tree-sha256"
+      immutable_job_contract_sha256 = sha256(jsonencode(local.pipeline_job_contract))
     } : null
   }
 }
