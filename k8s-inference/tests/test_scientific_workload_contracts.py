@@ -233,10 +233,56 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         }
         self.assertEqual({"alphafold3", "bindcraft"}, academic)
 
-    def test_empty_profile_set_is_honest_until_runtime_qualification(self) -> None:
+    def test_primary_profiles_are_schema_valid_candidate_only_and_unroutable(self) -> None:
         profiles = self.load(CONTRACT_ROOT / "scientific-workload-profiles.json")
         self.assert_valid("scientific-workload-profiles.schema.json", profiles)
-        self.assertEqual([], profiles["profiles"])
+        full_validator = self.validator("scientific-workload-profile.schema.json")
+        self.assertEqual(
+            ["boltzgen", "proteina-complexa"],
+            [profile["model_id"] for profile in profiles["profiles"]],
+        )
+        for profile in profiles["profiles"]:
+            with self.subTest(model_id=profile["model_id"]):
+                self.assertEqual([], list(full_validator.iter_errors(profile)))
+                self.assertEqual("candidate-unqualified", profile["state"])
+                self.assertFalse(profile["route_exposed"])
+                self.assertEqual(
+                    {
+                        "boltzgen": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
+                        "proteina-complexa": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+                    }[profile["model_id"]],
+                    profile["execution_identity"]["runtime_image_digest"],
+                )
+                self.assertIsNone(
+                    profile["execution_identity"]["artifact_manifest_digest"]
+                )
+                self.assertIsNone(
+                    profile["execution_identity"]["execution_identity_sha256"]
+                )
+
+    def test_primary_parameter_schemas_validate_only_canonical_request_parameters(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "proteina-complexa-parameters.schema.json",
+                ROOT
+                / "models/structure/batch-adapters/proteina-complexa/fixtures/positive-protein.json",
+            ),
+            (
+                "boltzgen-parameters.schema.json",
+                ROOT
+                / "models/structure/batch-adapters/boltzgen/fixtures/positive-design.json",
+            ),
+        )
+        request_validator = self.validator("scientific-run-request.schema.json")
+        for schema_name, fixture_path in cases:
+            with self.subTest(schema=schema_name):
+                request = self.load(fixture_path)
+                self.assertEqual([], list(request_validator.iter_errors(request)))
+                self.assertEqual(
+                    [], list(self.validator(schema_name).iter_errors(request["parameters"]))
+                )
 
 
 if __name__ == "__main__":

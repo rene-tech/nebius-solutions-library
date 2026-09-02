@@ -30,6 +30,8 @@ class ScientificStageExpansion:
 
     shard_ids: tuple[str, ...] = ("main",)
     gang_size: int | None = None
+    enabled: bool = True
+    depends_on: tuple[str, ...] | None = None
 
 
 def _mapping(value: object, path: str) -> Mapping[str, object]:
@@ -94,6 +96,11 @@ def scientific_plan_from_catalog_profile(
         maximum = _integer(stage.get("max_parallelism"), f"{path}.max_parallelism")
         expansion = selected.pop(stage_id, None)
 
+        if expansion is not None and not expansion.enabled:
+            if expansion.gang_size is not None or expansion.depends_on is not None:
+                raise CatalogProfileAdapterError(f"{path} disabled expansion cannot supply execution fields")
+            continue
+
         if mode is ExecutionMode.FANOUT:
             if expansion is None:
                 if minimum != 1:
@@ -117,7 +124,11 @@ def scientific_plan_from_catalog_profile(
             stages.append(
                 ScientificStagePlan(
                     stage_id=stage_id,
-                    depends_on=_string_tuple(stage.get("needs"), f"{path}.needs"),
+                    depends_on=(
+                        expansion.depends_on
+                        if expansion is not None and expansion.depends_on is not None
+                        else _string_tuple(stage.get("needs"), f"{path}.needs")
+                    ),
                     mode=mode,
                     shards=shards,
                     max_attempts=max_attempts,
