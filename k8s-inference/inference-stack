@@ -2185,7 +2185,15 @@ def status_stack(
             "reference_data": None,
         }
     )
-    if not workloads_ready and infrastructure_reference_data is not None:
+    # A previously applied workloads state can remain otherwise complete while the
+    # newly enabled reference-data module is intentionally held behind its own
+    # review gate. Keep the normal status surface truthful in that transition:
+    # report the live infrastructure identities and retained lifecycle until the
+    # workload-owned status service and pipeline replace this fallback.
+    if (
+        endpoints["reference_data"] is None
+        and infrastructure_reference_data is not None
+    ):
         endpoints["reference_data"] = infrastructure_reference_data
     print(
         json.dumps(

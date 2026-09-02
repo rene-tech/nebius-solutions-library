@@ -1046,6 +1046,71 @@ class InferenceStackTests(unittest.TestCase):
             )
         self.assertEqual(values["reference_data"], reference_status)
 
+    def test_status_falls_back_to_live_reference_infrastructure_before_workloads_apply(
+        self,
+    ) -> None:
+        configuration = contract()
+        configuration["stages"]["infrastructure"]["reference_data"] = {
+            "enabled": True
+        }
+        configuration["stages"]["workloads"]["reference_data"] = {"enabled": True}
+        storage_contract = {
+            "filesystem": {"id": "computefilesystem-test"},
+            "object_storage": {
+                "id": "storagebucket-test",
+                "name": "reference-data-test",
+            },
+            "cpu_pool": {"id": "mk8snodegroup-test"},
+            "lifecycle": {
+                "retention_mode": "retain",
+                "destroy_status": "blocked-retained",
+            },
+        }
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory(
+            prefix="inference-stack-reference-status-"
+        ) as temporary:
+            run_root = Path(temporary)
+            for state_name in (
+                "terraform.tfstate",
+                "foundation.tfstate",
+                "workloads.tfstate",
+            ):
+                (run_root / state_name).touch()
+            with (
+                mock.patch.object(STACK, "terraform_init"),
+                mock.patch.object(
+                    STACK, "state_addresses", return_value=["resource.ready"]
+                ),
+                mock.patch.object(STACK, "state_ready", return_value=True),
+                mock.patch.object(STACK, "stage_environment", return_value={}),
+                mock.patch.object(
+                    STACK,
+                    "terraform_optional_json_output",
+                    side_effect=[storage_contract, None, None],
+                ),
+                mock.patch.object(
+                    STACK,
+                    "terraform_json_output",
+                    side_effect=["mcp", "admin", "inference"],
+                ),
+                redirect_stdout(output),
+            ):
+                STACK.status_stack(arguments(), run_root, configuration)
+
+        self.assertEqual(
+            json.loads(output.getvalue())["reference_data"],
+            {
+                "filesystem_id": "computefilesystem-test",
+                "bucket_id": "storagebucket-test",
+                "bucket_name": "reference-data-test",
+                "cpu_pool_id": "mk8snodegroup-test",
+                "lifecycle": storage_contract["lifecycle"],
+                "status_service": None,
+                "pipeline": None,
+            },
+        )
+
     def test_output_explicitly_emits_the_sensitive_access_bundle(self) -> None:
         access_bundle = complete_access_bundle()
         output = io.StringIO()
