@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fs2-serve.nebius.ai/schema/academic-assets-readiness/v1",
-  "title": "Admin-safe academic asset readiness projection",
+  "$id": "https://fs2-serve.nebius.ai/schema/academic-assets-readiness/v2",
+  "title": "Non-secret academic asset platform readiness projection",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "generation", "state", "assets", "fallbacks"],
   "properties": {
-    "schema": {"const": "fs2-serve.nebius.ai/academic-assets-readiness/v1"},
+    "schema": {"const": "fs2-serve.nebius.ai/academic-assets-readiness/v2"},
     "generation": {"type": ["string", "null"]},
     "state": {"enum": ["Blocked", "Ready"]},
     "assets": {
@@ -15,41 +15,22 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["asset_id", "model_id", "display_name", "state", "stages", "artifact_sha256", "runtime_image_digest"],
+        "required": ["asset_id", "model_id", "backend_id", "display_name", "state", "license_status", "artifact_status", "runtime_status", "cache_status", "deployment_status", "semantic_status", "tenant_binding_status", "artifact_sha256", "acceptance_receipt_sha256", "runtime_image_digest"],
         "properties": {
-          "asset_id": {"type": "string"},
+          "asset_id": {"enum": ["alphafold3", "pyrosetta-bindcraft"]},
           "model_id": {"enum": ["alphafold3", "bindcraft"]},
+          "backend_id": {"enum": ["alphafold3-native", "bindcraft-native-pyrosetta"]},
           "display_name": {"type": "string"},
-          "state": {
-            "enum": [
-              "MissingLicenseAcceptance",
-              "InvalidContract",
-              "MissingArtifact",
-              "MissingCache",
-              "InvalidCacheReceipt",
-              "MissingImage",
-              "InvalidImageReceipt",
-              "MissingDeployment",
-              "InvalidDeploymentReceipt",
-              "MissingSemanticReadiness",
-              "InvalidSemanticReceipt",
-              "Ready"
-            ]
-          },
-          "stages": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["license_acceptance", "artifact", "private_cache", "private_image", "deployment", "semantic_readiness"],
-            "properties": {
-              "license_acceptance": {"enum": ["missing", "accepted"]},
-              "artifact": {"enum": ["missing", "verified"]},
-              "private_cache": {"enum": ["missing", "invalid", "ready"]},
-              "private_image": {"enum": ["missing", "invalid", "ready"]},
-              "deployment": {"enum": ["missing", "invalid", "ready"]},
-              "semantic_readiness": {"enum": ["missing", "invalid", "ready"]}
-            }
-          },
+          "state": {"enum": ["LicenseAcceptancePending", "MissingArtifact", "ArtifactStaged", "MissingCache", "MissingImage", "RuntimeValidationPending", "RuntimeReady", "MissingDeployment", "MissingSemanticReadiness", "Ready"]},
+          "license_status": {"enum": ["LicenseAcceptancePending", "LicenseAccepted"]},
+          "artifact_status": {"enum": ["MissingArtifact", "ArtifactStaged", "ArtifactRejected"]},
+          "runtime_status": {"enum": ["MissingImage", "RuntimeValidationPending", "RuntimeReady"]},
+          "cache_status": {"enum": ["QuarantineOnly", "MissingTenantCache", "TenantCacheReady"]},
+          "deployment_status": {"enum": ["MissingDeployment", "DeploymentReady"]},
+          "semantic_status": {"enum": ["MissingSemanticReadiness", "SemanticReady"]},
+          "tenant_binding_status": {"enum": ["PendingNamedTenantAndInstitution", "TenantInstitutionBound"]},
           "artifact_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+          "acceptance_receipt_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
           "runtime_image_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}
         }
       }
@@ -64,13 +45,9 @@
         "required": ["model_id", "state", "aliases", "does_not_satisfy"],
         "properties": {
           "model_id": {"enum": ["openfold3", "open-binder"]},
-          "state": {"const": "IndependentFallback"},
+          "state": {"const": "IndependentAlternative"},
           "aliases": {"const": []},
-          "does_not_satisfy": {
-            "type": "array",
-            "minItems": 1,
-            "items": {"enum": ["alphafold3", "bindcraft"]}
-          }
+          "does_not_satisfy": {"type": "array", "minItems": 1, "items": {"enum": ["alphafold3", "bindcraft"]}}
         }
       }
     }

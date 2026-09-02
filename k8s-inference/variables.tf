@@ -1071,3 +1071,18 @@ variable "deployment" {
     error_message = "Secret environment-variable references must be uppercase shell variable names."
   }
 }
+variable "academic_assets" {
+  description = "Tenant-private academic asset runtime storage; bytes are mounted, never embedded in images."
+  type = object({
+    enabled        = optional(bool, false)
+    tenant_id      = string
+    institution_id = string
+    namespace      = optional(string, "fs2-academic-poc")
+    pvc_name       = optional(string, "academic-assets-runtime-rwx")
+    storage_gib    = optional(number, 128)
+  })
+  default = {
+    tenant_id      = "academic-poc-pending"
+    institution_id = "institution-pending"
+  }
+}

@@ -28,12 +28,13 @@
       "validators": ["verified TLS", "object size", "zstd magic", "zstd full-stream test", "SHA-256"]
     },
     "pyrosetta-bindcraft": {
-      "source": "official RosettaCommons conda channel",
-      "bindcraft_version": "v.1.5.3@a234a8d3af9fe3d2724209aa91d930280b72048b",
-      "package_version": "2025.24+release.8e1e5e54f0=py310_0",
-      "size_bytes": 1435146644,
-      "sha256": "d1170ee50d5f02c3a6c84a7d0035dc961c7737024836eb5da882abe6ca51afbb",
-      "validators": ["verified TLS", "repodata identity", "Conda v2 archive integrity", "SHA-256"],
+      "source": "official RosettaCommons release.cxx11thread.serialization wheel",
+      "bindcraft_version": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+      "package_version": "2026.29+releasequarterly.80a0635615",
+      "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+      "size_bytes": 1667097173,
+      "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+      "validators": ["verified TLS", "wheel metadata", "Zip integrity", "SHA-256"],
       "tls_bypass_used": false
     }
   },

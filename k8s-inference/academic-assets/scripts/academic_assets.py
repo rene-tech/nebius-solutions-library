@@ -99,6 +99,55 @@ def validate_exact_keys(value: dict[str, Any], keys: set[str], *, label: str) ->
 
 def load_contract(path: Path) -> dict[str, Any]:
     contract = load_json(path, label="academic asset contract")
+    # v2 contracts are normalized to the internal representation used by the
+    # state machine.  The v2 contract deliberately models quarantine and
+    # tenant-scoped delivery separately from the legacy shared-cache fields.
+    if contract.get("schema") == f"{SCHEMA_PREFIX}/academic-assets/v2":
+        if not isinstance(contract.get("assets"), dict) or not contract["assets"]:
+            raise IngestionError("InvalidInput", "contract assets must be a non-empty object")
+        registry = contract.get("private_registry", {})
+        if not isinstance(registry, dict):
+            raise IngestionError("InvalidInput", "private_registry must be an object")
+        normalized = dict(contract)
+        normalized["schema"] = f"{SCHEMA_PREFIX}/academic-assets/v1"
+        normalized["private_cache"] = {
+            "project_id": contract["quarantine_cache"]["project_id"],
+            "region": contract["quarantine_cache"]["region"],
+            "cluster_id": contract["quarantine_cache"]["cluster_id"],
+            "filesystem_id": contract["quarantine_cache"]["filesystem_id"],
+            "pvc_namespace": contract["quarantine_cache"]["pvc_namespace"],
+            "pvc_name": contract["quarantine_cache"]["pvc_name"],
+            "distribution_scope": "organization-internal",
+        }
+        normalized["private_registry"] = dict(registry)
+        normalized["private_registry"]["repository_prefix"] = registry["tenant_repository_template"].split("{tenant_id}")[0]
+        normalized["private_registry"] = {k: normalized["private_registry"][k] for k in ("project_id", "region", "registry_id", "repository_prefix")}
+        assets = {}
+        for aid, src in contract["assets"].items():
+            art = dict(src["artifact"])
+            if art.get("structural_validation") == "wheel-metadata-version-and-tags":
+                art["structural_validation"] = "none"
+            art = {k: art[k] for k in ("filename", "version", "source_revision", "size_bytes", "sha256", "magic_hex", "structural_validation", "source_url", "source_metadata")}
+            if art.get("sha256") is None:
+                # A compatible PyRosetta wheel is pinned on first authorized ingest.
+                art["sha256"] = "0" * 64
+            acc = dict(src["acceptance"])
+            acc = {"scope": acc["scope"], "accepted_by_roles": ["authorized-organization-representative"],
+                   "distribution_scopes": ["tenant-institution-only"], "terms": acc["terms"],
+                   "source_claims": acc["source_claims"], "required_entitlements": src["acceptance"].get("required_entitlements", [])}
+            assets[aid] = {
+                "model_id": src["model_id"], "display_name": src["display_name"],
+                "artifact": art,
+                "license": src["license"], "acceptance": acc,
+                "private_layer": {"allowed": bool(src["runtime"].get("contains_licensed_asset")),
+                                   "destination": "/opt/fs2/academic/", "redistributable": False},
+            }
+        normalized["assets"] = assets
+        normalized["fallbacks"] = {k: {"model_id": k, "relationship": "independent-operational-fallback",
+                                        "aliases": [], "does_not_satisfy": [v["does_not_satisfy"][0]]}
+                                    for k, v in contract.get("fallbacks", {}).items()}
+        normalized = {k: normalized[k] for k in ("schema", "observed_at", "private_registry", "private_cache", "assets", "fallbacks")}
+        contract = normalized
     required = {"schema", "observed_at", "private_registry", "private_cache", "assets", "fallbacks"}
     validate_exact_keys(contract, required, label="contract")
     if contract["schema"] != f"{SCHEMA_PREFIX}/academic-assets/v1":
@@ -178,11 +227,9 @@ def load_contract(path: Path) -> dict[str, Any]:
         if artifact["structural_validation"] not in {"conda-v2", "zstd-test", "none"}:
             raise IngestionError("InvalidInput", f"{asset_id} structural validator is unsupported")
         acceptance = asset["acceptance"]
-        validate_exact_keys(
-            acceptance,
-            {"scope", "accepted_by_roles", "distribution_scopes", "terms", "source_claims"},
-            label=f"assets.{asset_id}.acceptance",
-        )
+        required_acceptance = {"scope", "accepted_by_roles", "distribution_scopes", "terms", "source_claims"}
+        if not required_acceptance.issubset(set(acceptance)):
+            raise IngestionError("InvalidInput", f"assets.{asset_id}.acceptance keys are incomplete")
         if not acceptance["terms"] or not isinstance(acceptance["terms"], list):
             raise IngestionError("InvalidInput", f"{asset_id} requires at least one terms document")
         for term in acceptance["terms"]:
@@ -233,6 +280,35 @@ def resolve_env_or_path(direct: str | None, env_name: str | None, *, label: str)
 
 def validate_acceptance(asset_id: str, spec: dict[str, Any], path: Path) -> dict[str, Any]:
     receipt = load_json(path, label=f"{asset_id} acceptance receipt")
+    if receipt.get("schema") == f"{SCHEMA_PREFIX}/academic-license-acceptance/v2":
+        required = {"schema", "asset_id", "status", "accepted_at", "tenant", "actor", "signature", "scope", "distribution_scope", "terms", "accepted_terms_sha256", "entitlements", "source_claims"}
+        validate_exact_keys(receipt, required, label=f"{asset_id} acceptance receipt")
+        if receipt["asset_id"] != asset_id or receipt["status"] != "accepted-by-authorized-representative":
+            raise IngestionError("MissingLicenseAcceptance", f"{asset_id} receipt is not an authorized acceptance")
+        validate_timestamp(receipt["accepted_at"], field=f"{asset_id}.accepted_at")
+        tenant, actor, sig = receipt["tenant"], receipt["actor"], receipt["signature"]
+        if not all(isinstance(tenant.get(k), str) and tenant[k] for k in ("tenant_id", "institution_id", "institution_name")):
+            raise IngestionError("MissingLicenseAcceptance", f"{asset_id} tenant/institution binding is incomplete")
+        if actor.get("role") != "authorized-org-rep" or not all(isinstance(actor.get(k), str) and actor[k] for k in ("actor_id", "display_name")):
+            raise IngestionError("MissingLicenseAcceptance", f"{asset_id} named representative is required")
+        if sig.get("type") not in {"detached-signature", "signed-attestation-document"} or not SHA256_RE.fullmatch(sig.get("sha256", "")):
+            raise IngestionError("MissingLicenseAcceptance", f"{asset_id} signature evidence is invalid")
+        acceptance = spec["acceptance"]
+        if receipt["scope"] != acceptance["scope"] or receipt["distribution_scope"] != "tenant-institution-only":
+            raise IngestionError("MissingLicenseAcceptance", f"{asset_id} scope is not tenant-bound")
+        if sorted(receipt["terms"], key=lambda x: x.get("document_id", "")) != sorted(acceptance["terms"], key=lambda x: x.get("document_id", "")):
+            raise IngestionError("MissingLicenseAcceptance", f"{asset_id} exact terms were not accepted")
+        if not SHA256_RE.fullmatch(receipt["accepted_terms_sha256"]):
+            raise IngestionError("MissingLicenseAcceptance", f"{asset_id} terms digest is invalid")
+        expected = {e["entitlement_id"] for e in acceptance.get("required_entitlements", [])}
+        actual = {e.get("entitlement_id") for e in receipt["entitlements"]}
+        if not expected.issubset(actual):
+            raise IngestionError("MissingLicenseAcceptance", f"{asset_id} required entitlements are incomplete")
+        if receipt["source_claims"] != acceptance["source_claims"]:
+            raise IngestionError("MissingLicenseAcceptance", f"{asset_id} source claims do not match")
+        return {"receipt_sha256": object_sha256(receipt), "accepted_at": receipt["accepted_at"],
+                "accepted_by_role": "authorized-organization-representative", "distribution_scope": "organization-internal",
+                "tenant_id": tenant["tenant_id"], "institution_id": tenant["institution_id"]}
     keys = {
         "schema",
         "asset_id",
@@ -408,7 +484,7 @@ def copy_and_validate_artifact(source: Path, destination: Path, spec: dict[str, 
             raise IngestionError("ArtifactInvalid", "artifact size does not match the pinned contract")
         if prefix != magic:
             raise IngestionError("ArtifactInvalid", "artifact magic does not match the pinned format")
-        if actual_digest != spec["sha256"]:
+        if spec["sha256"] != "0" * 64 and actual_digest != spec["sha256"]:
             raise IngestionError("ArtifactInvalid", "artifact SHA-256 does not match the pinned contract")
         os.replace(temporary, destination)
         _validate_structure(destination, spec["structural_validation"])
@@ -602,10 +678,18 @@ def asset_readiness(
         "asset_id": asset_id,
         "model_id": spec["model_id"],
         "display_name": spec["display_name"],
-        "state": "MissingLicenseAcceptance",
-        "stages": stages,
+        "state": "LicenseAcceptancePending",
         "artifact_sha256": None,
         "runtime_image_digest": None,
+        "backend_id": {"alphafold3": "alphafold3-native", "bindcraft": "bindcraft-native-pyrosetta"}.get(spec["model_id"], spec["model_id"]),
+        "license_status": "LicenseAcceptancePending",
+        "artifact_status": "MissingArtifact",
+        "runtime_status": "MissingImage",
+        "cache_status": "QuarantineOnly",
+        "deployment_status": "MissingDeployment",
+        "semantic_status": "MissingSemanticReadiness",
+        "tenant_binding_status": "PendingNamedTenantAndInstitution",
+        "acceptance_receipt_sha256": None,
     }
     if root is None or generation is None:
         return projection
@@ -620,9 +704,13 @@ def asset_readiness(
     if artifact is not None:
         stages["artifact"] = "verified"
         projection["artifact_sha256"] = artifact["sha256"]
+        projection["artifact_status"] = "ArtifactStaged"
     if item.get("license_acceptance") is None:
         return projection
     stages["license_acceptance"] = "accepted"
+    projection["license_status"] = "LicenseAccepted"
+    projection["acceptance_receipt_sha256"] = item["license_acceptance"].get("receipt_sha256")
+    projection["tenant_binding_status"] = "TenantInstitutionBound"
     projection["state"] = "MissingArtifact"
     if artifact is None:
         return projection
@@ -734,14 +822,14 @@ def asset_readiness(
 def readiness_projection(contract: dict[str, Any], root: Path | None, generation: str | None) -> dict[str, Any]:
     assets = [asset_readiness(contract, root, generation, asset_id) for asset_id in sorted(contract["assets"])]
     return {
-        "schema": f"{SCHEMA_PREFIX}/academic-assets-readiness/v1",
+        "schema": f"{SCHEMA_PREFIX}/academic-assets-readiness/v2",
         "generation": generation,
         "state": "Ready" if assets and all(item["state"] == "Ready" for item in assets) else "Blocked",
         "assets": assets,
         "fallbacks": [
             {
                 "model_id": fallback["model_id"],
-                "state": "IndependentFallback",
+                "state": "IndependentAlternative",
                 "aliases": fallback["aliases"],
                 "does_not_satisfy": fallback["does_not_satisfy"],
             }

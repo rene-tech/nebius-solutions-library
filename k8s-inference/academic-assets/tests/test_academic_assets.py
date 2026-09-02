@@ -193,7 +193,7 @@ class AcademicAssetTests(unittest.TestCase):
     def test_absent_state_is_explicit_and_alternatives_are_distinct(self) -> None:
         code, result = self.call(["status", "--state-dir", str(self.state)])
         self.assertEqual(code, 0)
-        self.assertEqual([item["state"] for item in result["assets"]], ["MissingLicenseAcceptance"] * 2)
+        self.assertEqual([item["state"] for item in result["assets"]], ["LicenseAcceptancePending"] * 2)
         self.assertEqual(
             [(item["model_id"], item["does_not_satisfy"]) for item in result["fallbacks"]],
             [("open-binder", ["bindcraft"]), ("openfold3", ["alphafold3"])],
@@ -218,8 +218,8 @@ class AcademicAssetTests(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         by_id = {item["asset_id"]: item for item in result["assets"]}
-        self.assertEqual(by_id["alphafold3"]["state"], "MissingLicenseAcceptance")
-        self.assertEqual(by_id["alphafold3"]["stages"]["artifact"], "verified")
+        self.assertEqual(by_id["alphafold3"]["state"], "LicenseAcceptancePending")
+        self.assertEqual(by_id["alphafold3"]["artifact_status"], "ArtifactStaged")
         code, result = self.call(
             ["resolve", "--state-dir", str(self.state), "--asset-id", "alphafold3"]
         )
@@ -475,7 +475,22 @@ class AcademicAssetTests(unittest.TestCase):
         self.assertNotIn(str(self.inputs), rendered)
         by_id = {item["asset_id"]: item for item in result["assets"]}
         self.assertEqual(by_id["alphafold3"]["state"], "MissingCache")
-        self.assertEqual(by_id["pyrosetta-bindcraft"]["state"], "MissingLicenseAcceptance")
+        self.assertEqual(by_id["pyrosetta-bindcraft"]["state"], "LicenseAcceptancePending")
+
+    def test_manager_corrections_are_encoded(self) -> None:
+        repo = SCRIPT.parents[1]
+        contract = json.loads((repo / "contracts/academic-assets.json").read_text())
+        pyro = contract["assets"]["pyrosetta-bindcraft"]
+        self.assertEqual(pyro["artifact"]["version"], "2026.29+releasequarterly.80a0635615")
+        self.assertEqual({e["entitlement_id"] for e in pyro["acceptance"]["required_entitlements"]},
+                         {"rosetta-noncommercial-license", "pyrosetta-academic-entitlement"})
+        self.assertEqual(contract["quarantine_cache"]["runtime_mount_allowed"], False)
+        self.assertFalse(contract["activation_policy"]["general_shared_cache_allowed"])
+        for name in ("alphafold3-acceptance.template.json", "pyrosetta-bindcraft-acceptance.template.json"):
+            fixture = json.loads((repo / "contracts" / name).read_text())
+            self.assertEqual(fixture["status"], "pending-authorized-representative")
+            self.assertNotIn("actor", fixture)
+            self.assertNotIn("signature", fixture)
 
 
 if __name__ == "__main__":

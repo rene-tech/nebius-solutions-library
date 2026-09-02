@@ -1,26 +1,38 @@
 {
-  "schema": "fs2-serve.nebius.ai/academic-assets/v1",
-  "observed_at": "2026-09-02T20:30:00Z",
+  "schema": "fs2-serve.nebius.ai/academic-assets/v2",
+  "observed_at": "2026-09-02T21:12:46Z",
+  "activation_policy": {
+    "default_state": "LicenseAcceptancePending",
+    "acceptance_actor": "named-authorized-organization-representative",
+    "tenant_binding_required": true,
+    "institution_binding_required": true,
+    "general_shared_cache_allowed": false,
+    "credentials_in_contracts_or_state": false
+  },
   "private_registry": {
     "project_id": "project-e00rene",
     "region": "eu-north1",
     "registry_id": "registry-e00akg9ndpx77eaexh",
-    "repository_prefix": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/"
+    "tenant_repository_template": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/{tenant_id}/"
   },
-  "private_cache": {
+  "quarantine_cache": {
     "project_id": "project-e00rene",
     "region": "eu-north1",
     "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
     "filesystem_id": "computefilesystem-e00hdb1drrgsenr2j7",
     "pvc_namespace": "fs2-models",
     "pvc_name": "cancer-immunotherapy-academic-assets-rwx-v1",
-    "distribution_scope": "organization-internal"
+    "purpose": "technical-staging-quarantine-only",
+    "runtime_mount_allowed": false,
+    "catalog_visible": false
   },
   "assets": {
     "alphafold3": {
       "model_id": "alphafold3",
+      "backend_id": "alphafold3-native",
       "display_name": "AlphaFold 3 (native Google parameters)",
       "artifact": {
+        "identity_status": "pinned",
         "filename": "af3.bin.zst",
         "version": "Google object generation 1780568696389861",
         "source_revision": "gs://alphafold3/af3.bin.zst#1780568696389861",
@@ -30,28 +42,23 @@
         "structural_validation": "zstd-test",
         "source_url": "https://storage.googleapis.com/alphafold3/af3.bin.zst",
         "source_metadata": {
+          "generation": "1780568696389861",
           "etag": "\"-COWBlqWv7ZQDEAQ=\"",
           "crc32c_base64": "0h6mjg==",
           "last_modified": "2026-06-04T10:24:56Z"
-        }
+        },
+        "technical_staging_without_acceptance": true
       },
       "license": {
         "license_id": "AlphaFold-3-Model-Parameters-Terms-of-Use-2024-11-09",
-        "allowed_users": "non-commercial organizations and qualifying affiliated researchers, for non-commercial use only",
-        "redistribution": "model parameters must not be published or shared outside the accepting organization; individual grants cannot be shared",
-        "containerization": "only a private organization-internal layer when an authorized organization representative accepted the terms; otherwise use a user-bound private volume",
-        "access_procedure": "accept the current terms, then obtain af3.bin.zst directly from the Google URL documented by the pinned AlphaFold3 repository revision"
+        "allowed_users": "qualifying non-commercial organizations and their affiliated researchers for permitted non-commercial activity",
+        "redistribution": "the parameters cannot be published or shared outside the organization whose authorized representative accepted the terms",
+        "containerization": "parameters stay outside images on a tenant-isolated private volume and cannot enter a general shared cache",
+        "access_procedure": "a named representative with authority to bind the academic institution accepts Google's current terms for that institution and obtains the parameters directly from Google"
       },
       "acceptance": {
         "scope": "academic-noncommercial",
-        "accepted_by_roles": [
-          "authorized-individual",
-          "authorized-organization-representative"
-        ],
-        "distribution_scopes": [
-          "individual-only",
-          "organization-internal"
-        ],
+        "distribution_scope": "tenant-institution-only",
         "terms": [
           {
             "document_id": "alphafold3-weights-terms-2024-11-09@c0f97eda2f1f482fd94d3a38bece18c7069b4a5c",
@@ -62,87 +69,144 @@
             "sha256": "4992aebdc29bc7a9260bed6373bad05bb5a7e1b783451cd170163dd259f46c45"
           }
         ],
+        "required_entitlements": [
+          {
+            "entitlement_id": "google-af3-organization-parameter-access",
+            "issuer": "Google DeepMind",
+            "evidence": "digest of the organization access/download receipt supplied through Google's approved process"
+          }
+        ],
         "source_claims": {
           "received_directly_from_licensor": true,
           "source": "google-direct-download",
           "object_generation": "1780568696389861"
         }
       },
-      "private_layer": {
-        "allowed": false,
-        "destination": "/opt/fs2/academic-assets/alphafold3/af3.bin.zst",
-        "redistributable": false
+      "runtime": {
+        "code_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+        "artifact_delivery": "tenant-private-volume",
+        "licensed_asset_embedded_in_image": false,
+        "runtime_image_required": true,
+        "offline_validation": "load exact parameter identifier before semantic inference"
       }
     },
     "pyrosetta-bindcraft": {
       "model_id": "bindcraft",
-      "display_name": "BindCraft PyRosetta prerequisite",
+      "backend_id": "bindcraft-native-pyrosetta",
+      "display_name": "BindCraft native PyRosetta prerequisite",
       "artifact": {
-        "filename": "pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda",
-        "version": "2025.24+release.8e1e5e54f0=py310_0",
-        "source_revision": "https://conda.rosettacommons.org/linux-64/repodata.json#pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda",
-        "size_bytes": 1435146644,
-        "sha256": "d1170ee50d5f02c3a6c84a7d0035dc961c7737024836eb5da882abe6ca51afbb",
+      "identity_status": "pinned",
+        "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+        "version": "2026.29+releasequarterly.80a0635615",
+        "source_revision": "https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/#2026.29+releasequarterly.80a0635615-cp310-linux_x86_64",
+        "size_bytes": 1667097173,
+      "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+      "sha256_policy": "immutable-verified-digest",
         "magic_hex": "504b0304",
-        "structural_validation": "conda-v2",
-        "source_url": "https://conda.rosettacommons.org/linux-64/pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda",
+        "structural_validation": "wheel-metadata-version-and-tags",
+        "source_url": "https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/pyrosetta-2026.29%2Breleasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
         "source_metadata": {
-          "repodata_sha256": "4a5fa91055666b09669c81d2e393a42365f4758f7434704d5aa26ded447e442c",
-          "repodata_observed_at": "2026-09-02T20:30:00Z"
-        }
+          "http_last_modified": "2026-07-24T02:44:31Z",
+          "http_etag": "\"6a62d18f-635de255\"",
+          "observed_at": "2026-09-02T21:12:46Z"
+        },
+        "technical_staging_without_acceptance": false
       },
       "license": {
-        "license_id": "PyRosetta-Software-Non-Commercial-License-Agreement",
-        "allowed_users": "defined Non-Commercial Users at not-for-profit research institutions, government laboratories, universities, and qualifying individuals",
-        "redistribution": "refer other users to the official distribution; do not publish or make Rosetta executable/source copies available outside the licensed internal scope",
-        "containerization": "private internal copies only within the accepted non-commercial institutional scope; public images are forbidden",
-        "access_procedure": "accept the current Rosetta/PyRosetta non-commercial terms and obtain the exact package from the official RosettaCommons conda channel"
+        "license_id": "Rosetta-and-PyRosetta-Non-Commercial-License-Chain",
+        "allowed_users": "eligible non-commercial users operating within a licensed academic institution",
+        "redistribution": "refer other users to the official distribution; do not publish the wheel, installed files, or private runtime image",
+        "containerization": "an installed image is private, tenant/institution bound, non-redistributable, and usable only while both entitlements remain valid",
+        "access_procedure": "the institution obtains a Rosetta non-commercial license and the linked PyRosetta entitlement through UW CoMotion; PyRosetta is available only to entities already holding Rosetta rights"
       },
       "acceptance": {
         "scope": "academic-noncommercial",
-        "accepted_by_roles": [
-          "authorized-individual",
-          "authorized-organization-representative"
-        ],
-        "distribution_scopes": [
-          "individual-only",
-          "organization-internal"
-        ],
+        "distribution_scope": "tenant-institution-only",
         "terms": [
+          {
+            "document_id": "rosetta-noncommercial-license@de92a3c0dea8a010d372a22025e3e50bd4e2f33f",
+            "sha256": "8cc2e394ee31761ac27a9ebee4fe2a567758e17cadc1ed0318c54e9cfe0d5214"
+          },
           {
             "document_id": "pyrosetta-noncommercial-license@de92a3c0dea8a010d372a22025e3e50bd4e2f33f",
             "sha256": "41de5b13b7ddb64fab2dda1cb45581b9d4c1ee6be7bd3ad90f562288bcdcffa1"
           }
         ],
+        "required_entitlements": [
+          {
+            "entitlement_id": "rosetta-noncommercial-license",
+            "issuer": "University of Washington CoMotion",
+            "evidence": "digest of the institution's Rosetta license or official entitlement receipt"
+          },
+          {
+            "entitlement_id": "pyrosetta-academic-entitlement",
+            "issuer": "University of Washington CoMotion",
+            "evidence": "digest of the linked PyRosetta entitlement or official download receipt"
+          }
+        ],
         "source_claims": {
           "received_directly_from_licensor": true,
-          "source": "rosettacommons-conda-channel",
-          "package_sha256": "d1170ee50d5f02c3a6c84a7d0035dc961c7737024836eb5da882abe6ca51afbb"
+          "source": "rosettacommons-quarterly-release.cxx11thread.serialization",
+          "bindcraft_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
         }
       },
-      "private_layer": {
-        "allowed": true,
-        "destination": "/opt/fs2/academic-assets/pyrosetta/pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda",
-        "redistributable": false
+      "runtime": {
+        "bindcraft_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+        "python_abi": "cp310-cp310-linux_x86_64",
+        "pyrosetta_version": "2026.29+releasequarterly.80a0635615",
+        "artifact_delivery": "installed-private-image",
+        "licensed_asset_embedded_in_image": true,
+        "runtime_image_required": true,
+        "offline_validation": "python3.10 import pyrosetta and exact distribution-version assertion with network disabled"
       }
+    }
+  },
+  "quarantined_artifacts": {
+    "pyrosetta-bindcraft-2025.24-conda": {
+      "filename": "pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda",
+      "version": "2025.24+release.8e1e5e54f0=py310_0",
+      "size_bytes": 1435146644,
+      "sha256": "d1170ee50d5f02c3a6c84a7d0035dc961c7737024836eb5da882abe6ca51afbb",
+      "classification": "rejected-incompatible",
+      "retention": "retain-private-do-not-delete-do-not-activate",
+      "reason": "not selected by approved BindCraft revision 7cd4ace1b7407adf66a50dfefa47de2270f5e4a9; it is a 2025.24 conda archive, while that installer selects the current cp310 quarterly wheel, observed as 2026.29"
+    }
+  },
+  "platform_consumers": {
+    "catalog": {
+      "projection_field": "catalog",
+      "activation_requires": ["LicenseAccepted", "ArtifactStaged", "RuntimeReady", "SemanticReady"],
+      "native_models": ["alphafold3", "bindcraft"]
+    },
+    "control_plane": {
+      "projection_field": "control_plane",
+      "api_resource": "/admin/api/v1/scientific-models",
+      "access_gate_profile": "academic",
+      "receipt_storage": "private-evidence-store-by-digest"
+    },
+    "admin": {
+      "projection_field": "admin",
+      "route": "/admin/scientific-models",
+      "show_fields": ["state", "artifact_status", "runtime_status", "tenant_binding_status", "receipt_digest"]
+    },
+    "terraform": {
+      "projection_field": "terraform",
+      "allowed_inputs": ["enabled", "tenant_id", "institution_id", "status_manifest_uri", "status_manifest_sha256", "kubernetes_secret_ref_names"],
+      "forbidden_inputs": ["artifact_bytes", "credentials", "signed_urls", "acceptance_receipt_body"]
     }
   },
   "fallbacks": {
     "open-binder": {
       "model_id": "open-binder",
-      "relationship": "independent-operational-fallback",
+      "relationship": "independent-operational-alternative",
       "aliases": [],
-      "does_not_satisfy": [
-        "bindcraft"
-      ]
+      "does_not_satisfy": ["bindcraft"]
     },
     "openfold3": {
       "model_id": "openfold3",
-      "relationship": "independent-operational-fallback",
+      "relationship": "independent-operational-alternative",
       "aliases": [],
-      "does_not_satisfy": [
-        "alphafold3"
-      ]
+      "does_not_satisfy": ["alphafold3"]
     }
   }
 }

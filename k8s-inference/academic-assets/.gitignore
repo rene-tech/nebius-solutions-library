@@ -1,5 +1,6 @@
 private-state/
 *.conda
+*.whl
 af3.bin.zst
 *.acceptance.json
 *.cache-receipt.json

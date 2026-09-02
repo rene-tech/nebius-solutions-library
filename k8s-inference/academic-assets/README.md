@@ -24,7 +24,8 @@ BindCraft tag `v.1.5.3` resolves to commit
 `a234a8d3af9fe3d2724209aa91d930280b72048b`. Its
 [pinned environment](https://github.com/martinpacesa/BindCraft/blob/a234a8d3af9fe3d2724209aa91d930280b72048b/environment.yml)
 uses Python 3.10 and
-`pyrosetta=2025.24+release.8e1e5e54f0=py310_0`. The official RosettaCommons
+`pyrosetta=2026.29+releasequarterly.80a0635615=cp310-cp310-linux_x86_64` selected by BindCraft commit `7cd4ace`. The former
+2025.24 conda archive is retained only as rejected quarantine evidence. The official RosettaCommons
 Linux conda index recorded:
 
 - filename `pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda`;
@@ -91,7 +92,7 @@ Every later copy of that object generation must match this digest.
 export FS2_ACADEMIC_STATE=/secure/fs2-academic-assets
 export FS2_AF3_FILE=/secure/intake/af3.bin.zst
 export FS2_AF3_ACCEPTANCE=/secure/intake/alphafold3.acceptance.json
-export FS2_PYROSETTA_FILE=/secure/intake/pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda
+export FS2_PYROSETTA_FILE=/secure/intake/pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl
 export FS2_PYROSETTA_ACCEPTANCE=/secure/intake/pyrosetta-bindcraft.acceptance.json
 export FS2_ACADEMIC_GENERATION=intake-YYYYMMDD
 

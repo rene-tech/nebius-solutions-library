@@ -1,20 +1,16 @@
 {
-  "schema": "fs2-serve.nebius.ai/academic-license-acceptance/v1",
+  "schema": "fs2-serve.nebius.ai/academic-asset-technical-staging/v1",
   "asset_id": "pyrosetta-bindcraft",
-  "accepted": false,
-  "accepted_at": "REPLACE_WITH_UTC_RFC3339_TIMESTAMP",
-  "accepted_by_role": "authorized-individual",
-  "scope": "academic-noncommercial",
-  "distribution_scope": "individual-only",
-  "terms": [
-    {
-      "document_id": "pyrosetta-noncommercial-license@de92a3c0dea8a010d372a22025e3e50bd4e2f33f",
-      "sha256": "41de5b13b7ddb64fab2dda1cb45581b9d4c1ee6be7bd3ad90f562288bcdcffa1"
-    }
+  "status": "pending-authorized-representative",
+  "purpose": "technical-staging-only",
+  "artifact_status": "ArtifactRejected",
+  "tenant_binding_status": "PendingNamedTenantAndInstitution",
+  "activation_allowed": false,
+  "required_entitlements": [
+    "rosetta-noncommercial-license",
+    "pyrosetta-academic-entitlement"
   ],
-  "source_claims": {
-    "received_directly_from_licensor": true,
-    "source": "rosettacommons-conda-channel",
-    "package_sha256": "d1170ee50d5f02c3a6c84a7d0035dc961c7737024836eb5da882abe6ca51afbb"
-  }
+  "required_artifact": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+  "quarantined_artifact": "pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda",
+  "next_step": "After both institutional entitlements exist, a named authorized representative creates a private v2 receipt and the exact compatible wheel is downloaded and hashed; this file is not acceptance."
 }
