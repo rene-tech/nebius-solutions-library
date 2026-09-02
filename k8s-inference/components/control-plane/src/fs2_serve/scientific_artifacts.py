@@ -22,12 +22,13 @@ from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import asyncpg
+import httpx
 from pydantic import AwareDatetime, ConfigDict, Field, StringConstraints, model_validator
 
 from .models import StrictModel
 
 ARTIFACT_RECORD_SCHEMA = "fs2-serve.nebius.ai/scientific-artifact-record/v1"
-RESULT_RECORD_SCHEMA = "fs2-serve.nebius.ai/scientific-result-record/v1"
+SCIENTIFIC_RUN_RESULT_SCHEMA = "fs2-serve.nebius.ai/scientific-run-result/v1"
 SCIENTIFIC_ARTIFACT_MIGRATION = "0014_scientific_artifact_results.sql"
 MAX_ARTIFACT_BYTES = 1 << 40
 MAX_HANDLE_TTL = timedelta(minutes=15)
@@ -35,12 +36,12 @@ MAX_HANDLE_TTL = timedelta(minutes=15)
 SHA256_PATTERN = r"^sha256:[a-f0-9]{64}$"
 TENANT_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"
 SAFE_ID_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9_.:@/+\-]*[A-Za-z0-9])?$"
-MEDIA_TYPE_PATTERN = r"^[a-z0-9][a-z0-9!#$&^_.+\-]*/[a-z0-9][a-z0-9!#$&^_.+\-]*$"
+MEDIA_TYPE_PATTERN = r"^[a-z0-9][a-z0-9.+\-]*/[A-Za-z0-9][A-Za-z0-9.+_\-]*$"
 
 TenantId = Annotated[str, StringConstraints(min_length=1, max_length=120, pattern=TENANT_PATTERN)]
 SafeId = Annotated[str, StringConstraints(min_length=1, max_length=256, pattern=SAFE_ID_PATTERN)]
 Sha256Digest = Annotated[str, StringConstraints(pattern=SHA256_PATTERN)]
-MediaType = Annotated[str, StringConstraints(min_length=3, max_length=127, pattern=MEDIA_TYPE_PATTERN)]
+MediaType = Annotated[str, StringConstraints(min_length=3, max_length=128, pattern=MEDIA_TYPE_PATTERN)]
 
 
 class ScientificArtifactModel(StrictModel):
@@ -341,11 +342,15 @@ class TerminalResultDraft(ScientificArtifactModel):
 
 
 class TerminalResultManifest(TerminalResultDraft):
-    schema_version: Literal["fs2-serve.nebius.ai/scientific-result-record/v1"] = (
-        "fs2-serve.nebius.ai/scientific-result-record/v1"
-    )
+    """Internal persisted projection of canonical scientific-run-result/v1."""
+    schema: Literal["fs2-serve.nebius.ai/scientific-run-result/v1"] = SCIENTIFIC_RUN_RESULT_SCHEMA
     manifest_digest: Sha256Digest
     committed_at: AwareDatetime
+
+    @property
+    def schema_version(self) -> str:
+        """Backward-compatible accessor; only canonical ``schema`` is persisted."""
+        return self.schema
 
     @model_validator(mode="after")
     def digest_matches_manifest(self) -> TerminalResultManifest:
@@ -398,6 +403,45 @@ class ArtifactHandleSigner(Protocol):
     ) -> EphemeralHandle: ...
 
     async def issue_download(self, *, storage_key: str, expires_at: datetime) -> EphemeralHandle: ...
+
+
+class S3CompatibleArtifactObjectStore:
+    """Same-region S3-compatible store adapter used by the live runtime."""
+    def __init__(self, *, endpoint: str, bucket: str, region: str, access_key: str, secret_key: str) -> None:
+        self.endpoint, self.bucket, self.region = endpoint.rstrip("/"), bucket, region
+        self.access_key, self.secret_key = access_key, secret_key
+
+    async def inspect(self, storage_key: str) -> VerifiedStoredObject:
+        url = f"{self.endpoint}/{self.bucket}/{storage_key}"
+        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            body = response.content
+        return VerifiedStoredObject(
+            digest="sha256:" + hashlib.sha256(body).hexdigest(),
+            size_bytes=len(body),
+            media_type=response.headers.get("content-type", "application/octet-stream").split(";", 1)[0],
+            compression=None,
+        )
+
+
+class S3CompatibleArtifactHandleSigner:
+    """Short-lived signed-handle provider; credentials stay process-local."""
+    def __init__(self, *, endpoint: str, bucket: str, region: str, access_key: str, secret_key: str) -> None:
+        self.endpoint, self.bucket, self.region = endpoint.rstrip("/"), bucket, region
+        self.access_key, self.secret_key = access_key, secret_key
+
+    def _handle(self, method: Literal["GET", "PUT"], storage_key: str, expires_at: datetime, media_type: str | None = None) -> EphemeralHandle:
+        # The object-store gateway validates these short-lived query credentials.
+        expiry = int(expires_at.timestamp())
+        url = f"{self.endpoint}/{self.bucket}/{storage_key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential={self.access_key}%2F{self.region}&X-Amz-Expires={max(1, expiry-int(datetime.now(UTC).timestamp()))}"
+        return EphemeralHandle(method=method, url=url, expires_at=expires_at, write_once=method == "PUT", headers={"content-type": media_type} if media_type else {})
+
+    async def issue_upload(self, *, storage_key: str, media_type: str, compression: ArtifactCompression | None, expires_at: datetime) -> EphemeralHandle:
+        return self._handle("PUT", storage_key, expires_at, media_type)
+
+    async def issue_download(self, *, storage_key: str, expires_at: datetime) -> EphemeralHandle:
+        return self._handle("GET", storage_key, expires_at)
 
 
 class ArtifactRepository(Protocol):
@@ -477,7 +521,7 @@ def _canonical_json(value: object) -> bytes:
 
 def _manifest_body(value: TerminalResultDraft | TerminalResultManifest) -> dict[str, Any]:
     body = value.model_dump(mode="json", exclude={"manifest_digest", "committed_at"})
-    body.setdefault("schema_version", RESULT_RECORD_SCHEMA)
+    body.setdefault("schema", SCIENTIFIC_RUN_RESULT_SCHEMA)
     return body
 
 
