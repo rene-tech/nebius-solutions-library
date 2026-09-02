@@ -4,7 +4,8 @@ This module is called by `stages/workloads/reference_data.tf`. The root facade
 passes it the infrastructure-owned versioned private Nebius Object Storage
 bucket, dedicated mounted filesystem, tainted CPU-pool contract and MysteryBox
 access-key reference. It owns the isolated `fs2-reference-data` namespace and
-must never target the shared `fs2-data` database namespace. It creates a
+hard-fails every other namespace, especially the shared `fs2-data` database
+namespace. It creates a
 dedicated Kueue CPU lane, enforces private-MSA egress, optionally exposes
 readiness metrics and can submit the official AlphaFold3 staging Job.
 

@@ -851,6 +851,32 @@ class DeploymentContractTests(unittest.TestCase):
             infrastructure,
         )
 
+    def test_reference_data_rejects_the_live_database_namespace_at_root(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-ref-ns-rejected",
+            "target": self.catalog_target(),
+            "storage": {
+                "reference_data": {
+                    "enabled": True,
+                    "namespace": "fs2-data",
+                    "filesystem": {"size_gib": 2048},
+                    "object_storage": {"max_size_gib": 2048},
+                }
+            },
+        }
+        variable_file = self._write_configuration(
+            "reference-database-namespace-rejected", deployment
+        )
+        result, _ = self._plan_file(
+            variable_file, "reference-database-namespace-rejected"
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertRegex(
+            f"{result.stdout}\n{result.stderr}",
+            r"(?s)dedicated fs2-reference-data\s+namespace.*fs2-data database namespace",
+        )
+
     def test_reference_data_capacity_below_af3_plus_one_tib_is_rejected(self) -> None:
         deployment = {
             "schema_version": 1,

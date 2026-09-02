@@ -43,6 +43,20 @@ variables {
   pipeline = { enabled = false }
 }
 
+run "live_database_namespace_is_rejected" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.region_contract]
+  }
+
+  variables {
+    namespace = "fs2-data"
+  }
+
+  expect_failures = [var.namespace]
+}
+
 run "fresh_empty_volume_status_rollout_is_service_ready" {
   command = apply
 
@@ -65,5 +79,41 @@ run "fresh_empty_volume_status_rollout_is_service_ready" {
   assert {
     condition     = kubernetes_deployment_v1.status[0].spec[0].template[0].spec[0].volume[0].host_path[0].path == "/mnt/fs2-reference-data/data"
     error_message = "Empty-volume bootstrap must mount the dedicated reference path."
+  }
+}
+
+run "every_reference_policy_is_scoped_away_from_database_pods" {
+  command = plan
+
+  variables {
+    object_storage_egress_cidrs = ["10.200.0.0/16"]
+    object_storage_egress_fqdns = ["storage.eu-north1.nebius.cloud"]
+    allow_public_source_staging = true
+    allow_public_msa_opt_in     = true
+  }
+
+  plan_options {
+    target = [
+      kubernetes_network_policy_v1.default_deny,
+      kubernetes_network_policy_v1.dns,
+      kubernetes_network_policy_v1.private_object_storage,
+      kubernetes_manifest.private_object_storage_fqdn,
+      kubernetes_network_policy_v1.public_source_staging,
+      kubernetes_network_policy_v1.public_msa_opt_in,
+      kubernetes_network_policy_v1.status_ingress,
+    ]
+  }
+
+  assert {
+    condition = alltrue([
+      kubernetes_network_policy_v1.default_deny.metadata[0].namespace == "fs2-reference-data",
+      kubernetes_network_policy_v1.dns.metadata[0].namespace == "fs2-reference-data",
+      kubernetes_network_policy_v1.private_object_storage[0].metadata[0].namespace == "fs2-reference-data",
+      kubernetes_manifest.private_object_storage_fqdn[0].manifest.metadata.namespace == "fs2-reference-data",
+      kubernetes_network_policy_v1.public_source_staging[0].metadata[0].namespace == "fs2-reference-data",
+      kubernetes_network_policy_v1.public_msa_opt_in[0].metadata[0].namespace == "fs2-reference-data",
+      kubernetes_network_policy_v1.status_ingress[0].metadata[0].namespace == "fs2-reference-data",
+    ])
+    error_message = "Every reference-data policy must be namespaced to fs2-reference-data, so no selector can match a CloudNativePG pod in fs2-data."
   }
 }

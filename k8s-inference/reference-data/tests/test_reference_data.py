@@ -359,6 +359,24 @@ class ReferenceDataContractTests(unittest.TestCase):
             reference_data.validate_preprocess_request(public)
         reference_data.validate_preprocess_request(public, allow_public_msa=True)
 
+    def test_renderers_reject_the_live_database_namespace(self) -> None:
+        request_path = REFERENCE_DATA / "examples" / "private-msa-request.json"
+        args = argparse.Namespace(
+            request=request_path,
+            allow_public_msa=False,
+            namespace="fs2-data",
+            queue="reference-data",
+            tools_config_map="fs2-reference-data-tools-123456789abc",
+            shared_host_path="/mnt/fs2-reference-data/data",
+            credentials_secret=None,
+            object_storage_endpoint=None,
+        )
+        with self.assertRaisesRegex(
+            reference_data.ContractError,
+            "fs2-data contains the live database and is forbidden",
+        ):
+            render_job.render_preprocess(args)
+
     def test_completed_preprocessing_is_a_verified_cache_hit_with_telemetry(self) -> None:
         request = reference_data.load_json(REFERENCE_DATA / "examples" / "private-msa-request.json")
         output_prefix = self.work / "outputs"

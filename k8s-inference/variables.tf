@@ -678,8 +678,7 @@ variable "deployment" {
           var.deployment.storage.reference_data.object_storage.bucket_name == null ||
           can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.deployment.storage.reference_data.object_storage.bucket_name))
         ) &&
-        can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", var.deployment.storage.reference_data.namespace)) &&
-        length(var.deployment.storage.reference_data.namespace) <= 63 &&
+        var.deployment.storage.reference_data.namespace == "fs2-reference-data" &&
         alltrue([
           for name in [
             var.deployment.storage.reference_data.queue.resource_flavor,
@@ -692,7 +691,7 @@ variable "deployment" {
       ),
       false,
     )
-    error_message = "enabled storage.reference_data requires retain+forbid_deletion or disposable+deletable lifecycle semantics, a bounded dedicated regular CPU pool with positive conservative schedulable CPU/memory/ephemeral capacity, DNS-safe names and dedicated filesystem/object capacities of at least 1611 GiB (the 630 GB official AlphaFold3 expansion estimate plus 1 TiB headroom)."
+    error_message = "enabled storage.reference_data requires the dedicated fs2-reference-data namespace (never the live fs2-data database namespace), retain+forbid_deletion or disposable+deletable lifecycle semantics, a bounded dedicated regular CPU pool with positive conservative schedulable CPU/memory/ephemeral capacity, DNS-safe names and dedicated filesystem/object capacities of at least 1611 GiB (the 630 GB official AlphaFold3 expansion estimate plus 1 TiB headroom)."
   }
 
   validation {

@@ -46,12 +46,12 @@ variable "object_storage_access" {
 }
 
 variable "namespace" {
-  description = "Dedicated namespace for reference-data and preprocessing CPU workloads."
+  description = "Dedicated namespace for reference-data and preprocessing CPU workloads; the shared fs2-data database namespace is forbidden."
   type        = string
   default     = "fs2-reference-data"
   validation {
-    condition     = can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", var.namespace)) && length(var.namespace) <= 63
-    error_message = "namespace must be a Kubernetes DNS label."
+    condition     = var.namespace == "fs2-reference-data"
+    error_message = "reference-data resources must use the dedicated fs2-reference-data namespace; fs2-data contains the live database and is forbidden."
   }
 }
 

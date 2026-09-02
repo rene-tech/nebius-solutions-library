@@ -35,6 +35,16 @@ def _dns_label(value: str, context: str) -> str:
     return value
 
 
+def _reference_namespace(value: str) -> str:
+    namespace = _dns_label(value, "namespace")
+    if namespace != "fs2-reference-data":
+        raise ContractError(
+            "reference-data Jobs must use the dedicated fs2-reference-data namespace; "
+            "fs2-data contains the live database and is forbidden"
+        )
+    return namespace
+
+
 def _base_job(
     *,
     name: str,
@@ -169,6 +179,7 @@ def _base_job(
 
 
 def render_stage(args: argparse.Namespace) -> dict[str, Any]:
+    namespace = _reference_namespace(args.namespace)
     catalog = validate_catalog(load_json(args.catalog))
     if args.bundle not in catalog["bundles"]:
         raise ContractError(f"unknown bundle id {args.bundle}")
@@ -196,13 +207,13 @@ def render_stage(args: argparse.Namespace) -> dict[str, Any]:
     config_map = {
         "apiVersion": "v1",
         "kind": "ConfigMap",
-        "metadata": {"name": config_name, "namespace": args.namespace},
+        "metadata": {"name": config_name, "namespace": namespace},
         "immutable": True,
         "data": config_data,
     }
     job = _base_job(
         name=f"fs2-stage-{args.bundle[:35].rstrip('-')}-{identity}",
-        namespace=args.namespace,
+        namespace=namespace,
         queue=args.queue,
         image=args.image,
         command=command,
@@ -230,6 +241,7 @@ def render_stage(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def render_preprocess(args: argparse.Namespace) -> dict[str, Any]:
+    namespace = _reference_namespace(args.namespace)
     document = validate_preprocess_request(load_json(args.request), allow_public_msa=args.allow_public_msa)
     digest = hashlib.sha256(canonical_json(document)).hexdigest()
     config_name = f"fs2-preprocess-{digest[:12]}"
@@ -237,7 +249,7 @@ def render_preprocess(args: argparse.Namespace) -> dict[str, Any]:
     config_map = {
         "apiVersion": "v1",
         "kind": "ConfigMap",
-        "metadata": {"name": config_name, "namespace": args.namespace},
+        "metadata": {"name": config_name, "namespace": namespace},
         "immutable": True,
         "data": {"request.json": json.dumps(document, indent=2, sort_keys=True) + "\n"},
     }
@@ -251,7 +263,7 @@ def render_preprocess(args: argparse.Namespace) -> dict[str, Any]:
         command.append("--allow-public-msa")
     job = _base_job(
         name=f"fs2-preprocess-{document['request_id'][:32].rstrip('-')}-{digest[:12]}",
-        namespace=args.namespace,
+        namespace=namespace,
         queue=args.queue,
         image=execution["image"],
         command=command,
@@ -283,7 +295,7 @@ def _common(subparser: argparse.ArgumentParser) -> None:
         "fs2-reference-data-tools-"
         + hashlib.sha256(Path(__file__).with_name("reference_data.py").read_bytes()).hexdigest()[:12]
     )
-    subparser.add_argument("--namespace", default="fs2-reference-data", type=lambda value: _dns_label(value, "namespace"))
+    subparser.add_argument("--namespace", default="fs2-reference-data", type=_reference_namespace)
     subparser.add_argument("--queue", default="reference-data", type=lambda value: _dns_label(value, "queue"))
     subparser.add_argument("--tools-config-map", default=default_tools_config_map, type=lambda value: _dns_label(value, "tools ConfigMap"))
     subparser.add_argument("--shared-host-path", default="/mnt/fs2-reference-data/data")

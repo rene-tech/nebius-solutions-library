@@ -11,7 +11,9 @@ The production default is private: customer sequence objects may be read only
 from `file:///` or private `s3://` references, sequence content is never put in
 Job metadata or logs. The dedicated `fs2-reference-data` namespace has
 default-deny egress, and a tainted, storage-attached CPU pool keeps staging and
-MSA work off both the Kubernetes system pool and H100 nodes.
+MSA work off both the Kubernetes system pool and H100 nodes. The root facade,
+workloads contract, standalone Job renderer and module all reject `fs2-data`,
+which is reserved for the live CloudNativePG cluster.
 The root `cpu_pool.schedulable_capacity` contract is deliberately lower than the
 provider preset's nominal capacity so Kubernetes and node DaemonSets retain
 headroom. Root and module preconditions reject a pipeline pod that cannot fit one

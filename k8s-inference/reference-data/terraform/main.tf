@@ -211,6 +211,7 @@ resource "terraform_data" "region_contract" {
   input = {
     cluster_region        = var.cluster_region
     object_storage_region = var.object_storage_region
+    namespace             = var.namespace
   }
   lifecycle {
     precondition {
