@@ -142,7 +142,13 @@ elasticity qualification receipt, add only the passing model IDs to
 `components/control-plane/contracts/all-models-live-services.json`, then run:
 
 ```bash
-python3 k8s-inference/components/control-plane/scripts/render_all_models_live.py
+FS2_RENDER_DIR=/tmp/fs2-live-release-render
+install -d "$FS2_RENDER_DIR"
+python3 k8s-inference/components/control-plane/scripts/render_all_models_live.py \
+  --configmaps-output "$FS2_RENDER_DIR/configmaps.json" \
+  --helm-values-output "$FS2_RENDER_DIR/values.json" \
+  --qualification-output \
+    k8s-inference/components/control-plane/contracts/model-qualification-projection.json
 python3 -m pytest -q k8s-inference/components/control-plane/tests/test_all_models_live_release.py
 ```
 
@@ -151,3 +157,12 @@ receipt for diagnosis, and correct the Terraform/KEDA/runtime path before a
 fresh attempt. A receipt is tuple-specific; moving to another accelerator,
 runtime digest, artifact revision, cache tier, or placement pool requires new
 live evidence.
+
+The passing 2026-09-02 H100 runs for `cosmos3-nano` and `qwen3-8b` are
+retained as the compact, sanitized receipt
+`catalog/profiles/evidence/h100-qwen-cosmos-elasticity-qualification-20260902.json`
+(`sha256:1cd246c27c5a4c4cc639a189c5b5fc33a8fcd7080f6b621f4bd1bc2c9d5401a6`).
+It binds the source public and private receipt hashes, exact model and runtime
+digests, reserved H100 pool tuple, KEDA transitions, cache hits, semantic
+results, timings, cleanup, and restored zero floor without retaining request or
+response bodies.

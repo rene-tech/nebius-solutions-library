@@ -98,7 +98,8 @@
             "model_discovery_sha256",
             "mcp_discovery_sha256",
             "http_mcp_acceptance_sha256",
-            "cold_start_acceptance_sha256"
+            "cold_start_acceptance_sha256",
+            "elasticity_acceptance_sha256"
           ],
           "properties": {
             "audited_catalog_sha256": {"$ref": "#/$defs/digest"},
@@ -107,7 +108,8 @@
             "model_discovery_sha256": {"$ref": "#/$defs/digest"},
             "mcp_discovery_sha256": {"$ref": "#/$defs/digest"},
             "http_mcp_acceptance_sha256": {"$ref": "#/$defs/digest"},
-            "cold_start_acceptance_sha256": {"$ref": "#/$defs/digest"}
+            "cold_start_acceptance_sha256": {"$ref": "#/$defs/digest"},
+            "elasticity_acceptance_sha256": {"$ref": "#/$defs/digest"}
           }
         }
       }

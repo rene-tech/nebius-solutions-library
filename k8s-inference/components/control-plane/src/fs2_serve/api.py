@@ -167,7 +167,6 @@ class AppRuntime:
     route_revalidator: RouteRevalidator | None = None
     admin_read: AdminReadService | None = None
     configuration: ConfigurationService | None = None
-    configuration_sync_error: str | None = None
     model_deployment_preview: ModelDeploymentPreviewService | None = None
     model_deployment_read: ModelDeploymentReadService | None = None
     model_deployment_mutation: ModelDeploymentMutationService | None = None
@@ -667,12 +666,6 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     async def readyz() -> Response:
         if not await runtime.store.ping():
             return _error(503, "database_unavailable", "database ping failed")
-        if runtime.configuration_sync_error is not None:
-            return _error(
-                503,
-                runtime.configuration_sync_error,
-                "Terraform-applied configuration receipt is absent, stale, or invalid",
-            )
         route_health = (
             runtime.route_revalidator.health()
             if runtime.route_revalidator is not None

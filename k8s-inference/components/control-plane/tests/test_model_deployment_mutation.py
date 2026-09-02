@@ -119,6 +119,8 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
     assert default.cache.tier is qualification.template_cache_tiers[default.runtime.template_ref.digest]
     assert default.placement.accelerators_per_replica == qualification.max_accelerators_per_replica
     assert default.exposure.open_ai_aliases == []
+    assert default.exposure.mcp
+    assert default.exposure.mcp_tool_name == qualification.mcp_tool_name
     assert [choice.pool_ref for choice in option.pool_choices] == ["pool-a"]
     assert option.local_queue_choices == ["interactive"]
     assert option.priority_class_choices == ["standard"]
@@ -137,6 +139,18 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
     hot_only_option = hot_only_service.configuration_options()[0]
     assert not hot_only_option.scale_to_zero_qualified
     assert hot_only_option.default_spec.availability.min_replicas == 1
+
+    no_mcp_qualification = qualification.model_copy(update={"mcp_tool_name": None})
+    no_mcp = installed.model_copy(
+        update={"qualifications": {no_mcp_qualification.model_ref: no_mcp_qualification}}
+    )
+    no_mcp_option = ModelDeploymentMutationService(
+        repository=service.repository,
+        writer=FakeWriter(),
+        envelope=no_mcp,
+    ).configuration_options()[0]
+    assert not no_mcp_option.default_spec.exposure.mcp
+    assert no_mcp_option.default_spec.exposure.mcp_tool_name is None
 
 
 def test_configuration_default_selects_every_compatible_pool_and_invariant_allows_subsets() -> None:
@@ -325,6 +339,8 @@ def test_capabilities_route_publishes_server_authoritative_configuration_options
     default = capabilities["configuration_options"][0]["default_spec"]
     assert default["runtime"]["image"] == envelope().qualifications["qwen.3-8b"].runtime_images[0]
     assert default["placement"]["acceleratorsPerReplica"] == 8
+    assert default["exposure"]["mcp"] is True
+    assert default["exposure"]["mcpToolName"] == "qwen_3_8b"
 
 
 @pytest.mark.asyncio

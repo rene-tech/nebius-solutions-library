@@ -408,7 +408,7 @@ def test_admin_console_rejects_incomplete_or_mutable_release_values(extra: list[
     assert expected in result.stderr
 
 
-def test_admin_configuration_is_an_exact_read_only_immutable_handoff_mount() -> None:
+def test_admin_configuration_optionally_mounts_a_reviewed_apply_receipt() -> None:
     digest = "d" * 64
     documents = render(
         "--set",
@@ -448,6 +448,40 @@ def test_admin_configuration_is_an_exact_read_only_immutable_handoff_mount() -> 
                 {"key": "admin-configuration.json", "path": "admin-configuration.json"},
                 {"key": "terraform-apply-receipt.json", "path": "terraform-apply-receipt.json"},
             ],
+        },
+    }
+
+
+def test_admin_configuration_baseline_mount_does_not_require_a_receipt() -> None:
+    digest = "d" * 64
+    documents = render(
+        "--set",
+        "adminConfiguration.enabled=true",
+        "--set",
+        f"adminConfiguration.configMapName=fs2-admin-configuration-{digest[:16]}-baseline",
+        "--set",
+        f"adminConfiguration.sha256={digest}",
+    )
+    pod = gateway_deployment(documents)["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    environment = {item["name"]: item["value"] for item in container["env"] if "value" in item}
+
+    assert environment["FS2_ADMIN_CONFIGURATION_FILE"] == "/etc/fs2-serve/admin/admin-configuration.json"
+    assert "FS2_ADMIN_CONFIGURATION_RECEIPT_FILE" not in environment
+    assert [item for item in container["volumeMounts"] if item["name"] == "admin-configuration"] == [
+        {
+            "name": "admin-configuration",
+            "mountPath": "/etc/fs2-serve/admin/admin-configuration.json",
+            "subPath": "admin-configuration.json",
+            "readOnly": True,
+        }
+    ]
+    assert next(item for item in pod["volumes"] if item["name"] == "admin-configuration") == {
+        "name": "admin-configuration",
+        "configMap": {
+            "name": f"fs2-admin-configuration-{digest[:16]}-baseline",
+            "defaultMode": 292,
+            "items": [{"key": "admin-configuration.json", "path": "admin-configuration.json"}],
         },
     }
 

@@ -69,7 +69,6 @@ const variables = {
   admin_configuration_reconciliation_id: "11111111-1111-4111-8111-111111111111",
   admin_configuration_base_revision: 2,
   admin_configuration_base_etag: hash("a"),
-  admin_configuration_bootstrap_baseline_accepted: false,
   model_scaling_mode: "keda",
   hot_model_ids: [],
   model_scaling_overrides: {

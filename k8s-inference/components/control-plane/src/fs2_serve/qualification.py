@@ -35,6 +35,7 @@ _EVIDENCE_KEYS = {
     "mcp_discovery_sha256",
     "http_mcp_acceptance_sha256",
     "cold_start_acceptance_sha256",
+    "elasticity_acceptance_sha256",
 }
 _STATE_KEYS = {
     "registered",

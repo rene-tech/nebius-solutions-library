@@ -984,6 +984,38 @@ class MemoryStore:
             )
             return value.model_copy(deep=True)
 
+    async def configuration_adopt_terraform_baseline(
+        self,
+        configuration: PlatformConfiguration,
+        *,
+        actor: str,
+    ) -> ConfigurationRevision:
+        """Append the mounted Terraform baseline when its desired state changed."""
+
+        if not 1 <= len(actor) <= 200:
+            raise ValueError("configuration actor is outside the bound")
+        etag = configuration_etag(configuration)
+        async with self._lock:
+            current = (
+                self.configuration_revisions[max(self.configuration_revisions)]
+                if self.configuration_revisions
+                else None
+            )
+            if current is not None and current.etag == etag:
+                return current.model_copy(deep=True)
+            revision = 1 if current is None else current.revision + 1
+            value = ConfigurationRevision(
+                revision=revision,
+                etag=etag,
+                desired=configuration.model_copy(deep=True),
+                effective=configuration.model_copy(deep=True),
+                created_at=datetime.now(UTC),
+                created_by=actor,
+                previous_revision=current.revision if current is not None else None,
+            )
+            self.configuration_revisions[revision] = value
+            return value.model_copy(deep=True)
+
     async def configuration_accept_terraform_applied(
         self,
         configuration: PlatformConfiguration,

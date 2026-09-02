@@ -95,6 +95,17 @@ while model discovery is empty and every model invocation remains unavailable.
 Activation and federation dependencies gate readiness only when an enabled
 route actually needs them.
 
+The immutable admin configuration ConfigMap is a Terraform baseline, not a
+one-time bootstrap receipt. At startup the gateway validates it against the
+catalog and appends it to PostgreSQL revision history whenever its canonical
+ETag differs from the current revision, using actor `terraform-baseline`.
+No external receipt is required for a normal tfvars-driven change, and an
+unchanged restart is idempotent. A receipt mounted with the ConfigMap opts into
+the existing reviewed plan/reconcile correlation and status-closing path;
+configuration history and rollback planning are shared by both paths. A stale
+or invalid optional receipt does not hold readiness down: the mounted Terraform
+baseline is still adopted, while the unrelated reconciliation stays unfinished.
+
 Source/runtime variants remain candidate-only in the canonical static catalog.
 The gateway separately mounts `model-variant-promotions.json` beside the normal
 serving binding and consumes it only through

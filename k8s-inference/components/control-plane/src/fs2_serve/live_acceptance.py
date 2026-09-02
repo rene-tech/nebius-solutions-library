@@ -1,4 +1,4 @@
-"""Secret-safe public HTTP and MCP qualification for every retained live model."""
+"""Public HTTP and MCP qualification for the full catalog or a selected deployed set."""
 
 from __future__ import annotations
 
@@ -261,7 +261,12 @@ def _materialize_payload_assets(
     return materialized
 
 
-def _load_cases(path: Path, catalog: Catalog, release: LiveRelease) -> tuple[AcceptanceCase, ...]:
+def _load_cases(
+    path: Path,
+    catalog: Catalog,
+    release: LiveRelease,
+    selected_model_ids: frozenset[str] | None = None,
+) -> tuple[AcceptanceCase, ...]:
     try:
         raw = path.read_bytes()
     except OSError:
@@ -287,6 +292,10 @@ def _load_cases(path: Path, catalog: Catalog, release: LiveRelease) -> tuple[Acc
     routes = {route["model_id"]: route for route in release.routes}
     if set(document["cases"]) != set(routes):
         raise AcceptanceError("acceptance_cases_model_set_invalid")
+    if selected_model_ids is not None:
+        if not selected_model_ids or not selected_model_ids.issubset(routes):
+            raise AcceptanceError("acceptance_selected_model_set_invalid")
+        routes = {model_id: routes[model_id] for model_id in selected_model_ids}
 
     cases: list[AcceptanceCase] = []
     for model_id in sorted(routes):
@@ -865,6 +874,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--cases", type=Path, default=project_root / "control-plane/contracts/all-models-live-acceptance.json"
     )
+    parser.add_argument(
+        "--models",
+        help=(
+            "comma-separated deployed model IDs to accept; omit to require the complete retained catalog"
+        ),
+    )
     parser.add_argument("--timeout-seconds", type=float, default=7200)
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument(
@@ -887,7 +902,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 async def _run(args: argparse.Namespace, token: str) -> dict[str, object]:
     catalog = load_catalog(args.catalog_root.resolve(), repo_root=args.repo_root.resolve())
     release = render_live_release(catalog, args.inventory.resolve())
-    cases = _load_cases(args.cases.resolve(), catalog, release)
+    selected_model_ids = None
+    if args.models is not None:
+        selected_model_ids = frozenset(model_id.strip() for model_id in args.models.split(",") if model_id.strip())
+    cases = _load_cases(args.cases.resolve(), catalog, release, selected_model_ids)
     runner = AcceptanceRunner(
         origin=args.endpoint,
         token=token,

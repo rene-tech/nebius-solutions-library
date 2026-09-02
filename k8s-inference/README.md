@@ -414,6 +414,16 @@ interface version 1. `terraform.tfvars` supplies immutable control-plane,
 admin-console, and selected model image digests; admin provenance is a typed
 source-commit, source-tree, and CycloneDX SBOM identity.
 
+`inference-stack` also derives the admin configuration baseline directly from
+the selected models, scaling settings, and live accelerator-pool contract. On
+every deployment the control plane durably adopts a changed baseline as a new
+configuration revision with actor `terraform-baseline`; changing tfvars after
+the first deployment does not require a separate admin plan or apply receipt.
+Repeated starts with the same baseline are idempotent. The authenticated admin
+plan/reconcile path remains available when an operator wants a reviewed
+Terraform handoff, reconciliation status, history, or rollback target; only
+that optional path supplies `admin_configuration_*` receipt fields.
+
 The `full_catalog` model profile currently contains these 16 canonical routes:
 
 - `boltz2`

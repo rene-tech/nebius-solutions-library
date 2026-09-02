@@ -247,6 +247,34 @@ async def test_admin_configuration_receipt_is_atomic_durable_and_exactly_replaya
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
+async def test_admin_configuration_terraform_baseline_adopts_each_changed_tfvars_revision(
+    postgres_store: PostgresStore,
+) -> None:
+    from test_admin_configuration import qualified_configuration, with_cooldown
+
+    initial, _ = qualified_configuration()
+    desired = with_cooldown(initial, 301)
+    repository = StoreConfigurationRepository(postgres_store)
+
+    first = await repository.adopt_terraform_baseline(initial)
+    adopted, replay = await asyncio.gather(
+        repository.adopt_terraform_baseline(desired),
+        repository.adopt_terraform_baseline(desired),
+    )
+
+    assert first.revision == 1
+    assert adopted == replay
+    assert adopted.revision == 2
+    assert adopted.previous_revision == 1
+    assert adopted.reconciliation_id is None
+    assert adopted.created_by == "terraform-baseline"
+    assert adopted.desired == adopted.effective == desired
+    async with postgres_store.pool.acquire() as connection:
+        assert await connection.fetchval("SELECT count(*) FROM fs2_configuration_revisions") == 2
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
 async def test_model_deployment_revisions_idempotency_status_and_audit_are_durable(
     postgres_store: PostgresStore,
 ) -> None:

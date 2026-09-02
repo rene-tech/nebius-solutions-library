@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the secret-safe all-model public HTTP and MCP acceptance harness."""
+"""Run public HTTP and MCP acceptance, requiring the full catalog by default."""
 
 from __future__ import annotations
 

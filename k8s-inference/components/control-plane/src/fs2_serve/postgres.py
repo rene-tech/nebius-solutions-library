@@ -1508,6 +1508,41 @@ class PostgresStore:
             return self._configuration_revision(row)
 
     @retry_serialization
+    async def configuration_adopt_terraform_baseline(
+        self,
+        configuration: PlatformConfiguration,
+        *,
+        actor: str,
+    ) -> ConfigurationRevision:
+        """Append the mounted Terraform baseline when its desired state changed."""
+
+        if not 1 <= len(actor) <= 200:
+            raise ValueError("configuration actor is outside the bound")
+        desired = configuration.model_dump(mode="json")
+        etag = configuration_etag(configuration)
+        async with self.pool.acquire() as connection, connection.transaction():
+            await self._configuration_lock(connection)
+            current_row = await connection.fetchrow(
+                "SELECT * FROM fs2_configuration_revisions ORDER BY revision DESC LIMIT 1"
+            )
+            current = self._configuration_revision(current_row) if current_row is not None else None
+            if current is not None and current.etag == etag:
+                return current
+            row = await connection.fetchrow(
+                """
+                INSERT INTO fs2_configuration_revisions(
+                    etag,desired,effective,created_by,previous_revision
+                ) VALUES($1,$2,$2,$3,$4) RETURNING *
+                """,
+                etag,
+                json.dumps(desired, sort_keys=True, separators=(",", ":")),
+                actor,
+                current.revision if current is not None else None,
+            )
+            assert row is not None
+            return self._configuration_revision(row)
+
+    @retry_serialization
     async def configuration_accept_terraform_applied(
         self,
         configuration: PlatformConfiguration,

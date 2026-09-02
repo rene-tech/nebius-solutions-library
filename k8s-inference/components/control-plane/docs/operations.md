@@ -901,6 +901,23 @@ k8s-inference/components/control-plane/.venv/bin/python \
 The token file remains owner-owned mode `0600`; never print it or persist its
 value in the evidence receipt.
 
+By default the harness remains a strict full-catalog acceptance and requires
+every retained model to be the exact authenticated `/v1/models` set. To accept
+the subset intentionally deployed on a cluster, pass the selected IDs:
+
+```bash
+k8s-inference/components/control-plane/.venv/bin/python \
+  k8s-inference/components/control-plane/scripts/accept_all_models_live.py \
+  --endpoint https://PUBLIC_ENDPOINT \
+  --token-file /OWNER_ONLY/PAT_FILE \
+  --output /OWNER_ONLY/selected-models-acceptance.json \
+  --models qwen3-8b,cosmos3-nano
+```
+
+The selected run still validates each model against the complete reviewed
+inventory and canonical semantic-case contract; it changes only the deployed
+model set expected from the live endpoint.
+
 The default `--tls-mode verified` uses normal certificate verification for
 both the HTTP and MCP transports. Only the Terraform disposable staging gate,
 whose Let's Encrypt staging chain is intentionally not publicly trusted, may

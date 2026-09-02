@@ -1500,7 +1500,6 @@ def write_downstream_variables(
             {
                 "admin_configuration": configuration,
                 "admin_configuration_sha256": configuration_sha256,
-                "admin_configuration_bootstrap_baseline_accepted": True,
                 "model_scaling_overrides": scaling,
             }
         )

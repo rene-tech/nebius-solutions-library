@@ -208,6 +208,13 @@ class Store(Protocol):
         actor: str,
     ) -> ConfigurationRevision: ...
 
+    async def configuration_adopt_terraform_baseline(
+        self,
+        configuration: PlatformConfiguration,
+        *,
+        actor: str,
+    ) -> ConfigurationRevision: ...
+
     async def configuration_accept_terraform_applied(
         self,
         configuration: PlatformConfiguration,

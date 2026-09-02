@@ -314,6 +314,31 @@ def test_published_acceptance_cases_exactly_cover_the_live_release() -> None:
     assert cosmos.response_kind == "mp4-b64-json"
 
 
+def test_published_acceptance_cases_can_target_an_explicit_deployed_subset() -> None:
+    catalog = live_acceptance.load_catalog(CATALOG_ROOT, repo_root=REPO_ROOT)
+    published_release = render_live_release(
+        catalog,
+        CONTROL_ROOT / "contracts/all-models-live-services.json",
+    )
+
+    cases = _load_cases(
+        CONTROL_ROOT / "contracts/all-models-live-acceptance.json",
+        catalog,
+        published_release,
+        frozenset({"qwen3-8b", "cosmos3-nano"}),
+    )
+
+    assert [case.model_id for case in cases] == ["cosmos3-nano", "qwen3-8b"]
+
+    with pytest.raises(AcceptanceError, match="acceptance_selected_model_set_invalid"):
+        _load_cases(
+            CONTROL_ROOT / "contracts/all-models-live-acceptance.json",
+            catalog,
+            published_release,
+            frozenset({"not-in-the-release"}),
+        )
+
+
 def test_packaged_licensed_image_is_digest_bound_and_materialized_as_data_uri(
     tmp_path: Path,
 ) -> None:

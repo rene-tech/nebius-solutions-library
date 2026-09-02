@@ -340,7 +340,7 @@ class InferenceStackTests(unittest.TestCase):
         self.assertEqual(
             workloads["model_scaling_overrides"]["qwen3-8b"]["min_replicas"], 1
         )
-        self.assertTrue(workloads["admin_configuration_bootstrap_baseline_accepted"])
+        self.assertNotIn("admin_configuration_bootstrap_baseline_accepted", workloads)
         self.assertEqual(
             workloads["admin_configuration_sha256"],
             STACK.canonical_sha256(baseline),

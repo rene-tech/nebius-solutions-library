@@ -47,6 +47,7 @@ from .configuration_models import (
 
 PLAN_TTL = timedelta(minutes=15)
 TERRAFORM_BOOTSTRAP_ACTOR = "terraform-bootstrap"
+TERRAFORM_BASELINE_ACTOR = "terraform-baseline"
 _MISSING = object()
 _SECRET_KEY_PARTS = frozenset({"api_key", "apikey", "credential", "password", "secret", "token"})
 _APPLICABLE_AUTOSCALING_FIELDS = frozenset(
@@ -325,7 +326,6 @@ class DeclarativeConfigurationRenderer:
             "admin_configuration_reconciliation_id": str(plan_id),
             "admin_configuration_base_revision": base_revision,
             "admin_configuration_base_etag": base_etag,
-            "admin_configuration_bootstrap_baseline_accepted": False,
             "model_scaling_mode": "keda",
             "hot_model_ids": hot_models,
             "model_scaling_overrides": {
@@ -419,6 +419,13 @@ class ConfigurationPersistenceStore(Protocol):
         actor: str,
     ) -> ConfigurationRevision: ...
 
+    async def configuration_adopt_terraform_baseline(
+        self,
+        configuration: PlatformConfiguration,
+        *,
+        actor: str,
+    ) -> ConfigurationRevision: ...
+
     async def configuration_accept_terraform_applied(
         self,
         configuration: PlatformConfiguration,
@@ -449,6 +456,19 @@ class StoreConfigurationRepository:
         actor: str,
     ) -> ConfigurationRevision:
         return await self.store.configuration_ensure_initial(configuration, actor=actor)
+
+    async def adopt_terraform_baseline(
+        self,
+        configuration: PlatformConfiguration,
+        *,
+        actor: str = TERRAFORM_BASELINE_ACTOR,
+    ) -> ConfigurationRevision:
+        """Durably make the mounted Terraform desired state the current revision."""
+
+        return await self.store.configuration_adopt_terraform_baseline(
+            configuration,
+            actor=actor,
+        )
 
     async def accept_terraform_applied(
         self,
@@ -1078,7 +1098,6 @@ def validate_terraform_apply_correlation(
         "admin_configuration_reconciliation_id": str(plan.plan_id),
         "admin_configuration_base_revision": plan.base_revision,
         "admin_configuration_base_etag": plan.base_etag,
-        "admin_configuration_bootstrap_baseline_accepted": False,
     }
     if receipt.plan_id != plan.plan_id or receipt.reconciliation_id != plan.plan_id:
         raise ValueError("Terraform apply receipt identity differs from the durable plan")

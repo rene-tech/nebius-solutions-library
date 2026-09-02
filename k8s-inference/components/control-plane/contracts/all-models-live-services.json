@@ -4,7 +4,7 @@
   "qualification": {
     "schema": "fs2-serve.nebius.ai/model-qualification-observations/v1",
     "authority": "reviewed-retained-evidence",
-    "observed_at": "2026-09-02T09:17:01Z",
+    "observed_at": "2026-09-02T10:53:26Z",
     "evidence": {
       "audited_catalog_sha256": "36222c86357ef1ce7efbb5c6e2246fe37583456fd7323cd282bac1463b55cf74",
       "audited_live_routes_sha256": "2cc8360b97bb09fb8d4281729adcc4b6e13db36598f6f14b61c5696f085c0cca",
@@ -12,7 +12,8 @@
       "model_discovery_sha256": "955cba641bfe571455770ab48e2bbde6a2a2e8b202b4306b1a1e4754f446b11f",
       "mcp_discovery_sha256": "74febece19ee0fe1250c984c871eff6ea7522a6b1de845cec5c3be632693aa0e",
       "http_mcp_acceptance_sha256": "0d66f4fab33908b15a9a89bc9977752e21c9f819307198ac72d3e770ee8b208f",
-      "cold_start_acceptance_sha256": "778683ecc7ff595fb452d06060d005de34a83176deb20f90f2c5c49b4beaf300"
+      "cold_start_acceptance_sha256": "778683ecc7ff595fb452d06060d005de34a83176deb20f90f2c5c49b4beaf300",
+      "elasticity_acceptance_sha256": "1cd246c27c5a4c4cc639a189c5b5fc33a8fcd7080f6b621f4bd1bc2c9d5401a6"
     },
     "active_variant_bindings": {
       "boltz2": "boltz2-hf-blackwell-sm103",
@@ -44,7 +45,7 @@
       "nv-reason-cxr-3b", "nv-segment-ct", "openfold2", "openfold3",
       "qwen3-8b", "rfdiffusion", "sdxl"
     ],
-    "elasticity_qualified_models": []
+    "elasticity_qualified_models": ["cosmos3-nano", "qwen3-8b"]
   },
   "routes": {
     "boltz2": {

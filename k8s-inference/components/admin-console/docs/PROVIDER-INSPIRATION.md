@@ -13,7 +13,7 @@ not claims of visual equivalence.
 | Baseten's per-model metrics distinguish request volume by outcome, response time, ready/not-ready replicas, restarts, CPU/GPU use, concurrency, and asynchronous queue state. | Make Models the primary resource table; give every model a detail page with runtime state, latency/throughput, replica placement, queue/cold-start, snapshot/cache, semantic health, and error evidence. Never derive `hot` from replica count alone. |
 | Baseten distinguishes personal and team credentials, offers permission/model/environment scope, and discloses a new key once. | Model human and service principals separately. Create scoped, named API keys with role, tenant, model, operation, budget, concurrency and rate-window policy; disclose the secret once and retain only verifier material and non-secret metadata. |
 | Together uses project-scoped keys and key identifiers to segment usage by workload, model, and time. | Attribute every admitted operation and durable usage fact to tenant, principal and key ID. Provide per-key operations, reported tokens/modalities, estimated GPU-seconds, last accepted use, limits, rotation lineage, and revocation state. |
-| Fireworks exposes dedicated deployments and autoscaling controls for request rate and concurrency. | Keep deployment/hotness, min/max replicas, concurrency, queue, cooldown, placement, and capacity type visible together, while sending mutations through the existing declarative reconciler and reviewed Terraform workflow. |
+| Fireworks exposes dedicated deployments and autoscaling controls for request rate and concurrency. | Keep deployment/hotness, min/max replicas, concurrency, queue, cooldown, placement, and capacity type visible together. Normal tfvars deployments become the authoritative baseline; the reviewed Terraform plan/reconcile workflow remains available from the console. |
 
 ## Deliberate differences
 
@@ -25,8 +25,9 @@ not claims of visual equivalence.
 - Prometheus, Loki, Kubernetes, PostgreSQL, and cloud credentials never enter
   the browser. Grafana is the authenticated external pane for the installed
   observability stack; raw Prometheus and Loki stay private.
-- Configuration changes produce a validated diff, reconcile receipt, rollback
-  target, and Terraform handoff. The browser is not a second cloud control
+- The browser can produce a validated diff, reconcile receipt, rollback target,
+  and Terraform handoff. Direct tfvars changes need no receipt and are durably
+  adopted as the Terraform baseline. The browser is not a second cloud control
   plane and does not patch Terraform-owned resources directly.
 - Unknown, stale, unsupported, and unavailable states remain distinct from
   numeric zero or a healthy state.

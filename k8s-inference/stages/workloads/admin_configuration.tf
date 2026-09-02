@@ -35,7 +35,7 @@ variable "admin_console" {
 }
 
 variable "admin_configuration" {
-  description = "Typed, secret-free desired state rendered by the authenticated admin plan. Null disables configuration APIs."
+  description = "Typed, secret-free Terraform baseline for the admin configuration service. Null disables configuration APIs."
   type = object({
     schema_version = string
     pools = map(object({
@@ -169,7 +169,7 @@ variable "admin_configuration" {
 }
 
 variable "admin_configuration_sha256" {
-  description = "Canonical JSON SHA-256 from the reviewed admin plan; required with admin_configuration."
+  description = "Canonical JSON SHA-256 of admin_configuration; required with admin_configuration."
   type        = string
   default     = null
   nullable    = true
@@ -181,7 +181,7 @@ variable "admin_configuration_sha256" {
 }
 
 variable "admin_configuration_plan_id" {
-  description = "Durable admin plan UUID. Null is allowed only for first-cluster bootstrap."
+  description = "Optional reviewed admin plan UUID. Null selects authoritative Terraform baseline mode."
   type        = string
   default     = null
   nullable    = true
@@ -196,7 +196,7 @@ variable "admin_configuration_plan_id" {
 }
 
 variable "admin_configuration_reconciliation_id" {
-  description = "Plan-owned durable reconciliation UUID. It must equal admin_configuration_plan_id."
+  description = "Optional plan-owned durable reconciliation UUID. It must equal admin_configuration_plan_id when supplied."
   type        = string
   default     = null
   nullable    = true
@@ -211,7 +211,7 @@ variable "admin_configuration_reconciliation_id" {
 }
 
 variable "admin_configuration_base_revision" {
-  description = "Durable base revision from the reviewed admin plan. Null is allowed only for bootstrap."
+  description = "Optional durable base revision from the reviewed admin plan. Null selects baseline mode."
   type        = number
   default     = null
   nullable    = true
@@ -229,7 +229,7 @@ variable "admin_configuration_base_revision" {
 }
 
 variable "admin_configuration_base_etag" {
-  description = "Durable base ETag from the reviewed admin plan. Null is allowed only for bootstrap."
+  description = "Optional durable base ETag from the reviewed admin plan. Null selects baseline mode."
   type        = string
   default     = null
   nullable    = true
@@ -244,13 +244,13 @@ variable "admin_configuration_base_etag" {
 }
 
 variable "admin_configuration_bootstrap_baseline_accepted" {
-  description = "Wrapper-owned acknowledgement that a receipt-free first revision was deterministically derived from the same tfvars, accelerator-pool output, routes, and canonical catalog as this deployment."
+  description = "Deprecated compatibility input. Terraform baselines are authoritative whenever no optional reviewed apply receipt is supplied."
   type        = bool
   default     = false
 }
 
 variable "model_scaling_overrides" {
-  description = "Per-model KEDA values from the reviewed admin handoff. Empty preserves the legacy global inputs."
+  description = "Per-model KEDA values matching the Terraform baseline or optional reviewed admin handoff. Empty preserves the legacy global inputs."
   type = map(object({
     min_replicas             = number
     max_replicas             = number
@@ -308,7 +308,7 @@ locals {
   admin_configuration_name = local.admin_configuration_enabled ? format(
     "fs2-admin-configuration-%s-%s",
     substr(local.admin_configuration_computed_sha256, 0, 16),
-    local.admin_configuration_receipt_enabled ? substr(replace(var.admin_configuration_plan_id, "-", ""), 0, 8) : "bootstrap",
+    local.admin_configuration_receipt_enabled ? substr(replace(var.admin_configuration_plan_id, "-", ""), 0, 8) : "baseline",
   ) : null
 
   admin_control_plane_overrides = merge(
@@ -356,8 +356,8 @@ resource "kubernetes_config_map_v1" "admin_configuration" {
     labels    = local.common_labels
     annotations = {
       "fs2-serve.nebius.ai/configuration-sha256" = local.admin_configuration_computed_sha256
-      "fs2-serve.nebius.ai/configuration-owner"  = "terraform-reviewed-handoff"
-      "fs2-serve.nebius.ai/configuration-plan"   = local.admin_configuration_receipt_enabled ? var.admin_configuration_plan_id : "bootstrap"
+      "fs2-serve.nebius.ai/configuration-owner"  = local.admin_configuration_receipt_enabled ? "terraform-reviewed-handoff" : "terraform-baseline"
+      "fs2-serve.nebius.ai/configuration-plan"   = local.admin_configuration_receipt_enabled ? var.admin_configuration_plan_id : "none"
     }
   }
 
@@ -385,15 +385,7 @@ resource "kubernetes_config_map_v1" "admin_configuration" {
         alltrue([for value in local.admin_configuration_receipt_values : value == null]) ||
         local.admin_configuration_receipt_enabled
       )
-      error_message = "Terraform apply receipt inputs must be supplied together or all omitted for first bootstrap."
-    }
-
-    precondition {
-      condition = (
-        local.admin_configuration_receipt_enabled !=
-        var.admin_configuration_bootstrap_baseline_accepted
-      )
-      error_message = "Exactly one configuration mode is required: a correlated apply receipt or explicit Terraform baseline acceptance."
+      error_message = "Optional Terraform apply receipt inputs must be supplied together or all omitted for baseline mode."
     }
 
     precondition {
@@ -439,7 +431,7 @@ resource "kubernetes_config_map_v1" "admin_configuration" {
           cooldown_seconds         = model.autoscaling.cooldown_seconds
         }
       })
-      error_message = "model_scaling_overrides must exactly match the reviewed admin_configuration."
+      error_message = "model_scaling_overrides must exactly match admin_configuration."
     }
 
     precondition {
@@ -462,14 +454,16 @@ resource "kubernetes_config_map_v1" "admin_configuration" {
 }
 
 output "admin_configuration_contract" {
-  description = "Secret-free, immutable receipt and explicit infrastructure review handoff."
+  description = "Secret-free immutable Terraform baseline with an optional reviewed apply receipt."
   value = {
-    schema                      = "fs2-serve.nebius.ai/admin-configuration-terraform/v1"
-    enabled                     = local.admin_configuration_enabled
-    configuration_sha256        = local.admin_configuration_computed_sha256
-    config_map_name             = local.admin_configuration_name
-    browser_cloud_mutation      = false
-    reconciliation_state        = local.admin_configuration_enabled ? "terraform-reviewed" : "disabled"
+    schema                 = "fs2-serve.nebius.ai/admin-configuration-terraform/v1"
+    enabled                = local.admin_configuration_enabled
+    configuration_sha256   = local.admin_configuration_computed_sha256
+    config_map_name        = local.admin_configuration_name
+    browser_cloud_mutation = false
+    reconciliation_state = !local.admin_configuration_enabled ? "disabled" : (
+      local.admin_configuration_receipt_enabled ? "terraform-reviewed" : "terraform-baseline"
+    )
     infrastructure_change_owner = "terraform"
     accelerator_pools           = local.admin_configuration_enabled ? var.admin_configuration.pools : {}
     model_scaling_overrides     = var.model_scaling_overrides
@@ -482,10 +476,12 @@ output "admin_configuration_contract" {
     } : null
     bootstrap_baseline = {
       source                                 = "immutable-terraform-configmap"
-      accepted_without_prior_revision        = local.admin_configuration_enabled && var.admin_configuration_bootstrap_baseline_accepted
+      accepted_without_prior_revision        = local.admin_configuration_enabled && !local.admin_configuration_receipt_enabled
       static_equivalence_proven_by_plan      = false
-      static_equivalence_acceptance_required = local.admin_configuration_enabled && !local.admin_configuration_receipt_enabled
+      static_equivalence_acceptance_required = false
       arbitrary_api_bootstrap_allowed        = false
+      authoritative_on_startup               = local.admin_configuration_enabled && !local.admin_configuration_receipt_enabled
+      durable_revision_adoption              = local.admin_configuration_enabled && !local.admin_configuration_receipt_enabled
     }
   }
 }

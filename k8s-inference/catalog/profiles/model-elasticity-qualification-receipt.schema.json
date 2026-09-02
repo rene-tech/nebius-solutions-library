@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-elasticity-qualification-receipt/v1",
+  "title": "FS2 exact model elasticity qualification receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "observed_at", "cluster", "source_schema", "models"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/model-elasticity-qualification-receipt/v1"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "cluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id_sha256", "context", "project_id", "region", "namespace"],
+      "properties": {
+        "id_sha256": {"$ref": "#/$defs/digest"},
+        "context": {"type": "string", "minLength": 1},
+        "project_id": {"type": "string", "minLength": 1},
+        "region": {"type": "string", "minLength": 1},
+        "namespace": {"type": "string", "minLength": 1}
+      }
+    },
+    "source_schema": {"const": "fs2-serve.nebius.ai/model-autoscaling-public-acceptance/v1"},
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/model"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "shaDigest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "modelId": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_id",
+        "model_revision",
+        "artifact_manifest_digest",
+        "model_content_digest",
+        "runtime_image_digest",
+        "target",
+        "placement",
+        "source",
+        "autoscaling",
+        "cache",
+        "timings_seconds",
+        "semantic_calls",
+        "cleanup",
+        "result"
+      ],
+      "properties": {
+        "model_id": {"$ref": "#/$defs/modelId"},
+        "model_revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "artifact_manifest_digest": {"$ref": "#/$defs/shaDigest"},
+        "model_content_digest": {"$ref": "#/$defs/shaDigest"},
+        "runtime_image_digest": {"$ref": "#/$defs/shaDigest"},
+        "target": {"$ref": "#/$defs/target"},
+        "placement": {"$ref": "#/$defs/placement"},
+        "source": {"$ref": "#/$defs/source"},
+        "autoscaling": {"$ref": "#/$defs/autoscaling"},
+        "cache": {"$ref": "#/$defs/cache"},
+        "timings_seconds": {"$ref": "#/$defs/timings"},
+        "semantic_calls": {"$ref": "#/$defs/semanticCalls"},
+        "cleanup": {"$ref": "#/$defs/cleanup"},
+        "result": {"const": "PASS"}
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deployment", "service", "expected_floor"],
+      "properties": {
+        "deployment": {"$ref": "#/$defs/modelId"},
+        "service": {"$ref": "#/$defs/modelId"},
+        "expected_floor": {"const": 0}
+      }
+    },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accelerator_class",
+        "pool_id",
+        "capacity_type",
+        "requested_gpu_count",
+        "observed_node_gpu_count",
+        "accelerator_class_label_sha256",
+        "pool_id_label_sha256",
+        "capacity_source_label_sha256",
+        "capacity_type_label_sha256",
+        "node_uid_sha256",
+        "pod_uid_sha256"
+      ],
+      "properties": {
+        "accelerator_class": {"$ref": "#/$defs/modelId"},
+        "pool_id": {"$ref": "#/$defs/modelId"},
+        "capacity_type": {"$ref": "#/$defs/modelId"},
+        "requested_gpu_count": {"type": "integer", "minimum": 1},
+        "observed_node_gpu_count": {"type": "integer", "minimum": 1},
+        "accelerator_class_label_sha256": {"$ref": "#/$defs/digest"},
+        "pool_id_label_sha256": {"$ref": "#/$defs/digest"},
+        "capacity_source_label_sha256": {"$ref": "#/$defs/digest"},
+        "capacity_type_label_sha256": {"$ref": "#/$defs/digest"},
+        "node_uid_sha256": {"$ref": "#/$defs/digest"},
+        "pod_uid_sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["public_receipt_sha256", "private_receipt_sha256"],
+      "properties": {
+        "public_receipt_sha256": {"$ref": "#/$defs/digest"},
+        "private_receipt_sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "initial_replicas",
+        "initial_ready_replicas",
+        "initial_endpoints",
+        "scaledobject_active",
+        "hpa_desired_one",
+        "deployment_one",
+        "endpoint_ready",
+        "final_replicas",
+        "final_ready_replicas",
+        "final_endpoints"
+      ],
+      "properties": {
+        "engine": {"const": "keda"},
+        "initial_replicas": {"const": 0},
+        "initial_ready_replicas": {"const": 0},
+        "initial_endpoints": {"const": 0},
+        "scaledobject_active": {"const": true},
+        "hpa_desired_one": {"const": true},
+        "deployment_one": {"const": true},
+        "endpoint_ready": {"const": true},
+        "final_replicas": {"const": 0},
+        "final_ready_replicas": {"const": 0},
+        "final_endpoints": {"const": 0}
+      }
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mechanism", "outcome", "localization_seconds"],
+      "properties": {
+        "mechanism": {"const": "shared-cache"},
+        "outcome": {"enum": ["cache-hit", "cache-hit-after-wait"]},
+        "localization_seconds": {"type": "number", "minimum": 0}
+      }
+    },
+    "timings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "activation_to_model_ready",
+        "activation_to_semantic_completion",
+        "warm_semantic_completion",
+        "semantic_completion_to_floor"
+      ],
+      "properties": {
+        "activation_to_model_ready": {"type": "number", "minimum": 0},
+        "activation_to_semantic_completion": {"type": "number", "minimum": 0},
+        "warm_semantic_completion": {"type": "number", "minimum": 0},
+        "semantic_completion_to_floor": {"type": "number", "minimum": 0}
+      }
+    },
+    "semanticCalls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "kind", "first_result_sha256", "second_result_sha256"],
+      "properties": {
+        "count": {"const": 2},
+        "kind": {"type": "string", "minLength": 1},
+        "first_result_sha256": {"$ref": "#/$defs/digest"},
+        "second_result_sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "floor_restored", "terminal_operations_acknowledged"],
+      "properties": {
+        "result": {"const": "PASS"},
+        "floor_restored": {"const": true},
+        "terminal_operations_acknowledged": {"const": 2}
+      }
+    }
+  }
+}

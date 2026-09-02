@@ -262,9 +262,12 @@ def test_projection_names_eight_independent_variants_three_exact_nims_and_policy
         "semantic_qualified": True,
         "http_mcp_qualified": True,
         "cold_start_qualified": False,
-        "elasticity_qualified": False,
+        "elasticity_qualified": True,
     }
-    assert not any(row["states"]["elasticity_qualified"] for row in rows.values())
+    assert {model_id for model_id, row in rows.items() if row["states"]["elasticity_qualified"]} == {
+        "cosmos3-nano",
+        "qwen3-8b",
+    }
 
 
 def test_release_selects_explicit_segment_sm103_variant(tmp_path: Path, catalog: Catalog) -> None:

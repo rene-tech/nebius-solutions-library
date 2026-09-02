@@ -43,8 +43,9 @@ adminConsole:
   tolerations: []
   affinity: {}
 
-# Immutable desired-state bootstrap for the admin configuration service. The
-# Terraform-owned ConfigMap name includes the canonical configuration digest.
+# Immutable desired-state baseline for the admin configuration service. The
+# Terraform-owned ConfigMap name includes the canonical configuration digest;
+# receiptKey is optional and is used only for the reviewed plan/reconcile flow.
 adminConfiguration:
   enabled: false
   configMapName: ""

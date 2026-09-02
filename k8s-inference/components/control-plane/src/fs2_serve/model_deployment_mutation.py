@@ -524,10 +524,11 @@ class ModelDeploymentMutationService:
                             # Repeating it as an alias collides during atomic
                             # registry binding and would withdraw the snapshot.
                             "openAIAliases": [],
-                            "mcp": not qualification.open_ai_qualified and qualification.mcp_tool_name is not None,
-                            "mcpToolName": (
-                                qualification.mcp_tool_name if not qualification.open_ai_qualified else None
-                            ),
+                            # OpenAI and MCP are independent qualified surfaces.
+                            # Match Terraform bootstrap by publishing both when
+                            # the canonical model has an approved MCP tool.
+                            "mcp": qualification.mcp_tool_name is not None,
+                            "mcpToolName": qualification.mcp_tool_name,
                         },
                         "policy": {
                             "visibility": "Tenant",

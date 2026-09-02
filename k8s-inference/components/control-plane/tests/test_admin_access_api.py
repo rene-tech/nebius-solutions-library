@@ -126,22 +126,6 @@ def test_authenticated_configuration_routes_plan_and_stop_at_terraform(
     assert status.status_code == 200 and status.json()["data"] == reconciled.json()["data"]
 
 
-def test_invalid_or_missing_terraform_configuration_receipt_blocks_readiness(
-    registry: Any,
-    cipher: Any,
-    hasher: Any,
-) -> None:
-    runtime = _runtime(registry, cipher, hasher)
-    runtime.configuration_sync_error = "configuration_apply_receipt_missing"
-
-    with _client(runtime) as client:
-        response = client.get("/readyz")
-
-    assert response.status_code == 503
-    assert response.headers["cache-control"] == "no-store"
-    assert response.json()["error"]["type"] == "configuration_apply_receipt_missing"
-
-
 def _create_principal(
     runtime: AppRuntime,
     *,

@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
@@ -37,16 +38,16 @@ from .admission import AdmissionService
 from .api import AppRuntime, create_app
 from .auth import OperatorSessionService, PepperRing, TokenService
 from .configuration import (
+    TERRAFORM_BASELINE_ACTOR,
     ConfigurationService,
     StaticCatalogConfigurationAdapter,
     StoreConfigurationAuditSink,
     StoreConfigurationRepository,
     catalog_configuration_contracts,
-    configuration_etag,
     load_platform_configuration,
     load_terraform_apply_receipt,
 )
-from .configuration_models import PlatformConfiguration
+from .configuration_models import ConfigurationRevision, PlatformConfiguration
 from .crypto import KeyedHasher, PayloadCipher
 from .federation import FederationRouter
 from .mcp_server import mount_mcp
@@ -166,6 +167,34 @@ def _admin_read_dependencies(
             )
         )
     return kubernetes, prometheus, capacity, observability, context
+
+
+async def _synchronize_admin_configuration(
+    repository: StoreConfigurationRepository,
+    current: ConfigurationRevision | None,
+    configuration: PlatformConfiguration,
+    receipt_file: Path | None,
+) -> None:
+    """Adopt a Terraform baseline, or close an explicitly reviewed handoff."""
+
+    if current is not None and receipt_file is not None:
+        try:
+            receipt = load_terraform_apply_receipt(receipt_file)
+            await repository.accept_terraform_applied(
+                configuration,
+                receipt,
+                actor="terraform-applied",
+            )
+        except (ConflictError, ValueError):
+            logging.getLogger("fs2_serve.configuration").exception(
+                "optional Terraform apply receipt was invalid; adopting the mounted baseline"
+            )
+        else:
+            return
+    await repository.adopt_terraform_baseline(
+        configuration,
+        actor=TERRAFORM_BASELINE_ACTOR,
+    )
 
 
 async def build_runtime(settings: Settings) -> AppRuntime:
@@ -292,7 +321,6 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     )
     configure_tracing(settings.otlp_endpoint)
     configuration_service: ConfigurationService | None = None
-    configuration_sync_error: str | None = None
     if initial_configuration is not None:
         canonical_catalog = load_catalog(settings.catalog_dir, repo_root=settings.repo_root)
         configuration_repository = StoreConfigurationRepository(store)
@@ -304,27 +332,12 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         validation = await configuration_service.validate_bootstrap(initial_configuration)
         if not validation.valid:
             raise RuntimeError("initial admin configuration does not match the canonical catalog")
-        current = await store.configuration_current()
-        if current is None:
-            await configuration_repository.ensure_initial(initial_configuration, actor="terraform-bootstrap")
-        elif settings.admin_configuration_receipt_file is not None:
-            try:
-                receipt = load_terraform_apply_receipt(settings.admin_configuration_receipt_file)
-                await configuration_repository.accept_terraform_applied(
-                    initial_configuration,
-                    receipt,
-                    actor="terraform-applied",
-                )
-            except (ConflictError, ValueError):
-                logging.getLogger("fs2_serve.configuration").exception(
-                    "Terraform-applied configuration receipt validation failed"
-                )
-                configuration_sync_error = "configuration_apply_receipt_invalid"
-        elif current.etag != configuration_etag(initial_configuration):
-            logging.getLogger("fs2_serve.configuration").error(
-                "changed Terraform configuration is missing its apply receipt"
-            )
-            configuration_sync_error = "configuration_apply_receipt_missing"
+        await _synchronize_admin_configuration(
+            configuration_repository,
+            await store.configuration_current(),
+            initial_configuration,
+            settings.admin_configuration_receipt_file,
+        )
     return AppRuntime(
         settings=settings,
         registry=registry,
@@ -341,7 +354,6 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         route_revalidator=route_revalidator,
         admin_read=admin_read,
         configuration=configuration_service,
-        configuration_sync_error=configuration_sync_error,
         model_deployment_preview=model_deployment_preview,
         model_deployment_read=model_deployment_read,
         model_deployment_mutation=model_deployment_mutation,

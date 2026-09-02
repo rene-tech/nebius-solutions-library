@@ -11,6 +11,7 @@ import pytest
 from fs2_serve_catalog.loader import load_catalog
 
 from fs2_serve.access_models import OperatorPrincipal, OperatorRole, PrincipalKind
+from fs2_serve.cli import _synchronize_admin_configuration
 from fs2_serve.configuration import (
     ConfigurationProblemError,
     ConfigurationService,
@@ -38,6 +39,7 @@ from fs2_serve.configuration_models import (
     QueueConfiguration,
     RateConfiguration,
     ReconciliationPhase,
+    RollbackRequest,
     SnapshotConfiguration,
     TerraformApplyReceipt,
     ValidationSeverity,
@@ -159,7 +161,7 @@ async def test_supported_autoscaling_change_stops_at_a_reviewed_terraform_handof
     assert plan.validation.issues == []
     assert plan.terraform.required and plan.terraform.state == "review-required"
     assert plan.terraform.variables["model_scaling_mode"] == "keda"
-    assert plan.terraform.variables["admin_configuration_bootstrap_baseline_accepted"] is False
+    assert "admin_configuration_bootstrap_baseline_accepted" not in plan.terraform.variables
     assert plan.terraform.variables["model_scaling_overrides"]["qwen3-8b"]["cooldown_seconds"] == 301
     assert plan.terraform.variables_sha256
     assert json.loads(plan.terraform.tfvars_json) == plan.terraform.variables
@@ -546,8 +548,6 @@ async def test_rollback_is_admin_only_and_remains_a_terraform_plan(cipher, hashe
         actor="terraform-applied",
     )
 
-    from fs2_serve.configuration_models import RollbackRequest
-
     request = RollbackRequest(target_revision=1, base_etag=configuration_etag(second))
     with pytest.raises(ConfigurationProblemError) as forbidden:
         await service.rollback(request, principal(OperatorRole.OPERATOR))
@@ -616,6 +616,68 @@ async def test_terraform_apply_receipt_closes_status_atomically_and_replays_exac
         "configuration.reconcile",
         "configuration.terraform-applied",
     ]
+
+
+@pytest.mark.asyncio
+async def test_terraform_baseline_durably_adopts_changed_configuration_without_receipt(cipher, hasher) -> None:
+    initial, catalog = qualified_configuration()
+    second = with_cooldown(initial, 301)
+    store = MemoryStore(cipher, hasher)
+    repository = StoreConfigurationRepository(store)
+
+    first = await repository.adopt_terraform_baseline(initial)
+    sync_error = await _synchronize_admin_configuration(
+        repository,
+        first,
+        second,
+        None,
+    )
+    adopted = await repository.current()
+    replay_error = await _synchronize_admin_configuration(repository, adopted, second, None)
+    replay = await repository.current()
+
+    assert first.revision == 1
+    assert first.created_by == "terraform-baseline"
+    assert sync_error is replay_error is None
+    assert adopted == replay
+    assert adopted.revision == 2
+    assert adopted.previous_revision == first.revision
+    assert adopted.reconciliation_id is None
+    assert adopted.created_by == "terraform-baseline"
+    assert adopted.desired == adopted.effective == second
+    assert await repository.current() == adopted
+    assert await repository.get_revision(1) == first
+
+    # The baseline path does not replace the optional reviewed planning flow.
+    service = ConfigurationService(repository=repository, catalog=catalog)
+    rollback = await service.rollback(
+        RollbackRequest(target_revision=1, base_etag=adopted.etag),
+        principal(OperatorRole.ADMIN),
+    )
+    assert rollback.plan.state is ConfigurationPlanState.VALID
+    assert rollback.plan.terraform.required
+
+
+@pytest.mark.asyncio
+async def test_invalid_optional_receipt_falls_back_to_authoritative_terraform_baseline(
+    tmp_path: Path,
+    cipher,
+    hasher,
+) -> None:
+    initial, _ = qualified_configuration()
+    desired = with_cooldown(initial, 301)
+    repository = StoreConfigurationRepository(MemoryStore(cipher, hasher))
+    current = await repository.adopt_terraform_baseline(initial)
+    receipt_file = tmp_path / "terraform-apply-receipt.json"
+    receipt_file.write_text("{}\n", encoding="utf-8")
+
+    await _synchronize_admin_configuration(repository, current, desired, receipt_file)
+
+    adopted = await repository.current()
+    assert adopted.revision == 2
+    assert adopted.desired == adopted.effective == desired
+    assert adopted.created_by == "terraform-baseline"
+    assert adopted.reconciliation_id is None
 
 
 @pytest.mark.asyncio
