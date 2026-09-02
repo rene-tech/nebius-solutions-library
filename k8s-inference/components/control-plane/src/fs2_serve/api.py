@@ -94,11 +94,14 @@ from .scientific_artifacts import (
     ArtifactPolicyError,
     ScientificArtifactControllerPort,
 )
+from .scientific_batch.artifact_bridge import SignedArtifactContentReader
+from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
 from .scientific_batch.kubernetes import HttpScientificBatchCluster
 from .scientific_batch.postgres_repository import ScientificBatchNotFoundError
 from .scientific_batch.profile_catalog import ScientificProfileError, ScientificRequestError
 from .scientific_batch.service import ScientificBatchService
 from .scientific_batch.worker import ScientificBatchWorker
+from .scientific_batch.workload_routes import WorkloadBatchRepository, scientific_workload_artifact_router
 from .settings import Settings
 from .store import (
     BudgetExceededError,
@@ -188,6 +191,9 @@ class AppRuntime:
     scientific_batch_worker: ScientificBatchWorker | None = None
     scientific_batch_cluster: HttpScientificBatchCluster | None = None
     artifact_service: ScientificArtifactControllerPort | None = None
+    scientific_workload_capabilities: ScientificWorkloadCapabilityAuthority | None = None
+    scientific_workload_batches: WorkloadBatchRepository | None = None
+    scientific_artifact_content_reader: SignedArtifactContentReader | None = None
 
     async def revalidate_routes(self) -> bool:
         if self.route_revalidator is not None and not await self.route_revalidator.refresh():
@@ -403,6 +409,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 await runtime.scientific_batch_worker.close()
             if runtime.scientific_batch_cluster is not None:
                 await runtime.scientific_batch_cluster.close()
+            if runtime.scientific_artifact_content_reader is not None:
+                await runtime.scientific_artifact_content_reader.close()
             if runtime.model_deployment_bridge is not None:
                 await runtime.model_deployment_bridge.close()
             if runtime.route_revalidator is not None:
@@ -1486,6 +1494,19 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             scientific_artifact_router(
                 service=runtime.artifact_service,
                 principal_dependency=principal,
+            )
+        )
+
+    if (
+        runtime.scientific_workload_capabilities is not None
+        and runtime.artifact_service is not None
+        and runtime.scientific_workload_batches is not None
+    ):
+        app.include_router(
+            scientific_workload_artifact_router(
+                authority=runtime.scientific_workload_capabilities,
+                artifacts=runtime.artifact_service,
+                batches=runtime.scientific_workload_batches,
             )
         )
 

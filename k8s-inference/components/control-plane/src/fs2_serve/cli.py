@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
+from uuid import UUID
 
 import uvicorn
 from fastapi import FastAPI
@@ -69,10 +71,18 @@ from .scientific_artifacts import (
     S3CompatibleArtifactObjectStore,
     ScientificArtifactService,
 )
-from .scientific_batch.artifact_bridge import ArtifactServiceBridge
+from .scientific_batch.artifact_bridge import ArtifactServiceBridge, SignedArtifactContentReader
+from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
+from .scientific_batch.companion import (
+    WorkloadArtifactHttpClient,
+    collect_and_commit,
+    materialize_artifact,
+    prepare_workspace,
+)
 from .scientific_batch.controller import ScientificBatchController
 from .scientific_batch.execution import FileScientificManifestRenderer
 from .scientific_batch.kubernetes import HttpScientificBatchCluster
+from .scientific_batch.models import MaterializationMode
 from .scientific_batch.postgres_repository import PostgresScientificBatchRepository
 from .scientific_batch.profile_catalog import ScientificProfileCatalog
 from .scientific_batch.scheduling import SchedulingContractResolver
@@ -236,21 +246,32 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         secret_root=settings.federation_secret_dir,
     )
     store = await _store(settings)
-    artifact_store = S3CompatibleArtifactObjectStore(
-        endpoint=settings.artifact_store_endpoint, bucket=settings.artifact_store_bucket,
-        region=settings.artifact_store_region, access_key=settings.artifact_store_access_key,
-        secret_key=settings.artifact_store_secret_key,
-    )
-    artifact_signer = S3CompatibleArtifactHandleSigner(
-        endpoint=settings.artifact_store_endpoint, bucket=settings.artifact_store_bucket,
-        region=settings.artifact_store_region, access_key=settings.artifact_store_access_key,
-        secret_key=settings.artifact_store_secret_key,
-    )
-    artifact_service = ScientificArtifactService(
-        repository=PostgresArtifactRepository(store.pool), object_store=artifact_store,
-        signer=artifact_signer,
-        allowed_media_types={"application/octet-stream", "application/json", "chemical/x-pdb", "text/plain"},
-    )
+    artifact_repository = PostgresArtifactRepository(store.pool)
+    artifact_service: ScientificArtifactService | None = None
+    if settings.artifact_service_enabled:
+        artifact_credentials = {
+            "endpoint": settings.artifact_store_endpoint,
+            "bucket": settings.artifact_store_bucket,
+            "region": settings.artifact_store_region,
+            "access_key": settings.artifact_store_access_key.get_secret_value(),
+            "secret_key": settings.artifact_store_secret_key.get_secret_value(),
+        }
+        artifact_service = ScientificArtifactService(
+            repository=artifact_repository,
+            object_store=S3CompatibleArtifactObjectStore(**artifact_credentials),
+            signer=S3CompatibleArtifactHandleSigner(**artifact_credentials),
+            allowed_media_types={
+                "application/octet-stream",
+                "application/json",
+                "application/vnd.fs2.scientific-manifest+json",
+                "application/x-tar",
+                "application/gzip",
+                "chemical/x-pdb",
+                "chemical/x-mmcif",
+                "text/csv",
+                "text/plain",
+            },
+        )
     peppers = PepperRing.from_file(settings.token_pepper_file)
     tokens = TokenService(store, peppers)
     model_deployment_preview: ModelDeploymentPreviewService | None = None
@@ -260,6 +281,9 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     scientific_batches: ScientificBatchService | None = None
     scientific_batch_worker: ScientificBatchWorker | None = None
     scientific_batch_cluster: HttpScientificBatchCluster | None = None
+    scientific_repository: PostgresScientificBatchRepository | None = None
+    scientific_capabilities: ScientificWorkloadCapabilityAuthority | None = None
+    artifact_content_reader: SignedArtifactContentReader | None = None
     if settings.model_controller_enabled:
         controller_files = ControllerFiles.load(
             settings.model_controller_envelope_file,
@@ -304,10 +328,17 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         scientific_profiles = ScientificProfileCatalog.load(settings.catalog_dir)
         if not scientific_profiles.list():
             raise RuntimeError("scientific batch is enabled without a runnable qualified profile")
+        if artifact_service is None:
+            raise RuntimeError("scientific batch requires the canonical artifact service")
         scientific_repository = PostgresScientificBatchRepository(store.pool)
+        scientific_capabilities = ScientificWorkloadCapabilityAuthority(store.hasher)
+        artifact_content_reader = SignedArtifactContentReader(artifact_service)
         scientific_renderer = FileScientificManifestRenderer(
             path=settings.scientific_batch_execution_map_file,
             profiles=scientific_profiles,
+            tools_image=settings.scientific_batch_tools_image,
+            internal_api_url=settings.scientific_batch_internal_api_url,
+            capability_authority=scientific_capabilities,
         )
         scientific_batch_cluster = HttpScientificBatchCluster(
             base_url=settings.scientific_batch_kubernetes_api_url,
@@ -319,26 +350,31 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             writes_enabled=settings.scientific_batch_writes_enabled,
             timeout_seconds=settings.scientific_batch_api_timeout_seconds,
         )
+        scientific_artifact_bridge = ArtifactServiceBridge(
+            artifacts=artifact_repository,
+            batches=scientific_repository,
+            profiles=scientific_profiles,
+            store=store,
+            content_reader=artifact_content_reader,
+            service=artifact_service,
+        )
         scientific_controller = ScientificBatchController(
             repository=scientific_repository,
             cluster=scientific_batch_cluster,
             controller_id=settings.scientific_batch_controller_id,
             namespace=settings.scientific_batch_namespace,
+            result_publisher=scientific_artifact_bridge,
             lease_seconds=settings.scientific_batch_lease_seconds,
         )
-        artifact_repository = PostgresArtifactRepository(store.pool)
         scientific_batches = ScientificBatchService(
             store=store,
             repository=scientific_repository,
             controller=scientific_controller,
             profiles=scientific_profiles,
             scheduling=SchedulingContractResolver.load(settings.scientific_batch_scheduling_contract_file),
-            artifacts=ArtifactServiceBridge(
-                artifacts=artifact_repository,
-                batches=scientific_repository,
-                profiles=scientific_profiles,
-                store=store,
-            ),
+            artifacts=scientific_artifact_bridge,
+            execution_binding=scientific_renderer,
+            plan_factory=scientific_renderer,
         )
         scientific_batch_worker = ScientificBatchWorker(
             scientific_controller,
@@ -448,6 +484,9 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         scientific_batch_worker=scientific_batch_worker,
         scientific_batch_cluster=scientific_batch_cluster,
         artifact_service=artifact_service,
+        scientific_workload_capabilities=scientific_capabilities,
+        scientific_workload_batches=scientific_repository,
+        scientific_artifact_content_reader=artifact_content_reader,
     )
 
 
@@ -568,14 +607,87 @@ def main() -> None:
             "validate",
             "postgresql-release-contract",
             "model-controller",
+            "scientific-materialize",
+            "scientific-collect",
+            "scientific-prepare-workspace",
         ),
         nargs="?",
         default="serve",
     )
+    parser.add_argument("--logical-artifact-id")
+    parser.add_argument("--artifact-id")
+    parser.add_argument("--destination")
+    parser.add_argument("--mode", choices=tuple(item.value for item in MaterializationMode))
+    parser.add_argument("--compression")
+    parser.add_argument("--yaml-name")
+    parser.add_argument("--reuse-prefix")
+    parser.add_argument("--expected-digest")
+    parser.add_argument("--expected-size-bytes", type=int)
+    parser.add_argument("--expected-media-type")
+    parser.add_argument("--collector-id")
+    parser.add_argument("--workspace")
+    parser.add_argument("--logical-output-id")
+    parser.add_argument("--validator-id")
+    parser.add_argument("--max-artifacts", type=int)
+    parser.add_argument("--max-output-bytes", type=int)
     args = parser.parse_args()
     settings = Settings()
     logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    if args.command == "validate":
+    if args.command == "scientific-prepare-workspace":
+        if not args.workspace:
+            parser.error("scientific workspace is required")
+        prepare_workspace(Path(args.workspace))
+    elif args.command in {"scientific-materialize", "scientific-collect"}:
+        api_url = os.environ.get("FS2_SCIENTIFIC_INTERNAL_API_URL")
+        capability = os.environ.get("FS2_SCIENTIFIC_WORKLOAD_CAPABILITY")
+        if not api_url or not capability:
+            parser.error("scientific companion API and capability are required")
+        client = WorkloadArtifactHttpClient(base_url=api_url, capability=capability)
+        if args.command == "scientific-materialize":
+            if (
+                not args.artifact_id
+                or not args.destination
+                or not args.mode
+                or not args.expected_digest
+                or args.expected_size_bytes is None
+                or not args.expected_media_type
+            ):
+                parser.error("scientific materialization identity, destination, and mode are required")
+            materialize_artifact(
+                client=client,
+                artifact_id=UUID(args.artifact_id),
+                destination=Path(args.destination),
+                mode=MaterializationMode(args.mode),
+                compression=args.compression,
+                yaml_name=args.yaml_name,
+                reuse_prefix=args.reuse_prefix,
+                expected_digest=args.expected_digest,
+                expected_size_bytes=args.expected_size_bytes,
+                expected_media_type=args.expected_media_type,
+            )
+        else:
+            invocation = os.environ.get("FS2_STAGE_INVOCATION_JSON")
+            if (
+                not args.collector_id
+                or not args.validator_id
+                or not args.workspace
+                or not invocation
+                or args.max_artifacts is None
+                or args.max_output_bytes is None
+            ):
+                parser.error("scientific collector identity, workspace, and invocation are required")
+            collect_and_commit(
+                client=client,
+                collector_id=args.collector_id,
+                validator_id=args.validator_id,
+                invocation_json=invocation,
+                workspace=Path(args.workspace),
+                catalog_dir=settings.catalog_dir,
+                max_artifacts=args.max_artifacts,
+                max_output_bytes=args.max_output_bytes,
+            )
+        client.client.close()
+    elif args.command == "validate":
         validate(settings)
     elif args.command == "postgresql-release-contract":
         emit_postgresql_release_contract(settings)

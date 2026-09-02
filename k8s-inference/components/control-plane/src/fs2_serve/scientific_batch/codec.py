@@ -14,28 +14,38 @@ from typing import Any, cast
 from uuid import UUID
 
 from .models import (
+    AdapterExecutionPlan,
+    ArtifactAccessContext,
+    ArtifactMaterialization,
     AttemptOutcome,
     BatchStatus,
     CheckpointMode,
     ExecutionMode,
     FailureKind,
     LifecyclePhase,
+    MaterializationMode,
     PreemptionMode,
     ResourceClass,
+    RuntimeArtifactFile,
+    RuntimeArtifactLocalization,
+    SchedulingAdmission,
     SchedulingSnapshot,
     ScientificAttemptState,
     ScientificBatchPlan,
     ScientificBatchState,
+    ScientificInputArtifact,
     ScientificStagePlan,
     ScientificStageState,
     ServiceClass,
+    StageInvocation,
     StageSchedulingDecision,
     StageStatus,
+    VerifiedInputManifest,
     WorkloadKind,
     WorkloadRef,
 )
 
-STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v1"
+STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v5"
 MAX_STATE_BYTES = 4 * 1024 * 1024
 
 
@@ -106,6 +116,86 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
         "workload_id": str(state.workload_id),
         "tenant_id": state.tenant_id,
         "model_id": state.model_id,
+        "variant_id": state.variant_id,
+        "input_artifact_id": str(state.input_artifact_id),
+        "access_context": {
+            "profile": state.access_context.profile,
+            "receipt_digest": state.access_context.receipt_digest,
+            "tenant_id": state.access_context.tenant_id,
+        },
+        "input_manifest": (
+            None
+            if state.input_manifest is None
+            else {
+                "manifest_id": state.input_manifest.manifest_id,
+                "manifest_artifact_id": str(state.input_manifest.manifest_artifact_id),
+                "manifest_digest": state.input_manifest.manifest_digest,
+                "entries": [
+                    {
+                        "logical_artifact_id": item.logical_artifact_id,
+                        "semantic_type": item.semantic_type,
+                        "artifact_id": str(item.artifact_id),
+                        "digest": item.digest,
+                        "size_bytes": item.size_bytes,
+                        "media_type": item.media_type,
+                        "compression": item.compression,
+                    }
+                    for item in state.input_manifest.entries
+                ],
+            }
+        ),
+        "runtime_artifacts": [
+            {
+                "logical_artifact_id": item.logical_artifact_id,
+                "mount_path": item.mount_path,
+                "content_digest": item.content_digest,
+                "files": [
+                    {"path": file.path, "digest": file.digest, "size_bytes": file.size_bytes} for file in item.files
+                ],
+                "localization_receipt_digest": item.localization_receipt_digest,
+            }
+            for item in state.runtime_artifacts
+        ],
+        "adapter_execution": (
+            None
+            if state.execution_plan is None
+            else {
+                "model_id": state.execution_plan.model_id,
+                "variant_id": state.execution_plan.variant_id,
+                "source_revision": state.execution_plan.source_revision,
+                "request_sha256": state.execution_plan.request_sha256,
+                "required_model_artifacts": list(state.execution_plan.required_model_artifacts),
+                "invocations": [
+                    {
+                        "stage_id": invocation.stage_id,
+                        "shard_id": invocation.shard_id,
+                        "argv": list(invocation.argv),
+                        "environment": [list(item) for item in invocation.environment],
+                        "working_directory": invocation.working_directory,
+                        "consumes": list(invocation.consumes),
+                        "produces": invocation.produces,
+                        "collector_id": invocation.collector_id,
+                        "validator_id": invocation.validator_id,
+                        "handoff_name": invocation.handoff_name,
+                        "max_output_artifacts": invocation.max_output_artifacts,
+                        "max_output_bytes": invocation.max_output_bytes,
+                        "runtime_artifacts": list(invocation.runtime_artifacts),
+                        "materializations": [
+                            {
+                                "artifact_id": item.artifact_id,
+                                "destination": item.destination,
+                                "mode": item.mode.value,
+                                "compression": item.compression,
+                                "yaml_name": item.yaml_name,
+                                "reuse_prefix": item.reuse_prefix,
+                            }
+                            for item in invocation.materializations
+                        ],
+                    }
+                    for invocation in state.execution_plan.invocations
+                ],
+            }
+        ),
         "plan": {
             "stages": [
                 {
@@ -169,6 +259,19 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                         "outcome": attempt.outcome.value,
                         "last_phase": attempt.last_phase.value,
                         "resource_released": attempt.resource_released,
+                        "scheduling_admission": (
+                            None
+                            if attempt.scheduling_admission is None
+                            else {
+                                "resolved_pool_id": attempt.scheduling_admission.resolved_pool_id,
+                                "admitted_resource_flavor": attempt.scheduling_admission.admitted_resource_flavor,
+                                "accelerator_resource_name": attempt.scheduling_admission.accelerator_resource_name,
+                                "accelerator_count": attempt.scheduling_admission.accelerator_count,
+                                "admitted_at": attempt.scheduling_admission.admitted_at.isoformat(),
+                            }
+                        ),
+                        "kueue_workload_uid": attempt.kueue_workload_uid,
+                        "pod_uids": list(attempt.pod_uids),
                         "failure_kind": attempt.failure_kind.value if attempt.failure_kind else None,
                         "failure_code": attempt.failure_code,
                     }
@@ -181,6 +284,7 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
         "revision": state.revision,
         "cancel_requested": state.cancel_requested,
         "failure_code": state.failure_code,
+        "result_published": state.result_published,
     }
 
 
@@ -207,6 +311,12 @@ def state_from_value(raw: object) -> ScientificBatchState:
             "workload_id",
             "tenant_id",
             "model_id",
+            "variant_id",
+            "input_artifact_id",
+            "access_context",
+            "input_manifest",
+            "runtime_artifacts",
+            "adapter_execution",
             "plan",
             "scheduling",
             "stages",
@@ -214,6 +324,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
             "revision",
             "cancel_requested",
             "failure_code",
+            "result_published",
         },
         "scientific-batch state",
     )
@@ -253,6 +364,179 @@ def state_from_value(raw: object) -> ScientificBatchState:
             )
         )
     plan = ScientificBatchPlan(tuple(plan_stages))
+
+    access_value = _object(
+        value["access_context"], {"profile", "receipt_digest", "tenant_id"}, "artifact access context"
+    )
+    access_context = ArtifactAccessContext(
+        profile=_string(access_value["profile"], "artifact access profile"),
+        receipt_digest=_optional_string(access_value["receipt_digest"], "artifact access receipt"),
+        tenant_id=_optional_string(access_value["tenant_id"], "artifact access tenant"),
+    )
+
+    input_manifest = None
+    if value["input_manifest"] is not None:
+        manifest = _object(
+            value["input_manifest"],
+            {"manifest_id", "manifest_artifact_id", "manifest_digest", "entries"},
+            "verified input manifest",
+        )
+        entries: list[ScientificInputArtifact] = []
+        for raw_entry in _items(manifest["entries"], "verified input entries", maximum=10_000):
+            entry = _object(
+                raw_entry,
+                {
+                    "logical_artifact_id",
+                    "semantic_type",
+                    "artifact_id",
+                    "digest",
+                    "size_bytes",
+                    "media_type",
+                    "compression",
+                },
+                "verified input entry",
+            )
+            entries.append(
+                ScientificInputArtifact(
+                    logical_artifact_id=_string(entry["logical_artifact_id"], "input logical artifact ID"),
+                    semantic_type=_string(entry["semantic_type"], "input semantic type"),
+                    artifact_id=_uuid(entry["artifact_id"], "input artifact ID"),
+                    digest=_string(entry["digest"], "input artifact digest"),
+                    size_bytes=_integer(entry["size_bytes"], "input artifact size"),
+                    media_type=_string(entry["media_type"], "input artifact media type"),
+                    compression=_optional_string(entry["compression"], "input artifact compression"),
+                )
+            )
+        input_manifest = VerifiedInputManifest(
+            manifest_id=_string(manifest["manifest_id"], "input manifest ID"),
+            manifest_artifact_id=_uuid(manifest["manifest_artifact_id"], "input manifest artifact ID"),
+            manifest_digest=_string(manifest["manifest_digest"], "input manifest digest"),
+            entries=tuple(entries),
+        )
+
+    runtime_artifacts: list[RuntimeArtifactLocalization] = []
+    for raw_artifact in _items(value["runtime_artifacts"], "runtime artifact localizations", maximum=64):
+        artifact = _object(
+            raw_artifact,
+            {
+                "logical_artifact_id",
+                "mount_path",
+                "content_digest",
+                "files",
+                "localization_receipt_digest",
+            },
+            "runtime artifact localization",
+        )
+        runtime_artifacts.append(
+            RuntimeArtifactLocalization(
+                logical_artifact_id=_string(artifact["logical_artifact_id"], "runtime artifact ID"),
+                mount_path=_string(artifact["mount_path"], "runtime artifact mount path"),
+                content_digest=_string(artifact["content_digest"], "runtime artifact content digest"),
+                files=tuple(
+                    RuntimeArtifactFile(
+                        path=_string(file["path"], "runtime artifact file path"),
+                        digest=_string(file["digest"], "runtime artifact file digest"),
+                        size_bytes=_integer(file["size_bytes"], "runtime artifact file size"),
+                    )
+                    for file in (
+                        _object(raw_file, {"path", "digest", "size_bytes"}, "runtime artifact file")
+                        for raw_file in _items(artifact["files"], "runtime artifact files", maximum=4096)
+                    )
+                ),
+                localization_receipt_digest=_string(
+                    artifact["localization_receipt_digest"], "runtime artifact localization receipt"
+                ),
+            )
+        )
+
+    adapter_execution = None
+    if value["adapter_execution"] is not None:
+        execution = _object(
+            value["adapter_execution"],
+            {
+                "model_id",
+                "variant_id",
+                "source_revision",
+                "request_sha256",
+                "required_model_artifacts",
+                "invocations",
+            },
+            "adapter execution",
+        )
+        invocations: list[StageInvocation] = []
+        for raw_invocation in _items(execution["invocations"], "adapter invocations"):
+            invocation = _object(
+                raw_invocation,
+                {
+                    "stage_id",
+                    "shard_id",
+                    "argv",
+                    "environment",
+                    "working_directory",
+                    "consumes",
+                    "produces",
+                    "collector_id",
+                    "validator_id",
+                    "handoff_name",
+                    "max_output_artifacts",
+                    "max_output_bytes",
+                    "runtime_artifacts",
+                    "materializations",
+                },
+                "adapter invocation",
+            )
+            environment: list[tuple[str, str]] = []
+            for raw_item in _items(invocation["environment"], "adapter environment", maximum=128):
+                items = _items(raw_item, "adapter environment item", maximum=2)
+                if len(items) != 2:
+                    raise ValueError("stored adapter environment item fields differ")
+                environment.append((_string(items[0], "environment key"), _string(items[1], "environment value")))
+            materializations: list[ArtifactMaterialization] = []
+            for raw_materialization in _items(invocation["materializations"], "artifact materializations", maximum=64):
+                materialization = _object(
+                    raw_materialization,
+                    {"artifact_id", "destination", "mode", "compression", "yaml_name", "reuse_prefix"},
+                    "artifact materialization",
+                )
+                materializations.append(
+                    ArtifactMaterialization(
+                        artifact_id=_string(materialization["artifact_id"], "logical artifact ID"),
+                        destination=_string(materialization["destination"], "materialization destination"),
+                        mode=MaterializationMode(_string(materialization["mode"], "materialization mode")),
+                        compression=_optional_string(materialization["compression"], "artifact compression"),
+                        yaml_name=_optional_string(materialization["yaml_name"], "BoltzGen YAML name"),
+                        reuse_prefix=_optional_string(materialization["reuse_prefix"], "BoltzGen reuse prefix"),
+                    )
+                )
+            invocations.append(
+                StageInvocation(
+                    stage_id=_string(invocation["stage_id"], "invocation stage ID"),
+                    shard_id=_string(invocation["shard_id"], "invocation shard ID"),
+                    argv=_string_items(invocation["argv"], "invocation argv", maximum=64),
+                    environment=tuple(environment),
+                    working_directory=_string(invocation["working_directory"], "invocation working directory"),
+                    consumes=_string_items(invocation["consumes"], "logical input", maximum=64),
+                    produces=_string(invocation["produces"], "logical output"),
+                    collector_id=_string(invocation["collector_id"], "collector ID"),
+                    validator_id=_string(invocation["validator_id"], "validator ID"),
+                    handoff_name=_optional_string(invocation["handoff_name"], "handoff entry name"),
+                    max_output_artifacts=_integer(invocation["max_output_artifacts"], "maximum output artifacts"),
+                    max_output_bytes=_integer(invocation["max_output_bytes"], "maximum output bytes"),
+                    materializations=tuple(materializations),
+                    runtime_artifacts=_string_items(invocation["runtime_artifacts"], "runtime artifact", maximum=64),
+                )
+            )
+        adapter_execution = AdapterExecutionPlan(
+            model_id=_string(execution["model_id"], "adapter model ID"),
+            variant_id=_string(execution["variant_id"], "adapter variant ID"),
+            source_revision=_string(execution["source_revision"], "adapter source revision"),
+            request_sha256=_string(execution["request_sha256"], "adapter request digest"),
+            controller_plan=plan,
+            invocations=tuple(invocations),
+            required_model_artifacts=_string_items(
+                execution["required_model_artifacts"], "required runtime artifact", maximum=64
+            ),
+        )
 
     scheduling_value = _object(
         value["scheduling"],
@@ -325,6 +609,9 @@ def state_from_value(raw: object) -> ScientificBatchState:
         "outcome",
         "last_phase",
         "resource_released",
+        "scheduling_admission",
+        "kueue_workload_uid",
+        "pod_uids",
         "failure_kind",
         "failure_code",
     }
@@ -336,6 +623,30 @@ def state_from_value(raw: object) -> ScientificBatchState:
         for raw_attempt in _items(stage_state["attempts"], "scientific attempts"):
             attempt = _object(raw_attempt, attempt_keys, "scientific attempt")
             workload = _object(attempt["workload"], workload_keys, "scientific attempt workload")
+            admission = None
+            if attempt["scheduling_admission"] is not None:
+                admission_value = _object(
+                    attempt["scheduling_admission"],
+                    {
+                        "resolved_pool_id",
+                        "admitted_resource_flavor",
+                        "accelerator_resource_name",
+                        "accelerator_count",
+                        "admitted_at",
+                    },
+                    "scientific attempt scheduling admission",
+                )
+                admission = SchedulingAdmission(
+                    resolved_pool_id=_optional_string(admission_value["resolved_pool_id"], "resolved pool ID"),
+                    admitted_resource_flavor=_optional_string(
+                        admission_value["admitted_resource_flavor"], "admitted ResourceFlavor"
+                    ),
+                    accelerator_resource_name=_optional_string(
+                        admission_value["accelerator_resource_name"], "admitted accelerator resource"
+                    ),
+                    accelerator_count=_integer(admission_value["accelerator_count"], "admitted accelerator count"),
+                    admitted_at=_datetime(admission_value["admitted_at"], "Kueue admission time"),
+                )
             attempts.append(
                 ScientificAttemptState(
                     attempt_id=_uuid(attempt["attempt_id"], "attempt ID"),
@@ -351,6 +662,9 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     outcome=AttemptOutcome(_string(attempt["outcome"], "attempt outcome")),
                     last_phase=LifecyclePhase(_string(attempt["last_phase"], "attempt phase")),
                     resource_released=_boolean(attempt["resource_released"], "attempt resource release"),
+                    scheduling_admission=admission,
+                    kueue_workload_uid=_optional_string(attempt["kueue_workload_uid"], "Kueue Workload UID"),
+                    pod_uids=_string_items(attempt["pod_uids"], "Pod UID", maximum=64),
                     failure_kind=(
                         None
                         if attempt["failure_kind"] is None
@@ -374,11 +688,18 @@ def state_from_value(raw: object) -> ScientificBatchState:
         workload_id=_uuid(value["workload_id"], "workload ID"),
         tenant_id=_string(value["tenant_id"], "tenant ID"),
         model_id=_string(value["model_id"], "model ID"),
+        variant_id=_string(value["variant_id"], "variant ID"),
+        input_artifact_id=_uuid(value["input_artifact_id"], "input artifact ID"),
         plan=plan,
         scheduling=scheduling,
         stages=tuple(stage_states),
+        execution_plan=adapter_execution,
+        access_context=access_context,
+        input_manifest=input_manifest,
+        runtime_artifacts=tuple(runtime_artifacts),
         status=BatchStatus(_string(value["status"], "batch status")),
         revision=_integer(value["revision"], "revision"),
         cancel_requested=_boolean(value["cancel_requested"], "cancel request"),
         failure_code=_optional_string(value["failure_code"], "batch failure code"),
+        result_published=_boolean(value["result_published"], "terminal result publication"),
     )

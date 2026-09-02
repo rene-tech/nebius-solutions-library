@@ -458,7 +458,7 @@ class PostgresStore:
                     f"fs2_scientific_artifacts,fs2_scientific_uploads,"
                     f"fs2_scientific_result_manifests,fs2_scientific_artifact_events,"
                     f"fs2_scientific_batches,fs2_scientific_batch_events,"
-                    f"fs2_scientific_stage_commits,"
+                    f"fs2_scientific_attempt_commits,"
                     f"fs2_reporting_model_usage,fs2_reporting_principal_usage,"
                     f"fs2_reporting_terminal_totals,fs2_activation_intents,fs2_activation_events,"
                     f"fs2_activation_target_state,fs2_activation_controller_status,"
@@ -510,16 +510,14 @@ class PostgresStore:
             await connection.execute(
                 f"GRANT UPDATE (artifact_id,finalized_at) ON fs2_scientific_uploads TO {quoted_runtime}"
             )
-            await connection.execute(
-                f"GRANT SELECT,INSERT ON fs2_scientific_batches TO {quoted_runtime}"
-            )
+            await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batches TO {quoted_runtime}")
             await connection.execute(
                 f"GRANT UPDATE (status,revision,cancel_requested,state,controller_id,fencing_token,"
                 f"lease_expires_at,updated_at) ON fs2_scientific_batches TO {quoted_runtime}"
             )
             await connection.execute(
-                f"GRANT SELECT,INSERT ON fs2_scientific_batch_events,"
-                f"fs2_scientific_stage_commits TO {quoted_runtime}"
+                f"GRANT SELECT,INSERT ON fs2_scientific_batch_events,fs2_scientific_attempt_commits "
+                f"TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT SELECT ON fs2_schema_migrations,fs2_reporting_terminal_totals TO {quoted_runtime}"

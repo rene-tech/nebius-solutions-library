@@ -13,6 +13,19 @@ spec:
       {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 6 }}
   policyTypes: [Ingress, Egress]
   ingress:
+    {{- if .Values.scientificBatch.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.scientificBatch.namespace }}
+          podSelector:
+            matchExpressions:
+              - key: fs2.nebius.ai/workload-id
+                operator: Exists
+      ports:
+        - port: {{ .Values.service.port }}
+          protocol: TCP
+    {{- end }}
     - from:
         - namespaceSelector:
             matchLabels:
@@ -100,6 +113,16 @@ spec:
         - port: 443
           protocol: TCP
     {{- end }}
+    {{- if .Values.artifactService.enabled }}
+    - to:
+        {{- range $network.artifactStoreCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: 443
+          protocol: TCP
+    {{- end }}
     {{- if $network.federationCidrs }}
     - to:
         {{- range $network.federationCidrs }}
@@ -112,6 +135,53 @@ spec:
           protocol: TCP
         {{- end }}
     {{- end }}
+{{- if .Values.scientificBatch.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-scientific-workloads
+  namespace: {{ .Values.scientificBatch.namespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: fs2.nebius.ai/workload-id
+        operator: Exists
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.dns.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.dns.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.dns.port }}
+          protocol: UDP
+        - port: {{ $network.dns.port }}
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 14 }}
+      ports:
+        - port: {{ .Values.service.port }}
+          protocol: TCP
+    - to:
+        {{- range $network.artifactStoreCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: 443
+          protocol: TCP
+{{- end }}
 {{- if .Values.publicGateway.enabled }}
 ---
 apiVersion: networking.k8s.io/v1

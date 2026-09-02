@@ -7,6 +7,7 @@
     "adminConfiguration",
     "modelController",
     "scientificBatch",
+    "artifactService",
     "bootstrapAccess",
     "serviceAccounts",
     "catalog",
@@ -686,6 +687,42 @@
       },
       "additionalProperties": false
     },
+    "artifactService": {
+      "type": "object",
+      "required": [
+        "enabled", "endpoint", "bucket", "region", "credentialsSecretName",
+        "accessKeyKey", "secretKeyKey"
+      ],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^https://[a-z0-9.-]+(?::[0-9]+)?/?$"
+        },
+        "bucket": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9.-]+[a-z0-9]$"
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "credentialsSecretName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "accessKeyKey": {"type": "string", "minLength": 1, "maxLength": 253},
+        "secretKeyKey": {"type": "string", "minLength": 1, "maxLength": 253}
+      },
+      "additionalProperties": false
+    },
     "serviceAccounts": {
       "type": "object",
       "required": [
@@ -1230,8 +1267,8 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "6b7e92782d7d1b3b299c7b560342758be49366c4cc7344149aef2a3e407f05d8"},
-            "migrationSetSha256": {"const": "4a119d6e14e4e124a318257628987f600230c7e834753ef402173dda1925ed95"},
+            "contractPayloadSha256": {"const": "8c81e640cb0bf30df242363518d307af68a5a19ad20b4cb2eac8d7b7b9081b99"},
+            "migrationSetSha256": {"const": "cecfcd67151405ed5acf2b87c558051ff842a8a9a3a84f338e92142f49a7efc9"},
             "migrationCount": {"const": 15},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
             "lastMigrationVersion": {"const": "0015_scientific_batch_controller.sql"},
@@ -1666,7 +1703,11 @@
         "prometheus",
         "database",
         "runtime",
-        "otlp"
+        "otlp",
+        "federationCidrs",
+        "federationPorts",
+        "kubernetesApiCidrs",
+        "artifactStoreCidrs"
       ],
       "properties": {
         "enabled": {
@@ -1894,6 +1935,12 @@
             "type": "string",
             "pattern": "^(([0-9]{1,3}\\.){3}[0-9]{1,3}/([1-9]|[12][0-9]|3[0-2])|[0-9A-Fa-f:]+/([1-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$"
           }
+        },
+        "artifactStoreCidrs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^(([0-9]{1,3}\\.){3}[0-9]{1,3}/32|[0-9A-Fa-f:]+/128)$"}
         }
       },
       "additionalProperties": false

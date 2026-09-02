@@ -19,6 +19,7 @@ from jsonschema.exceptions import SchemaError, ValidationError  # type: ignore[i
 
 SCIENTIFIC_REQUEST_SCHEMA = "fs2-serve.nebius.ai/scientific-run-request/v1"
 SCIENTIFIC_RESULT_SCHEMA = "fs2-serve.nebius.ai/scientific-run-result/v1"
+SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA = "fs2-serve.nebius.ai/scientific-artifact-manifest/v1"
 
 
 class ScientificProfileError(RuntimeError):
@@ -147,7 +148,7 @@ class ScientificProfileCatalog:
         properties = _object_schema(result_schema.get("properties"), "scientific result properties")
         attempts = _object_schema(properties.get("attempts"), "scientific result attempts")
         maximum = attempts.get("maxItems")
-        if not isinstance(maximum, int) or isinstance(maximum, bool) or not 1 <= maximum <= 4096:
+        if not isinstance(maximum, int) or isinstance(maximum, bool) or not 1 <= maximum <= 1_000_000:
             raise ScientificProfileError("canonical scientific result attempt bound is invalid")
         self.max_result_attempts = maximum
 
@@ -225,3 +226,17 @@ class ScientificProfileCatalog:
             self._validators[SCIENTIFIC_RESULT_SCHEMA].validate(value)
         except ValidationError as error:
             raise ScientificProfileError("scientific result violates its canonical schema") from error
+
+    def validate_artifact_manifest(self, value: object) -> Mapping[str, Any]:
+        """Validate and return the existing catalog-owned manifest contract."""
+
+        try:
+            validator = self._validators.get(SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA)
+            if validator is None:
+                raise ScientificProfileError("canonical scientific artifact manifest schema is absent")
+            validator.validate(value)
+        except ValidationError as error:
+            raise ScientificRequestError("input manifest violates the canonical artifact schema") from error
+        if not isinstance(value, Mapping):  # implied by schema; narrows the return type
+            raise ScientificRequestError("input manifest is not an object")
+        return cast(Mapping[str, Any], value)
