@@ -282,9 +282,8 @@ entirely.
 
 ## 8. Read-only discovery of what already exists
 
-Performed against the task kubeconfig at
-`/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig`,
-context `k8s-inference-h100`, using only `get` and `list`. Nothing was created,
+Performed against the operator-provided acceptance kubeconfig, context
+`k8s-inference-h100`, using only `get` and `list`. Nothing was created,
 patched or deleted. Secrets were enumerated by name and type only; no secret
 value was read.
 

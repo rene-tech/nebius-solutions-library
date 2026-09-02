@@ -5,11 +5,11 @@
   "use_class": "academic-non-commercial",
   "evidence_policy": "Read-only primary-source research. Every revision, license and gate below was retrieved from the cited upstream source on retrieved_at. Nothing in this manifest asserts that any model was deployed, benchmarked or qualified on hardware; H100 fit states distinguish documented upstream support from untested expectation.",
   "discovery": {
-    "method": "Read-only inspection on 2026-09-02 using the task kubeconfig at /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig, context k8s-inference-h100. Only get and list verbs were used. No object was created, patched or deleted, and no secret value was read; secrets were enumerated by name and type only.",
+    "method": "Read-only inspection on 2026-09-02 using the operator-provided acceptance kubeconfig, context k8s-inference-h100. Only get and list verbs were used. No object was created, patched or deleted, and no secret value was read; secrets were enumerated by name and type only.",
     "cluster": {
       "reachable": true,
       "context": "k8s-inference-h100",
-      "kubeconfig": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+      "kubeconfig": "operator-provided acceptance kubeconfig",
       "project": "project-e00rene",
       "region": "eu-north1",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
@@ -844,7 +844,7 @@
           "established": "That the University of Washington issues PyRosetta licences, that commercial tiers are priced by global headcount, and that a PyRosetta licence requires a Rosetta licence as well."
         },
         {
-          "url": "https://www.pyrosetta.org/home/licensing-pyrosetta",
+          "url": "https://www.pyrosetta.org/downloads",
           "established": "That PyRosetta is free for academic, non-profit and government entities and requires a paid agreement otherwise."
         },
         {
