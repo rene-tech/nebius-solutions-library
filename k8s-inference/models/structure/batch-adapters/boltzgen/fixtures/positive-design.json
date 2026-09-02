@@ -1,0 +1,29 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design-binders",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "boltz.design.batch.01",
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "size_bytes": 16384,
+    "media_type": "application/x-tar",
+    "compression": "zstd"
+  },
+  "parameters": {
+    "protocol": "protein-anything",
+    "batches": [
+      {
+        "shard_id": "pdl1-a",
+        "num_designs": 10,
+        "budget": 2,
+        "reuse_completed": false
+      },
+      {
+        "shard_id": "pdl1-b",
+        "num_designs": 12,
+        "budget": 2,
+        "reuse_completed": false
+      }
+    ]
+  }
+}

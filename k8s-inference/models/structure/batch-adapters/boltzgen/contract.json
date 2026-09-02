@@ -1,0 +1,45 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-adapter-identity/v1",
+  "model_id": "boltzgen",
+  "variant_id": "upstream-v0-3-2",
+  "candidate_state": "unqualified",
+  "source": {
+    "repository": "HannesStark/boltzgen",
+    "release_tag": "v0.3.2",
+    "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+    "revision_kind": "release-tag-and-commit"
+  },
+  "weights": {
+    "artifact_id": "boltzgen-1",
+    "runtime_artifact_id": "boltzgen-checkpoints",
+    "host": "huggingface",
+    "repository": "boltzgen/boltzgen-1",
+    "revision": "c1be29e1f82ffcc72264f64b993c43fb4e0d17f0",
+    "files": [
+      "boltzgen1_diverse.ckpt",
+      "boltzgen1_adherence.ckpt",
+      "boltzgen1_ifold.ckpt",
+      "boltz2_conf_final.ckpt",
+      "boltz2_aff.ckpt",
+      "boltzgen1_structuretrained_small.ckpt"
+    ],
+    "gate": "none",
+    "notes": "The structure-trained small checkpoint is retained in the exact artifact inventory; v0.3.2 inference argv directly selects the other five checkpoints."
+  },
+  "required_reference_artifact": "boltzgen-inference-molecules-2026-08-11",
+  "runtime_reference_artifact": "boltzgen-inference-molecules",
+  "runtime_artifact_mount_root": "/opt/fs2/artifacts",
+  "execution": {
+    "admission_mode": "independent-jobs",
+    "gpu_count_per_shard": 1,
+    "gpu_stages": ["configure", "design", "inverse-folding", "folding", "design-folding", "affinity"],
+    "cpu_stages": ["analysis", "filtering"],
+    "checkpoint_mode": "restart",
+    "preemption_mode": "restartable",
+    "platform_resume_supported": false
+  },
+  "runtime_image_digest": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
+  "artifact_manifest_digest": null,
+  "h100_qualification_receipt": null,
+  "fast_start_qualification_receipt": null
+}

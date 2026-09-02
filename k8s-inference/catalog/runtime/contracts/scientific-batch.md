@@ -28,9 +28,11 @@ creating downstream work, allowing the earlier stage to release quota.
 
 The intended API is:
 
-- `POST /v1/models/{model_id}:submit` with
+- `POST /v1/models/{model_id}/variants/{variant_id}:submit` with
   `fs2-serve.nebius.ai/scientific-run-request/v1` and an `Idempotency-Key`
   header;
+- `POST /v1/models/{model_id}:submit` is only a convenience alias when the
+  catalog declares exactly one default variant;
 - `GET /v1/operations/{operation_id}` for durable state and the terminal
   `scientific-run-result/v1` document;
 - `GET /v1/operations/{operation_id}/events` for ordered phase/attempt events;
@@ -41,10 +43,12 @@ the same API. A candidate profile is discoverable but has `invocable=false`.
 The MCP server must not create Jobs itself or reinterpret free-form prompts as
 runtime command lines.
 
-An idempotency record binds tenant/principal, model ID, operation, canonical
+An idempotency record binds tenant/principal, model ID, variant ID, operation, canonical
 request digest, and `Idempotency-Key`. Repeating the tuple returns the original
 `operation_id`; reusing the key with different content returns a conflict.
-`operation_id`, `batch_id`, and `workload_id` remain stable across retry, while
+`model_id` and `variant_id` are retained in the operation, execution identity,
+workload, event, and telemetry joins. Route/default/MCP identities must be
+collision-checked before exposure. `operation_id`, `batch_id`, and `workload_id` remain stable across retry, while
 each execution receives a new `attempt_id`. The result records Kueue Workload,
 Kubernetes Job/Pod/Node, and GPU identities without placing long IDs in labels.
 

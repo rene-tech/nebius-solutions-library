@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID
 
 from .models import (
+    AdapterExecutionPlan,
     AttemptOutcome,
     BatchClaim,
     BatchEventDraft,
@@ -68,6 +69,7 @@ class ScientificBatchController:
         tenant_id: str,
         plan: ScientificBatchPlan,
         scheduling: SchedulingSnapshot,
+        execution_plan: AdapterExecutionPlan | None = None,
     ) -> ScientificBatchState:
         """Bind a frozen admission snapshot to an existing durable Operation."""
 
@@ -76,6 +78,41 @@ class ScientificBatchController:
             tenant_id=tenant_id,
             plan=plan,
             scheduling=scheduling,
+            execution_plan=execution_plan,
+        )
+
+    async def admit_adapter_run(
+        self,
+        *,
+        operation_id: UUID,
+        tenant_id: str,
+        model_id: str,
+        variant_id: str,
+        profile: Mapping[str, object],
+        request: object,
+        scheduling: SchedulingSnapshot,
+    ) -> ScientificBatchState:
+        """Compile an allow-listed model request before freezing admission.
+
+        The adapter can only select bounded catalog expansions and exact argv;
+        scheduling remains an independently resolved, controller-owned input.
+        """
+
+        from .adapters import compile_adapter_run
+
+        execution = compile_adapter_run(
+            model_id,
+            profile,
+            request,
+            operation_id=str(operation_id),
+            variant_id=variant_id,
+        )
+        return await self.admit(
+            operation_id=operation_id,
+            tenant_id=tenant_id,
+            plan=execution.controller_plan,
+            scheduling=scheduling,
+            execution_plan=execution,
         )
 
     async def reconcile_once(self) -> UUID | None:
@@ -169,6 +206,13 @@ class ScientificBatchController:
                     kind=kind,
                     scheduling=record.scheduling.stage(spec.stage_id),
                     gang_size=spec.gang_size,
+                    invocation=(
+                        record.execution_plan.invocation(spec.stage_id, shard_id)
+                        if record.execution_plan is not None
+                        else None
+                    ),
+                    model_id=record.model_id,
+                    variant_id=record.variant_id,
                 )
                 ref = await self.cluster.apply(resource, controller_fence=claim.fencing_token)
                 if (ref.namespace, ref.name, ref.kind) != (resource.namespace, resource.name, resource.kind):
@@ -498,6 +542,8 @@ class ScientificBatchController:
             attempt_id=attempt_id,
             phase=phase,
             code=code,
+            model_id=record.model_id,
+            variant_id=record.variant_id,
         )
 
     def _lifecycle(
