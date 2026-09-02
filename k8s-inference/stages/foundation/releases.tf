@@ -115,6 +115,8 @@ resource "helm_release" "kueue" {
   wait    = false
   timeout = 900
 
+  values = [file("${path.module}/values/kueue.yaml")]
+
   # Kueue registers a Job admission webhook. Cert-manager's post-install
   # startup API check is itself a Job, so let that check finish before Kueue
   # can register its webhook and briefly make Job admission unavailable.

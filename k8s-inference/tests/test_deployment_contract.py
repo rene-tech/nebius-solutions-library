@@ -1417,6 +1417,23 @@ class DeploymentContractTests(unittest.TestCase):
             re.compile(r"not enabled and hardware-validated", re.IGNORECASE),
         )
 
+    def test_kueue_quotas_only_accelerator_resources(self) -> None:
+        releases = (DEPLOY_ROOT / "stages/foundation/releases.tf").read_text(
+            encoding="utf-8"
+        )
+        values_path = DEPLOY_ROOT / "stages/foundation/values/kueue.yaml"
+        values = yaml.safe_load(values_path.read_text(encoding="utf-8"))
+        manager = yaml.safe_load(
+            values["managerConfig"]["controllerManagerConfigYaml"]
+        )
+
+        self.assertIn('values = [file("${path.module}/values/kueue.yaml")]', releases)
+        self.assertEqual(
+            manager["resources"]["excludeResourcePrefixes"],
+            ["cpu", "memory", "ephemeral-storage"],
+        )
+        self.assertIn("deployment", manager["integrations"]["frameworks"])
+
 
 if __name__ == "__main__":
     unittest.main()
