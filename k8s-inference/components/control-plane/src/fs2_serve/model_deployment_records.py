@@ -14,6 +14,7 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 
+from .fast_start import FastStartStatus
 from .model_deployment import (
     DNS_LABEL_PATTERN,
     DNS_SUBDOMAIN_PATTERN,
@@ -78,6 +79,7 @@ class ModelDeploymentConditionType(StrEnum):
     INFRASTRUCTURE_REQUIRED = "InfrastructureRequired"
     FAILED = "Failed"
     PROGRESSING = "Progressing"
+    FAST_START_QUALIFIED = "FastStartQualified"
 
 
 class KubernetesConditionStatus(StrEnum):
@@ -192,6 +194,7 @@ class ModelDeploymentObservedStatus(StrictModel):
     placements: list[ModelDeploymentPlacementStatus] = Field(default_factory=list, max_length=64)
     replicas: ModelDeploymentReplicaStatus | None = None
     cache: ModelDeploymentCacheStatus | None = None
+    fast_start: FastStartStatus | None = None
     publication: ModelDeploymentPublicationStatus | None = None
     endpoint: ModelDeploymentEndpointStatus | None = None
     adoption: ModelDeploymentAdoptionStatus | None = None

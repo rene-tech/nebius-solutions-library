@@ -84,6 +84,9 @@ The live configuration surface exposes these controls:
 - one or more compatible existing pool references and accelerator count;
 - cache tier and snapshot preference, with qualification status shown
   separately from intent;
+- an optional fast-start performance class (`Off`, `L1`..`L4`) or automatic
+  bounds, with the qualified and effective level shown separately from the
+  requested one;
 - queue, priority, tenant visibility, OpenAI route, and MCP exposure;
 - per-model request, token, concurrency, and GPU-time policy references.
 
@@ -94,6 +97,59 @@ replicas to `maxReplicas`; the cloud node scaler then supplies nodes up to the
 Terraform-defined pool maximum. Operators must see the phases separately:
 admitted, node pending, artifact localizing, runtime starting, warming, ready,
 draining, and failed.
+
+### Fast-start performance classes
+
+`spec.fastStart` is optional and backward compatible; an absent or default
+policy asks for nothing and keeps every existing revision ETag stable. A level
+is a startup-time target measured from GPU capacity being available until
+semantic endpoint readiness. Capacity wait and total end-to-end time are
+separate measurements and never count against a level. `Hot` (a ready replica)
+is derived runtime state, not a configurable cold-start level.
+
+| Level | Target |
+| --- | --- |
+| `Off` | no startup-time target |
+| `L1` | at most 300 seconds |
+| `L2` | at most 120 seconds |
+| `L3` | at most 60 seconds |
+| `L4` | at most 30 seconds |
+
+```yaml
+fastStart:
+  mode: Fixed | Automatic            # default Fixed
+  level: Off | L1 | L2 | L3 | L4     # Fixed target, default Off
+  minimumLevel: Off | L1 | L2 | L3 | L4   # Automatic lower bound, default Off
+  maximumLevel: Off | L1 | L2 | L3 | L4   # Automatic upper bound, default L4
+  fallbackPolicy: AllowLowerLevel | RequireTarget   # default AllowLowerLevel
+```
+
+`Fixed` targets exactly `level`; `Automatic` selects the highest qualified
+level inside `[minimumLevel, maximumLevel]`. A level is qualified only by
+compatible benchmark evidence in the Terraform-owned envelope
+(`qualifications.<modelRef>.fastStartEvidence`) for the exact artifact
+manifest, runtime image, runtime template, cache tier, snapshot, accelerator
+class, and accelerator count the deployment will run, with at least five
+samples whose nearest-rank p95 model-start time is within the target. Failed
+attempts rank after every successful duration. Mechanism names such as
+regional caches, snapshots, host RAM residency, or ModelExpress are operator
+detail carried by the evidence; a name alone never qualifies a level. With
+several pools, the slowest pool binds the deployment.
+
+`AllowLowerLevel` deploys at the best qualified level and reports the
+shortfall as `Fallback`; `RequireTarget` rejects the revision with
+`fast_start_target_unqualified` when the fixed level or the automatic lower
+bound is not qualified. Changing `spec.fastStart` is a live policy change and
+needs no cold cutover.
+
+`status.fastStart` keeps `requestedLevel`, `qualifiedLevel`, `assignedLevel`,
+and `effectiveLevel` apart. The effective level is claimed only once the
+desired render has converged; until then the previously effective level, if
+any, is carried forward. `modelStart`, `capacityWait`, and `endToEnd` carry
+latest/p50/p95 seconds per binding pool and per pool in `pools[]`, and are
+omitted entirely when no compatible evidence exists. The `FastStartQualified`
+condition is `True` for `NoTarget` and `Qualified`, `False` for `Fallback` and
+`Unqualified`.
 
 ### Implemented heterogeneous elasticity
 

@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic.alias_generators import to_camel
 
 MAX_MODEL_ID_LENGTH = 128
 MIN_IDEMPOTENCY_KEY_LENGTH = 8
@@ -21,6 +22,17 @@ IdempotencyKey = Annotated[
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+
+class KubernetesModel(StrictModel):
+    """Strict model that accepts Kubernetes camelCase and Python snake_case."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        allow_inf_nan=False,
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
 
 class Scope(StrEnum):

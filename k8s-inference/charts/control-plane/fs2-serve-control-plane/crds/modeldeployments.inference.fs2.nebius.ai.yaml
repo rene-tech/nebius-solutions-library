@@ -39,6 +39,9 @@ spec:
         - name: Max
           type: integer
           jsonPath: .spec.availability.maxReplicas
+        - name: FastStart
+          type: string
+          jsonPath: .status.fastStart.assignedLevel
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp
@@ -412,6 +415,38 @@ spec:
                         digest:
                           type: string
                           pattern: ^sha256:[a-f0-9]{64}$
+                fastStart:
+                  # Customer-facing startup-time class measured from GPU capacity
+                  # being available until semantic endpoint readiness.  Off has no
+                  # target; L1 <= 300s, L2 <= 120s, L3 <= 60s, L4 <= 30s.  Hot is
+                  # derived runtime state and deliberately not a level.  "Off" is
+                  # quoted because YAML 1.1 parsers read a bare Off as false.
+                  type: object
+                  required: [mode]
+                  default: {mode: Fixed, level: "Off", fallbackPolicy: AllowLowerLevel}
+                  x-kubernetes-validations:
+                    - rule: self.mode != 'Fixed' || (!has(self.minimumLevel) && !has(self.maximumLevel))
+                      message: Fixed fast-start uses level; minimumLevel and maximumLevel belong to Automatic mode
+                    - rule: self.mode != 'Automatic' || !has(self.level)
+                      message: Automatic fast-start uses minimumLevel and maximumLevel; level belongs to Fixed mode
+                    - rule: '!has(self.minimumLevel) || !has(self.maximumLevel) || (self.minimumLevel == ''Off'' ? 0 : self.minimumLevel == ''L1'' ? 1 : self.minimumLevel == ''L2'' ? 2 : self.minimumLevel == ''L3'' ? 3 : 4) <= (self.maximumLevel == ''Off'' ? 0 : self.maximumLevel == ''L1'' ? 1 : self.maximumLevel == ''L2'' ? 2 : self.maximumLevel == ''L3'' ? 3 : 4)'
+                      message: fast-start minimumLevel cannot exceed maximumLevel
+                  properties:
+                    mode:
+                      type: string
+                      enum: [Fixed, Automatic]
+                    level:
+                      type: string
+                      enum: ["Off", L1, L2, L3, L4]
+                    minimumLevel:
+                      type: string
+                      enum: ["Off", L1, L2, L3, L4]
+                    maximumLevel:
+                      type: string
+                      enum: ["Off", L1, L2, L3, L4]
+                    fallbackPolicy:
+                      type: string
+                      enum: [AllowLowerLevel, RequireTarget]
             status:
               type: object
               properties:
@@ -538,6 +573,247 @@ spec:
                     observedAt:
                       type: string
                       format: date-time
+                fastStart:
+                  # Requested, qualified, assigned, and effective levels are kept
+                  # apart.  Measured seconds appear only when compatible benchmark
+                  # evidence exists; absence means unavailable, never zero.
+                  type: object
+                  required: [mode, fallbackPolicy, requestedLevel, qualifiedLevel, qualification]
+                  properties:
+                    mode:
+                      type: string
+                      enum: [Fixed, Automatic]
+                    fallbackPolicy:
+                      type: string
+                      enum: [AllowLowerLevel, RequireTarget]
+                    requestedLevel:
+                      type: string
+                      enum: ["Off", L1, L2, L3, L4]
+                    minimumLevel:
+                      type: string
+                      enum: ["Off", L1, L2, L3, L4]
+                    maximumLevel:
+                      type: string
+                      enum: ["Off", L1, L2, L3, L4]
+                    qualifiedLevel:
+                      type: string
+                      enum: ["Off", L1, L2, L3, L4]
+                    assignedLevel:
+                      type: string
+                      enum: ["Off", L1, L2, L3, L4]
+                    effectiveLevel:
+                      type: string
+                      enum: ["Off", L1, L2, L3, L4]
+                    requestedTargetSeconds:
+                      type: integer
+                      format: int32
+                      minimum: 1
+                    targetSeconds:
+                      type: integer
+                      format: int32
+                      minimum: 1
+                    hot:
+                      type: boolean
+                    qualification:
+                      type: object
+                      required: [state, reason, message]
+                      properties:
+                        state:
+                          type: string
+                          enum: [NoTarget, Qualified, Fallback, Unqualified]
+                        reason:
+                          type: string
+                          minLength: 1
+                          maxLength: 64
+                          pattern: ^[A-Za-z][A-Za-z0-9]*$
+                        message:
+                          type: string
+                          minLength: 1
+                          maxLength: 240
+                    modelStart:
+                      type: object
+                      required: [sampleCount, latestObservedAt]
+                      properties:
+                        sampleCount:
+                          type: integer
+                          format: int32
+                          minimum: 1
+                        failedCount:
+                          type: integer
+                          format: int32
+                          minimum: 0
+                        latestSeconds:
+                          type: number
+                          minimum: 0
+                        latestObservedAt:
+                          type: string
+                          format: date-time
+                        p50Seconds:
+                          type: number
+                          minimum: 0
+                        p95Seconds:
+                          type: number
+                          minimum: 0
+                    capacityWait:
+                      type: object
+                      required: [sampleCount, latestObservedAt]
+                      properties:
+                        sampleCount:
+                          type: integer
+                          format: int32
+                          minimum: 1
+                        failedCount:
+                          type: integer
+                          format: int32
+                          minimum: 0
+                        latestSeconds:
+                          type: number
+                          minimum: 0
+                        latestObservedAt:
+                          type: string
+                          format: date-time
+                        p50Seconds:
+                          type: number
+                          minimum: 0
+                        p95Seconds:
+                          type: number
+                          minimum: 0
+                    endToEnd:
+                      type: object
+                      required: [sampleCount, latestObservedAt]
+                      properties:
+                        sampleCount:
+                          type: integer
+                          format: int32
+                          minimum: 1
+                        failedCount:
+                          type: integer
+                          format: int32
+                          minimum: 0
+                        latestSeconds:
+                          type: number
+                          minimum: 0
+                        latestObservedAt:
+                          type: string
+                          format: date-time
+                        p50Seconds:
+                          type: number
+                          minimum: 0
+                        p95Seconds:
+                          type: number
+                          minimum: 0
+                    pools:
+                      type: array
+                      maxItems: 32
+                      x-kubernetes-list-type: map
+                      x-kubernetes-list-map-keys: [poolRef]
+                      items:
+                        type: object
+                        required: [poolRef, qualifiedLevel, reason]
+                        properties:
+                          poolRef:
+                            type: string
+                            minLength: 1
+                            maxLength: 128
+                          acceleratorClass:
+                            type: string
+                            minLength: 1
+                            maxLength: 128
+                          qualifiedLevel:
+                            type: string
+                            enum: ["Off", L1, L2, L3, L4]
+                          reason:
+                            type: string
+                            minLength: 1
+                            maxLength: 64
+                            pattern: ^[A-Za-z][A-Za-z0-9]*$
+                          mechanisms:
+                            type: array
+                            maxItems: 64
+                            x-kubernetes-list-type: set
+                            items:
+                              type: string
+                              minLength: 1
+                              maxLength: 64
+                          receiptDigests:
+                            type: array
+                            maxItems: 256
+                            x-kubernetes-list-type: set
+                            items:
+                              type: string
+                              pattern: ^sha256:[a-f0-9]{64}$
+                          modelStart:
+                            type: object
+                            required: [sampleCount, latestObservedAt]
+                            properties:
+                              sampleCount:
+                                type: integer
+                                format: int32
+                                minimum: 1
+                              failedCount:
+                                type: integer
+                                format: int32
+                                minimum: 0
+                              latestSeconds:
+                                type: number
+                                minimum: 0
+                              latestObservedAt:
+                                type: string
+                                format: date-time
+                              p50Seconds:
+                                type: number
+                                minimum: 0
+                              p95Seconds:
+                                type: number
+                                minimum: 0
+                          capacityWait:
+                            type: object
+                            required: [sampleCount, latestObservedAt]
+                            properties:
+                              sampleCount:
+                                type: integer
+                                format: int32
+                                minimum: 1
+                              failedCount:
+                                type: integer
+                                format: int32
+                                minimum: 0
+                              latestSeconds:
+                                type: number
+                                minimum: 0
+                              latestObservedAt:
+                                type: string
+                                format: date-time
+                              p50Seconds:
+                                type: number
+                                minimum: 0
+                              p95Seconds:
+                                type: number
+                                minimum: 0
+                          endToEnd:
+                            type: object
+                            required: [sampleCount, latestObservedAt]
+                            properties:
+                              sampleCount:
+                                type: integer
+                                format: int32
+                                minimum: 1
+                              failedCount:
+                                type: integer
+                                format: int32
+                                minimum: 0
+                              latestSeconds:
+                                type: number
+                                minimum: 0
+                              latestObservedAt:
+                                type: string
+                                format: date-time
+                              p50Seconds:
+                                type: number
+                                minimum: 0
+                              p95Seconds:
+                                type: number
+                                minimum: 0
                 publication:
                   type: object
                   required: [openAI, mcp]
@@ -674,6 +950,7 @@ spec:
                           - InfrastructureRequired
                           - Failed
                           - Progressing
+                          - FastStartQualified
                       status:
                         type: string
                         enum: ["True", "False", Unknown]

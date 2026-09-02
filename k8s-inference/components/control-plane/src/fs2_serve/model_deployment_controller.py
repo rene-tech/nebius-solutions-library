@@ -30,6 +30,7 @@ from pydantic import Field
 
 from .admin import AdminAdapterUnavailableError
 from .admin_adapters import HttpPrometheusScalarReader
+from .fast_start import FastStartAssessment, FastStartLevel, FastStartQualificationState, FastStartStatus
 from .model_deployment import (
     API_VERSION,
     FIELD_MANAGER,
@@ -1282,6 +1283,37 @@ def _cache_status(
     return {"state": "Unknown", "tier": tier, "digest": digest}
 
 
+def _fast_start_status(
+    *,
+    assessment: FastStartAssessment | None,
+    converged: bool,
+    ready_replicas: int | None,
+    previous_status: Mapping[str, Any],
+) -> FastStartStatus | None:
+    """Add what only observed runtime can tell to the deterministic policy outcome.
+
+    The effective level is claimed only once the desired render has converged.
+    Until then the previously effective level, if any, is carried forward so a
+    rollout never advertises a startup class it has not reached.
+    """
+
+    if assessment is None:
+        return None
+    previous = _mapping(previous_status.get("fastStart"))
+    effective: FastStartLevel | None = None
+    if converged and assessment.assigned_level is not None:
+        effective = assessment.assigned_level
+    else:
+        carried = previous.get("effectiveLevel")
+        if isinstance(carried, str) and carried in {level.value for level in FastStartLevel}:
+            effective = FastStartLevel(carried)
+    return FastStartStatus(
+        **assessment.model_dump(),
+        effective_level=effective,
+        hot=None if ready_replicas is None else ready_replicas > 0,
+    )
+
+
 def build_status(
     *,
     spec: ModelDeploymentSpec,
@@ -1403,6 +1435,28 @@ def build_status(
             now=observed_at,
         )
     )
+    fast_start = _fast_start_status(
+        assessment=plan.validation.fast_start,
+        converged=converged,
+        ready_replicas=ready,
+        previous_status=previous_status,
+    )
+    if fast_start is not None:
+        satisfied = fast_start.qualification.state in {
+            FastStartQualificationState.NO_TARGET,
+            FastStartQualificationState.QUALIFIED,
+        }
+        conditions.append(
+            _condition(
+                "FastStartQualified",
+                "True" if satisfied else "False",
+                fast_start.qualification.reason,
+                fast_start.qualification.message,
+                generation,
+                previous=old.get("FastStartQualified"),
+                now=observed_at,
+            )
+        )
     resources = [
         {
             "identity": item.observed.identity,
@@ -1463,6 +1517,9 @@ def build_status(
         status["placements"] = placements
     if cache is not None:
         status["cache"] = cache
+    if fast_start is not None:
+        # Unavailable measurements are omitted rather than serialised as zero.
+        status["fastStart"] = fast_start.model_dump(mode="json", by_alias=True, exclude_none=True)
     if plan.validation.admitted_pool_ref is not None:
         status["admittedPoolRef"] = plan.validation.admitted_pool_ref
     if plan.render is not None:

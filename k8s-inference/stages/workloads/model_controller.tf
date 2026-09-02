@@ -241,6 +241,15 @@ locals {
         null
       )
       snapshotDigests = []
+      # Fast-start levels (L1..L4) are qualified only by retained benchmark
+      # evidence measured from GPU capacity being available until semantic
+      # endpoint readiness for the exact artifact, image, template, cache tier
+      # and accelerator tuple. The retained elasticity receipts measure
+      # activation-to-ready, which includes capacity wait, so they are not
+      # compatible evidence. Until a fast-start benchmark receipt is retained
+      # and projected here, every level above Off stays unqualified and the
+      # controller reports that truthfully.
+      fastStartEvidence = []
     }
   }
   model_controller_pool_envelope = {

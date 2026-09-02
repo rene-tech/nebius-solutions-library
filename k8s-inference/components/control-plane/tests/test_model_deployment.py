@@ -330,6 +330,43 @@ def test_crd_is_structural_versioned_and_has_explicit_terraform_upgrade_owner() 
     assert "uniqueItems" not in status_properties["eligiblePoolRefs"]
     assert status_properties["placements"]["x-kubernetes-list-map-keys"] == ["deploymentName"]
 
+    # spec.fastStart is optional and backward compatible; spec.cache and
+    # status.cache stay in place during the migration.  "Off" must survive
+    # YAML 1.1 loaders as a string, never as boolean false.
+    spec_properties = schema["properties"]["spec"]["properties"]
+    assert "fastStart" not in schema["properties"]["spec"]["required"]
+    assert "cache" in schema["properties"]["spec"]["required"] and "cache" in status_properties
+    fast_start = spec_properties["fastStart"]
+    assert fast_start["default"] == {"mode": "Fixed", "level": "Off", "fallbackPolicy": "AllowLowerLevel"}
+    levels = ["Off", "L1", "L2", "L3", "L4"]
+    for field in ("level", "minimumLevel", "maximumLevel"):
+        assert fast_start["properties"][field]["enum"] == levels
+    assert fast_start["properties"]["mode"]["enum"] == ["Fixed", "Automatic"]
+    assert fast_start["properties"]["fallbackPolicy"]["enum"] == ["AllowLowerLevel", "RequireTarget"]
+    fast_start_rules = {item["message"] for item in fast_start["x-kubernetes-validations"]}
+    assert "fast-start minimumLevel cannot exceed maximumLevel" in fast_start_rules
+    fast_start_status = status_properties["fastStart"]
+    assert set(fast_start_status["required"]) == {
+        "mode",
+        "fallbackPolicy",
+        "requestedLevel",
+        "qualifiedLevel",
+        "qualification",
+    }
+    for field in ("requestedLevel", "qualifiedLevel", "assignedLevel", "effectiveLevel"):
+        assert fast_start_status["properties"][field]["enum"] == levels
+    assert fast_start_status["properties"]["qualification"]["properties"]["state"]["enum"] == [
+        "NoTarget",
+        "Qualified",
+        "Fallback",
+        "Unqualified",
+    ]
+    for measurement in ("modelStart", "capacityWait", "endToEnd"):
+        assert fast_start_status["properties"][measurement]["required"] == ["sampleCount", "latestObservedAt"]
+    assert fast_start_status["properties"]["pools"]["x-kubernetes-list-map-keys"] == ["poolRef"]
+    assert "FastStartQualified" in condition["properties"]["type"]["enum"]
+    assert [column["name"] for column in version["additionalPrinterColumns"] if column["name"] == "FastStart"]
+
     terraform = (WORKLOADS / "model_deployment_api.tf").read_text()
     control_plane = (WORKLOADS / "control_plane.tf").read_text()
     assert 'resource "kubernetes_manifest" "model_deployment_crd"' in terraform

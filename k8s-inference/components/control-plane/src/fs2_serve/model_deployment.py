@@ -20,10 +20,16 @@ from typing import Annotated, Any, Literal, Protocol
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import CroniterBadCronError, croniter
-from pydantic import AwareDatetime, ConfigDict, Field, StringConstraints, model_validator
-from pydantic.alias_generators import to_camel
+from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 
-from .models import StrictModel
+from .fast_start import (
+    FastStartAssessment,
+    FastStartMode,
+    FastStartQualificationState,
+    FastStartSpec,
+    evaluate_fast_start,
+)
+from .models import KubernetesModel
 
 API_VERSION = "inference.fs2.nebius.ai/v1alpha1"
 KIND = "ModelDeployment"
@@ -69,17 +75,6 @@ PrincipalId = Annotated[
         pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9_.:@/-]*[A-Za-z0-9])?$",
     ),
 ]
-
-
-class KubernetesModel(StrictModel):
-    """Strict model that accepts Kubernetes camelCase and Python snake_case."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        allow_inf_nan=False,
-        alias_generator=to_camel,
-        populate_by_name=True,
-    )
 
 
 class DesiredState(StrEnum):
@@ -229,6 +224,52 @@ class CacheSpec(KubernetesModel):
         return self
 
 
+class FastStartSample(KubernetesModel):
+    """One benchmark attempt.
+
+    ``modelStartSeconds`` is measured from GPU capacity being available until
+    semantic endpoint readiness; ``None`` means the attempt never became
+    semantically ready.  Capacity wait and total end-to-end time are separate
+    measurements and may be absent.
+    """
+
+    observed_at: AwareDatetime
+    model_start_seconds: float | None = Field(default=None, ge=0, le=86400)
+    capacity_wait_seconds: float | None = Field(default=None, ge=0, le=604800)
+    end_to_end_seconds: float | None = Field(default=None, ge=0, le=604800)
+
+    @model_validator(mode="after")
+    def consistent_phases(self) -> FastStartSample:
+        if self.end_to_end_seconds is not None:
+            for phase in (self.model_start_seconds, self.capacity_wait_seconds):
+                if phase is not None and phase > self.end_to_end_seconds:
+                    raise ValueError("end-to-end seconds cannot be shorter than one of its phases")
+        return self
+
+
+class FastStartEvidence(KubernetesModel):
+    """Retained benchmark evidence for one exact runtime tuple.
+
+    The mechanism is descriptive operator detail.  Compatibility with a
+    ModelDeployment is decided only by the exact digests, cache tier, snapshot,
+    accelerator class, and accelerator count recorded here.
+    """
+
+    receipt_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
+    mechanism: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9-]*$")
+    measurement_basis: Literal["CapacityAvailableToSemanticReady"]
+    accelerator_class: str = Field(min_length=1, max_length=128)
+    pool_ref: PoolRef | None = None
+    accelerators_per_replica: int = Field(ge=1, le=64)
+    artifact_manifest_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
+    runtime_image: str = Field(min_length=73, max_length=768, pattern=IMAGE_DIGEST_PATTERN)
+    template_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
+    cache_tier: CacheTier
+    snapshot_digest: str | None = Field(default=None, pattern=SHA256_DIGEST_PATTERN)
+    samples: list[FastStartSample] = Field(min_length=1, max_length=256)
+    valid_until: AwareDatetime | None = None
+
+
 class QueueSpec(KubernetesModel):
     local_queue: str = Field(min_length=1, max_length=253, pattern=DNS_SUBDOMAIN_PATTERN)
     priority_class: str = Field(min_length=1, max_length=253, pattern=DNS_SUBDOMAIN_PATTERN)
@@ -307,6 +348,7 @@ class ModelDeploymentSpec(KubernetesModel):
     exposure: ExposureSpec
     policy: TenantPolicySpec
     adoption: AdoptionSpec = Field(default_factory=AdoptionSpec)
+    fast_start: FastStartSpec = Field(default_factory=FastStartSpec)
 
     @model_validator(mode="after")
     def valid_lifecycle(self) -> ModelDeploymentSpec:
@@ -333,6 +375,11 @@ def spec_digest(spec: ModelDeploymentSpec) -> str:
     )
     payload["exposure"]["openAIAliases"] = sorted(payload["exposure"]["openAIAliases"])
     payload["policy"]["allowedPrincipalIds"] = sorted(payload["policy"]["allowedPrincipalIds"])
+    if spec.fast_start == FastStartSpec():
+        # The optional fast-start policy joined the contract after revisions
+        # were already persisted; an unset or default policy keeps every
+        # existing ETag and controller spec-digest annotation stable.
+        del payload["fastStart"]
     return canonical_digest(payload)
 
 
@@ -361,6 +408,7 @@ class ValidationDecision(KubernetesModel):
     issues: list[ValidationIssue] = Field(max_length=256)
     terraform_inputs: list[str] = Field(default_factory=list, max_length=64)
     admitted_pool_ref: str | None = Field(default=None, min_length=1, max_length=128)
+    fast_start: FastStartAssessment | None = None
 
     @model_validator(mode="after")
     def consistent_disposition(self) -> ValidationDecision:
@@ -416,6 +464,7 @@ class ModelQualification(KubernetesModel):
     )
     snapshot_digests: list[str] = Field(default_factory=list, max_length=64)
     scale_to_zero_qualified: bool
+    fast_start_evidence: list[FastStartEvidence] = Field(default_factory=list, max_length=256)
 
     @model_validator(mode="after")
     def exact_artifacts(self) -> ModelQualification:
@@ -484,11 +533,24 @@ def validate_model_deployment(
     envelope: InfrastructureEnvelope,
     *,
     current: ModelDeploymentSpec | None = None,
+    evaluation_time: datetime | None = None,
 ) -> ValidationDecision:
     """Validate one revision before any renderer, Kubernetes, or cloud action."""
 
     issues: list[ValidationIssue] = []
     terraform_inputs: set[str] = set()
+    fast_start = evaluate_fast_start(spec, envelope, evaluation_time=evaluation_time or datetime.now(UTC))
+    if fast_start.qualification.state is FastStartQualificationState.UNQUALIFIED:
+        issues.append(
+            _issue(
+                "fast_start_target_unqualified",
+                "$.spec.fastStart.level"
+                if spec.fast_start.mode is FastStartMode.FIXED
+                else "$.spec.fastStart.minimumLevel",
+                fast_start.qualification.message,
+                owner="live-control-plane",
+            )
+        )
 
     if current is not None:
         immutable = (
@@ -828,6 +890,7 @@ def validate_model_deployment(
         issues=issues,
         terraform_inputs=sorted(terraform_inputs),
         admitted_pool_ref=admitted_pool_ref,
+        fast_start=fast_start,
     )
 
 
@@ -1675,6 +1738,7 @@ def _rejected_decision(
         spec_digest=decision.spec_digest,
         issues=[*decision.issues, _issue(code, path, message, owner="live-control-plane")],
         terraform_inputs=decision.terraform_inputs,
+        fast_start=decision.fast_start,
     )
 
 
@@ -1750,7 +1814,12 @@ def plan_reconciliation(
         raise ValueError("controller reconciliation requires a non-preview context with an exact CR UID")
     if generation != render_context.generation:
         raise ValueError("desired generation differs from the render context generation")
-    validation = validate_model_deployment(spec, envelope, current=current)
+    validation = validate_model_deployment(
+        spec,
+        envelope,
+        current=current,
+        evaluation_time=render_context.evaluation_time,
+    )
     if validation.disposition is ValidationDisposition.REJECTED:
         return ReconcilePlan(
             action=ReconcileAction.REJECT,

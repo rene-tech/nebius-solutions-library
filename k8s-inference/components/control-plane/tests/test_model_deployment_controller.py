@@ -8,8 +8,10 @@ from typing import Any
 
 import httpx
 import pytest
+from test_fast_start import evidence, with_evidence, with_fast_start
 from test_model_deployment import envelope, model_spec, renderer, reserved_and_preemptible_envelope
 
+from fs2_serve.fast_start import FastStartLevel
 from fs2_serve.model_deployment import (
     FIELD_MANAGER,
     FINALIZER,
@@ -23,6 +25,7 @@ from fs2_serve.model_deployment import (
     canonical_digest,
     plan_reconciliation,
 )
+from fs2_serve.model_deployment_bridge import _normalize_keys
 from fs2_serve.model_deployment_controller import (
     BoundedKeyQueue,
     ControllerHealth,
@@ -39,6 +42,7 @@ from fs2_serve.model_deployment_controller import (
     ResourceSnapshot,
     build_status,
 )
+from fs2_serve.model_deployment_records import ModelDeploymentObservedStatus
 
 
 class FakePrometheusReader:
@@ -768,6 +772,107 @@ def test_status_projects_localizing_and_warming_from_observed_runtime_pods() -> 
     )
     assert warming["phase"] == "Warming"
     assert warming["replicas"]["warming"] == 1
+
+
+def test_status_keeps_fast_start_levels_apart_and_claims_effective_only_when_converged() -> None:
+    context = RenderContext(
+        name="qwen-live",
+        namespace="fs2-models",
+        uid="cr-uid-1",
+        generation=1,
+        pool=envelope().pools["pool-b"],
+        eligible_pools=[envelope().pools[pool_ref] for pool_ref in model_spec().placement.pool_refs],
+        prometheus_server_address="http://prometheus:9090",
+    )
+
+    # Without evidence nothing is claimed: no target, no seconds, no effective level.
+    plain = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=model_spec(),
+        envelope=envelope(),
+        renderer=renderer(),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+    unqualified = build_status(
+        spec=model_spec(),
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plain,
+        discovery=Discovery(resources=[], complete=True),
+        previous_status={},
+        drain=None,
+    )
+    assert unqualified["fastStart"]["qualification"]["state"] == "NoTarget"
+    assert unqualified["fastStart"]["assignedLevel"] == "Off"
+    for absent in ("modelStart", "capacityWait", "endToEnd", "targetSeconds", "effectiveLevel"):
+        assert absent not in unqualified["fastStart"]
+    condition = next(item for item in unqualified["conditions"] if item["type"] == "FastStartQualified")
+    assert (condition["status"], condition["reason"]) == ("True", "NoFastStartTarget")
+
+    # pool-a qualifies L3 but the slower pool-b binds the model at L2.
+    spec = with_fast_start(model_spec(), level="L3")
+    pools = envelope().pools
+    installed = with_evidence(
+        envelope(),
+        evidence(model_spec(), pools["pool-a"], seconds=[40, 45, 50, 55, 58]),
+        evidence(model_spec(), pools["pool-b"], seconds=[70, 80, 90, 100, 110]),
+    )
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+    pending = build_status(
+        spec=spec,
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plan,
+        discovery=Discovery(resources=[], complete=True),
+        previous_status={"fastStart": {"effectiveLevel": "L1"}},
+        drain=None,
+    )
+    fast_start = pending["fastStart"]
+    assert fast_start["requestedLevel"] == "L3"
+    assert (fast_start["qualifiedLevel"], fast_start["assignedLevel"]) == ("L2", "L2")
+    assert (fast_start["requestedTargetSeconds"], fast_start["targetSeconds"]) == (60, 120)
+    assert fast_start["qualification"]["state"] == "Fallback"
+    # Not converged: the previously effective level is carried, the new one is not claimed.
+    assert fast_start["effectiveLevel"] == "L1"
+    assert fast_start["hot"] is False
+    assert fast_start["modelStart"]["p95Seconds"] == 110 and fast_start["modelStart"]["sampleCount"] == 5
+    assert "capacityWait" not in fast_start and "endToEnd" not in fast_start
+    assert {pool["poolRef"]: pool["qualifiedLevel"] for pool in fast_start["pools"]} == {"pool-a": "L3", "pool-b": "L2"}
+    condition = next(item for item in pending["conditions"] if item["type"] == "FastStartQualified")
+    assert (condition["status"], condition["reason"]) == ("False", "RequestedLevelUnqualified")
+
+    render = renderer().render(spec, context)
+    converged = build_status(
+        spec=spec,
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plan,
+        discovery=Discovery(resources=[snapshot(item, ready=True) for item in render.resources], complete=True),
+        previous_status=pending,
+        drain=None,
+    )
+    assert converged["fastStart"]["effectiveLevel"] == "L2"
+    assert converged["fastStart"]["hot"] is True
+    assert converged["specDigest"] == plan.spec_digest
+
+    # The durable records contract accepts the exact controller projection.
+    observed = ModelDeploymentObservedStatus.model_validate(_normalize_keys(converged))
+    assert observed.fast_start is not None
+    assert observed.fast_start.effective_level is FastStartLevel.L2
+    assert observed.fast_start.model_start is not None and observed.fast_start.model_start.p95_seconds == 110
+    assert {item.type.value for item in observed.conditions} >= {"Ready", "Cached", "FastStartQualified"}
 
 
 def test_renderer_propagates_controller_identity_to_runtime_pod_template() -> None:

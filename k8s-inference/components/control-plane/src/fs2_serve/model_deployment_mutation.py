@@ -27,6 +27,7 @@ from .access import AdminAccessService
 from .access_models import OperatorPrincipal, OperatorRole
 from .admin import AdminProblemError
 from .admin_models import AdminEnvelope
+from .fast_start import FastStartLevel
 from .model_deployment import (
     API_VERSION,
     DNS_LABEL_PATTERN,
@@ -334,6 +335,9 @@ class ModelDeploymentConfigurationOption(StrictModel):
     priority_class_choices: list[str] = Field(min_length=1, max_length=128)
     tenant_choices: list[str] = Field(min_length=1, max_length=1024)
     scale_to_zero_qualified: bool
+    # Highest fast-start level backed by compatible benchmark evidence for the
+    # default spec across every default pool; Off when no evidence exists.
+    fast_start_qualified_level: FastStartLevel = FastStartLevel.OFF
 
     @model_validator(mode="after")
     def defaults_are_allowed(self) -> ModelDeploymentConfigurationOption:
@@ -544,10 +548,13 @@ class ModelDeploymentMutationService:
                             "ratePolicyRef": None,
                         },
                         "adoption": {"mode": "None", "receiptRef": None},
+                        # No startup-time class is requested until an operator
+                        # picks one; qualification is published separately.
+                        "fastStart": {"mode": "Fixed", "level": "Off", "fallbackPolicy": "AllowLowerLevel"},
                     }
                 )
                 decision = validate_model_deployment(default_spec, self.envelope)
-                if decision.disposition is not ValidationDisposition.ACCEPTED:
+                if decision.disposition is not ValidationDisposition.ACCEPTED or decision.fast_start is None:
                     continue
                 options.append(
                     ModelDeploymentConfigurationOption(
@@ -560,6 +567,7 @@ class ModelDeploymentMutationService:
                         priority_class_choices=valid_priorities,
                         tenant_choices=valid_tenants,
                         scale_to_zero_qualified=qualification.scale_to_zero_qualified,
+                        fast_start_qualified_level=decision.fast_start.qualified_level,
                     )
                 )
             except ValueError:

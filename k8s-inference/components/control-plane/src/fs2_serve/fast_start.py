@@ -1,0 +1,468 @@
+"""Customer-facing fast-start performance classes and their qualification.
+
+A fast-start level is a startup-time target measured from GPU capacity being
+available until semantic endpoint readiness.  Capacity wait and total
+end-to-end time are reported separately and never count against a level.
+``Off`` has no target.  ``Hot`` (a ready replica) is derived runtime state
+and deliberately not a configurable level.
+
+This module is the single deterministic policy and qualification evaluator.
+A level is qualified only by compatible benchmark evidence for the exact
+artifact, runtime image, runtime template, cache tier, snapshot, accelerator
+class, and accelerator count that a ModelDeployment will actually run.
+Mechanism names (regional OCI/weights/compile caches, shared or local
+snapshots, host RAM residency, ModelExpress, ...) are operator detail carried
+by the evidence; a mechanism name alone never qualifies a level.  Missing
+evidence is reported as unavailable, never as zero or an invented value.
+"""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Sequence
+from datetime import datetime
+from enum import StrEnum
+from typing import TYPE_CHECKING
+
+from pydantic import AwareDatetime, Field, model_validator
+
+from .models import KubernetesModel
+
+if TYPE_CHECKING:
+    from .model_deployment import FastStartEvidence, InfrastructureEnvelope, ModelDeploymentSpec, PoolEnvelope
+
+
+class FastStartLevel(StrEnum):
+    OFF = "Off"
+    L1 = "L1"
+    L2 = "L2"
+    L3 = "L3"
+    L4 = "L4"
+
+    @property
+    def rank(self) -> int:
+        return LEVEL_ORDER.index(self)
+
+    @property
+    def target_seconds(self) -> int | None:
+        return LEVEL_TARGET_SECONDS[self]
+
+
+LEVEL_ORDER: tuple[FastStartLevel, ...] = (
+    FastStartLevel.OFF,
+    FastStartLevel.L1,
+    FastStartLevel.L2,
+    FastStartLevel.L3,
+    FastStartLevel.L4,
+)
+LEVEL_TARGET_SECONDS: dict[FastStartLevel, int | None] = {
+    FastStartLevel.OFF: None,
+    FastStartLevel.L1: 300,
+    FastStartLevel.L2: 120,
+    FastStartLevel.L3: 60,
+    FastStartLevel.L4: 30,
+}
+MEASUREMENT_BASIS = "CapacityAvailableToSemanticReady"
+# Nearest-rank p95 over fewer samples than this is just the maximum of a tiny
+# set; it cannot support a customer-facing startup-time class.
+MINIMUM_QUALIFYING_SAMPLES = 5
+QUALIFYING_PERCENTILE = 0.95
+REASON_PATTERN = r"^[A-Za-z][A-Za-z0-9]*$"
+
+
+class FastStartMode(StrEnum):
+    FIXED = "Fixed"
+    AUTOMATIC = "Automatic"
+
+
+class FastStartFallbackPolicy(StrEnum):
+    ALLOW_LOWER_LEVEL = "AllowLowerLevel"
+    REQUIRE_TARGET = "RequireTarget"
+
+
+class FastStartQualificationState(StrEnum):
+    NO_TARGET = "NoTarget"
+    QUALIFIED = "Qualified"
+    FALLBACK = "Fallback"
+    UNQUALIFIED = "Unqualified"
+
+
+class FastStartSpec(KubernetesModel):
+    """Optional ``spec.fastStart`` policy; the default asks for nothing.
+
+    ``Fixed`` targets exactly ``level``.  ``Automatic`` selects the highest
+    qualified level inside ``[minimumLevel, maximumLevel]``.  ``RequireTarget``
+    rejects the revision when the fixed level or the automatic lower bound is
+    not qualified; ``AllowLowerLevel`` deploys at the best qualified level and
+    reports the shortfall truthfully.
+    """
+
+    mode: FastStartMode = FastStartMode.FIXED
+    level: FastStartLevel | None = None
+    minimum_level: FastStartLevel | None = None
+    maximum_level: FastStartLevel | None = None
+    fallback_policy: FastStartFallbackPolicy = FastStartFallbackPolicy.ALLOW_LOWER_LEVEL
+
+    @model_validator(mode="after")
+    def valid_combination(self) -> FastStartSpec:
+        if self.mode is FastStartMode.FIXED:
+            if self.minimum_level is not None or self.maximum_level is not None:
+                raise ValueError("Fixed fast-start uses level; minimumLevel and maximumLevel belong to Automatic mode")
+            if self.level is None:
+                self.level = FastStartLevel.OFF
+            return self
+        if self.level is not None:
+            raise ValueError("Automatic fast-start uses minimumLevel and maximumLevel; level belongs to Fixed mode")
+        if self.minimum_level is None:
+            self.minimum_level = FastStartLevel.OFF
+        if self.maximum_level is None:
+            self.maximum_level = FastStartLevel.L4
+        if self.minimum_level.rank > self.maximum_level.rank:
+            raise ValueError("fast-start minimumLevel cannot exceed maximumLevel")
+        return self
+
+    @property
+    def requested_level(self) -> FastStartLevel:
+        if self.mode is FastStartMode.FIXED:
+            assert self.level is not None
+            return self.level
+        assert self.maximum_level is not None
+        return self.maximum_level
+
+    @property
+    def required_level(self) -> FastStartLevel:
+        """The level that ``RequireTarget`` insists on."""
+
+        if self.mode is FastStartMode.FIXED:
+            return self.requested_level
+        assert self.minimum_level is not None
+        return self.minimum_level
+
+
+class FastStartStatistics(KubernetesModel):
+    """Nearest-rank statistics over compatible benchmark samples.
+
+    Absent evidence is represented by omitting the whole object, never by a
+    zero.  Failed attempts rank after every successful duration, so a
+    percentile that lands on a failure is reported as unavailable.
+    """
+
+    sample_count: int = Field(ge=1, le=65536)
+    failed_count: int = Field(default=0, ge=0, le=65536)
+    latest_seconds: float | None = Field(default=None, ge=0)
+    latest_observed_at: AwareDatetime
+    p50_seconds: float | None = Field(default=None, ge=0)
+    p95_seconds: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def bounded_failures(self) -> FastStartStatistics:
+        if self.failed_count > self.sample_count:
+            raise ValueError("failed samples cannot exceed the sample count")
+        return self
+
+
+class FastStartPoolAssessment(KubernetesModel):
+    """Per-pool qualification so heterogeneous placements stay truthful."""
+
+    pool_ref: str = Field(min_length=1, max_length=128)
+    accelerator_class: str | None = Field(default=None, min_length=1, max_length=128)
+    qualified_level: FastStartLevel
+    reason: str = Field(min_length=1, max_length=64, pattern=REASON_PATTERN)
+    mechanisms: list[str] = Field(default_factory=list, max_length=64)
+    receipt_digests: list[str] = Field(default_factory=list, max_length=256)
+    model_start: FastStartStatistics | None = None
+    capacity_wait: FastStartStatistics | None = None
+    end_to_end: FastStartStatistics | None = None
+
+
+class FastStartQualification(KubernetesModel):
+    state: FastStartQualificationState
+    reason: str = Field(min_length=1, max_length=64, pattern=REASON_PATTERN)
+    message: str = Field(min_length=1, max_length=240)
+
+
+class FastStartAssessment(KubernetesModel):
+    """Deterministic policy outcome for one desired spec against one envelope."""
+
+    mode: FastStartMode
+    fallback_policy: FastStartFallbackPolicy
+    requested_level: FastStartLevel
+    minimum_level: FastStartLevel | None = None
+    maximum_level: FastStartLevel | None = None
+    qualified_level: FastStartLevel
+    assigned_level: FastStartLevel | None = None
+    requested_target_seconds: int | None = Field(default=None, ge=1)
+    target_seconds: int | None = Field(default=None, ge=1)
+    qualification: FastStartQualification
+    model_start: FastStartStatistics | None = None
+    capacity_wait: FastStartStatistics | None = None
+    end_to_end: FastStartStatistics | None = None
+    pools: list[FastStartPoolAssessment] = Field(default_factory=list, max_length=32)
+
+    @model_validator(mode="after")
+    def consistent_outcome(self) -> FastStartAssessment:
+        if len({item.pool_ref for item in self.pools}) != len(self.pools):
+            raise ValueError("fast-start pool assessments must be unique")
+        unqualified = self.qualification.state is FastStartQualificationState.UNQUALIFIED
+        if unqualified != (self.assigned_level is None):
+            raise ValueError("only an Unqualified outcome leaves the assigned level unset")
+        if self.assigned_level is not None and self.assigned_level.rank > self.qualified_level.rank:
+            raise ValueError("an assigned level cannot exceed the qualified level")
+        if self.requested_target_seconds != self.requested_level.target_seconds:
+            raise ValueError("requested target seconds must match the requested level")
+        expected_target = self.assigned_level.target_seconds if self.assigned_level is not None else None
+        if self.target_seconds != expected_target:
+            raise ValueError("target seconds must match the assigned level")
+        return self
+
+    @property
+    def admitted(self) -> bool:
+        return self.assigned_level is not None
+
+
+class FastStartStatus(FastStartAssessment):
+    """Controller-observed projection; adds what only runtime can tell.
+
+    ``effectiveLevel`` is the level the converged runtime is running at.  It
+    may lag behind, or after a policy change even exceed, the newly assigned
+    level until the render converges.  ``hot`` is derived from observed ready
+    replicas and is never a configurable level.
+    """
+
+    effective_level: FastStartLevel | None = None
+    hot: bool | None = None
+
+
+def nearest_rank(values: Sequence[float | None], fraction: float) -> float | None:
+    """Nearest-rank percentile where ``None`` (a failed attempt) ranks last."""
+
+    if not values or not 0 < fraction <= 1:
+        return None
+    ordered = sorted(value for value in values if value is not None)
+    rank = max(1, math.ceil(fraction * len(values)))
+    if rank > len(ordered):
+        return None
+    return ordered[rank - 1]
+
+
+def _statistics(
+    samples: Sequence[tuple[datetime, float | None]],
+    *,
+    failures_rank_last: bool,
+) -> FastStartStatistics | None:
+    """Summarise ``(observed_at, seconds)`` pairs; ``None`` seconds are failures or unmeasured."""
+
+    if failures_rank_last:
+        considered = list(samples)
+    else:
+        considered = [(observed_at, value) for observed_at, value in samples if value is not None]
+    if not considered:
+        return None
+    ordered = sorted(considered, key=lambda item: item[0])
+    latest_observed_at, latest = ordered[-1]
+    values = [value for _, value in ordered]
+    return FastStartStatistics(
+        sample_count=len(values),
+        failed_count=sum(value is None for value in values),
+        latest_seconds=latest,
+        latest_observed_at=latest_observed_at,
+        p50_seconds=nearest_rank(values, 0.5),
+        p95_seconds=nearest_rank(values, QUALIFYING_PERCENTILE),
+    )
+
+
+def _compatible(
+    evidence: FastStartEvidence,
+    spec: ModelDeploymentSpec,
+    pool: PoolEnvelope,
+    evaluation_time: datetime,
+) -> bool:
+    snapshot_digest = spec.cache.snapshot_ref.digest if spec.cache.snapshot_ref is not None else None
+    return (
+        evidence.measurement_basis == MEASUREMENT_BASIS
+        and evidence.accelerator_class == pool.accelerator_class
+        and (evidence.pool_ref is None or evidence.pool_ref == pool.pool_id)
+        and evidence.accelerators_per_replica == spec.placement.accelerators_per_replica
+        and evidence.artifact_manifest_digest == spec.artifact.manifest_digest
+        and evidence.runtime_image == spec.runtime.image
+        and evidence.template_digest == spec.runtime.template_ref.digest
+        and evidence.cache_tier is spec.cache.tier
+        and evidence.snapshot_digest == snapshot_digest
+        and (evidence.valid_until is None or evaluation_time < evidence.valid_until)
+    )
+
+
+def _highest_level_within(p95_seconds: float) -> FastStartLevel:
+    for level in reversed(LEVEL_ORDER):
+        target = level.target_seconds
+        if target is not None and p95_seconds <= target:
+            return level
+    return FastStartLevel.OFF
+
+
+def _assess_pool(
+    spec: ModelDeploymentSpec,
+    pool: PoolEnvelope,
+    evidence: Sequence[FastStartEvidence],
+    evaluation_time: datetime,
+) -> FastStartPoolAssessment:
+    compatible = [item for item in evidence if _compatible(item, spec, pool, evaluation_time)]
+    if not compatible:
+        return FastStartPoolAssessment(
+            pool_ref=pool.pool_id,
+            accelerator_class=pool.accelerator_class,
+            qualified_level=FastStartLevel.OFF,
+            reason="NoCompatibleBenchmarkEvidence",
+        )
+    model_start = _statistics(
+        [(sample.observed_at, sample.model_start_seconds) for item in compatible for sample in item.samples],
+        failures_rank_last=True,
+    )
+    capacity_wait = _statistics(
+        [(sample.observed_at, sample.capacity_wait_seconds) for item in compatible for sample in item.samples],
+        failures_rank_last=False,
+    )
+    end_to_end = _statistics(
+        [(sample.observed_at, sample.end_to_end_seconds) for item in compatible for sample in item.samples],
+        failures_rank_last=False,
+    )
+    assert model_start is not None
+    qualified = FastStartLevel.OFF
+    if model_start.sample_count < MINIMUM_QUALIFYING_SAMPLES:
+        reason = "InsufficientBenchmarkSamples"
+    elif model_start.p95_seconds is None:
+        reason = "BenchmarkFailuresExceedPercentile"
+    else:
+        qualified = _highest_level_within(model_start.p95_seconds)
+        reason = "BenchmarkP95WithinTarget" if qualified is not FastStartLevel.OFF else "BenchmarkP95ExceedsEveryTarget"
+    return FastStartPoolAssessment(
+        pool_ref=pool.pool_id,
+        accelerator_class=pool.accelerator_class,
+        qualified_level=qualified,
+        reason=reason,
+        mechanisms=sorted({item.mechanism for item in compatible}),
+        receipt_digests=sorted({item.receipt_digest for item in compatible}),
+        model_start=model_start,
+        capacity_wait=capacity_wait,
+        end_to_end=end_to_end,
+    )
+
+
+def _binding_pool(pools: Sequence[FastStartPoolAssessment]) -> FastStartPoolAssessment | None:
+    """The pool that limits the deployment: lowest level, then slowest p95."""
+
+    if not pools:
+        return None
+    return sorted(
+        pools,
+        key=lambda item: (
+            item.qualified_level.rank,
+            -(
+                math.inf
+                if item.model_start is None or item.model_start.p95_seconds is None
+                else item.model_start.p95_seconds
+            ),
+            item.pool_ref,
+        ),
+    )[0]
+
+
+def _p95_text(assessment: FastStartPoolAssessment | None) -> str:
+    if assessment is None or assessment.model_start is None or assessment.model_start.p95_seconds is None:
+        return "no compatible model-start p95"
+    return f"model-start p95 {assessment.model_start.p95_seconds:g}s over {assessment.model_start.sample_count} samples"
+
+
+def evaluate_fast_start(
+    spec: ModelDeploymentSpec,
+    envelope: InfrastructureEnvelope,
+    *,
+    evaluation_time: datetime,
+) -> FastStartAssessment:
+    """Decide requested, qualified, and assigned levels from evidence alone."""
+
+    policy = spec.fast_start
+    qualification = envelope.qualifications.get(spec.model_ref)
+    evidence = qualification.fast_start_evidence if qualification is not None else []
+    pools: list[FastStartPoolAssessment] = []
+    for pool_ref in sorted(spec.placement.pool_refs):
+        pool = envelope.pools.get(pool_ref)
+        if pool is None:
+            pools.append(
+                FastStartPoolAssessment(
+                    pool_ref=pool_ref,
+                    qualified_level=FastStartLevel.OFF,
+                    reason="PoolOutsideEnvelope",
+                )
+            )
+            continue
+        pools.append(_assess_pool(spec, pool, evidence, evaluation_time))
+    binding = _binding_pool(pools)
+    qualified = binding.qualified_level if binding is not None else FastStartLevel.OFF
+
+    requested = policy.requested_level
+    if policy.mode is FastStartMode.FIXED:
+        candidate = requested if qualified.rank >= requested.rank else qualified
+        satisfied = candidate is requested
+        shortfall_reason = "RequestedLevelUnqualified"
+        shortfall_target = f"requested {requested.value}"
+    else:
+        assert policy.minimum_level is not None and policy.maximum_level is not None
+        candidate = LEVEL_ORDER[min(qualified.rank, policy.maximum_level.rank)]
+        satisfied = candidate.rank >= policy.minimum_level.rank
+        shortfall_reason = "MinimumLevelUnqualified"
+        shortfall_target = f"minimum {policy.minimum_level.value}"
+
+    binding_text = f"{binding.pool_ref}: {_p95_text(binding)}" if binding is not None else "no placement pools"
+    assigned: FastStartLevel | None = candidate
+    if satisfied and candidate is FastStartLevel.OFF:
+        qualification_state = FastStartQualification(
+            state=FastStartQualificationState.NO_TARGET,
+            reason="NoFastStartTarget",
+            message=f"assigned level Off has no startup-time target ({binding_text})",
+        )
+    elif satisfied:
+        qualification_state = FastStartQualification(
+            state=FastStartQualificationState.QUALIFIED,
+            reason="AutomaticLevelSelected" if policy.mode is FastStartMode.AUTOMATIC else "BenchmarkEvidenceQualified",
+            message=(
+                f"{candidate.value} (at most {candidate.target_seconds}s from capacity to semantic readiness) "
+                f"is backed by compatible benchmark evidence ({binding_text})"
+            ),
+        )
+    elif policy.fallback_policy is FastStartFallbackPolicy.ALLOW_LOWER_LEVEL:
+        qualification_state = FastStartQualification(
+            state=FastStartQualificationState.FALLBACK,
+            reason=shortfall_reason,
+            message=(
+                f"{shortfall_target} lacks compatible benchmark evidence; "
+                f"{candidate.value} assigned instead ({binding_text})"
+            ),
+        )
+    else:
+        assigned = None
+        qualification_state = FastStartQualification(
+            state=FastStartQualificationState.UNQUALIFIED,
+            reason="RequireTargetUnmet",
+            message=(
+                f"{shortfall_target} lacks compatible benchmark evidence and fallbackPolicy is RequireTarget "
+                f"({binding_text})"
+            ),
+        )
+
+    return FastStartAssessment(
+        mode=policy.mode,
+        fallback_policy=policy.fallback_policy,
+        requested_level=requested,
+        minimum_level=policy.minimum_level,
+        maximum_level=policy.maximum_level,
+        qualified_level=qualified,
+        assigned_level=assigned,
+        requested_target_seconds=requested.target_seconds,
+        target_seconds=assigned.target_seconds if assigned is not None else None,
+        qualification=qualification_state,
+        model_start=binding.model_start if binding is not None else None,
+        capacity_wait=binding.capacity_wait if binding is not None else None,
+        end_to_end=binding.end_to_end if binding is not None else None,
+        pools=pools,
+    )

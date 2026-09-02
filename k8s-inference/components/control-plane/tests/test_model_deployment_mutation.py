@@ -10,6 +10,7 @@ from test_model_deployment import envelope, model_spec, renderer, reserved_and_p
 
 from fs2_serve.access_models import OperatorPrincipal, OperatorRole, PrincipalKind
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
+from fs2_serve.fast_start import FastStartLevel, FastStartSpec
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.model_deployment import (
     ArtifactStorageRef,
@@ -117,6 +118,8 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
     assert default.runtime.image in qualification.runtime_images
     assert qualification.template_refs[default.runtime.template_ref.name] == default.runtime.template_ref.digest
     assert default.cache.tier is qualification.template_cache_tiers[default.runtime.template_ref.digest]
+    assert default.fast_start == FastStartSpec()
+    assert option.fast_start_qualified_level is FastStartLevel.OFF
     assert default.placement.accelerators_per_replica == qualification.max_accelerators_per_replica
     assert default.exposure.open_ai_aliases == []
     assert default.exposure.mcp
@@ -141,9 +144,7 @@ def test_configuration_options_are_exact_valid_installed_defaults() -> None:
     assert hot_only_option.default_spec.availability.min_replicas == 1
 
     no_mcp_qualification = qualification.model_copy(update={"mcp_tool_name": None})
-    no_mcp = installed.model_copy(
-        update={"qualifications": {no_mcp_qualification.model_ref: no_mcp_qualification}}
-    )
+    no_mcp = installed.model_copy(update={"qualifications": {no_mcp_qualification.model_ref: no_mcp_qualification}})
     no_mcp_option = ModelDeploymentMutationService(
         repository=service.repository,
         writer=FakeWriter(),

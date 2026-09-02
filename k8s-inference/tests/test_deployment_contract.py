@@ -407,6 +407,9 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("model_controller_ineligible_reasons", controller_source)
         self.assertIn("artifactRevisions", controller_source)
         self.assertIn("scaleToZeroQualified", controller_source)
+        # Fast-start levels need explicit benchmark evidence; the envelope must
+        # never derive them from activation-based elasticity timings.
+        self.assertIn("fastStartEvidence = []", controller_source)
         self.assertNotIn("sha256(jsonencode({ source = model.model.source", controller_source)
         self.assertIn(
             "!contains(local.model_controller_dynamic_model_ids, model_id)",
