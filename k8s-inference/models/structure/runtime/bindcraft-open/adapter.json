@@ -1,0 +1,25 @@
+{
+  "schema": "fs2-serve.nebius.ai/bindcraft-open-batch-adapter/v1",
+  "model_id": "freebindcraft",
+  "adapter_id": "freebindcraft-v1-0-5",
+  "backend_id": "freebindcraft-v1-0-5",
+  "execution_mode": "scientific-batch",
+  "contracts": {
+    "request": "../../../../catalog/runtime/schema/scientific-run-request.schema.json",
+    "parameters": "parameters.schema.json",
+    "artifacts": "../../../../catalog/runtime/schema/scientific-artifact-manifest.schema.json",
+    "result": "../../../../catalog/runtime/schema/scientific-run-result.schema.json",
+    "workload": "workload.json"
+  },
+  "source": {
+    "repository": "https://github.com/cytokineking/FreeBindCraft",
+    "revision": "28c43fc48942eebd7918f504e9812c5c17bb3411",
+    "tag": "v1.0.5",
+    "code_license": "MIT",
+    "composite_license_state": "component-review-required"
+  },
+  "runtime_image": {"repository": "cr.eu-north1.nebius.cloud/project-e00rene/k8s-inference/scientific/bindcraft-open-freebindcraft", "state": "wrapper-input-pinned-pending-publish", "digest": null},
+  "access": {"profile": "standard", "lane": "open-alternative", "receipt_required": false, "pyrosetta_forbidden": true},
+  "resource_profile": {"id": "single-gpu-80gb", "gpu_count": 1, "gpu_memory_min_bytes": 85899345920, "cpu_request": "16", "cpu_limit": "24", "memory_request": "96Gi", "memory_limit": "128Gi", "shard_parallelism": "independent-trajectories"},
+  "qualification": {"h100": "pending-published-digest", "route_exposed": false}
+}

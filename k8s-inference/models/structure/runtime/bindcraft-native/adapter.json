@@ -1,0 +1,45 @@
+{
+  "schema": "fs2-serve.nebius.ai/bindcraft-native-batch-adapter/v1",
+  "model_id": "bindcraft",
+  "adapter_id": "bindcraft-v1-5-3-pyrosetta-academic",
+  "backend_id": "bindcraft-v1-5-3-pyrosetta-academic",
+  "execution_mode": "scientific-batch",
+  "contracts": {
+    "request": "../../../../catalog/runtime/schema/scientific-run-request.schema.json",
+    "parameters": "parameters.schema.json",
+    "artifacts": "../../../../catalog/runtime/schema/scientific-artifact-manifest.schema.json",
+    "result": "../../../../catalog/runtime/schema/scientific-run-result.schema.json",
+    "workload": "workload.json",
+    "access_receipt_owner": "operator-admission"
+  },
+  "source": {
+    "repository": "https://github.com/martinpacesa/BindCraft",
+    "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+    "revision_label": "source-qualified commit immediately preceding v.1.5.3 release; diverged tag is not used",
+    "code_license": "MIT",
+    "composite_license_state": "academic-access-required"
+  },
+  "runtime_image": {
+    "repository": "cr.eu-north1.nebius.cloud/project-e00rene/k8s-inference/scientific/bindcraft-native-pyrosetta",
+    "state": "blocked-pending-private-academic-asset-ingestion",
+    "digest": null
+  },
+  "access": {
+    "profile": "academic",
+    "receipt_required": true,
+    "component": "pyrosetta",
+    "credentials_in_request": false,
+    "package_data_in_repository": false
+  },
+  "resource_profile": {
+    "id": "single-gpu-80gb",
+    "gpu_count": 1,
+    "gpu_memory_min_bytes": 85899345920,
+    "cpu_request": "16",
+    "cpu_limit": "24",
+    "memory_request": "96Gi",
+    "memory_limit": "128Gi",
+    "shard_parallelism": "independent-trajectories"
+  },
+  "qualification": {"h100": "not-run", "route_exposed": false}
+}

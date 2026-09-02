@@ -1,0 +1,38 @@
+{
+  "request": {
+    "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "operation": "design-binder",
+    "service_class": "customer-batch",
+    "input_manifest": {
+      "artifact_id": "manifest.mosaic.minibinder.01",
+      "sha256": "23d109248070644bbe72f68a9d82ed7e8b4ff763913030ea6206366947795ca7",
+      "size_bytes": 398,
+      "media_type": "application/vnd.fs2.scientific-manifest+json",
+      "compression": "none"
+    },
+    "parameters": {
+      "schema": "fs2-serve.nebius.ai/mosaic-boltz2-proteinmpnn-parameters/v1",
+      "shard_count": 1,
+      "base_seed": 10,
+      "hotspots": [3],
+      "binder_length": 76,
+      "optimizer_steps": 75,
+      "raw_objective": "__import__('os').system('id')"
+    }
+  },
+  "input_manifest": {
+    "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+    "manifest_id": "manifest.mosaic.minibinder.01",
+    "entries": [{
+      "name": "target_sequence",
+      "semantic_type": "protein-sequence-fasta/v1",
+      "artifact": {
+        "artifact_id": "artifact.mosaic.target.minibinder",
+        "sha256": "7ed5501be9de5478ba1e86ee23edb0f08bc650a10b83671e01f1b383ef51b1bc",
+        "size_bytes": 44,
+        "media_type": "text/x-fasta",
+        "compression": "none"
+      }
+    }]
+  }
+}

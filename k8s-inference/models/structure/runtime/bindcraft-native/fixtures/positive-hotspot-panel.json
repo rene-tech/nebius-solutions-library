@@ -1,0 +1,48 @@
+{
+  "request": {
+    "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "operation": "design-binder",
+    "service_class": "presentation",
+    "input_manifest": {
+      "artifact_id": "manifest.bindcraft.native.panel.02",
+      "sha256": "c03b99ffc7419a3b615c14829b3c9e62a90115901d0338f8dcd2b002b0d5241e",
+      "size_bytes": 405,
+      "media_type": "application/vnd.fs2.scientific-manifest+json",
+      "compression": "none"
+    },
+    "parameters": {
+      "schema": "fs2-serve.nebius.ai/bindcraft-native-pyrosetta-parameters/v1",
+      "shard_count": 3,
+      "base_seed": 5100,
+      "target_chains": ["A"],
+      "hotspots": [{"chain": "A", "residue": 3}, {"chain": "A", "residue": 7}, {"chain": "A", "residue": 10}],
+      "binder_length": {"minimum": 72, "maximum": 84},
+      "accepted_designs_per_shard": 2,
+      "max_trajectories_per_shard": 80
+    },
+    "client_context": {"batch_id": "batch.bindcraft.native.02", "display_name": "native hotspot panel"}
+  },
+  "input_manifest": {
+    "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+    "manifest_id": "manifest.bindcraft.native.panel.02",
+    "entries": [{
+      "name": "target_structure",
+      "semantic_type": "protein-structure-pdb/v1",
+      "artifact": {
+        "artifact_id": "artifact.bindcraft.target.1ubq",
+        "sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+        "size_bytes": 78570,
+        "media_type": "chemical/x-pdb",
+        "compression": "none"
+      }
+    }]
+  },
+  "admission": {
+    "runtime_image": "registry.invalid/fs2/bindcraft-native@sha256:01309a97b66cdb0b5109324a95fd29fad4af8de560cf974dd286046641862c8d",
+    "access_receipt_digest": "6534b5c199b356a35c2ee6fef4c96aaa4d486bc73a3fdc18fa22fc46a1be0728",
+    "operation_id": "operation.bindcraft.native.02",
+    "workload_id": "bindcraft-native-workload-02",
+    "attempt_id": "bindcraft-native-attempt-02",
+    "tenant_id": "cancer-research"
+  }
+}

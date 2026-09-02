@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Fail-closed gate for tenant-private PyRosetta authorization."""
+import argparse
+import json, pathlib
+a = argparse.ArgumentParser(); a.add_argument("--profile", required=True); a.add_argument("--receipt", required=True); a.add_argument("--expected-digest", required=True); a.add_argument("--required-component", required=True)
+args = a.parse_args()
+if args.profile != "academic":
+    raise SystemExit("academic profile required")
+try: receipt = json.loads(pathlib.Path(args.receipt).read_text())
+except (OSError, ValueError): raise SystemExit("invalid academic access receipt")
+required = {"tenant_id", "scope", "component", "artifact_sha256", "receipt_sha256"}
+if not required <= receipt.keys() or receipt["scope"] != "academic-poc" or receipt["component"] != args.required_component or receipt["receipt_sha256"] != args.expected_digest or len(receipt["artifact_sha256"]) != 64:
+    raise SystemExit("academic receipt identity mismatch")

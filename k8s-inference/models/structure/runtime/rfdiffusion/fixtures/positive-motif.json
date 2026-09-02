@@ -1,0 +1,49 @@
+{
+  "request": {
+    "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "operation": "design-backbone",
+    "service_class": "interactive",
+    "input_manifest": {
+      "artifact_id": "manifest.rfdiffusion.motif.02",
+      "sha256": "ded00af1d93f19ab766c2716a8398be1399cd57e96e744fd5846dcf3d97b8966",
+      "size_bytes": 402,
+      "media_type": "application/vnd.fs2.scientific-manifest+json",
+      "compression": "none"
+    },
+    "parameters": {
+      "schema": "fs2-serve.nebius.ai/rfdiffusion-upstream-base-parameters/v1",
+      "shard_count": 3,
+      "base_seed": 9100,
+      "contigs": [
+        {"kind": "motif", "chain": "A", "start": 1, "end": 10},
+        {"kind": "generated", "minimum_length": 66, "maximum_length": 66}
+      ],
+      "hotspots": [{"chain": "A", "residue": 3}, {"chain": "A", "residue": 7}],
+      "diffusion_steps": 75,
+      "motif_rmsd_max_a": 0.5
+    },
+    "client_context": {"batch_id": "batch.rfdiffusion.02", "display_name": "motif scaffold"}
+  },
+  "input_manifest": {
+    "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+    "manifest_id": "manifest.rfdiffusion.motif.02",
+    "entries": [{
+      "name": "target_structure",
+      "semantic_type": "protein-structure-pdb/v1",
+      "artifact": {
+        "artifact_id": "artifact.rfdiffusion.target.1ubq",
+        "sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+        "size_bytes": 78570,
+        "media_type": "chemical/x-pdb",
+        "compression": "none"
+      }
+    }]
+  },
+  "admission": {
+    "runtime_image": "registry.invalid/fs2/rfdiffusion@sha256:e653448154ff6322e93f3b74607bb6e5d42c18b11b38feae30cf4541b275d155",
+    "operation_id": "operation.rfdiffusion.02",
+    "workload_id": "rfdiffusion-workload-02",
+    "attempt_id": "rfdiffusion-attempt-02",
+    "tenant_id": "cancer-research"
+  }
+}
