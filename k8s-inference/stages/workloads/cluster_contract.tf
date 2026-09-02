@@ -259,10 +259,6 @@ resource "terraform_data" "cluster_contract" {
       error_message = "The selected NIM models require ngc_api_key and nvcrio_dockerconfigjson; the full-catalog DCGM exporter independently requires nvcrio_dockerconfigjson."
     }
     precondition {
-      condition     = try(local.control_plane_release_pairs[var.control_plane_image.digest], "") == var.catalog_rollout_digest
-      error_message = "control_plane_image and catalog_rollout_digest are not an approved immutable release pair."
-    }
-    precondition {
       condition     = try(data.kubernetes_resource.envoyproxy_crd.object.metadata.name, "") == "envoyproxies.gateway.envoyproxy.io"
       error_message = "The foundation is missing the EnvoyProxy CRD from Envoy Gateway v1.8.3."
     }

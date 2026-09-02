@@ -32,7 +32,9 @@ TEST_APPLICATIONS = {
     "control_plane": {
         "repository": "registry.example.invalid/inference/control-plane",
         "digest": f"sha256:{'0' * 64}",
-        "catalog_rollout_digest": f"sha256:{'0' * 64}",
+        # Application and catalog are independently immutable tfvars inputs;
+        # deployment must not depend on a source-code digest-pair allowlist.
+        "catalog_rollout_digest": f"sha256:{'1' * 64}",
     },
     "admin_console": {
         "repository": "registry.example.invalid/inference/admin-console",
