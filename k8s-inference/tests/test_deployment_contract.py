@@ -1703,7 +1703,7 @@ class DeploymentContractTests(unittest.TestCase):
 
         self.assertTrue(infrastructure["enabled"])
         self.assertTrue(infrastructure["create_bucket"])
-        self.assertTrue(infrastructure["forbid_deletion"])
+        self.assertFalse(infrastructure["forbid_deletion"])
         self.assertEqual(infrastructure["versioning_policy"], "ENABLED")
         self.assertEqual(infrastructure["region"], region)
 
@@ -1752,22 +1752,23 @@ class DeploymentContractTests(unittest.TestCase):
         )
         infrastructure = outputs["deployment_contract"]["stages"]["infrastructure"]
 
-        # The model cache is disposable; results are not. They must never share
-        # a resource, a name, or a deletion policy.
+        # Both are disposable by default. What must never be shared is the
+        # resource itself, so a cache change cannot rotate or delete results.
         self.assertFalse(infrastructure["shared_cache"]["forbid_deletion"])
-        self.assertTrue(infrastructure["scientific_artifacts"]["forbid_deletion"])
+        self.assertFalse(infrastructure["scientific_artifacts"]["forbid_deletion"])
         self.assertNotIn(
             str(infrastructure["scientific_artifacts"]["bucket_name"]),
             json.dumps(infrastructure["shared_cache"]),
         )
+        self.assertNotIn("bucket_name", infrastructure["shared_cache"])
 
     def test_the_retention_flag_selects_the_bucket_lifecycle(self) -> None:
         """The flag must reach the resource, not only a document or a receipt."""
 
         cases = (
-            ({}, True, "retained"),
-            ({"forbid_deletion": False}, False, "disposable"),
-            ({"create_bucket": False}, True, "bound"),
+            ({}, False, "disposable"),
+            ({"forbid_deletion": True}, True, "retained"),
+            ({"create_bucket": False}, False, "bound"),
         )
         for index, (override, expected_flag, expected_lifecycle) in enumerate(cases):
             with self.subTest(lifecycle=expected_lifecycle):
@@ -1787,6 +1788,41 @@ class DeploymentContractTests(unittest.TestCase):
                 summary = outputs["effective_configuration"]["scientific_artifacts"]
                 self.assertEqual(infrastructure["forbid_deletion"], expected_flag)
                 self.assertEqual(summary["bucket_lifecycle"], expected_lifecycle)
+
+    def test_the_default_store_is_torn_down_with_the_run(self) -> None:
+        """No configuration should be able to block a teardown by default."""
+
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-artifact-teardown-test",
+            "target": self.catalog_target(),
+            "storage": self.scientific_storage(),
+        }
+        outputs = self._planned_outputs(
+            self._write_configuration("artifact-teardown", deployment), "artifact-teardown"
+        )
+        infrastructure = outputs["deployment_contract"]["stages"]["infrastructure"][
+            "scientific_artifacts"
+        ]
+        summary = outputs["effective_configuration"]["scientific_artifacts"]
+
+        self.assertTrue(infrastructure["enabled"])
+        self.assertFalse(infrastructure["forbid_deletion"])
+        self.assertEqual(summary["bucket_lifecycle"], "disposable")
+
+        # The shipped examples must not opt into blocking a teardown either.
+        for example in (
+            DEPLOY_ROOT / "terraform.tfvars.example",
+            DEPLOY_ROOT / "examples/scientific-artifacts.tfvars",
+        ):
+            with self.subTest(example=example.name):
+                # Scan settings only; the examples document the opt-in in prose.
+                body = "\n".join(
+                    line
+                    for line in example.read_text(encoding="utf-8").splitlines()
+                    if not line.lstrip().startswith("#")
+                )
+                self.assertNotIn("forbid_deletion", body)
 
     def test_an_invalid_scientific_store_is_rejected_before_any_cloud_plan(self) -> None:
         cases = (

@@ -57,7 +57,6 @@ run "enabled_records_one_regional_versioned_store" {
       enabled           = true
       bucket_name       = "fs2-scientific-artifacts-synthetic"
       create_bucket     = true
-      forbid_deletion   = true
       versioning_policy = "ENABLED"
       max_size_bytes    = 4398046511104
       region            = "us-north1"
@@ -85,10 +84,10 @@ run "enabled_records_one_regional_versioned_store" {
 
   assert {
     condition = (
-      terraform_data.scientific_artifacts_contract[0].input.forbid_deletion == true &&
-      terraform_data.scientific_artifacts_contract[0].input.bucket_lifecycle == "retained"
+      terraform_data.scientific_artifacts_contract[0].input.forbid_deletion == false &&
+      terraform_data.scientific_artifacts_contract[0].input.bucket_lifecycle == "disposable"
     )
-    error_message = "Results outlive the disposable cluster, so the bucket must default to retained."
+    error_message = "An enabled store must default to disposable so a teardown is never blocked."
   }
 
   assert {
@@ -214,26 +213,6 @@ run "a_cross_region_bucket_is_refused" {
   expect_failures = [terraform_data.scientific_artifacts_contract]
 }
 
-run "a_created_bucket_must_be_versioned" {
-  command = plan
-
-  plan_options {
-    target = [terraform_data.scientific_artifacts_contract]
-  }
-
-  variables {
-    scientific_artifacts = {
-      enabled           = true
-      bucket_name       = "fs2-scientific-artifacts-synthetic"
-      create_bucket     = true
-      versioning_policy = "DISABLED"
-      region            = "us-north1"
-    }
-  }
-
-  expect_failures = [terraform_data.scientific_artifacts_contract]
-}
-
 run "an_invalid_bucket_name_is_refused_before_any_plan" {
   command = plan
 
@@ -267,4 +246,25 @@ run "a_store_without_a_region_is_refused_before_any_plan" {
   }
 
   expect_failures = [var.scientific_artifacts]
+}
+
+run "no_default_configuration_selects_the_protected_bucket" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.scientific_artifacts_contract]
+  }
+
+  variables {
+    scientific_artifacts = {
+      enabled     = true
+      bucket_name = "fs2-scientific-artifacts-synthetic"
+      region      = "us-north1"
+    }
+  }
+
+  assert {
+    condition     = local.scientific_artifacts_retained == false
+    error_message = "Retention must be an explicit opt-in; no default may block a teardown."
+  }
 }

@@ -139,6 +139,7 @@ class ScientificArtifactStoreGraphTests(GpuBootstrapGraphTests):
     def test_the_permit_waits_for_the_bucket_and_the_writer_group(self) -> None:
         permit = "[root] nebius_iam_v1_access_permit.scientific_artifacts_writer (expand)"
         for resource in (
+            "nebius_storage_v1_bucket.scientific_artifacts_disposable",
             "nebius_storage_v1_bucket.scientific_artifacts_retained",
             "nebius_iam_v1_group.scientific_artifacts_writers",
         ):
@@ -149,6 +150,7 @@ class ScientificArtifactStoreGraphTests(GpuBootstrapGraphTests):
         target = "[root] terraform_data.target_contract (expand)"
         receipt = "[root] terraform_data.scientific_artifacts_contract (expand)"
         for resource in (
+            "nebius_storage_v1_bucket.scientific_artifacts_disposable",
             "nebius_storage_v1_bucket.scientific_artifacts_retained",
             "nebius_iam_v1_service_account.scientific_artifacts_writer",
             "nebius_iam_v1_group.scientific_artifacts_writers",
@@ -161,6 +163,7 @@ class ScientificArtifactStoreGraphTests(GpuBootstrapGraphTests):
     def test_the_result_store_is_independent_of_the_disposable_model_cache(self) -> None:
         cache = "[root] nebius_compute_v1_filesystem.cache (expand)"
         for resource in (
+            "nebius_storage_v1_bucket.scientific_artifacts_disposable",
             "nebius_storage_v1_bucket.scientific_artifacts_retained",
             "nebius_iam_v2_access_key.scientific_artifacts",
         ):

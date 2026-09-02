@@ -53,8 +53,10 @@ SCIENTIFIC_ARTIFACT_BUCKETS = {
     "bound": frozenset(),
 }
 
+# The default retention mode, so the default address contract is the deletable
+# bucket. "retained" is only reached when an operator opts in.
 SCIENTIFIC_ARTIFACT_MANAGED_ADDRESSES = (
-    SCIENTIFIC_ARTIFACT_SHARED_ADDRESSES | SCIENTIFIC_ARTIFACT_BUCKETS["retained"]
+    SCIENTIFIC_ARTIFACT_SHARED_ADDRESSES | SCIENTIFIC_ARTIFACT_BUCKETS["disposable"]
 )
 
 REQUIRED_MANAGED_ADDRESSES = (

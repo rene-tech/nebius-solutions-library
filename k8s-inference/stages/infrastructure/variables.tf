@@ -921,7 +921,7 @@ variable "scientific_artifacts" {
     enabled              = optional(bool, false)
     bucket_name          = optional(string)
     create_bucket        = optional(bool, true)
-    forbid_deletion      = optional(bool, true)
+    forbid_deletion      = optional(bool, false)
     versioning_policy    = optional(string, "ENABLED")
     max_size_bytes       = optional(number)
     secret_delivery_mode = optional(string, "INLINE")

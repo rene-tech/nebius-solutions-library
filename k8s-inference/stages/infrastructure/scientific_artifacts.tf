@@ -1,11 +1,15 @@
-# Durable scientific result storage.
+# Scientific result storage.
 #
-# This is intentionally a distinct bucket and a distinct identity from the
-# model cache and the reference-data plane. That cache is rebuildable from
-# upstream and is disposable with the run; these are tenant results held under
-# a retention contract, so the bucket defaults to versioned and undeletable and
-# survives a cluster teardown. Set create_bucket = false to bind an existing
-# shared artifact plane instead of provisioning a second one.
+# This is a distinct bucket and a distinct identity from the model cache and
+# the reference-data plane, so the two are never destroyed or rotated together.
+# It is nonetheless disposable with the run by default, like everything else
+# this stage owns: a destroy removes it.
+#
+# Two opt-in ways to keep results beyond the run, neither of them the default:
+# forbid_deletion = true marks the bucket prevent_destroy, which makes a
+# destroy fail until the flag is cleared; create_bucket = false binds a bucket
+# this stage does not own, which keeps results outside the run's lifecycle
+# without blocking teardown at all.
 
 locals {
   scientific_artifacts_enabled = var.scientific_artifacts.enabled
@@ -55,18 +59,13 @@ resource "terraform_data" "scientific_artifacts_contract" {
       condition     = var.scientific_artifacts.region == local.selected_target.region
       error_message = "Scientific artifact storage must be regional with the cluster; finalize streams every stored object back to verify its digest."
     }
-
-    precondition {
-      condition     = !var.scientific_artifacts.create_bucket || var.scientific_artifacts.versioning_policy == "ENABLED"
-      error_message = "A Terraform-created scientific artifact bucket must be versioned; committed results are immutable evidence."
-    }
   }
 }
 
-# forbid_deletion = true. Terraform refuses to destroy this bucket, so tearing
-# down the disposable cluster fails loudly rather than deleting tenant results.
-# Releasing it is deliberate: set forbid_deletion = false and apply, or remove
-# it from state, before the stage can be destroyed.
+# Opt-in only, selected by forbid_deletion = true. Terraform refuses to destroy
+# this bucket, which means a stage teardown fails until the operator clears the
+# flag and applies, or removes the bucket from state. That is a deliberate
+# trade the operator chooses; it is not the default and is not required.
 resource "nebius_storage_v1_bucket" "scientific_artifacts_retained" {
   count = local.scientific_artifacts_retained ? 1 : 0
 
@@ -93,8 +92,8 @@ resource "nebius_storage_v1_bucket" "scientific_artifacts_retained" {
   ]
 }
 
-# forbid_deletion = false. The bucket is owned by the run and is destroyed with
-# it, which is only appropriate where results are reproducible scratch.
+# The default. The bucket is owned by the run and is destroyed with it, so a
+# teardown of this stage is complete and leaves nothing behind.
 resource "nebius_storage_v1_bucket" "scientific_artifacts_disposable" {
   count = local.scientific_artifacts_disposable ? 1 : 0
 

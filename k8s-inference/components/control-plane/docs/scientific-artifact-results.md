@@ -137,13 +137,13 @@ projected read-only into the pod. They are never passed as environment values.
 default-deny NetworkPolicy. Leave it empty and finalize cannot reach the
 gateway, because presigning is local but digest verification is not.
 
-The bucket is deliberately separate from the reference-data model cache. That
-cache is rebuildable from upstream and is labelled disposable with the run;
-these are tenant results under a retention contract, so the result bucket is
-versioned and, by default, carries `prevent_destroy`. A cluster teardown
-therefore fails on that bucket rather than deleting results. That is a
-Terraform guarantee only: the object-storage API has no deletion-protection
-field, so a bucket removed outside Terraform is still gone.
+The bucket is separate from the reference-data model cache, so the two are
+never destroyed or rotated together, but it is disposable with the run by
+default and a teardown removes it. Keeping results beyond the run is opt-in:
+`forbid_deletion = true` marks the bucket `prevent_destroy`, at the cost of
+making a teardown fail until the flag is cleared, and `create_bucket = false`
+binds a bucket Terraform does not own. Neither protects the cloud object
+itself, because the object-storage API has no deletion-protection field.
 
 ## Authorization
 

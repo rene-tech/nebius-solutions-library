@@ -245,16 +245,17 @@ variable "deployment" {
         forbid_deletion  = optional(bool, false)
       }))
 
-      # Durable scientific result storage. This is deliberately a separate
-      # bucket from the reference-data model cache: that cache is rebuildable
-      # from upstream and is torn down with the run, whereas these are tenant
-      # results held under a retention contract. Set create_bucket = false to
-      # bind an already-provisioned shared artifact plane instead.
+      # Scientific result storage. It is a separate bucket from the
+      # reference-data model cache, but it is disposable with the run like
+      # everything else this stage owns. Set forbid_deletion = true only when
+      # results must survive a teardown; that marks the bucket prevent_destroy,
+      # so a destroy then fails until the flag is cleared. Set
+      # create_bucket = false to bind an already-provisioned bucket instead.
       scientific_artifacts = optional(object({
         enabled              = optional(bool, false)
         bucket_name          = optional(string)
         create_bucket        = optional(bool, true)
-        forbid_deletion      = optional(bool, true)
+        forbid_deletion      = optional(bool, false)
         versioning           = optional(string, "ENABLED")
         max_size_gib         = optional(number)
         retention_days       = optional(number, 90)

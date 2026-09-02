@@ -603,10 +603,30 @@ class ScientificArtifactStoreContractTests(unittest.TestCase):
             self.terraform,
         )
 
-    def test_results_outlive_the_disposable_cluster(self) -> None:
-        # The model cache is explicitly deletable; results must not inherit that.
-        self.assertIn("forbid_deletion      = optional(bool, true)", self.terraform)
+    def test_the_store_is_disposable_with_the_run_by_default(self) -> None:
+        # Retention is an operator choice, never an imposed default.
+        self.assertIn("forbid_deletion      = optional(bool, false)", self.terraform)
         self.assertIn('versioning_policy    = optional(string, "ENABLED")', self.terraform)
+
+    def test_no_default_configuration_can_block_a_teardown(self) -> None:
+        artifacts = (ROOT / "scientific_artifacts.tf").read_text(encoding="utf-8")
+        # Scan the executable configuration; the comments explain the opt-in.
+        executable = "\n".join(
+            line for line in artifacts.splitlines() if not line.lstrip().startswith("#")
+        )
+        # prevent_destroy exists exactly once, on the opt-in resource whose
+        # count is false unless the operator sets the flag.
+        self.assertEqual(executable.count("prevent_destroy"), 1)
+        protected = artifacts.index("prevent_destroy = true")
+        guard = artifacts.rindex("count = local.scientific_artifacts_retained ? 1 : 0", 0, protected)
+        self.assertLess(guard, protected)
+        self.assertIn(
+            "scientific_artifacts_retained   = local.scientific_artifacts_created "
+            "&& var.scientific_artifacts.forbid_deletion",
+            artifacts,
+        )
+        # Nothing else in the stage forces a versioning or retention policy.
+        self.assertNotIn("must be versioned", artifacts)
 
     def test_the_retention_flag_reaches_the_bucket_lifecycle(self) -> None:
         """The flag must change the resource, not only a receipt or a document.
@@ -642,7 +662,10 @@ class ScientificArtifactStoreContractTests(unittest.TestCase):
             artifacts,
         )
         # ignore_changes alone protects nothing; it must not be the only guard.
-        self.assertEqual(artifacts.count("prevent_destroy = true"), 1)
+        executable = "\n".join(
+            line for line in artifacts.splitlines() if not line.lstrip().startswith("#")
+        )
+        self.assertEqual(executable.count("prevent_destroy = true"), 1)
 
     def test_the_writer_identity_is_separate_and_bucket_scoped(self) -> None:
         self.assertIn(

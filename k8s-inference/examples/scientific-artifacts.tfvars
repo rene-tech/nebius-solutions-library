@@ -42,12 +42,14 @@ deployment = {
       enabled     = true
       bucket_name = "fs2-scientific-artifacts-example"
 
-      # Results outlive the run that produced them, so the bucket is versioned
-      # and protected from deletion even when the disposable cluster goes away.
-      create_bucket   = true
-      forbid_deletion = true
-      versioning      = "ENABLED"
-      max_size_gib    = 4096
+      # Disposable with the run, like everything else this stage owns.
+      # Set forbid_deletion = true to mark the bucket prevent_destroy when
+      # results must survive a teardown; a destroy then fails until it is
+      # cleared. Binding an existing bucket with create_bucket = false keeps
+      # results outside the run's lifecycle without blocking teardown at all.
+      create_bucket = true
+      versioning    = "ENABLED"
+      max_size_gib  = 4096
 
       retention_days     = 90
       handle_ttl_seconds = 600
