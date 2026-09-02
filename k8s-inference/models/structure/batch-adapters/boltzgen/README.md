@@ -49,7 +49,9 @@ The collector reads upstream `final_designs_metrics_<budget>.csv` and the real
 offline validator checks immutable bytes, per-shard budget accounting,
 canonical sequences, composition bias, interface confidence, refold RMSD,
 unresolved-residue columns when emitted, and non-degenerate two-chain mmCIF
-structures. Passing it does not qualify the model.
+structures. Every ranking `file_name` is bound to one path-free structure
+artifact identity, so an unrelated structure cannot satisfy the count alone.
+Passing it does not qualify the model.
 
 Run the focused suite from `components/control-plane`:
 
