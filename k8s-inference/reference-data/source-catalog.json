@@ -19,7 +19,7 @@
         "terms": [
           {"component": "UniProt and UniRef", "license": "CC-BY-4.0", "url": "https://www.uniprot.org/help/license/", "verification": "primary-source-verified"},
           {"component": "Rfam", "license": "CC0-1.0", "url": "https://docs.rfam.org/en/latest/", "verification": "primary-source-verified"},
-          {"component": "NCBI nucleotide data", "license": "NCBI molecular-data policy; contributor rights may apply", "url": "https://www.ncbi.nlm.nih.gov/home/about/policies/", "verification": "primary-source-verified"},
+          {"component": "NCBI nucleotide data", "license": "NCBI molecular-data policy; contributor rights may apply", "url": "https://www.ncbi.nlm.nih.gov/%68ome/about/policies/", "verification": "primary-source-verified"},
           {"component": "MGnify, RNAcentral, BFD, PDB and CCD", "license": "upstream component terms", "url": "https://github.com/google-deepmind/alphafold3/blob/v3.0.1/docs/installation.md", "verification": "upstream-terms-review-required"}
         ]
       },

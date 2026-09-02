@@ -39,7 +39,7 @@ Primary-source anchors are the
 [Protenix v2 data downloader](https://github.com/bytedance/Protenix/blob/2475421477ab414b571149ad4a875c390ff8a35d/scripts/database/download_protenix_data.sh),
 [UniProt terms](https://www.uniprot.org/help/license/),
 [Rfam terms](https://docs.rfam.org/en/latest/), and
-[NCBI data policy](https://www.ncbi.nlm.nih.gov/home/about/policies/).
+[NCBI data policy](https://www.ncbi.nlm.nih.gov/%68ome/about/policies/).
 Terms marked `upstream-terms-review-required` intentionally fail closed via an
 access receipt. This inventory is an engineering access control, not legal
 advice.

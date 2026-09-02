@@ -874,9 +874,9 @@
       },
       "code": {
         "repository": "https://github.com/cytokineking/FreeBindCraft",
-        "revision": "main branch head at retrieval",
-        "revision_kind": "commit",
-        "revision_label": "Onboarding must resolve and pin an exact commit; the fork publishes no release tags matching upstream.",
+        "revision": "28c43fc48942eebd7918f504e9812c5c17bb3411",
+        "revision_kind": "release-tag-and-commit",
+        "revision_label": "tag v1.0.5; the default master branch was 8b8d4c4627da06f084f46b7007450048fe3ca22f at verification",
         "package": null,
         "license": "MIT, an unmodified copy of the BindCraft licence",
         "commercial_use": "permitted"
@@ -937,7 +937,7 @@
       "sources": [
         {
           "url": "https://github.com/cytokineking/FreeBindCraft",
-          "established": "The fork's existence, its MIT licence, the install-time and runtime no-PyRosetta bypass, the substitution table, the hardcoded placeholder metric values, the rejection-attribution analysis showing AlphaFold2 metrics drive over ninety percent of filtering, and the authors' own statement that wet-lab equivalence is untested."
+          "established": "The fork's existence, its v1.0.5 tag at commit 28c43fc48942eebd7918f504e9812c5c17bb3411, its MIT licence, the install-time and runtime no-PyRosetta bypass, the substitution table, the hardcoded placeholder metric values, the rejection-attribution analysis showing AlphaFold2 metrics drive over ninety percent of filtering, and the authors' own statement that wet-lab equivalence is untested."
         }
       ]
     },

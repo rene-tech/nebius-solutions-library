@@ -73,7 +73,9 @@ flag to disable it. The University of Washington CoMotion express licensing
 portal issues PyRosetta licences free of charge to academic, non-profit and
 government entities, and a PyRosetta licence additionally requires a Rosetta
 licence, so both must be requested. Until they are issued, run the FreeBindCraft
-lane instead.
+lane instead. That alternative is pinned to its published `v1.0.5` tag at
+commit `28c43fc48942eebd7918f504e9812c5c17bb3411`; it is never presented as the
+native BindCraft implementation.
 
 **AlphaFold3 needs the institution to accept the parameter terms itself.**
 DeepMind removed the approval form in July 2026, and this task confirmed the
