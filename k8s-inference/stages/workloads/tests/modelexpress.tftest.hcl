@@ -312,6 +312,15 @@ run "managed_server_digest_changes_client_binding" {
     )
     error_message = "Changing the managed coordinator digest must change the exact ModelExpress client binding digest."
   }
+
+  assert {
+    condition = (
+      length(local.model_controller_qualifications["qwen3-8b"].fastStartRuntimeContracts) == 0 &&
+      local.model_controller_pool_envelope["nebius-b300-preemptible-1x"].startupScenario == "fresh-node-zero-pod" &&
+      length(local.model_controller_pool_envelope["nebius-b300-preemptible-1x"].fastStartEnvironmentBindings) == 0
+    )
+    error_message = "Missing observed environment/measurement inputs must fail closed without inventing a fast-start runtime contract."
+  }
 }
 
 run "globally_disabled_creates_no_modelexpress_resources" {

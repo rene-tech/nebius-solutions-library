@@ -22,20 +22,29 @@ from aggregate_fast_start_benchmark import (
 SUPPORTED_CACHE_TIERS = {"Disabled", "ObjectStore", "SharedFilesystem", "NodeLocal"}
 
 
-def project_receipt(receipt: dict[str, Any], *, valid_for_days: int) -> tuple[str, dict[str, Any]]:
+def project_receipt(
+    receipt: dict[str, Any], *, valid_for_days: int
+) -> tuple[str, dict[str, Any]]:
     """Return one backend ``FastStartEvidence`` document from a valid receipt."""
 
     validate_receipt(receipt)
     compatibility = receipt["compatibility_tuple"]
     cache_tier = compatibility["cache_tier"]
     if cache_tier not in SUPPORTED_CACHE_TIERS:
-        raise FastStartEvidenceError(f"cache tier {cache_tier!r} has no ModelDeployment CacheTier representation")
+        raise FastStartEvidenceError(
+            f"cache tier {cache_tier!r} has no ModelDeployment CacheTier representation"
+        )
     generated_at = _timestamp(receipt["generated_at"])
+    bound = receipt["schema"] == "fs2-serve.nebius.ai/fast-start-benchmark-receipt/v2"
+    identity = receipt.get("evidence_identity") if bound else None
+    identity_digest = receipt.get("evidence_identity_digest") if bound else None
     samples = [
         {
             "observedAt": attempt["observed_at"],
             "modelStartSeconds": (
-                attempt["durations_seconds"]["gpu_capacity_available_to_ready"] if attempt["status"] == "PASS" else None
+                attempt["durations_seconds"]["gpu_capacity_available_to_ready"]
+                if attempt["status"] == "PASS"
+                else None
             ),
             "capacityWaitSeconds": attempt["durations_seconds"]["capacity_wait"],
             "endToEndSeconds": attempt["durations_seconds"]["activation_to_ready"],
@@ -44,10 +53,17 @@ def project_receipt(receipt: dict[str, Any], *, valid_for_days: int) -> tuple[st
     ]
     evidence = {
         "receiptDigest": f"sha256:{receipt['receipt_digest']}",
+        "identityState": "Bound" if bound else "LegacyUnbound",
         "mechanism": compatibility["mechanism"],
-        "mechanismConfigDigest": compatibility.get("mechanism_config_digest"),
+        "mechanismConfigDigest": (
+            identity["cache"]["mechanismConfigDigest"]
+            if isinstance(identity, dict)
+            else compatibility.get("mechanism_config_digest")
+        ),
         "compatibilityTupleDigest": f"sha256:{receipt['compatibility_tuple_digest']}",
-        "compatibilityTupleComplete": receipt["qualification"]["compatibility_tuple_complete"],
+        "compatibilityTupleComplete": receipt["qualification"][
+            "compatibility_tuple_complete"
+        ],
         "measurementBasis": "CapacityAvailableToSemanticReady",
         "acceleratorClass": compatibility["accelerator_class"],
         "poolRef": compatibility["pool_id"],
@@ -58,12 +74,24 @@ def project_receipt(receipt: dict[str, Any], *, valid_for_days: int) -> tuple[st
         "cacheTier": cache_tier,
         "snapshotDigest": compatibility["snapshot_digest"],
         "samples": samples,
-        "validUntil": (generated_at + timedelta(days=valid_for_days)).isoformat().replace("+00:00", "Z"),
+        "validUntil": (generated_at + timedelta(days=valid_for_days))
+        .isoformat()
+        .replace("+00:00", "Z"),
     }
+    if bound:
+        evidence.update(
+            {
+                "identityDigest": identity_digest,
+                "identity": identity,
+                "capacityType": compatibility["capacity_type"],
+            }
+        )
     return compatibility["model_id"], evidence
 
 
-def project_receipts(receipts: Sequence[dict[str, Any]], *, valid_for_days: int) -> dict[str, list[dict[str, Any]]]:
+def project_receipts(
+    receipts: Sequence[dict[str, Any]], *, valid_for_days: int
+) -> dict[str, list[dict[str, Any]]]:
     if not 1 <= valid_for_days <= 365:
         raise FastStartEvidenceError("valid-for-days must be between 1 and 365")
     projected: dict[str, list[dict[str, Any]]] = {}
@@ -82,9 +110,13 @@ def _write_new(path: Path, value: dict[str, Any]) -> None:
     raw = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
+        descriptor = os.open(
+            path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600
+        )
     except OSError as error:
-        raise FastStartEvidenceError(f"output already exists or is unavailable: {path}") from error
+        raise FastStartEvidenceError(
+            f"output already exists or is unavailable: {path}"
+        ) from error
     with os.fdopen(descriptor, "wb") as stream:
         stream.write(raw)
 
@@ -105,7 +137,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise FastStartEvidenceError("every receipt must be a JSON object")
         projected = project_receipts(values, valid_for_days=arguments.valid_for_days)
         _write_new(arguments.output, projected)
-        print(json.dumps({"models": sorted(projected), "receipts": len(values)}, sort_keys=True))
+        print(
+            json.dumps(
+                {"models": sorted(projected), "receipts": len(values)}, sort_keys=True
+            )
+        )
         return 0
     except FastStartEvidenceError as error:
         print(f"fast-start evidence projection failed: {error}", file=sys.stderr)

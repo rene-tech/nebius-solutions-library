@@ -636,6 +636,7 @@ class ModelQualification(KubernetesModel):
             raise ValueError("ModelExpress is qualified only for the explicit vLLM runtime profile")
         runtime_contract_keys = {
             (
+                item.pool_ref,
                 item.runtime.source_revision,
                 item.runtime.artifact_manifest_digest,
                 item.runtime.runtime_image,

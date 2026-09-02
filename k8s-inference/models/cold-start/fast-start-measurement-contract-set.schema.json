@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schemas/fast-start-measurement-contract-set.v1.json",
+  "title": "Fast-start measurement contract set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "models"],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/fast-start-measurement-contract-set/v1"
+    },
+    "models": {
+      "type": "object",
+      "maxProperties": 512,
+      "propertyNames": {
+        "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$",
+        "maxLength": 128
+      },
+      "additionalProperties": {
+        "$ref": "fast-start-measurement-contract.schema.json"
+      }
+    }
+  }
+}

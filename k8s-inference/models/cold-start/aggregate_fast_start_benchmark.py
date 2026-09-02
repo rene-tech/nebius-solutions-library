@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -18,11 +19,23 @@ from typing import Any, Iterable, Sequence
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-
 ROOT = Path(__file__).resolve().parent
 SCHEMA_PATH = ROOT / "fast-start-benchmark-receipt.schema.json"
-RECEIPT_SCHEMA = "fs2-serve.nebius.ai/fast-start-benchmark-receipt/v1"
-ATTEMPT_SCHEMA = "fs2-serve.nebius.ai/fast-start-benchmark-attempt/v1"
+_IDENTITY_SPEC = importlib.util.spec_from_file_location(
+    "_fs2_fast_start_identity",
+    ROOT / "fast_start_identity.py",
+)
+if _IDENTITY_SPEC is None or _IDENTITY_SPEC.loader is None:
+    raise RuntimeError("fast-start identity module is unavailable")
+_IDENTITY = importlib.util.module_from_spec(_IDENTITY_SPEC)
+_IDENTITY_SPEC.loader.exec_module(_IDENTITY)
+IdentityError = _IDENTITY.IdentityError
+canonical_identity_digest = _IDENTITY.canonical_digest
+validate_runtime_evidence_identity = _IDENTITY.validate_runtime_evidence_identity
+RECEIPT_SCHEMA_V1 = "fs2-serve.nebius.ai/fast-start-benchmark-receipt/v1"
+RECEIPT_SCHEMA_V2 = "fs2-serve.nebius.ai/fast-start-benchmark-receipt/v2"
+ATTEMPT_SCHEMA_V1 = "fs2-serve.nebius.ai/fast-start-benchmark-attempt/v1"
+ATTEMPT_SCHEMA_V2 = "fs2-serve.nebius.ai/fast-start-benchmark-attempt/v2"
 MINIMUM_EXPLORATORY_ATTEMPTS = 3
 MINIMUM_QUALIFICATION_ATTEMPTS = 20
 PERFORMANCE_TARGETS: dict[str, float | None] = {
@@ -178,10 +191,62 @@ def validate_attempt(attempt: dict[str, Any]) -> None:
     ):
         raise FastStartEvidenceError("runtime image reference and digest differ")
     mechanism_digest = compatibility_tuple.get("mechanism_config_digest")
-    if (compatibility_tuple["mechanism"] == "modelexpress") != (mechanism_digest is not None):
+    if (compatibility_tuple["mechanism"] == "modelexpress") != (
+        mechanism_digest is not None
+    ):
         raise FastStartEvidenceError(
             "modelexpress requires one mechanism_config_digest and other mechanisms must omit it"
         )
+    if attempt["schema"] == ATTEMPT_SCHEMA_V2:
+        identity = attempt["evidence_identity"]
+        try:
+            validate_runtime_evidence_identity(identity)
+        except IdentityError as error:
+            raise FastStartEvidenceError(
+                f"attempt runtime evidence identity invalid: {error}"
+            ) from None
+        if attempt["evidence_identity_digest"] != canonical_identity_digest(identity):
+            raise FastStartEvidenceError(
+                "attempt runtime evidence identity digest mismatch"
+            )
+        runtime = identity["runtime"]
+        placement = identity["placement"]
+        cache = identity["cache"]
+        measurement = identity["measurement"]
+        duplicated = {
+            "model_id": runtime["modelRef"],
+            "model_content_digest": runtime["modelContentDigest"],
+            "artifact_manifest_digest": runtime["artifactManifestDigest"],
+            "runtime_image_ref": runtime["runtimeImage"],
+            "runtime_template_digest": runtime["templateDigest"],
+            "runtime_argv_digest": runtime["argvDigest"].removeprefix("sha256:"),
+            "runtime_environment_digest": runtime["environmentDigest"].removeprefix(
+                "sha256:"
+            ),
+            "accelerator_class": placement["acceleratorClass"],
+            "gpu_count": placement["acceleratorsPerReplica"],
+            "capacity_state": placement["startupScenario"],
+            "cache_tier": cache["tier"],
+            "mechanism": cache["mechanism"],
+            "snapshot_digest": cache["snapshotDigest"],
+            "payload_digest": measurement["payloadDigest"].removeprefix("sha256:"),
+            "interface_protocol": measurement["protocol"],
+            "endpoint_path": measurement["endpointPath"],
+            "streaming": measurement["streaming"],
+            "semantic_validator_digest": measurement[
+                "semanticValidatorDigest"
+            ].removeprefix("sha256:"),
+            "benchmark_client_digest": measurement[
+                "benchmarkClientDigest"
+            ].removeprefix("sha256:"),
+            "client_placement": measurement["clientPlacement"],
+        }
+        if any(
+            compatibility_tuple[field] != value for field, value in duplicated.items()
+        ):
+            raise FastStartEvidenceError(
+                "attempt identity and compatibility tuple differ"
+            )
 
     timestamps = attempt["timestamps"]
     durations = attempt["durations_seconds"]
@@ -468,6 +533,26 @@ def build_receipt(
     if len(raw_digests) != len(set(raw_digests)):
         raise FastStartEvidenceError("raw attempt artifact digests must be unique")
 
+    attempt_schemas = {attempt["schema"] for attempt in ordered}
+    if len(attempt_schemas) != 1:
+        raise FastStartEvidenceError("v1 and v2 attempts cannot be combined")
+    attempt_schema = next(iter(attempt_schemas))
+    if attempt_schema not in {ATTEMPT_SCHEMA_V1, ATTEMPT_SCHEMA_V2}:
+        raise FastStartEvidenceError("attempt schema is unsupported")
+    identity: dict[str, Any] | None = None
+    identity_digest: str | None = None
+    if attempt_schema == ATTEMPT_SCHEMA_V2:
+        identities = {
+            canonical_digest(attempt["evidence_identity"]) for attempt in ordered
+        }
+        identity_digests = {attempt["evidence_identity_digest"] for attempt in ordered}
+        if len(identities) != 1 or len(identity_digests) != 1:
+            raise FastStartEvidenceError(
+                "attempt runtime evidence identities are not comparable"
+            )
+        identity = ordered[0]["evidence_identity"]
+        identity_digest = ordered[0]["evidence_identity_digest"]
+
     tuple_digest = ordered[0]["compatibility_tuple_digest"]
     compatibility_tuple = ordered[0]["compatibility_tuple"]
     requested_level = ordered[0]["requested_level"]
@@ -550,7 +635,9 @@ def build_receipt(
     _timestamp(generated_at)
 
     receipt: dict[str, Any] = {
-        "schema": RECEIPT_SCHEMA,
+        "schema": RECEIPT_SCHEMA_V2
+        if attempt_schema == ATTEMPT_SCHEMA_V2
+        else RECEIPT_SCHEMA_V1,
         "receipt_digest": "0" * 64,
         "generated_at": generated_at,
         "status": "PASS" if not failed else "FAIL",
@@ -581,6 +668,9 @@ def build_receipt(
             compatibility_tuple_complete,
         ),
     }
+    if identity is not None and identity_digest is not None:
+        receipt["evidence_identity"] = identity
+        receipt["evidence_identity_digest"] = identity_digest
     unsigned = dict(receipt)
     unsigned.pop("receipt_digest")
     receipt["receipt_digest"] = canonical_digest(unsigned)

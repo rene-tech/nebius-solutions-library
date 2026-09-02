@@ -185,8 +185,9 @@ class FastStartEnvironmentBinding(KubernetesModel):
 
 
 class FastStartRuntimeContract(KubernetesModel):
-    """Terraform-owned expected identity components for one exact runtime."""
+    """Terraform-owned expected identity components for one exact pool render."""
 
+    pool_ref: str = Field(min_length=1, max_length=128)
     runtime: RuntimeContractIdentity
     storage_contract_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
     measurement: RuntimeMeasurementIdentity

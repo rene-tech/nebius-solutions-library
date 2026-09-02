@@ -57,7 +57,7 @@ NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
 STORAGE_CONTRACT_DIGEST = digest("5")
 
 
-def runtime_contract(spec: ModelDeploymentSpec) -> FastStartRuntimeContract:
+def runtime_contract(spec: ModelDeploymentSpec, pool_ref: str = "pool-a") -> FastStartRuntimeContract:
     runtime_payload = {
         "schema": RUNTIME_CONTRACT_SCHEMA,
         "modelRef": spec.model_ref,
@@ -89,6 +89,7 @@ def runtime_contract(spec: ModelDeploymentSpec) -> FastStartRuntimeContract:
         {**measurement_payload, "contractDigest": canonical_digest(measurement_payload)}
     )
     return FastStartRuntimeContract(
+        pool_ref=pool_ref,
         runtime=runtime,
         storage_contract_digest=STORAGE_CONTRACT_DIGEST,
         measurement=measurement,
@@ -127,7 +128,9 @@ def qualify_for_fast_start(installed: InfrastructureEnvelope) -> InfrastructureE
         for key, pool in installed.pools.items()
     }
     qualifications = {
-        key: item.model_copy(update={"fast_start_runtime_contracts": [runtime_contract(base_spec)]})
+        key: item.model_copy(
+            update={"fast_start_runtime_contracts": [runtime_contract(base_spec, pool_ref) for pool_ref in pools]}
+        )
         for key, item in installed.qualifications.items()
     }
     return installed.model_copy(update={"pools": pools, "qualifications": qualifications})
@@ -191,7 +194,7 @@ def evidence(
     )
     identity_state = EvidenceIdentityState(values.get("identity_state", EvidenceIdentityState.BOUND))
     if identity_state is not EvidenceIdentityState.LEGACY_UNBOUND:
-        contract = runtime_contract(spec)
+        contract = runtime_contract(spec, pool.pool_id)
         runtime_payload = contract.runtime.model_dump(
             mode="json",
             by_alias=True,

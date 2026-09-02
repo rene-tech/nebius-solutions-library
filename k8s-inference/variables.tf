@@ -114,15 +114,17 @@ variable "deployment" {
     }), {})
 
     dynamic_models = optional(object({
-      enabled                           = optional(bool, false)
-      writes_enabled                    = optional(bool, false)
-      workload_owner                    = optional(string, "terraform")
-      bootstrap_model_ids               = optional(set(string), [])
-      fresh_install                     = optional(bool, false)
-      handoff_receipt                   = optional(string)
-      fast_start_evidence_file          = optional(string)
-      fast_start_wait_second_value      = optional(number, 0.01)
-      fast_start_mechanism_hourly_costs = optional(map(number), {})
+      enabled                                    = optional(bool, false)
+      writes_enabled                             = optional(bool, false)
+      workload_owner                             = optional(string, "terraform")
+      bootstrap_model_ids                        = optional(set(string), [])
+      fresh_install                              = optional(bool, false)
+      handoff_receipt                            = optional(string)
+      fast_start_evidence_file                   = optional(string)
+      fast_start_environment_qualifications_file = optional(string)
+      fast_start_measurement_contracts_file      = optional(string)
+      fast_start_wait_second_value               = optional(number, 0.01)
+      fast_start_mechanism_hourly_costs          = optional(map(number), {})
       priority_classes = optional(map(number), {
         interactive = 100
         standard    = 0
@@ -602,6 +604,12 @@ variable "deployment" {
         startswith(pathexpand(var.deployment.dynamic_models.fast_start_evidence_file), "/") &&
         can(jsondecode(file(pathexpand(var.deployment.dynamic_models.fast_start_evidence_file))))
       ) &&
+      alltrue([
+        for path in [
+          var.deployment.dynamic_models.fast_start_environment_qualifications_file,
+          var.deployment.dynamic_models.fast_start_measurement_contracts_file,
+        ] : path == null ? true : startswith(pathexpand(path), "/") && can(jsondecode(file(pathexpand(path))))
+      ]) &&
       var.deployment.dynamic_models.fast_start_wait_second_value >= 0 &&
       var.deployment.dynamic_models.fast_start_wait_second_value <= 1000000 &&
       length(var.deployment.dynamic_models.fast_start_mechanism_hourly_costs) <= 128 &&
@@ -611,7 +619,7 @@ variable "deployment" {
       ]),
       false,
     )
-    error_message = "models.selection must be profile or explicit; explicit IDs must belong to the profile; fast-start evidence must be readable JSON at an absolute path; and bounded economic inputs must be valid."
+    error_message = "models.selection must be profile or explicit; explicit IDs must belong to the profile; fast-start evidence and qualification contracts must be readable JSON at absolute paths; and bounded economic inputs must be valid."
   }
 
   validation {

@@ -6,14 +6,132 @@ locals {
     var.model_controller.fast_start_evidence_file == null ? {} :
     jsondecode(file(pathexpand(var.model_controller.fast_start_evidence_file)))
   )
+  # Environment qualifications are generated from an observed node/runtime
+  # probe and measurement contracts are generated from the exact benchmark
+  # payload/client. They are explicit files because Terraform must never invent
+  # a driver, CUDA, GPU product, storage path, or semantic readiness contract.
+  model_controller_fast_start_environment_qualifications = (
+    var.model_controller.fast_start_environment_qualifications_file == null ? {
+      schema   = "fs2-serve.nebius.ai/runtime-environment-qualification-set/v1"
+      bindings = []
+      } : jsondecode(file(pathexpand(
+        var.model_controller.fast_start_environment_qualifications_file
+    )))
+  )
+  model_controller_fast_start_measurement_contracts = (
+    var.model_controller.fast_start_measurement_contracts_file == null ? {
+      schema = "fs2-serve.nebius.ai/fast-start-measurement-contract-set/v1"
+      models = {}
+      } : jsondecode(file(pathexpand(
+        var.model_controller.fast_start_measurement_contracts_file
+    )))
+  )
+  model_controller_fast_start_environment_qualifications_valid = try(
+    local.model_controller_fast_start_environment_qualifications.schema == "fs2-serve.nebius.ai/runtime-environment-qualification-set/v1" &&
+    length(keys(local.model_controller_fast_start_environment_qualifications)) == 2 &&
+    length(local.model_controller_fast_start_environment_qualifications.bindings) <= 256 &&
+    alltrue([
+      for binding in local.model_controller_fast_start_environment_qualifications.bindings :
+      length(keys(binding)) == 10 &&
+      length(setsubtract(toset(keys(binding)), toset([
+        "scope",
+        "accelerator",
+        "driverCuda",
+        "storageRuntime",
+        "hostRuntimeDigest",
+        "environment",
+        "members",
+        "cacheTier",
+        "startupScenario",
+        "validUntil",
+      ]))) == 0 &&
+      binding.scope == {
+        projectId      = nonsensitive(var.project_id)
+        region         = local.selected_target.region
+        clusterContext = var.kube_context
+      } &&
+      length(binding.members) >= 1 && length(binding.members) <= 32 &&
+      length(distinct([for member in binding.members : "${member.poolRef}/${member.capacityType}"])) == length(binding.members) &&
+      alltrue([
+        for member in binding.members :
+        contains(keys(local.selected_queue_pools), member.poolRef) &&
+        contains(["regular", "preemptible"], member.capacityType) &&
+        local.selected_queue_pools[member.poolRef].capacity.type == member.capacityType &&
+        local.selected_queue_pools[member.poolRef].accelerator_class == binding.accelerator.acceleratorClass
+      ]) &&
+      contains(["Disabled", "ObjectStore", "SharedFilesystem", "NodeLocal"], binding.cacheTier) &&
+      contains([
+        "prepared-node-zero-pod",
+        "fresh-node-zero-pod",
+        "preemption-replacement",
+        "durable-cache-loss-fallback",
+      ], binding.startupScenario) &&
+      can(timecmp(binding.validUntil, binding.validUntil)) && endswith(binding.validUntil, "Z") &&
+      can(regex("^sha256:[a-f0-9]{64}$", binding.hostRuntimeDigest)) &&
+      binding.environment == {
+        schema = "fs2-serve.nebius.ai/runtime-environment-qualification/v1"
+        qualificationDigest = "sha256:${sha256(jsonencode({
+          schema               = "fs2-serve.nebius.ai/runtime-environment-qualification/v1"
+          scopeDigest          = "sha256:${sha256(jsonencode(binding.scope))}"
+          acceleratorDigest    = "sha256:${sha256(jsonencode(binding.accelerator))}"
+          driverCudaDigest     = "sha256:${sha256(jsonencode(binding.driverCuda))}"
+          hostRuntimeDigest    = binding.hostRuntimeDigest
+          storageRuntimeDigest = "sha256:${sha256(jsonencode(binding.storageRuntime))}"
+        }))}"
+        scopeDigest          = "sha256:${sha256(jsonencode(binding.scope))}"
+        acceleratorDigest    = "sha256:${sha256(jsonencode(binding.accelerator))}"
+        driverCudaDigest     = "sha256:${sha256(jsonencode(binding.driverCuda))}"
+        hostRuntimeDigest    = binding.hostRuntimeDigest
+        storageRuntimeDigest = "sha256:${sha256(jsonencode(binding.storageRuntime))}"
+      }
+    ]),
+    false,
+  )
+  model_controller_fast_start_measurement_contracts_valid = try(
+    local.model_controller_fast_start_measurement_contracts.schema == "fs2-serve.nebius.ai/fast-start-measurement-contract-set/v1" &&
+    length(keys(local.model_controller_fast_start_measurement_contracts)) == 2 &&
+    length(local.model_controller_fast_start_measurement_contracts.models) <= 512 &&
+    alltrue([
+      for model_id, contract in local.model_controller_fast_start_measurement_contracts.models :
+      contains(local.selected_model_ids, model_id) &&
+      length(keys(contract)) == 10 &&
+      contract.schema == "fs2-serve.nebius.ai/fast-start-measurement-contract/v1" &&
+      contract.basis == "CapacityAvailableToSemanticReady" &&
+      startswith(contract.endpointPath, "/") &&
+      contains(["same-pod", "same-node", "in-cluster", "same-region", "cross-region", "external"], contract.clientPlacement) &&
+      alltrue([
+        for digest in [
+          contract.payloadDigest,
+          contract.semanticValidatorDigest,
+          contract.benchmarkClientDigest,
+          contract.contractDigest,
+        ] : can(regex("^sha256:[a-f0-9]{64}$", digest))
+      ]) &&
+      contract.contractDigest == "sha256:${sha256(jsonencode({
+        schema                  = contract.schema
+        basis                   = contract.basis
+        payloadDigest           = contract.payloadDigest
+        protocol                = contract.protocol
+        endpointPath            = contract.endpointPath
+        streaming               = contract.streaming
+        semanticValidatorDigest = contract.semanticValidatorDigest
+        benchmarkClientDigest   = contract.benchmarkClientDigest
+        clientPlacement         = contract.clientPlacement
+      }))}"
+    ]),
+    false,
+  )
   model_controller_fast_start_evidence_valid = try(alltrue([
     for model_id, evidence in local.model_controller_fast_start_evidence :
     contains(local.model_controller_dynamic_model_ids, model_id) &&
     length(evidence) <= 256 &&
     alltrue([
       for item in evidence :
-      contains([15, 16], length(keys(item))) && length(setsubtract(toset(keys(item)), toset([
+      contains([17, 20], length(keys(item))) && length(setsubtract(toset(keys(item)), toset([
         "receiptDigest",
+        "identityState",
+        "identityDigest",
+        "identity",
         "mechanism",
         "mechanismConfigDigest",
         "compatibilityTupleDigest",
@@ -21,6 +139,7 @@ locals {
         "measurementBasis",
         "acceleratorClass",
         "poolRef",
+        "capacityType",
         "acceleratorsPerReplica",
         "artifactManifestDigest",
         "runtimeImage",
@@ -31,11 +150,32 @@ locals {
         "validUntil",
       ]))) == 0 &&
       can(regex("^sha256:[a-f0-9]{64}$", item.receiptDigest)) &&
+      contains(["LegacyUnbound", "Bound"], item.identityState) &&
       can(regex("^[a-z][a-z0-9-]{0,63}$", item.mechanism)) &&
       (
-        item.mechanism == "modelexpress" ?
-        can(regex("^sha256:[a-f0-9]{64}$", try(item.mechanismConfigDigest, ""))) :
-        try(item.mechanismConfigDigest, null) == null
+        item.identityState == "Bound" ?
+        length(keys(item)) == 20 &&
+        item.poolRef != null &&
+        contains(["regular", "preemptible"], try(item.capacityType, "")) &&
+        can(regex("^sha256:[a-f0-9]{64}$", try(item.identityDigest, ""))) &&
+        try(item.identity.schema, "") == "fs2-serve.nebius.ai/runtime-evidence-identity/v2" &&
+        try(item.identityDigest, "") == "sha256:${sha256(jsonencode(try(item.identity, {})))}" &&
+        try(item.identity.runtime.artifactManifestDigest, "") == item.artifactManifestDigest &&
+        try(item.identity.runtime.runtimeImage, "") == item.runtimeImage &&
+        try(item.identity.runtime.templateDigest, "") == item.templateDigest &&
+        try(item.identity.placement.acceleratorClass, "") == item.acceleratorClass &&
+        try(item.identity.placement.acceleratorsPerReplica, 0) == item.acceleratorsPerReplica &&
+        try(item.identity.cache.tier, "") == item.cacheTier &&
+        try(item.identity.cache.snapshotDigest, null) == item.snapshotDigest &&
+        try(item.identity.cache.mechanism, "") == item.mechanism &&
+        try(item.identity.cache.mechanismConfigDigest, "") == item.mechanismConfigDigest &&
+        can(regex("^sha256:[a-f0-9]{64}$", item.mechanismConfigDigest)) :
+        length(keys(item)) == 17 &&
+        (
+          item.mechanism == "modelexpress" ?
+          can(regex("^sha256:[a-f0-9]{64}$", try(item.mechanismConfigDigest, ""))) :
+          try(item.mechanismConfigDigest, null) == null
+        )
       ) &&
       can(regex("^sha256:[a-f0-9]{64}$", item.compatibilityTupleDigest)) &&
       (item.compatibilityTupleComplete == true || item.compatibilityTupleComplete == false) &&
@@ -370,6 +510,188 @@ locals {
       }
     }
   }
+  model_controller_fast_start_runtime_keys = flatten([
+    for model_id in local.model_controller_dynamic_model_ids : [
+      for pool_id in local.model_controller_qualified_pool_ids[model_id] : {
+        key      = "${model_id}/${pool_id}"
+        model_id = model_id
+        pool_id  = pool_id
+      }
+    ]
+  ])
+  model_controller_fast_start_runtime_containers = {
+    for model_id, deployment in local.model_controller_primary_deployments : model_id => one([
+      for container in deployment.spec.template.spec.containers : container
+      if container.name == local.model_controller_runtime_container_names[model_id]
+    ])
+  }
+  model_controller_fast_start_modelexpress_env = {
+    for row in local.model_controller_fast_start_runtime_keys : row.key => concat(
+      [
+        { name = "MODEL_EXPRESS_URL", value = local.model_controller_modelexpress_bindings[row.model_id].endpoint },
+        { name = "MX_SERVER_ADDRESS", value = local.model_controller_modelexpress_bindings[row.model_id].endpoint },
+        { name = "MX_METADATA_BACKEND", value = local.model_controller_modelexpress_bindings[row.model_id].metadataBackend },
+        { name = "VLLM_PLUGINS", value = "modelexpress" },
+        { name = "MX_NIXL_BACKEND", value = local.model_controller_modelexpress_bindings[row.model_id].poolTransports[row.pool_id].nixlBackend },
+        { name = "MX_METADATA_PORT", value = "5555" },
+        { name = "MX_WORKER_GRPC_PORT", value = "6555" },
+        { name = "MX_P2P_METADATA", value = "1" },
+        {
+          name = "MX_MODEL_REVISION"
+          value = "fs2:sha256:${sha256(jsonencode({
+            configDigest     = local.model_controller_modelexpress_bindings[row.model_id].configDigest
+            acceleratorClass = local.selected_queue_pools[row.pool_id].accelerator_class
+            nixlBackend      = local.model_controller_modelexpress_bindings[row.model_id].poolTransports[row.pool_id].nixlBackend
+          }))}"
+        },
+      ],
+      local.model_controller_modelexpress_bindings[row.model_id].poolTransports[row.pool_id].mode == "nixl-rdma" ? [
+        {
+          name  = "MX_RDMA_NIC_PIN"
+          value = local.model_controller_modelexpress_bindings[row.model_id].poolTransports[row.pool_id].rdmaNicPin
+        }
+      ] : [],
+      local.model_controller_modelexpress_bindings[row.model_id].poolTransports[row.pool_id].mode == "nixl-rdma" &&
+      local.model_controller_modelexpress_bindings[row.model_id].poolTransports[row.pool_id].nixlBackend == "UCX" ? [
+        { name = "UCX_RNDV_SCHEME", value = "get_zcopy" },
+        { name = "UCX_RNDV_THRESH", value = "0" },
+      ] : [],
+      [
+        { name = "POD_IP", valueFrom = { fieldRef = { fieldPath = "status.podIP" } } },
+        { name = "NODE_NAME", valueFrom = { fieldRef = { fieldPath = "spec.nodeName" } } },
+        { name = "POD_NAMESPACE", valueFrom = { fieldRef = { fieldPath = "metadata.namespace" } } },
+        { name = "POD_NAME", valueFrom = { fieldRef = { fieldPath = "metadata.name" } } },
+        { name = "POD_UID", valueFrom = { fieldRef = { fieldPath = "metadata.uid" } } },
+      ],
+    )
+    if contains(keys(local.model_controller_modelexpress_bindings), row.model_id)
+  }
+  model_controller_fast_start_modelexpress_managed_env_names = {
+    for key, environment in local.model_controller_fast_start_modelexpress_env :
+    key => toset([for item in environment : item.name])
+  }
+  model_controller_fast_start_runtime_args = {
+    for row in local.model_controller_fast_start_runtime_keys : row.key => (
+      contains(keys(local.model_controller_modelexpress_bindings), row.model_id) ? concat([
+        for index, argument in try(local.model_controller_fast_start_runtime_containers[row.model_id].args, []) : argument
+        if argument != "--load-format" &&
+        !startswith(argument, "--load-format=") &&
+        !(index > 0 && try(local.model_controller_fast_start_runtime_containers[row.model_id].args[index - 1], null) == "--load-format")
+      ], ["--load-format", "modelexpress"]) : try(local.model_controller_fast_start_runtime_containers[row.model_id].args, [])
+    )
+  }
+  model_controller_fast_start_runtime_base_env = {
+    for row in local.model_controller_fast_start_runtime_keys : row.key => try(
+      local.model_controller_fast_start_runtime_containers[row.model_id].env,
+      [],
+    )
+  }
+  model_controller_fast_start_runtime_modelexpress_env = {
+    for row in local.model_controller_fast_start_runtime_keys : row.key => concat([
+      for item in try(local.model_controller_fast_start_runtime_containers[row.model_id].env, []) : item
+      if !contains(local.model_controller_fast_start_modelexpress_managed_env_names[row.key], item.name)
+      ], local.model_controller_fast_start_modelexpress_env[row.key]
+    )
+    if contains(keys(local.model_controller_modelexpress_bindings), row.model_id)
+  }
+  model_controller_fast_start_runtime_env = merge(
+    local.model_controller_fast_start_runtime_base_env,
+    local.model_controller_fast_start_runtime_modelexpress_env,
+  )
+  model_controller_fast_start_container_env = merge(
+    merge([
+      for row in local.model_controller_fast_start_runtime_keys : {
+        for container in local.model_controller_primary_deployments[row.model_id].spec.template.spec.containers :
+        "${row.key}/${container.name}" => try(container.env, [])
+      }
+    ]...),
+    {
+      for row in local.model_controller_fast_start_runtime_keys :
+      "${row.key}/${local.model_controller_runtime_container_names[row.model_id]}" => local.model_controller_fast_start_runtime_env[row.key]
+    },
+  )
+  model_controller_fast_start_environment_rows = {
+    for row in local.model_controller_fast_start_runtime_keys : row.key => flatten([
+      for container in local.model_controller_primary_deployments[row.model_id].spec.template.spec.containers : [
+        for item in local.model_controller_fast_start_container_env["${row.key}/${container.name}"] : {
+          container    = container.name
+          name         = item.name
+          value_sha256 = contains(keys(item), "value") ? sha256(tostring(item.value)) : null
+          value_from   = try(item.valueFrom, null)
+        }
+      ]
+    ])
+  }
+  model_controller_fast_start_storage_contracts = {
+    for model_id in local.model_controller_dynamic_model_ids : model_id => {
+      schema = "fs2-serve.nebius.ai/fast-start-storage-contract/v1"
+      storageClass = local.model_controller_bundle_requires_shared_cache[model_id] ? one(distinct([
+        for document in local.model_documents : try(document.manifest.spec.storageClassName, null)
+        if document.model_id == model_id && document.manifest.kind == "PersistentVolumeClaim"
+      ])) : null
+      storageMode = local.model_controller_bundle_requires_shared_cache[model_id] ? (
+        contains(flatten([
+          for document in local.model_documents : try(document.manifest.spec.accessModes, [])
+          if document.model_id == model_id && document.manifest.kind == "PersistentVolumeClaim"
+        ]), "ReadWriteMany") ? "rwx-filesystem" : "rwo-filesystem"
+      ) : "ephemeral"
+    }
+  }
+  model_controller_fast_start_runtime_payloads = {
+    for row in local.model_controller_fast_start_runtime_keys : row.key => {
+      schema                 = "fs2-serve.nebius.ai/runtime-contract/v1"
+      modelRef               = row.model_id
+      sourceRevision         = local.catalog_models[row.model_id].model.source.revision
+      modelContentDigest     = local.model_controller_artifact_manifest_digests[row.model_id]
+      artifactManifestDigest = local.model_controller_artifact_manifest_digests[row.model_id]
+      runtimeProfile         = local.catalog_models[row.model_id].runtime.kind
+      runtimeImage           = var.model_image_overrides[row.model_id]
+      templateDigest         = local.model_controller_template_digests[row.model_id]
+      renderContractDigest = "sha256:${sha256(jsonencode({
+        schema         = "fs2-serve.nebius.ai/runtime-render-contract/v1"
+        runtimeImage   = var.model_image_overrides[row.model_id]
+        templateDigest = local.model_controller_template_digests[row.model_id]
+        argvDigest = "sha256:${sha256(jsonencode({
+          command = try(local.model_controller_fast_start_runtime_containers[row.model_id].command, [])
+          args    = local.model_controller_fast_start_runtime_args[row.key]
+        }))}"
+        environmentDigest = "sha256:${sha256(jsonencode(local.model_controller_fast_start_environment_rows[row.key]))}"
+      }))}"
+      argvDigest = "sha256:${sha256(jsonencode({
+        command = try(local.model_controller_fast_start_runtime_containers[row.model_id].command, [])
+        args    = local.model_controller_fast_start_runtime_args[row.key]
+      }))}"
+      environmentDigest = "sha256:${sha256(jsonencode(local.model_controller_fast_start_environment_rows[row.key]))}"
+    }
+  }
+  model_controller_fast_start_runtime_contracts = {
+    for model_id in local.model_controller_dynamic_model_ids : model_id => [
+      for row in local.model_controller_fast_start_runtime_keys : {
+        poolRef = row.pool_id
+        runtime = merge(local.model_controller_fast_start_runtime_payloads[row.key], {
+          runtimeContractDigest = "sha256:${sha256(jsonencode(local.model_controller_fast_start_runtime_payloads[row.key]))}"
+        })
+        storageContractDigest = "sha256:${sha256(jsonencode(local.model_controller_fast_start_storage_contracts[model_id]))}"
+        measurement           = local.model_controller_fast_start_measurement_contracts.models[model_id]
+      }
+      if row.model_id == model_id && contains(keys(local.model_controller_fast_start_measurement_contracts.models), model_id)
+    ]
+  }
+  model_controller_fast_start_pool_bindings = {
+    for pool_id in keys(local.selected_queue_pools) : pool_id => [
+      for binding in local.model_controller_fast_start_environment_qualifications.bindings : {
+        environment     = binding.environment
+        members         = binding.members
+        cacheTier       = binding.cacheTier
+        startupScenario = binding.startupScenario
+        validUntil      = binding.validUntil
+      }
+      if contains(binding.members, {
+        poolRef      = pool_id
+        capacityType = local.selected_queue_pools[pool_id].capacity.type
+      })
+    ]
+  }
   model_controller_bundles = [
     for model_id in local.model_controller_dynamic_model_ids : {
       modelRef             = model_id
@@ -410,7 +732,8 @@ locals {
         local.inventory.routes[model_id].mcp.tool_name :
         null
       )
-      snapshotDigests = []
+      snapshotDigests           = []
+      fastStartRuntimeContracts = local.model_controller_fast_start_runtime_contracts[model_id]
       # Fast-start levels (L1..L4) are qualified only by retained benchmark
       # evidence measured from GPU capacity being available until semantic
       # endpoint readiness for the exact artifact, image, template, cache tier
@@ -426,15 +749,17 @@ locals {
   }
   model_controller_pool_envelope = {
     for pool_id, pool in local.selected_queue_pools : pool_id => {
-      poolId              = pool_id
-      acceleratorClass    = pool.accelerator_class
-      resourceName        = pool.resource_api.resource_name
-      capacityType        = pool.capacity.type
-      acceleratorsPerNode = pool.node.gpus_per_node
-      minNodes            = pool.capacity.min_nodes
-      maxNodes            = pool.capacity.max_nodes
-      nodeSelector        = pool.scheduling.stable_node_labels
-      tolerations         = pool.scheduling.tolerations
+      poolId                       = pool_id
+      acceleratorClass             = pool.accelerator_class
+      resourceName                 = pool.resource_api.resource_name
+      capacityType                 = pool.capacity.type
+      acceleratorsPerNode          = pool.node.gpus_per_node
+      minNodes                     = pool.capacity.min_nodes
+      maxNodes                     = pool.capacity.max_nodes
+      nodeSelector                 = pool.scheduling.stable_node_labels
+      tolerations                  = pool.scheduling.tolerations
+      startupScenario              = pool.capacity.min_nodes > 0 ? "prepared-node-zero-pod" : "fresh-node-zero-pod"
+      fastStartEnvironmentBindings = local.model_controller_fast_start_pool_bindings[pool_id]
     }
   }
   model_controller_envelope_without_revision = {
@@ -601,6 +926,16 @@ resource "terraform_data" "model_controller_contract" {
     precondition {
       condition     = local.model_controller_fast_start_evidence_valid
       error_message = "Fast-start evidence must map only controller-qualified model IDs to the exact bounded wire shape emitted by project_fast_start_evidence.py."
+    }
+
+    precondition {
+      condition     = local.model_controller_fast_start_environment_qualifications_valid
+      error_message = "Fast-start environment qualifications must be an exact, self-digested v1 document for this project, region, cluster context, accelerator class, pool, and capacity type."
+    }
+
+    precondition {
+      condition     = local.model_controller_fast_start_measurement_contracts_valid
+      error_message = "Fast-start measurement contracts must be exact, self-digested v1 contracts for selected models."
     }
 
     precondition {

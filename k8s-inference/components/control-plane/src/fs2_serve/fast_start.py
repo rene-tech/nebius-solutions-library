@@ -434,7 +434,8 @@ def _identity_compatibility(
     contracts = [
         item
         for item in qualification.fast_start_runtime_contracts
-        if item.runtime.model_ref == spec.model_ref
+        if item.pool_ref == pool.pool_id
+        and item.runtime.model_ref == spec.model_ref
         and item.runtime.source_revision == spec.artifact.revision
         and item.runtime.artifact_manifest_digest == spec.artifact.manifest_digest
         and item.runtime.runtime_profile == spec.runtime.profile

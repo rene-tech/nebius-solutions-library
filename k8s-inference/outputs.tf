@@ -19,16 +19,18 @@ output "effective_configuration" {
     model_scaling_mode         = var.deployment.models.scaling.mode
     hot_model_ids              = sort(tolist(var.deployment.models.scaling.hot))
     dynamic_models = {
-      enabled                           = var.deployment.dynamic_models.enabled
-      writes_enabled                    = var.deployment.dynamic_models.writes_enabled
-      workload_owner                    = var.deployment.dynamic_models.workload_owner
-      bootstrap_model_ids               = sort(tolist(var.deployment.dynamic_models.bootstrap_model_ids))
-      fresh_install                     = var.deployment.dynamic_models.fresh_install
-      handoff_receipt_set               = var.deployment.dynamic_models.handoff_receipt != null
-      fast_start_evidence_file_set      = var.deployment.dynamic_models.fast_start_evidence_file != null
-      fast_start_wait_second_value      = var.deployment.dynamic_models.fast_start_wait_second_value
-      fast_start_mechanism_hourly_costs = var.deployment.dynamic_models.fast_start_mechanism_hourly_costs
-      priority_classes                  = var.deployment.dynamic_models.priority_classes
+      enabled                                        = var.deployment.dynamic_models.enabled
+      writes_enabled                                 = var.deployment.dynamic_models.writes_enabled
+      workload_owner                                 = var.deployment.dynamic_models.workload_owner
+      bootstrap_model_ids                            = sort(tolist(var.deployment.dynamic_models.bootstrap_model_ids))
+      fresh_install                                  = var.deployment.dynamic_models.fresh_install
+      handoff_receipt_set                            = var.deployment.dynamic_models.handoff_receipt != null
+      fast_start_evidence_file_set                   = var.deployment.dynamic_models.fast_start_evidence_file != null
+      fast_start_environment_qualifications_file_set = var.deployment.dynamic_models.fast_start_environment_qualifications_file != null
+      fast_start_measurement_contracts_file_set      = var.deployment.dynamic_models.fast_start_measurement_contracts_file != null
+      fast_start_wait_second_value                   = var.deployment.dynamic_models.fast_start_wait_second_value
+      fast_start_mechanism_hourly_costs              = var.deployment.dynamic_models.fast_start_mechanism_hourly_costs
+      priority_classes                               = var.deployment.dynamic_models.priority_classes
     }
     model_express = {
       enabled         = var.deployment.acceleration.model_express.enabled

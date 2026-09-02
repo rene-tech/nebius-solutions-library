@@ -234,16 +234,18 @@ variable "enabled_model_ids" {
 variable "model_controller" {
   description = "Feature-gated dynamic ModelDeployment controller. Internal envelopes and renderer bundles are derived from the selected catalog, effective accelerator pools, queue, tenant, images, and scaling inputs."
   type = object({
-    enabled                           = bool
-    writes_enabled                    = bool
-    workload_owner                    = string
-    bootstrap_model_ids               = set(string)
-    fresh_install                     = bool
-    handoff_receipt                   = optional(string)
-    fast_start_evidence_file          = optional(string)
-    fast_start_wait_second_value      = optional(number, 0.01)
-    fast_start_mechanism_hourly_costs = optional(map(number), {})
-    priority_classes                  = map(number)
+    enabled                                    = bool
+    writes_enabled                             = bool
+    workload_owner                             = string
+    bootstrap_model_ids                        = set(string)
+    fresh_install                              = bool
+    handoff_receipt                            = optional(string)
+    fast_start_evidence_file                   = optional(string)
+    fast_start_environment_qualifications_file = optional(string)
+    fast_start_measurement_contracts_file      = optional(string)
+    fast_start_wait_second_value               = optional(number, 0.01)
+    fast_start_mechanism_hourly_costs          = optional(map(number), {})
+    priority_classes                           = map(number)
   })
   default = {
     enabled             = false
@@ -294,6 +296,12 @@ variable "model_controller" {
         startswith(pathexpand(var.model_controller.fast_start_evidence_file), "/") &&
         can(jsondecode(file(pathexpand(var.model_controller.fast_start_evidence_file))))
       ) &&
+      alltrue([
+        for path in [
+          var.model_controller.fast_start_environment_qualifications_file,
+          var.model_controller.fast_start_measurement_contracts_file,
+        ] : path == null ? true : startswith(pathexpand(path), "/") && can(jsondecode(file(pathexpand(path))))
+      ]) &&
       var.model_controller.fast_start_wait_second_value >= 0 &&
       var.model_controller.fast_start_wait_second_value <= 1000000 &&
       length(var.model_controller.fast_start_mechanism_hourly_costs) <= 128 &&
@@ -310,7 +318,7 @@ variable "model_controller" {
       ]),
       false,
     )
-    error_message = "model_controller must preserve one owner; controller mode requires writes, KEDA, a valid bootstrap/handoff; fast-start evidence must be readable JSON at an absolute path; and bounded economic inputs must be valid."
+    error_message = "model_controller must preserve one owner; controller mode requires writes, KEDA, a valid bootstrap/handoff; fast-start evidence and qualification contracts must be readable JSON at absolute paths; and bounded economic inputs must be valid."
   }
 }
 

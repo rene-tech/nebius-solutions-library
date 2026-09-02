@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/runtime-environment-qualification-set/v1",
+  "title": "FS2 reviewed runtime environment qualifications",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "bindings"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/runtime-environment-qualification-set/v1"},
+    "bindings": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {"$ref": "#/$defs/binding"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "accelerator",
+        "driverCuda",
+        "storageRuntime",
+        "hostRuntimeDigest",
+        "environment",
+        "members",
+        "cacheTier",
+        "startupScenario",
+        "validUntil"
+      ],
+      "properties": {
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["projectId", "region", "clusterContext"],
+          "properties": {
+            "projectId": {"type": "string", "pattern": "^project-[a-z0-9]+$"},
+            "region": {"type": "string", "pattern": "^[a-z]{2}-[a-z]+[0-9]+$"},
+            "clusterContext": {"type": "string", "minLength": 1, "maxLength": 253}
+          }
+        },
+        "accelerator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["acceleratorClass", "gpuProduct", "computeCapability", "memoryBytes"],
+          "properties": {
+            "acceleratorClass": {"type": "string", "minLength": 1, "maxLength": 128},
+            "gpuProduct": {"type": "string", "minLength": 1, "maxLength": 256},
+            "computeCapability": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+            "memoryBytes": {"type": "integer", "minimum": 1}
+          }
+        },
+        "driverCuda": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["driverVersion", "cudaVersion"],
+          "properties": {
+            "driverVersion": {"type": "string", "minLength": 1, "maxLength": 128},
+            "cudaVersion": {"type": "string", "minLength": 1, "maxLength": 128}
+          }
+        },
+        "storageRuntime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["storageClass", "storageMode"],
+          "properties": {
+            "storageClass": {"type": ["string", "null"], "maxLength": 253},
+            "storageMode": {"type": "string", "minLength": 1, "maxLength": 64}
+          }
+        },
+        "hostRuntimeDigest": {"$ref": "#/$defs/digest"},
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema",
+            "qualificationDigest",
+            "scopeDigest",
+            "acceleratorDigest",
+            "driverCudaDigest",
+            "hostRuntimeDigest",
+            "storageRuntimeDigest"
+          ],
+          "properties": {
+            "schema": {"const": "fs2-serve.nebius.ai/runtime-environment-qualification/v1"},
+            "qualificationDigest": {"$ref": "#/$defs/digest"},
+            "scopeDigest": {"$ref": "#/$defs/digest"},
+            "acceleratorDigest": {"$ref": "#/$defs/digest"},
+            "driverCudaDigest": {"$ref": "#/$defs/digest"},
+            "hostRuntimeDigest": {"$ref": "#/$defs/digest"},
+            "storageRuntimeDigest": {"$ref": "#/$defs/digest"}
+          }
+        },
+        "members": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["poolRef", "capacityType"],
+            "properties": {
+              "poolRef": {"type": "string", "minLength": 1, "maxLength": 128},
+              "capacityType": {"enum": ["regular", "preemptible"]}
+            }
+          }
+        },
+        "cacheTier": {"enum": ["Disabled", "ObjectStore", "SharedFilesystem", "NodeLocal"]},
+        "startupScenario": {
+          "enum": [
+            "prepared-node-zero-pod",
+            "fresh-node-zero-pod",
+            "preemption-replacement",
+            "durable-cache-loss-fallback"
+          ]
+        },
+        "validUntil": {"type": "string", "format": "date-time", "pattern": "Z$"}
+      }
+    }
+  }
+}

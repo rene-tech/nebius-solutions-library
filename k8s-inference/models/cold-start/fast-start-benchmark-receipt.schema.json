@@ -17,9 +17,28 @@
     "aggregates",
     "qualification"
   ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema": {"const": "fs2-serve.nebius.ai/fast-start-benchmark-receipt/v2"}
+        }
+      },
+      "then": {"required": ["evidence_identity", "evidence_identity_digest"]},
+      "else": {
+        "properties": {
+          "evidence_identity": false,
+          "evidence_identity_digest": false
+        }
+      }
+    }
+  ],
   "properties": {
     "schema": {
-      "const": "fs2-serve.nebius.ai/fast-start-benchmark-receipt/v1"
+      "enum": [
+        "fs2-serve.nebius.ai/fast-start-benchmark-receipt/v1",
+        "fs2-serve.nebius.ai/fast-start-benchmark-receipt/v2"
+      ]
     },
     "receipt_digest": {"$ref": "#/$defs/digest"},
     "generated_at": {"$ref": "#/$defs/timestamp"},
@@ -27,6 +46,8 @@
     "performance_class": {"$ref": "#/$defs/performanceClass"},
     "compatibility_tuple": {"$ref": "#/$defs/compatibilityTuple"},
     "compatibility_tuple_digest": {"$ref": "#/$defs/digest"},
+    "evidence_identity": {"$ref": "#/$defs/runtimeEvidenceIdentity"},
+    "evidence_identity_digest": {"$ref": "#/$defs/shaDigest"},
     "attempts": {
       "type": "array",
       "minItems": 1,
@@ -318,6 +339,104 @@
         }
       }
     },
+    "runtimeEvidenceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "runtime", "environment", "placement", "cache", "measurement"],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/runtime-evidence-identity/v2"},
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema", "modelRef", "sourceRevision", "modelContentDigest", "artifactManifestDigest",
+            "runtimeProfile", "runtimeImage", "templateDigest", "renderContractDigest", "argvDigest",
+            "environmentDigest", "runtimeContractDigest"
+          ],
+          "properties": {
+            "schema": {"const": "fs2-serve.nebius.ai/runtime-contract/v1"},
+            "modelRef": {"type": "string", "minLength": 1, "maxLength": 128},
+            "sourceRevision": {"type": "string", "minLength": 1, "maxLength": 256},
+            "modelContentDigest": {"$ref": "#/$defs/shaDigest"},
+            "artifactManifestDigest": {"$ref": "#/$defs/shaDigest"},
+            "runtimeProfile": {"type": "string", "minLength": 1, "maxLength": 128},
+            "runtimeImage": {"type": "string", "pattern": "^[^\\s@]+@sha256:[0-9a-f]{64}$", "maxLength": 768},
+            "templateDigest": {"$ref": "#/$defs/shaDigest"},
+            "renderContractDigest": {"$ref": "#/$defs/shaDigest"},
+            "argvDigest": {"$ref": "#/$defs/shaDigest"},
+            "environmentDigest": {"$ref": "#/$defs/shaDigest"},
+            "runtimeContractDigest": {"$ref": "#/$defs/shaDigest"}
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema", "qualificationDigest", "scopeDigest", "acceleratorDigest", "driverCudaDigest",
+            "hostRuntimeDigest", "storageRuntimeDigest"
+          ],
+          "properties": {
+            "schema": {"const": "fs2-serve.nebius.ai/runtime-environment-qualification/v1"},
+            "qualificationDigest": {"$ref": "#/$defs/shaDigest"},
+            "scopeDigest": {"$ref": "#/$defs/shaDigest"},
+            "acceleratorDigest": {"$ref": "#/$defs/shaDigest"},
+            "driverCudaDigest": {"$ref": "#/$defs/shaDigest"},
+            "hostRuntimeDigest": {"$ref": "#/$defs/shaDigest"},
+            "storageRuntimeDigest": {"$ref": "#/$defs/shaDigest"}
+          }
+        },
+        "placement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["acceleratorClass", "acceleratorsPerReplica", "topologyPolicy", "startupScenario"],
+          "properties": {
+            "acceleratorClass": {"type": "string", "minLength": 1, "maxLength": 128},
+            "acceleratorsPerReplica": {"type": "integer", "minimum": 1, "maximum": 64},
+            "topologyPolicy": {"enum": ["Any", "SingleNode", "HighBandwidthDomain"]},
+            "startupScenario": {
+              "enum": [
+                "prepared-node-zero-pod", "fresh-node-zero-pod", "preemption-replacement",
+                "durable-cache-loss-fallback"
+              ]
+            }
+          }
+        },
+        "cache": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tier", "mechanism", "mechanismConfigDigest", "snapshotDigest", "storageContractDigest"],
+          "properties": {
+            "tier": {"enum": ["Disabled", "ObjectStore", "SharedFilesystem", "NodeLocal"]},
+            "mechanism": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$", "maxLength": 64},
+            "mechanismConfigDigest": {"$ref": "#/$defs/shaDigest"},
+            "snapshotDigest": {"anyOf": [{"$ref": "#/$defs/shaDigest"}, {"type": "null"}]},
+            "storageContractDigest": {"$ref": "#/$defs/shaDigest"}
+          }
+        },
+        "measurement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema", "basis", "payloadDigest", "protocol", "endpointPath", "streaming",
+            "semanticValidatorDigest", "benchmarkClientDigest", "clientPlacement", "contractDigest"
+          ],
+          "properties": {
+            "schema": {"const": "fs2-serve.nebius.ai/fast-start-measurement-contract/v1"},
+            "basis": {"const": "CapacityAvailableToSemanticReady"},
+            "payloadDigest": {"$ref": "#/$defs/shaDigest"},
+            "protocol": {"type": "string", "minLength": 1, "maxLength": 128},
+            "endpointPath": {"type": "string", "pattern": "^/", "maxLength": 512},
+            "streaming": {"type": "boolean"},
+            "semanticValidatorDigest": {"$ref": "#/$defs/shaDigest"},
+            "benchmarkClientDigest": {"$ref": "#/$defs/shaDigest"},
+            "clientPlacement": {
+              "enum": ["same-pod", "same-node", "in-cluster", "same-region", "cross-region", "external"]
+            },
+            "contractDigest": {"$ref": "#/$defs/shaDigest"}
+          }
+        }
+      }
+    },
     "timestamps": {
       "type": "object",
       "additionalProperties": false,
@@ -498,6 +617,22 @@
     "attempt": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "schema": {"const": "fs2-serve.nebius.ai/fast-start-benchmark-attempt/v2"}
+            }
+          },
+          "then": {"required": ["evidence_identity", "evidence_identity_digest"]},
+          "else": {
+            "properties": {
+              "evidence_identity": false,
+              "evidence_identity_digest": false
+            }
+          }
+        }
+      ],
       "required": [
         "schema",
         "attempt_id",
@@ -515,7 +650,10 @@
       ],
       "properties": {
         "schema": {
-          "const": "fs2-serve.nebius.ai/fast-start-benchmark-attempt/v1"
+          "enum": [
+            "fs2-serve.nebius.ai/fast-start-benchmark-attempt/v1",
+            "fs2-serve.nebius.ai/fast-start-benchmark-attempt/v2"
+          ]
         },
         "attempt_id": {
           "type": "string",
@@ -537,6 +675,8 @@
         "requested_level": {"$ref": "#/$defs/level"},
         "compatibility_tuple": {"$ref": "#/$defs/compatibilityTuple"},
         "compatibility_tuple_digest": {"$ref": "#/$defs/digest"},
+        "evidence_identity": {"$ref": "#/$defs/runtimeEvidenceIdentity"},
+        "evidence_identity_digest": {"$ref": "#/$defs/shaDigest"},
         "timestamps": {"$ref": "#/$defs/timestamps"},
         "durations_seconds": {"$ref": "#/$defs/durations"},
         "inference": {"$ref": "#/$defs/inference"},

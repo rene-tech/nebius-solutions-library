@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/fast-start-measurement-contract/v1",
+  "title": "FS2 fast-start measurement contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "basis",
+    "payloadDigest",
+    "protocol",
+    "endpointPath",
+    "streaming",
+    "semanticValidatorDigest",
+    "benchmarkClientDigest",
+    "clientPlacement",
+    "contractDigest"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/fast-start-measurement-contract/v1"},
+    "basis": {"const": "CapacityAvailableToSemanticReady"},
+    "payloadDigest": {"$ref": "#/$defs/digest"},
+    "protocol": {"type": "string", "minLength": 1, "maxLength": 128},
+    "endpointPath": {"type": "string", "pattern": "^/", "maxLength": 512},
+    "streaming": {"type": "boolean"},
+    "semanticValidatorDigest": {"$ref": "#/$defs/digest"},
+    "benchmarkClientDigest": {"$ref": "#/$defs/digest"},
+    "clientPlacement": {
+      "enum": ["same-pod", "same-node", "in-cluster", "same-region", "cross-region", "external"]
+    },
+    "contractDigest": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}

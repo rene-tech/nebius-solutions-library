@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/runtime-evidence-identity/v2",
+  "title": "FS2 exact runtime evidence identity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "runtime", "environment", "placement", "cache", "measurement"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/runtime-evidence-identity/v2"},
+    "runtime": {"$ref": "#/$defs/runtime"},
+    "environment": {"$ref": "#/$defs/environment"},
+    "placement": {"$ref": "#/$defs/placement"},
+    "cache": {"$ref": "#/$defs/cache"},
+    "measurement": {"$ref": "#/$defs/measurement"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "modelRef",
+        "sourceRevision",
+        "modelContentDigest",
+        "artifactManifestDigest",
+        "runtimeProfile",
+        "runtimeImage",
+        "templateDigest",
+        "renderContractDigest",
+        "argvDigest",
+        "environmentDigest",
+        "runtimeContractDigest"
+      ],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/runtime-contract/v1"},
+        "modelRef": {"type": "string", "minLength": 1, "maxLength": 128},
+        "sourceRevision": {"type": "string", "minLength": 1, "maxLength": 256},
+        "modelContentDigest": {"$ref": "#/$defs/digest"},
+        "artifactManifestDigest": {"$ref": "#/$defs/digest"},
+        "runtimeProfile": {"type": "string", "minLength": 1, "maxLength": 128},
+        "runtimeImage": {
+          "type": "string",
+          "pattern": "^[^\\s@]+@sha256:[0-9a-f]{64}$",
+          "maxLength": 768
+        },
+        "templateDigest": {"$ref": "#/$defs/digest"},
+        "renderContractDigest": {"$ref": "#/$defs/digest"},
+        "argvDigest": {"$ref": "#/$defs/digest"},
+        "environmentDigest": {"$ref": "#/$defs/digest"},
+        "runtimeContractDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "qualificationDigest",
+        "scopeDigest",
+        "acceleratorDigest",
+        "driverCudaDigest",
+        "hostRuntimeDigest",
+        "storageRuntimeDigest"
+      ],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/runtime-environment-qualification/v1"},
+        "qualificationDigest": {"$ref": "#/$defs/digest"},
+        "scopeDigest": {"$ref": "#/$defs/digest"},
+        "acceleratorDigest": {"$ref": "#/$defs/digest"},
+        "driverCudaDigest": {"$ref": "#/$defs/digest"},
+        "hostRuntimeDigest": {"$ref": "#/$defs/digest"},
+        "storageRuntimeDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acceleratorClass", "acceleratorsPerReplica", "topologyPolicy", "startupScenario"],
+      "properties": {
+        "acceleratorClass": {"type": "string", "minLength": 1, "maxLength": 128},
+        "acceleratorsPerReplica": {"type": "integer", "minimum": 1, "maximum": 64},
+        "topologyPolicy": {"enum": ["Any", "SingleNode", "HighBandwidthDomain"]},
+        "startupScenario": {
+          "enum": [
+            "prepared-node-zero-pod",
+            "fresh-node-zero-pod",
+            "preemption-replacement",
+            "durable-cache-loss-fallback"
+          ]
+        }
+      }
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tier",
+        "mechanism",
+        "mechanismConfigDigest",
+        "snapshotDigest",
+        "storageContractDigest"
+      ],
+      "properties": {
+        "tier": {"enum": ["Disabled", "ObjectStore", "SharedFilesystem", "NodeLocal"]},
+        "mechanism": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$", "maxLength": 64},
+        "mechanismConfigDigest": {"$ref": "#/$defs/digest"},
+        "snapshotDigest": {
+          "anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]
+        },
+        "storageContractDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "basis",
+        "payloadDigest",
+        "protocol",
+        "endpointPath",
+        "streaming",
+        "semanticValidatorDigest",
+        "benchmarkClientDigest",
+        "clientPlacement",
+        "contractDigest"
+      ],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/fast-start-measurement-contract/v1"},
+        "basis": {"const": "CapacityAvailableToSemanticReady"},
+        "payloadDigest": {"$ref": "#/$defs/digest"},
+        "protocol": {"type": "string", "minLength": 1, "maxLength": 128},
+        "endpointPath": {"type": "string", "pattern": "^/", "maxLength": 512},
+        "streaming": {"type": "boolean"},
+        "semanticValidatorDigest": {"$ref": "#/$defs/digest"},
+        "benchmarkClientDigest": {"$ref": "#/$defs/digest"},
+        "clientPlacement": {
+          "enum": ["same-pod", "same-node", "in-cluster", "same-region", "cross-region", "external"]
+        },
+        "contractDigest": {"$ref": "#/$defs/digest"}
+      }
+    }
+  }
+}
