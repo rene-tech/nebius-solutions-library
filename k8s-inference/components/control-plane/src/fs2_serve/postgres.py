@@ -455,6 +455,8 @@ class PostgresStore:
                     f"fs2_configuration_reconciliation_events,"
                     f"fs2_model_deployment_revisions,fs2_model_deployments,"
                     f"fs2_model_deployment_idempotency,fs2_model_deployment_status_events,"
+                    f"fs2_scientific_artifacts,fs2_scientific_uploads,"
+                    f"fs2_scientific_result_manifests,fs2_scientific_artifact_events,"
                     f"fs2_reporting_model_usage,fs2_reporting_principal_usage,"
                     f"fs2_reporting_terminal_totals,fs2_activation_intents,fs2_activation_events,"
                     f"fs2_activation_target_state,fs2_activation_controller_status,"
@@ -464,12 +466,16 @@ class PostgresStore:
                     f"REVOKE ALL ON fs2_operation_events_id_seq,fs2_audit_events_id_seq,"
                     f"fs2_activation_events_id_seq,fs2_configuration_revisions_revision_seq,"
                     f"fs2_configuration_reconciliation_events_id_seq,"
-                    f"fs2_model_deployment_status_events_id_seq FROM {role}"
+                    f"fs2_model_deployment_status_events_id_seq,"
+                    f"fs2_scientific_artifact_events_id_seq FROM {role}"
                 )
                 await connection.execute(
                     f"REVOKE ALL ON FUNCTION fs2_activation_model_lock_key(text),"
                     f"fs2_runtime_ensure_activation_intent(uuid,integer,text,text,char(64),"
-                    f"timestamptz,integer,text,bigint),fs2_record_terminal_usage() FROM {role}"
+                    f"timestamptz,integer,text,bigint),fs2_record_terminal_usage(),"
+                    f"fs2_scientific_assert_current_attempt(),"
+                    f"fs2_scientific_validate_upload_transition(),"
+                    f"fs2_scientific_reject_mutation() FROM {role}"
                 )
             await connection.execute(
                 f"GRANT SELECT ON fs2_reporting_model_usage,fs2_reporting_principal_usage,"
@@ -492,6 +498,14 @@ class PostgresStore:
             )
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_model_deployments TO {quoted_runtime}")
             await connection.execute(
+                f"GRANT SELECT,INSERT ON fs2_scientific_artifacts,"
+                f"fs2_scientific_result_manifests,fs2_scientific_artifact_events TO {quoted_runtime}"
+            )
+            await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_uploads TO {quoted_runtime}")
+            await connection.execute(
+                f"GRANT UPDATE (artifact_id,finalized_at) ON fs2_scientific_uploads TO {quoted_runtime}"
+            )
+            await connection.execute(
                 f"GRANT SELECT ON fs2_schema_migrations,fs2_reporting_terminal_totals TO {quoted_runtime}"
             )
             # API-key inventory joins runtime-owned token identities to a
@@ -510,7 +524,8 @@ class PostgresStore:
             await connection.execute(
                 f"GRANT USAGE,SELECT ON fs2_configuration_revisions_revision_seq,"
                 f"fs2_configuration_reconciliation_events_id_seq,"
-                f"fs2_model_deployment_status_events_id_seq TO {quoted_runtime}"
+                f"fs2_model_deployment_status_events_id_seq,"
+                f"fs2_scientific_artifact_events_id_seq TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT EXECUTE ON FUNCTION fs2_runtime_ensure_activation_intent(uuid,integer,text,text,"
