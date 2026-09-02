@@ -47,7 +47,7 @@ EXPECTED_MIGRATIONS: Final = (
     ),
     (
         "0014_scientific_artifact_results.sql",
-        "65f0fd8eafa3d4dc3d34f1008629982846519f900f72a81935e24ec5e7c9f6df",
+        "97be6f57c64944418fa9719a58bacd8040402d21fa874f7af3a773c02b68b675",
     ),
 )
 

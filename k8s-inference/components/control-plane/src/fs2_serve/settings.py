@@ -178,11 +178,33 @@ class Settings(BaseSettings):
     max_request_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
     max_response_bytes: int = Field(default=128 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
     payload_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
-    artifact_store_endpoint: str = "https://storage.eu-north1.nebius.cloud"
-    artifact_store_bucket: str = "fs2-scientific-artifacts"
-    artifact_store_region: str = "eu-north1"
-    artifact_store_access_key: str = ""
-    artifact_store_secret_key: str = ""
+    scientific_artifacts_enabled: bool = False
+    artifact_store_endpoint: str = Field(
+        default="https://storage.eu-north1.nebius.cloud", min_length=8, max_length=2048
+    )
+    artifact_store_bucket: str = Field(
+        default="fs2-scientific-artifacts",
+        min_length=3,
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+    )
+    artifact_store_region: str = Field(
+        default="eu-north1", min_length=2, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]*$"
+    )
+    artifact_store_addressing_style: Literal["path", "virtual"] = "path"
+    artifact_store_verify_tls: bool = True
+    artifact_store_credentials_file: Path = Path("/var/run/secrets/fs2-serve/artifact-store/credentials.json")
+    artifact_handle_ttl_seconds: int = Field(default=600, ge=30, le=900)
+    artifact_max_bytes: int = Field(default=1 << 40, ge=1024, le=1 << 40)
+    artifact_retention_seconds: int = Field(default=7776000, ge=86400, le=315360000)
+    artifact_media_types: str = Field(
+        default=(
+            "application/octet-stream,application/json,application/gzip,"
+            "application/vnd.fs2.scientific-manifest+json,chemical/x-pdb,chemical/x-cif,text/plain"
+        ),
+        min_length=3,
+        max_length=2048,
+    )
     operation_retention_seconds: int = Field(default=604800, ge=3600, le=2592000)
     pat_retention_seconds: int = Field(default=604800, ge=3600, le=2592000)
     audit_retention_seconds: int = Field(default=2592000, ge=3600, le=31536000)
@@ -250,6 +272,15 @@ class Settings(BaseSettings):
             raise ValueError("max_sync_waiters cannot be lower than worker_concurrency")
         if self.federation_routes_file.parent != self.federation_secret_dir:
             raise ValueError("federation_routes_file must be directly inside federation_secret_dir")
+        if self.scientific_artifacts_enabled:
+            if not self.artifact_store_endpoint.startswith(("https://", "http://")):
+                raise ValueError("artifact_store_endpoint must be an absolute HTTP(S) URL")
+            if self.artifact_store_verify_tls and not self.artifact_store_endpoint.startswith("https://"):
+                raise ValueError("artifact store TLS verification requires an https endpoint")
+            if not self.allow_non_cluster_urls and not self.artifact_store_endpoint.startswith("https://"):
+                raise ValueError("artifact_store_endpoint must use HTTPS")
+            if not self.artifact_media_types_set():
+                raise ValueError("artifact_media_types must list at least one exact media type")
         database_roles = {
             self.reporting_database_role,
             self.runtime_database_role,
@@ -314,6 +345,29 @@ class Settings(BaseSettings):
 
     def admin_token(self) -> bytes:
         return self._read_secret(self.admin_token_file, minimum=32)
+
+    def artifact_media_types_set(self) -> frozenset[str]:
+        """Return the exact media-type allowlist accepted for scientific bytes."""
+
+        return frozenset(item.strip().lower() for item in self.artifact_media_types.split(",") if item.strip())
+
+    def artifact_store_credentials(self) -> tuple[str, str]:
+        """Read the object-store key pair from its mounted secret, not from env."""
+
+        raw = self._read_secret(self.artifact_store_credentials_file, minimum=8)
+        try:
+            document = json.loads(raw)
+        except ValueError as exc:
+            raise ValueError("artifact store credentials must be a JSON object") from exc
+        if not isinstance(document, dict):
+            raise ValueError("artifact store credentials must be a JSON object")
+        access_key = document.get("access_key_id")
+        secret_key = document.get("secret_access_key")
+        if not isinstance(access_key, str) or not isinstance(secret_key, str):
+            raise ValueError("artifact store credentials must name access_key_id and secret_access_key")
+        if not access_key or not secret_key:
+            raise ValueError("artifact store credentials must be non-empty")
+        return access_key, secret_key
 
     def bootstrap_access_token(self) -> str:
         raw = self._read_secret(self.bootstrap_access_token_file, minimum=64)

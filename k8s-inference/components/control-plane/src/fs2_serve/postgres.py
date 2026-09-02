@@ -345,8 +345,10 @@ class PostgresStore:
                     f"fs2_configuration_reconciliation_events,"
                     f"fs2_model_deployment_revisions,fs2_model_deployments,"
                     f"fs2_model_deployment_idempotency,fs2_model_deployment_status_events,"
-                    f"fs2_scientific_artifacts,fs2_scientific_uploads,"
-                    f"fs2_scientific_result_manifests,fs2_scientific_artifact_events,"
+                    f"fs2_scientific_stage_attempts,fs2_scientific_artifacts,fs2_scientific_uploads,"
+                    f"fs2_scientific_stage_commits,fs2_scientific_stage_commit_attempts,"
+                    f"fs2_scientific_run_results,fs2_scientific_artifact_events,"
+                    f"fs2_scientific_retention_ledger,"
                     f"fs2_reporting_model_usage,fs2_reporting_principal_usage,"
                     f"fs2_reporting_terminal_totals,fs2_activation_intents,fs2_activation_events,"
                     f"fs2_activation_target_state,fs2_activation_controller_status,"
@@ -357,15 +359,18 @@ class PostgresStore:
                     f"fs2_activation_events_id_seq,fs2_configuration_revisions_revision_seq,"
                     f"fs2_configuration_reconciliation_events_id_seq,"
                     f"fs2_model_deployment_status_events_id_seq,"
-                    f"fs2_scientific_artifact_events_id_seq FROM {role}"
+                    f"fs2_scientific_artifact_events_id_seq,"
+                    f"fs2_scientific_retention_ledger_id_seq FROM {role}"
                 )
                 await connection.execute(
                     f"REVOKE ALL ON FUNCTION fs2_activation_model_lock_key(text),"
                     f"fs2_runtime_ensure_activation_intent(uuid,integer,text,text,char(64),"
                     f"timestamptz,integer,text,bigint),fs2_record_terminal_usage(),"
-                    f"fs2_scientific_assert_current_attempt(),"
+                    f"fs2_scientific_assert_writable(),fs2_scientific_assert_live_attempt(),"
+                    f"fs2_scientific_validate_attempt_transition(),"
                     f"fs2_scientific_validate_upload_transition(),"
-                    f"fs2_scientific_reject_mutation() FROM {role}"
+                    f"fs2_scientific_reject_mutation(),"
+                    f"fs2_scientific_guard_retention_delete() FROM {role}"
                 )
             await connection.execute(
                 f"GRANT SELECT ON fs2_reporting_model_usage,fs2_reporting_principal_usage,"
@@ -387,13 +392,30 @@ class PostgresStore:
                 f"fs2_model_deployment_idempotency,fs2_model_deployment_status_events TO {quoted_runtime}"
             )
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_model_deployments TO {quoted_runtime}")
+            # Scientific artifact provenance. Rows are append-only for the
+            # runtime role: the only permitted updates are the two documented
+            # one-way transitions, and DELETE is additionally gated in SQL by
+            # the retention trigger, so the privilege alone cannot erase data.
             await connection.execute(
-                f"GRANT SELECT,INSERT ON fs2_scientific_artifacts,"
-                f"fs2_scientific_result_manifests,fs2_scientific_artifact_events TO {quoted_runtime}"
+                f"GRANT SELECT,INSERT ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
+                f"fs2_scientific_uploads,fs2_scientific_stage_commits,"
+                f"fs2_scientific_stage_commit_attempts,fs2_scientific_run_results,"
+                f"fs2_scientific_artifact_events,fs2_scientific_retention_ledger TO {quoted_runtime}"
             )
-            await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_uploads TO {quoted_runtime}")
+            await connection.execute(
+                f"GRANT UPDATE (status,completed_at,resolved_pool_id,admitted_resource_flavor,"
+                f"accelerator_resource_name,accelerator_count,admitted_at,kueue_workload_uid,"
+                f"k8s_job_uid,pod_uids,node_uids,gpu_uuids) "
+                f"ON fs2_scientific_stage_attempts TO {quoted_runtime}"
+            )
             await connection.execute(
                 f"GRANT UPDATE (artifact_id,finalized_at) ON fs2_scientific_uploads TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT DELETE ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
+                f"fs2_scientific_uploads,fs2_scientific_stage_commits,"
+                f"fs2_scientific_stage_commit_attempts,fs2_scientific_run_results,"
+                f"fs2_scientific_artifact_events TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT SELECT ON fs2_schema_migrations,fs2_reporting_terminal_totals TO {quoted_runtime}"
@@ -415,7 +437,8 @@ class PostgresStore:
                 f"GRANT USAGE,SELECT ON fs2_configuration_revisions_revision_seq,"
                 f"fs2_configuration_reconciliation_events_id_seq,"
                 f"fs2_model_deployment_status_events_id_seq,"
-                f"fs2_scientific_artifact_events_id_seq TO {quoted_runtime}"
+                f"fs2_scientific_artifact_events_id_seq,"
+                f"fs2_scientific_retention_ledger_id_seq TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT EXECUTE ON FUNCTION fs2_runtime_ensure_activation_intent(uuid,integer,text,text,"

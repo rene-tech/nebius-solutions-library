@@ -2642,3 +2642,87 @@ def test_observability_link_requires_verified_allowlisted_https_route() -> None:
         )
         assert result.returncode != 0
         assert expected in result.stderr
+
+
+def _deployment(documents: list[dict]) -> dict:
+    return next(item for item in documents if item["kind"] == "Deployment")
+
+
+def test_scientific_artifact_routes_are_absent_until_object_storage_is_configured() -> None:
+    deployment = _deployment(render())
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    names = {item["name"] for item in container["env"]}
+    assert not [name for name in names if name.startswith("FS2_ARTIFACT_")]
+    assert "FS2_SCIENTIFIC_ARTIFACTS_ENABLED" not in names
+    mounts = {item["name"] for item in container["volumeMounts"]}
+    assert "artifact-store" not in mounts
+    volumes = {item["name"] for item in deployment["spec"]["template"]["spec"]["volumes"]}
+    assert "artifact-store" not in volumes
+
+
+def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> None:
+    documents = render(
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set",
+        "scientificArtifacts.egressCidrs[0]=203.0.113.0/24",
+    )
+    deployment = _deployment(documents)
+    pod = deployment["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    environment = {item["name"]: item.get("value") for item in container["env"]}
+
+    # Every artifact value must survive Helm's float64 number handling.
+    assert environment["FS2_ARTIFACT_MAX_BYTES"] == "1099511627776"
+    assert environment["FS2_ARTIFACT_RETENTION_SECONDS"] == "7776000"
+    assert environment["FS2_ARTIFACT_HANDLE_TTL_SECONDS"] == "600"
+    assert "e+" not in "".join(value or "" for value in environment.values())
+
+    # Credentials arrive as a read-only projected file, never as an env value.
+    assert "FS2_ARTIFACT_STORE_ACCESS_KEY" not in environment
+    assert "FS2_ARTIFACT_STORE_SECRET_KEY" not in environment
+    assert environment["FS2_ARTIFACT_STORE_CREDENTIALS_FILE"] == (
+        "/var/run/secrets/fs2-serve/artifact-store/credentials.json"
+    )
+    volume = next(item for item in pod["volumes"] if item["name"] == "artifact-store")
+    assert volume["secret"]["defaultMode"] == 0o400
+    mount = next(item for item in container["volumeMounts"] if item["name"] == "artifact-store")
+    assert mount["readOnly"] is True
+    assert mount["mountPath"] == "/var/run/secrets/fs2-serve/artifact-store"
+
+    # The rendered environment must construct the real Settings object.
+    from fs2_serve.settings import Settings
+
+    settings = Settings(
+        **{
+            key.removeprefix("FS2_").lower(): value
+            for key, value in environment.items()
+            if key.startswith("FS2_ARTIFACT") or key == "FS2_SCIENTIFIC_ARTIFACTS_ENABLED"
+        }
+    )
+    assert settings.scientific_artifacts_enabled is True
+    assert settings.artifact_max_bytes == 1099511627776
+    assert "chemical/x-pdb" in settings.artifact_media_types_set()
+
+
+def test_object_storage_egress_is_opt_in_and_scoped_to_tls() -> None:
+    without = render("--set", "scientificArtifacts.enabled=true")
+    policies = [item for item in without if item["kind"] == "NetworkPolicy"]
+    assert policies, "the chart must still render its default-deny policies"
+    assert "203.0.113.0/24" not in json.dumps(without)
+
+    with_egress = render(
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set",
+        "scientificArtifacts.egressCidrs[0]=203.0.113.0/24",
+    )
+    rules = [
+        rule
+        for item in with_egress
+        if item["kind"] == "NetworkPolicy"
+        for rule in item["spec"].get("egress", [])
+        if any(peer.get("ipBlock", {}).get("cidr") == "203.0.113.0/24" for peer in rule.get("to", []))
+    ]
+    assert len(rules) == 1
+    assert rules[0]["ports"] == [{"port": 443, "protocol": "TCP"}]

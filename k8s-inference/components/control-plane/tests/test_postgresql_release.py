@@ -33,7 +33,7 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
         "first_migration_version": "0001_initial.sql",
         "last_migration_version": "0014_scientific_artifact_results.sql",
         "migration_count": 14,
-        "migration_set_sha256": "39536717cf8fbb35325bc7ccf0585247ace2f0b9446b3340724fecfab0e430c3",
+        "migration_set_sha256": "2982db80a031571280fb9fb57a4fdae3a5f043a21af6ae4d476884164f10d6dd",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]

@@ -112,6 +112,18 @@ spec:
           protocol: TCP
         {{- end }}
     {{- end }}
+    {{- if and .Values.scientificArtifacts.enabled .Values.scientificArtifacts.egressCidrs }}
+    # Scientific artifact object storage. Handles are presigned locally, but
+    # finalize streams the stored object back to verify its digest.
+    - to:
+        {{- range .Values.scientificArtifacts.egressCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: 443
+          protocol: TCP
+    {{- end }}
 {{- if .Values.publicGateway.enabled }}
 ---
 apiVersion: networking.k8s.io/v1

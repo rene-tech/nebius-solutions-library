@@ -206,6 +206,11 @@ secrets:
   admin:
     name: fs2-serve-admin
     key: token
+  # JSON object with access_key_id and secret_access_key. Only consumed when
+  # scientificArtifacts.enabled is true.
+  artifactStore:
+    name: fs2-serve-artifact-store
+    key: credentials.json
 
 config:
   # Required public HTTPS origins; empty defaults fail validation.
@@ -255,8 +260,8 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 85ccac5ef465e21bb88e2232c3783967d5265bd16378af1506d1119cdcf354e8
-    migrationSetSha256: 39536717cf8fbb35325bc7ccf0585247ace2f0b9446b3340724fecfab0e430c3
+    contractPayloadSha256: c78c7a4d69f535260fb341687d328bfc1ba636dd1ef82c72d0a5dec71ecee7e7
+    migrationSetSha256: 2982db80a031571280fb9fb57a4fdae3a5f043a21af6ae4d476884164f10d6dd
     migrationCount: 14
     firstMigrationVersion: 0001_initial.sql
     lastMigrationVersion: 0014_scientific_artifact_results.sql
@@ -537,3 +542,29 @@ podAnnotations: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+# Scientific artifact provenance and result service. Disabled by default: the
+# routes are mounted only when object storage is fully configured, so an
+# unconfigured cluster never exposes an endpoint backed by absent credentials.
+scientificArtifacts:
+  enabled: false
+  endpoint: https://storage.eu-north1.nebius.cloud
+  bucket: fs2-scientific-artifacts
+  region: eu-north1
+  addressingStyle: path
+  verifyTls: true
+  handleTtlSeconds: 600
+  maxBytes: 1099511627776
+  retentionSeconds: 7776000
+  mediaTypes:
+    - application/octet-stream
+    - application/json
+    - application/gzip
+    - application/vnd.fs2.scientific-manifest+json
+    - chemical/x-pdb
+    - chemical/x-cif
+    - text/plain
+    - text/x-fasta
+  # CIDRs the control plane may reach on 443 to serve artifact handles and
+  # verify stored objects. Empty keeps the default-deny egress policy intact.
+  egressCidrs: []

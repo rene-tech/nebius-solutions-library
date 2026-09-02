@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import uvicorn
@@ -64,10 +65,9 @@ from .route_revalidation import RouteRevalidator
 from .runtime import RuntimeClient
 from .scientific_artifacts import (
     PostgresArtifactRepository,
-    S3CompatibleArtifactHandleSigner,
-    S3CompatibleArtifactObjectStore,
     ScientificArtifactService,
 )
+from .scientific_object_store import ObjectStoreConfig, S3ArtifactObjectStore
 from .settings import Settings
 from .store import ConflictError
 from .telemetry import Metrics, configure_tracing
@@ -203,6 +203,39 @@ async def _synchronize_admin_configuration(
     )
 
 
+def _artifact_service(settings: Settings, store: PostgresStore) -> ScientificArtifactService | None:
+    """Build the artifact service only when object storage is fully configured.
+
+    An unconfigured deployment gets no artifact routes at all, instead of
+    routes backed by anonymous credentials that would fail at first use.
+    """
+
+    if not settings.scientific_artifacts_enabled:
+        return None
+    access_key, secret_key = settings.artifact_store_credentials()
+    object_store = S3ArtifactObjectStore(
+        ObjectStoreConfig(
+            endpoint_url=settings.artifact_store_endpoint,
+            bucket=settings.artifact_store_bucket,
+            region=settings.artifact_store_region,
+            access_key=access_key,
+            secret_key=secret_key,
+            addressing_style=settings.artifact_store_addressing_style,
+            verify_tls=settings.artifact_store_verify_tls,
+            max_stream_bytes=settings.artifact_max_bytes,
+        )
+    )
+    return ScientificArtifactService(
+        repository=PostgresArtifactRepository(store.pool),
+        object_store=object_store,
+        allowed_media_types=settings.artifact_media_types_set(),
+        max_artifact_bytes=settings.artifact_max_bytes,
+        default_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
+        retention=timedelta(seconds=settings.artifact_retention_seconds),
+        require_tls_handles=settings.artifact_store_verify_tls,
+    )
+
+
 async def build_runtime(settings: Settings) -> AppRuntime:
     registry = Registry.load(
         settings.catalog_dir,
@@ -226,21 +259,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         secret_root=settings.federation_secret_dir,
     )
     store = await _store(settings)
-    artifact_store = S3CompatibleArtifactObjectStore(
-        endpoint=settings.artifact_store_endpoint, bucket=settings.artifact_store_bucket,
-        region=settings.artifact_store_region, access_key=settings.artifact_store_access_key,
-        secret_key=settings.artifact_store_secret_key,
-    )
-    artifact_signer = S3CompatibleArtifactHandleSigner(
-        endpoint=settings.artifact_store_endpoint, bucket=settings.artifact_store_bucket,
-        region=settings.artifact_store_region, access_key=settings.artifact_store_access_key,
-        secret_key=settings.artifact_store_secret_key,
-    )
-    artifact_service = ScientificArtifactService(
-        repository=PostgresArtifactRepository(store.pool), object_store=artifact_store,
-        signer=artifact_signer,
-        allowed_media_types={"application/octet-stream", "application/json", "chemical/x-pdb", "text/plain"},
-    )
+    artifact_service = _artifact_service(settings, store)
     peppers = PepperRing.from_file(settings.token_pepper_file)
     tokens = TokenService(store, peppers)
     model_deployment_preview: ModelDeploymentPreviewService | None = None
@@ -296,6 +315,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         max_response_bytes=settings.max_response_bytes,
         federation=federation,
     )
+
     async def refresh_routes() -> bool:
         if not await route_revalidator.refresh():
             return False
