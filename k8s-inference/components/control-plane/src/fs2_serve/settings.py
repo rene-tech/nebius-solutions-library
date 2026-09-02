@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import SplitResult, urlsplit
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .models import ModelId, Scope
@@ -188,6 +188,10 @@ class Settings(BaseSettings):
     scientific_batch_kubernetes_ca_file: Path = Path("/var/run/secrets/fs2-scientific-batch/ca.crt")
     scientific_batch_scheduling_contract_file: Path = Path("/etc/fs2-scientific-batch/kueue-scheduling.json")
     scientific_batch_execution_map_file: Path = Path("/etc/fs2-scientific-batch/execution-map.json")
+    scientific_batch_tools_image: str | None = Field(default=None, max_length=1024)
+    scientific_batch_internal_api_url: str = Field(
+        default="http://fs2-serve-control-plane.default.svc:8080", min_length=1, max_length=2048
+    )
     scientific_batch_workers: int = Field(default=2, ge=1, le=32)
     scientific_batch_poll_seconds: float = Field(default=0.25, ge=0.05, le=60)
     scientific_batch_lease_seconds: float = Field(default=30, ge=5, le=300)
@@ -198,11 +202,21 @@ class Settings(BaseSettings):
     max_request_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
     max_response_bytes: int = Field(default=128 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
     payload_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
-    artifact_store_endpoint: str = "https://storage.eu-north1.nebius.cloud"
-    artifact_store_bucket: str = "fs2-scientific-artifacts"
-    artifact_store_region: str = "eu-north1"
-    artifact_store_access_key: str = ""
-    artifact_store_secret_key: str = ""
+    artifact_service_enabled: bool = False
+    artifact_store_endpoint: str = Field(
+        default="https://storage.eu-north1.nebius.cloud", min_length=1, max_length=2048
+    )
+    artifact_store_bucket: str = Field(
+        default="fs2-scientific-artifacts",
+        min_length=3,
+        max_length=64,
+        pattern=r"^[a-z0-9][a-z0-9.-]+[a-z0-9]$",
+    )
+    artifact_store_region: str = Field(
+        default="eu-north1", min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]*$"
+    )
+    artifact_store_access_key: SecretStr = SecretStr("")
+    artifact_store_secret_key: SecretStr = SecretStr("")
     operation_retention_seconds: int = Field(default=604800, ge=3600, le=2592000)
     pat_retention_seconds: int = Field(default=604800, ge=3600, le=2592000)
     audit_retention_seconds: int = Field(default=2592000, ge=3600, le=31536000)
@@ -301,8 +315,42 @@ class Settings(BaseSettings):
             raise ValueError("scientific batch API requires the independent Kubernetes write gate")
         if self.scientific_batch_enabled and self.scientific_batch_controller_id is None:
             raise ValueError("scientific batch controller identity is required when enabled")
+        if self.scientific_batch_enabled and (
+            self.scientific_batch_tools_image is None
+            or re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", self.scientific_batch_tools_image) is None
+        ):
+            raise ValueError("scientific batch requires an immutable artifact companion image")
+        internal_api = urlsplit(self.scientific_batch_internal_api_url)
+        if self.scientific_batch_enabled and (
+            internal_api.scheme != "http"
+            or internal_api.hostname is None
+            or (not internal_api.hostname.endswith(".svc") and not self.allow_non_cluster_urls)
+            or internal_api.path not in {"", "/"}
+            or internal_api.query
+            or internal_api.fragment
+        ):
+            raise ValueError("scientific batch internal API URL must be an in-cluster HTTP origin")
         if not self.scientific_batch_kubernetes_api_url.startswith("https://"):
             raise ValueError("scientific batch Kubernetes API URL must use HTTPS")
+        if self.scientific_batch_enabled and not self.artifact_service_enabled:
+            raise ValueError("scientific batch requires the canonical artifact service")
+        if self.artifact_service_enabled:
+            parsed_artifact_endpoint = urlsplit(self.artifact_store_endpoint)
+            if (
+                parsed_artifact_endpoint.scheme != "https"
+                or not parsed_artifact_endpoint.hostname
+                or parsed_artifact_endpoint.username is not None
+                or parsed_artifact_endpoint.password is not None
+                or parsed_artifact_endpoint.path not in {"", "/"}
+                or parsed_artifact_endpoint.query
+                or parsed_artifact_endpoint.fragment
+            ):
+                raise ValueError("artifact store endpoint must be an exact HTTPS authority")
+            if (
+                len(self.artifact_store_access_key.get_secret_value()) < 3
+                or len(self.artifact_store_secret_key.get_secret_value()) < 8
+            ):
+                raise ValueError("artifact service requires object-store credentials")
         required_bootstrap_scopes = {Scope.CATALOG_READ, Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE}
         if not required_bootstrap_scopes.issubset(self.bootstrap_access_scopes):
             raise ValueError("bootstrap access requires catalog.read, inference.invoke, and mcp.invoke")

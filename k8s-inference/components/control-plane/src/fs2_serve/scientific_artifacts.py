@@ -9,7 +9,9 @@ repository boundary.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import hmac
 import json
 import re
 from collections.abc import Callable, Mapping
@@ -18,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Annotated, Any, Literal, Protocol, cast
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -28,7 +30,7 @@ from pydantic import AwareDatetime, ConfigDict, Field, StringConstraints, model_
 from .models import StrictModel
 
 ARTIFACT_RECORD_SCHEMA = "fs2-serve.nebius.ai/scientific-artifact-record/v1"
-SCIENTIFIC_RUN_RESULT_SCHEMA = "fs2-serve.nebius.ai/scientific-run-result/v1"
+RESULT_RECORD_SCHEMA = "fs2-serve.nebius.ai/scientific-result-record/v1"
 SCIENTIFIC_ARTIFACT_MIGRATION = "0014_scientific_artifact_results.sql"
 MAX_ARTIFACT_BYTES = 1 << 40
 MAX_HANDLE_TTL = timedelta(minutes=15)
@@ -271,8 +273,8 @@ class ExecutionProvenance(ScientificArtifactModel):
     runtime_image_digest: Sha256Digest
     workload_spec_digest: Sha256Digest
     scheduling_snapshot_digest: Sha256Digest
-    job_uid: SafeId
-    pod_uids: tuple[SafeId, ...] = Field(min_length=1, max_length=64)
+    job_uid: SafeId | None = None
+    pod_uids: tuple[SafeId, ...] = Field(default=(), max_length=64)
     started_at: AwareDatetime
     completed_at: AwareDatetime
 
@@ -342,15 +344,13 @@ class TerminalResultDraft(ScientificArtifactModel):
 
 
 class TerminalResultManifest(TerminalResultDraft):
-    """Internal persisted projection of canonical scientific-run-result/v1."""
-    schema: Literal["fs2-serve.nebius.ai/scientific-run-result/v1"] = SCIENTIFIC_RUN_RESULT_SCHEMA
+    """Internal persisted result; public projections use the catalog schema."""
+
+    schema_version: Literal["fs2-serve.nebius.ai/scientific-result-record/v1"] = (
+        "fs2-serve.nebius.ai/scientific-result-record/v1"
+    )
     manifest_digest: Sha256Digest
     committed_at: AwareDatetime
-
-    @property
-    def schema_version(self) -> str:
-        """Backward-compatible accessor; only canonical ``schema`` is persisted."""
-        return self.schema
 
     @model_validator(mode="after")
     def digest_matches_manifest(self) -> TerminalResultManifest:
@@ -399,49 +399,184 @@ class ArtifactHandleSigner(Protocol):
         storage_key: str,
         media_type: str,
         compression: ArtifactCompression | None,
+        expected_digest: str,
         expires_at: datetime,
     ) -> EphemeralHandle: ...
 
     async def issue_download(self, *, storage_key: str, expires_at: datetime) -> EphemeralHandle: ...
 
 
-class S3CompatibleArtifactObjectStore:
-    """Same-region S3-compatible store adapter used by the live runtime."""
+def _uri_encode(value: str, *, encode_slash: bool = True) -> str:
+    return quote(value, safe="-_.~" if encode_slash else "/-_.~")
+
+
+def _hmac(key: bytes, value: str) -> bytes:
+    return hmac.new(key, value.encode(), hashlib.sha256).digest()
+
+
+class _S3SigV4:
+    """Minimal AWS Signature V4 query signer for one path-style S3 endpoint."""
+
     def __init__(self, *, endpoint: str, bucket: str, region: str, access_key: str, secret_key: str) -> None:
-        self.endpoint, self.bucket, self.region = endpoint.rstrip("/"), bucket, region
-        self.access_key, self.secret_key = access_key, secret_key
+        parsed = urlsplit(endpoint)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("artifact endpoint must be an exact HTTPS authority")
+        if re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,62}[a-z0-9]", bucket) is None:
+            raise ValueError("artifact bucket is invalid")
+        if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", region) is None:
+            raise ValueError("artifact region is invalid")
+        if not 3 <= len(access_key) <= 256 or not 8 <= len(secret_key) <= 1024:
+            raise ValueError("artifact S3 credentials are absent or invalid")
+        self.endpoint = f"https://{parsed.netloc}"
+        self.host = parsed.netloc.lower()
+        self.bucket = bucket
+        self.region = region
+        self.access_key = access_key
+        self.secret_key = secret_key
+
+    def presign(
+        self,
+        method: Literal["GET", "PUT", "HEAD"],
+        storage_key: str,
+        *,
+        now: datetime,
+        expires_at: datetime,
+        headers: Mapping[str, str] | None = None,
+    ) -> tuple[str, dict[str, str]]:
+        if now.tzinfo is None or expires_at.tzinfo is None:
+            raise ValueError("artifact signature timestamps must be timezone-aware")
+        seconds = int((expires_at - now).total_seconds())
+        if not 1 <= seconds <= 604800:
+            raise ValueError("artifact signature expiry is outside the SigV4 bound")
+        timestamp = now.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+        date = timestamp[:8]
+        scope = f"{date}/{self.region}/s3/aws4_request"
+        request_headers = {key.lower(): " ".join(value.strip().split()) for key, value in (headers or {}).items()}
+        if "host" in request_headers or any(not key or not value for key, value in request_headers.items()):
+            raise ValueError("artifact signed headers are invalid")
+        canonical_headers = {"host": self.host, **request_headers}
+        signed_headers = ";".join(sorted(canonical_headers))
+        query = {
+            "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+            "X-Amz-Credential": f"{self.access_key}/{scope}",
+            "X-Amz-Date": timestamp,
+            "X-Amz-Expires": str(seconds),
+            "X-Amz-SignedHeaders": signed_headers,
+        }
+        canonical_query = "&".join(f"{_uri_encode(key)}={_uri_encode(value)}" for key, value in sorted(query.items()))
+        canonical_uri = f"/{_uri_encode(self.bucket)}/{_uri_encode(storage_key, encode_slash=False)}"
+        canonical_header_block = "".join(f"{key}:{canonical_headers[key]}\n" for key in sorted(canonical_headers))
+        canonical_request = "\n".join(
+            (method, canonical_uri, canonical_query, canonical_header_block, signed_headers, "UNSIGNED-PAYLOAD")
+        )
+        string_to_sign = "\n".join(
+            (
+                "AWS4-HMAC-SHA256",
+                timestamp,
+                scope,
+                hashlib.sha256(canonical_request.encode()).hexdigest(),
+            )
+        )
+        date_key = _hmac(f"AWS4{self.secret_key}".encode(), date)
+        region_key = _hmac(date_key, self.region)
+        service_key = _hmac(region_key, "s3")
+        signing_key = _hmac(service_key, "aws4_request")
+        signature = hmac.new(signing_key, string_to_sign.encode(), hashlib.sha256).hexdigest()
+        return f"{self.endpoint}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}", request_headers
+
+
+class S3CompatibleArtifactObjectStore:
+    """Verify immutable upload metadata with an authenticated S3 HEAD."""
+
+    def __init__(self, *, endpoint: str, bucket: str, region: str, access_key: str, secret_key: str) -> None:
+        self.signer = _S3SigV4(
+            endpoint=endpoint,
+            bucket=bucket,
+            region=region,
+            access_key=access_key,
+            secret_key=secret_key,
+        )
 
     async def inspect(self, storage_key: str) -> VerifiedStoredObject:
-        url = f"{self.endpoint}/{self.bucket}/{storage_key}"
+        now = datetime.now(UTC)
+        url, headers = self.signer.presign(
+            "HEAD",
+            storage_key,
+            now=now,
+            expires_at=now + timedelta(minutes=1),
+            headers={"x-amz-checksum-mode": "ENABLED"},
+        )
         async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            response = await client.get(url)
+            response = await client.head(url, headers=headers)
             response.raise_for_status()
-            body = response.content
+        encoded_checksum = response.headers.get("x-amz-checksum-sha256")
+        if encoded_checksum is None:
+            raise ArtifactVerificationError("stored object has no SHA-256 checksum")
+        try:
+            checksum = base64.b64decode(encoded_checksum, validate=True)
+        except ValueError as error:
+            raise ArtifactVerificationError("stored object SHA-256 checksum is invalid") from error
+        if len(checksum) != hashlib.sha256().digest_size:
+            raise ArtifactVerificationError("stored object SHA-256 checksum is invalid")
+        compression_value = response.headers.get("content-encoding")
+        try:
+            compression = None if compression_value is None else ArtifactCompression(compression_value)
+        except ValueError as error:
+            raise ArtifactVerificationError("stored object compression is unsupported") from error
+        try:
+            size_bytes = int(response.headers["content-length"])
+        except (KeyError, ValueError):
+            raise ArtifactVerificationError("stored object size is invalid") from None
         return VerifiedStoredObject(
-            digest="sha256:" + hashlib.sha256(body).hexdigest(),
-            size_bytes=len(body),
+            storage_key=storage_key,
+            digest="sha256:" + checksum.hex(),
+            size_bytes=size_bytes,
             media_type=response.headers.get("content-type", "application/octet-stream").split(";", 1)[0],
-            compression=None,
+            compression=compression,
         )
 
 
 class S3CompatibleArtifactHandleSigner:
-    """Short-lived signed-handle provider; credentials stay process-local."""
+    """Issue real SigV4 query-authenticated handles; credentials stay local."""
+
     def __init__(self, *, endpoint: str, bucket: str, region: str, access_key: str, secret_key: str) -> None:
-        self.endpoint, self.bucket, self.region = endpoint.rstrip("/"), bucket, region
-        self.access_key, self.secret_key = access_key, secret_key
+        self.signer = _S3SigV4(
+            endpoint=endpoint,
+            bucket=bucket,
+            region=region,
+            access_key=access_key,
+            secret_key=secret_key,
+        )
 
-    def _handle(self, method: Literal["GET", "PUT"], storage_key: str, expires_at: datetime, media_type: str | None = None) -> EphemeralHandle:
-        # The object-store gateway validates these short-lived query credentials.
-        expiry = int(expires_at.timestamp())
-        url = f"{self.endpoint}/{self.bucket}/{storage_key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential={self.access_key}%2F{self.region}&X-Amz-Expires={max(1, expiry-int(datetime.now(UTC).timestamp()))}"
-        return EphemeralHandle(method=method, url=url, expires_at=expires_at, write_once=method == "PUT", headers={"content-type": media_type} if media_type else {})
-
-    async def issue_upload(self, *, storage_key: str, media_type: str, compression: ArtifactCompression | None, expires_at: datetime) -> EphemeralHandle:
-        return self._handle("PUT", storage_key, expires_at, media_type)
+    async def issue_upload(
+        self,
+        *,
+        storage_key: str,
+        media_type: str,
+        compression: ArtifactCompression | None,
+        expected_digest: str,
+        expires_at: datetime,
+    ) -> EphemeralHandle:
+        now = datetime.now(UTC)
+        encoded_checksum = base64.b64encode(bytes.fromhex(expected_digest.removeprefix("sha256:"))).decode()
+        signed = {"content-type": media_type, "x-amz-checksum-sha256": encoded_checksum}
+        if compression is not None:
+            signed["content-encoding"] = compression.value
+        url, headers = self.signer.presign("PUT", storage_key, now=now, expires_at=expires_at, headers=signed)
+        return EphemeralHandle(method="PUT", url=url, expires_at=expires_at, write_once=True, headers=headers)
 
     async def issue_download(self, *, storage_key: str, expires_at: datetime) -> EphemeralHandle:
-        return self._handle("GET", storage_key, expires_at)
+        now = datetime.now(UTC)
+        url, headers = self.signer.presign("GET", storage_key, now=now, expires_at=expires_at)
+        return EphemeralHandle(method="GET", url=url, expires_at=expires_at, headers=headers)
 
 
 class ArtifactRepository(Protocol):
@@ -521,7 +656,7 @@ def _canonical_json(value: object) -> bytes:
 
 def _manifest_body(value: TerminalResultDraft | TerminalResultManifest) -> dict[str, Any]:
     body = value.model_dump(mode="json", exclude={"manifest_digest", "committed_at"})
-    body.setdefault("schema", SCIENTIFIC_RUN_RESULT_SCHEMA)
+    body.setdefault("schema_version", RESULT_RECORD_SCHEMA)
     return body
 
 
@@ -688,6 +823,7 @@ class ScientificArtifactService:
                 storage_key=upload.storage_key,
                 media_type=upload.media_type,
                 compression=upload.compression,
+                expected_digest=upload.expected_digest,
                 expires_at=deadline,
             )
         except Exception:

@@ -7,12 +7,17 @@ from typing import Protocol
 from uuid import UUID
 
 from .models import (
+    PUBLIC_ARTIFACT_ACCESS_CONTEXT,
+    AdapterExecutionPlan,
+    ArtifactAccessContext,
     ArtifactCommit,
     BatchClaim,
     BatchEventDraft,
+    RuntimeArtifactLocalization,
     SchedulingSnapshot,
     ScientificBatchPlan,
     ScientificBatchState,
+    VerifiedInputManifest,
     WorkloadObservation,
     WorkloadRef,
     WorkloadResource,
@@ -42,8 +47,14 @@ class ScientificBatchRepository(Protocol):
         operation_id: UUID,
         tenant_id: str,
         model_id: str,
+        variant_id: str,
+        input_artifact_id: UUID,
         plan: ScientificBatchPlan,
         scheduling: SchedulingSnapshot,
+        execution_plan: AdapterExecutionPlan | None = None,
+        access_context: ArtifactAccessContext = PUBLIC_ARTIFACT_ACCESS_CONTEXT,
+        input_manifest: VerifiedInputManifest | None = None,
+        runtime_artifacts: tuple[RuntimeArtifactLocalization, ...] = (),
     ) -> ScientificBatchState: ...
 
     async def claim_next(
@@ -66,7 +77,7 @@ class ScientificBatchRepository(Protocol):
         now: datetime,
     ) -> ScientificBatchState: ...
 
-    async def artifact_commit(self, claim: BatchClaim, *, stage_id: str) -> ArtifactCommit | None: ...
+    async def artifact_commits(self, claim: BatchClaim, *, stage_id: str) -> tuple[ArtifactCommit, ...]: ...
 
     async def release(self, claim: BatchClaim) -> None: ...
 
@@ -86,3 +97,9 @@ class ScientificBatchCluster(Protocol):
     async def observe(self, ref: WorkloadRef) -> WorkloadObservation: ...
 
     async def delete(self, ref: WorkloadRef, *, controller_fence: int) -> None: ...
+
+
+class ScientificBatchResultPublisher(Protocol):
+    """Idempotently commit the artifact-service-owned terminal result."""
+
+    async def publish_terminal(self, state: ScientificBatchState) -> None: ...

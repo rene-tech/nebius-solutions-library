@@ -4,6 +4,8 @@ CREATE TABLE fs2_scientific_batches (
     workload_id uuid NOT NULL UNIQUE,
     tenant_id text NOT NULL CHECK (length(tenant_id) BETWEEN 1 AND 120),
     model_id text NOT NULL CHECK (model_id ~ '^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$' AND length(model_id) <= 63),
+    variant_id text NOT NULL CHECK (variant_id ~ '^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$' AND length(variant_id) <= 128),
+    input_artifact_id uuid NOT NULL REFERENCES fs2_scientific_artifacts(id),
     scheduling_digest char(71) NOT NULL CHECK (scheduling_digest ~ '^sha256:[0-9a-f]{64}$'),
     status text NOT NULL CHECK (status IN ('queued','running','succeeded','failed','cancelled')),
     revision integer NOT NULL DEFAULT 0 CHECK (revision >= 0),
@@ -11,12 +13,14 @@ CREATE TABLE fs2_scientific_batches (
     state jsonb NOT NULL CHECK (
         pg_column_size(state) <= 4194304
         AND jsonb_typeof(state) = 'object'
-        AND state->>'schema_version' = 'fs2-serve.nebius.ai/scientific-batch-state/v1'
+        AND state->>'schema_version' = 'fs2-serve.nebius.ai/scientific-batch-state/v5'
         AND state->>'operation_id' = operation_id::text
         AND state->>'batch_id' = batch_id::text
         AND state->>'workload_id' = workload_id::text
         AND state->>'tenant_id' = tenant_id
         AND state->>'model_id' = model_id
+        AND state->>'variant_id' = variant_id
+        AND state->>'input_artifact_id' = input_artifact_id::text
         AND state->>'status' = status
         AND (state->>'revision')::integer = revision
         AND (state->>'cancel_requested')::boolean = cancel_requested
@@ -33,7 +37,7 @@ CREATE TABLE fs2_scientific_batches (
 
 CREATE INDEX fs2_scientific_batches_claim_idx
     ON fs2_scientific_batches(status, lease_expires_at, operation_id)
-    WHERE status IN ('queued','running');
+    WHERE status IN ('queued','running','succeeded','failed','cancelled');
 CREATE INDEX fs2_scientific_batches_tenant_idx
     ON fs2_scientific_batches(tenant_id, operation_id);
 
@@ -70,19 +74,34 @@ CREATE INDEX fs2_scientific_batch_events_operation_idx
 
 -- Artifact metadata and immutable public manifests remain owned by migration
 -- 0014. This table only records the controller's stage-level commit barrier.
-CREATE TABLE fs2_scientific_stage_commits (
+CREATE TABLE fs2_scientific_attempt_commits (
     operation_id uuid NOT NULL REFERENCES fs2_scientific_batches(operation_id) ON DELETE CASCADE,
     stage_id text NOT NULL CHECK (stage_id ~ '^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$' AND length(stage_id) <= 63),
-    attempt_ids uuid[] NOT NULL CHECK (cardinality(attempt_ids) BETWEEN 1 AND 1024),
+    attempt_id uuid NOT NULL,
+    logical_artifact_id text NOT NULL CHECK (
+        logical_artifact_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+    ),
+    handoff_artifact_id uuid NOT NULL REFERENCES fs2_scientific_artifacts(id),
+    handoff_digest char(71) NOT NULL CHECK (handoff_digest ~ '^sha256:[0-9a-f]{64}$'),
+    handoff_size_bytes bigint NOT NULL CHECK (handoff_size_bytes BETWEEN 0 AND 137438953472),
+    handoff_media_type text NOT NULL CHECK (length(handoff_media_type) BETWEEN 3 AND 128),
+    handoff_compression text CHECK (handoff_compression IS NULL OR handoff_compression IN ('gzip','zstd')),
     manifest_artifact_id uuid NOT NULL REFERENCES fs2_scientific_artifacts(id),
     validation_artifact_id uuid NOT NULL REFERENCES fs2_scientific_artifacts(id),
     manifest_digest char(71) NOT NULL CHECK (manifest_digest ~ '^sha256:[0-9a-f]{64}$'),
     validation_digest char(71) NOT NULL CHECK (validation_digest ~ '^sha256:[0-9a-f]{64}$'),
+    collector_id text NOT NULL CHECK (
+        collector_id ~ '^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$' AND length(collector_id) <= 128
+    ),
+    validator_id text NOT NULL CHECK (
+        validator_id ~ '^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$' AND length(validator_id) <= 128
+    ),
     committed_at timestamptz NOT NULL,
     validated_at timestamptz NOT NULL,
     semantic_valid boolean NOT NULL,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-    PRIMARY KEY(operation_id, stage_id),
+    PRIMARY KEY(operation_id, stage_id, attempt_id),
+    UNIQUE(operation_id, logical_artifact_id),
     CHECK (manifest_artifact_id <> validation_artifact_id),
     CHECK (validated_at >= committed_at)
 );
@@ -92,8 +111,14 @@ RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.operation_id <> OLD.operation_id OR NEW.batch_id <> OLD.batch_id
        OR NEW.workload_id <> OLD.workload_id OR NEW.tenant_id <> OLD.tenant_id
-       OR NEW.model_id <> OLD.model_id OR NEW.scheduling_digest <> OLD.scheduling_digest
-       OR NEW.state->'plan' <> OLD.state->'plan' OR NEW.state->'scheduling' <> OLD.state->'scheduling' THEN
+       OR NEW.model_id <> OLD.model_id OR NEW.variant_id <> OLD.variant_id
+       OR NEW.input_artifact_id <> OLD.input_artifact_id
+       OR NEW.scheduling_digest <> OLD.scheduling_digest
+       OR NEW.state->'plan' <> OLD.state->'plan' OR NEW.state->'scheduling' <> OLD.state->'scheduling'
+       OR NEW.state->'adapter_execution' <> OLD.state->'adapter_execution'
+       OR NEW.state->'access_context' <> OLD.state->'access_context'
+       OR NEW.state->'input_manifest' <> OLD.state->'input_manifest'
+       OR NEW.state->'runtime_artifacts' <> OLD.state->'runtime_artifacts' THEN
         RAISE EXCEPTION 'scientific batch admission is immutable';
     END IF;
     IF NEW.revision < OLD.revision THEN
@@ -118,12 +143,12 @@ CREATE TRIGGER fs2_scientific_batch_events_append_only_trigger
 BEFORE UPDATE OR DELETE ON fs2_scientific_batch_events
 FOR EACH ROW EXECUTE FUNCTION fs2_scientific_batch_append_only();
 
-CREATE TRIGGER fs2_scientific_stage_commits_append_only_trigger
-BEFORE UPDATE OR DELETE ON fs2_scientific_stage_commits
+CREATE TRIGGER fs2_scientific_attempt_commits_append_only_trigger
+BEFORE UPDATE OR DELETE ON fs2_scientific_attempt_commits
 FOR EACH ROW EXECUTE FUNCTION fs2_scientific_batch_append_only();
 
 REVOKE ALL ON fs2_scientific_batches,fs2_scientific_batch_events,
-    fs2_scientific_stage_commits FROM PUBLIC;
+    fs2_scientific_attempt_commits FROM PUBLIC;
 REVOKE ALL ON SEQUENCE fs2_scientific_batch_events_sequence_seq FROM PUBLIC;
 REVOKE ALL ON FUNCTION fs2_scientific_batch_state_immutable(),
     fs2_scientific_batch_append_only() FROM PUBLIC;

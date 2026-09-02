@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol, cast
 from urllib.parse import quote
@@ -16,6 +17,7 @@ import httpx
 from .models import (
     FailureKind,
     LifecyclePhase,
+    SchedulingAdmission,
     WorkloadKind,
     WorkloadObservation,
     WorkloadRef,
@@ -28,6 +30,7 @@ ATTEMPT_LABEL = "fs2.nebius.ai/attempt-id"
 OPERATION_LABEL = "fs2.nebius.ai/operation-id"
 WORKLOAD_LABEL = "fs2.nebius.ai/workload-id"
 MODEL_LABEL = "fs2.nebius.ai/model-id"
+VARIANT_LABEL = "fs2.nebius.ai/variant-id"
 TENANT_LABEL = "fs2.nebius.ai/tenant-id"
 STAGE_LABEL = "fs2.nebius.ai/stage-id"
 SHARD_LABEL = "fs2.nebius.ai/shard-id"
@@ -37,7 +40,10 @@ QUEUE_LABEL = "kueue.x-k8s.io/queue-name"
 PRIORITY_LABEL = "kueue.x-k8s.io/priority-class"
 FENCE_ANNOTATION = "fs2.nebius.ai/scientific-controller-fence"
 SNAPSHOT_ANNOTATION = "fs2.nebius.ai/scheduling-snapshot-digest"
+VARIANT_ANNOTATION = "fs2.nebius.ai/variant-id"
 MANIFEST_ANNOTATION = "fs2.nebius.ai/scientific-manifest-sha256"
+KUEUE_JOB_UID_LABEL = "kueue.x-k8s.io/job-uid"
+POOL_LABEL = "fs2.nebius.ai/pool-id"
 
 
 class ScientificManifestRenderer(Protocol):
@@ -210,6 +216,7 @@ class HttpScientificBatchCluster:
                 WORKLOAD_LABEL: str(resource.workload_id),
                 ATTEMPT_LABEL: str(resource.attempt_id),
                 MODEL_LABEL: resource.model_id,
+                VARIANT_LABEL: _safe_label(resource.variant_id),
                 TENANT_LABEL: _safe_label(resource.tenant_id),
                 STAGE_LABEL: resource.stage_id,
                 SERVICE_CLASS_LABEL: str(resource.service_class),
@@ -223,6 +230,7 @@ class HttpScientificBatchCluster:
         annotations = _object(metadata.setdefault("annotations", {}), "Kubernetes annotations")
         annotations[FENCE_ANNOTATION] = f"{self.controller_id}:{controller_fence}"
         annotations[SNAPSHOT_ANNOTATION] = resource.scheduling_snapshot_digest
+        annotations[VARIANT_ANNOTATION] = resource.variant_id
         for pod_metadata in _template_metadata(manifest, resource.kind):
             pod_labels = _object(pod_metadata.setdefault("labels", {}), "Pod template labels")
             pod_labels.update(labels)
@@ -278,6 +286,12 @@ class HttpScientificBatchCluster:
         phases: list[LifecyclePhase] = []
         if _condition(status, "QuotaReserved") or _condition(status, "Admitted") or status.get("startTime"):
             phases.append(LifecyclePhase.ADMITTED)
+        scheduling_admission = None
+        kueue_workload_uid = None
+        if LifecyclePhase.ADMITTED in phases:
+            scheduling_admission, kueue_workload_uid = await self._scheduling_admission(
+                ref, str(metadata.get("uid", ""))
+            )
 
         selector = quote(f"{ATTEMPT_LABEL}={attempt_id}", safe="=,.-")
         pod_response = await self._request(
@@ -287,10 +301,15 @@ class HttpScientificBatchCluster:
         pod_phases: list[str] = []
         waiting_reasons: list[str] = []
         failure_reasons: list[str] = []
+        pod_uids: list[str] = []
         scheduled = False
         for raw_pod in pods if isinstance(pods, list) else []:
             if not isinstance(raw_pod, Mapping):
                 continue
+            pod_metadata = raw_pod.get("metadata")
+            pod_uid = pod_metadata.get("uid") if isinstance(pod_metadata, Mapping) else None
+            if isinstance(pod_uid, str) and pod_uid:
+                pod_uids.append(pod_uid)
             pod_status = raw_pod.get("status")
             if not isinstance(pod_status, Mapping):
                 continue
@@ -329,6 +348,9 @@ class HttpScientificBatchCluster:
                 attempt_id=attempt_id,
                 state=workload_state,
                 phases=tuple(dict.fromkeys(phases)),
+                scheduling_admission=scheduling_admission,
+                kueue_workload_uid=kueue_workload_uid,
+                pod_uids=tuple(dict.fromkeys(pod_uids)),
                 failure_kind=failure_kind,
                 failure_code=failure_code[:128],
             )
@@ -341,6 +363,107 @@ class HttpScientificBatchCluster:
             attempt_id=attempt_id,
             state=state,
             phases=tuple(dict.fromkeys(phases)),
+            scheduling_admission=scheduling_admission,
+            kueue_workload_uid=kueue_workload_uid,
+            pod_uids=tuple(dict.fromkeys(pod_uids)),
+        )
+
+    async def _scheduling_admission(
+        self, ref: WorkloadRef, job_uid: str
+    ) -> tuple[SchedulingAdmission | None, str | None]:
+        """Reopen exact Kueue admission and its ResourceFlavor-to-pool label."""
+
+        if not job_uid:
+            raise ScientificKubernetesError("Kubernetes workload UID is absent during Kueue admission")
+        selector = quote(f"{KUEUE_JOB_UID_LABEL}={job_uid}", safe="=,.-")
+        namespace = quote(ref.namespace, safe="")
+        response = await self._request(
+            "GET", f"/apis/kueue.x-k8s.io/v1beta1/namespaces/{namespace}/workloads?labelSelector={selector}&limit=2"
+        )
+        if response.status_code == 404:
+            return None, None
+        items = cast(dict[str, Any], response.json()).get("items")
+        if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], Mapping):
+            return None, None
+        workload_metadata = items[0].get("metadata")
+        workload_uid = workload_metadata.get("uid") if isinstance(workload_metadata, Mapping) else None
+        if not isinstance(workload_uid, str) or not workload_uid:
+            raise ScientificKubernetesError("Kueue Workload UID is absent")
+        workload_status = items[0].get("status")
+        if not isinstance(workload_status, Mapping):
+            return None, workload_uid
+        admitted = _condition(workload_status, "Admitted")
+        admission = workload_status.get("admission")
+        if admitted is None or not isinstance(admission, Mapping):
+            return None, workload_uid
+        timestamp = admitted.get("lastTransitionTime")
+        if not isinstance(timestamp, str):
+            raise ScientificKubernetesError("Kueue admission timestamp is absent")
+        try:
+            admitted_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise ScientificKubernetesError("Kueue admission timestamp is invalid") from error
+        assignments = admission.get("podSetAssignments")
+        if not isinstance(assignments, list) or not assignments:
+            raise ScientificKubernetesError("Kueue admission has no PodSet assignment")
+        flavor_by_resource: dict[str, str] = {}
+        usage_by_resource: dict[str, int] = {}
+        for raw_assignment in assignments:
+            if not isinstance(raw_assignment, Mapping):
+                raise ScientificKubernetesError("Kueue PodSet assignment is invalid")
+            flavors = raw_assignment.get("flavors", {})
+            usage = raw_assignment.get("resourceUsage", {})
+            if not isinstance(flavors, Mapping) or not isinstance(usage, Mapping):
+                raise ScientificKubernetesError("Kueue PodSet assignment resources are invalid")
+            for resource, raw_count in usage.items():
+                if not isinstance(resource, str) or "/" not in resource:
+                    continue
+                try:
+                    count = int(raw_count)
+                except (TypeError, ValueError):
+                    raise ScientificKubernetesError("Kueue accelerator admission quantity is invalid") from None
+                flavor = flavors.get(resource)
+                if count < 0 or not isinstance(flavor, str):
+                    raise ScientificKubernetesError("Kueue accelerator admission is incomplete")
+                if resource in flavor_by_resource and flavor_by_resource[resource] != flavor:
+                    raise ScientificKubernetesError("Kueue admitted multiple ResourceFlavors for one accelerator")
+                flavor_by_resource[resource] = flavor
+                usage_by_resource[resource] = usage_by_resource.get(resource, 0) + count
+        active = [(resource, count) for resource, count in usage_by_resource.items() if count]
+        if not active:
+            return (
+                SchedulingAdmission(
+                    resolved_pool_id=None,
+                    admitted_resource_flavor=None,
+                    accelerator_resource_name=None,
+                    accelerator_count=0,
+                    admitted_at=admitted_at,
+                ),
+                workload_uid,
+            )
+        if len(active) != 1:
+            raise ScientificKubernetesError("Kueue admitted an ambiguous accelerator resource set")
+        accelerator_resource, accelerator_count = active[0]
+        flavor = flavor_by_resource[accelerator_resource]
+        flavor_response = await self._request(
+            "GET", f"/apis/kueue.x-k8s.io/v1beta1/resourceflavors/{quote(flavor, safe='')}"
+        )
+        if flavor_response.status_code == 404:
+            return None, workload_uid
+        flavor_metadata = _metadata(cast(dict[str, Any], flavor_response.json()))
+        flavor_labels = _object(flavor_metadata.get("labels", {}), "ResourceFlavor labels")
+        pool_id = flavor_labels.get(POOL_LABEL)
+        if not isinstance(pool_id, str):
+            return None, workload_uid
+        return (
+            SchedulingAdmission(
+                resolved_pool_id=pool_id,
+                admitted_resource_flavor=flavor,
+                accelerator_resource_name=accelerator_resource,
+                accelerator_count=accelerator_count,
+                admitted_at=admitted_at,
+            ),
+            workload_uid,
         )
 
     async def delete(self, ref: WorkloadRef, *, controller_fence: int) -> None:

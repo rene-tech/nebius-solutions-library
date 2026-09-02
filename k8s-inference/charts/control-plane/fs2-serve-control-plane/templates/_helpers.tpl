@@ -267,6 +267,10 @@ app.kubernetes.io/component: model-controller
   value: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.schedulingContractKey }}
 - name: FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE
   value: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.executionMapKey }}
+- name: FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE
+  value: {{ include "fs2-serve.image" . }}
+- name: FS2_SCIENTIFIC_BATCH_INTERNAL_API_URL
+  value: http://{{ include "fs2-serve.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
 - name: FS2_SCIENTIFIC_BATCH_WORKERS
   value: {{ .Values.scientificBatch.workers | quote }}
 - name: FS2_SCIENTIFIC_BATCH_POLL_SECONDS
@@ -275,6 +279,26 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.scientificBatch.leaseSeconds | quote }}
 - name: FS2_SCIENTIFIC_BATCH_API_TIMEOUT_SECONDS
   value: {{ .Values.scientificBatch.apiTimeoutSeconds | quote }}
+{{- end }}
+{{- if .Values.artifactService.enabled }}
+- name: FS2_ARTIFACT_SERVICE_ENABLED
+  value: "true"
+- name: FS2_ARTIFACT_STORE_ENDPOINT
+  value: {{ .Values.artifactService.endpoint | quote }}
+- name: FS2_ARTIFACT_STORE_BUCKET
+  value: {{ .Values.artifactService.bucket | quote }}
+- name: FS2_ARTIFACT_STORE_REGION
+  value: {{ .Values.artifactService.region | quote }}
+- name: FS2_ARTIFACT_STORE_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.artifactService.credentialsSecretName }}
+      key: {{ .Values.artifactService.accessKeyKey }}
+- name: FS2_ARTIFACT_STORE_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.artifactService.credentialsSecretName }}
+      key: {{ .Values.artifactService.secretKeyKey }}
 {{- end }}
 - name: FS2_ADMIN_ADAPTER_TIMEOUT_SECONDS
   value: {{ .Values.adminReadAdapters.adapterTimeoutSeconds | quote }}

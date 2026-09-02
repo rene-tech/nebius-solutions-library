@@ -106,11 +106,20 @@ def controller(repository, cluster) -> ScientificBatchController:
     )
 
 
-def commit(operation_id: UUID, stage_id: str, attempt_ids: tuple[UUID, ...], *, valid: bool = True):
+def commit(operation_id: UUID, stage_id: str, attempt_id: UUID, *, valid: bool = True):
+    handoff_id, manifest_id, validation_id = uuid4(), uuid4(), uuid4()
     return ArtifactCommit(
         operation_id=operation_id,
         stage_id=stage_id,
-        attempt_ids=attempt_ids,
+        attempt_ids=(attempt_id,),
+        logical_artifact_id=f"{stage_id}-result-{str(attempt_id)[:8]}",
+        handoff_artifact_id=handoff_id,
+        handoff_digest=digest(f"handoff-{stage_id}-{attempt_id}"),
+        handoff_size_bytes=100,
+        handoff_media_type="application/json",
+        handoff_compression=None,
+        manifest_artifact_id=manifest_id,
+        validation_artifact_id=validation_id,
         manifest_digest=digest(f"manifest-{stage_id}"),
         validation_digest=digest(f"validation-{stage_id}"),
         committed_at=NOW,
@@ -192,7 +201,8 @@ async def test_frozen_snapshot_validated_commit_gates_next_stage_and_releases_fa
     assert repository.records[operation_id].revision == waiting_revision
     assert not any(resource.kind is WorkloadKind.JOB_SET for resource in cluster.apply_history)
 
-    repository.put_commit(commit(operation_id, "prepare", tuple(attempt.attempt_id for attempt in prepare.attempts)))
+    for attempt in prepare.attempts:
+        repository.put_commit(commit(operation_id, "prepare", attempt.attempt_id))
     await reconciler.reconcile_once()
     prepared = repository.records[operation_id]
     assert prepared.stage("prepare").status is StageStatus.SUCCEEDED
@@ -209,7 +219,7 @@ async def test_frozen_snapshot_validated_commit_gates_next_stage_and_releases_fa
     assert len(cluster.delete_history) == 2, "the downstream JobSet starts only after predecessor quota release"
 
     observe_success(cluster, design.attempts[0])
-    repository.put_commit(commit(operation_id, "design", (design.attempts[0].attempt_id,)))
+    repository.put_commit(commit(operation_id, "design", design.attempts[0].attempt_id))
     await reconciler.reconcile_once()
     await reconciler.reconcile_once()
     await reconciler.reconcile_once()
@@ -225,6 +235,58 @@ async def test_frozen_snapshot_validated_commit_gates_next_stage_and_releases_fa
     ]
     assert first_attempt_phases == [LifecyclePhase.QUEUED, LifecyclePhase.SCHEDULING, *PHASES]
     assert len({event.draft.event_id for event in events}) == len(events)
+
+
+@pytest.mark.asyncio
+async def test_terminal_result_publication_is_durable_and_retried_idempotently() -> None:
+    repository = FakeScientificBatchRepository()
+    cluster = FakeScientificBatchCluster()
+
+    class Publisher:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def publish_terminal(self, state) -> None:
+            assert state.status is BatchStatus.SUCCEEDED
+            assert state.result_published is False
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("injected artifact result failure")
+
+    publisher = Publisher()
+    reconciler = ScientificBatchController(
+        repository=repository,
+        cluster=cluster,
+        controller_id="controller-pod:uid-1",
+        namespace="fs2-scientific",
+        result_publisher=publisher,
+        clock=lambda: NOW,
+    )
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="fold"),))
+    await reconciler.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        plan=batch_plan,
+        scheduling=snapshot(batch_plan),
+    )
+    await reconciler.reconcile_once()
+    attempt = repository.records[operation_id].stage("fold").attempts[0]
+    observe_success(cluster, attempt)
+    repository.put_commit(commit(operation_id, "fold", attempt.attempt_id))
+    for _ in range(3):
+        await reconciler.reconcile_once()
+    terminal = repository.records[operation_id]
+    assert terminal.status is BatchStatus.SUCCEEDED
+    assert terminal.result_published is False
+
+    with pytest.raises(RuntimeError, match="injected artifact result failure"):
+        await reconciler.reconcile_once()
+    assert repository.records[operation_id].result_published is False
+    await reconciler.reconcile_once()
+    assert repository.records[operation_id].result_published is True
+    assert publisher.calls == 2
 
 
 @pytest.mark.asyncio
@@ -286,7 +348,7 @@ async def test_preemption_retries_with_new_attempt_and_stale_observation_is_fenc
     assert repository.events[operation_id][-1].draft.kind is BatchEventKind.ATTEMPT_FENCED
 
     observe_success(cluster, second)
-    repository.put_commit(commit(operation_id, "fold", (second.attempt_id,)))
+    repository.put_commit(commit(operation_id, "fold", second.attempt_id))
     await reconciler.reconcile_once()
     await reconciler.reconcile_once()
     await reconciler.reconcile_once()
@@ -441,7 +503,7 @@ async def test_negative_semantic_commit_cannot_unlock_downstream_stage() -> None
     await reconciler.reconcile_once()
     attempt = repository.records[operation_id].stage("prepare").attempts[0]
     observe_success(cluster, attempt)
-    repository.put_commit(commit(operation_id, "prepare", (attempt.attempt_id,), valid=False))
+    repository.put_commit(commit(operation_id, "prepare", attempt.attempt_id, valid=False))
     await reconciler.reconcile_once()
     observed = repository.records[operation_id].stage("prepare").attempts[0]
     assert observed.outcome is AttemptOutcome.SUCCEEDED and not observed.resource_released

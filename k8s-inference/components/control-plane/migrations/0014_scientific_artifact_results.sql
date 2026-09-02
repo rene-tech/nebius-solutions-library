@@ -87,7 +87,7 @@ CREATE TABLE fs2_scientific_result_manifests (
     manifest jsonb NOT NULL CHECK (
         jsonb_typeof(manifest)='object'
         AND octet_length(manifest::text) BETWEEN 2 AND 1048576
-        AND manifest->>'schema'='fs2-serve.nebius.ai/scientific-run-result/v1'
+        AND manifest->>'schema_version'='fs2-serve.nebius.ai/scientific-result-record/v1'
         AND manifest->>'operation_id'=operation_id::text
         AND manifest->>'tenant_id'=tenant_id
         AND (manifest->>'attempt')::integer=attempt

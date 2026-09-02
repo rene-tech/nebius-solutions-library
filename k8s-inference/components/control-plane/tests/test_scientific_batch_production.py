@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import json
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 from uuid import UUID, uuid4
@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from conftest import CATALOG_ROOT, REPO_ROOT
+from fastapi import FastAPI
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
@@ -21,6 +22,7 @@ from scientific_batch_fakes import FakeScientificBatchCluster, FakeScientificBat
 from fs2_serve.admission import AdmissionService
 from fs2_serve.api import AppRuntime, create_app
 from fs2_serve.auth import OperatorSessionService, PepperRing, TokenService
+from fs2_serve.crypto import KeyedHasher
 from fs2_serve.mcp_server import PATTokenVerifier, build_mcp_server
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.models import Principal, Scope, TokenCreate
@@ -28,19 +30,20 @@ from fs2_serve.runtime import StubRuntimeClient
 from fs2_serve.scientific_artifacts import (
     ArtifactAccess,
     ArtifactDirection,
+    ArtifactDownload,
+    ArtifactRecord,
     BeginArtifactUpload,
-    ExecutionProvenance,
+    BeginUploadResult,
+    EphemeralHandle,
     FinalizeArtifactUpload,
     MemoryArtifactRepository,
-    SemanticValidation,
-    SemanticValidationStatus,
-    TerminalResultDraft,
-    TerminalResultStatus,
+    UploadIntent,
     VerifiedStoredObject,
     artifact_storage_key,
     build_terminal_manifest,
 )
 from fs2_serve.scientific_batch.artifact_bridge import ArtifactServiceBridge
+from fs2_serve.scientific_batch.capability import ScientificWorkloadCapabilityAuthority
 from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer, ScientificExecutionMapError
@@ -51,23 +54,34 @@ from fs2_serve.scientific_batch.kubernetes import (
     _failure,
 )
 from fs2_serve.scientific_batch.models import (
+    AdapterExecutionPlan,
+    ArtifactAccessContext,
     ArtifactCommit,
+    ArtifactMaterialization,
+    BatchStatus,
     CheckpointMode,
     ExecutionMode,
     FailureKind,
     LifecyclePhase,
+    MaterializationMode,
     PreemptionMode,
     ResourceClass,
+    SchedulingAdmission,
     ScientificBatchPlan,
     ScientificBatchState,
+    ScientificInputAdmission,
+    ScientificInputArtifact,
     ScientificStagePlan,
     ServiceClass,
+    StageInvocation,
+    VerifiedInputManifest,
     WorkloadKind,
     WorkloadObservation,
     WorkloadResource,
     WorkloadState,
 )
 from fs2_serve.scientific_batch.profile_catalog import (
+    SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA,
     SCIENTIFIC_REQUEST_SCHEMA,
     SCIENTIFIC_RESULT_SCHEMA,
     ScientificProfileCatalog,
@@ -76,6 +90,7 @@ from fs2_serve.scientific_batch.profile_catalog import (
 from fs2_serve.scientific_batch.scheduling import SchedulingContractResolver
 from fs2_serve.scientific_batch.service import ScientificBatchService
 from fs2_serve.scientific_batch.worker import ScientificBatchWorker
+from fs2_serve.scientific_batch.workload_routes import scientific_workload_artifact_router
 from fs2_serve.settings import Settings
 from fs2_serve.telemetry import Metrics
 
@@ -133,6 +148,7 @@ def profile_catalog() -> ScientificProfileCatalog:
         validators={
             SCIENTIFIC_REQUEST_SCHEMA: load("scientific-run-request.schema.json"),
             SCIENTIFIC_RESULT_SCHEMA: load("scientific-run-result.schema.json"),
+            SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA: load("scientific-artifact-manifest.schema.json"),
             PARAMETER_SCHEMA: Draft202012Validator(
                 {"type": "object", "additionalProperties": False, "maxProperties": 0}
             ),
@@ -172,10 +188,30 @@ def scheduling() -> SchedulingContractResolver:
 class FakeArtifactAccess:
     def __init__(self, pointer: dict[str, object]) -> None:
         self.pointer = pointer
+        entry_id = uuid4()
+        self.admission = ScientificInputAdmission(
+            manifest=VerifiedInputManifest(
+                manifest_id="request-inputs",
+                manifest_artifact_id=UUID(str(pointer["artifact_id"])),
+                manifest_digest=f"sha256:{pointer['sha256']}",
+                entries=(
+                    ScientificInputArtifact(
+                        logical_artifact_id="request",
+                        semantic_type="request/v1",
+                        artifact_id=entry_id,
+                        digest="sha256:" + "2" * 64,
+                        size_bytes=10,
+                        media_type="application/json",
+                    ),
+                ),
+            ),
+            access_context=ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id="tenant-a"),
+        )
 
-    async def validate_input(self, pointer, *, tenant_id: str) -> None:
+    async def validate_input(self, pointer, *, tenant_id: str) -> ScientificInputAdmission:
         assert tenant_id == "tenant-a"
         assert pointer == self.pointer
+        return self.admission
 
     async def artifact_response(self, artifact_id, *, tenant_id: str):
         return self.pointer
@@ -187,6 +223,63 @@ class FakeArtifactAccess:
         result["batch_id"] = f"batch.{operation_id}"
         result["workload_id"] = f"workload.{operation_id}"
         return result
+
+
+class FakeExecutionBinding:
+    def variant_id(self, model_id: str) -> str:
+        assert model_id == "protein-design"
+        return "protein-design-h100"
+
+    def collector_id(self, model_id: str, stage_id: str) -> str:
+        assert (model_id, stage_id) == ("protein-design", "design")
+        return "protein-design-output-v1"
+
+    def verify_runtime_artifacts(self, profile, execution_plan):
+        del profile, execution_plan
+        return ()
+
+
+class FakePlanFactory:
+    def plan(
+        self,
+        profile,
+        request,
+        *,
+        operation_id=None,
+        access_context,
+        input_artifacts,
+    ) -> AdapterExecutionPlan:
+        del request, access_context
+        controller_plan = ScientificBatchPlan((ScientificStagePlan(stage_id="design", max_attempts=2),))
+        logical_input = input_artifacts[0].logical_artifact_id
+        invocation = StageInvocation(
+            stage_id="design",
+            shard_id="main",
+            argv=("protein-design", "run", "--input", "/mnt/fs2-scientific/work/design/main/input.json"),
+            environment=(),
+            working_directory="/mnt/fs2-scientific/work/design/main",
+            consumes=(logical_input,),
+            produces="design-result",
+            collector_id="protein-design-output-v1",
+            validator_id="protein-design-v1",
+            handoff_name=None,
+            materializations=(
+                ArtifactMaterialization(
+                    artifact_id=logical_input,
+                    destination="/mnt/fs2-scientific/work/design/main/input.json",
+                    mode=MaterializationMode.COPY_FILE,
+                ),
+            ),
+        )
+        return AdapterExecutionPlan(
+            model_id=profile.model_id,
+            variant_id="protein-design-h100",
+            source_revision=profile.model_revision,
+            request_sha256=hashlib.sha256(str(operation_id).encode()).hexdigest(),
+            controller_plan=controller_plan,
+            invocations=(invocation,),
+            required_model_artifacts=(),
+        )
 
 
 async def principal(store: MemoryStore) -> Principal:
@@ -253,6 +346,8 @@ def scientific_runtime(
         profiles=profile_catalog(),
         scheduling=scheduling(),
         artifacts=FakeArtifactAccess(pointer),
+        execution_binding=FakeExecutionBinding(),
+        plan_factory=FakePlanFactory(),
     )
     settings = Settings(
         run_workers=False,
@@ -314,6 +409,7 @@ async def test_submit_freezes_public_profile_and_never_enters_generic_worker(cip
         profiles=profile_catalog(),
         scheduling=scheduling(),
         artifacts=FakeArtifactAccess(pointer),
+        execution_binding=FakeExecutionBinding(),
     )
     request = {
         "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
@@ -406,11 +502,21 @@ async def test_public_http_and_mcp_share_scientific_operation_lifecycle(registry
                     operation_id=operation_id,
                     stage_id="design",
                     attempt_ids=(attempt.attempt_id,),
+                    logical_artifact_id="design-result",
+                    handoff_artifact_id=uuid4(),
+                    handoff_digest="sha256:" + "1" * 64,
+                    handoff_size_bytes=10,
+                    handoff_media_type="application/json",
+                    handoff_compression=None,
+                    manifest_artifact_id=uuid4(),
+                    validation_artifact_id=uuid4(),
                     manifest_digest="sha256:" + "2" * 64,
                     validation_digest="sha256:" + "3" * 64,
                     committed_at=datetime.now(UTC),
                     validated_at=datetime.now(UTC),
                     semantic_valid=True,
+                    collector_id="protein-design-output-v1",
+                    validator_id="protein-design-v1",
                 )
             )
             await controller.reconcile_once()
@@ -423,6 +529,7 @@ async def test_public_http_and_mcp_share_scientific_operation_lifecycle(registry
             result = await client.get(f"/v1/operations/{operation_id}/result")
             assert status.status_code == events.status_code == artifact.status_code == result.status_code == 200
             assert status.json()["batch"]["status"] == "succeeded"
+            assert status.json()["batch"]["variant_id"] == "protein-design-h100"
             assert events.json()["data"][-1]["kind"] == "batch_succeeded"
             assert artifact.json() == pointer
             assert result.json()["schema"] == "fs2-serve.nebius.ai/scientific-run-result/v1"
@@ -494,6 +601,8 @@ def test_internal_state_codec_round_trip_and_rejects_type_coercion() -> None:
         operation_id=uuid4(),
         tenant_id="tenant-a",
         model_id="protein-design",
+        variant_id="protein-design-h100",
+        input_artifact_id=uuid4(),
         plan=plan,
         scheduling=snapshot,
     )
@@ -551,6 +660,8 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
         attempt_number=1,
         tenant_id="tenant-a",
         model_id="protein-design",
+        variant_id="protein-design-h100",
+        input_artifact_id=uuid4(),
         service_class=ServiceClass.CUSTOMER_BATCH,
         scheduling_snapshot_digest=snapshot.digest,
         namespace="fs2-models",
@@ -581,8 +692,41 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
                         "uid": "job-uid",
                         "labels": {ATTEMPT_LABEL: str(attempt_id)},
                     },
-                    "status": {"succeeded": 1},
+                    "status": {"succeeded": 1, "startTime": "2026-09-02T20:00:00Z"},
                 },
+            )
+        if request.url.path.endswith("/workloads"):
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "metadata": {"uid": "kueue-workload-uid"},
+                            "status": {
+                                "conditions": [
+                                    {
+                                        "type": "Admitted",
+                                        "status": "True",
+                                        "lastTransitionTime": "2026-09-02T20:00:00Z",
+                                    }
+                                ],
+                                "admission": {
+                                    "podSetAssignments": [
+                                        {
+                                            "flavors": {"nvidia.com/gpu": "inference-h100-1x"},
+                                            "resourceUsage": {"nvidia.com/gpu": "1"},
+                                        }
+                                    ]
+                                },
+                            },
+                        }
+                    ]
+                },
+            )
+        if request.url.path.endswith("/resourceflavors/inference-h100-1x"):
+            return httpx.Response(
+                200,
+                json={"metadata": {"labels": {"fs2.nebius.ai/pool-id": "h100-preemptible"}}},
             )
         return httpx.Response(200, json={"items": []})
 
@@ -605,24 +749,288 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
     assert ref.uid == "job-uid"
     assert observation.attempt_id == attempt_id
     assert observation.state.value == "succeeded"
+    assert observation.scheduling_admission == SchedulingAdmission(
+        resolved_pool_id="h100-preemptible",
+        admitted_resource_flavor="inference-h100-1x",
+        accelerator_resource_name="nvidia.com/gpu",
+        accelerator_count=1,
+        admitted_at=datetime(2026, 9, 2, 20, 0, tzinfo=UTC),
+    )
+    assert observation.kueue_workload_uid == "kueue-workload-uid"
     assert fence.calls == [(operation_id, "controller-a", 7)]
-    assert [request.method for request in requests] == ["POST", "GET", "GET"]
+    assert [request.method for request in requests] == ["POST", "GET", "GET", "GET", "GET"]
     await client.aclose()
 
 
-def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_workload_capability_materializes_and_commits_through_single_artifact_port(hasher) -> None:
+    now = datetime(2026, 9, 2, 21, tzinfo=UTC)
+    repository = FakeScientificBatchRepository()
+    cluster = FakeScientificBatchCluster()
+    reconciler = ScientificBatchController(
+        repository=repository,
+        cluster=cluster,
+        controller_id="controller-a",
+        namespace="fs2-models",
+        clock=lambda: now,
+    )
+    operation_id = uuid4()
+    input_id = uuid4()
+    manifest_id = uuid4()
+    controller_plan = ScientificBatchPlan((ScientificStagePlan(stage_id="design"),))
+    invocation = StageInvocation(
+        stage_id="design",
+        shard_id="main",
+        argv=("protein-design", "run", "--input", "/mnt/fs2-scientific/work/design/main/input.json"),
+        environment=(),
+        working_directory="/mnt/fs2-scientific/work/design/main",
+        consumes=("request",),
+        produces="design-result",
+        collector_id="protein-design-output-v1",
+        validator_id="protein-design-v1",
+        handoff_name="structure",
+        materializations=(
+            ArtifactMaterialization(
+                "request",
+                "/mnt/fs2-scientific/work/design/main/input.json",
+                MaterializationMode.COPY_FILE,
+            ),
+        ),
+    )
+    execution = AdapterExecutionPlan(
+        model_id="protein-design",
+        variant_id="protein-design-h100",
+        source_revision="b" * 40,
+        request_sha256="1" * 64,
+        controller_plan=controller_plan,
+        invocations=(invocation,),
+        required_model_artifacts=(),
+    )
+    await reconciler.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        variant_id="protein-design-h100",
+        input_artifact_id=manifest_id,
+        plan=controller_plan,
+        scheduling=scheduling().freeze(
+            service_class="customer-batch",
+            model_id="protein-design",
+            profile=profile_value(),
+            plan=controller_plan,
+            captured_at=now,
+        ),
+        execution_plan=execution,
+        access_context=ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id="tenant-a"),
+        input_manifest=VerifiedInputManifest(
+            manifest_id="request-inputs",
+            manifest_artifact_id=manifest_id,
+            manifest_digest="sha256:" + "2" * 64,
+            entries=(
+                ScientificInputArtifact(
+                    logical_artifact_id="request",
+                    semantic_type="request/v1",
+                    artifact_id=input_id,
+                    digest="sha256:" + "3" * 64,
+                    size_bytes=10,
+                    media_type="application/json",
+                ),
+            ),
+        ),
+    )
+    await reconciler.reconcile_once()
+    resource = cluster.apply_history[0]
+    authority = ScientificWorkloadCapabilityAuthority(hasher)
+    capability = authority.issue(resource)
+
+    input_owner = uuid4()
+    input_record = ArtifactRecord(
+        artifact_id=input_id,
+        operation_id=input_owner,
+        tenant_id="tenant-a",
+        attempt=0,
+        direction=ArtifactDirection.INPUT,
+        digest="sha256:" + "3" * 64,
+        size_bytes=10,
+        media_type="application/json",
+        storage_key=artifact_storage_key(
+            tenant_id="tenant-a",
+            operation_id=input_owner,
+            attempt=0,
+            direction=ArtifactDirection.INPUT,
+            digest="sha256:" + "3" * 64,
+        ),
+        access=ArtifactAccess(),
+        created_at=now,
+    )
+
+    class Artifacts:
+        def __init__(self) -> None:
+            self.uploads: dict[UUID, UploadIntent] = {}
+            self.upload_attempts: list[int] = []
+
+        async def download(self, artifact_id, *, tenant_id, handle_ttl=None):
+            assert artifact_id == input_id and tenant_id == "tenant-a" and handle_ttl is None
+            return ArtifactDownload(
+                artifact=input_record,
+                handle=EphemeralHandle(
+                    method="GET",
+                    url="https://objects.test/input",
+                    expires_at=now + timedelta(minutes=5),
+                ),
+            )
+
+        async def begin_upload(self, request, *, handle_ttl=None):
+            assert handle_ttl is None
+            self.upload_attempts.append(request.attempt)
+            intent = UploadIntent(
+                upload_id=request.upload_id,
+                operation_id=request.operation_id,
+                tenant_id=request.tenant_id,
+                attempt=request.attempt,
+                direction=request.direction,
+                expected_digest=request.expected_digest,
+                expected_size_bytes=request.expected_size_bytes,
+                media_type=request.media_type,
+                compression=request.compression,
+                storage_key=artifact_storage_key(
+                    tenant_id=request.tenant_id,
+                    operation_id=request.operation_id,
+                    attempt=request.attempt,
+                    direction=request.direction,
+                    digest=request.expected_digest,
+                ),
+                access=request.access,
+                begun_at=now,
+            )
+            self.uploads[request.upload_id] = intent
+            return BeginUploadResult(
+                upload=intent,
+                handle=EphemeralHandle(
+                    method="PUT",
+                    url=f"https://objects.test/{request.upload_id}",
+                    expires_at=now + timedelta(minutes=5),
+                    write_once=True,
+                ),
+            )
+
+        async def finalize_upload(self, request):
+            intent = self.uploads[request.upload_id]
+            assert request.attempt == intent.attempt == 0
+            return ArtifactRecord(
+                artifact_id=request.upload_id,
+                operation_id=request.operation_id,
+                tenant_id=request.tenant_id,
+                attempt=request.attempt,
+                direction=ArtifactDirection.OUTPUT,
+                digest=intent.expected_digest,
+                size_bytes=intent.expected_size_bytes,
+                media_type=intent.media_type,
+                compression=intent.compression,
+                storage_key=intent.storage_key,
+                access=intent.access,
+                created_at=now,
+            )
+
+    artifacts = Artifacts()
+    app = FastAPI()
+    app.include_router(
+        scientific_workload_artifact_router(
+            authority=authority,
+            artifacts=artifacts,  # type: ignore[arg-type]
+            batches=repository,
+            clock=lambda: now,
+        )
+    )
+    headers = {"authorization": f"Bearer {capability}"}
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://control.test",
+        headers=headers,
+    ) as client:
+        downloaded = await client.get(f"/internal/scientific-workloads/artifacts/{input_id}:download")
+        assert downloaded.status_code == 200
+        refs = []
+        for index, media_type in enumerate(
+            ("chemical/x-pdb", "application/vnd.fs2.scientific-manifest+json", "application/json"),
+            start=4,
+        ):
+            upload_id = uuid4()
+            begun = await client.post(
+                "/internal/scientific-workloads/uploads",
+                json={
+                    "upload_id": str(upload_id),
+                    "sha256": str(index) * 64,
+                    "size_bytes": index,
+                    "media_type": media_type,
+                },
+            )
+            assert begun.status_code == 201
+            finalized = await client.post(f"/internal/scientific-workloads/uploads/{upload_id}:finalize")
+            assert finalized.status_code == 200
+            refs.append(finalized.json())
+        committed = await client.post(
+            "/internal/scientific-workloads/commit",
+            json={
+                "handoff_artifact_id": refs[0]["artifact_id"],
+                "handoff_digest": "sha256:" + refs[0]["sha256"],
+                "handoff_size_bytes": refs[0]["size_bytes"],
+                "handoff_media_type": refs[0]["media_type"],
+                "manifest_artifact_id": refs[1]["artifact_id"],
+                "validation_artifact_id": refs[2]["artifact_id"],
+                "manifest_digest": "sha256:" + refs[1]["sha256"],
+                "validation_digest": "sha256:" + refs[2]["sha256"],
+                "semantic_valid": True,
+            },
+        )
+        assert committed.status_code == 200
+        await repository.request_cancel(operation_id, tenant_id="tenant-a", actor="test")
+        await reconciler.reconcile_once()
+        stale = await client.get(f"/internal/scientific-workloads/artifacts/{input_id}:download")
+        assert stale.status_code == 409
+    assert artifacts.upload_attempts == [0, 0, 0]
+    stored = repository.commits[(operation_id, "design", resource.attempt_id)]
+    assert stored.handoff_artifact_id == UUID(refs[0]["artifact_id"])
+    assert stored.collector_id == invocation.collector_id
+    assert repository.records[operation_id].status is BatchStatus.CANCELLED
+
+
+def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path, monkeypatch) -> None:
     execution = {
-        "schema": "fs2-serve.nebius.ai/scientific-execution-map/v1",
+        "schema": "fs2-serve.nebius.ai/scientific-execution-map/v2",
         "models": [
             {
                 "model_id": "protein-design",
+                "variant_id": "protein-design-h100",
                 "execution_identity_sha256": "f" * 64,
+                "plan_adapter": {
+                    "module": "fs2_serve.scientific_batch.adapters",
+                    "function": "compile_adapter_run",
+                },
                 "stages": [
                     {
                         "stage_id": "design",
                         "image": "registry.example/protein@sha256:" + "a" * 64,
-                        "command": ["python", "-m", "adapter"],
-                        "args": ["run"],
+                        "collector_id": "protein-design-output-v1",
+                        "validator_id": "protein-design-v1",
+                        "mounts": [
+                            {
+                                "name": "artifact-workspace",
+                                "kind": "artifact-workspace",
+                                "claim_name": None,
+                                "mount_path": "/mnt/fs2-scientific",
+                                "sub_path": None,
+                                "read_only": False,
+                            },
+                            {
+                                "name": "reference-data",
+                                "kind": "reference",
+                                "claim_name": "scientific-reference-data",
+                                "mount_path": "/opt/fs2/artifacts",
+                                "sub_path": "protenix-v2",
+                                "read_only": True,
+                            },
+                        ],
                         "service_account_name": "scientific-runner",
                         "resources": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "100Gi"},
                         "active_deadline_seconds": 3600,
@@ -635,8 +1043,55 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path)
     }
     path = tmp_path / "execution-map.json"
     path.write_text(json.dumps(execution))
-    renderer = FileScientificManifestRenderer(path=path, profiles=profile_catalog())
     plan = ScientificBatchPlan((ScientificStagePlan(stage_id="design"),))
+    invocation = StageInvocation(
+        stage_id="design",
+        shard_id="main",
+        argv=("python", "-m", "adapter", "run"),
+        environment=(),
+        working_directory="/mnt/fs2-scientific/work/design/main",
+        consumes=(),
+        produces="design-result",
+        collector_id="protein-design-output-v1",
+        validator_id="protein-design-v1",
+        handoff_name=None,
+    )
+    adapter_plan = AdapterExecutionPlan(
+        model_id="protein-design",
+        variant_id="protein-design-h100",
+        source_revision="b" * 40,
+        request_sha256="1" * 64,
+        controller_plan=plan,
+        invocations=(invocation,),
+        required_model_artifacts=(),
+    )
+    monkeypatch.setattr(
+        "fs2_serve.scientific_batch.execution.importlib.import_module",
+        lambda module: type(
+            "Adapter",
+            (),
+            {"compile_adapter_run": staticmethod(lambda *args, **kwargs: adapter_plan)},
+        ),
+    )
+    renderer = FileScientificManifestRenderer(
+        path=path,
+        profiles=profile_catalog(),
+        tools_image="registry.example/control@sha256:" + "9" * 64,
+        internal_api_url="http://control.fs2.svc:8080",
+        capability_authority=ScientificWorkloadCapabilityAuthority(
+            KeyedHasher(active_key_id="ledger-v1", keys={"ledger-v1": b"k" * 32})
+        ),
+    )
+    assert renderer.variant_id("protein-design") == "protein-design-h100"
+    assert (
+        renderer.plan(
+            profile_catalog().get("protein-design"),
+            {},
+            access_context=ArtifactAccessContext(profile="public", receipt_digest=None),
+            input_artifacts=(),
+        )
+        == adapter_plan
+    )
     snapshot = scheduling().freeze(
         service_class="customer-batch",
         model_id="protein-design",
@@ -653,17 +1108,36 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path)
         attempt_number=1,
         tenant_id="tenant-a",
         model_id="protein-design",
+        variant_id="protein-design-h100",
+        input_artifact_id=uuid4(),
         service_class=ServiceClass.CUSTOMER_BATCH,
         scheduling_snapshot_digest=snapshot.digest,
         namespace="fs2-models",
         name="scientific-design",
         kind=WorkloadKind.JOB,
         scheduling=snapshot.stages[0],
+        invocation=invocation,
+        access_context=ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id="tenant-a"),
     )
     manifest = renderer.render(resource)
     container = manifest["spec"]["template"]["spec"]["containers"][0]  # type: ignore[index]
     assert container["image"].endswith("@sha256:" + "a" * 64)
-    assert container["command"] == ["python", "-m", "adapter"]
+    assert container["command"] == ["python", "-m", "adapter", "run"]
+    assert "args" not in container
+    assert {item["name"] for item in container["volumeMounts"]} == {
+        "artifact-workspace",
+        "reference-data",
+    }
+    environment = {item["name"]: item["value"] for item in container["env"]}
+    assert environment["FS2_VARIANT_ID"] == "protein-design-h100"
+    assert environment["FS2_TENANT_ID"] == "tenant-a"
+    assert environment["FS2_ARTIFACT_ACCESS_PROFILE"] == "public"
+    assert environment["FS2_ARTIFACT_ACCESS_RECEIPT_DIGEST"] == ""
+    assert UUID(environment["FS2_INPUT_ARTIFACT_ID"])
+    assert environment["FS2_COLLECTOR_ID"] == "protein-design-output-v1"
+    assert environment["FS2_VALIDATOR_ID"] == "protein-design-v1"
+    assert manifest["spec"]["template"]["spec"]["initContainers"][0]["name"] == "prepare-workspace"  # type: ignore[index]
+    assert manifest["spec"]["template"]["spec"]["containers"][1]["name"] == "artifact-collector"  # type: ignore[index]
     assert all("request" not in item["name"].lower() for item in container["env"])
     gang = replace(
         resource,
@@ -672,6 +1146,7 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path)
         name="scientific-design-gang",
         kind=WorkloadKind.JOB_SET,
         gang_size=2,
+        invocation=replace(invocation, shard_id="gang"),
     )
     jobset = renderer.render(gang)
     assert jobset["kind"] == "JobSet"
@@ -753,6 +1228,13 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
             attempt_id=attempt.attempt_id,
             state=WorkloadState.SUCCEEDED,
             phases=(LifecyclePhase.ADMITTED, LifecyclePhase.ACTIVE_COMPUTE),
+            scheduling_admission=SchedulingAdmission(
+                resolved_pool_id="h100-preemptible",
+                admitted_resource_flavor="inference-h100-1x",
+                accelerator_resource_name="nvidia.com/gpu",
+                accelerator_count=1,
+                admitted_at=datetime.now(UTC),
+            ),
         ),
     )
     batches.put_commit(
@@ -760,11 +1242,21 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
             operation_id=operation_id,
             stage_id="design",
             attempt_ids=(attempt.attempt_id,),
+            logical_artifact_id="design-result",
+            handoff_artifact_id=uuid4(),
+            handoff_digest="sha256:" + "1" * 64,
+            handoff_size_bytes=10,
+            handoff_media_type="application/json",
+            handoff_compression=None,
+            manifest_artifact_id=uuid4(),
+            validation_artifact_id=uuid4(),
             manifest_digest="sha256:" + "2" * 64,
             validation_digest="sha256:" + "3" * 64,
             committed_at=datetime.now(UTC),
             validated_at=datetime.now(UTC),
             semantic_valid=True,
+            collector_id="protein-design-output-v1",
+            validator_id="protein-design-v1",
         )
     )
     await controller.reconcile_once()
@@ -816,49 +1308,61 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
         b'{"input":"manifest"}',
         "application/vnd.fs2.scientific-manifest+json",
     )
+    state = batches.records[operation_id]
+    assert state.input_manifest is not None
+    batches.records[operation_id] = replace(
+        state,
+        input_artifact_id=input_manifest.artifact_id,
+        input_manifest=replace(
+            state.input_manifest,
+            manifest_artifact_id=input_manifest.artifact_id,
+            manifest_digest=input_manifest.digest,
+        ),
+    )
     output_manifest = await add_artifact(
         ArtifactDirection.OUTPUT,
         b'{"output":"manifest"}',
         "application/vnd.fs2.scientific-manifest+json",
     )
     evidence = await add_artifact(ArtifactDirection.OUTPUT, b'{"valid":true}', "application/json")
-    completed_at = datetime.now(UTC)
-    terminal = build_terminal_manifest(
-        TerminalResultDraft(
+    batches.put_commit(
+        ArtifactCommit(
             operation_id=operation_id,
-            tenant_id="tenant-a",
-            attempt=0,
-            status=TerminalResultStatus.SUCCEEDED,
-            input_artifacts=(input_manifest,),
-            output_artifacts=(output_manifest, evidence),
-            provenance=ExecutionProvenance(
-                model_id="protein-design",
-                model_revision="b" * 40,
-                runtime_image_digest="sha256:" + "a" * 64,
-                workload_spec_digest="sha256:" + "4" * 64,
-                scheduling_snapshot_digest=batches.records[operation_id].scheduling.digest,
-                job_uid=attempt.workload.uid or "job-a",
-                pod_uids=("pod-a",),
-                started_at=completed_at,
-                completed_at=completed_at,
-            ),
-            validation=SemanticValidation(
-                validator_id="protein-design-v1",
-                validator_revision="sha256:" + "5" * 64,
-                status=SemanticValidationStatus.PASSED,
-                evidence_artifact=evidence,
-            ),
-            completed_at=completed_at,
-        ),
-        committed_at=datetime.now(UTC),
+            stage_id="design",
+            attempt_ids=(attempt.attempt_id,),
+            logical_artifact_id="design-result",
+            handoff_artifact_id=output_manifest.artifact_id,
+            handoff_digest=output_manifest.digest,
+            handoff_size_bytes=output_manifest.size_bytes,
+            handoff_media_type=output_manifest.media_type,
+            handoff_compression=None,
+            manifest_artifact_id=output_manifest.artifact_id,
+            validation_artifact_id=evidence.artifact_id,
+            manifest_digest=output_manifest.digest,
+            validation_digest=evidence.digest,
+            committed_at=datetime.now(UTC),
+            validated_at=datetime.now(UTC),
+            semantic_valid=True,
+            collector_id="protein-design-output-v1",
+            validator_id="protein-design-v1",
+        )
     )
-    await artifacts.commit_terminal_result(terminal)
+
+    class ResultWriter:
+        async def commit_terminal_result(self, draft):
+            terminal = build_terminal_manifest(draft, committed_at=datetime.now(UTC))
+            return await artifacts.commit_terminal_result(terminal)
+
     bridge = ArtifactServiceBridge(
         artifacts=artifacts,
         batches=batches,
         profiles=profile_catalog(),
         store=runtime.store,
+        service=ResultWriter(),  # type: ignore[arg-type]
     )
+    batches.records[operation_id] = replace(batches.records[operation_id], result_published=False)
+    await bridge.publish_terminal(batches.records[operation_id])
+    batches.records[operation_id] = replace(batches.records[operation_id], result_published=True)
     result = await bridge.result_response(operation_id, tenant_id="tenant-a")
     profile_catalog().validate_result(result)
     assert result["input_manifest"] == input_manifest.to_public_ref().model_dump(mode="json", exclude_none=True)

@@ -12,14 +12,19 @@ import asyncpg
 
 from .codec import state_from_value, state_to_json
 from .models import (
+    PUBLIC_ARTIFACT_ACCESS_CONTEXT,
+    AdapterExecutionPlan,
+    ArtifactAccessContext,
     ArtifactCommit,
     BatchClaim,
     BatchEvent,
     BatchEventDraft,
     BatchStatus,
+    RuntimeArtifactLocalization,
     SchedulingSnapshot,
     ScientificBatchPlan,
     ScientificBatchState,
+    VerifiedInputManifest,
 )
 from .protocols import BatchFenceLostError, BatchRepositoryConflictError
 
@@ -69,6 +74,8 @@ class PostgresScientificBatchRepository:
             or state.workload_id != record["workload_id"]
             or state.tenant_id != record["tenant_id"]
             or state.model_id != record["model_id"]
+            or state.variant_id != record["variant_id"]
+            or state.input_artifact_id != record["input_artifact_id"]
             or state.status.value != record["status"]
             or state.revision != record["revision"]
             or state.cancel_requested != record["cancel_requested"]
@@ -88,15 +95,27 @@ class PostgresScientificBatchRepository:
         operation_id: UUID,
         tenant_id: str,
         model_id: str,
+        variant_id: str,
+        input_artifact_id: UUID,
         plan: ScientificBatchPlan,
         scheduling: SchedulingSnapshot,
+        execution_plan: AdapterExecutionPlan | None = None,
+        access_context: ArtifactAccessContext = PUBLIC_ARTIFACT_ACCESS_CONTEXT,
+        input_manifest: VerifiedInputManifest | None = None,
+        runtime_artifacts: tuple[RuntimeArtifactLocalization, ...] = (),
     ) -> ScientificBatchState:
         proposed = ScientificBatchState.admit(
             operation_id=operation_id,
             tenant_id=tenant_id,
             model_id=model_id,
+            variant_id=variant_id,
+            input_artifact_id=input_artifact_id,
             plan=plan,
             scheduling=scheduling,
+            execution_plan=execution_plan,
+            access_context=access_context,
+            input_manifest=input_manifest,
+            runtime_artifacts=runtime_artifacts,
         )
         payload = state_to_json(proposed)
         try:
@@ -114,9 +133,9 @@ class PostgresScientificBatchRepository:
                 await connection.execute(
                     """
                     INSERT INTO fs2_scientific_batches(
-                        operation_id,batch_id,workload_id,tenant_id,model_id,
+                        operation_id,batch_id,workload_id,tenant_id,model_id,variant_id,input_artifact_id,
                         scheduling_digest,status,revision,cancel_requested,state
-                    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+                    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb)
                     ON CONFLICT (operation_id) DO NOTHING
                     """,
                     proposed.operation_id,
@@ -124,6 +143,8 @@ class PostgresScientificBatchRepository:
                     proposed.workload_id,
                     proposed.tenant_id,
                     proposed.model_id,
+                    proposed.variant_id,
+                    proposed.input_artifact_id,
                     proposed.scheduling.digest,
                     proposed.status.value,
                     proposed.revision,
@@ -140,8 +161,14 @@ class PostgresScientificBatchRepository:
                 if (
                     current.tenant_id != tenant_id
                     or current.model_id != model_id
+                    or current.variant_id != variant_id
+                    or current.input_artifact_id != input_artifact_id
                     or current.plan != plan
                     or current.scheduling != scheduling
+                    or current.execution_plan != execution_plan
+                    or current.access_context != access_context
+                    or current.input_manifest != input_manifest
+                    or current.runtime_artifacts != runtime_artifacts
                 ):
                     raise BatchRepositoryConflictError("operation already has another frozen batch admission")
                 return current
@@ -166,8 +193,14 @@ class PostgresScientificBatchRepository:
                     SELECT batch.operation_id
                     FROM fs2_scientific_batches batch
                     JOIN fs2_operations operation ON operation.id=batch.operation_id
-                    WHERE batch.status IN ('queued','running')
-                      AND operation.status IN ('queued','running')
+                    WHERE (
+                        (batch.status IN ('queued','running') AND operation.status IN ('queued','running'))
+                        OR (
+                            batch.status IN ('succeeded','failed','cancelled')
+                            AND operation.status IN ('succeeded','failed','cancelled')
+                            AND (batch.state->>'result_published')::boolean=false
+                        )
+                    )
                       AND (batch.lease_expires_at IS NULL OR batch.lease_expires_at<=clock_timestamp())
                     ORDER BY operation.accepted_at,batch.operation_id
                     FOR UPDATE OF batch SKIP LOCKED
@@ -275,6 +308,10 @@ class PostgresScientificBatchRepository:
                     or record.model_id != current.model_id
                     or record.plan != current.plan
                     or record.scheduling != current.scheduling
+                    or record.execution_plan != current.execution_plan
+                    or record.access_context != current.access_context
+                    or record.input_manifest != current.input_manifest
+                    or record.runtime_artifacts != current.runtime_artifacts
                 ):
                     raise BatchRepositoryConflictError("immutable scientific-batch admission changed")
                 payload = state_to_json(record)
@@ -382,30 +419,88 @@ class PostgresScientificBatchRepository:
                 operation["attempt"],
             )
 
-    async def artifact_commit(self, claim: BatchClaim, *, stage_id: str) -> ArtifactCommit | None:
+    async def artifact_commits(self, claim: BatchClaim, *, stage_id: str) -> tuple[ArtifactCommit, ...]:
         async with self.pool.acquire() as connection, connection.transaction():
             await self._claimed_record(connection, claim, shared=True)
-            record = await connection.fetchrow(
+            records = await connection.fetch(
                 """
-                SELECT operation_id,stage_id,attempt_ids,manifest_digest,validation_digest,
-                       committed_at,validated_at,semantic_valid
-                FROM fs2_scientific_stage_commits
+                SELECT operation_id,stage_id,attempt_id,logical_artifact_id,handoff_artifact_id,
+                       handoff_digest,handoff_size_bytes,handoff_media_type,handoff_compression,
+                       manifest_artifact_id,validation_artifact_id,manifest_digest,validation_digest,
+                       collector_id,validator_id,committed_at,validated_at,semantic_valid
+                FROM fs2_scientific_attempt_commits
                 WHERE operation_id=$1 AND stage_id=$2
+                ORDER BY attempt_id
                 """,
                 claim.operation_id,
                 stage_id,
             )
-        if record is None:
-            return None
+        return tuple(
+            ArtifactCommit(
+                operation_id=record["operation_id"],
+                stage_id=record["stage_id"],
+                attempt_ids=(record["attempt_id"],),
+                logical_artifact_id=record["logical_artifact_id"],
+                handoff_artifact_id=record["handoff_artifact_id"],
+                handoff_digest=record["handoff_digest"],
+                handoff_size_bytes=record["handoff_size_bytes"],
+                handoff_media_type=record["handoff_media_type"],
+                handoff_compression=record["handoff_compression"],
+                manifest_artifact_id=record["manifest_artifact_id"],
+                validation_artifact_id=record["validation_artifact_id"],
+                manifest_digest=record["manifest_digest"],
+                validation_digest=record["validation_digest"],
+                committed_at=record["committed_at"],
+                validated_at=record["validated_at"],
+                semantic_valid=record["semantic_valid"],
+                collector_id=record["collector_id"],
+                validator_id=record["validator_id"],
+            )
+            for record in records
+        )
+
+    async def list_artifact_commits(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+    ) -> tuple[ArtifactCommit, ...]:
+        """Read the immutable stage ledger after controller terminalization."""
+
+        async with self.pool.acquire() as connection:
+            records = await connection.fetch(
+                """
+                SELECT commit.* FROM fs2_scientific_attempt_commits commit
+                JOIN fs2_scientific_batches batch ON batch.operation_id=commit.operation_id
+                WHERE commit.operation_id=$1 AND batch.tenant_id=$2
+                ORDER BY commit.stage_id,commit.attempt_id
+                """,
+                operation_id,
+                tenant_id,
+            )
+        return tuple(self._artifact_commit(record) for record in records)
+
+    @staticmethod
+    def _artifact_commit(record: Mapping[str, Any]) -> ArtifactCommit:
         return ArtifactCommit(
             operation_id=record["operation_id"],
             stage_id=record["stage_id"],
-            attempt_ids=tuple(record["attempt_ids"]),
+            attempt_ids=(record["attempt_id"],),
+            logical_artifact_id=record["logical_artifact_id"],
+            handoff_artifact_id=record["handoff_artifact_id"],
+            handoff_digest=record["handoff_digest"],
+            handoff_size_bytes=record["handoff_size_bytes"],
+            handoff_media_type=record["handoff_media_type"],
+            handoff_compression=record["handoff_compression"],
+            manifest_artifact_id=record["manifest_artifact_id"],
+            validation_artifact_id=record["validation_artifact_id"],
             manifest_digest=record["manifest_digest"],
             validation_digest=record["validation_digest"],
             committed_at=record["committed_at"],
             validated_at=record["validated_at"],
             semantic_valid=record["semantic_valid"],
+            collector_id=record["collector_id"],
+            validator_id=record["validator_id"],
         )
 
     async def record_artifact_commit(
@@ -429,68 +524,121 @@ class PostgresScientificBatchRepository:
                     raise ScientificBatchNotFoundError("scientific batch does not exist")
                 state = self._state(batch)
                 stage = state.stage(commit.stage_id)
-                known_attempts = {attempt.attempt_id for attempt in stage.attempts}
-                if not set(commit.attempt_ids).issubset(known_attempts):
-                    raise BatchRepositoryConflictError("stage commit references an unknown attempt")
+                attempt = next(
+                    (item for item in stage.attempts if item.attempt_id == commit.attempt_ids[0]),
+                    None,
+                )
+                if (
+                    attempt is None
+                    or attempt is not stage.latest_attempt(attempt.shard_id)
+                    or attempt.outcome.value != "active"
+                    or state.execution_plan is None
+                ):
+                    raise BatchRepositoryConflictError("stage commit references a stale attempt or logical output")
+                invocation = state.execution_plan.invocation(commit.stage_id, attempt.shard_id)
+                if (
+                    invocation.produces != commit.logical_artifact_id
+                    or invocation.collector_id != commit.collector_id
+                    or invocation.validator_id != commit.validator_id
+                ):
+                    raise BatchRepositoryConflictError("stage commit execution identity differs")
+                if (manifest_artifact_id, validation_artifact_id) != (
+                    commit.manifest_artifact_id,
+                    commit.validation_artifact_id,
+                ):
+                    raise BatchRepositoryConflictError("stage commit artifact IDs differ")
                 artifacts = await connection.fetch(
                     """
-                    SELECT id,digest,direction FROM fs2_scientific_artifacts
+                    SELECT id,digest,size_bytes,media_type,compression,direction FROM fs2_scientific_artifacts
                     WHERE operation_id=$1 AND tenant_id=$2 AND id=ANY($3::uuid[])
                     """,
                     commit.operation_id,
                     tenant_id,
-                    [manifest_artifact_id, validation_artifact_id],
+                    [commit.handoff_artifact_id, manifest_artifact_id, validation_artifact_id],
                 )
                 by_id = {item["id"]: item for item in artifacts}
-                if set(by_id) != {manifest_artifact_id, validation_artifact_id}:
+                if set(by_id) != {commit.handoff_artifact_id, manifest_artifact_id, validation_artifact_id}:
                     raise BatchRepositoryConflictError("stage commit artifacts are unavailable")
                 if any(item["direction"] != "output" for item in by_id.values()):
                     raise BatchRepositoryConflictError("stage commit must reference output artifacts")
                 if (
                     by_id[manifest_artifact_id]["digest"] != commit.manifest_digest
                     or by_id[validation_artifact_id]["digest"] != commit.validation_digest
+                    or by_id[commit.handoff_artifact_id]["digest"] != commit.handoff_digest
+                    or by_id[commit.handoff_artifact_id]["size_bytes"] != commit.handoff_size_bytes
+                    or by_id[commit.handoff_artifact_id]["media_type"] != commit.handoff_media_type
+                    or by_id[commit.handoff_artifact_id]["compression"] != commit.handoff_compression
                 ):
                     raise BatchRepositoryConflictError("stage commit digest differs from artifact metadata")
                 await connection.execute(
                     """
-                    INSERT INTO fs2_scientific_stage_commits(
-                        operation_id,stage_id,attempt_ids,manifest_artifact_id,validation_artifact_id,
-                        manifest_digest,validation_digest,committed_at,validated_at,semantic_valid
-                    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-                    ON CONFLICT (operation_id,stage_id) DO NOTHING
+                    INSERT INTO fs2_scientific_attempt_commits(
+                        operation_id,stage_id,attempt_id,logical_artifact_id,handoff_artifact_id,
+                        handoff_digest,handoff_size_bytes,handoff_media_type,handoff_compression,
+                        manifest_artifact_id,validation_artifact_id,
+                        manifest_digest,validation_digest,collector_id,validator_id,
+                        committed_at,validated_at,semantic_valid
+                    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+                    ON CONFLICT (operation_id,stage_id,attempt_id) DO NOTHING
                     """,
                     commit.operation_id,
                     commit.stage_id,
-                    list(commit.attempt_ids),
+                    commit.attempt_ids[0],
+                    commit.logical_artifact_id,
+                    commit.handoff_artifact_id,
+                    commit.handoff_digest,
+                    commit.handoff_size_bytes,
+                    commit.handoff_media_type,
+                    commit.handoff_compression,
                     manifest_artifact_id,
                     validation_artifact_id,
                     commit.manifest_digest,
                     commit.validation_digest,
+                    commit.collector_id,
+                    commit.validator_id,
                     commit.committed_at,
                     commit.validated_at,
                     commit.semantic_valid,
                 )
                 stored = await connection.fetchrow(
-                    "SELECT * FROM fs2_scientific_stage_commits WHERE operation_id=$1 AND stage_id=$2",
+                    "SELECT * FROM fs2_scientific_attempt_commits "
+                    "WHERE operation_id=$1 AND stage_id=$2 AND attempt_id=$3",
                     commit.operation_id,
                     commit.stage_id,
+                    commit.attempt_ids[0],
                 )
                 if stored is None:
                     raise RuntimeError("stage commit insert did not produce a durable row")
                 comparable = (
-                    tuple(stored["attempt_ids"]),
+                    stored["attempt_id"],
+                    stored["logical_artifact_id"],
+                    stored["handoff_artifact_id"],
+                    stored["handoff_digest"],
+                    stored["handoff_size_bytes"],
+                    stored["handoff_media_type"],
+                    stored["handoff_compression"],
                     stored["manifest_artifact_id"],
                     stored["validation_artifact_id"],
                     stored["manifest_digest"],
                     stored["validation_digest"],
+                    stored["collector_id"],
+                    stored["validator_id"],
                     stored["semantic_valid"],
                 )
                 expected = (
-                    commit.attempt_ids,
+                    commit.attempt_ids[0],
+                    commit.logical_artifact_id,
+                    commit.handoff_artifact_id,
+                    commit.handoff_digest,
+                    commit.handoff_size_bytes,
+                    commit.handoff_media_type,
+                    commit.handoff_compression,
                     manifest_artifact_id,
                     validation_artifact_id,
                     commit.manifest_digest,
                     commit.validation_digest,
+                    commit.collector_id,
+                    commit.validator_id,
                     commit.semantic_valid,
                 )
                 if comparable != expected:
@@ -601,10 +749,10 @@ class PostgresScientificBatchRepository:
 # remain forward-only; dropping this extension must precede any test-only
 # rollback of the artifact tables it references.
 SCIENTIFIC_BATCH_ROLLBACK_SQL = """
-DROP TRIGGER IF EXISTS fs2_scientific_stage_commits_append_only_trigger ON fs2_scientific_stage_commits;
+DROP TRIGGER IF EXISTS fs2_scientific_attempt_commits_append_only_trigger ON fs2_scientific_attempt_commits;
 DROP TRIGGER IF EXISTS fs2_scientific_batch_events_append_only_trigger ON fs2_scientific_batch_events;
 DROP TRIGGER IF EXISTS fs2_scientific_batch_state_immutable_trigger ON fs2_scientific_batches;
-DROP TABLE IF EXISTS fs2_scientific_stage_commits;
+DROP TABLE IF EXISTS fs2_scientific_attempt_commits;
 DROP TABLE IF EXISTS fs2_scientific_batch_events;
 DROP TABLE IF EXISTS fs2_scientific_batches;
 DROP FUNCTION IF EXISTS fs2_scientific_batch_append_only();
