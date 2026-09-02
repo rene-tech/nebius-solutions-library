@@ -387,12 +387,21 @@ class AdminUsageRow(StrictModel):
     estimated_gpu_seconds: float = Field(ge=0)
     duration_seconds: float = Field(ge=0)
     cold_start_seconds: float = Field(ge=0)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    token_reported_operations: int = Field(ge=0)
+    latency_p50_seconds: float = Field(ge=0)
+    latency_p95_seconds: float = Field(ge=0)
+    latency_p99_seconds: float = Field(ge=0)
 
 
 class AdminUsageWindow(StrictModel):
     from_at: AwareDatetime
     to_at: AwareDatetime
     rows: list[AdminUsageRow] = Field(max_length=256)
+    latency_p50_seconds: float | None = Field(default=None, ge=0)
+    latency_p95_seconds: float | None = Field(default=None, ge=0)
+    latency_p99_seconds: float | None = Field(default=None, ge=0)
 
 
 class AdminKubernetesModel(StrictModel):

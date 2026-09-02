@@ -181,12 +181,8 @@ class MemoryStore:
         self.configuration_plans: dict[UUID, ConfigurationPlan] = {}
         self.configuration_status_events: dict[UUID, list[ReconciliationStatus]] = {}
         self.model_deployment_revisions: dict[tuple[str, str], list[ModelDeploymentRevision]] = {}
-        self.model_deployment_idempotency: dict[
-            tuple[UUID, str, str], tuple[str, str, str, int]
-        ] = {}
-        self.model_deployment_status_events: dict[
-            tuple[str, str], list[ModelDeploymentStatusObservation]
-        ] = {}
+        self.model_deployment_idempotency: dict[tuple[UUID, str, str], tuple[str, str, str, int]] = {}
+        self.model_deployment_status_events: dict[tuple[str, str], list[ModelDeploymentStatusObservation]] = {}
         self.model_deployment_status_by_id: dict[UUID, ModelDeploymentStatusObservation] = {}
 
     def _activation_event(self, intent: ActivationIntent, event: str) -> None:
@@ -1299,9 +1295,7 @@ class MemoryStore:
             if events and model_deployment_status_precedes(observation, events[-1]):
                 raise ConflictError("model deployment observation is older than current status")
             value = observation.model_copy(deep=True)
-            self.model_deployment_status_events.setdefault(
-                (observation.namespace, observation.name), []
-            ).append(value)
+            self.model_deployment_status_events.setdefault((observation.namespace, observation.name), []).append(value)
             self.model_deployment_status_by_id[value.observation_id] = value
             return value.model_copy(deep=True)
 
@@ -2516,8 +2510,26 @@ class MemoryStore:
             or (to_at - from_at).total_seconds() > 31 * 24 * 60 * 60
         ):
             raise ValueError("admin usage window is invalid")
+
+        def percentile(values: list[float], quantile: float) -> float | None:
+            if not values:
+                return None
+            ordered = sorted(values)
+            position = (len(ordered) - 1) * quantile
+            lower = int(position)
+            upper = min(lower + 1, len(ordered) - 1)
+            fraction = position - lower
+            return ordered[lower] + (ordered[upper] - ordered[lower]) * fraction
+
+        def required_percentile(values: list[float], quantile: float) -> float:
+            value = percentile(values, quantile)
+            assert value is not None
+            return value
+
         async with self._lock:
             totals: dict[str, dict[str, float | int]] = {}
+            latencies: dict[str, list[float]] = {}
+            all_latencies: list[float] = []
             for row in self.operations.values():
                 operation = row.view
                 if (
@@ -2528,16 +2540,30 @@ class MemoryStore:
                     continue
                 value = totals.setdefault(
                     operation.model_id,
-                    {"operations": 0, "errors": 0, "gpu": 0.0, "duration": 0.0, "cold": 0.0},
+                    {
+                        "operations": 0,
+                        "errors": 0,
+                        "gpu": 0.0,
+                        "duration": 0.0,
+                        "cold": 0.0,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "token_reported_operations": 0,
+                    },
                 )
                 value["operations"] = int(value["operations"]) + 1
                 if operation.status != OperationStatus.SUCCEEDED:
                     value["errors"] = int(value["errors"]) + 1
                 value["gpu"] = float(value["gpu"]) + operation.estimated_gpu_seconds
-                value["duration"] = float(value["duration"]) + max(
-                    0.0, (operation.completed_at - operation.accepted_at).total_seconds()
-                )
+                latency = max(0.0, (operation.completed_at - operation.accepted_at).total_seconds())
+                value["duration"] = float(value["duration"]) + latency
                 value["cold"] = float(value["cold"]) + (operation.cold_start_seconds or 0.0)
+                value["input_tokens"] = int(value["input_tokens"]) + (operation.input_tokens or 0)
+                value["output_tokens"] = int(value["output_tokens"]) + (operation.output_tokens or 0)
+                if operation.input_tokens is not None and operation.output_tokens is not None:
+                    value["token_reported_operations"] = int(value["token_reported_operations"]) + 1
+                latencies.setdefault(operation.model_id, []).append(latency)
+                all_latencies.append(latency)
             return AdminUsageWindow(
                 from_at=from_at,
                 to_at=to_at,
@@ -2549,9 +2575,18 @@ class MemoryStore:
                         estimated_gpu_seconds=float(value["gpu"]),
                         duration_seconds=float(value["duration"]),
                         cold_start_seconds=float(value["cold"]),
+                        input_tokens=int(value["input_tokens"]),
+                        output_tokens=int(value["output_tokens"]),
+                        token_reported_operations=int(value["token_reported_operations"]),
+                        latency_p50_seconds=required_percentile(latencies[model_id], 0.50),
+                        latency_p95_seconds=required_percentile(latencies[model_id], 0.95),
+                        latency_p99_seconds=required_percentile(latencies[model_id], 0.99),
                     )
                     for model_id, value in sorted(totals.items())
                 ],
+                latency_p50_seconds=percentile(all_latencies, 0.50),
+                latency_p95_seconds=percentile(all_latencies, 0.95),
+                latency_p99_seconds=percentile(all_latencies, 0.99),
             )
 
     @staticmethod

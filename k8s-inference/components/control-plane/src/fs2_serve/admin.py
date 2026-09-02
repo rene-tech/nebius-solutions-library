@@ -62,6 +62,7 @@ from .admin_models import (
     AdminRuntimeOrigin,
     AdminSource,
     AdminSourceState,
+    AdminUsageRow,
     AdminUsageWindow,
     AdminValueState,
     AdminWarning,
@@ -77,6 +78,7 @@ MAX_CLOCK_SKEW_SECONDS = 300.0
 DEFAULT_ADAPTER_TIMEOUT_SECONDS = 2.0
 _MODEL_SELECTOR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
 _SUPPORTED_CATALOG_STATES = frozenset({"qualified", "lean-live-verified"})
+_TOKEN_REPORTING_PROTOCOLS = frozenset({"openai-chat", "openai-completions", "openai-embeddings"})
 
 
 class AdminProblemError(RuntimeError):
@@ -267,14 +269,14 @@ class AdminObservabilityQueryTemplates:
                 "sum(DCGM_FI_DEV_FB_USED) / clamp_min(sum(DCGM_FI_DEV_FB_USED) + sum(DCGM_FI_DEV_FB_FREE), 1)"
             ),
             "otel_refused_items_per_second": (
-                f"sum(rate(otelcol_receiver_refused_spans[{window}])) + "
-                f"sum(rate(otelcol_receiver_refused_log_records[{window}])) + "
-                f"sum(rate(otelcol_receiver_refused_metric_points[{window}]))"
+                f"(sum(rate(otelcol_receiver_refused_spans[{window}])) or vector(0)) + "
+                f"(sum(rate(otelcol_receiver_refused_log_records[{window}])) or vector(0)) + "
+                f"(sum(rate(otelcol_receiver_refused_metric_points[{window}])) or vector(0))"
             ),
             "otel_export_failures_per_second": (
-                f"sum(rate(otelcol_exporter_send_failed_spans[{window}])) + "
-                f"sum(rate(otelcol_exporter_send_failed_log_records[{window}])) + "
-                f"sum(rate(otelcol_exporter_send_failed_metric_points[{window}]))"
+                f"(sum(rate(otelcol_exporter_send_failed_spans[{window}])) or vector(0)) + "
+                f"(sum(rate(otelcol_exporter_send_failed_log_records[{window}])) or vector(0)) + "
+                f"(sum(rate(otelcol_exporter_send_failed_metric_points[{window}])) or vector(0))"
             ),
         }
 
@@ -683,13 +685,61 @@ class AdminReadService:
         )
 
     @staticmethod
-    def _latency(prometheus: AdminPrometheusModel | AdminPrometheusSnapshot | None) -> AdminLatency:
+    def _token_rate(
+        *,
+        source_ready: bool,
+        token_reporting_configured: bool,
+        terminal_operations: int,
+        token_reported_operations: int,
+        input_tokens: int,
+        output_tokens: int,
+        window_seconds: float,
+    ) -> AdminMeasurement:
+        if not source_ready:
+            return _unavailable("tokens/second", "postgresql", "durable usage query is unavailable")
+        if not token_reporting_configured:
+            return _unavailable(
+                "tokens/second",
+                "postgresql",
+                "the runtime does not use a token-reporting protocol",
+            )
+        if terminal_operations == 0:
+            return _available(0.0, "tokens/second", "postgresql")
+        if token_reported_operations == 0:
+            return _unavailable(
+                "tokens/second",
+                "postgresql",
+                "runtime token reporting is unavailable for the selected operations",
+            )
+        rate = (input_tokens + output_tokens) / window_seconds
+        if token_reported_operations < terminal_operations:
+            return AdminMeasurement(
+                value=rate,
+                unit="tokens/second",
+                state=AdminValueState.ESTIMATED,
+                source="postgresql",
+                reason=(
+                    f"{token_reported_operations} of {terminal_operations} terminal operations reported token usage"
+                ),
+            )
+        return _available(rate, "tokens/second", "postgresql")
+
+    @staticmethod
+    def _latency(
+        prometheus: AdminPrometheusModel | AdminPrometheusSnapshot | None,
+        durable: AdminUsageRow | AdminUsageWindow | None,
+    ) -> AdminLatency:
         def metric(field: str) -> AdminMeasurement:
-            value = getattr(prometheus, field, None) if prometheus is not None else None
-            return (
-                _available(float(value), "seconds", "prometheus")
-                if value is not None
-                else _unavailable("seconds", "prometheus", "latency series is unavailable")
+            durable_value = getattr(durable, field, None) if durable is not None else None
+            if durable_value is not None:
+                return _available(float(durable_value), "seconds", "postgresql")
+            prometheus_value = getattr(prometheus, field, None) if prometheus is not None else None
+            if prometheus_value is not None:
+                return _available(float(prometheus_value), "seconds", "prometheus")
+            return _unavailable(
+                "seconds",
+                "postgresql",
+                "no terminal operation latency is available in the selected window",
             )
 
         return AdminLatency(
@@ -778,9 +828,23 @@ class AdminReadService:
                     if database_ready
                     else _unavailable("gpu-seconds", "postgresql", "durable usage query is unavailable")
                 ),
-                measured_gpu_seconds=_unavailable("gpu-seconds", "dcgm", "measured GPU accounting is not instrumented"),
-                tokens_per_second=_unavailable("tokens/second", "postgresql", "token accounting is not instrumented"),
-                latency=self._latency(prom if prom_ready else None),
+                measured_gpu_seconds=_unavailable(
+                    "gpu-seconds",
+                    "dcgm",
+                    "per-model time-integrated DCGM GPU-seconds are not instrumented",
+                ),
+                tokens_per_second=self._token_rate(
+                    source_ready=database_ready,
+                    token_reporting_configured=bool(_TOKEN_REPORTING_PROTOCOLS.intersection(model.gateway.protocols)),
+                    terminal_operations=operations,
+                    token_reported_operations=usage.token_reported_operations if usage is not None else 0,
+                    input_tokens=usage.input_tokens if usage is not None else 0,
+                    output_tokens=usage.output_tokens if usage is not None else 0,
+                    window_seconds=(database.usage.to_at - database.usage.from_at).total_seconds()
+                    if database is not None
+                    else 1,
+                ),
+                latency=self._latency(prom if prom_ready else None, usage if database_ready else None),
                 cold_start_seconds=(
                     _available(usage.cold_start_seconds if usage is not None else 0.0, "seconds", "postgresql")
                     if database_ready
@@ -874,6 +938,14 @@ class AdminReadService:
         prom_ready = source_states.get("prometheus") == AdminSourceState.AVAILABLE and prometheus is not None
         k8s_ready = source_states.get("kubernetes") == AdminSourceState.AVAILABLE and kubernetes is not None
         usage_rows = database.usage.rows if db_ready and database is not None else []
+        token_model_ids = {
+            model.id for model in models if _TOKEN_REPORTING_PROTOCOLS.intersection(model.gateway.protocols)
+        }
+        token_usage_rows = [row for row in usage_rows if row.model_id in token_model_ids]
+        token_terminal = sum(row.terminal_operations for row in token_usage_rows)
+        token_reported = sum(row.token_reported_operations for row in token_usage_rows)
+        input_tokens = sum(row.input_tokens for row in token_usage_rows)
+        output_tokens = sum(row.output_tokens for row in token_usage_rows)
         terminal = sum(row.terminal_operations for row in usage_rows)
         errors = sum(row.error_operations for row in usage_rows)
         estimated_gpu = sum(row.estimated_gpu_seconds for row in usage_rows)
@@ -897,7 +969,17 @@ class AdminReadService:
                     if prom_ready and prometheus is not None
                     else _unavailable("requests/second", "prometheus", "request-rate series is unavailable")
                 ),
-                tokens_per_second=_unavailable("tokens/second", "postgresql", "token accounting is not instrumented"),
+                tokens_per_second=self._token_rate(
+                    source_ready=db_ready,
+                    token_reporting_configured=bool(token_model_ids),
+                    terminal_operations=token_terminal,
+                    token_reported_operations=token_reported,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    window_seconds=(database.usage.to_at - database.usage.from_at).total_seconds()
+                    if database is not None
+                    else 1,
+                ),
                 terminal_operations=(
                     _available(float(terminal), "operations", "postgresql")
                     if db_ready
@@ -919,7 +1001,9 @@ class AdminReadService:
                     else _unavailable("gpu-seconds", "postgresql", "durable usage query is unavailable")
                 ),
                 measured_gpu_seconds=_unavailable(
-                    "gpu-seconds", "dcgm", "DCGM series are not ingested into Prometheus"
+                    "gpu-seconds",
+                    "dcgm",
+                    "time-integrated DCGM GPU-seconds are not instrumented",
                 ),
                 queued_operations=(
                     _available(float(queue), "operations", "postgresql")
@@ -931,7 +1015,10 @@ class AdminReadService:
                     if db_ready
                     else _unavailable("seconds", "postgresql", "durable queue query is unavailable")
                 ),
-                latency=self._latency(prometheus if prom_ready else None),
+                latency=self._latency(
+                    prometheus if prom_ready else None,
+                    database.usage if db_ready and database is not None else None,
+                ),
                 capacity=AdminFleetCapacity(
                     allocatable_gpus=(
                         _available(float(kubernetes.allocatable_gpus), "gpus", "kubernetes")

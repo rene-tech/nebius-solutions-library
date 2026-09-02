@@ -17,9 +17,9 @@ labels. Aggregate metric identities are joined to the durable ledger server-side
 | Model identity, revision, runtime, immutable image/model, GPU compatibility, endpoint/MCP exposure | Catalog package and contracts | Available | Preserve immutable identities; treat compatibility outcome separately from live health. |
 | Hot/loading/queued/cold/unhealthy/unsupported | Catalog + PostgreSQL activation/queue + Kubernetes Deployments/Services/Pods | Implemented; rollout required | Production composition uses the bounded live adapter. A Ready Pod must also be selected by the model Service. This is serving health, not an application semantic probe; request semantic outcomes remain separate durable evidence. |
 | Requests/s and outcomes | Prometheus `fs2_serve_requests_total`; reconcile terminal total with `fs2_usage_facts` | Available | Bounded model/outcome labels only. |
-| End-to-end latency | `fs2_serve_request_duration_seconds`; per-operation timestamps | Aggregate available | Quantiles are operational estimates; do not assign histogram quantiles to individual operations. |
+| End-to-end latency | PostgreSQL per-operation timestamps; `fs2_serve_request_duration_seconds` fallback | Available | Compute selected-window percentiles from durable terminal operations so gateway rollouts do not erase the admin view; do not assign aggregate quantiles to individual operations. |
 | TTFT | First-output timestamp + histogram | Missing | Schema and instrumentation do not exist; return `null`/`not_instrumented`. |
-| Token/s and per-operation input/output tokens | Durable operation/usage columns plus bounded histograms/counters | Missing | No token columns exist; never infer tokens from request count. |
+| Token/s and per-operation input/output tokens | Durable operation/usage columns | Available when reported | OpenAI text/embedding runtimes persist reported input/output tokens. Exact coverage is available; partial coverage is labeled as an estimate and tokens are never inferred from request count. |
 | Cold-start total | Prometheus cold-start histogram + durable `cold_start_seconds` | Available | Label measured total; phase breakdown is not recorded. |
 | Cold-start phase breakdown | Activation/download/load/restore/readiness timestamps | Missing | Extend operation/activation events before adding phase charts. |
 | Errors/retries | Prometheus outcomes + durable operation error/retry fields | Available | Normalize bounded error classes; redact backend detail before display. |
@@ -31,9 +31,9 @@ labels. Aggregate metric identities are joined to the durable ledger server-side
 | Durable inference queue | PostgreSQL operation queue + `fs2_serve_operations`/oldest-age gauges | Available | Reconcile aggregate gauge to durable count for the selected window. |
 | Kueue quota/reservation/workloads | ResourceFlavor, ClusterQueue, LocalQueue, Workload APIs | Available via read-only adapter | Show spec nominal quota separately from status reservation; do not treat missing status as zero capacity. |
 | GPU/node-pool inventory | Kubernetes Node labels/capacity/conditions | Available | Project dynamic `gpu_class`/`capacity_type`; heterogeneous pools are first-class. |
-| GPU utilization/health | DCGM -> Prometheus/Grafana | Blocked on scrape | DCGM workload exists but no `DCGM_FI_*` series were observed; show unavailable. |
-| HPA/KEDA | Kubernetes HPA/ScaledObject APIs | Partial | Control-plane HPA is live; KEDA has zero ScaledObjects. |
-| Node autoscaler | Provider/Kubernetes autoscaler objects and events | Not verified | Do not invent a state; add a provider-agnostic adapter contract. |
+| GPU utilization/health | DCGM -> Prometheus/Grafana | Available | Accepted `DCGM_FI_*` series drive live utilization and memory signals. Time-integrated and per-model GPU-seconds remain unavailable until attribution is instrumented. |
+| HPA/KEDA | Kubernetes HPA/ScaledObject APIs | Available | Model pools publish live ScaledObjects and generated HPAs, including the legitimate zero-replica idle state. |
+| Node autoscaler | Provider/Kubernetes autoscaler objects and events | Available | The provider-agnostic adapter projects health and recent scale-up events without exposing provider credentials. |
 | Preemption events | Node/pod events + durable operation retry/error + provider event | Not normalized | Define bounded event class and retention before KPI. |
 | Audit | `fs2_audit_events`, current `GET /admin/v1/audit` | Available | Keep admin changes separate from inference operation history. |
 | Grafana | Runtime-configured authenticated URL | Healthy | Enable contextual model/cluster/time link after allow-list validation. |
@@ -42,7 +42,7 @@ labels. Aggregate metric identities are joined to the durable ledger server-side
 | Tempo/traces | OTel trace pipeline + trace backend | Backend absent | OTel collector health is not proof of stored/queryable traces; disable link. |
 | Alertmanager | Alertmanager API/UI | Absent | PrometheusRule objects do not constitute an alert workflow; disable link. |
 | OTel collector | Collector self-metrics | Healthy, no UI | Render pipeline health projection; no launch action. |
-| DCGM views | Prometheus DCGM series + Grafana panel | Not ingested | Existing dashboard query is not evidence of data; enable only after a non-empty acceptance query. |
+| DCGM views | Prometheus DCGM series + Grafana panel | Ingested | Keep live utilization separate from the unimplemented time-integrated GPU-seconds projection. |
 | Kueue view | Typed BFF over Kueue APIs | Controller/queue healthy; no Prometheus series | Render native table first; do not expose cluster credentials or an unverified UI. |
 
 ## Current exact control-plane API coverage

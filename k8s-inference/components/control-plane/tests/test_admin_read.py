@@ -238,6 +238,8 @@ def _seed_operations(runtime: AppRuntime) -> tuple[list[str], list[str]]:
                     "estimated_gpu_seconds": 8.0,
                     "cold_start_seconds": 3.0,
                     "reserved_gpu_seconds": 0.0,
+                    "input_tokens": ordinal * 10 if status == OperationStatus.SUCCEEDED else None,
+                    "output_tokens": ordinal * 5 if status == OperationStatus.SUCCEEDED else None,
                 }
             )
             identifiers.append(str(operation.id))
@@ -347,13 +349,17 @@ def test_context_overview_models_and_model_detail_are_typed_and_explicit(
     overview_value = overview.json()
     assert overview_value["data"]["capacity"]["allocatable_gpus"]["value"] == 38
     assert overview_value["data"]["tokens_per_second"] == {
-        "value": None,
+        "value": 0.0,
         "unit": "tokens/second",
-        "state": "unavailable",
+        "state": "available",
         "source": "postgresql",
-        "reason": "token accounting is not instrumented",
+        "reason": None,
     }
     assert overview_value["data"]["measured_gpu_seconds"]["value"] is None
+    assert (
+        overview_value["data"]["measured_gpu_seconds"]["reason"]
+        == "time-integrated DCGM GPU-seconds are not instrumented"
+    )
     model = models.json()["data"]["items"][0]
     assert model["identity"]["id"] == "qwen3-8b"
     assert model["runtime"]["state"] == "hot"
@@ -529,6 +535,7 @@ def test_operation_cursor_filters_redaction_and_detail(registry: Any, cipher: An
         failed = client.get("/admin/api/v1/operations?status=failed", headers=ADMIN_AUTH)
         detail = client.get(f"/admin/api/v1/operations/{operation_ids[1]}", headers=ADMIN_AUTH)
         overview = client.get("/admin/api/v1/overview", headers=ADMIN_AUTH)
+        model = client.get("/admin/api/v1/models/qwen3-8b", headers=ADMIN_AUTH)
 
     assert {
         first.status_code,
@@ -536,6 +543,7 @@ def test_operation_cursor_filters_redaction_and_detail(registry: Any, cipher: An
         failed.status_code,
         detail.status_code,
         overview.status_code,
+        model.status_code,
     } == {200}
     assert len(first.json()["data"]["items"]) == 2
     assert len(second.json()["data"]["items"]) == 1
@@ -551,6 +559,24 @@ def test_operation_cursor_filters_redaction_and_detail(registry: Any, cipher: An
     assert reconciliation["prometheus_terminal_operations"]["value"] == 0
     assert reconciliation["difference"]["value"] == -3
     assert overview.json()["data"]["estimated_gpu_seconds"]["state"] == "estimated"
+    token_rate = overview.json()["data"]["tokens_per_second"]
+    assert token_rate["value"] == pytest.approx(60 / 3600)
+    assert token_rate["state"] == "estimated"
+    assert token_rate["reason"] == "2 of 3 terminal operations reported token usage"
+    latency = overview.json()["data"]["latency"]
+    assert latency["p50_seconds"] == {
+        "value": 8.0,
+        "unit": "seconds",
+        "state": "available",
+        "source": "postgresql",
+        "reason": None,
+    }
+    assert latency["p95_seconds"]["value"] == 8.0
+    assert latency["p99_seconds"]["value"] == 8.0
+    assert latency["ttft_p95_seconds"]["value"] is None
+    model_metrics = model.json()["data"]["model"]["metrics"]
+    assert model_metrics["tokens_per_second"] == token_rate
+    assert model_metrics["latency"]["p95_seconds"]["value"] == 8.0
     combined = "\n".join((first.text, second.text, failed.text, detail.text, overview.text))
     for secret in (SECRET_PROMPT, SECRET_ERROR, SECRET_IDEMPOTENCY, *secret_values):
         assert secret not in combined

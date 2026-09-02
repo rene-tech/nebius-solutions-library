@@ -380,9 +380,7 @@ class PostgresStore:
                 f"GRANT SELECT,INSERT ON fs2_model_deployment_revisions,"
                 f"fs2_model_deployment_idempotency,fs2_model_deployment_status_events TO {quoted_runtime}"
             )
-            await connection.execute(
-                f"GRANT SELECT,INSERT,UPDATE ON fs2_model_deployments TO {quoted_runtime}"
-            )
+            await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_model_deployments TO {quoted_runtime}")
             await connection.execute(
                 f"GRANT SELECT ON fs2_schema_migrations,fs2_reporting_terminal_totals TO {quoted_runtime}"
             )
@@ -3516,25 +3514,64 @@ class PostgresStore:
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
                 """
+                WITH terminal AS (
+                    SELECT model_id,status,estimated_gpu_seconds,cold_start_seconds,
+                           input_tokens,output_tokens,
+                           GREATEST(0,extract(epoch FROM completed_at-accepted_at))
+                               ::double precision AS latency_seconds
+                    FROM fs2_operations
+                    WHERE status IN ('succeeded','failed','cancelled','preempted','expired')
+                      AND completed_at >= $1 AND completed_at < $2
+                )
                 SELECT model_id,
                        count(*)::bigint AS terminal_operations,
                        count(*) FILTER (WHERE status<>'succeeded')::bigint AS error_operations,
                        COALESCE(sum(estimated_gpu_seconds),0)::double precision AS estimated_gpu_seconds,
-                       COALESCE(sum(GREATEST(0,extract(epoch FROM completed_at-accepted_at))),0)
-                           ::double precision AS duration_seconds,
-                       COALESCE(sum(COALESCE(cold_start_seconds,0)),0)::double precision AS cold_start_seconds
-                FROM fs2_operations
-                WHERE status IN ('succeeded','failed','cancelled','preempted','expired')
-                  AND completed_at >= $1 AND completed_at < $2
+                       COALESCE(sum(latency_seconds),0)::double precision AS duration_seconds,
+                       COALESCE(sum(COALESCE(cold_start_seconds,0)),0)::double precision AS cold_start_seconds,
+                       COALESCE(sum(input_tokens),0)::bigint AS input_tokens,
+                       COALESCE(sum(output_tokens),0)::bigint AS output_tokens,
+                       count(*) FILTER (
+                           WHERE input_tokens IS NOT NULL AND output_tokens IS NOT NULL
+                       )::bigint AS token_reported_operations,
+                       percentile_cont(0.50) WITHIN GROUP (ORDER BY latency_seconds)
+                           ::double precision AS latency_p50_seconds,
+                       percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_seconds)
+                           ::double precision AS latency_p95_seconds,
+                       percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_seconds)
+                           ::double precision AS latency_p99_seconds
+                FROM terminal
                 GROUP BY model_id ORDER BY model_id
                 """,
                 from_at,
                 to_at,
             )
+            latency = await connection.fetchrow(
+                """
+                SELECT percentile_cont(0.50) WITHIN GROUP (
+                           ORDER BY GREATEST(0,extract(epoch FROM completed_at-accepted_at))
+                       )::double precision AS latency_p50_seconds,
+                       percentile_cont(0.95) WITHIN GROUP (
+                           ORDER BY GREATEST(0,extract(epoch FROM completed_at-accepted_at))
+                       )::double precision AS latency_p95_seconds,
+                       percentile_cont(0.99) WITHIN GROUP (
+                           ORDER BY GREATEST(0,extract(epoch FROM completed_at-accepted_at))
+                       )::double precision AS latency_p99_seconds
+                FROM fs2_operations
+                WHERE status IN ('succeeded','failed','cancelled','preempted','expired')
+                  AND completed_at >= $1 AND completed_at < $2
+                """,
+                from_at,
+                to_at,
+            )
+        assert latency is not None
         return AdminUsageWindow(
             from_at=from_at,
             to_at=to_at,
             rows=[AdminUsageRow.model_validate(dict(row)) for row in rows],
+            latency_p50_seconds=latency["latency_p50_seconds"],
+            latency_p95_seconds=latency["latency_p95_seconds"],
+            latency_p99_seconds=latency["latency_p99_seconds"],
         )
 
     @staticmethod

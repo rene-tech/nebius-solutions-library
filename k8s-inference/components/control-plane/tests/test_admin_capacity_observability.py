@@ -708,6 +708,8 @@ def test_observability_promql_is_fixed_bounded_and_identity_free() -> None:
     encoded = "\n".join(queries.values()).casefold()
     for forbidden in ("tenant", "principal", "token", "api_key", "operation_id", "model_id", "pod_uid", "uuid"):
         assert forbidden not in encoded
+    assert queries["otel_refused_items_per_second"].count("or vector(0)") == 3
+    assert queries["otel_export_failures_per_second"].count("or vector(0)") == 3
     with pytest.raises(ValueError, match="range"):
         AdminObservabilityQueryTemplates.for_window(59)
 

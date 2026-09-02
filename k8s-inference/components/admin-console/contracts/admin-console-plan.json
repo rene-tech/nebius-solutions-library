@@ -366,7 +366,7 @@
       "id": "dcgm",
       "authority": "measured GPU device utilization and health",
       "adapter": "Prometheus after scrape acceptance",
-      "live_state": "deployed-not-ingested",
+      "live_state": "ingested",
       "browser_direct": false
     },
     {
@@ -403,8 +403,8 @@
       "id": "token.throughput",
       "page": "overview,model-detail,operations",
       "sources": ["postgresql"],
-      "availability": "missing-schema",
-      "semantics": "unavailable, never inferred from requests"
+      "availability": "available-when-reported",
+      "semantics": "durable reported-token rate with explicit operation coverage; never inferred from requests"
     },
     {
       "id": "latency.end_to_end",

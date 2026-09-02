@@ -1448,9 +1448,7 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
             payload_ttl_seconds=3600,
         )
         model_revision = (
-            await runtime_store.model_deployment_append_revision(
-                append_request(key="restricted-runtime-model-0001")
-            )
+            await runtime_store.model_deployment_append_revision(append_request(key="restricted-runtime-model-0001"))
         ).value
         assert (
             await runtime_store.model_deployment_current(
@@ -2741,3 +2739,8 @@ async def test_admin_reporting_queries_are_bounded_paginated_and_payload_free(
     )
     row = next(item for item in usage.rows if item.model_id == "qwen3-8b")
     assert row.terminal_operations == 3 and row.error_operations == 3
+    assert row.input_tokens == row.output_tokens == row.token_reported_operations == 0
+    assert 0 <= row.latency_p50_seconds <= row.latency_p95_seconds <= row.latency_p99_seconds
+    assert usage.latency_p50_seconds is not None
+    assert usage.latency_p95_seconds is not None
+    assert usage.latency_p99_seconds is not None
