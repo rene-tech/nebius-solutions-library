@@ -514,8 +514,10 @@ def test_boltzgen_semantics_enforce_identity_budget_and_degenerate_sequence_gate
     request = fixture("boltzgen", "positive-design.json")
     structure = mmcif_bytes()
     items: list[tuple[str, str, str, bytes]] = []
-    for index in range(1, 5):
-        name = f"design-{index}-structure"
+    file_names = ("one.cif", "two.cif", "three.cif", "four.cif")
+    shard_ids = ("pdl1-a", "pdl1-a", "pdl1-b", "pdl1-b")
+    for index, (shard_id, file_name) in enumerate(zip(shard_ids, file_names, strict=True), start=1):
+        name = f"structure.{shard_id}.{hashlib.sha256(json.dumps(file_name).encode()).hexdigest()}"
         items.append((name, "protein-complex-structure/v1", f"boltz.structure.{index}", structure))
     header = b"id,file_name,designed_chain_sequence,design_to_target_iptm,designfolding-filter_rmsd\n"
     ranking_a = header + (
@@ -550,6 +552,16 @@ def test_boltzgen_semantics_enforce_identity_budget_and_degenerate_sequence_gate
     invalid_manifest, invalid_blobs = output_manifest(invalid_items)
     with pytest.raises(ScientificAdapterError, match="finite"):
         boltzgen.validate_output(request, invalid_manifest, artifact_loader=invalid_blobs.__getitem__)
+
+    unbound = ranking_a.replace(b"one.cif", b"unrelated.cif")
+    unbound_items = [
+        *items[:-2],
+        ("ranking.pdl1-a", "boltzgen-ranking-csv/v1", "boltz.ranking.a", unbound),
+        items[-1],
+    ]
+    unbound_manifest, unbound_blobs = output_manifest(unbound_items)
+    with pytest.raises(ScientificAdapterError, match="do not match emitted structure artifacts"):
+        boltzgen.validate_output(request, unbound_manifest, artifact_loader=unbound_blobs.__getitem__)
 
 
 def tar_bytes(files: Mapping[str, bytes], *, symlink: tuple[str, str] | None = None) -> bytes:

@@ -198,6 +198,21 @@ def _execute_argv(batch: DesignBatch, stage_id: str, operation_id: str) -> tuple
     )
 
 
+def _structure_entry_name(shard_id: str, file_name: str) -> str:
+    """Bind an upstream ranking filename to one path-free manifest identity."""
+
+    if (
+        not file_name
+        or len(file_name) > 255
+        or Path(file_name).name != file_name
+        or "\\" in file_name
+        or Path(file_name).suffix.lower() not in {".cif", ".mmcif"}
+    ):
+        raise ScientificAdapterError("BoltzGen ranking file_name must be a bounded mmCIF basename")
+    filename_digest = canonical_digest(file_name)
+    return f"structure.{shard_id}.{filename_digest}"
+
+
 def compile_run(profile: Mapping[str, object], request_value: object, *, operation_id: str) -> AdapterExecutionPlan:
     """Compile bounded campaigns into exact upstream configure/execute steps."""
 
@@ -304,6 +319,7 @@ def validate_output(
         raise ScientificAdapterError("BoltzGen output does not account for the requested budget")
     batch_budgets = {batch.shard_id: batch.budget for batch in parameters.batches}
     seen: set[str] = set()
+    expected_structure_names: set[str] = set()
     observed_batches: Counter[str] = Counter()
     for ranking in ranking_items:
         if not ranking.name.startswith("ranking."):
@@ -327,8 +343,10 @@ def validate_output(
             design_id = row["id"]
             if not 1 <= len(design_id) <= 128 or any(character in design_id for character in ("/", "\\", "\x00")):
                 raise ScientificAdapterError("BoltzGen design ID is invalid")
-            if Path(row["file_name"]).name != row["file_name"] or "\\" in row["file_name"]:
-                raise ScientificAdapterError("BoltzGen ranking file_name must be a basename")
+            structure_name = _structure_entry_name(shard_id, row["file_name"])
+            if structure_name in expected_structure_names:
+                raise ScientificAdapterError("BoltzGen ranking contains a duplicate structure filename")
+            expected_structure_names.add(structure_name)
             qualified = f"{shard_id}:{design_id}"
             if qualified in seen:
                 raise ScientificAdapterError("BoltzGen ranking contains a duplicate design")
@@ -344,6 +362,9 @@ def validate_output(
         observed_batches[shard_id] = len(rows)
     if dict(observed_batches) != batch_budgets:
         raise ScientificAdapterError("BoltzGen output has missing shard rankings")
+    structure_names = {item.name for item in structures}
+    if structure_names != expected_structure_names:
+        raise ScientificAdapterError("BoltzGen ranking filenames do not match emitted structure artifacts")
     atom_count = sum(structure_atom_count(item, require_two_chains=True) for item in structures)
     return {
         "validator_id": "boltzgen-v0-3-2",
@@ -370,15 +391,25 @@ def collect_output(request_value: object, workspaces: Mapping[str, Path]) -> Col
         structures += sorted((final_root / f"final_{batch.budget}_designs").glob("*.mmcif"))
         if len(structures) != batch.budget:
             raise ScientificAdapterError("BoltzGen final structure count does not equal the requested budget")
+        fields, rows = parse_csv_artifact(
+            ranking.read_bytes(),
+            label=f"BoltzGen ranking {batch.shard_id}",
+            maximum_rows=batch.budget,
+        )
+        if "file_name" not in fields or len(rows) != batch.budget:
+            raise ScientificAdapterError("BoltzGen ranking CSV does not account for the requested budget")
+        ranked_names = {row["file_name"] for row in rows}
+        if len(ranked_names) != batch.budget or ranked_names != {structure.name for structure in structures}:
+            raise ScientificAdapterError("BoltzGen ranking filenames do not match collected structures")
         entries = [(f"ranking.{batch.shard_id}", "boltzgen-ranking-csv/v1", ranking, True)]
         entries.extend(
             (
-                f"structure.{batch.shard_id}.{index}",
+                _structure_entry_name(batch.shard_id, structure.name),
                 "protein-complex-structure/v1",
                 structure,
                 False,
             )
-            for index, structure in enumerate(structures, start=1)
+            for structure in structures
         )
         collected.append(
             collect_output_files(
