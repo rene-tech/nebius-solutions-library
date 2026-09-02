@@ -93,6 +93,12 @@ build. It must never be used as a deployment image.
 4. Supply a licensed Nebius asset package or explicitly approve the neutral FS2
    wordmark. Do not scrape visual tokens or copy public assets into source.
 
-The unit route matrix uses backend-shaped envelopes and covers all console
-routes, but it is not evidence of a live rollout. Record the deployed image
-digest, endpoint, cluster context, and browser acceptance separately.
+The unit route matrix uses backend-shaped envelopes and covers all
+backend-integrated console routes, but it is not evidence of a live rollout.
+Record the deployed image digest, endpoint, cluster context, and browser
+acceptance separately.
+
+The fixture-backed scientific run and model-readiness projection is documented
+in [`docs/SCIENTIFIC-OPERATIONS-UI.md`](docs/SCIENTIFIC-OPERATIONS-UI.md). Its
+three read routes are provisional until backend integration; production builds
+fail closed and never ship fixture middleware.

@@ -23,6 +23,9 @@ class AdminConsolePlanTests(unittest.TestCase):
         cls.api_contract = json.loads(
             (ROOT / "contracts" / "admin-api-v1.json").read_text()
         )
+        cls.scientific_fixture_contract = json.loads(
+            (ROOT / "contracts" / "scientific-admin-fixture-v1.json").read_text()
+        )
         cls.inventory = json.loads(
             (ROOT / "acceptance" / "inventory.fixture.json").read_text()
         )
@@ -262,6 +265,37 @@ class AdminConsolePlanTests(unittest.TestCase):
                         rf'element=\{{<{route["page"]}(?:\s|/>)'
                     )
                 self.assertRegex(source, pattern)
+
+    def test_scientific_admin_contract_is_explicitly_fixture_only(self) -> None:
+        contract = self.scientific_fixture_contract
+        self.assertEqual(contract["status"], "fixture-only-pending-backend-integration")
+        self.assertFalse(contract["access"]["credentials_exposed"])
+        self.assertEqual(
+            contract["gpu_accounting"]["evidence_states"],
+            ["measured", "estimated", "unavailable"],
+        )
+        self.assertIn("never rendered as measured", contract["gpu_accounting"]["invariant"])
+        self.assertIn("explicit-alternative", contract["access"]["native_gate_invariant"])
+
+        scientific_paths = {route["path"] for route in contract["routes"]}
+        live_paths = {route["path"] for route in self.api_contract["routes"]}
+        self.assertTrue(scientific_paths.isdisjoint(live_paths))
+        self.assertEqual(
+            scientific_paths,
+            {
+                "/admin/api/v1/scientific-runs",
+                "/admin/api/v1/scientific-runs/{run_id}",
+                "/admin/api/v1/scientific-models",
+            },
+        )
+
+        client_source = (ROOT / "src" / "api" / "client.ts").read_text()
+        self.assertIn('request<ScientificRunList>("/scientific-runs"', client_source)
+        self.assertIn('request<ScientificModelReadinessList>("/scientific-models"', client_source)
+
+        app_source = (ROOT / "src" / "app" / "App.tsx").read_text()
+        self.assertIn('<Route path="scientific-runs" element={<ScientificRunsPage />} />', app_source)
+        self.assertIn('<Route path="scientific-runs/:runId" element={<ScientificRunDetailPage />} />', app_source)
 
 
 if __name__ == "__main__":

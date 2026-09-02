@@ -53,6 +53,15 @@ import type {
   ModelDeploymentStatusView,
   ModelDeploymentValidationPreview,
 } from "./modelDeploymentTypes";
+import type {
+  ScientificAccessState,
+  ScientificAdmissionState,
+  ScientificModelReadinessList,
+  ScientificRunDetail,
+  ScientificRunList,
+  ScientificRunState,
+  ScientificServiceClass,
+} from "./scientificTypes";
 import { sharedContextParams } from "../lib/search";
 
 const API_PREFIX = "/admin/api/v1";
@@ -70,6 +79,10 @@ const queryValueMaximum: Readonly<Record<string, number>> = {
   operation_id: 36,
   namespace: 63,
   after: 253,
+  service_class: 32,
+  access_state: 16,
+  admission_state: 16,
+  run_status: 32,
 };
 
 export class AdminApiError extends Error {
@@ -149,6 +162,17 @@ export interface OperationQuery {
   apiKeyPrefix?: string;
   status?: OperationState;
   errorCode?: string;
+  limit?: number;
+}
+
+export interface ScientificRunQuery {
+  cursor?: string;
+  tenantId?: string;
+  modelId?: string;
+  serviceClass?: ScientificServiceClass;
+  accessState?: ScientificAccessState;
+  admissionState?: ScientificAdmissionState;
+  status?: ScientificRunState;
   limit?: number;
 }
 
@@ -267,6 +291,26 @@ export const adminApi = {
       undefined,
       signal,
     ),
+  scientificRuns: (context: URLSearchParams, filters: ScientificRunQuery = {}, signal?: AbortSignal) =>
+    request<ScientificRunList>("/scientific-runs", context, {
+      limit: boundedLimit(filters.limit, 200, 100),
+      cursor: filters.cursor,
+      tenant_id: filters.tenantId,
+      model_id: filters.modelId,
+      service_class: filters.serviceClass,
+      access_state: filters.accessState,
+      admission_state: filters.admissionState,
+      run_status: filters.status,
+    }, signal),
+  scientificRun: (runId: string, context: URLSearchParams, signal?: AbortSignal) =>
+    request<ScientificRunDetail>(
+      `/scientific-runs/${encodeURIComponent(runId)}`,
+      context,
+      undefined,
+      signal,
+    ),
+  scientificModels: (context: URLSearchParams, signal?: AbortSignal) =>
+    request<ScientificModelReadinessList>("/scientific-models", context, undefined, signal),
   capacity: (context: URLSearchParams, signal?: AbortSignal) =>
     request<AdminCapacity>("/capacity", context, undefined, signal),
   observability: (

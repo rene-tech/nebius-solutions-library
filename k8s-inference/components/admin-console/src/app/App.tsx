@@ -13,6 +13,8 @@ import { ObservabilityPage } from "../pages/observability/ObservabilityPage";
 import { ConfigurationPage } from "../pages/configuration/ConfigurationPage";
 import { ModelDeploymentsPage } from "../pages/modelDeployments/ModelDeploymentsPage";
 import { ModelDeploymentWorkspacePage } from "../pages/modelDeployments/ModelDeploymentWorkspacePage";
+import { ScientificRunDetailPage } from "../pages/scientific/ScientificRunDetailPage";
+import { ScientificRunsPage } from "../pages/scientific/ScientificRunsPage";
 
 export function App() {
   return (
@@ -27,6 +29,8 @@ export function App() {
           <Route path="model-deployments/:deploymentName" element={<ModelDeploymentWorkspacePage />} />
           <Route path="operations" element={<OperationsPage />} />
           <Route path="operations/:operationId" element={<OperationDetailPage />} />
+          <Route path="scientific-runs" element={<ScientificRunsPage />} />
+          <Route path="scientific-runs/:runId" element={<ScientificRunDetailPage />} />
           <Route path="access" element={<AccessPage />} />
           <Route path="capacity" element={<CapacityPage />} />
           <Route path="observability" element={<ObservabilityPage />} />

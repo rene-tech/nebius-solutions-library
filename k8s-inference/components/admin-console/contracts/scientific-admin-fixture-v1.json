@@ -1,0 +1,65 @@
+{
+  "schema_version": "fs2.scientific-admin-fixture-contract/v1",
+  "status": "fixture-only-pending-backend-integration",
+  "production_behavior": "The client uses same-origin read-only BFF routes and fails closed when they are absent. Fixture data is enabled only by Vite fixture mode and tests.",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/scientific-runs",
+      "data_schema": "ScientificRunList",
+      "filters": ["cursor", "tenant_id", "model_id", "service_class", "access_state", "admission_state", "run_status", "limit"]
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/scientific-runs/{run_id}",
+      "data_schema": "ScientificRunDetail"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/scientific-models",
+      "data_schema": "ScientificModelReadinessList"
+    }
+  ],
+  "service_classes": ["presentation", "interactive", "customer-batch", "bulk-backfill"],
+  "execution_modes": ["scientific-batch", "hybrid"],
+  "access": {
+    "profiles": ["standard", "academic"],
+    "states": ["not-required", "unverified", "verified", "blocked"],
+    "credentials_exposed": false,
+    "receipt_digest_is_non_secret": true,
+    "native_gate_invariant": "Native AlphaFold3 and native BindCraft/PyRosetta cannot be admitted without a verified receipt. Alternatives retain a distinct model identity and explicit-alternative relationship."
+  },
+  "gpu_accounting": {
+    "evidence_states": ["measured", "estimated", "unavailable"],
+    "required_totals": ["allocated", "active", "idle_total", "grace_drain", "reconciliation_delta"],
+    "idle_causes": ["image-pull", "artifact-load", "restore", "warmup", "between-stages", "scheduler-hold", "unattributed"],
+    "invariant": "Every numeric GPU value includes its evidence state and source. Estimated and unavailable values are visibly labelled and never rendered as measured."
+  },
+  "fast_start_tiers": [
+    "cold",
+    "container-image-local",
+    "model-artifact-local",
+    "runtime-checkpoint-restore",
+    "gpu-memory-snapshot-restore",
+    "warm-replica",
+    "not-observed"
+  ],
+  "detail_sections": [
+    "attribution",
+    "model_backend_identity",
+    "access_admission",
+    "service_class_decision",
+    "queue_priority_admission",
+    "lifecycle_phases",
+    "gpu_accounting",
+    "dag_stages_attempts",
+    "artifacts",
+    "errors_retries_cancellation",
+    "observability_links"
+  ],
+  "protected_data": {
+    "payloads_exposed": false,
+    "credentials_exposed": false,
+    "raw_api_keys_exposed": false
+  }
+}

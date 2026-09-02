@@ -13,6 +13,11 @@ import {
   modelDeploymentStatusFixture,
   modelDeploymentValidationFixture,
 } from "./modelDeploymentFixtures.ts";
+import {
+  scientificModelReadinessFixture,
+  scientificRunDetailFixture,
+  scientificRunListFixture,
+} from "./scientificFixtures.ts";
 
 const now = "2026-08-30T08:30:00Z";
 const context = {
@@ -191,6 +196,9 @@ export function browserFixture(path: string): unknown | undefined {
   if (path.startsWith("/admin/api/v1/models/")) { const id = decodeURIComponent(path.slice("/admin/api/v1/models/".length)); const model = models.find((item) => item.identity.id === id); return model ? envelope({ model, snapshot_restore_seconds: measurement(35.4, "seconds"), cache_residency_bytes: measurement(null, "bytes", "unavailable", "cache byte telemetry is not instrumented"), cold_start_phase_breakdown: measurement(null, "seconds", "unavailable", "phase breakdown is not yet published") }) : undefined; }
   if (path === "/admin/api/v1/operations") return envelope({ items: [operation], next_cursor: null });
   if (path.startsWith("/admin/api/v1/operations/")) return envelope({ operation, payloads_exposed: false });
+  if (path === "/admin/api/v1/scientific-runs") return envelope(scientificRunListFixture);
+  if (path.startsWith("/admin/api/v1/scientific-runs/")) return envelope(scientificRunDetailFixture);
+  if (path === "/admin/api/v1/scientific-models") return envelope(scientificModelReadinessFixture);
   if (path === "/admin/api/v1/capacity") return envelope(capacityFixture);
   if (path === "/admin/api/v1/observability") return envelope(observabilityFixture);
   if (path === "/admin/api/v1/configuration") return envelope(configurationRevision);
