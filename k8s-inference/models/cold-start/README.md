@@ -30,6 +30,12 @@ identity into thirteen exact complete tuples and three explicitly blocked
 unresolved model-content digests, and denies runtime log markers for every
 route except the reviewed Evo source-instrumented observation path.
 
+Use the [live KEDA elasticity acceptance](LIVE_ELASTICITY_ACCEPTANCE.md) for
+the shorter model-qualification gate. It records scale-to-zero, request
+admission, KEDA/HPA activation, Pod/Node/model readiness, semantic completion,
+shared-cache outcome, return to zero, and bounded failure cleanup in linked
+private and identity-hashed public receipts.
+
 ## DCGM cadence for the conventional baseline
 
 The standard Terraform profile leaves `enable_dcgm_cold_start_campaign=false`:
