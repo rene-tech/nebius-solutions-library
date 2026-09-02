@@ -877,6 +877,39 @@ class DeploymentContractTests(unittest.TestCase):
             r"(?s)dedicated fs2-reference-data\s+namespace.*fs2-data database namespace",
         )
 
+    def test_reference_namespace_has_one_cross_state_owner(self) -> None:
+        foundation_locals = (
+            DEPLOY_ROOT / "stages/foundation/locals.tf"
+        ).read_text(encoding="utf-8")
+        namespace_block_start = foundation_locals.index("namespaces = toset([")
+        namespace_block_end = foundation_locals.index("])", namespace_block_start)
+        foundation_namespaces = set(
+            re.findall(
+                r'"([a-z0-9-]+)"',
+                foundation_locals[namespace_block_start:namespace_block_end],
+            )
+        )
+        workloads = (
+            DEPLOY_ROOT / "stages/workloads/reference_data.tf"
+        ).read_text(encoding="utf-8")
+        reference_module = (
+            DEPLOY_ROOT / "reference-data/terraform/main.tf"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("fs2-data", foundation_namespaces)
+        self.assertNotIn("fs2-reference-data", foundation_namespaces)
+        self.assertRegex(
+            workloads,
+            r'(?s)module "reference_data".*?'
+            r'source\s*=\s*"\.\./\.\./reference-data/terraform".*?'
+            r'namespace\s*=\s*var\.reference_data\.namespace',
+        )
+        self.assertRegex(
+            reference_module,
+            r'(?s)resource "kubernetes_namespace_v1" "reference_data"\s*\{.*?'
+            r'name\s*=\s*var\.namespace',
+        )
+
     def test_reference_data_capacity_below_af3_plus_one_tib_is_rejected(self) -> None:
         deployment = {
             "schema_version": 1,

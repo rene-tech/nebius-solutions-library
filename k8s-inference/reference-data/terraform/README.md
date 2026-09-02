@@ -5,8 +5,13 @@ passes it the infrastructure-owned versioned private Nebius Object Storage
 bucket, dedicated mounted filesystem, tainted CPU-pool contract and MysteryBox
 access-key reference. It owns the isolated `fs2-reference-data` namespace and
 hard-fails every other namespace, especially the shared `fs2-data` database
-namespace. It creates a
-dedicated Kueue CPU lane, enforces private-MSA egress, optionally exposes
+namespace. Namespace ownership is deliberately split across Terraform states:
+foundation is the sole owner of `fs2-data`, while this workloads child module
+is the sole owner of `fs2-reference-data`. Do not add `fs2-reference-data` to
+the foundation namespace set or point this module at `fs2-data`; either change
+would create a cross-state ownership collision, and an empty-selector reference
+NetworkPolicy would then select the live CloudNativePG pods. The module creates
+a dedicated Kueue CPU lane, enforces private-MSA egress, optionally exposes
 readiness metrics and can submit the official AlphaFold3 staging Job.
 
 The caller provides the existing cluster's Kubernetes and Nebius providers and
