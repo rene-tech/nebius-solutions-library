@@ -1,0 +1,24 @@
+{
+  "schema": "fs2-serve.nebius.ai/mosaic-artifact-lock/v1",
+  "model_id": "mosaic",
+  "backend_id": "mosaic-boltz2-proteinmpnn-v1",
+  "source_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+  "recipe_sha256": "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+  "artifacts": [
+    {
+      "id": "boltz2-weights",
+      "artifact_manifest": "../../../bionemo/boltz2/artifact-manifest.json",
+      "artifact_manifest_sha256": "6e83771034762feae697f9b2a0780f0ced57649b2a9d6fa5562786eceafc5e9e",
+      "content_sha256": "9459dd0c80992f21d07e70ae7d54c318e66a9d5202d6e849a134957b0740d82a",
+      "state": "exact-manifest-available"
+    },
+    {
+      "id": "proteinmpnn-v-48-020",
+      "source": "git+https://github.com/escalante-bio/mosaic@70fec525423f5f87156a1a957b4a4048f9f8e676#src/mosaic/proteinmpnn/weights/v_48_020.pt",
+      "bytes": 6681301,
+      "sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+      "state": "exact-source-file"
+    }
+  ],
+  "runtime_image_state": "unbuilt-unqualified"
+}

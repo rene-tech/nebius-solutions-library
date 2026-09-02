@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""Versioned image entrypoint for the mosaic batch adapter."""
+import runpy, sys
+if len(sys.argv) < 2 or sys.argv[1] not in {"run-shard", "aggregate"}:
+    raise SystemExit("usage: mosaic-batch {run-shard|aggregate} ...")
+runpy.run_path("/opt/fs2/mosaic/runtime_entrypoint.py", run_name="__main__")

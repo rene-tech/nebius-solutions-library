@@ -1,0 +1,36 @@
+{
+  "schema": "fs2-serve.nebius.ai/mosaic-recipe/v1",
+  "recipe_id": "mosaic-boltz2-proteinmpnn-minibinder-v1",
+  "mosaic_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+  "backend": {
+    "id": "mosaic-boltz2-proteinmpnn-v1",
+    "boltz_source_revision": "1acc397b6e81f30dc07a80d17a26c38f9c6f6942",
+    "joltz_source_revision": "ed0f04257dac85bd4b7bf45521cc280f86d38ded",
+    "boltz2_artifact_manifest_sha256": "6e83771034762feae697f9b2a0780f0ced57649b2a9d6fa5562786eceafc5e9e",
+    "boltz2_checkpoint_sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+    "proteinmpnn_checkpoint": "src/mosaic/proteinmpnn/weights/v_48_020.pt",
+    "proteinmpnn_checkpoint_sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd"
+  },
+  "features": {
+    "target_msa": "empty",
+    "binder_msa": "empty",
+    "recycling_steps": 1,
+    "diffusion_sampling_steps": 25,
+    "deterministic": true
+  },
+  "objective": [
+    {"term": "BinderTargetContact", "weight": 2.0},
+    {"term": "WithinBinderContact", "weight": 1.0},
+    {"term": "PLDDTLoss", "weight": 0.2},
+    {"term": "InverseFoldingSequenceRecovery", "weight": 5.0, "temperature": 0.01}
+  ],
+  "optimizer": {
+    "name": "simplex_APGM",
+    "initialization": "seeded-gumbel-softmax",
+    "initial_temperature": 0.5,
+    "step_size": 0.1,
+    "momentum": 0.0,
+    "allowed_steps": {"minimum": 20, "maximum": 500}
+  },
+  "output_validator": "mosaic-boltz2-proteinmpnn-result/v1"
+}

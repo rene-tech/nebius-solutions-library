@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+"""Versioned RFdiffusion wrapper delegating to the pinned upstream runner."""
+import json, pathlib, runpy, sys
+if len(sys.argv) < 2 or sys.argv[1] not in {"run-shard", "aggregate"}:
+    raise SystemExit("usage: rfdiffusion-batch {run-shard|aggregate} ...")
+if sys.argv[1] == "aggregate":
+    a = dict(zip(sys.argv[2::2], sys.argv[3::2]))
+    shards = pathlib.Path(a["--shards"])
+    outputs = sorted(str(p.relative_to(shards)) for p in shards.rglob("*") if p.is_file())
+    entries = [{"name": p, "semantic_type": "structure", "artifact": {"artifact_id": p, "media_type": "chemical/x-pdb"}} for p in outputs]
+    manifest = {"schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1", "manifest_id": pathlib.Path(a["--output-manifest"]).stem, "entries": entries, "complete": len({p.split('/')[0] for p in outputs}) == int(a["--expected-shards"])}
+    tmp = pathlib.Path(a["--staging-manifest"]); tmp.write_text(json.dumps(manifest, sort_keys=True)); tmp.replace(a["--output-manifest"])
+else:
+    # Translate the typed adapter envelope into the upstream Hydra CLI contract.
+    args = sys.argv[2:]
+    out = args[args.index("--output") + 1]; seed = args[args.index("--seed") + 1]
+    sys.argv = ["run_inference.py", "inference.output_prefix=" + out, "inference.deterministic=True", "inference.seed=" + seed]
+    for key, flag in (("--checkpoint", "inference.model_directory_path"), ("--checkpoint-sha256", "fs2.checkpoint_sha256"), ("--input-manifest", "fs2.input_manifest"), ("--request", "fs2.request")):
+        if key in args: sys.argv.append(flag + "=" + args[args.index(key) + 1])
+    runpy.run_path("/opt/fs2/runtime/run_upstream.py", run_name="__main__")

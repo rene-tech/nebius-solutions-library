@@ -1,0 +1,26 @@
+{
+  "stages": [
+    {
+      "id": "design",
+      "needs": [],
+      "resource_class": "gpu",
+      "admission_mode": "independent-jobs",
+      "min_parallelism": 1,
+      "max_parallelism": 64,
+      "checkpoint_mode": "restart",
+      "preemption_mode": "restartable"
+    },
+    {
+      "id": "aggregate",
+      "needs": ["design"],
+      "resource_class": "cpu",
+      "admission_mode": "independent-jobs",
+      "min_parallelism": 1,
+      "max_parallelism": 1,
+      "checkpoint_mode": "restart",
+      "preemption_mode": "restartable"
+    }
+  ],
+  "retry": {"max_attempts": 3, "retryable_exit_codes": [75, 137, 143]},
+  "cancellation": {"mode": "terminate-attempt", "grace_seconds": 90}
+}

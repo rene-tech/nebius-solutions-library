@@ -1,0 +1,5 @@
+{
+  "schema": "fs2-serve.nebius.ai/rfdiffusion-artifact-lock/v1", "model_id": "rfdiffusion-upstream", "backend_id": "rfdiffusion-upstream-v1-1-0-base", "source_revision": "9273ef67335acaf91df0150473a274759229cdf6", "source_tag": "v1.1.0", "observed_head_revision": "86507b6538f51fce57b5a72477165f03999ed7ae",
+  "artifacts": [{"id": "base-checkpoint", "source": "https://files.ipd.uw.edu/pub/RFdiffusion/6f5902ac237024bdd0c176cb93063dc4/Base_ckpt.pt", "path": "Base_ckpt.pt", "bytes": 483616107, "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca", "state": "exact-download-source"}],
+  "content_sha256": "38617f06504291dd3f931bddfffc0932b879eec5ab1f2f1969facacdda2dd1f0", "content_digest_algorithm": "sha256-of-canonical-fs2-file-inventory", "runtime_image_state": "unbuilt-unqualified-for-h100-batch"
+}

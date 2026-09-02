@@ -1,0 +1,13 @@
+{
+  "schema": "fs2-serve.nebius.ai/bindcraft-native-artifact-lock/v1",
+  "model_id": "bindcraft",
+  "backend_id": "bindcraft-v1-5-3-pyrosetta-academic",
+  "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+  "artifacts": [
+    {"id": "default-4stage-multimer", "path": "settings_advanced/default_4stage_multimer.json", "bytes": 1992, "sha256": "4124733af9dff65fb23e6a5f52b2329fc0d7a4ce5c50b6df225422f77fe467d6", "state": "exact-source-file"},
+    {"id": "default-filters", "path": "settings_filters/default_filters.json", "bytes": 28036, "sha256": "4faeae2ed4a78b82ff8f9c3c763985ff0f0b97ebb9e10072d5d572424bb73206", "state": "exact-source-file"},
+    {"id": "alphafold-params-2022-12-06", "source": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar", "bytes": 5587968000, "gcs_generation": "1670353726160664", "md5_base64": "XMWaVh6AYBhilI/zbGsECw==", "license": "CC-BY-4.0", "state": "sha256-required-at-private-ingestion"},
+    {"id": "pyrosetta-2026.29-cp310", "source": "tenant-private://academic/pyrosetta-2026.29-cp310.whl", "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242", "license": "PyRosetta-Software-Non-Commercial-License", "state": "access-gated-not-redistributed", "identity_binding": "asset-access-receipt-digest", "authorization": "academic-poc"}
+  ],
+  "runtime_image_state": "blocked-pending-private-academic-asset-ingestion"
+}
