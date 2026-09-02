@@ -255,6 +255,11 @@ output "scheduling_contract" {
   value       = module.kueue_scheduling.contract
 }
 
+output "reference_data_contract" {
+  description = "Same-region storage, private preprocessing and optional official staging-pipeline contract."
+  value       = try(terraform_data.reference_data_contract[0].output, null)
+}
+
 output "managed_resource_count" {
   description = "Expected concrete managed-address count for exact plan review."
   value = (
@@ -288,6 +293,14 @@ output "managed_resource_count" {
       toset(keys(module.kueue_scheduling.contract.workload_priority_classes)),
       toset(keys(var.model_controller.priority_classes)),
     ))
+    + (var.reference_data.enabled ? (
+      12
+      + (var.reference_data.network.allow_public_source_staging ? 1 : 0)
+      + (var.reference_data.network.allow_public_msa_opt_in ? 1 : 0)
+      + (var.reference_data.pipeline.enabled ? 2 : 0)
+      + (var.reference_data.status.enabled ? 3 : 0)
+      + (var.reference_data.status.enabled && var.reference_data.status.service_monitor_enabled ? 1 : 0)
+    ) : 0)
   )
 }
 

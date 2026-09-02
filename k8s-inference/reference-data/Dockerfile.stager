@@ -1,0 +1,18 @@
+FROM python:3.13.15-alpine3.23@sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1
+
+ARG SOURCE_COMMIT=unknown
+LABEL org.opencontainers.image.title="FS2 reference-data stager" \
+      org.opencontainers.image.description="CPU-only resumable/checksummed scientific reference-data staging tools" \
+      org.opencontainers.image.revision="${SOURCE_COMMIT}" \
+      org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library"
+
+RUN apk add --no-cache \
+      aws-cli=2.32.7-r0 \
+      ca-certificates=20260611-r0 \
+      zstd=1.5.7-r2 \
+    && python --version \
+    && aws --version \
+    && zstd --version
+
+WORKDIR /work
+USER 1000:1000

@@ -1,10 +1,3 @@
-variable "project_id" {
-  description = "Nebius project containing the cluster and optional versioned reference-data bucket."
-  type        = string
-  sensitive   = true
-  nullable    = false
-}
-
 variable "cluster_region" {
   description = "Authoritative region from the existing cluster target contract."
   type        = string
@@ -21,19 +14,34 @@ variable "object_storage_region" {
   nullable    = false
 }
 
-variable "create_object_bucket" {
-  description = "Create a task-owned versioned private bucket. False binds an existing private bucket by name without adopting it."
-  type        = bool
-  default     = false
-}
-
 variable "object_bucket_name" {
-  description = "Globally unique private bucket name, whether created here or supplied by the integrator."
+  description = "Terraform-infrastructure-owned, versioned private bucket name."
   type        = string
   nullable    = false
   validation {
     condition     = can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.object_bucket_name))
     error_message = "object_bucket_name must be a 3-63 character object-storage bucket name."
+  }
+}
+
+variable "object_storage_access" {
+  description = "Non-secret access-key identity and MysteryBox reference emitted by infrastructure; the secret value is consumed ephemerally."
+  type = object({
+    access_key_id       = string
+    secret_reference_id = string
+    revision            = number
+  })
+  nullable = false
+
+  validation {
+    condition = (
+      length(var.object_storage_access.access_key_id) >= 8 &&
+      can(regex("^[A-Za-z0-9_-]+$", var.object_storage_access.access_key_id)) &&
+      can(regex("^[a-z][a-z0-9-]+$", var.object_storage_access.secret_reference_id)) &&
+      floor(var.object_storage_access.revision) == var.object_storage_access.revision &&
+      var.object_storage_access.revision >= 1
+    )
+    error_message = "object_storage_access must contain a bounded access-key ID, MysteryBox secret reference and positive revision."
   }
 }
 
@@ -119,6 +127,19 @@ variable "object_storage_egress_cidrs" {
   }
 }
 
+variable "object_storage_egress_fqdns" {
+  description = "Exact private object endpoint FQDNs allowed for customer-input preprocessing through Cilium DNS policy."
+  type        = set(string)
+  default     = []
+  validation {
+    condition = alltrue([
+      for name in var.object_storage_egress_fqdns :
+      can(regex("^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$", name)) && !strcontains(name, "*")
+    ])
+    error_message = "object_storage_egress_fqdns must contain exact DNS names without wildcards."
+  }
+}
+
 variable "allow_public_source_staging" {
   description = "Permit public-source staging Jobs to reach HTTPS sources. This does not permit private MSA Jobs to use public services."
   type        = bool
@@ -129,4 +150,43 @@ variable "allow_public_msa_opt_in" {
   description = "Create the explicitly labeled public-opt-in egress lane. False is the production default."
   type        = bool
   default     = false
+}
+
+
+variable "pipeline" {
+  description = "Optional Kueue-admitted CPU-only official reference-data staging pipeline."
+  type = object({
+    enabled                 = optional(bool, false)
+    bundle_id               = optional(string, "alphafold3-public-databases-v3.0")
+    image                   = optional(string)
+    generation              = optional(number, 1)
+    cpu                     = optional(string, "6")
+    memory                  = optional(string, "24Gi")
+    ephemeral_storage       = optional(string, "2Gi")
+    active_deadline_seconds = optional(number, 604800)
+    backoff_limit           = optional(number, 6)
+  })
+  default = {}
+
+  validation {
+    condition = try(
+      !var.pipeline.enabled || (
+        var.pipeline.bundle_id == "alphafold3-public-databases-v3.0" &&
+        can(regex("^[^@[:space:]]+@sha256:[0-9a-f]{64}$", var.pipeline.image)) &&
+        floor(var.pipeline.generation) == var.pipeline.generation &&
+        var.pipeline.generation >= 1 &&
+        can(regex("^[1-9][0-9]*(?:m)?$", var.pipeline.cpu)) &&
+        can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", var.pipeline.memory)) &&
+        can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", var.pipeline.ephemeral_storage)) &&
+        floor(var.pipeline.active_deadline_seconds) == var.pipeline.active_deadline_seconds &&
+        var.pipeline.active_deadline_seconds >= 3600 &&
+        var.pipeline.active_deadline_seconds <= 1209600 &&
+        floor(var.pipeline.backoff_limit) == var.pipeline.backoff_limit &&
+        var.pipeline.backoff_limit >= 0 &&
+        var.pipeline.backoff_limit <= 20
+      ),
+      false,
+    )
+    error_message = "enabled pipeline requires the exact official AlphaFold3 bundle, a digest-pinned image, and bounded CPU-only resources."
+  }
 }

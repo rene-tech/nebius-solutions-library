@@ -269,6 +269,52 @@ class InferenceStackTests(unittest.TestCase):
             )
             self.assertEqual(list(run_root.glob(".*.tmp-*")), [])
 
+    def test_reference_data_handoff_stays_non_secret_and_exact(self) -> None:
+        configuration = contract()
+        configuration["stages"]["workloads"]["reference_data"] = {
+            "enabled": True,
+            "namespace": "fs2-data",
+            "queue": {},
+            "network": {"allow_public_msa_opt_in": False},
+            "status": {},
+            "pipeline": {"enabled": True},
+        }
+        dynamic = dynamic_outputs(Path("/private/run"))
+        dynamic["nebius_profile"] = "sandbox"
+        dynamic["reference_data_storage_contract"] = {
+            "schema": "fs2-serve.nebius.ai/reference-data-storage/v1",
+            "project_id": "project-test",
+            "region": "us-north1",
+            "filesystem": {"host_path": "/mnt/fs2-reference-data/data"},
+            "object_storage": {
+                "name": "fs2-reference-data-test",
+                "endpoint": "https://storage.us-north1.nebius.cloud",
+            },
+        }
+        dynamic["reference_data_object_storage_access"] = {
+            "access_key_id": "TESTACCESSKEY",
+            "secret_reference_id": "mysteryboxsecret-test",
+            "revision": 1,
+        }
+        with tempfile.TemporaryDirectory(prefix="reference-data-handoff-") as temporary:
+            run_root = Path(temporary)
+            STACK.private_directory(run_root)
+            _foundation, workloads_path = STACK.write_downstream_variables(
+                run_root, configuration, dynamic
+            )
+            generated_text = workloads_path.read_text(encoding="utf-8")
+            workloads = json.loads(generated_text)
+
+        self.assertEqual(
+            dynamic["reference_data_storage_contract"],
+            workloads["reference_data"]["storage_contract"],
+        )
+        self.assertEqual(
+            dynamic["reference_data_object_storage_access"],
+            workloads["reference_data"]["object_storage_access"],
+        )
+        self.assertNotIn("secret-access-key", generated_text)
+
     def test_clean_environment_cannot_override_generated_stage_inputs(self) -> None:
         with mock.patch.dict(
             os.environ,

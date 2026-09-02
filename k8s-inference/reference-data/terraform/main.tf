@@ -4,12 +4,23 @@ locals {
     "app.kubernetes.io/part-of"    = "fs2-serve"
     "app.kubernetes.io/managed-by" = "terraform"
   }
-  tools_sha256        = filesha256("${path.module}/../reference_data.py")
-  tools_config_map    = "fs2-reference-data-tools-${substr(local.tools_sha256, 0, 12)}"
-  object_bucket_name  = var.create_object_bucket ? one(nebius_storage_v1_bucket.reference_data[*].name) : var.object_bucket_name
+  tools_sha256          = filesha256("${path.module}/../reference_data.py")
+  tools_config_map      = "fs2-reference-data-tools-${substr(local.tools_sha256, 0, 12)}"
+  source_catalog        = jsondecode(file("${path.module}/../source-catalog.json"))
+  source_catalog_sha256 = filesha256("${path.module}/../source-catalog.json")
+  selected_bundle       = local.source_catalog.bundles[var.pipeline.bundle_id]
+  pipeline_identity = substr(sha256(jsonencode({
+    bundle_id  = var.pipeline.bundle_id
+    revision   = local.selected_bundle.revision
+    catalog    = local.source_catalog_sha256
+    image      = var.pipeline.image
+    generation = var.pipeline.generation
+  })), 0, 12)
+  object_bucket_name  = var.object_bucket_name
   object_endpoint     = "https://storage.${var.object_storage_region}.nebius.cloud"
   object_prefix       = "s3://${local.object_bucket_name}/reference-data"
   filesystem_file_uri = "file://${var.shared_filesystem_host_path}"
+  credentials_secret  = "fs2-reference-data-object-storage"
 }
 
 resource "terraform_data" "region_contract" {
@@ -22,17 +33,24 @@ resource "terraform_data" "region_contract" {
       condition     = var.cluster_region == var.object_storage_region
       error_message = "reference data, object storage, shared filesystem and preprocessing must stay in the cluster region."
     }
+    precondition {
+      condition = (
+        !var.pipeline.enabled ||
+        (
+          var.allow_public_source_staging &&
+          local.selected_bundle.access.staging_policy == "automatic-public" &&
+          local.selected_bundle.upstream.revision == "231efc9bb9c13b45cc59e43f7107869084ee9624" &&
+          local.selected_bundle.upstream.source_sha256 == "152b5a1a2af4c3128f9618939adec8f0389b604ddc767e3de81ccb8a6dc00d19"
+        )
+      )
+      error_message = "the official AlphaFold3 staging pipeline requires explicit public-source egress and the reviewed pinned upstream commit/script digest."
+    }
   }
 }
 
-resource "nebius_storage_v1_bucket" "reference_data" {
-  count = var.create_object_bucket ? 1 : 0
-
-  parent_id         = var.project_id
-  name              = var.object_bucket_name
-  versioning_policy = "ENABLED"
-
-  depends_on = [terraform_data.region_contract]
+ephemeral "nebius_mysterybox_v1_secret_payload_entry" "object_storage" {
+  secret_id = var.object_storage_access.secret_reference_id
+  key       = "secret"
 }
 
 resource "kubernetes_namespace_v1" "reference_data" {
@@ -54,6 +72,20 @@ resource "kubernetes_service_account_v1" "reference_data" {
     labels    = local.common_labels
   }
   automount_service_account_token = false
+}
+
+resource "kubernetes_secret_v1" "object_storage" {
+  metadata {
+    name      = local.credentials_secret
+    namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
+    labels    = local.common_labels
+  }
+  type = "Opaque"
+  data_wo = {
+    "access-key-id"     = var.object_storage_access.access_key_id
+    "secret-access-key" = ephemeral.nebius_mysterybox_v1_secret_payload_entry.object_storage.data.string_value
+  }
+  data_wo_revision = var.object_storage_access.revision
 }
 
 resource "kubernetes_config_map_v1" "tools" {
@@ -208,6 +240,35 @@ resource "kubernetes_network_policy_v1" "private_object_storage" {
   }
 }
 
+resource "kubernetes_manifest" "private_object_storage_fqdn" {
+  count = length(var.object_storage_egress_fqdns) > 0 ? 1 : 0
+  manifest = {
+    apiVersion = "cilium.io/v2"
+    kind       = "CiliumNetworkPolicy"
+    metadata = {
+      name      = "private-msa-object-storage-fqdn"
+      namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
+      labels    = local.common_labels
+    }
+    spec = {
+      endpointSelector = {
+        matchLabels = {
+          "app.kubernetes.io/component"               = "private-msa"
+          "reference-data.fs2.nebius.ai/network-mode" = "private-only"
+        }
+      }
+      egress = [{
+        toFQDNs = [for name in sort(tolist(var.object_storage_egress_fqdns)) : {
+          matchName = name
+        }]
+        toPorts = [{
+          ports = [{ port = "443", protocol = "TCP" }]
+        }]
+      }]
+    }
+  }
+}
+
 resource "kubernetes_network_policy_v1" "public_source_staging" {
   count = var.allow_public_source_staging ? 1 : 0
   metadata {
@@ -234,6 +295,187 @@ resource "kubernetes_network_policy_v1" "public_source_staging" {
       }
     }
   }
+}
+
+resource "kubernetes_config_map_v1" "pipeline_catalog" {
+  count = var.pipeline.enabled ? 1 : 0
+  metadata {
+    name      = "fs2-stage-af3-${local.pipeline_identity}"
+    namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "reference-data-stager"
+    })
+    annotations = {
+      "reference-data.fs2.nebius.ai/catalog-sha256"  = local.source_catalog_sha256
+      "reference-data.fs2.nebius.ai/upstream-commit" = local.selected_bundle.upstream.revision
+    }
+  }
+  immutable = true
+  data = {
+    "catalog.json" = jsonencode({
+      schema       = local.source_catalog.schema
+      generated_at = local.source_catalog.generated_at
+      bundles = {
+        (var.pipeline.bundle_id) = local.selected_bundle
+      }
+    })
+  }
+}
+
+resource "kubernetes_manifest" "pipeline" {
+  count = var.pipeline.enabled ? 1 : 0
+  manifest = {
+    apiVersion = "batch/v1"
+    kind       = "Job"
+    metadata = {
+      name      = "fs2-stage-af3-${local.pipeline_identity}"
+      namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
+      labels = merge(local.common_labels, {
+        "app.kubernetes.io/component"               = "reference-data-stager"
+        "kueue.x-k8s.io/queue-name"                 = var.queue.local_queue
+        "kueue.x-k8s.io/priority-class"             = "batch"
+        "reference-data.fs2.nebius.ai/bundle"       = var.pipeline.bundle_id
+        "reference-data.fs2.nebius.ai/network-mode" = "public-source-staging"
+      })
+      annotations = {
+        "reference-data.fs2.nebius.ai/catalog-sha256" = local.source_catalog_sha256
+        "reference-data.fs2.nebius.ai/resumable"      = "true"
+        "reference-data.fs2.nebius.ai/checksums"      = "source-identity,sha256,tree-sha256"
+      }
+    }
+    spec = {
+      suspend                 = true
+      backoffLimit            = var.pipeline.backoff_limit
+      activeDeadlineSeconds   = var.pipeline.active_deadline_seconds
+      ttlSecondsAfterFinished = 604800
+      template = {
+        metadata = {
+          labels = merge(local.common_labels, {
+            "app.kubernetes.io/component"               = "reference-data-stager"
+            "reference-data.fs2.nebius.ai/bundle"       = var.pipeline.bundle_id
+            "reference-data.fs2.nebius.ai/network-mode" = "public-source-staging"
+          })
+        }
+        spec = {
+          restartPolicy                = "Never"
+          serviceAccountName           = kubernetes_service_account_v1.reference_data.metadata[0].name
+          automountServiceAccountToken = false
+          enableServiceLinks           = false
+          nodeSelector = {
+            "workload.fs2.nebius/system"        = "true"
+            "capacity.fs2.nebius/type"          = "regular"
+            "capacity.fs2.nebius/pool"          = "system"
+            "storage.fs2.nebius/reference-data" = "true"
+          }
+          securityContext = {
+            runAsNonRoot        = true
+            runAsUser           = 1000
+            runAsGroup          = 1000
+            fsGroup             = 1000
+            fsGroupChangePolicy = "OnRootMismatch"
+            seccompProfile      = { type = "RuntimeDefault" }
+          }
+          containers = [{
+            name            = "stager"
+            image           = var.pipeline.image
+            imagePullPolicy = "IfNotPresent"
+            command = [
+              "python", "/opt/fs2/reference-data/reference_data.py", "stage",
+              "--catalog", "/etc/fs2-stage/catalog.json",
+              "--bundle", var.pipeline.bundle_id,
+              "--root", "/reference-data",
+              "--object-store-prefix", local.object_prefix,
+            ]
+            env = [
+              {
+                name = "AWS_ACCESS_KEY_ID"
+                valueFrom = {
+                  secretKeyRef = {
+                    name = kubernetes_secret_v1.object_storage.metadata[0].name
+                    key  = "access-key-id"
+                  }
+                }
+              },
+              {
+                name = "AWS_SECRET_ACCESS_KEY"
+                valueFrom = {
+                  secretKeyRef = {
+                    name = kubernetes_secret_v1.object_storage.metadata[0].name
+                    key  = "secret-access-key"
+                  }
+                }
+              },
+              { name = "AWS_ENDPOINT_URL", value = local.object_endpoint },
+              { name = "AWS_DEFAULT_REGION", value = var.object_storage_region },
+              { name = "HOME", value = "/work" },
+            ]
+            resources = {
+              requests = {
+                cpu                 = var.pipeline.cpu
+                memory              = var.pipeline.memory
+                "ephemeral-storage" = var.pipeline.ephemeral_storage
+              }
+              limits = {
+                cpu                 = var.pipeline.cpu
+                memory              = var.pipeline.memory
+                "ephemeral-storage" = var.pipeline.ephemeral_storage
+              }
+            }
+            securityContext = {
+              allowPrivilegeEscalation = false
+              readOnlyRootFilesystem   = true
+              capabilities             = { drop = ["ALL"] }
+            }
+            volumeMounts = [
+              { name = "reference-data", mountPath = "/reference-data" },
+              { name = "tools", mountPath = "/opt/fs2/reference-data", readOnly = true },
+              { name = "catalog", mountPath = "/etc/fs2-stage", readOnly = true },
+              { name = "work", mountPath = "/work" },
+            ]
+          }]
+          volumes = [
+            {
+              name = "reference-data"
+              hostPath = {
+                path = var.shared_filesystem_host_path
+                type = "Directory"
+              }
+            },
+            {
+              name = "tools"
+              configMap = {
+                name        = kubernetes_config_map_v1.tools.metadata[0].name
+                defaultMode = 365
+              }
+            },
+            {
+              name = "catalog"
+              configMap = {
+                name        = kubernetes_config_map_v1.pipeline_catalog[0].metadata[0].name
+                defaultMode = 292
+              }
+            },
+            {
+              name = "work"
+              emptyDir = {
+                sizeLimit = var.pipeline.ephemeral_storage
+              }
+            },
+          ]
+        }
+      }
+    }
+  }
+  computed_fields = [
+    "metadata.annotations",
+    "metadata.labels",
+    "spec.suspend",
+  ]
+
+  depends_on = [
+    kubernetes_manifest.local_queue,
+    kubernetes_network_policy_v1.public_source_staging,
+  ]
 }
 
 resource "kubernetes_network_policy_v1" "public_msa_opt_in" {
@@ -288,9 +530,10 @@ resource "kubernetes_deployment_v1" "status" {
         automount_service_account_token = false
         enable_service_links            = false
         node_selector = {
-          "workload.fs2.nebius/system" = "true"
-          "capacity.fs2.nebius/type"   = "regular"
-          "capacity.fs2.nebius/pool"   = "system"
+          "workload.fs2.nebius/system"        = "true"
+          "capacity.fs2.nebius/type"          = "regular"
+          "capacity.fs2.nebius/pool"          = "system"
+          "storage.fs2.nebius/reference-data" = "true"
         }
         security_context {
           run_as_non_root = true

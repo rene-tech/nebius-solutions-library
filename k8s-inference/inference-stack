@@ -1441,8 +1441,33 @@ def infrastructure_outputs(
     )
     if registry_delivery is None:
         registry_delivery = legacy_registry_delivery_contract(contract, target_contract)
+    reference_data_enabled = (
+        contract.get("stages", {})
+        .get("infrastructure", {})
+        .get("reference_data", {})
+        .get("enabled")
+        is True
+    )
+    reference_data_storage = (
+        terraform_optional_json_output(
+            terraform, INFRA_ROOT, "reference_data_storage_contract", environment
+        )
+        if reference_data_enabled
+        else None
+    )
+    reference_data_access = (
+        terraform_optional_json_output(
+            terraform,
+            INFRA_ROOT,
+            "reference_data_object_storage_access",
+            environment,
+        )
+        if reference_data_enabled
+        else None
+    )
     return {
         "run_root": str(run_root.resolve()),
+        "nebius_profile": nebius_profile,
         "kubeconfig_path": str(kubeconfig.resolve()),
         "run_id": contract["run_id"],
         "cluster_id": cluster_id,
@@ -1461,6 +1486,8 @@ def infrastructure_outputs(
         "public_edge_contract": terraform_json_output(
             terraform, INFRA_ROOT, "public_edge_contract", environment
         ),
+        "reference_data_storage_contract": reference_data_storage,
+        "reference_data_object_storage_access": reference_data_access,
     }
 
 
@@ -1487,8 +1514,26 @@ def write_downstream_variables(
     workloads = {
         **rewritten_workloads(contract, dynamic),
         **identity,
+        "nebius_profile": dynamic.get("nebius_profile", "sandbox"),
         "public_edge_contract": dynamic["public_edge_contract"],
     }
+    reference_data = workloads.get("reference_data")
+    if isinstance(reference_data, Mapping):
+        enabled = reference_data.get("enabled") is True
+        storage_contract = dynamic.get("reference_data_storage_contract")
+        object_access = dynamic.get("reference_data_object_storage_access")
+        if enabled and (
+            not isinstance(storage_contract, Mapping)
+            or not isinstance(object_access, Mapping)
+        ):
+            raise DeploymentError(
+                "enabled reference data requires complete infrastructure storage and object-access outputs"
+            )
+        workloads["reference_data"] = {
+            **reference_data,
+            "storage_contract": storage_contract if enabled else None,
+            "object_storage_access": object_access if enabled else None,
+        }
     admin_contract = contract.get("admin_configuration", {})
     if isinstance(admin_contract, Mapping) and admin_contract.get("enabled") is True:
         configuration, configuration_sha256, scaling = derived_admin_configuration(

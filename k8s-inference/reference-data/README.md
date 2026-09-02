@@ -1,10 +1,11 @@
 # Reference-data and private MSA plane
 
-This directory is a self-contained integration unit for versioned scientific
-reference data and CPU-only sequence preprocessing. It does not modify the
-shared control plane, root Terraform, or model runtime packaging. Nothing here
-downloads data or changes a cluster until an operator deliberately renders and
-submits a suspended Job.
+This directory implements versioned scientific reference data and CPU-only
+sequence preprocessing behind the solution's root `deployment.storage.reference_data`
+Terraform contract. Infrastructure creates a dedicated same-region filesystem,
+private versioned bucket and least-privilege MysteryBox-backed S3 identity;
+the workloads stage creates the private CPU/Kueue plane and can submit the
+official pinned AlphaFold3 staging Job without a source-code edit.
 
 The production default is private: customer sequence objects may be read only
 from `file:///` or private `s3://` references, sequence content is never put in
@@ -78,14 +79,13 @@ forbidden.
 
 ## Immutable storage contract
 
-The standalone module in `terraform/` binds an existing same-region shared
-filesystem and private, versioned object bucket. Its output describes this
-layout:
+The internal module in `terraform/` consumes the exact storage and access
+handoff emitted by `stages/infrastructure`. Its output describes this layout:
 
 ```text
 s3://<bucket>/reference-data/blobs/sha256/<sha256>
 s3://<bucket>/reference-data/manifests/sha256/<manifest-sha256>.json
-file:///mnt/fs2cache/csi-mounted-fs-path-data/reference-data/
+file:///mnt/fs2-reference-data/data/
   datasets/<bundle>/<revision>/sha256/<tree-sha256>/
   manifests/sha256/<manifest-sha256>.json
   telemetry/
@@ -104,6 +104,13 @@ extraction, per-file SHA-256 inventory and atomic directory rename. A
 same publication returns the original manifest and timestamp; it cannot replace
 an immutable tree.
 
+The default dedicated filesystem and object-store cap are both 2 TiB. Terraform
+rejects less than 1,611 GiB: the official 630,000,000,000-byte AlphaFold3
+expanded estimate plus 1 TiB of headroom, rounded up to GiB. Both sizes remain
+tfvars parameters. The filesystem defaults to deletion protection; the bucket
+uses versioning, forced STANDARD storage, object audit logging and a policy that
+limits the staging identity to `reference-data/`, `inputs/` and `preprocessing/`.
+
 ## Operator workflow
 
 Validate the checked-in catalog without downloading anything:
@@ -118,7 +125,41 @@ and create a non-secret receipt conforming to `access-receipt.schema.json`.
 Receipts bind the bundle, revision, terms digest, approver, time and approved
 scope; they contain neither download URLs nor credentials.
 
-Render a suspended CPU staging Job after parent/integration approval:
+For normal operation, enable the root contract. Terraform provisions and
+submits the suspended, Kueue-admitted CPU Job; Kueue unsuspends it only after
+CPU/memory quota admission:
+
+```hcl
+storage = {
+  reference_data = {
+    enabled = true
+    filesystem    = { size_gib = 2048, forbid_deletion = true }
+    object_storage = { max_size_gib = 2048 }
+    network = {
+      allow_public_source_staging = true
+      allow_public_msa_opt_in      = false
+    }
+    status = {
+      enabled = true
+      image   = "cr.eu-north1.nebius.cloud/<registry>/<repo>@sha256:<digest>"
+    }
+    pipeline = {
+      enabled   = true
+      bundle_id = "alphafold3-public-databases-v3.0"
+      image     = "cr.eu-north1.nebius.cloud/<registry>/<repo>@sha256:<digest>"
+    }
+  }
+}
+```
+
+`Dockerfile.stager` is the pinned CPU worker image. It contains only Python,
+zstd, CA roots and the AWS CLI; the reviewed staging program and selected
+single-bundle catalog are immutable ConfigMaps. The S3 secret is fetched from
+MysteryBox as a Terraform ephemeral value and written with the Kubernetes
+provider's write-only Secret field, so it appears in neither Terraform state nor
+generated tfvars.
+
+The renderer remains useful for an explicitly separate batch submission:
 
 ```bash
 python3 reference-data/render_job.py stage \
@@ -166,12 +207,12 @@ The optional status service has these read-only endpoints:
   observation, duration and cache-hit aggregates. Raw sequence content is never
   stored or labeled.
 
-Actual capacity, queue wait, staging bandwidth, search latency, cache-hit rate
-and retry behavior must be recorded by the later live acceptance run. This task
-deliberately did not perform the roughly 615 GB source download, create cloud
-resources, mutate the shared cluster, or allocate an H100 because parent review
-has not authorized those operations. The checked-in offline tests use tiny
-local fixtures to exercise the same publication state machine.
+Status JSON and metrics expose exact revision readiness, staging duration/bytes,
+content-free preprocessing latency/errors and cache hits. The official Job
+retains `.part` files on the durable filesystem across retries, validates each
+upstream size and MD5/ETag, computes a cryptographic SHA-256 for every source
+blob and expanded file, uploads content-addressed blobs/manifests, and writes
+the readiness marker last.
 
 ## Tests
 
@@ -184,4 +225,4 @@ reference-data/scripts/check.sh
 It validates every JSON Schema, checks catalog byte totals, exercises atomic
 idempotent staging and checksum/access failures, attacks archive paths, verifies
 private-MSA/public-opt-in behavior and cache telemetry, renders a suspended
-CPU-only Job, then formats and validates the standalone Terraform module.
+CPU-only Job, then formats and validates the integrated Terraform module.

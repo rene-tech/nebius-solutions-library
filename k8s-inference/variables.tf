@@ -244,6 +244,48 @@ variable "deployment" {
         block_size_bytes = optional(number, 4096)
         forbid_deletion  = optional(bool, false)
       }))
+      reference_data = optional(object({
+        enabled = optional(bool, false)
+        filesystem = optional(object({
+          size_gib         = optional(number, 2048)
+          type             = optional(string, "NETWORK_SSD")
+          block_size_bytes = optional(number, 4096)
+          forbid_deletion  = optional(bool, true)
+        }), {})
+        object_storage = optional(object({
+          bucket_name  = optional(string)
+          max_size_gib = optional(number, 2048)
+        }), {})
+        namespace = optional(string, "fs2-data")
+        queue = optional(object({
+          resource_flavor = optional(string, "reference-data-cpu")
+          cluster_queue   = optional(string, "reference-data-cpu")
+          local_queue     = optional(string, "reference-data")
+          nominal_cpu     = optional(string, "32")
+          nominal_memory  = optional(string, "128Gi")
+        }), {})
+        network = optional(object({
+          allow_public_source_staging = optional(bool, false)
+          allow_public_msa_opt_in     = optional(bool, false)
+        }), {})
+        status = optional(object({
+          enabled                 = optional(bool, false)
+          image                   = optional(string)
+          replicas                = optional(number, 1)
+          service_monitor_enabled = optional(bool, true)
+        }), {})
+        pipeline = optional(object({
+          enabled                 = optional(bool, false)
+          bundle_id               = optional(string, "alphafold3-public-databases-v3.0")
+          image                   = optional(string)
+          generation              = optional(number, 1)
+          cpu                     = optional(string, "6")
+          memory                  = optional(string, "24Gi")
+          ephemeral_storage       = optional(string, "2Gi")
+          active_deadline_seconds = optional(number, 604800)
+          backoff_limit           = optional(number, 6)
+        }), {})
+      }), {})
     }), {})
 
     artifacts = optional(object({
@@ -573,6 +615,76 @@ variable "deployment" {
       false,
     )
     error_message = "storage.shared_cache must use a positive whole-GiB size and a supported network filesystem type/block size."
+  }
+
+  validation {
+    condition = try(
+      !var.deployment.storage.reference_data.enabled || (
+        floor(var.deployment.storage.reference_data.filesystem.size_gib) == var.deployment.storage.reference_data.filesystem.size_gib &&
+        var.deployment.storage.reference_data.filesystem.size_gib >= 1611 &&
+        var.deployment.storage.reference_data.filesystem.size_gib <= 65536 &&
+        contains(["NETWORK_SSD", "NETWORK_SSD_NON_REPLICATED", "NETWORK_SSD_IO_M3"], var.deployment.storage.reference_data.filesystem.type) &&
+        contains([4096, 8192, 16384, 32768, 65536], var.deployment.storage.reference_data.filesystem.block_size_bytes) &&
+        floor(var.deployment.storage.reference_data.object_storage.max_size_gib) == var.deployment.storage.reference_data.object_storage.max_size_gib &&
+        var.deployment.storage.reference_data.object_storage.max_size_gib >= 1611 &&
+        var.deployment.storage.reference_data.object_storage.max_size_gib <= 65536 &&
+        (
+          var.deployment.storage.reference_data.object_storage.bucket_name == null ||
+          can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.deployment.storage.reference_data.object_storage.bucket_name))
+        ) &&
+        can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", var.deployment.storage.reference_data.namespace)) &&
+        length(var.deployment.storage.reference_data.namespace) <= 63 &&
+        alltrue([
+          for name in [
+            var.deployment.storage.reference_data.queue.resource_flavor,
+            var.deployment.storage.reference_data.queue.cluster_queue,
+            var.deployment.storage.reference_data.queue.local_queue,
+          ] : can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", name)) && length(name) <= 63
+        ]) &&
+        can(regex("^[1-9][0-9]*(?:m)?$", var.deployment.storage.reference_data.queue.nominal_cpu)) &&
+        can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", var.deployment.storage.reference_data.queue.nominal_memory))
+      ),
+      false,
+    )
+    error_message = "enabled storage.reference_data requires DNS-safe names and dedicated filesystem/object capacities of at least 1611 GiB (the 630 GB official AlphaFold3 expansion estimate plus 1 TiB headroom)."
+  }
+
+  validation {
+    condition = try(
+      !var.deployment.storage.reference_data.status.enabled || (
+        var.deployment.storage.reference_data.enabled &&
+        can(regex("^[^@[:space:]]+@sha256:[0-9a-f]{64}$", var.deployment.storage.reference_data.status.image)) &&
+        floor(var.deployment.storage.reference_data.status.replicas) == var.deployment.storage.reference_data.status.replicas &&
+        var.deployment.storage.reference_data.status.replicas >= 1 &&
+        var.deployment.storage.reference_data.status.replicas <= 3
+      ),
+      false,
+    )
+    error_message = "storage.reference_data.status requires the data plane, a digest-pinned image, and 1-3 replicas."
+  }
+
+  validation {
+    condition = try(
+      !var.deployment.storage.reference_data.pipeline.enabled || (
+        var.deployment.storage.reference_data.enabled &&
+        var.deployment.storage.reference_data.network.allow_public_source_staging &&
+        var.deployment.storage.reference_data.pipeline.bundle_id == "alphafold3-public-databases-v3.0" &&
+        can(regex("^[^@[:space:]]+@sha256:[0-9a-f]{64}$", var.deployment.storage.reference_data.pipeline.image)) &&
+        floor(var.deployment.storage.reference_data.pipeline.generation) == var.deployment.storage.reference_data.pipeline.generation &&
+        var.deployment.storage.reference_data.pipeline.generation >= 1 &&
+        can(regex("^[1-9][0-9]*(?:m)?$", var.deployment.storage.reference_data.pipeline.cpu)) &&
+        can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", var.deployment.storage.reference_data.pipeline.memory)) &&
+        can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", var.deployment.storage.reference_data.pipeline.ephemeral_storage)) &&
+        floor(var.deployment.storage.reference_data.pipeline.active_deadline_seconds) == var.deployment.storage.reference_data.pipeline.active_deadline_seconds &&
+        var.deployment.storage.reference_data.pipeline.active_deadline_seconds >= 3600 &&
+        var.deployment.storage.reference_data.pipeline.active_deadline_seconds <= 1209600 &&
+        floor(var.deployment.storage.reference_data.pipeline.backoff_limit) == var.deployment.storage.reference_data.pipeline.backoff_limit &&
+        var.deployment.storage.reference_data.pipeline.backoff_limit >= 0 &&
+        var.deployment.storage.reference_data.pipeline.backoff_limit <= 20
+      ),
+      false,
+    )
+    error_message = "storage.reference_data.pipeline requires the exact official AlphaFold3 bundle, public-source staging opt-in, a digest-pinned image, and bounded CPU-only retry resources."
   }
 
   validation {

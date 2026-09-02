@@ -26,11 +26,24 @@ output "dynamic_configuration" {
     cluster_queue               = var.queue.cluster_queue
     resource_flavor             = var.queue.resource_flavor
     tools_config_map            = local.tools_config_map
+    object_storage_secret       = kubernetes_secret_v1.object_storage.metadata[0].name
     shared_filesystem_host_path = var.shared_filesystem_host_path
     public_msa_default          = false
     public_msa_opt_in_enabled   = var.allow_public_msa_opt_in
+    private_object_fqdns        = sort(tolist(var.object_storage_egress_fqdns))
     status_service              = var.status.enabled ? "fs2-reference-data-status.${var.namespace}.svc.cluster.local:8080" : null
     source_catalog_sha256       = filesha256("${path.module}/../source-catalog.json")
     requirements_sha256         = filesha256("${path.module}/../model-requirements.json")
+    pipeline = var.pipeline.enabled ? {
+      job_name        = kubernetes_manifest.pipeline[0].manifest.metadata.name
+      bundle_id       = var.pipeline.bundle_id
+      revision        = local.selected_bundle.revision
+      upstream_commit = local.selected_bundle.upstream.revision
+      source_sha256   = local.selected_bundle.upstream.source_sha256
+      image           = var.pipeline.image
+      generation      = var.pipeline.generation
+      resumable       = true
+      checksum_policy = "source-identity+sha256+tree-sha256"
+    } : null
   }
 }

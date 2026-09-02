@@ -197,6 +197,40 @@ deployment = {
     }
   }
 
+  # Dedicated same-region scientific reference-data plane. The 2 TiB defaults
+  # cover the official AlphaFold3 630 GB expanded estimate with more than 1 TiB
+  # headroom. H100 workers consume the mounted immutable tree; downloads and MSA
+  # preprocessing run only on the regular CPU system pool. The pipeline image
+  # must contain Python, zstd and the AWS CLI and must be digest pinned.
+  # storage = {
+  #   reference_data = {
+  #     enabled = true
+  #     filesystem = {
+  #       size_gib         = 2048
+  #       type             = "NETWORK_SSD"
+  #       block_size_bytes = 4096
+  #       forbid_deletion  = true
+  #     }
+  #     object_storage = {
+  #       # Omit bucket_name for the deterministic deployment/run-derived name.
+  #       max_size_gib = 2048
+  #     }
+  #     network = {
+  #       allow_public_source_staging = true
+  #       allow_public_msa_opt_in      = false
+  #     }
+  #     status = {
+  #       enabled = true
+  #       image   = "cr.eu-north1.nebius.cloud/<registry>/<repository>@sha256:<64-hex-digest>"
+  #     }
+  #     pipeline = {
+  #       enabled   = true
+  #       bundle_id = "alphafold3-public-databases-v3.0"
+  #       image     = "cr.eu-north1.nebius.cloud/<registry>/<repository>@sha256:<64-hex-digest>"
+  #     }
+  #   }
+  # }
+
   # By default the wrapper copies every selected digest-pinned application and
   # model image into the registry created beside this cluster. Workloads then
   # pull only from that regional registry. Set mode = "direct-source" only when

@@ -107,5 +107,13 @@ resource "terraform_data" "deployment_contract" {
       error_message = "A model scaling override exceeds the maximum replicas supported by its compatible selected accelerator pools and configured node ceilings."
     }
 
+    precondition {
+      condition = (
+        !var.deployment.storage.reference_data.enabled ||
+        can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", local.reference_data_bucket_name))
+      )
+      error_message = "The effective reference-data bucket name must be a globally valid 3-63 character object-storage name; set deployment.storage.reference_data.object_storage.bucket_name explicitly when the derived name is too long."
+    }
+
   }
 }

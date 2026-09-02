@@ -1,24 +1,38 @@
 locals {
   shared_cache_mount_path           = "/mnt/fs2cache"
+  reference_data_mount_path         = "/mnt/fs2-reference-data"
+  reference_data_host_path          = "${local.reference_data_mount_path}/data"
   shared_cache_cloud_init_user_data = <<-YAML
     #cloud-config
     package_update: false
     package_upgrade: false
     mounts:
       - [fs2cache, ${local.shared_cache_mount_path}, virtiofs, "defaults,nofail", 0, 2]
+${var.reference_data.enabled ? format("      - [fs2reference, %s, virtiofs, \"defaults,nofail\", 0, 2]", local.reference_data_mount_path) : ""}
     runcmd:
       - [modprobe, fuse]
       - [mkdir, -p, ${local.shared_cache_mount_path}]
+${var.reference_data.enabled ? format("      - [mkdir, -p, %s]", local.reference_data_mount_path) : ""}
       - [mount, -a]
       - [mkdir, -p, ${local.shared_cache_mount_path}/csi-mounted-fs-path-data]
+${var.reference_data.enabled ? format("      - [install, -d, -m, \"0770\", -o, \"1000\", -g, \"1000\", %s]", local.reference_data_host_path) : ""}
   YAML
-  filesystem_attachment = [{
-    attach_mode = "READ_WRITE"
-    mount_tag   = "fs2cache"
-    existing_filesystem = {
-      id = nebius_compute_v1_filesystem.cache.id
-    }
-  }]
+  filesystem_attachment = concat(
+    [{
+      attach_mode = "READ_WRITE"
+      mount_tag   = "fs2cache"
+      existing_filesystem = {
+        id = nebius_compute_v1_filesystem.cache.id
+      }
+    }],
+    var.reference_data.enabled ? [{
+      attach_mode = "READ_WRITE"
+      mount_tag   = "fs2reference"
+      existing_filesystem = {
+        id = nebius_compute_v1_filesystem.reference_data[0].id
+      }
+    }] : [],
+  )
 
   worker_network_interfaces = [{
     subnet_id = data.nebius_vpc_v1_subnet.target.id
@@ -114,11 +128,12 @@ resource "nebius_mk8s_v1_node_group" "system" {
   template = {
     metadata = {
       labels = {
-        "workload.fs2.nebius/system"      = "true"
-        "capacity.fs2.nebius/type"        = local.effective_system_pool.capacity
-        "capacity.fs2.nebius/pool"        = "system"
-        "lifecycle.fs2.nebius/run"        = var.run_id
-        "storage.fs2.nebius/shared-cache" = "true"
+        "workload.fs2.nebius/system"        = "true"
+        "capacity.fs2.nebius/type"          = local.effective_system_pool.capacity
+        "capacity.fs2.nebius/pool"          = "system"
+        "lifecycle.fs2.nebius/run"          = var.run_id
+        "storage.fs2.nebius/shared-cache"   = "true"
+        "storage.fs2.nebius/reference-data" = var.reference_data.enabled ? "true" : "false"
       }
     }
     boot_disk = {
@@ -144,6 +159,7 @@ resource "nebius_mk8s_v1_node_group" "system" {
     nebius_iam_v1_access_permit.nodepull_registry,
     nebius_iam_v1_access_permit.nodepull_external_registry,
     nebius_compute_v1_filesystem.cache,
+    nebius_compute_v1_filesystem.reference_data,
   ]
 }
 
@@ -187,6 +203,9 @@ resource "nebius_mk8s_v1_node_group" "gpu" {
         },
         each.value.features.shared_filesystem ? {
           "storage.fs2.nebius/shared-cache" = "true"
+        } : {},
+        each.value.features.shared_filesystem && var.reference_data.enabled ? {
+          "storage.fs2.nebius/reference-data" = "true"
         } : {},
         {
           "lifecycle.fs2.nebius/run" = var.run_id
@@ -315,6 +334,9 @@ resource "nebius_mk8s_v1_node_group" "nvlink_rack" {
         each.value.pool.scheduling.stable_node_labels,
         each.value.pool.features.shared_filesystem ? {
           "storage.fs2.nebius/shared-cache" = "true"
+        } : {},
+        each.value.pool.features.shared_filesystem && var.reference_data.enabled ? {
+          "storage.fs2.nebius/reference-data" = "true"
         } : {},
         {
           "lifecycle.fs2.nebius/run"         = var.run_id

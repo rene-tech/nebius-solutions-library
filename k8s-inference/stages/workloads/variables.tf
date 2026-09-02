@@ -1,3 +1,14 @@
+variable "nebius_profile" {
+  description = "Exact authenticated Nebius CLI profile used by the staged wrapper; required only to read the MysteryBox-delivered reference-data S3 secret ephemerally."
+  type        = string
+  default     = "sandbox"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", var.nebius_profile))
+    error_message = "nebius_profile must be a bounded CLI profile name."
+  }
+}
+
 variable "run_root" {
   description = "Absolute mode-0700 lifecycle directory containing kubeconfig and both local state files."
   type        = string
@@ -6,6 +17,137 @@ variable "run_root" {
   validation {
     condition     = startswith(var.run_root, "/") && !strcontains(var.run_root, "..")
     error_message = "run_root must be an absolute path without parent traversal."
+  }
+}
+
+variable "reference_data" {
+  description = "Root-derived private reference-data plane bound to the exact infrastructure storage/access handoff."
+  type = object({
+    enabled   = bool
+    namespace = string
+    queue = object({
+      resource_flavor = string
+      cluster_queue   = string
+      local_queue     = string
+      nominal_cpu     = string
+      nominal_memory  = string
+    })
+    network = object({
+      allow_public_source_staging = bool
+      allow_public_msa_opt_in     = bool
+    })
+    status = object({
+      enabled                 = bool
+      image                   = optional(string)
+      replicas                = number
+      service_monitor_enabled = bool
+    })
+    pipeline = object({
+      enabled                 = bool
+      bundle_id               = string
+      image                   = optional(string)
+      generation              = number
+      cpu                     = string
+      memory                  = string
+      ephemeral_storage       = string
+      active_deadline_seconds = number
+      backoff_limit           = number
+    })
+    storage_contract = optional(object({
+      schema     = string
+      project_id = string
+      region     = string
+      filesystem = object({
+        id               = string
+        size_gib         = number
+        type             = string
+        block_size_bytes = number
+        forbid_deletion  = bool
+        node_mount_path  = string
+        host_path        = string
+        uri              = string
+      })
+      object_storage = object({
+        id                = string
+        name              = string
+        endpoint          = string
+        max_size_gib      = number
+        versioning_policy = string
+        object_prefix     = string
+      })
+      layout = object({
+        blobs                 = string
+        manifests             = string
+        filesystem_datasets   = string
+        preprocessing_inputs  = string
+        preprocessing_outputs = string
+      })
+      sizing = object({
+        official_alphafold3_expanded_bytes = number
+        required_headroom_bytes            = number
+        minimum_size_gib                   = number
+      })
+      public_msa_default = bool
+    }))
+    object_storage_access = optional(object({
+      access_key_id       = string
+      secret_reference_id = string
+      revision            = number
+    }))
+  })
+  default = {
+    enabled   = false
+    namespace = "fs2-data"
+    queue = {
+      resource_flavor = "reference-data-cpu"
+      cluster_queue   = "reference-data-cpu"
+      local_queue     = "reference-data"
+      nominal_cpu     = "32"
+      nominal_memory  = "128Gi"
+    }
+    network = {
+      allow_public_source_staging = false
+      allow_public_msa_opt_in     = false
+    }
+    status = {
+      enabled                 = false
+      image                   = null
+      replicas                = 1
+      service_monitor_enabled = true
+    }
+    pipeline = {
+      enabled                 = false
+      bundle_id               = "alphafold3-public-databases-v3.0"
+      image                   = null
+      generation              = 1
+      cpu                     = "6"
+      memory                  = "24Gi"
+      ephemeral_storage       = "2Gi"
+      active_deadline_seconds = 604800
+      backoff_limit           = 6
+    }
+    storage_contract      = null
+    object_storage_access = null
+  }
+
+  validation {
+    condition = try(
+      !var.reference_data.enabled || (
+        var.reference_data.storage_contract.schema == "fs2-serve.nebius.ai/reference-data-storage/v1" &&
+        var.reference_data.storage_contract.project_id == nonsensitive(var.project_id) &&
+        var.reference_data.storage_contract.region == var.target_contract.region &&
+        var.reference_data.storage_contract.filesystem.size_gib >= var.reference_data.storage_contract.sizing.minimum_size_gib &&
+        var.reference_data.storage_contract.object_storage.max_size_gib >= var.reference_data.storage_contract.sizing.minimum_size_gib &&
+        var.reference_data.storage_contract.object_storage.versioning_policy == "ENABLED" &&
+        !var.reference_data.storage_contract.public_msa_default &&
+        length(var.reference_data.object_storage_access.access_key_id) >= 8 &&
+        can(regex("^[A-Za-z0-9_-]+$", var.reference_data.object_storage_access.access_key_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.reference_data.object_storage_access.secret_reference_id)) &&
+        var.reference_data.object_storage_access.revision >= 1
+      ),
+      false,
+    )
+    error_message = "enabled reference_data requires the exact same-project/same-region infrastructure storage and MysteryBox access handoff."
   }
 }
 

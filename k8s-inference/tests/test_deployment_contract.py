@@ -753,6 +753,80 @@ class DeploymentContractTests(unittest.TestCase):
             controller,
         )
 
+    def test_reference_data_plane_is_root_configured_sized_and_cpu_only(self) -> None:
+        image = f"cr.eu-north1.nebius.cloud/test/reference-stager@sha256:{'a' * 64}"
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-reference-data-test",
+            "target": self.catalog_target(),
+            "storage": {
+                "reference_data": {
+                    "enabled": True,
+                    "filesystem": {"size_gib": 2048, "forbid_deletion": True},
+                    "object_storage": {"max_size_gib": 2048},
+                    "network": {
+                        "allow_public_source_staging": True,
+                        "allow_public_msa_opt_in": False,
+                    },
+                    "status": {"enabled": True, "image": image},
+                    "pipeline": {"enabled": True, "image": image},
+                }
+            },
+        }
+        variable_file = self._write_configuration("reference-data", deployment)
+        outputs = self._planned_outputs(variable_file, "reference-data")
+        contract = outputs["deployment_contract"]
+        infrastructure = contract["stages"]["infrastructure"]["reference_data"]
+        workloads = contract["stages"]["workloads"]["reference_data"]
+
+        self.assertTrue(infrastructure["enabled"])
+        self.assertEqual(2048, infrastructure["filesystem"]["size_gib"])
+        self.assertEqual(2048, infrastructure["object_storage"]["max_size_gib"])
+        self.assertRegex(
+            infrastructure["object_storage"]["bucket_name"],
+            r"^fs2-reference-data-test-r[0-9a-f]{10}-reference-data$",
+        )
+        self.assertTrue(workloads["pipeline"]["enabled"])
+        self.assertEqual("alphafold3-public-databases-v3.0", workloads["pipeline"]["bundle_id"])
+        self.assertFalse(workloads["network"]["allow_public_msa_opt_in"])
+        self.assertEqual(
+            2048, outputs["effective_configuration"]["reference_data"]["filesystem_size_gib"]
+        )
+
+        infrastructure_source = (
+            DEPLOY_ROOT / "stages/infrastructure/storage.tf"
+        ).read_text(encoding="utf-8")
+        cluster_source = (
+            DEPLOY_ROOT / "stages/infrastructure/cluster.tf"
+        ).read_text(encoding="utf-8")
+        pipeline_source = (
+            DEPLOY_ROOT / "reference-data/terraform/main.tf"
+        ).read_text(encoding="utf-8")
+        self.assertIn('versioning_policy     = "ENABLED"', infrastructure_source)
+        self.assertIn('forbid_deletion  = var.reference_data.filesystem.forbid_deletion', infrastructure_source)
+        self.assertIn('mount_tag   = "fs2reference"', cluster_source)
+        self.assertNotIn('"nvidia.com/gpu"', pipeline_source)
+        self.assertIn('suspend                 = true', pipeline_source)
+        self.assertIn('"--object-store-prefix", local.object_prefix', pipeline_source)
+
+    def test_reference_data_capacity_below_af3_plus_one_tib_is_rejected(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-reference-too-small",
+            "target": self.catalog_target(),
+            "storage": {
+                "reference_data": {
+                    "enabled": True,
+                    "filesystem": {"size_gib": 1610},
+                    "object_storage": {"max_size_gib": 2048},
+                }
+            },
+        }
+        variable_file = self._write_configuration("reference-too-small", deployment)
+        result, _ = self._plan_file(variable_file, "reference-too-small")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("at least 1611 GiB", f"{result.stdout}\n{result.stderr}")
+
     def test_regional_mirror_rejects_tag_only_model_override(self) -> None:
         deployment = {
             "schema_version": 1,

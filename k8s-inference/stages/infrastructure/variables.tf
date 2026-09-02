@@ -312,6 +312,54 @@ variable "shared_cache" {
   }
 }
 
+variable "reference_data" {
+  description = "Dedicated durable same-region filesystem and versioned object storage for immutable scientific reference data."
+  type = object({
+    enabled = bool
+    filesystem = object({
+      size_gib         = number
+      type             = string
+      block_size_bytes = number
+      forbid_deletion  = bool
+    })
+    object_storage = object({
+      bucket_name  = string
+      max_size_gib = number
+    })
+  })
+  default = {
+    enabled = false
+    filesystem = {
+      size_gib         = 2048
+      type             = "NETWORK_SSD"
+      block_size_bytes = 4096
+      forbid_deletion  = true
+    }
+    object_storage = {
+      bucket_name  = "disabled-reference-data.invalid"
+      max_size_gib = 2048
+    }
+  }
+
+  validation {
+    condition = try(
+      !var.reference_data.enabled || (
+        floor(var.reference_data.filesystem.size_gib) == var.reference_data.filesystem.size_gib &&
+        var.reference_data.filesystem.size_gib >= 1611 &&
+        var.reference_data.filesystem.size_gib <= 65536 &&
+        contains(["NETWORK_SSD", "NETWORK_SSD_IO_M3", "NETWORK_SSD_NON_REPLICATED"], var.reference_data.filesystem.type) &&
+        contains([4096, 8192, 16384, 32768, 65536], var.reference_data.filesystem.block_size_bytes) &&
+        can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.reference_data.object_storage.bucket_name)) &&
+        floor(var.reference_data.object_storage.max_size_gib) == var.reference_data.object_storage.max_size_gib &&
+        var.reference_data.object_storage.max_size_gib >= 1611 &&
+        var.reference_data.object_storage.max_size_gib <= 65536
+      ),
+      false,
+    )
+    error_message = "enabled reference_data requires a valid bucket and dedicated filesystem/object capacity of 1611-65536 whole GiB."
+  }
+}
+
 variable "capacity_profile" {
   description = "Reviewed capacity envelope. full_catalog supports every canonical route plus the second MSA backend without HCL edits."
   type        = string
@@ -609,6 +657,8 @@ locals {
     forbid_deletion  = try(coalesce(var.shared_cache.forbid_deletion, false), false)
   }
 
+  effective_reference_data = var.reference_data
+
   # Pool realization is separate from the capacity envelope. These two
   # aliases preserve the existing resource addresses and infrastructure
   # contract while moving provider/GPU facts behind the typed accelerator
@@ -770,7 +820,8 @@ locals {
     local.effective_accelerator_pool_profile == var.capacity_profile &&
     var.target_binding == null &&
     var.system_pool == null &&
-    var.shared_cache == null
+    var.shared_cache == null &&
+    !var.reference_data.enabled
   )
   current_gpu_pool_1x = merge(
     local.accelerator_pool_contract.pool_templates["nebius-b300-preemptible-1x"],

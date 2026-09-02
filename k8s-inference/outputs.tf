@@ -18,6 +18,16 @@ output "effective_configuration" {
     port_forward_ports         = var.deployment.edge.port_forward_ports
     model_scaling_mode         = var.deployment.models.scaling.mode
     hot_model_ids              = sort(tolist(var.deployment.models.scaling.hot))
+    reference_data = {
+      enabled                   = var.deployment.storage.reference_data.enabled
+      region                    = var.deployment.target.region
+      filesystem_size_gib       = var.deployment.storage.reference_data.filesystem.size_gib
+      object_storage_max_gib    = var.deployment.storage.reference_data.object_storage.max_size_gib
+      object_bucket_name        = local.reference_data_bucket_name
+      private_msa_default       = true
+      public_msa_opt_in_enabled = var.deployment.storage.reference_data.network.allow_public_msa_opt_in
+      staging_bundle            = var.deployment.storage.reference_data.pipeline.enabled ? var.deployment.storage.reference_data.pipeline.bundle_id : null
+    }
     scheduling = {
       cohort_name         = var.deployment.scheduling.cohort.enabled ? var.deployment.scheduling.cohort.name : null
       cluster_queue_names = sort(keys(var.deployment.scheduling.cluster_queues))

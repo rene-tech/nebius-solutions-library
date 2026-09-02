@@ -1,22 +1,21 @@
-# Standalone reference-data Terraform module
+# Integrated reference-data Terraform module
 
-This opt-in module is intentionally not wired into the shared root deployment.
-It lets the integration owner bind or create a versioned private Nebius Object
-Storage bucket, create a dedicated Kueue CPU lane, enforce private-MSA egress,
-and optionally expose the shared-filesystem readiness API/Prometheus metrics.
+This module is called by `stages/workloads/reference_data.tf`. The root facade
+passes it the infrastructure-owned versioned private Nebius Object Storage
+bucket, dedicated mounted filesystem and MysteryBox access-key reference. It
+creates a dedicated Kueue CPU lane, enforces private-MSA egress, optionally
+exposes readiness metrics and can submit the official AlphaFold3 staging Job.
 
-The caller must provide the existing cluster's Kubernetes provider and the
-same Nebius project/region contract. The module fails when the object endpoint
-region differs from the cluster. It never creates GPU capacity or assumes local
-NVMe. The shared host path must already be mounted on CPU and eligible GPU nodes
-and pre-created writable by uid/gid 1000; this module does not run a privileged
-permission-changing workload.
+The caller provides the existing cluster's Kubernetes and Nebius providers and
+the same region contract. The module fails when the object endpoint region
+differs from the cluster. It never creates GPU capacity or assumes local NVMe.
+Infrastructure mounts and prepares the dedicated host path on CPU and eligible
+GPU nodes as uid/gid 1000.
 
-`create_object_bucket=false` is the safe integration default. The named bucket
-must be private and versioned by its external owner. When true, the module
-creates a versioned task-owned bucket but deliberately creates no broad editor
-membership, access key, or Kubernetes Secret. Supply a narrowly scoped existing
-Secret only when rendering staging/preprocessing Jobs.
+The module never creates cloud storage or broad IAM membership. It consumes the
+least-privilege access-key identity from infrastructure, fetches its secret
+ephemerally from MysteryBox and uses the Kubernetes provider's write-only
+Secret field so credential material is not persisted in Terraform state.
 
 Private preprocessing has default-deny egress. Set exact
 `object_storage_egress_cidrs` for the private S3 endpoint/proxy. Public source

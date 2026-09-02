@@ -12,6 +12,10 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "= 3.2.1"
     }
+    nebius = {
+      source  = "terraform-provider.storage.eu-north1.nebius.cloud/nebius/nebius"
+      version = ">= 0.5.232"
+    }
     random = {
       source  = "hashicorp/random"
       version = "= 3.7.2"

@@ -104,16 +104,70 @@ output "accelerator_pool_contract_sha256" {
 output "owned_resource_ids" {
   description = "Task-owned resources that must be absent after the supervised destroy."
   value = {
-    registry            = nebius_registry_v1_registry.images.id
-    shared_cache        = nebius_compute_v1_filesystem.cache.id
-    nodepull_sa         = nebius_iam_v1_service_account.nodepull.id
-    target_reader_group = nebius_iam_v1_group.target_registry_readers.id
+    registry                  = nebius_registry_v1_registry.images.id
+    shared_cache              = nebius_compute_v1_filesystem.cache.id
+    reference_data_filesystem = try(nebius_compute_v1_filesystem.reference_data[0].id, null)
+    reference_data_bucket     = try(nebius_storage_v1_bucket.reference_data[0].id, null)
+    reference_data_writer_sa  = try(nebius_iam_v1_service_account.reference_data[0].id, null)
+    reference_data_access_key = try(nebius_iam_v2_access_key.reference_data[0].id, null)
+    nodepull_sa               = nebius_iam_v1_service_account.nodepull.id
+    target_reader_group       = nebius_iam_v1_group.target_registry_readers.id
     external_reader_groups = {
       for registry_id, group in nebius_iam_v1_group.external_registry_readers : registry_id => group.id
     }
     worker_sg          = nebius_vpc_v1_security_group.workers.id
     gateway_allocation = try(one(nebius_vpc_v1_allocation.gateway[*].id), null)
   }
+}
+
+output "reference_data_storage_contract" {
+  description = "Dedicated same-region durable filesystem/object contract for immutable scientific reference data, or null when disabled."
+  value = var.reference_data.enabled ? {
+    schema     = "fs2-serve.nebius.ai/reference-data-storage/v1"
+    project_id = nonsensitive(var.project_id)
+    region     = local.selected_target.region
+    filesystem = {
+      id               = nebius_compute_v1_filesystem.reference_data[0].id
+      size_gib         = var.reference_data.filesystem.size_gib
+      type             = var.reference_data.filesystem.type
+      block_size_bytes = var.reference_data.filesystem.block_size_bytes
+      forbid_deletion  = var.reference_data.filesystem.forbid_deletion
+      node_mount_path  = local.reference_data_mount_path
+      host_path        = local.reference_data_host_path
+      uri              = "file://${local.reference_data_host_path}"
+    }
+    object_storage = {
+      id                = nebius_storage_v1_bucket.reference_data[0].id
+      name              = nebius_storage_v1_bucket.reference_data[0].name
+      endpoint          = "https://storage.${local.selected_target.region}.nebius.cloud"
+      max_size_gib      = var.reference_data.object_storage.max_size_gib
+      versioning_policy = "ENABLED"
+      object_prefix     = "s3://${nebius_storage_v1_bucket.reference_data[0].name}/reference-data"
+    }
+    layout = {
+      blobs                 = "s3://${nebius_storage_v1_bucket.reference_data[0].name}/reference-data/blobs/sha256/<sha256>"
+      manifests             = "s3://${nebius_storage_v1_bucket.reference_data[0].name}/reference-data/manifests/sha256/<manifest-sha256>.json"
+      filesystem_datasets   = "file://${local.reference_data_host_path}/datasets/<bundle>/<revision>/sha256/<tree-sha256>"
+      preprocessing_inputs  = "s3://${nebius_storage_v1_bucket.reference_data[0].name}/inputs/sha256/<sha256>.<format>"
+      preprocessing_outputs = "s3://${nebius_storage_v1_bucket.reference_data[0].name}/preprocessing/<tenant>/<workload>/requests/sha256/<request-sha256>/results/sha256/<result-manifest-sha256>"
+    }
+    sizing = {
+      official_alphafold3_expanded_bytes = 630000000000
+      required_headroom_bytes            = 1099511627776
+      minimum_size_gib                   = 1611
+    }
+    public_msa_default = false
+  } : null
+}
+
+output "reference_data_object_storage_access" {
+  description = "Sensitive handoff containing only the S3 access-key ID and MysteryBox reference; the secret value never enters infrastructure state or generated tfvars."
+  sensitive   = true
+  value = var.reference_data.enabled ? {
+    access_key_id       = nebius_iam_v2_access_key.reference_data[0].status.aws_access_key_id
+    secret_reference_id = nebius_iam_v2_access_key.reference_data[0].status.secret_reference_id
+    revision            = nebius_iam_v2_access_key.reference_data[0].resource_version
+  } : null
 }
 
 output "gateway_allocation_id" {

@@ -45,6 +45,11 @@ locals {
     region     = var.deployment.target.region
   })), 0, 10)}"
 
+  reference_data_bucket_name = coalesce(
+    var.deployment.storage.reference_data.object_storage.bucket_name,
+    "${var.deployment.name}-${local.run_id}-reference-data",
+  )
+
   selected_model_ids = sort(tolist(
     var.deployment.models.selection == "profile" ?
     toset(local.selected_model_profile.canonical_routes) :
@@ -203,8 +208,21 @@ locals {
       repository_prefix = var.deployment.artifacts.registry_policy.repository_prefix
       source_hosts      = local.selected_image_source_hosts
     }
-    system_pool              = var.deployment.cluster.system_pool
-    shared_cache             = var.deployment.storage.shared_cache
+    system_pool  = var.deployment.cluster.system_pool
+    shared_cache = var.deployment.storage.shared_cache
+    reference_data = {
+      enabled = var.deployment.storage.reference_data.enabled
+      filesystem = {
+        size_gib         = var.deployment.storage.reference_data.filesystem.size_gib
+        type             = var.deployment.storage.reference_data.filesystem.type
+        block_size_bytes = var.deployment.storage.reference_data.filesystem.block_size_bytes
+        forbid_deletion  = var.deployment.storage.reference_data.filesystem.forbid_deletion
+      }
+      object_storage = {
+        bucket_name  = local.reference_data_bucket_name
+        max_size_gib = var.deployment.storage.reference_data.object_storage.max_size_gib
+      }
+    }
     public_edge_mode         = var.deployment.edge.mode
     public_edge_source_cidrs = sort(tolist(var.deployment.edge.source_cidrs))
     port_forward_local_ports = var.deployment.edge.port_forward_ports
@@ -231,6 +249,14 @@ locals {
     enable_cold_start_keepers       = var.deployment.models.cold_start_keepers
     enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
     scheduling                      = var.deployment.scheduling
+    reference_data = {
+      enabled   = var.deployment.storage.reference_data.enabled
+      namespace = var.deployment.storage.reference_data.namespace
+      queue     = var.deployment.storage.reference_data.queue
+      network   = var.deployment.storage.reference_data.network
+      status    = var.deployment.storage.reference_data.status
+      pipeline  = var.deployment.storage.reference_data.pipeline
+    }
     model_express = {
       enabled         = var.deployment.acceleration.model_express.enabled
       deployment_mode = var.deployment.acceleration.model_express.deployment_mode

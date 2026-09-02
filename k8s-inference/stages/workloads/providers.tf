@@ -9,3 +9,10 @@ provider "helm" {
     config_context = var.kube_context
   }
 }
+
+provider "nebius" {
+  profile = {
+    name            = var.nebius_profile
+    no_browser_open = true
+  }
+}
