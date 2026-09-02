@@ -57,6 +57,20 @@ variable "reference_data" {
       schema     = string
       project_id = string
       region     = string
+      cpu_pool = object({
+        id          = string
+        name        = string
+        platform    = string
+        preset      = string
+        node_count  = number
+        capacity    = string
+        node_labels = map(string)
+        taint = object({
+          key    = string
+          value  = string
+          effect = string
+        })
+      })
       filesystem = object({
         id               = string
         size_gib         = number
@@ -97,13 +111,13 @@ variable "reference_data" {
   })
   default = {
     enabled   = false
-    namespace = "fs2-data"
+    namespace = "fs2-reference-data"
     queue = {
       resource_flavor = "reference-data-cpu"
       cluster_queue   = "reference-data-cpu"
       local_queue     = "reference-data"
-      nominal_cpu     = "32"
-      nominal_memory  = "128Gi"
+      nominal_cpu     = "6"
+      nominal_memory  = "24Gi"
     }
     network = {
       allow_public_source_staging = false
@@ -136,6 +150,15 @@ variable "reference_data" {
         var.reference_data.storage_contract.schema == "fs2-serve.nebius.ai/reference-data-storage/v1" &&
         var.reference_data.storage_contract.project_id == nonsensitive(var.project_id) &&
         var.reference_data.storage_contract.region == var.target_contract.region &&
+        var.reference_data.namespace == "fs2-reference-data" &&
+        var.reference_data.storage_contract.cpu_pool.capacity == "regular" &&
+        var.reference_data.storage_contract.cpu_pool.node_count >= 1 &&
+        var.reference_data.storage_contract.cpu_pool.node_labels["workload.fs2.nebius/reference-data"] == "true" &&
+        var.reference_data.storage_contract.cpu_pool.node_labels["capacity.fs2.nebius/pool"] == "reference-data" &&
+        var.reference_data.storage_contract.cpu_pool.node_labels["storage.fs2.nebius/reference-data"] == "true" &&
+        var.reference_data.storage_contract.cpu_pool.taint.key == "workload.fs2.nebius/reference-data" &&
+        var.reference_data.storage_contract.cpu_pool.taint.value == "true" &&
+        var.reference_data.storage_contract.cpu_pool.taint.effect == "NoSchedule" &&
         var.reference_data.storage_contract.filesystem.size_gib >= var.reference_data.storage_contract.sizing.minimum_size_gib &&
         var.reference_data.storage_contract.object_storage.max_size_gib >= var.reference_data.storage_contract.sizing.minimum_size_gib &&
         var.reference_data.storage_contract.object_storage.versioning_policy == "ENABLED" &&
@@ -147,7 +170,7 @@ variable "reference_data" {
       ),
       false,
     )
-    error_message = "enabled reference_data requires the exact same-project/same-region infrastructure storage and MysteryBox access handoff."
+    error_message = "enabled reference_data requires the dedicated fs2-reference-data namespace, exact same-project/same-region infrastructure storage, a tainted storage-attached regular CPU pool and MysteryBox access handoff."
   }
 }
 

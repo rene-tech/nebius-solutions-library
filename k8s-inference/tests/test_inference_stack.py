@@ -273,7 +273,7 @@ class InferenceStackTests(unittest.TestCase):
         configuration = contract()
         configuration["stages"]["workloads"]["reference_data"] = {
             "enabled": True,
-            "namespace": "fs2-data",
+            "namespace": "fs2-reference-data",
             "queue": {},
             "network": {"allow_public_msa_opt_in": False},
             "status": {},

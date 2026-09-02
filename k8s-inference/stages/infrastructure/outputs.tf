@@ -74,6 +74,9 @@ output "node_group_ids" {
   description = "Backward-compatible node-group map. The two B300 aliases are present only for the exact legacy fixture."
   value = merge(
     { system = nebius_mk8s_v1_node_group.system.id },
+    var.reference_data.enabled ? {
+      reference_data_cpu = nebius_mk8s_v1_node_group.reference_data[0].id
+    } : {},
     contains(keys(nebius_mk8s_v1_node_group.gpu), "nebius-b300-preemptible-1x") ? {
       gpu_b300_1x = nebius_mk8s_v1_node_group.gpu["nebius-b300-preemptible-1x"].id
     } : {},
@@ -110,6 +113,7 @@ output "owned_resource_ids" {
     reference_data_bucket     = try(nebius_storage_v1_bucket.reference_data[0].id, null)
     reference_data_writer_sa  = try(nebius_iam_v1_service_account.reference_data[0].id, null)
     reference_data_access_key = try(nebius_iam_v2_access_key.reference_data[0].id, null)
+    reference_data_cpu_pool   = try(nebius_mk8s_v1_node_group.reference_data[0].id, null)
     nodepull_sa               = nebius_iam_v1_service_account.nodepull.id
     target_reader_group       = nebius_iam_v1_group.target_registry_readers.id
     external_reader_groups = {
@@ -126,6 +130,25 @@ output "reference_data_storage_contract" {
     schema     = "fs2-serve.nebius.ai/reference-data-storage/v1"
     project_id = nonsensitive(var.project_id)
     region     = local.selected_target.region
+    cpu_pool = {
+      id         = nebius_mk8s_v1_node_group.reference_data[0].id
+      name       = nebius_mk8s_v1_node_group.reference_data[0].name
+      platform   = var.reference_data.cpu_pool.platform
+      preset     = var.reference_data.cpu_pool.preset
+      node_count = var.reference_data.cpu_pool.node_count
+      capacity   = "regular"
+      node_labels = {
+        "workload.fs2.nebius/reference-data" = "true"
+        "capacity.fs2.nebius/type"           = "regular"
+        "capacity.fs2.nebius/pool"           = "reference-data"
+        "storage.fs2.nebius/reference-data"  = "true"
+      }
+      taint = {
+        key    = "workload.fs2.nebius/reference-data"
+        value  = "true"
+        effect = "NoSchedule"
+      }
+    }
     filesystem = {
       id               = nebius_compute_v1_filesystem.reference_data[0].id
       size_gib         = var.reference_data.filesystem.size_gib

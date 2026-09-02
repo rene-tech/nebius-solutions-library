@@ -9,7 +9,9 @@ official pinned AlphaFold3 staging Job without a source-code edit.
 
 The production default is private: customer sequence objects may be read only
 from `file:///` or private `s3://` references, sequence content is never put in
-Job metadata or logs, and the preprocessing namespace has default-deny egress.
+Job metadata or logs. The dedicated `fs2-reference-data` namespace has
+default-deny egress, and a tainted, storage-attached CPU pool keeps staging and
+MSA work off both the Kubernetes system pool and H100 nodes.
 The separate public-MSA network lane requires both Terraform
 `allow_public_msa_opt_in=true` and request/render-time opt-in. The included
 backends perform local searches; the opt-in does not silently substitute a
@@ -133,6 +135,17 @@ CPU/memory quota admission:
 storage = {
   reference_data = {
     enabled = true
+    namespace = "fs2-reference-data"
+    cpu_pool = {
+      platform        = "cpu-d3"
+      preset          = "8vcpu-32gb"
+      node_count      = 1
+      boot_disk_type  = "NETWORK_SSD"
+      boot_disk_gib   = 160
+      max_surge       = 1
+      max_unavailable = 0
+      drain_timeout   = "15m"
+    }
     filesystem    = { size_gib = 2048, forbid_deletion = true }
     object_storage = { max_size_gib = 2048 }
     network = {

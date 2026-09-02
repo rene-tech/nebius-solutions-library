@@ -249,10 +249,10 @@ class ReferenceDataContractTests(unittest.TestCase):
         args = argparse.Namespace(
             request=request_path,
             allow_public_msa=False,
-            namespace="fs2-data",
+            namespace="fs2-reference-data",
             queue="reference-data",
             tools_config_map="fs2-reference-data-tools-123456789abc",
-            shared_host_path="/mnt/fs2cache/csi-mounted-fs-path-data/reference-data",
+            shared_host_path="/mnt/fs2-reference-data/data",
             credentials_secret=None,
             object_storage_endpoint=None,
         )
@@ -264,6 +264,9 @@ class ReferenceDataContractTests(unittest.TestCase):
         self.assertTrue(job["spec"]["suspend"])
         self.assertNotIn("nvidia.com/gpu", json.dumps(container["resources"]))
         self.assertEqual("regular", pod["nodeSelector"]["capacity.fs2.nebius/type"])
+        self.assertEqual("reference-data", pod["nodeSelector"]["capacity.fs2.nebius/pool"])
+        self.assertEqual("true", pod["nodeSelector"]["storage.fs2.nebius/reference-data"])
+        self.assertEqual("NoSchedule", pod["tolerations"][0]["effect"])
         self.assertTrue(next(
             mount for mount in container["volumeMounts"] if mount["name"] == "reference-data"
         )["readOnly"])
@@ -383,10 +386,10 @@ class ReferenceDataContractTests(unittest.TestCase):
             image=f"registry.example.invalid/stager@sha256:{'a' * 64}",
             access_receipt=receipt_path,
             object_store_prefix=None,
-            namespace="fs2-data",
+            namespace="fs2-reference-data",
             queue="reference-data",
             tools_config_map="fs2-reference-data-tools-123456789abc",
-            shared_host_path="/mnt/fs2cache/csi-mounted-fs-path-data/reference-data",
+            shared_host_path="/mnt/fs2-reference-data/data",
             credentials_secret="reference-data-writer",
             object_storage_endpoint="https://storage.eu-north1.nebius.cloud",
             cpu="8",

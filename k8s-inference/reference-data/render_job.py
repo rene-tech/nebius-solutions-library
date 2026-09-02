@@ -123,10 +123,17 @@ def _base_job(
                     "automountServiceAccountToken": False,
                     "enableServiceLinks": False,
                     "nodeSelector": {
-                        "workload.fs2.nebius/system": "true",
+                        "workload.fs2.nebius/reference-data": "true",
                         "capacity.fs2.nebius/type": "regular",
-                        "capacity.fs2.nebius/pool": "system",
+                        "capacity.fs2.nebius/pool": "reference-data",
+                        "storage.fs2.nebius/reference-data": "true",
                     },
+                    "tolerations": [{
+                        "key": "workload.fs2.nebius/reference-data",
+                        "operator": "Equal",
+                        "value": "true",
+                        "effect": "NoSchedule",
+                    }],
                     "securityContext": {
                         "runAsNonRoot": True,
                         "runAsUser": 1000,
@@ -276,10 +283,10 @@ def _common(subparser: argparse.ArgumentParser) -> None:
         "fs2-reference-data-tools-"
         + hashlib.sha256(Path(__file__).with_name("reference_data.py").read_bytes()).hexdigest()[:12]
     )
-    subparser.add_argument("--namespace", default="fs2-data", type=lambda value: _dns_label(value, "namespace"))
+    subparser.add_argument("--namespace", default="fs2-reference-data", type=lambda value: _dns_label(value, "namespace"))
     subparser.add_argument("--queue", default="reference-data", type=lambda value: _dns_label(value, "queue"))
     subparser.add_argument("--tools-config-map", default=default_tools_config_map, type=lambda value: _dns_label(value, "tools ConfigMap"))
-    subparser.add_argument("--shared-host-path", default="/mnt/fs2cache/csi-mounted-fs-path-data/reference-data")
+    subparser.add_argument("--shared-host-path", default="/mnt/fs2-reference-data/data")
     subparser.add_argument("--credentials-secret", type=lambda value: _dns_label(value, "credentials Secret"))
     subparser.add_argument("--object-storage-endpoint")
 
@@ -294,9 +301,9 @@ def parser() -> argparse.ArgumentParser:
     stage.add_argument("--image", required=True)
     stage.add_argument("--access-receipt", type=Path)
     stage.add_argument("--object-store-prefix")
-    stage.add_argument("--cpu", default="8")
-    stage.add_argument("--memory", default="32Gi")
-    stage.add_argument("--ephemeral-storage", default="32Gi")
+    stage.add_argument("--cpu", default="6")
+    stage.add_argument("--memory", default="24Gi")
+    stage.add_argument("--ephemeral-storage", default="2Gi")
     stage.add_argument("--active-deadline-seconds", type=int, default=604800)
     stage.add_argument("--backoff-limit", type=int, default=2)
     preprocess = commands.add_parser("preprocess")

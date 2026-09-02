@@ -2,15 +2,17 @@
 
 This module is called by `stages/workloads/reference_data.tf`. The root facade
 passes it the infrastructure-owned versioned private Nebius Object Storage
-bucket, dedicated mounted filesystem and MysteryBox access-key reference. It
-creates a dedicated Kueue CPU lane, enforces private-MSA egress, optionally
-exposes readiness metrics and can submit the official AlphaFold3 staging Job.
+bucket, dedicated mounted filesystem, tainted CPU-pool contract and MysteryBox
+access-key reference. It owns the isolated `fs2-reference-data` namespace and
+must never target the shared `fs2-data` database namespace. It creates a
+dedicated Kueue CPU lane, enforces private-MSA egress, optionally exposes
+readiness metrics and can submit the official AlphaFold3 staging Job.
 
 The caller provides the existing cluster's Kubernetes and Nebius providers and
 the same region contract. The module fails when the object endpoint region
 differs from the cluster. It never creates GPU capacity or assumes local NVMe.
-Infrastructure mounts and prepares the dedicated host path on CPU and eligible
-GPU nodes as uid/gid 1000.
+Infrastructure mounts and prepares the dedicated host path on the reference
+CPU pool and eligible GPU nodes as uid/gid 1000.
 
 The module never creates cloud storage or broad IAM membership. It consumes the
 least-privilege access-key identity from infrastructure, fetches its secret

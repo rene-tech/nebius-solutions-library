@@ -21,6 +21,9 @@ output "effective_configuration" {
     reference_data = {
       enabled                   = var.deployment.storage.reference_data.enabled
       region                    = var.deployment.target.region
+      namespace                 = var.deployment.storage.reference_data.namespace
+      cpu_pool_nodes            = var.deployment.storage.reference_data.cpu_pool.node_count
+      cpu_pool_preset           = var.deployment.storage.reference_data.cpu_pool.preset
       filesystem_size_gib       = var.deployment.storage.reference_data.filesystem.size_gib
       object_storage_max_gib    = var.deployment.storage.reference_data.object_storage.max_size_gib
       object_bucket_name        = local.reference_data_bucket_name

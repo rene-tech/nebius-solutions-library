@@ -212,6 +212,16 @@ locals {
     shared_cache = var.deployment.storage.shared_cache
     reference_data = {
       enabled = var.deployment.storage.reference_data.enabled
+      cpu_pool = {
+        platform        = var.deployment.storage.reference_data.cpu_pool.platform
+        preset          = var.deployment.storage.reference_data.cpu_pool.preset
+        node_count      = var.deployment.storage.reference_data.cpu_pool.node_count
+        boot_disk_type  = var.deployment.storage.reference_data.cpu_pool.boot_disk_type
+        boot_disk_gib   = var.deployment.storage.reference_data.cpu_pool.boot_disk_gib
+        max_surge       = var.deployment.storage.reference_data.cpu_pool.max_surge
+        max_unavailable = var.deployment.storage.reference_data.cpu_pool.max_unavailable
+        drain_timeout   = var.deployment.storage.reference_data.cpu_pool.drain_timeout
+      }
       filesystem = {
         size_gib         = var.deployment.storage.reference_data.filesystem.size_gib
         type             = var.deployment.storage.reference_data.filesystem.type

@@ -200,11 +200,23 @@ deployment = {
   # Dedicated same-region scientific reference-data plane. The 2 TiB defaults
   # cover the official AlphaFold3 630 GB expanded estimate with more than 1 TiB
   # headroom. H100 workers consume the mounted immutable tree; downloads and MSA
-  # preprocessing run only on the regular CPU system pool. The pipeline image
-  # must contain Python, zstd and the AWS CLI and must be digest pinned.
+  # preprocessing run only on a tainted, storage-attached regular CPU pool.
+  # The pipeline never shares the Kubernetes system pool. Its image must
+  # contain Python, zstd and the AWS CLI and must be digest pinned.
   # storage = {
   #   reference_data = {
   #     enabled = true
+  #     namespace = "fs2-reference-data"
+  #     cpu_pool = {
+  #       platform        = "cpu-d3"
+  #       preset          = "8vcpu-32gb"
+  #       node_count      = 1
+  #       boot_disk_type  = "NETWORK_SSD"
+  #       boot_disk_gib   = 160
+  #       max_surge       = 1
+  #       max_unavailable = 0
+  #       drain_timeout   = "15m"
+  #     }
   #     filesystem = {
   #       size_gib         = 2048
   #       type             = "NETWORK_SSD"
@@ -214,6 +226,13 @@ deployment = {
   #     object_storage = {
   #       # Omit bucket_name for the deterministic deployment/run-derived name.
   #       max_size_gib = 2048
+  #     }
+  #     queue = {
+  #       resource_flavor = "reference-data-cpu"
+  #       cluster_queue   = "reference-data-cpu"
+  #       local_queue     = "reference-data"
+  #       nominal_cpu     = "6"
+  #       nominal_memory  = "24Gi"
   #     }
   #     network = {
   #       allow_public_source_staging = true

@@ -316,6 +316,16 @@ variable "reference_data" {
   description = "Dedicated durable same-region filesystem and versioned object storage for immutable scientific reference data."
   type = object({
     enabled = bool
+    cpu_pool = object({
+      platform        = string
+      preset          = string
+      node_count      = number
+      boot_disk_type  = string
+      boot_disk_gib   = number
+      max_surge       = number
+      max_unavailable = number
+      drain_timeout   = string
+    })
     filesystem = object({
       size_gib         = number
       type             = string
@@ -329,6 +339,16 @@ variable "reference_data" {
   })
   default = {
     enabled = false
+    cpu_pool = {
+      platform        = "cpu-d3"
+      preset          = "8vcpu-32gb"
+      node_count      = 1
+      boot_disk_type  = "NETWORK_SSD"
+      boot_disk_gib   = 160
+      max_surge       = 1
+      max_unavailable = 0
+      drain_timeout   = "15m"
+    }
     filesystem = {
       size_gib         = 2048
       type             = "NETWORK_SSD"
@@ -344,6 +364,21 @@ variable "reference_data" {
   validation {
     condition = try(
       !var.reference_data.enabled || (
+        can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", var.reference_data.cpu_pool.platform)) &&
+        can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", var.reference_data.cpu_pool.preset)) &&
+        floor(var.reference_data.cpu_pool.node_count) == var.reference_data.cpu_pool.node_count &&
+        var.reference_data.cpu_pool.node_count >= 1 &&
+        var.reference_data.cpu_pool.node_count <= 32 &&
+        contains(["NETWORK_SSD", "NETWORK_SSD_IO_M3", "NETWORK_SSD_NON_REPLICATED"], var.reference_data.cpu_pool.boot_disk_type) &&
+        floor(var.reference_data.cpu_pool.boot_disk_gib) == var.reference_data.cpu_pool.boot_disk_gib &&
+        var.reference_data.cpu_pool.boot_disk_gib >= 32 &&
+        var.reference_data.cpu_pool.boot_disk_gib <= 4096 &&
+        floor(var.reference_data.cpu_pool.max_surge) == var.reference_data.cpu_pool.max_surge &&
+        floor(var.reference_data.cpu_pool.max_unavailable) == var.reference_data.cpu_pool.max_unavailable &&
+        var.reference_data.cpu_pool.max_surge >= 0 &&
+        var.reference_data.cpu_pool.max_unavailable >= 0 &&
+        var.reference_data.cpu_pool.max_surge + var.reference_data.cpu_pool.max_unavailable >= 1 &&
+        can(regex("^[1-9][0-9]*m$", var.reference_data.cpu_pool.drain_timeout)) &&
         floor(var.reference_data.filesystem.size_gib) == var.reference_data.filesystem.size_gib &&
         var.reference_data.filesystem.size_gib >= 1611 &&
         var.reference_data.filesystem.size_gib <= 65536 &&
@@ -356,7 +391,7 @@ variable "reference_data" {
       ),
       false,
     )
-    error_message = "enabled reference_data requires a valid bucket and dedicated filesystem/object capacity of 1611-65536 whole GiB."
+    error_message = "enabled reference_data requires a bounded dedicated CPU pool, a valid bucket and dedicated filesystem/object capacity of 1611-65536 whole GiB."
   }
 }
 

@@ -48,16 +48,50 @@ variable "object_storage_access" {
 variable "namespace" {
   description = "Dedicated namespace for reference-data and preprocessing CPU workloads."
   type        = string
-  default     = "fs2-data"
+  default     = "fs2-reference-data"
   validation {
     condition     = can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", var.namespace)) && length(var.namespace) <= 63
     error_message = "namespace must be a Kubernetes DNS label."
   }
 }
 
+variable "cpu_pool" {
+  description = "Infrastructure-owned dedicated regular CPU pool placement and taint contract."
+  type = object({
+    id          = string
+    name        = string
+    platform    = string
+    preset      = string
+    node_count  = number
+    capacity    = string
+    node_labels = map(string)
+    taint = object({
+      key    = string
+      value  = string
+      effect = string
+    })
+  })
+  nullable = false
+
+  validation {
+    condition = (
+      var.cpu_pool.capacity == "regular" &&
+      var.cpu_pool.node_count >= 1 &&
+      var.cpu_pool.node_labels["workload.fs2.nebius/reference-data"] == "true" &&
+      var.cpu_pool.node_labels["capacity.fs2.nebius/type"] == "regular" &&
+      var.cpu_pool.node_labels["capacity.fs2.nebius/pool"] == "reference-data" &&
+      var.cpu_pool.node_labels["storage.fs2.nebius/reference-data"] == "true" &&
+      var.cpu_pool.taint.key == "workload.fs2.nebius/reference-data" &&
+      var.cpu_pool.taint.value == "true" &&
+      var.cpu_pool.taint.effect == "NoSchedule"
+    )
+    error_message = "cpu_pool must be the infrastructure-owned, storage-attached, tainted regular reference-data pool."
+  }
+}
+
 variable "shared_filesystem_host_path" {
   description = <<-EOT
-    Existing same-region shared filesystem path already mounted on system and
+    Existing same-region shared filesystem path already mounted on the dedicated CPU and
     eligible GPU nodes. It must be pre-created and writable by uid/gid 1000.
   EOT
   type        = string
@@ -74,8 +108,8 @@ variable "queue" {
     resource_flavor = optional(string, "reference-data-cpu")
     cluster_queue   = optional(string, "reference-data-cpu")
     local_queue     = optional(string, "reference-data")
-    nominal_cpu     = optional(string, "32")
-    nominal_memory  = optional(string, "128Gi")
+    nominal_cpu     = optional(string, "6")
+    nominal_memory  = optional(string, "24Gi")
   })
   default = {}
 }

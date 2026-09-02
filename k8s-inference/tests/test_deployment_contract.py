@@ -780,6 +780,11 @@ class DeploymentContractTests(unittest.TestCase):
         workloads = contract["stages"]["workloads"]["reference_data"]
 
         self.assertTrue(infrastructure["enabled"])
+        self.assertEqual("fs2-reference-data", workloads["namespace"])
+        self.assertEqual("8vcpu-32gb", infrastructure["cpu_pool"]["preset"])
+        self.assertEqual(1, infrastructure["cpu_pool"]["node_count"])
+        self.assertEqual("6", workloads["queue"]["nominal_cpu"])
+        self.assertEqual("24Gi", workloads["queue"]["nominal_memory"])
         self.assertEqual(2048, infrastructure["filesystem"]["size_gib"])
         self.assertEqual(2048, infrastructure["object_storage"]["max_size_gib"])
         self.assertRegex(
@@ -805,9 +810,14 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn('versioning_policy     = "ENABLED"', infrastructure_source)
         self.assertIn('forbid_deletion  = var.reference_data.filesystem.forbid_deletion', infrastructure_source)
         self.assertIn('mount_tag   = "fs2reference"', cluster_source)
+        self.assertIn('resource "nebius_mk8s_v1_node_group" "reference_data"', cluster_source)
+        self.assertIn('"workload.fs2.nebius/reference-data" = "true"', cluster_source)
+        self.assertIn('effect = "NO_SCHEDULE"', cluster_source)
         self.assertNotIn('"nvidia.com/gpu"', pipeline_source)
         self.assertIn('suspend                 = true', pipeline_source)
         self.assertIn('"--object-store-prefix", local.object_prefix', pipeline_source)
+        self.assertRegex(pipeline_source, r"nodeSelector\s*= var\.cpu_pool\.node_labels")
+        self.assertIn('path = "/healthz"', pipeline_source)
 
     def test_reference_data_capacity_below_af3_plus_one_tib_is_rejected(self) -> None:
         deployment = {
@@ -825,7 +835,7 @@ class DeploymentContractTests(unittest.TestCase):
         variable_file = self._write_configuration("reference-too-small", deployment)
         result, _ = self._plan_file(variable_file, "reference-too-small")
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("at least 1611 GiB", f"{result.stdout}\n{result.stderr}")
+        self.assertRegex(f"{result.stdout}\n{result.stderr}", r"at least 1611\s+GiB")
 
     def test_regional_mirror_rejects_tag_only_model_override(self) -> None:
         deployment = {

@@ -33,6 +33,25 @@ ${var.reference_data.enabled ? format("      - [install, -d, -m, \"0770\", -o, \
       }
     }] : [],
   )
+  reference_data_filesystem_attachment = var.reference_data.enabled ? [{
+    attach_mode = "READ_WRITE"
+    mount_tag   = "fs2reference"
+    existing_filesystem = {
+      id = nebius_compute_v1_filesystem.reference_data[0].id
+    }
+  }] : []
+  reference_data_cloud_init_user_data = <<-YAML
+    #cloud-config
+    package_update: false
+    package_upgrade: false
+    mounts:
+      - [fs2reference, ${local.reference_data_mount_path}, virtiofs, "defaults,nofail", 0, 2]
+    runcmd:
+      - [modprobe, fuse]
+      - [mkdir, -p, ${local.reference_data_mount_path}]
+      - [mount, -a]
+      - [install, -d, -m, "0770", -o, "1000", -g, "1000", ${local.reference_data_host_path}]
+  YAML
 
   worker_network_interfaces = [{
     subnet_id = data.nebius_vpc_v1_subnet.target.id
@@ -159,6 +178,62 @@ resource "nebius_mk8s_v1_node_group" "system" {
     nebius_iam_v1_access_permit.nodepull_registry,
     nebius_iam_v1_access_permit.nodepull_external_registry,
     nebius_compute_v1_filesystem.cache,
+    nebius_compute_v1_filesystem.reference_data,
+  ]
+}
+
+resource "nebius_mk8s_v1_node_group" "reference_data" {
+  count = var.reference_data.enabled ? 1 : 0
+
+  parent_id        = nebius_mk8s_v1_cluster.validation.id
+  name             = "${local.resource_name}-reference-data-cpu"
+  labels           = merge(local.common_labels, { pool = "reference-data-cpu" })
+  version          = var.kubernetes_version
+  fixed_node_count = var.reference_data.cpu_pool.node_count
+
+  strategy = {
+    max_surge       = { count = var.reference_data.cpu_pool.max_surge }
+    max_unavailable = { count = var.reference_data.cpu_pool.max_unavailable }
+    drain_timeout   = var.reference_data.cpu_pool.drain_timeout
+  }
+
+  template = {
+    metadata = {
+      labels = {
+        "workload.fs2.nebius/reference-data" = "true"
+        "capacity.fs2.nebius/type"           = "regular"
+        "capacity.fs2.nebius/pool"           = "reference-data"
+        "lifecycle.fs2.nebius/run"           = var.run_id
+        "storage.fs2.nebius/reference-data"  = "true"
+      }
+    }
+    taints = [{
+      key    = "workload.fs2.nebius/reference-data"
+      value  = "true"
+      effect = "NO_SCHEDULE"
+    }]
+    boot_disk = {
+      size_gibibytes = var.reference_data.cpu_pool.boot_disk_gib
+      type           = var.reference_data.cpu_pool.boot_disk_type
+    }
+    filesystems        = local.reference_data_filesystem_attachment
+    network_interfaces = local.worker_network_interfaces
+    os                 = "ubuntu24.04"
+    reservation_policy = { policy = "FORBID" }
+    resources = {
+      platform = var.reference_data.cpu_pool.platform
+      preset   = var.reference_data.cpu_pool.preset
+    }
+    service_account_id   = nebius_iam_v1_service_account.nodepull.id
+    underlay_required    = false
+    cloud_init_user_data = local.reference_data_cloud_init_user_data
+  }
+
+  depends_on = [
+    nebius_iam_v1_group_membership.nodepull_target_registry,
+    nebius_iam_v1_group_membership.nodepull_external_registry,
+    nebius_iam_v1_access_permit.nodepull_registry,
+    nebius_iam_v1_access_permit.nodepull_external_registry,
     nebius_compute_v1_filesystem.reference_data,
   ]
 }

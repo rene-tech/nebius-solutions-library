@@ -246,6 +246,16 @@ variable "deployment" {
       }))
       reference_data = optional(object({
         enabled = optional(bool, false)
+        cpu_pool = optional(object({
+          platform        = optional(string, "cpu-d3")
+          preset          = optional(string, "8vcpu-32gb")
+          node_count      = optional(number, 1)
+          boot_disk_type  = optional(string, "NETWORK_SSD")
+          boot_disk_gib   = optional(number, 160)
+          max_surge       = optional(number, 1)
+          max_unavailable = optional(number, 0)
+          drain_timeout   = optional(string, "15m")
+        }), {})
         filesystem = optional(object({
           size_gib         = optional(number, 2048)
           type             = optional(string, "NETWORK_SSD")
@@ -256,13 +266,13 @@ variable "deployment" {
           bucket_name  = optional(string)
           max_size_gib = optional(number, 2048)
         }), {})
-        namespace = optional(string, "fs2-data")
+        namespace = optional(string, "fs2-reference-data")
         queue = optional(object({
           resource_flavor = optional(string, "reference-data-cpu")
           cluster_queue   = optional(string, "reference-data-cpu")
           local_queue     = optional(string, "reference-data")
-          nominal_cpu     = optional(string, "32")
-          nominal_memory  = optional(string, "128Gi")
+          nominal_cpu     = optional(string, "6")
+          nominal_memory  = optional(string, "24Gi")
         }), {})
         network = optional(object({
           allow_public_source_staging = optional(bool, false)
@@ -620,6 +630,21 @@ variable "deployment" {
   validation {
     condition = try(
       !var.deployment.storage.reference_data.enabled || (
+        can(regex("^[a-z0-9][a-z0-9-]{1,63}$", var.deployment.storage.reference_data.cpu_pool.platform)) &&
+        can(regex("^[a-z0-9][a-z0-9-]{1,63}$", var.deployment.storage.reference_data.cpu_pool.preset)) &&
+        floor(var.deployment.storage.reference_data.cpu_pool.node_count) == var.deployment.storage.reference_data.cpu_pool.node_count &&
+        var.deployment.storage.reference_data.cpu_pool.node_count >= 1 &&
+        var.deployment.storage.reference_data.cpu_pool.node_count <= 32 &&
+        contains(["NETWORK_SSD", "NETWORK_SSD_IO_M3", "NETWORK_SSD_NON_REPLICATED"], var.deployment.storage.reference_data.cpu_pool.boot_disk_type) &&
+        floor(var.deployment.storage.reference_data.cpu_pool.boot_disk_gib) == var.deployment.storage.reference_data.cpu_pool.boot_disk_gib &&
+        var.deployment.storage.reference_data.cpu_pool.boot_disk_gib >= 32 &&
+        var.deployment.storage.reference_data.cpu_pool.boot_disk_gib <= 4096 &&
+        floor(var.deployment.storage.reference_data.cpu_pool.max_surge) == var.deployment.storage.reference_data.cpu_pool.max_surge &&
+        floor(var.deployment.storage.reference_data.cpu_pool.max_unavailable) == var.deployment.storage.reference_data.cpu_pool.max_unavailable &&
+        var.deployment.storage.reference_data.cpu_pool.max_surge >= 0 &&
+        var.deployment.storage.reference_data.cpu_pool.max_unavailable >= 0 &&
+        var.deployment.storage.reference_data.cpu_pool.max_surge + var.deployment.storage.reference_data.cpu_pool.max_unavailable >= 1 &&
+        can(regex("^[1-9][0-9]*m$", var.deployment.storage.reference_data.cpu_pool.drain_timeout)) &&
         floor(var.deployment.storage.reference_data.filesystem.size_gib) == var.deployment.storage.reference_data.filesystem.size_gib &&
         var.deployment.storage.reference_data.filesystem.size_gib >= 1611 &&
         var.deployment.storage.reference_data.filesystem.size_gib <= 65536 &&
@@ -646,7 +671,7 @@ variable "deployment" {
       ),
       false,
     )
-    error_message = "enabled storage.reference_data requires DNS-safe names and dedicated filesystem/object capacities of at least 1611 GiB (the 630 GB official AlphaFold3 expansion estimate plus 1 TiB headroom)."
+    error_message = "enabled storage.reference_data requires a bounded dedicated regular CPU pool, DNS-safe names and dedicated filesystem/object capacities of at least 1611 GiB (the 630 GB official AlphaFold3 expansion estimate plus 1 TiB headroom)."
   }
 
   validation {

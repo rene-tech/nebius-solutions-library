@@ -112,11 +112,7 @@ resource "kubernetes_manifest" "cpu_flavor" {
       labels = local.common_labels
     }
     spec = {
-      nodeLabels = {
-        "workload.fs2.nebius/system" = "true"
-        "capacity.fs2.nebius/type"   = "regular"
-        "capacity.fs2.nebius/pool"   = "system"
-      }
+      nodeLabels = var.cpu_pool.node_labels
     }
   }
 }
@@ -361,12 +357,13 @@ resource "kubernetes_manifest" "pipeline" {
           serviceAccountName           = kubernetes_service_account_v1.reference_data.metadata[0].name
           automountServiceAccountToken = false
           enableServiceLinks           = false
-          nodeSelector = {
-            "workload.fs2.nebius/system"        = "true"
-            "capacity.fs2.nebius/type"          = "regular"
-            "capacity.fs2.nebius/pool"          = "system"
-            "storage.fs2.nebius/reference-data" = "true"
-          }
+          nodeSelector                 = var.cpu_pool.node_labels
+          tolerations = [{
+            key      = var.cpu_pool.taint.key
+            operator = "Equal"
+            value    = var.cpu_pool.taint.value
+            effect   = var.cpu_pool.taint.effect
+          }]
           securityContext = {
             runAsNonRoot        = true
             runAsUser           = 1000
@@ -529,11 +526,12 @@ resource "kubernetes_deployment_v1" "status" {
         service_account_name            = kubernetes_service_account_v1.reference_data.metadata[0].name
         automount_service_account_token = false
         enable_service_links            = false
-        node_selector = {
-          "workload.fs2.nebius/system"        = "true"
-          "capacity.fs2.nebius/type"          = "regular"
-          "capacity.fs2.nebius/pool"          = "system"
-          "storage.fs2.nebius/reference-data" = "true"
+        node_selector                   = var.cpu_pool.node_labels
+        toleration {
+          key      = var.cpu_pool.taint.key
+          operator = "Equal"
+          value    = var.cpu_pool.taint.value
+          effect   = var.cpu_pool.taint.effect
         }
         security_context {
           run_as_non_root = true
@@ -561,7 +559,7 @@ resource "kubernetes_deployment_v1" "status" {
           }
           readiness_probe {
             http_get {
-              path = "/readyz"
+              path = "/healthz"
               port = "http"
             }
             period_seconds = 10

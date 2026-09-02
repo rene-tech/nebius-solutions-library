@@ -13,6 +13,7 @@ module "reference_data" {
 
   namespace                   = var.reference_data.namespace
   shared_filesystem_host_path = try(var.reference_data.storage_contract.filesystem.host_path, "/mnt/fs2-reference-data/data")
+  cpu_pool                    = var.reference_data.storage_contract.cpu_pool
   queue                       = var.reference_data.queue
 
   object_storage_egress_fqdns = [
@@ -42,12 +43,16 @@ resource "terraform_data" "reference_data_contract" {
       condition = !var.reference_data.enabled || (
         var.reference_data.storage_contract.project_id == nonsensitive(var.project_id) &&
         var.reference_data.storage_contract.region == local.selected_target.region &&
+        var.reference_data.namespace == "fs2-reference-data" &&
+        var.reference_data.storage_contract.cpu_pool.capacity == "regular" &&
+        var.reference_data.storage_contract.cpu_pool.node_labels["capacity.fs2.nebius/pool"] == "reference-data" &&
+        var.reference_data.storage_contract.cpu_pool.taint.effect == "NoSchedule" &&
         var.reference_data.storage_contract.filesystem.size_gib >= 1611 &&
         var.reference_data.storage_contract.object_storage.max_size_gib >= 1611 &&
         var.reference_data.storage_contract.object_storage.versioning_policy == "ENABLED" &&
         !var.reference_data.storage_contract.public_msa_default
       )
-      error_message = "reference data must use the infrastructure-owned same-project/same-region storage contract with at least 1 TiB headroom and private MSA defaults."
+      error_message = "reference data must use the dedicated namespace and storage-attached regular CPU pool plus the infrastructure-owned same-project/same-region storage contract with at least 1 TiB headroom and private MSA defaults."
     }
   }
 }

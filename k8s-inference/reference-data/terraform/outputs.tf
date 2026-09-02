@@ -22,6 +22,8 @@ output "dynamic_configuration" {
   value = {
     schema                      = "fs2-serve.nebius.ai/reference-data-configuration/v1"
     namespace                   = var.namespace
+    cpu_pool_id                 = var.cpu_pool.id
+    cpu_pool_name               = var.cpu_pool.name
     local_queue                 = var.queue.local_queue
     cluster_queue               = var.queue.cluster_queue
     resource_flavor             = var.queue.resource_flavor
