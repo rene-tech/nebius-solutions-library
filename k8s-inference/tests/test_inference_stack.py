@@ -126,6 +126,42 @@ def dynamic_outputs(run_root: Path) -> dict:
     }
 
 
+def complete_access_bundle() -> dict:
+    return {
+        "schema": "fs2-serve.nebius.ai/access-bundle/v1",
+        "cluster": {
+            "project_id": "project-test",
+            "region": "us-north1",
+            "cluster_id": "mk8scluster-test",
+            "cluster_name": "k8s-inference-test",
+            "kube_context": "k8s-inference-test",
+            "kubeconfig_command": (
+                "KUBECONFIG=/private/run/kubeconfig nebius mk8s cluster get-credentials"
+            ),
+        },
+        "endpoints": {
+            "admin_portal_url": "https://192.0.2.12/admin/",
+            "mcp_url": "https://192.0.2.12/mcp",
+            "inference_base_url": "https://192.0.2.12/v1",
+            "grafana_url": "https://192.0.2.12/admin/observability/grafana",
+        },
+        "credentials": {
+            "admin_bootstrap_token": "test-only-admin-token",
+            "mcp_inference_token": "test-only-client-token",
+            "inference_access_token": "test-only-client-token",
+            "grafana": {
+                "username": "test-only-grafana-user",
+                "password": "test-only-grafana-password",
+            },
+        },
+        "mcp_access": {
+            "principal_id": "terraform-bootstrap-client",
+            "tenant_id": "tenant-test",
+            "scopes": ["mcp.invoke", "inference.invoke"],
+        },
+    }
+
+
 def regional_contract() -> dict:
     configuration = json.loads(json.dumps(contract()))
     configuration["artifact_delivery"] = {
@@ -759,12 +795,14 @@ class InferenceStackTests(unittest.TestCase):
         self.assertNotIn("TF_CLI_ARGS", cleaned)
         self.assertNotIn("TF_CLI_ARGS_plan", cleaned)
 
-    def test_apply_uses_infrastructure_foundation_workloads_order(self) -> None:
+    def test_apply_converges_stages_then_records_root_configuration(self) -> None:
         run_root = Path("/private/test-run")
         planned_stages: list[str] = []
         endpoint_values = {
             "mcp_endpoint_url": "https://192.0.2.10/mcp",
             "admin_web_interface_url": "https://192.0.2.10/admin/",
+            "inference_base_url": "https://192.0.2.10/v1",
+            "grafana_url": "https://192.0.2.10/admin/observability/grafana",
         }
 
         def fake_plan(*_args, **kwargs):
@@ -800,15 +838,39 @@ class InferenceStackTests(unittest.TestCase):
                 "terraform_json_output",
                 side_effect=fake_endpoint_output,
             ),
+            mock.patch.object(
+                STACK,
+                "terraform_optional_json_output",
+                return_value=endpoint_values["grafana_url"],
+            ),
             mock.patch.object(STACK, "stage_environment", return_value={}),
             redirect_stdout(output),
         ):
-            STACK.apply_stack(arguments(), run_root, contract(), "c" * 40)
+            STACK.apply_stack(
+                arguments(),
+                run_root,
+                contract(),
+                "c" * 40,
+                {"stage": "configuration"},
+            )
 
         self.assertEqual(planned_stages, ["infrastructure", "foundation", "workloads"])
         self.assertEqual(
             [call.args[1] for call in apply_plan.call_args_list],
-            [STACK.INFRA_ROOT, STACK.FOUNDATION_ROOT, STACK.WORKLOADS_ROOT],
+            [
+                STACK.INFRA_ROOT,
+                STACK.FOUNDATION_ROOT,
+                STACK.WORKLOADS_ROOT,
+                STACK.DEPLOY_ROOT,
+            ],
+        )
+        self.assertEqual(
+            apply_plan.call_args_list[-1].args[2],
+            run_root / "configuration.tfplan",
+        )
+        self.assertEqual(
+            apply_plan.call_args_list[-1].args[3],
+            {"stage": "configuration"},
         )
         self.assertEqual(
             json.loads(output.getvalue()), {"status": "applied", **endpoint_values}
@@ -817,10 +879,12 @@ class InferenceStackTests(unittest.TestCase):
             mock.ANY, run_root, mock.ANY, dynamic_outputs(run_root)
         )
 
-    def test_status_emits_only_the_two_non_secret_workload_endpoints(self) -> None:
+    def test_status_emits_all_non_secret_workload_endpoints(self) -> None:
         endpoint_values = {
             "mcp_endpoint_url": "https://192.0.2.11/mcp",
             "admin_web_interface_url": "https://192.0.2.11/admin/",
+            "inference_base_url": "https://192.0.2.11/v1",
+            "grafana_url": "https://192.0.2.11/admin/observability/grafana",
         }
 
         def fake_endpoint_output(_terraform, _root, name, _environment):
@@ -844,6 +908,11 @@ class InferenceStackTests(unittest.TestCase):
                     "terraform_json_output",
                     side_effect=fake_endpoint_output,
                 ) as terraform_json_output,
+                mock.patch.object(
+                    STACK,
+                    "terraform_optional_json_output",
+                    return_value=endpoint_values["grafana_url"],
+                ) as terraform_optional_json_output,
                 redirect_stdout(output),
             ):
                 STACK.status_stack(arguments(), run_root, contract())
@@ -854,7 +923,15 @@ class InferenceStackTests(unittest.TestCase):
         )
         self.assertEqual(
             [call.args[2] for call in terraform_json_output.call_args_list],
-            ["mcp_endpoint_url", "admin_web_interface_url"],
+            [
+                "mcp_endpoint_url",
+                "admin_web_interface_url",
+                "inference_base_url",
+            ],
+        )
+        self.assertEqual(
+            [call.args[2] for call in terraform_optional_json_output.call_args_list],
+            ["grafana_url"],
         )
         self.assertTrue(
             all(
@@ -863,17 +940,34 @@ class InferenceStackTests(unittest.TestCase):
             )
         )
 
-    def test_output_explicitly_emits_the_sensitive_access_bundle(self) -> None:
-        access_bundle = {
-            "schema": "fs2-serve.nebius.ai/access-bundle/v1",
-            "cluster": {"cluster_id": "mk8scluster-test"},
-            "endpoints": {
-                "mcp_url": "https://192.0.2.12/mcp",
-                "inference_base_url": "https://192.0.2.12/v1",
-            },
-            "credentials": {"mcp_inference_token": "test-only-token"},
-            "mcp_access": {"scopes": ["mcp.invoke", "inference.invoke"]},
+    def test_endpoint_output_allows_unpublished_grafana(self) -> None:
+        required = {
+            "mcp_endpoint_url": "https://192.0.2.11/mcp",
+            "admin_web_interface_url": "https://192.0.2.11/admin/",
+            "inference_base_url": "https://192.0.2.11/v1",
         }
+        with (
+            mock.patch.object(STACK, "stage_environment", return_value={}),
+            mock.patch.object(
+                STACK,
+                "terraform_json_output",
+                side_effect=lambda _terraform, _root, name, _environment: required[
+                    name
+                ],
+            ),
+            mock.patch.object(
+                STACK, "terraform_optional_json_output", return_value=None
+            ),
+        ):
+            self.assertEqual(
+                STACK.workload_endpoint_outputs(
+                    "terraform-test", Path("/private/test-run"), contract()
+                ),
+                {**required, "grafana_url": None},
+            )
+
+    def test_output_explicitly_emits_the_sensitive_access_bundle(self) -> None:
+        access_bundle = complete_access_bundle()
         output = io.StringIO()
         with (
             mock.patch.object(STACK, "state_ready", return_value=True),
@@ -890,6 +984,79 @@ class InferenceStackTests(unittest.TestCase):
         workload_access_bundle.assert_called_once_with(
             "terraform-test", Path("/private/test-run"), contract()
         )
+
+    def test_access_bundle_validation_requires_requested_connection_fields(
+        self,
+    ) -> None:
+        bundle = complete_access_bundle()
+        with (
+            mock.patch.object(STACK, "stage_environment", return_value={}),
+            mock.patch.object(
+                STACK,
+                "terraform_json_output",
+                return_value=bundle,
+            ),
+        ):
+            self.assertEqual(
+                STACK.workload_access_bundle(
+                    "terraform-test", Path("/private/test-run"), contract()
+                ),
+                bundle,
+            )
+
+    def test_access_bundle_validation_rejects_missing_connection_fields(
+        self,
+    ) -> None:
+        required_paths = (
+            ("cluster", "kubeconfig_command"),
+            ("endpoints", "admin_portal_url"),
+            ("endpoints", "mcp_url"),
+            ("endpoints", "inference_base_url"),
+            ("endpoints", "grafana_url"),
+            ("credentials", "admin_bootstrap_token"),
+            ("credentials", "mcp_inference_token"),
+            ("credentials", "inference_access_token"),
+            ("credentials", "grafana", "username"),
+            ("credentials", "grafana", "password"),
+            ("mcp_access", "scopes"),
+        )
+        for path in required_paths:
+            with self.subTest(path=path):
+                bundle = complete_access_bundle()
+                parent = bundle
+                for key in path[:-1]:
+                    parent = parent[key]
+                del parent[path[-1]]
+                with (
+                    mock.patch.object(STACK, "stage_environment", return_value={}),
+                    mock.patch.object(
+                        STACK,
+                        "terraform_json_output",
+                        return_value=bundle,
+                    ),
+                    self.assertRaisesRegex(
+                        STACK.DeploymentError, "missing or malformed"
+                    ),
+                ):
+                    STACK.workload_access_bundle(
+                        "terraform-test", Path("/private/test-run"), contract()
+                    )
+
+    def test_access_bundle_validation_requires_shared_token_alias(self) -> None:
+        bundle = complete_access_bundle()
+        bundle["credentials"]["inference_access_token"] = "different-token"
+        with (
+            mock.patch.object(STACK, "stage_environment", return_value={}),
+            mock.patch.object(
+                STACK,
+                "terraform_json_output",
+                return_value=bundle,
+            ),
+            self.assertRaisesRegex(STACK.DeploymentError, "missing or malformed"),
+        ):
+            STACK.workload_access_bundle(
+                "terraform-test", Path("/private/test-run"), contract()
+            )
 
     def test_output_rejects_an_incomplete_workloads_stage(self) -> None:
         with (
@@ -1453,7 +1620,11 @@ class InferenceStackTests(unittest.TestCase):
             self.assertRaisesRegex(STACK.DeploymentError, "post-copy mismatch"),
         ):
             STACK.apply_stack(
-                arguments(), Path("/private/test-run"), configuration, "a" * 40
+                arguments(),
+                Path("/private/test-run"),
+                configuration,
+                "a" * 40,
+                {"stage": "configuration"},
             )
         self.assertEqual(
             [call.kwargs["stage"] for call in plan_stage.call_args_list],

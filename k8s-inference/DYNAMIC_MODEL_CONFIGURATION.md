@@ -5,15 +5,15 @@
 Model lifecycle belongs in a Kubernetes-native control plane, not in Terraform.
 Terraform should continue to own the infrastructure boundary: the cluster, GPU
 node-pool envelopes, storage, registry, database, Gateway, operators, CRDs,
-observability, and platform identities. Operators should be able to add, remove,
-scale, warm, drain, and expose a model without running a Terraform plan, provided
+observability, and platform identities. Operators can add, update, scale, warm,
+drain, and expose a model without running a Terraform plan, provided
 the change fits inside an already-provisioned pool and policy envelope.
 
-The recommended target is an FS2 `ModelDeployment` API and reconciler. The admin
-API writes that custom resource, the reconciler renders the most suitable
-upstream serving resource, and Kubernetes status remains the live source of
-truth. PostgreSQL retains the append-only audit trail, approvals, idempotency
-keys, and configuration revisions; it must not become a second scheduler.
+The implemented baseline is an FS2 `ModelDeployment` API and reconciler. The
+admin API records a desired revision and projects that custom resource, the
+reconciler renders the selected serving resources, and Kubernetes status
+remains the live source of truth. PostgreSQL retains desired revisions,
+idempotency records, and status history; it does not become a second scheduler.
 
 This is an incremental replacement for Terraform-owned model Deployments. It
 does not require replacing the current gateway, identity, metrics, queueing, or
@@ -51,41 +51,31 @@ and future non-NVIDIA runtimes do not all share Dynamo's serving assumptions.
 
 ## Customer API
 
-A minimal resource should look like this; exact API names remain an
-implementation detail until the CRD spike is accepted.
+Operators use the admin console at `/admin/model-deployments` or its
+same-origin API rather than hand-authoring `ModelDeployment` resources. The
+server returns the model, pool, queue, runtime, cache, and tenant choices from
+the installed Terraform envelope, then carries one proposal through the same
+preview and apply path used by bootstrap:
 
-```yaml
-apiVersion: inference.fs2.nebius.ai/v1alpha1
-kind: ModelDeployment
-metadata:
-  name: qwen3-8b
-  namespace: fs2-models
-spec:
-  artifact:
-    modelRef: qwen3-8b
-    revision: sha256:reviewed-model-manifest-digest
-  runtime:
-    profile: vllm
-    image: cr.example/model-runtime@sha256:reviewed-image-digest
-  placement:
-    poolRefs: [h100-preemptible]
-    acceleratorsPerReplica: 1
-  availability:
-    minReplicas: 0
-    maxReplicas: 4
-    idleSeconds: 900
-    cachePolicy: node-local
-  queue:
-    localQueue: interactive
-    priorityClass: standard
-  exposure:
-    openAI: true
-    mcp: true
-  rollout:
-    strategy: rolling
+```text
+GET  /admin/api/v1/model-deployments:capabilities
+POST /admin/api/v1/model-deployments:validate-preview
+POST /admin/api/v1/model-deployments:plan-preview
+POST /admin/api/v1/model-deployments:apply
+GET  /admin/api/v1/model-deployments/{name}/status
+POST /admin/api/v1/model-deployments/{name}:drain
+POST /admin/api/v1/model-deployments/{name}:rollback
+POST /admin/api/v1/model-deployments/{name}:reconcile
 ```
 
-The live configuration surface should expose these controls:
+The resulting resource uses the shipped
+`inference.fs2.nebius.ai/v1alpha1` schema. Its required sections are
+`modelRef`, `tenantId`, `lifecycle`, `artifact`, `runtime`, `placement`,
+`availability`, `cache`, `queue`, `rollout`, `exposure`, and `policy`; values
+such as immutable digests and renderer template references come from the
+server-published configuration options.
+
+The live configuration surface exposes these controls:
 
 - enabled/draining state and immutable artifact/runtime revisions;
 - zero or more hot replicas, maximum replicas, idle timeout, and optional
@@ -196,10 +186,16 @@ dynamic_models = {
   enabled             = true
   writes_enabled      = true
   workload_owner      = "controller"
-  bootstrap_model_ids = ["qwen3-8b"]
+  bootstrap_model_ids = ["cosmos3-nano", "qwen3-8b"]
   fresh_install       = true
 }
 ```
+
+The exact retained H100 qualification for those two models is recorded in
+[`h100-qwen-cosmos-elasticity-qualification-20260902.json`](catalog/profiles/evidence/h100-qwen-cosmos-elasticity-qualification-20260902.json).
+It qualifies shared-cache scale-to-zero for the recorded reserved-H100 tuple;
+it is not a GPU-snapshot qualification or a generic qualification for every
+H100 pool.
 
 Terraform derives the controller's immutable `InfrastructureEnvelope` and
 `LegacyTemplateBundle` documents from the effective accelerator-pool contract,
@@ -252,37 +248,48 @@ drain before the release apply. The limitation is explicit rather than silently
 stealing fields or pretending a destructive Terraform removal was adoption.
 Before a dynamic desired revision exists, rollback by restoring
 `workload_owner = "terraform"`, clearing bootstrap/fresh/receipt and applying.
-After one exists, drain and delete it through the admin API and wait for its
-owned resources to disappear before returning that model to Terraform.
-Before removing a selected model from tfvars, disable or delete its durable live
-revision through the admin API; bootstrap is intentionally create-only and
-Terraform does not become the ongoing desired-state writer.
+After one exists, returning that model identity to Terraform ownership is not
+automated in this release; keep it controller-owned. Before removing a selected
+model from tfvars, drain and disable its durable live revision. Bootstrap is
+intentionally create-only and Terraform does not become the ongoing
+desired-state writer. Hard deletion remains disabled.
 
-## Delivery sequence
+## Implemented baseline
 
-1. Add the versioned `ModelDeployment` CRD, status conditions, admission rules,
-   and a controller that initially renders the existing FS2 Deployment/KEDA
-   resources. Adopt each current object with an explicit Terraform state removal,
-   server-side-apply field-manager handoff, owner-reference change, and no-diff
-   live check so Terraform and the controller are never concurrent writers.
-2. Put the existing configuration plan/reconcile/rollback API over the CRD and
-   add UI controls for hot floor, ceiling, idle policy, placement, cache, and
-   exposure. Preserve PostgreSQL audit and role checks.
-3. Reuse and qualify the KServe 0.20 CRD/resources already installed by the
-   foundation, then add Gateway API Inference Extension and llm-d as optional
-   Terraform-installed capabilities. Implement KServe renderers for qualified
-   LLM and custom-runtime profiles, with conformance tests against the stable
-   FS2 API.
-4. Add llm-d and Dynamo renderer profiles only after live qualification on the
-   target GPU/model matrix. Keep the current renderer as a supported fallback.
-5. Extend the implemented Kueue Deployment-Pod admission and exact
-   ResourceFlavor placement to localization, warm-up, benchmark, batch, and
-   multi-node startup jobs; keep interactive request queueing visible and
-   bounded while a zero-hot model activates.
+The shipped source now includes:
+
+- the versioned `ModelDeployment` CRD and a controller that renders the existing
+  FS2 Deployment, Service, KEDA, queue, cache, and publication resources;
+- durable desired revisions plus authenticated list, create/apply, edit, drain,
+  rollback, reconcile, status, and history workflows in the admin API
+  and console;
+- exact-pool heterogeneous placement, fixed regular-capacity hot segments,
+  independently bounded preemptible burst segments, KEDA demand scaling, and
+  Kueue ResourceFlavor placement inside the Terraform-owned envelope;
+- Ready-gated dynamic OpenAI and MCP publication with withdrawal while a model
+  is disabled, draining, failed, or no longer Ready; and
+- shared-cache localization state and separate hot, cold, cached, loading,
+  draining, failed, and infrastructure-required status projections.
+
+The current renderer deliberately preserves the existing FS2 workload shape.
+The installed KServe 0.20 Standard-mode controller is not yet used as the model
+renderer, and Gateway API Inference Extension, llm-d, Dynamo, and ModelMesh are
+not implied by enabling dynamic models.
+
+## Optional renderer extensions
+
+Future renderer profiles can use KServe `LLMInferenceService` or
+`InferenceService`, Gateway API Inference Extension with llm-d, or NVIDIA
+Dynamo without changing the FS2 admin API. Each profile still needs live
+qualification for its exact model, image, GPU topology, cache, and placement.
+Kueue coverage can likewise expand from serving Pods to localization, warm-up,
+benchmark, batch, and multi-node startup jobs.
+
+## Live acceptance
 
 Acceptance requires an authenticated operator to add a reviewed model, change
 its hot floor from zero to one and back, observe a node scale from zero, see the
-model become Ready and appear in MCP, roll back a revision, and remove the model
+model become Ready and appear in MCP, roll back a revision, and drain the model
 without a Terraform run. It must also prove that an attempted unknown pool or
 unqualified accelerator placement is rejected without cloud mutation.
 

@@ -41,6 +41,12 @@ output "mcp_access_token" {
   sensitive   = true
 }
 
+output "inference_access_token" {
+  description = "Alias of mcp_access_token for OpenAI-compatible inference clients; the bootstrap PAT intentionally grants both MCP and inference scopes."
+  value       = local.bootstrap_access_token
+  sensitive   = true
+}
+
 output "grafana_url" {
   description = "Published native-login Grafana URL, or null when publication is disabled."
   value       = local.grafana_publication.enabled ? local.grafana_publication.external_url : null
@@ -113,8 +119,9 @@ output "access_bundle" {
       grafana_url        = local.grafana_publication.enabled ? local.grafana_publication.external_url : null
     }
     credentials = {
-      admin_bootstrap_token = random_password.admin_token.result
-      mcp_inference_token   = local.bootstrap_access_token
+      admin_bootstrap_token  = random_password.admin_token.result
+      mcp_inference_token    = local.bootstrap_access_token
+      inference_access_token = local.bootstrap_access_token
       grafana = {
         username = data.kubernetes_secret_v1.grafana_admin.data[data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref.user_key]
         password = data.kubernetes_secret_v1.grafana_admin.data[data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref.password_key]

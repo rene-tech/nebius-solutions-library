@@ -155,7 +155,11 @@ def bind_lean_routes(
 
     document = _load_json(path)
     routes = document["routes"]
-    if not isinstance(routes, list) or not 1 <= len(routes) <= len(catalog.tested_model_ids):
+    if (
+        not isinstance(routes, list)
+        or len(routes) > len(catalog.tested_model_ids)
+        or (not routes and document["schema"] != LEAN_ROUTES_SCHEMA)
+    ):
         raise LeanRouteError("lean route count is invalid")
     qualification_rows: dict[str, Mapping[str, Any]] = {}
     qualification_metadata: dict[str, Any] = {}

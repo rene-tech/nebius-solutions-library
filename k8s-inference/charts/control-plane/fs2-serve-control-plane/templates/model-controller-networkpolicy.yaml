@@ -36,6 +36,16 @@ spec:
         - port: {{ .Values.networkPolicy.dns.port }}
           protocol: TCP
     - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.database.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.database.podLabels | nindent 14 }}
+      ports:
+        - port: {{ .Values.networkPolicy.database.port }}
+          protocol: TCP
+    - to:
         {{- range .Values.networkPolicy.kubernetesApiCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}

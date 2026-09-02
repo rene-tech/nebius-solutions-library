@@ -1614,7 +1614,7 @@ def workload_endpoint_outputs(
     run_root: Path,
     contract: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Read only the two non-secret, customer-facing workload endpoints."""
+    """Read all non-secret, customer-facing workload endpoints."""
     environment = stage_environment(
         run_root, "workloads", contract, include_secrets=False
     )
@@ -1624,6 +1624,12 @@ def workload_endpoint_outputs(
         ),
         "admin_web_interface_url": terraform_json_output(
             terraform, WORKLOADS_ROOT, "admin_web_interface_url", environment
+        ),
+        "inference_base_url": terraform_json_output(
+            terraform, WORKLOADS_ROOT, "inference_base_url", environment
+        ),
+        "grafana_url": terraform_optional_json_output(
+            terraform, WORKLOADS_ROOT, "grafana_url", environment
         ),
     }
 
@@ -1643,7 +1649,66 @@ def workload_access_bundle(
     )
     if not isinstance(bundle, dict) or bundle.get("schema") != "fs2-serve.nebius.ai/access-bundle/v1":
         raise DeploymentError("the workloads access bundle is missing or malformed")
-    if not all(isinstance(bundle.get(key), dict) for key in ("cluster", "endpoints", "credentials", "mcp_access")):
+
+    cluster = bundle.get("cluster")
+    endpoints = bundle.get("endpoints")
+    credentials = bundle.get("credentials")
+    mcp_access = bundle.get("mcp_access")
+    if not all(
+        isinstance(value, dict)
+        for value in (cluster, endpoints, credentials, mcp_access)
+    ):
+        raise DeploymentError("the workloads access bundle is missing or malformed")
+
+    def has_non_empty_strings(document: Mapping[str, Any], fields: tuple[str, ...]) -> bool:
+        return all(
+            isinstance(document.get(field), str) and bool(document[field].strip())
+            for field in fields
+        )
+
+    if not has_non_empty_strings(
+        cluster,
+        (
+            "project_id",
+            "region",
+            "cluster_id",
+            "cluster_name",
+            "kube_context",
+            "kubeconfig_command",
+        ),
+    ):
+        raise DeploymentError("the workloads access bundle is missing or malformed")
+    if not has_non_empty_strings(endpoints, ("mcp_url", "inference_base_url")):
+        raise DeploymentError("the workloads access bundle is missing or malformed")
+    if any(
+        key not in endpoints
+        or (endpoints[key] is not None and not isinstance(endpoints[key], str))
+        for key in ("admin_portal_url", "grafana_url")
+    ):
+        raise DeploymentError("the workloads access bundle is missing or malformed")
+
+    shared_token = credentials.get("mcp_inference_token")
+    if (
+        not has_non_empty_strings(
+            credentials,
+            ("admin_bootstrap_token", "mcp_inference_token", "inference_access_token"),
+        )
+        or credentials.get("inference_access_token") != shared_token
+    ):
+        raise DeploymentError("the workloads access bundle is missing or malformed")
+    grafana = credentials.get("grafana")
+    if not isinstance(grafana, dict) or not has_non_empty_strings(
+        grafana, ("username", "password")
+    ):
+        raise DeploymentError("the workloads access bundle is missing or malformed")
+    scopes = mcp_access.get("scopes")
+    if (
+        not has_non_empty_strings(
+            mcp_access, ("principal_id", "tenant_id")
+        )
+        or not isinstance(scopes, list)
+        or not {"mcp.invoke", "inference.invoke"}.issubset(scopes)
+    ):
         raise DeploymentError("the workloads access bundle is missing or malformed")
     return bundle
 
@@ -1699,6 +1764,7 @@ def apply_stack(
     run_root: Path,
     contract: Mapping[str, Any],
     commit: str,
+    configuration_environment: Mapping[str, str],
 ) -> None:
     infrastructure_variables = write_infrastructure_variables(
         run_root, contract, commit, args.nebius_profile
@@ -1742,6 +1808,14 @@ def apply_stack(
         variable_file=workloads_variables,
     )
     apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
+
+    # Record the accepted root contract after all of its staged consumers converge.
+    apply_plan(
+        args.terraform,
+        DEPLOY_ROOT,
+        run_root / "configuration.tfplan",
+        configuration_environment,
+    )
 
     endpoints = workload_endpoint_outputs(args.terraform, run_root, contract)
     print(json.dumps({"status": "applied", **endpoints}, indent=2))
@@ -1943,6 +2017,8 @@ def status_stack(
         else {
             "mcp_endpoint_url": None,
             "admin_web_interface_url": None,
+            "inference_base_url": None,
+            "grafana_url": None,
         }
     )
     print(
@@ -2051,7 +2127,7 @@ def internal_proxy_command(
         "mcp_endpoint_url": f"{application_origin}/mcp",
         "admin_web_interface_url": f"{application_origin}/admin/",
     }
-    if endpoints != expected_endpoints:
+    if any(endpoints.get(key) != value for key, value in expected_endpoints.items()):
         raise DeploymentError(
             "the workload endpoint outputs do not match the edge contract"
         )
@@ -2145,7 +2221,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"another inference-stack process owns {run_root}"
             ) from exc
 
-        contract, _ = validate_configuration(args.terraform, variable_file, run_root)
+        contract, configuration_environment = validate_configuration(
+            args.terraform, variable_file, run_root
+        )
         proxy_arguments: list[str] | None = None
         commit = source_commit()
         if args.command == "validate":
@@ -2169,7 +2247,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             plan_stack(args, run_root, contract, commit)
         elif args.command == "apply":
             require_deployable_images(contract)
-            apply_stack(args, run_root, contract, commit)
+            apply_stack(
+                args,
+                run_root,
+                contract,
+                commit,
+                configuration_environment,
+            )
         elif args.command == "destroy":
             destroy_stack(args, run_root, contract, commit)
         elif args.command == "output":

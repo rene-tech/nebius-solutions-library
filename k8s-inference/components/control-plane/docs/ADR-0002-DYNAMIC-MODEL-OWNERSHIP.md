@@ -159,78 +159,55 @@ discovery and never treats an empty, non-authoritative inventory as proof.
 
 Routine model operations no longer require Terraform, while infrastructure
 changes remain reviewable. The migration requires a deliberate one-model-at-a-
-time state handoff and conformance tests. Helm installing the CRD does not by
-itself transfer ownership: the writer, admin mutations, and adoption path stay
-feature-gated until their live acceptance is complete.
+time state handoff and conformance tests. Installing the CRD by itself does not
+transfer ownership; `deployment.dynamic_models.workload_owner` selects the one
+active serving-object writer.
 
-## Current feature gate and next tranche
+## Current implementation
 
-The source-only implementation installs the versioned API definition and
-provides authenticated, read-only admin validation/render previews:
+The shipped source implements the versioned API, durable desired revisions,
+controller, legacy workload renderer, dynamic publication bridge, admin API,
+and admin console. Enabling the model controller mounts the read and preview
+routes; enabling controller writes also mounts the mutation routes:
 
-- `POST /admin/api/v1/model-deployments:validate-preview`
-- `POST /admin/api/v1/model-deployments:plan-preview`
-
-The preview service has no Kubernetes writer dependency. Apply, adopt, and
-delete routes return `501 model_deployment_writer_disabled`. A preview is
-optimistically bound to the current ETag, records a secret-free audit event,
-and states `mutation_supported=false`.
-
-The second source tranche adds an append-only PostgreSQL desired-revision
-ledger, HMAC-only idempotency receipts, atomic revision audit records, and
-append-only bounded status observations. It also provides optional,
-tenant-filtered read seams:
-
+- `GET /admin/api/v1/model-deployments:capabilities`
 - `GET /admin/api/v1/model-deployments`
 - `GET /admin/api/v1/model-deployments/{name}`
 - `GET /admin/api/v1/model-deployments/{name}/history`
 - `GET /admin/api/v1/model-deployments/{name}/status`
+- `POST /admin/api/v1/model-deployments:validate-preview`
+- `POST /admin/api/v1/model-deployments:plan-preview`
+- `POST /admin/api/v1/model-deployments:apply`
+- `POST /admin/api/v1/model-deployments/{name}:drain`
+- `POST /admin/api/v1/model-deployments/{name}:rollback`
+- `POST /admin/api/v1/model-deployments/{name}:reconcile`
 
-These routes are absent unless a read service is explicitly injected. The
-default runtime does not mount them, no mutation service exists, and a database
-revision never claims that Kubernetes has applied or observed it. Status is
-reported as unavailable or stale until a matching controller observation is
-durable.
+The controller uses the Terraform-derived infrastructure envelope and renderer
+bundle, projects observed Kubernetes status, renders exact-pool Deployment,
+Service, and KEDA resources, and updates the dynamic OpenAI/MCP route set. The
+admin console exposes the same configuration choices and lifecycle actions;
+hard deletion is not enabled in this release.
 
-The chart keeps the CRD under `crds/` for fresh standalone Helm installs. Helm
-does not upgrade or delete CRDs. Solution installs therefore apply and upgrade
-that same file through the explicit Terraform
-`kubernetes_manifest.model_deployment_crd` resource, wait for `Established`,
-and order the Helm release after it. Installing the CRD creates no controller
-or model workload.
+Solution installs apply and upgrade the CRD through
+`kubernetes_manifest.model_deployment_crd`; Helm retains the same CRD under
+`crds/` for fresh standalone installs. Terraform's ownership modes are:
 
-The next tranche must implement and test all of the following before enabling
-mutation or adoption:
+- `terraform`: Terraform renders model serving objects and the controller does
+  not write them;
+- `released`: Terraform removes the qualified serving objects and emits the
+  handoff receipt while retaining shared-cache PVCs; and
+- `controller`: Terraform omits those qualified serving identities and the
+  controller renders them from admin-managed desired revisions.
 
-- an approval/admission workflow that is the only caller of the durable
-  revision append seam, preferably through a dedicated database writer role,
-  plus lifecycle and retention policy for its receipts;
-- explicit rollback target semantics (the current durable action is an audit
-  label, not proof of which earlier revision was selected) and conformance
-  checks that the selected spec is an exact prior revision;
-- a controller-writer identity and fencing contract for status events,
-  monotonic Kubernetes resource-version handling, and a transactionally
-  consistent status/head read so a stale controller cannot publish newer
-  readiness evidence;
-- an operational HMAC key-retention policy that keeps every idempotency key
-  version for at least the receipt replay horizon and blocks removal while a
-  retained receipt still depends on it;
-- a Kubernetes server-side-apply adapter, controller Deployment, leader
-  election, least-privilege RBAC, finalizer/status writer, bounded work queue,
-  metrics, and restart/failure recovery;
-- validating admission for raw delete, adoption state transitions, artifact and
-  infrastructure-envelope freshness, and cross-tenant policy;
-- authoritative owned-resource/managed-field discovery and the reviewed
-  Terraform-state adoption receipt workflow;
-- real idle-time and warm-window scheduling (the API fields are currently
-  validation-only);
-- Kueue localization/warm/benchmark jobs, queue status, cache and snapshot
-  localization, and qualification observations;
-- HTTPRoute generation, a Ready-gated publication projector, and dynamic
-  OpenAI/MCP catalog consumption;
-- complete controller phase/condition projection and the add/edit/drain/delete,
-  rollback mutation APIs and UI; the source-only read/history/status seams must
-  be wired only with the reviewed production repository.
+Fresh clusters can start directly in `controller` mode. Existing clusters use
+the explicit `terraform` -> `released` -> `controller` apply sequence. The
+current implementation does not perform the UID-preserving Claim protocol from
+the original design; the release stage is a bounded serving-resource cutover.
 
-Until these gates pass, no retained-cluster model may be adopted and Terraform
-continues to own every existing per-model workload.
+The initial renderer remains the existing FS2 Deployment/Service/KEDA shape.
+KServe `LLMInferenceService` and `InferenceService`, Gateway API Inference
+Extension with llm-d, Dynamo, and ModelMesh remain optional renderer work rather
+than capabilities implied by this release. Model elasticity is qualification
+specific: the retained 2026-09-02 receipt qualifies exact Qwen3-8B and Cosmos 3
+Nano shared-cache scale-to-zero runs on the reserved H100 tuple, but does not
+claim GPU-snapshot restore or another accelerator/runtime tuple.

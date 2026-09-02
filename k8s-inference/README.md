@@ -14,11 +14,13 @@ dependency order:
 The cluster remains running after `apply` so it can be tested. It is removed
 only by an explicit `destroy`.
 
-Model configuration is currently accepted through the deployment contract,
-but its target architecture is a live Kubernetes-native reconciler so operators
-can change the hot floor, ceiling, placement, cache policy, and exposure without
-running Terraform. See [Dynamic model configuration](DYNAMIC_MODEL_CONFIGURATION.md)
-for the researched ownership boundary and migration plan.
+Routine model lifecycle is implemented through the authenticated admin API and
+the Kubernetes-native `ModelDeployment` reconciler. Operators can add, edit,
+or drain a qualified model and change its hot floor, ceiling, placement, cache
+policy, and exposure without running Terraform. Terraform continues to own the cluster
+and its capacity, storage, registry, operator, and policy envelopes. See
+[Dynamic model configuration](DYNAMIC_MODEL_CONFIGURATION.md) for the exact
+ownership boundary, current renderer, and optional extension points.
 
 ## Accelerator and qualification boundary
 
@@ -88,7 +90,7 @@ the operator instead of changing limits or broad project roles.
 
 ## Quick start
 
-Prerequisites are Terraform 1.10 or newer (but older than 2.0), `kubectl`,
+Prerequisites are Terraform 1.10 or newer (but older than 2.0), `kubectl`, `jq`,
 [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane),
 Git, and authenticated Nebius CLI access to the target project. Authentication is
 runtime context, not desired state, so select it with `NEBIUS_PROFILE` or
@@ -115,15 +117,19 @@ NEBIUS_PROFILE=sandbox ./inference-stack status --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars
 ```
 
-After a deployment, `apply` and `status` print only the two non-secret customer
-entry points as top-level JSON fields:
+After a deployment, `apply` and `status` print all non-secret customer entry
+points as top-level JSON fields:
 
 ```json
 {
   "mcp_endpoint_url": "https://<allocated-public-ip>/mcp",
-  "admin_web_interface_url": "https://<allocated-public-ip>/admin/"
+  "admin_web_interface_url": "https://<allocated-public-ip>/admin/",
+  "inference_base_url": "https://<allocated-public-ip>/v1",
+  "grafana_url": "https://<allocated-public-ip>/admin/observability/grafana"
 }
 ```
+
+`grafana_url` is `null` when external Grafana publication is disabled.
 
 These values come from exact named Terraform outputs in the workloads state.
 They are resolved only after the infrastructure stage has allocated the edge
@@ -141,8 +147,23 @@ credentials, cluster/project/region identity, and the kubeconfig command:
   "schema": "fs2-serve.nebius.ai/access-bundle/v1",
   "cluster": {"project_id": "project-...", "region": "...", "cluster_id": "mk8scluster-..."},
   "endpoints": {"admin_portal_url": "https://.../admin/", "mcp_url": "https://.../mcp", "inference_base_url": "https://.../v1", "grafana_url": "https://.../admin/observability/grafana"},
-  "credentials": {"admin_bootstrap_token": "<redacted>", "mcp_inference_token": "<redacted>", "grafana": {"username": "<redacted>", "password": "<redacted>"}}
+  "credentials": {"admin_bootstrap_token": "<redacted>", "mcp_inference_token": "<redacted>", "inference_access_token": "<same scoped PAT>", "grafana": {"username": "<redacted>", "password": "<redacted>"}}
 }
+```
+
+`mcp_inference_token` remains for compatibility. `inference_access_token` is a
+clear alias of that same scoped PAT for OpenAI-compatible `/v1` clients.
+
+Open the emitted `admin_portal_url` and paste
+`credentials.admin_bootstrap_token` into the operator sign-in form. MCP clients
+use `credentials.mcp_inference_token` as a Bearer token, OpenAI-compatible
+clients use `credentials.inference_access_token`, and Grafana uses the emitted
+`credentials.grafana.username` and `credentials.grafana.password`. To print one
+value directly from the bundle:
+
+```bash
+NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars \
+  | jq -r '.credentials.admin_bootstrap_token'
 ```
 
 Run it only in a private terminal and do not pipe its output to logs, CI
@@ -301,11 +322,12 @@ platform and Managed Kubernetes compatibility preflight.
 
 ### Live model ownership and bootstrap
 
-For a new cluster, `dynamic_models.workload_owner = "controller"` removes only
-qualified per-model serving objects and static routes from Terraform's
-ownership. Models missing any exact artifact, retained runtime, base catalog,
-accelerator, or renderer evidence remain statically Terraform-owned and are
-reported in `dynamic_model_contract.ineligible_models`. The solution derives
+For a new cluster, `dynamic_models.workload_owner = "controller"` makes
+Terraform omit qualified per-model serving objects and static routes; the
+controller creates them from the initial desired revisions instead. Models
+missing any exact artifact, retained runtime, base catalog, accelerator, or
+renderer evidence remain statically Terraform-owned and are reported in
+`dynamic_model_contract.ineligible_models`. The solution derives
 immutable GPU-neutral pool envelopes and renderer bundles from the selected
 models and accelerator pools, then seeds only
 `bootstrap_model_ids` through the authenticated admin preview/apply API. Each
@@ -319,21 +341,33 @@ models = {
   selection = "explicit"
   enabled   = ["cosmos3-nano", "qwen3-8b"]
   scaling   = { mode = "keda", hot = ["qwen3-8b"] }
+  pool_overrides = {
+    "cosmos3-nano" = "h100-reserved-8x"
+    "qwen3-8b"     = "h100-reserved-8x"
+  }
 }
 
 dynamic_models = {
   enabled             = true
   writes_enabled      = true
   workload_owner      = "controller"
-  # qwen3-8b currently has the retained artifact/runtime/B300 tuple. Cosmos
-  # stays on the static path until equivalent platform evidence is promoted.
-  bootstrap_model_ids = ["qwen3-8b"]
+  bootstrap_model_ids = ["cosmos3-nano", "qwen3-8b"]
   fresh_install       = true
 }
 ```
 
+The checked-in H100 qualification for this example is
+[`h100-qwen-cosmos-elasticity-qualification-20260902.json`](catalog/profiles/evidence/h100-qwen-cosmos-elasticity-qualification-20260902.json).
+It records passing shared-cache scale-to-zero cycles for the exact Qwen3-8B and
+Cosmos 3 Nano revisions on `nvidia-h100-sxm5-80gb` in the
+`h100-reserved-8x` pool. Activation to model Ready was 134.26 seconds for Qwen
+and 91.169 seconds for Cosmos. These are shared-cache results, not GPU-snapshot
+results, and another model, image, accelerator, cache tier, or pool tuple needs
+its own qualification.
+
 For an existing Terraform-owned model deployment, do not set
-`fresh_install = true`. Use the explicit two-apply handoff:
+`fresh_install = true`. Use the explicit three-stage handoff, applying each
+stage before continuing:
 
 1. Enable the controller with `workload_owner = "terraform"` and
    `writes_enabled = false` to install and review the derived contracts while
@@ -356,12 +390,13 @@ writers for one resource. A future receipt-backed, UID-preserving Claim flow
 can replace this conservative cutover without changing the tfvars model.
 If the controller apply has not created a desired revision, rollback is simply
 `workload_owner = "terraform"`, writes/bootstrap/fresh/receipt cleared, then an
-apply to recreate the static objects. After a desired revision exists, first
-drain and delete it through the admin API and wait for its owned resources to
-disappear before returning that model to Terraform ownership.
-Before removing a model from the selected catalog, disable or delete its live
-desired revision in the admin API; Terraform intentionally does not interpret a
-catalog removal as authorization to mutate durable live configuration.
+apply to recreate the static objects. After a desired revision exists, returning
+that model identity to Terraform ownership is not automated in this release;
+retain controller ownership rather than creating a second writer. Before
+removing a model from the selected catalog, drain and disable its live desired
+revision. Terraform intentionally does not interpret catalog removal as
+authorization to mutate durable live configuration. Hard deletion remains
+disabled.
 
 `models.selection = "profile"` enables every route in `profiles.models` and
 requires an empty `models.enabled` set. `models.selection = "explicit"` enables
@@ -451,9 +486,9 @@ identifiers to the target region and run the live preflight. The separate
 [negative fixture](examples/heterogeneous-unqualified.tfvars) proves that a
 legacy catalog profile with no concrete pool declarations is still rejected.
 
-The secret-free [dual preemptible-cluster acceptance](LIVE_ACCEPTANCE.md)
-records the tfvars-only B300/H100 deployment exercise and its current provider
-limitations.
+The secret-free [live deployment acceptance history](LIVE_ACCEPTANCE.md)
+records the dated B300/H100 exercises, the current retained H100 topology, and
+the measured qualification boundaries.
 
 ## Destroy
 

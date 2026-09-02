@@ -159,6 +159,33 @@ def test_lean_route_binds_static_hot_qwen_service(tmp_path: Path) -> None:
     assert "lean-static-hot-route" not in public
 
 
+def test_empty_terraform_routes_leave_catalog_unroutable(tmp_path: Path) -> None:
+    registry = _load(
+        tmp_path,
+        {"schema": "fs2-serve.nebius.ai/lean-routes/v4", "routes": []},
+    )
+
+    assert registry.catalog.routable_model_ids() == ()
+
+
+@pytest.mark.parametrize(
+    "document",
+    (
+        {"schema": "fs2-serve.nebius.ai/lean-routes/v2", "routes": []},
+        {
+            "schema": "fs2-serve.nebius.ai/lean-routes/v3",
+            "routes": [],
+            "qualification": {},
+        },
+    ),
+)
+def test_empty_legacy_routes_are_rejected(tmp_path: Path, document: dict[str, Any]) -> None:
+    with pytest.raises(RegistryError, match="canonical gateway catalog validation failed") as error:
+        _load(tmp_path, document)
+    assert error.value.__cause__ is not None
+    assert "lean route count is invalid" in str(error.value.__cause__)
+
+
 def test_terraform_v4_route_uses_exact_eu_north1_h100_placement(tmp_path: Path) -> None:
     registry = _load(tmp_path, _cosmos_h100_route())
     model = registry.get("cosmos3-nano")
