@@ -1,0 +1,331 @@
+{
+  "$schema": "./image-lock.schema.json",
+  "schema": "fs2.nebius.ai/structure-secondary-image-lock/v2",
+  "platform": "linux/amd64",
+  "registry_default": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
+  "publication_policy": "explicit-non-overwriting-build-qualified-tags",
+  "superseded_publications": [
+    {
+      "id": "esmfold2",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/esmfold2:827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "digest": "sha256:9fbe580537b8604083ff34e1bd23300da97fcae9928b7d6c8d5899f04620aaf1",
+      "deployable": false,
+      "reason": "pre-review image duplicates its full environment in a chmod layer and has no exact-artifact H100 semantic evidence"
+    },
+    {
+      "id": "esmfold2-fast",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/esmfold2-fast:827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "digest": "sha256:c136e5f9b67562934d73758f40fa4a4ab98651d7f2c6394b8bce01b72e0555ef",
+      "deployable": false,
+      "reason": "pre-review image duplicates its full environment in a chmod layer and has no exact-artifact H100 semantic evidence"
+    },
+    {
+      "id": "protenix-v2",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/protenix-v2:2475421477ab414b571149ad4a875c390ff8a35d",
+      "digest": "sha256:ad2a55f1740f49296ec730e9ff4f1d06ad391a87354f03b2921f960fe0f6d240",
+      "deployable": false,
+      "reason": "source checkout shadows the installed wheel and permits runtime JIT; CPU teardown also exited 139"
+    },
+    {
+      "id": "alphafold3",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3:85c4d20505fd5cef05eac22b534d4e793971ae69",
+      "digest": "sha256:bead2e68627c1aa7d5fa80243b1164a18160f48cf3a1867090d72ff2b9270e37",
+      "deployable": false,
+      "reason": "package metadata reports a development version rather than exact v3.0.4 and the image duplicates its environment layer"
+    }
+  ],
+  "images": [
+    {
+      "id": "esmfold2",
+      "dockerfile": "Dockerfile.esmfold2",
+      "repository": "esmfold2",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r2",
+      "source": {
+        "repository": "https://github.com/Biohub/esm.git",
+        "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "tag": "v3.4.0",
+        "source_date_epoch": 1787866642
+      },
+      "base_images": [
+        "ubuntu:22.04@sha256:79676deb51ebb02885b0b9d33788e78a37cf1045ad79d1bb04c6a222c3556b3d",
+        "ghcr.io/prefix-dev/pixi:0.76.0@sha256:3c8ef8fbf8ff2267465e03516f568677d1af97ea1a6f16ac8804553eeda59b8c"
+      ],
+      "build_args": {
+        "RUNTIME_ID": "esmfold2",
+        "MODEL_REPOSITORY": "biohub/ESMFold2",
+        "MODEL_REVISION": "8fc3ff471022fdce52c77030685eb775de0c00a3"
+      },
+      "external_artifacts": [
+        {
+          "id": "esmfold2-trunk",
+          "state": "available-external",
+          "mount": "/models/esmfold2",
+          "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
+          "content_digest": "3bb081b48f0ccf70ee38b86a3c7e014554d4bf9e4148e709c2d97519e28c4b80",
+          "baked_into_image": false
+        },
+        {
+          "id": "esmc-6b",
+          "state": "available-external",
+          "mount": "/models/esmc-6b",
+          "revision": "45b0fa5d7fb06faefbd5e3b89bdcef35d564e79a",
+          "content_digest": "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "baked_into_image": false
+        },
+        {
+          "id": "esmfold2-ccd",
+          "state": "available-external",
+          "mount": "/databases/esmfold2/ccd.pkl",
+          "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
+          "sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5",
+          "bytes": 417306584,
+          "baked_into_image": false
+        }
+      ],
+      "runtime_contract": {
+        "entrypoint": "/usr/local/bin/fs2-run-esmfold2",
+        "subcommands": ["prepare-input", "fold"],
+        "network_policy": "offline-local-artifacts-only",
+        "required_mounts": ["/models/esmfold2", "/models/esmc-6b", "/databases/esmfold2/ccd.pkl"],
+        "commands": [
+          "/usr/local/bin/fs2-run-esmfold2 prepare-input --input-manifest <raw.json> --output <request.json> [--sequence <AA>] --mode <single-sequence|precomputed-msa> --seed <int>",
+          "/usr/local/bin/fs2-run-esmfold2 fold --input <request.json> --output-dir <dir> --variant esmfold2 --seed <int> [--smoke]"
+        ]
+      },
+      "accelerator_support": {
+        "h100": {"compute_capability": "9.0", "status": "pending-exact-artifact-semantic-test"},
+        "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
+      },
+      "smoke": "/usr/local/bin/fs2-image-smoke",
+      "published_digest": null
+    },
+    {
+      "id": "esmfold2-fast",
+      "dockerfile": "Dockerfile.esmfold2",
+      "repository": "esmfold2-fast",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r2",
+      "source": {
+        "repository": "https://github.com/Biohub/esm.git",
+        "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "tag": "v3.4.0",
+        "source_date_epoch": 1787866642
+      },
+      "base_images": [
+        "ubuntu:22.04@sha256:79676deb51ebb02885b0b9d33788e78a37cf1045ad79d1bb04c6a222c3556b3d",
+        "ghcr.io/prefix-dev/pixi:0.76.0@sha256:3c8ef8fbf8ff2267465e03516f568677d1af97ea1a6f16ac8804553eeda59b8c"
+      ],
+      "build_args": {
+        "RUNTIME_ID": "esmfold2-fast",
+        "MODEL_REPOSITORY": "biohub/ESMFold2-Fast",
+        "MODEL_REVISION": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6"
+      },
+      "external_artifacts": [
+        {
+          "id": "esmfold2-fast-trunk",
+          "state": "available-external",
+          "mount": "/models/esmfold2-fast",
+          "revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+          "content_digest": "19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63",
+          "baked_into_image": false
+        },
+        {
+          "id": "esmc-6b",
+          "state": "available-external",
+          "mount": "/models/esmc-6b",
+          "revision": "45b0fa5d7fb06faefbd5e3b89bdcef35d564e79a",
+          "content_digest": "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "baked_into_image": false
+        },
+        {
+          "id": "esmfold2-ccd",
+          "state": "available-external",
+          "mount": "/databases/esmfold2/ccd.pkl",
+          "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
+          "sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5",
+          "bytes": 417306584,
+          "baked_into_image": false
+        }
+      ],
+      "runtime_contract": {
+        "entrypoint": "/usr/local/bin/fs2-run-esmfold2",
+        "subcommands": ["prepare-input", "fold"],
+        "network_policy": "offline-local-artifacts-only",
+        "required_mounts": ["/models/esmfold2-fast", "/models/esmc-6b", "/databases/esmfold2/ccd.pkl"],
+        "commands": [
+          "/usr/local/bin/fs2-run-esmfold2 prepare-input --input-manifest <raw.json> --output <request.json> [--sequence <AA>] --mode <single-sequence|precomputed-msa> --seed <int>",
+          "/usr/local/bin/fs2-run-esmfold2 fold --input <request.json> --output-dir <dir> --variant esmfold2-fast --seed <int> [--smoke]"
+        ]
+      },
+      "accelerator_support": {
+        "h100": {"compute_capability": "9.0", "status": "pending-exact-artifact-semantic-test"},
+        "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
+      },
+      "smoke": "/usr/local/bin/fs2-image-smoke",
+      "published_digest": null
+    },
+    {
+      "id": "protenix-v2",
+      "dockerfile": "Dockerfile.protenix-v2",
+      "repository": "protenix-v2",
+      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r2",
+      "source": {
+        "repository": "https://github.com/bytedance/Protenix.git",
+        "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+        "tag": "v2.0.0",
+        "source_date_epoch": 1775585985
+      },
+      "base_images": [
+        "pytorch/pytorch:2.7.1-cuda12.6-cudnn9-devel@sha256:639b8229ccfd8a3aa803cf49c33d6d6fe406750d79aaf723fe8c0eb1060d8cff",
+        "pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime@sha256:2b59b1b91885677814f78be1f8df48a25d5dc952eb6580eaecfefca510f9afd3"
+      ],
+      "build_args": {},
+      "external_artifacts": [
+        {
+          "id": "protenix-v2-checkpoint",
+          "state": "third-party-mirror-verified-not-publisher-byte-compared",
+          "mount": "/models/protenix-v2/checkpoint/protenix-v2.pt",
+          "revision": "TMF001/protenix-v2-weights@653edab28103133512575365130916e3fd23ecc3",
+          "sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+          "bytes": 1859785497,
+          "localization_marker": "/models/protenix-v2/checkpoint/protenix-v2.pt.fs2.json",
+          "baked_into_image": false
+        },
+        {
+          "id": "protenix-v2-inference-data-2026-01-29",
+          "state": "available-external",
+          "mount": "/databases/protenix",
+          "revision": "v2.0.0-inference-plus-mmcif-20260129",
+          "source_sha256": "27da2585d0ea1d820f4693099653aab1fdff7d4e18c21e6d90a0dc18f718dd89",
+          "expected_paths": [
+            "common/components.cif",
+            "common/components.cif.rdkit_mol.pkl",
+            "common/clusters-by-entity-40.txt",
+            "common/obsolete_release_date.csv"
+          ],
+          "baked_into_image": false
+        }
+      ],
+      "runtime_contract": {
+        "entrypoint": "/usr/local/bin/fs2-run-protenix",
+        "subcommands": ["prep", "pred"],
+        "network_policy": "cpu-prep-private-reference-bundle-gpu-pred-enriched-input-and-weights-only",
+        "required_mounts": ["/models/protenix-v2/checkpoint/protenix-v2.pt", "/models/protenix-v2/checkpoint/protenix-v2.pt.fs2.json", "/databases/protenix"],
+        "commands": [
+          "/usr/local/bin/fs2-run-protenix prep --input <raw.json> --output-dir <dir> --processed-json <enriched.json> --msa-mode <none|precomputed>",
+          "/usr/local/bin/fs2-run-protenix pred --input <enriched.json> --output-dir <dir> --msa-mode <none|precomputed> --seeds <csv>"
+        ]
+      },
+      "accelerator_support": {
+        "h100": {"compute_capability": "9.0", "status": "pending-exact-checkpoint-semantic-test", "extension": "sm90-cubin-plus-compute90-ptx"},
+        "blackwell": {"status": "unsupported", "scope": "pinned-pytorch-2.7.1-cu126-libtorch-has-no-blackwell-cubin-or-ptx", "native_targets": []}
+      },
+      "smoke": "/usr/local/bin/fs2-image-smoke",
+      "published_digest": null
+    },
+    {
+      "id": "alphafold3",
+      "dockerfile": "Dockerfile.alphafold3",
+      "repository": "alphafold3",
+      "tag": "85c4d20505fd5cef05eac22b534d4e793971ae69-h100-r2",
+      "source": {
+        "repository": "https://github.com/google-deepmind/alphafold3.git",
+        "revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+        "tag": "v3.0.4",
+        "source_date_epoch": 1785243463
+      },
+      "base_images": [
+        "nvidia/cuda:12.6.3-base-ubuntu24.04@sha256:6b3201183858bad08441837f5a5efc2c75290135cc25fcc87d9ff763190cfd09",
+        "ghcr.io/astral-sh/uv:0.9.24@sha256:e4bc0bb4310505e7104f06430c0a2271a58f60a756a3b2c287bb409890081b2a"
+      ],
+      "build_args": {},
+      "external_artifacts": [
+        {
+          "id": "alphafold3-parameters",
+          "state": "operator-staged-private",
+          "mount": "/models/af3.bin.zst",
+          "revision": "gs://alphafold3/af3.bin.zst#1780568696389861",
+          "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+          "bytes": 1020545840,
+          "baked_into_image": false
+        },
+        {
+          "id": "alphafold3-public-databases-v3.0",
+          "state": "available-external",
+          "mount": "/databases",
+          "revision": "fetch_databases.sh@231efc9bb9c13b45cc59e43f7107869084ee9624",
+          "baked_into_image": false
+        }
+      ],
+      "runtime_contract": {
+        "entrypoint": "/usr/local/bin/fs2-run-alphafold3",
+        "subcommands": ["data", "inference"],
+        "network_policy": "official-parameters-and-databases-explicit",
+        "required_mounts": ["/models/af3.bin.zst", "/databases"],
+        "commands": [
+          "/usr/local/bin/fs2-run-alphafold3 data --input-json <raw.json> --output-dir <dir> --processed-json-output <processed.json> --seeds <csv>",
+          "/usr/local/bin/fs2-run-alphafold3 inference --processed-json <processed.json> --output-dir <dir> --seeds <csv> [--num-diffusion-samples <int>]"
+        ]
+      },
+      "accelerator_support": {
+        "h100": {"compute_capability": "9.0", "status": "pending-official-parameter-semantic-test"},
+        "blackwell": {"status": "not-qualified", "scope": "portability-not-readiness", "native_targets": []}
+      },
+      "smoke": "/usr/local/bin/fs2-image-smoke",
+      "published_digest": null
+    },
+    {
+      "id": "openfold3",
+      "dockerfile": "Dockerfile.openfold3",
+      "repository": "openfold3",
+      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r2",
+      "source": {
+        "repository": "https://github.com/aqlaboratory/openfold-3.git",
+        "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+        "tag": "v0.5.0",
+        "source_date_epoch": 1787301935
+      },
+      "base_images": [
+        "ubuntu:22.04@sha256:79676deb51ebb02885b0b9d33788e78a37cf1045ad79d1bb04c6a222c3556b3d",
+        "ghcr.io/prefix-dev/pixi:0.76.0@sha256:3c8ef8fbf8ff2267465e03516f568677d1af97ea1a6f16ac8804553eeda59b8c"
+      ],
+      "build_args": {},
+      "external_artifacts": [
+        {
+          "id": "openfold3-openbind-0",
+          "state": "available-external",
+          "mount": "/models/openfold3/of3-ob-2025-06-30-174k.pt",
+          "revision": "of3-ob-2025-06-30-174k",
+          "sha256": "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8e29e4",
+          "bytes": 2287872989,
+          "baked_into_image": false
+        },
+        {
+          "id": "openfold3-components-bcif",
+          "state": "available-external",
+          "mount": "/databases/openfold3/components.bcif",
+          "revision": "s3://openfold3-data/components.bcif#etag-b251a30629b9c30d077a5b91aeefecb2-4",
+          "sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c",
+          "bytes": 63393643,
+          "baked_into_image": false
+        }
+      ],
+      "runtime_contract": {
+        "entrypoint": "/usr/local/bin/fs2-run-openfold3",
+        "preprocess_entrypoint": "/opt/fs2/prepare_openfold3.py",
+        "subcommands": ["predict"],
+        "network_policy": "msa-server-forced-offline-explicit-checkpoint-and-ccd",
+        "required_mounts": ["/models/openfold3/of3-ob-2025-06-30-174k.pt", "/databases/openfold3/components.bcif"],
+        "commands": [
+          "/opt/fs2/prepare_openfold3.py --input <raw.json> --output-dir <dir> --msa-mode <none|precomputed> --seeds <csv> --offline",
+          "/usr/local/bin/fs2-run-openfold3 --query-json <query.json> --output-dir <dir> --runner-yaml <runner.yaml> --prepared-marker <prepared-query.fs2.json> --seeds <csv>"
+        ]
+      },
+      "accelerator_support": {
+        "h100": {"compute_capability": "9.0", "status": "pending-exact-artifact-semantic-test"},
+        "blackwell": {"status": "not-qualified", "scope": "portability-not-readiness", "native_targets": []}
+      },
+      "smoke": "/usr/local/bin/fs2-image-smoke",
+      "published_digest": null
+    }
+  ]
+}

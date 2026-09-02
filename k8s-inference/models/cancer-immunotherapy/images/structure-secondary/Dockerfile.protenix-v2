@@ -1,0 +1,113 @@
+# syntax=docker/dockerfile:1.7
+ARG BUILD_IMAGE=pytorch/pytorch:2.7.1-cuda12.6-cudnn9-devel@sha256:639b8229ccfd8a3aa803cf49c33d6d6fe406750d79aaf723fe8c0eb1060d8cff
+ARG BASE_IMAGE=pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime@sha256:2b59b1b91885677814f78be1f8df48a25d5dc952eb6580eaecfefca510f9afd3
+
+FROM ${BUILD_IMAGE} AS builder
+
+ARG SOURCE_REPOSITORY=https://github.com/bytedance/Protenix.git
+ARG SOURCE_REVISION=2475421477ab414b571149ad4a875c390ff8a35d
+ARG CUTLASS_REVISION=f7b19de32c5d1f3cedfc735c2849f12b537522ee
+ARG H100_CUDA_ARCH_LIST=9.0+PTX
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    CUTLASS_PATH=/opt/cutlass \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates git gcc g++ make \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/protenix-build
+COPY protenix-torch-ext-compile.py /tmp/protenix-torch-ext-compile.py
+COPY patch_protenix_source.py /tmp/patch_protenix_source.py
+COPY protenix-constraints.txt /tmp/protenix-constraints.txt
+RUN python -m venv --system-site-packages /opt/protenix-venv \
+    && git init . \
+    && git remote add origin "${SOURCE_REPOSITORY}" \
+    && git fetch --depth=1 origin refs/tags/v2.0.0:refs/tags/v2.0.0 \
+    && git checkout --detach refs/tags/v2.0.0 \
+    && test "$(git rev-parse HEAD)" = "${SOURCE_REVISION}" \
+    && test "$(git describe --tags --exact-match HEAD)" = v2.0.0 \
+    && cp /tmp/protenix-torch-ext-compile.py protenix/model/layer_norm/torch_ext_compile.py \
+    && python /tmp/patch_protenix_source.py \
+    && git init /opt/cutlass \
+    && git -C /opt/cutlass remote add origin https://github.com/NVIDIA/cutlass.git \
+    && git -C /opt/cutlass fetch --depth=1 origin "${CUTLASS_REVISION}" \
+    && git -C /opt/cutlass checkout --detach FETCH_HEAD \
+    && test "$(git -C /opt/cutlass rev-parse HEAD)" = "${CUTLASS_REVISION}" \
+    && /opt/protenix-venv/bin/python -m pip install --no-cache-dir \
+      --constraint /tmp/protenix-constraints.txt \
+      --requirement requirements.txt \
+    && /opt/protenix-venv/bin/python -m pip install --no-cache-dir --no-deps . \
+    && env -C / TORCH_CUDA_ARCH_LIST="${H100_CUDA_ARCH_LIST}" /opt/protenix-venv/bin/python -c 'from protenix.model.protenix import Protenix; assert Protenix' \
+    && package_root="$(env -C / /opt/protenix-venv/bin/python -c 'import pathlib, protenix; print(pathlib.Path(protenix.__file__).parent)')" \
+    && test -f "${package_root}/model/layer_norm/fast_layer_norm_cuda_v2.so" \
+    && cuobjdump --list-elf "${package_root}/model/layer_norm/fast_layer_norm_cuda_v2.so" | grep -F sm_90 \
+    && cuobjdump --dump-ptx "${package_root}/model/layer_norm/fast_layer_norm_cuda_v2.so" | grep -F '.target sm_90' \
+    && env -C / /opt/protenix-venv/bin/python -c 'import importlib.util; expected="/opt/protenix-venv/"; assert all((importlib.util.find_spec(n).origin or "").startswith(expected) for n in ("protenix", "runner", "configs"))' \
+    && rm -rf "${package_root}/model/layer_norm/kernel" \
+      "${package_root}/model/layer_norm/torch_ext_compile.py" \
+      "${package_root}/model/layer_norm/build.ninja" \
+      "${package_root}/model/layer_norm/.ninja_deps" \
+      "${package_root}/model/layer_norm/.ninja_log" \
+      "${package_root}/model/layer_norm/"*.o \
+      /root/.cache/pip /opt/protenix-build /opt/cutlass \
+      /tmp/protenix-torch-ext-compile.py /tmp/patch_protenix_source.py \
+    && chmod -R a-w /opt/protenix-venv
+
+FROM ${BASE_IMAGE}
+
+ARG SOURCE_REVISION=2475421477ab414b571149ad4a875c390ff8a35d
+ARG SOURCE_DATE_EPOCH=1775585985
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PATH=/opt/protenix-venv/bin:${PATH} \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# The runtime stage intentionally has no nvcc/compiler. HMMER, Kalign and the
+# PostgreSQL client support only the explicit external preprocessing contract.
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates postgresql-client hmmer kalign \
+    && rm -rf /var/lib/apt/lists/* \
+    && ! command -v nvcc \
+    && groupadd --gid 10001 fs2 \
+    && useradd --uid 10001 --gid 10001 --create-home --home-dir /tmp/fs2-home fs2 \
+    && mkdir -p /opt/fs2/runtime /models/protenix-v2/checkpoint /databases/protenix /outputs /tmp/fs2-cache \
+    && printf '%s\n' "${SOURCE_REVISION}" > /opt/fs2/source-revision \
+    && chown -R 10001:10001 /models /databases /outputs /tmp/fs2-home /tmp/fs2-cache \
+    && chmod 0555 /opt/fs2/runtime
+COPY --from=builder /opt/protenix-venv /opt/protenix-venv
+COPY --chmod=0555 entrypoint.sh /usr/local/bin/fs2-entrypoint
+COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
+COPY --chmod=0555 run_protenix.py /usr/local/bin/fs2-run-protenix
+COPY --chmod=0555 run_protenix.py /opt/fs2/run_protenix.py
+
+ENV FS2_RUNTIME_ID=protenix-v2 \
+    FS2_SOURCE_REVISION=${SOURCE_REVISION} \
+    FS2_MODEL_DIR=/models/protenix-v2 \
+    FS2_PROTENIX_CHECKPOINT=/models/protenix-v2/checkpoint/protenix-v2.pt \
+    PROTENIX_ROOT_DIR=/models/protenix-v2 \
+    HOME=/tmp/fs2-home \
+    XDG_CACHE_HOME=/tmp/fs2-cache \
+    SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+
+LABEL org.opencontainers.image.source="https://github.com/bytedance/Protenix" \
+      org.opencontainers.image.revision="2475421477ab414b571149ad4a875c390ff8a35d" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      ai.nebius.fs2.runtime.id="protenix-v2" \
+      ai.nebius.fs2.model.checkpoint.state="third-party-mirror-verified-not-publisher-byte-compared" \
+      ai.nebius.fs2.accelerator.target="h100-sm90" \
+      ai.nebius.fs2.blackwell.portability="unsupported-pinned-pytorch-cu126" \
+      ai.nebius.fs2.artifact.policy="external-only"
+
+USER 10001:10001
+WORKDIR /opt/fs2/runtime
+ENTRYPOINT ["/usr/local/bin/fs2-entrypoint"]
+CMD ["/usr/local/bin/fs2-image-smoke"]

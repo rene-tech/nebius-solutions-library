@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1.7
+ARG PIXI_IMAGE=ghcr.io/prefix-dev/pixi:0.76.0@sha256:3c8ef8fbf8ff2267465e03516f568677d1af97ea1a6f16ac8804553eeda59b8c
+ARG BASE_IMAGE=ubuntu:22.04@sha256:79676deb51ebb02885b0b9d33788e78a37cf1045ad79d1bb04c6a222c3556b3d
+
+FROM ${PIXI_IMAGE} AS pixi
+FROM ${BASE_IMAGE}
+
+ARG SOURCE_REPOSITORY=https://github.com/Biohub/esm.git
+ARG SOURCE_REVISION=827ec128e4cdaf80f7d6f95fb367a08980b34918
+ARG SOURCE_DATE_EPOCH=1787866642
+
+# The base digest fixes the initial apt state; Ubuntu security updates are
+# intentionally consumed when rebuilding this security-sensitive runtime.
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+      ca-certificates gcc g++ git \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=pixi /usr/local/bin/pixi /usr/local/bin/pixi
+
+WORKDIR /opt/esm
+RUN git init . \
+    && git remote add origin "${SOURCE_REPOSITORY}" \
+    && git fetch --depth=1 origin refs/tags/v3.4.0:refs/tags/v3.4.0 \
+    && git checkout --detach refs/tags/v3.4.0 \
+    && test "$(git rev-parse HEAD)" = "${SOURCE_REVISION}" \
+    && test "$(git describe --tags --exact-match HEAD)" = v3.4.0 \
+    && printf '%s\n' "${SOURCE_REVISION}" > /tmp/source-revision
+RUN CONDA_OVERRIDE_CUDA=13.0 pixi install --frozen -e gpu \
+    && CONDA_OVERRIDE_CUDA=13.0 pixi shell-hook -e gpu -s bash > /opt/activate.sh \
+    && mkdir -p /opt/fs2 \
+    && mv /opt/activate.sh /opt/fs2/activate.sh \
+    && mv /tmp/source-revision /opt/fs2/source-revision \
+    && chmod -R a-w /opt/esm \
+    && rm -rf /root/.cache/rattler /root/.cache/uv /root/.cache/pip .git
+
+RUN groupadd --gid 10001 fs2 \
+    && useradd --uid 10001 --gid 10001 --create-home --home-dir /tmp/fs2-home fs2 \
+    && mkdir -p /opt/fs2/runtime /models /databases /outputs /tmp/fs2-cache \
+    && chown -R 10001:10001 /models /databases /outputs /tmp/fs2-home /tmp/fs2-cache \
+    && chmod 0555 /opt/fs2/runtime
+COPY --chmod=0555 entrypoint.sh /usr/local/bin/fs2-entrypoint
+COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
+COPY --chmod=0555 run_esmfold2.py /usr/local/bin/fs2-run-esmfold2
+COPY --chmod=0555 run_esmfold2.py /opt/fs2/run_esmfold2.py
+
+# Keep variant identity after the shared 7+ GiB environment layer so the full
+# and Fast images reuse identical heavy layers.
+ARG RUNTIME_ID
+ARG MODEL_REPOSITORY
+ARG MODEL_REVISION
+
+ENV FS2_RUNTIME_ID=${RUNTIME_ID} \
+    FS2_SOURCE_REVISION=${SOURCE_REVISION} \
+    FS2_MODEL_REPOSITORY=${MODEL_REPOSITORY} \
+    FS2_MODEL_REVISION=${MODEL_REVISION} \
+    FS2_MODEL_DIR=/models/${RUNTIME_ID} \
+    FS2_ESMC_MODEL_DIR=/models/esmc-6b \
+    ESMCFOLD_CCD_PATH=/databases/esmfold2/ccd.pkl \
+    HF_HUB_OFFLINE=1 \
+    HF_HOME=/models/huggingface \
+    HOME=/tmp/fs2-home \
+    XDG_CACHE_HOME=/tmp/fs2-cache \
+    PYTHONUNBUFFERED=1 \
+    SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+
+LABEL org.opencontainers.image.source="https://github.com/Biohub/esm" \
+      org.opencontainers.image.revision="827ec128e4cdaf80f7d6f95fb367a08980b34918" \
+      org.opencontainers.image.licenses="MIT" \
+      ai.nebius.fs2.runtime.id="${RUNTIME_ID}" \
+      ai.nebius.fs2.model.repository="${MODEL_REPOSITORY}" \
+      ai.nebius.fs2.model.revision="${MODEL_REVISION}" \
+      ai.nebius.fs2.accelerator.target="h100-sm90" \
+      ai.nebius.fs2.blackwell.portability="not-qualified-runtime-dispatches-sdpa" \
+      ai.nebius.fs2.artifact.policy="external-only"
+
+USER 10001:10001
+WORKDIR /opt/fs2/runtime
+ENTRYPOINT ["/usr/local/bin/fs2-entrypoint"]
+CMD ["/usr/local/bin/fs2-image-smoke"]

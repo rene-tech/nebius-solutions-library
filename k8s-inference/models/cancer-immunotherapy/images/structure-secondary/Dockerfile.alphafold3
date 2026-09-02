@@ -1,0 +1,97 @@
+# syntax=docker/dockerfile:1.7
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.9.24@sha256:e4bc0bb4310505e7104f06430c0a2271a58f60a756a3b2c287bb409890081b2a
+ARG BASE_IMAGE=nvidia/cuda:12.6.3-base-ubuntu24.04@sha256:6b3201183858bad08441837f5a5efc2c75290135cc25fcc87d9ff763190cfd09
+
+FROM ${UV_IMAGE} AS uv
+FROM ${BASE_IMAGE}
+
+ARG SOURCE_REPOSITORY=https://github.com/google-deepmind/alphafold3.git
+ARG SOURCE_REVISION=85c4d20505fd5cef05eac22b534d4e793971ae69
+ARG SOURCE_DATE_EPOCH=1785243463
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# The base digest fixes the initial apt state; Ubuntu security updates are
+# intentionally consumed when rebuilding this security-sensitive runtime.
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+      ca-certificates git wget patch gcc g++ make zlib1g-dev zstd python3.12 python3.12-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=uv /uv /uvx /usr/local/bin/
+
+ENV UV_COMPILE_BYTECODE=0 \
+    UV_PROJECT_ENVIRONMENT=/opt/alphafold3-venv \
+    PATH=/hmmer/bin:/opt/alphafold3-venv/bin:${PATH}
+RUN uv venv "${UV_PROJECT_ENVIRONMENT}"
+
+RUN mkdir -p /hmmer-build /hmmer \
+    && wget --quiet --output-document=/hmmer-build/hmmer-3.4.tar.gz \
+      http://eddylab.org/software/hmmer/hmmer-3.4.tar.gz \
+    && echo 'ca70d94fd0cf271bd7063423aabb116d42de533117343a9b27a65c17ff06fbf3  /hmmer-build/hmmer-3.4.tar.gz' | sha256sum --check \
+    && tar -xzf /hmmer-build/hmmer-3.4.tar.gz -C /hmmer-build
+
+WORKDIR /opt/alphafold3
+RUN git init . \
+    && git remote add origin "${SOURCE_REPOSITORY}" \
+    && git fetch --depth=1 origin refs/tags/v3.0.4:refs/tags/v3.0.4 \
+    && git checkout --detach refs/tags/v3.0.4 \
+    && test "$(git rev-parse HEAD)" = "${SOURCE_REVISION}" \
+    && test "$(git describe --tags --exact-match HEAD)" = v3.0.4 \
+    && printf '%s\n' "${SOURCE_REVISION}" > /tmp/source-revision
+# HMMER's configure/build must execute within its extracted source directory.
+# hadolint ignore=DL3003
+RUN cp docker/jackhmmer_seq_limit.patch /hmmer-build/ \
+    && cd /hmmer-build \
+    && patch -p0 < jackhmmer_seq_limit.patch \
+    && cd hmmer-3.4 \
+    && ./configure --prefix=/hmmer \
+    && make -j"$(nproc)" \
+    && make install \
+    && make -C easel install \
+    && rm -rf /hmmer-build
+RUN --mount=type=cache,target=/root/.cache/uv \
+    UV_LINK_MODE=copy uv sync --frozen --no-dev --no-editable \
+    && /opt/alphafold3-venv/bin/build_data \
+    && test "$(/opt/alphafold3-venv/bin/python -c 'import importlib.metadata; print(importlib.metadata.version(\"alphafold3\"))')" = 3.0.4 \
+    && mkdir -p /opt/fs2 \
+    && mv /tmp/source-revision /opt/fs2/source-revision \
+    && chmod -R a-w /opt/alphafold3 /opt/alphafold3-venv /hmmer \
+    && rm -rf .git
+
+RUN groupadd --gid 10001 fs2 \
+    && useradd --uid 10001 --gid 10001 --create-home --home-dir /tmp/fs2-home fs2 \
+    && mkdir -p /opt/fs2/runtime /models /databases /outputs /tmp/fs2-cache /tmp/jax-cache \
+    && chown -R 10001:10001 /models /databases /outputs /tmp/fs2-home /tmp/fs2-cache /tmp/jax-cache \
+    && chmod 0555 /opt/fs2/runtime
+COPY --chmod=0555 entrypoint.sh /usr/local/bin/fs2-entrypoint
+COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
+COPY --chmod=0555 run_alphafold3.py /usr/local/bin/fs2-run-alphafold3
+COPY --chmod=0555 run_alphafold3.py /opt/fs2/run_alphafold3.py
+
+ENV FS2_RUNTIME_ID=alphafold3 \
+    FS2_SOURCE_REVISION=${SOURCE_REVISION} \
+    FS2_MODEL_DIR=/models \
+    FS2_DATABASE_DIR=/databases \
+    HOME=/tmp/fs2-home \
+    XDG_CACHE_HOME=/tmp/fs2-cache \
+    JAX_COMPILATION_CACHE_DIR=/tmp/jax-cache \
+    XLA_FLAGS=--xla_gpu_enable_triton_gemm=false \
+    XLA_PYTHON_CLIENT_PREALLOCATE=true \
+    XLA_CLIENT_MEM_FRACTION=0.95 \
+    PYTHONUNBUFFERED=1 \
+    SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+
+LABEL org.opencontainers.image.source="https://github.com/google-deepmind/alphafold3" \
+      org.opencontainers.image.revision="85c4d20505fd5cef05eac22b534d4e793971ae69" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      ai.nebius.fs2.runtime.id="alphafold3" \
+      ai.nebius.fs2.model.parameters="external-restricted-academic" \
+      ai.nebius.fs2.database.policy="external-only" \
+      ai.nebius.fs2.accelerator.target="h100-sm90" \
+      ai.nebius.fs2.blackwell.portability="not-qualified" \
+      ai.nebius.fs2.artifact.policy="external-only"
+
+USER 10001:10001
+WORKDIR /opt/fs2/runtime
+ENTRYPOINT ["/usr/local/bin/fs2-entrypoint"]
+CMD ["/usr/local/bin/fs2-image-smoke"]

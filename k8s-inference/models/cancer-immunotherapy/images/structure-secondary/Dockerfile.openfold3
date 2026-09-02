@@ -1,0 +1,85 @@
+# syntax=docker/dockerfile:1.7
+ARG PIXI_IMAGE=ghcr.io/prefix-dev/pixi:0.76.0@sha256:3c8ef8fbf8ff2267465e03516f568677d1af97ea1a6f16ac8804553eeda59b8c
+ARG BASE_IMAGE=ubuntu:22.04@sha256:79676deb51ebb02885b0b9d33788e78a37cf1045ad79d1bb04c6a222c3556b3d
+
+FROM ${PIXI_IMAGE} AS pixi
+FROM ${BASE_IMAGE}
+
+ARG SOURCE_REPOSITORY=https://github.com/aqlaboratory/openfold-3.git
+ARG SOURCE_REVISION=c4771653c5d0a3ebb0b3af71b05efd64bc44ee86
+ARG SOURCE_DATE_EPOCH=1787301935
+
+# The base digest fixes the initial apt state; Ubuntu security updates are
+# intentionally consumed when rebuilding this security-sensitive runtime.
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+      ca-certificates git libaio-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=pixi /usr/local/bin/pixi /usr/local/bin/pixi
+
+WORKDIR /opt/openfold3
+COPY openfold3-build-requirements.txt /tmp/openfold3-build-requirements.txt
+RUN git init . \
+    && git remote add origin "${SOURCE_REPOSITORY}" \
+    && git fetch --depth=1 origin refs/tags/v0.5.0:refs/tags/v0.5.0 \
+    && git checkout --detach refs/tags/v0.5.0 \
+    && test "$(git rev-parse HEAD)" = "${SOURCE_REVISION}" \
+    && test "$(git describe --tags --exact-match HEAD)" = v0.5.0 \
+    && printf '%s\n' "${SOURCE_REVISION}" > /tmp/source-revision
+RUN CONDA_OVERRIDE_CUDA=12.0 pixi install --frozen -e openfold3-cuda12 \
+    && CONDA_OVERRIDE_CUDA=12.0 pixi shell-hook -e openfold3-cuda12 -s bash > /opt/activate.sh \
+    && printf '%s\n' \
+      'export TRITON_CACHE_DIR=/tmp/fs2-triton' \
+      'export TORCH_EXTENSIONS_DIR=/tmp/fs2-torch-extensions' \
+      'export XDG_CACHE_HOME=/tmp/fs2-cache' \
+      >> /opt/activate.sh \
+    && bash -c 'source /opt/activate.sh && python -m pip install --no-deps --require-hashes --requirement /tmp/openfold3-build-requirements.txt' \
+    && bash -c 'source /opt/activate.sh && python -m pip install --no-build-isolation --no-deps .' \
+    && bash -c 'source /opt/activate.sh && test "$(python -c '\''import importlib.metadata; print(importlib.metadata.version("openfold3"))'\'')" = 0.5.0' \
+    && mkdir -p /opt/fs2 \
+    && mv /opt/activate.sh /opt/fs2/activate.sh \
+    && mv /tmp/source-revision /opt/fs2/source-revision \
+    && chmod -R a-w /opt/openfold3 \
+    && rm -rf /root/.cache/rattler /root/.cache/uv /root/.cache/pip .git
+
+RUN groupadd --gid 10001 fs2 \
+    && useradd --uid 10001 --gid 10001 --create-home --home-dir /tmp/fs2-home fs2 \
+    && mkdir -p /opt/fs2/runtime /models/openfold3 /databases/openfold3 /outputs /tmp/fs2-cache /tmp/fs2-triton /tmp/fs2-torch-extensions \
+    && chown -R 10001:10001 /models /databases /outputs /tmp/fs2-home /tmp/fs2-cache /tmp/fs2-triton /tmp/fs2-torch-extensions \
+    && chmod 0555 /opt/fs2/runtime
+COPY --chmod=0555 entrypoint-openfold3.sh /usr/local/bin/fs2-entrypoint
+COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
+COPY --chmod=0555 run_openfold3.py /usr/local/bin/fs2-run-openfold3
+COPY --chmod=0555 run_openfold3.py /opt/fs2/run_openfold3.py
+COPY --chmod=0555 prepare_openfold3.py /opt/fs2/prepare_openfold3.py
+
+ENV FS2_RUNTIME_ID=openfold3 \
+    FS2_SOURCE_REVISION=${SOURCE_REVISION} \
+    FS2_MODEL_DIR=/models/openfold3 \
+    FS2_DATABASE_DIR=/databases/openfold3 \
+    FS2_OPENFOLD3_CCD_PATH=/databases/openfold3/components.bcif \
+    OPENFOLD_CACHE=/models/openfold3 \
+    HOME=/tmp/fs2-home \
+    XDG_CACHE_HOME=/tmp/fs2-cache \
+    TRITON_CACHE_DIR=/tmp/fs2-triton \
+    TORCH_EXTENSIONS_DIR=/tmp/fs2-torch-extensions \
+    PYTHONUNBUFFERED=1 \
+    SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+
+LABEL org.opencontainers.image.source="https://github.com/aqlaboratory/openfold-3" \
+      org.opencontainers.image.revision="c4771653c5d0a3ebb0b3af71b05efd64bc44ee86" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      ai.nebius.fs2.runtime.id="openfold3" \
+      ai.nebius.fs2.model.relationship="alternative-not-alphafold3" \
+      ai.nebius.fs2.model.parameters="external-openbind-0" \
+      ai.nebius.fs2.database.policy="external-only" \
+      ai.nebius.fs2.network.policy="offline-no-msa-server" \
+      ai.nebius.fs2.accelerator.target="h100-sm90" \
+      ai.nebius.fs2.blackwell.portability="not-qualified" \
+      ai.nebius.fs2.artifact.policy="external-only"
+
+USER 10001:10001
+WORKDIR /opt/fs2/runtime
+ENTRYPOINT ["/usr/local/bin/fs2-entrypoint"]
+CMD ["/usr/local/bin/fs2-image-smoke"]
