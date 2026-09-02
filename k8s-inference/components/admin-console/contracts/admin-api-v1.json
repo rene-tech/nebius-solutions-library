@@ -7,30 +7,85 @@
   "session": {
     "endpoint": "/admin/api/v1/session",
     "cookie": "__Host-fs2_admin_session",
-    "cookie_attributes": ["Secure", "HttpOnly", "SameSite=Strict", "Path=/", "no Domain"],
-    "ttl_seconds": {"minimum": 300, "maximum": 86400},
+    "cookie_attributes": [
+      "Secure",
+      "HttpOnly",
+      "SameSite=Strict",
+      "Path=/",
+      "no Domain"
+    ],
+    "ttl_seconds": {
+      "minimum": 300,
+      "maximum": 86400
+    },
     "csrf_boundary": "exact trusted Host and Origin plus SameSite=Strict",
     "cache_control": "no-store"
   },
   "envelope": {
-    "fields": ["meta", "data"],
-    "meta_fields": ["schema_version", "generated_at", "context", "sources", "warnings"],
+    "fields": [
+      "meta",
+      "data"
+    ],
+    "meta_fields": [
+      "schema_version",
+      "generated_at",
+      "context",
+      "sources",
+      "warnings"
+    ],
     "schema_version": "fs2.admin-api/v1"
   },
   "measurement": {
-    "fields": ["value", "unit", "state", "source", "reason"],
-    "states": ["available", "estimated", "unavailable"],
+    "fields": [
+      "value",
+      "unit",
+      "state",
+      "source",
+      "reason"
+    ],
+    "states": [
+      "available",
+      "estimated",
+      "unavailable"
+    ],
     "unavailable_contract": "value is null and reason is non-null"
   },
   "problem": {
     "content_type": "application/problem+json",
-    "fields": ["type", "title", "status", "code", "detail", "request_id"],
+    "fields": [
+      "type",
+      "title",
+      "status",
+      "code",
+      "detail",
+      "request_id"
+    ],
     "request_id_header": "x-request-id",
     "request_id_authority": "server-generated UUID",
-    "status_codes": [400, 401, 403, 404, 409, 422, 429, 503]
+    "status_codes": [
+      400,
+      401,
+      403,
+      404,
+      409,
+      422,
+      429,
+      503
+    ]
   },
-  "model_states": ["hot", "loading", "queued", "cold", "unhealthy", "unsupported", "unknown"],
-  "compatibility_supported_states": ["qualified", "lean-live-verified"],
+  "model_states": [
+    "hot",
+    "loading",
+    "queued",
+    "cold",
+    "unhealthy",
+    "unsupported",
+    "unknown"
+  ],
+  "compatibility_supported_states": [
+    "qualified",
+    "lean-live-verified"
+  ],
   "semantic_health_contract": "hot requires explicit true; false is unhealthy; null is unknown",
   "model_identity_projection": {
     "activation_authority": "versioned-lean-live-route-inventory",
@@ -56,7 +111,11 @@
       "timestamp_field": "observed_at",
       "current_readiness_authority": "live Kubernetes and control-plane adapters, never the retained evidence snapshot"
     },
-    "policy_fields": ["license_id", "non_clinical", "commercial_use"]
+    "policy_fields": [
+      "license_id",
+      "non_clinical",
+      "commercial_use"
+    ]
   },
   "routes": [
     {
@@ -295,6 +354,12 @@
       "path": "/admin/api/v1/configuration:rollback",
       "success_status": 200,
       "data_schema": "RollbackPlan"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/academic-assets",
+      "success_status": 200,
+      "data_schema": "AcademicAssetReadinessList"
     }
   ],
   "feature_gated_route_groups": [
@@ -365,7 +430,14 @@
       "code": "model_deployment_writer_disabled"
     }
   ],
-  "shared_context_query": ["project", "cluster", "region", "from", "to", "timezone"],
+  "shared_context_query": [
+    "project",
+    "cluster",
+    "region",
+    "from",
+    "to",
+    "timezone"
+  ],
   "operation_filters": [
     "limit",
     "cursor",
@@ -376,11 +448,19 @@
     "status",
     "error_code"
   ],
-  "observability_filters": ["model_id", "operation_id"],
+  "observability_filters": [
+    "model_id",
+    "operation_id"
+  ],
   "capacity_contract": {
     "allocation_state": "estimated from bounded Pod requests",
     "health_state": "unavailable without an explicit GPU health source",
-    "kueue_quantities": ["nominal_quota", "reservation", "usage", "borrowed"]
+    "kueue_quantities": [
+      "nominal_quota",
+      "reservation",
+      "usage",
+      "borrowed"
+    ]
   },
   "model_deployment_configuration_options": {
     "endpoint": "/admin/api/v1/model-deployments:capabilities",
@@ -400,7 +480,12 @@
     "default_invariant": "every emitted default_spec passes the same live envelope validator with an accepted disposition",
     "failure_contract": "incomplete, malformed, unpinned, or currently unplaceable qualified tuples are omitted; the browser never fabricates a fallback"
   },
-  "observability_component_fields": ["installed", "health", "data_present", "launch"],
+  "observability_component_fields": [
+    "installed",
+    "health",
+    "data_present",
+    "launch"
+  ],
   "bounds": {
     "maximum_time_range_days": 31,
     "maximum_project_characters": 128,

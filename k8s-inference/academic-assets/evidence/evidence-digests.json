@@ -1,0 +1,70 @@
+{
+  "files": {
+    "jobs/academic-af3-official-loader-v3.json": {
+      "bytes": 14443,
+      "sha256": "9e47c8935ca5658200f48506501c6832786895f7dd39f9d3b63e5fd59bd89ee0"
+    },
+    "jobs/academic-assets-normalize-modes-v1.json": {
+      "bytes": 8667,
+      "sha256": "cb41f5c3f49bdcc7b2a0f64c86b4dbd5ef0fe8be3c79cedc2e51b1af81320c4a"
+    },
+    "jobs/academic-assets-stage-v1.json": {
+      "bytes": 9910,
+      "sha256": "b49ef0877b8a5123c229f83bd4127599b28e01aee6a30fe13bf3385463a446cd"
+    },
+    "jobs/academic-h100-runtime-smoke-v1.json": {
+      "bytes": 13357,
+      "sha256": "b439471436a90a7f1e849217657b792f676cb43a8d2acb6df0459f84969e7b19"
+    },
+    "jobs/academic-pyrosetta-install-v1.json": {
+      "bytes": 7285,
+      "sha256": "09c3ba5adce31232414633b4f0dfadf0766b409322d7792c4e46407830d48269"
+    },
+    "jobs/academic-pyrosetta-offline-import-v2.json": {
+      "bytes": 9916,
+      "sha256": "802a680d915e57c5dec5b068290e26d64896917f889dca21f153fd9a03ed3003"
+    },
+    "logs/academic-af3-official-loader-v2.log": {
+      "bytes": 13350,
+      "sha256": "bab72d06acbc88381ff3637eff2285d43d477fdcad37aa6a12fdee9563194991"
+    },
+    "logs/academic-af3-official-loader-v3.log": {
+      "bytes": 13023,
+      "sha256": "4bac025ea12f37ec33cf62161893c7577e8e76137989d17d52c9ff7f331fb602"
+    },
+    "logs/academic-af3-params-offline-load-v1.log": {
+      "bytes": 428,
+      "sha256": "84ebaea0642878b45ff83d668a23b9ed8f5d0028ca5e93f4b879bca6b36bac65"
+    },
+    "logs/academic-assets-normalize-modes-v1.log": {
+      "bytes": 60,
+      "sha256": "9fa3289992c33124731db7a0b6208d6e6b8b9912ed8e46f006cde7ebfdb52643"
+    },
+    "logs/academic-assets-stage-v1.log": {
+      "bytes": 273,
+      "sha256": "dd59690ecb248a72bf8b6e531a96f75c9a5884feafd6169a530c3fd337986bea"
+    },
+    "logs/academic-h100-runtime-smoke-v1.log": {
+      "bytes": 1865,
+      "sha256": "75de3caca3b51c442dbd7fa7236cbd18d2988d5cd4af0fafeb392897f55aa69e"
+    },
+    "logs/academic-legacy-inspect.log": {
+      "bytes": 501,
+      "sha256": "a8e4ac215138b0fe1a139035d89db46a86139a1d6957d80fb70b27c7fe41cc50"
+    },
+    "logs/academic-pyrosetta-install-v1.log": {
+      "bytes": 364,
+      "sha256": "a5489d7a3c0ad91c737a9844289c355cfa7c3fd5495f63ce8a3cdd0084271e94"
+    },
+    "logs/academic-pyrosetta-offline-import-v1.log": {
+      "bytes": 1513,
+      "sha256": "2b0c2ae4e358f2984e71cb5882de5708007ffa6ad1c46763f47576f05cd1e004"
+    },
+    "logs/academic-pyrosetta-offline-import-v2.log": {
+      "bytes": 1672,
+      "sha256": "b2a1d3e09fcb387cc4a6ccd4a22935df4f217bad1edf0a372d0f7bda3b7fb4c0"
+    }
+  },
+  "note": "SHA-256 of every retained job spec and job log, so the recorded evidence is tamper-evident.",
+  "schema": "fs2-serve.nebius.ai/academic-evidence-digests/v1"
+}

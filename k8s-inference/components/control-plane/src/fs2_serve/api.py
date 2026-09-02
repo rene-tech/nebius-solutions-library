@@ -41,6 +41,7 @@ from .access_models import (
 from .activation_health import activation_set
 from .admin import AdminProblemError, AdminReadService
 from .admin_models import (
+    AcademicAssetReadinessList,
     AdminCapacity,
     AdminContext,
     AdminContextData,
@@ -1265,6 +1266,25 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             model_id=model_id,
             operation_id=operation_id,
         )
+
+    @app.get(
+        "/admin/api/v1/academic-assets",
+        response_model=AdminEnvelope[AcademicAssetReadinessList],
+        responses=admin_problem_responses,
+    )
+    async def admin_academic_assets(
+        identity: Annotated[OperatorPrincipal, Depends(operator)],
+        params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+    ) -> AdminEnvelope[AcademicAssetReadinessList]:
+        """Licensed academic asset readiness, on two independent axes.
+
+        Operational readiness never implies that formal institutional licence
+        acceptance has happened, and no licensed bytes, credentials or
+        acceptance receipt bodies are exposed here.
+        """
+
+        await admin_access.authorize_global(identity, OperatorRole.VIEWER, action="academic-assets.read")
+        return await admin_read.academic_assets(selected_context(params))
 
     @app.get("/internal/ext-authz")
     async def ext_authz(identity: Annotated[Principal, Depends(principal)]) -> Response:

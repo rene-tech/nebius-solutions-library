@@ -1025,3 +1025,93 @@ variable "run_acceptance_job" {
   type        = bool
   default     = false
 }
+
+variable "academic_assets" {
+  description = <<-EOT
+    Normalized tenant-private academic asset delivery contract emitted by the root facade.
+    Licensed bytes are mounted from a tenant-private volume, never embedded in an image and
+    never placed in a general shared cache. institution_id is nullable so the operational
+    proof-of-concept path never depends on invented institution metadata.
+  EOT
+  type = object({
+    enabled        = bool
+    project_id     = string
+    region         = string
+    tenant_id      = string
+    institution_id = optional(string, null)
+    namespace      = string
+    runtime_claim = object({
+      name          = string
+      storage_gib   = number
+      storage_class = string
+      access_mode   = string
+    })
+    legacy_quarantine_claim = object({
+      enabled     = bool
+      namespace   = string
+      name        = string
+      storage_gib = number
+      retain      = bool
+    })
+    delivery = object({
+      mode                    = string
+      mount_root              = string
+      asset_gid               = number
+      consumer_access         = string
+      world_readable          = bool
+      embed_licensed_bytes    = bool
+      general_shared_cache    = bool
+      deny_egress_on_validate = bool
+    })
+    assets = map(object({
+      model_id              = string
+      relative_path         = string
+      install_relative_path = optional(string, null)
+      read_only             = optional(bool, true)
+    }))
+    readiness_manifest_sha256 = optional(string, null)
+  })
+  nullable = false
+
+  validation {
+    condition     = var.academic_assets.delivery.embed_licensed_bytes == false
+    error_message = "Licensed academic bytes must be mounted from a tenant-private volume, never embedded in an image."
+  }
+
+  validation {
+    condition     = var.academic_assets.delivery.general_shared_cache == false
+    error_message = "Licensed academic bytes must never enter a general shared cache."
+  }
+
+  validation {
+    condition     = var.academic_assets.delivery.mode == "tenant-private-volume"
+    error_message = "Only tenant-private-volume delivery is supported for licensed academic assets."
+  }
+
+  validation {
+    condition = (
+      var.academic_assets.namespace != var.academic_assets.legacy_quarantine_claim.namespace ||
+      var.academic_assets.runtime_claim.name != var.academic_assets.legacy_quarantine_claim.name
+    )
+    error_message = "The canonical runtime claim must be distinct from the retained quarantine claim."
+  }
+
+  validation {
+    condition     = alltrue([for key, asset in var.academic_assets.assets : asset.read_only])
+    error_message = "Runtime pods mount licensed academic assets read-only."
+  }
+
+  validation {
+    condition     = var.academic_assets.delivery.world_readable == false
+    error_message = "Licensed academic bytes must never be world-readable; runtimes read them through a supplemental group."
+  }
+
+  validation {
+    condition = (
+      var.academic_assets.delivery.asset_gid > 0 &&
+      var.academic_assets.delivery.asset_gid < 65536 &&
+      var.academic_assets.delivery.consumer_access == "supplemental-group"
+    )
+    error_message = "Licensed academic bytes are read through a non-root supplemental group."
+  }
+}

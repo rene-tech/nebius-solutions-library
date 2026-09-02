@@ -1,0 +1,97 @@
+{
+  "delivery": {
+    "claim": "academic-assets-runtime-rwx",
+    "general_shared_cache": false,
+    "mode": "tenant-private-volume",
+    "mount_root": "/opt/fs2/academic",
+    "namespace": "fs2-academic-poc",
+    "world_readable": false
+  },
+  "formal_license_state": "Pending",
+  "generated_by": "academic-assets/scripts/project_catalog_readiness.py",
+  "generation": "live-installed-20260902",
+  "models": [
+    {
+      "access_profile": "academic",
+      "alternative": {
+        "model_id": "openfold3",
+        "reason": "openfold3 is a separate model with its own identity and results; it does not satisfy alphafold3.",
+        "relationship": "independent-operational-alternative"
+      },
+      "artifact_sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+      "artifact_status": "ArtifactVerified",
+      "asset_id": "alphafold3",
+      "backend_id": "alphafold3-native",
+      "delivery": {
+        "asset_gid": 65532,
+        "consumer_access": "supplemental-group",
+        "embed_in_image": false,
+        "install_relative_path": null,
+        "mode": "tenant-private-volume",
+        "mount_path": "/opt/fs2/academic/alphafold3"
+      },
+      "deployment_status": "MissingDeployment",
+      "display_name": "AlphaFold 3 (native Google parameters)",
+      "execution_authorization_status": "Authorized",
+      "formal_license_status": "FormalAcceptancePending",
+      "license_id": "AlphaFold-3-Model-Parameters-Terms-of-Use-2024-11-09",
+      "model_id": "alphafold3",
+      "runtime_image_digest": "sha256:bead2e68627c1aa7d5fa80243b1164a18160f48cf3a1867090d72ff2b9270e37",
+      "runtime_invocation": {
+        "image_repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3",
+        "image_tag": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+        "model_dir": "/opt/fs2/academic/alphafold3",
+        "model_dir_flag": "--model_dir",
+        "offline_validation_kind": "official-parameter-loader",
+        "source_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69"
+      },
+      "runtime_status": "RuntimeSemanticPassedImageRebuildPending",
+      "semantic_status": "MissingSemanticReadiness",
+      "state": "ImageRebuildPending",
+      "tenant_cache_status": "TenantCacheReady",
+      "use_authorization_status": "Granted"
+    },
+    {
+      "access_profile": "academic",
+      "alternative": {
+        "model_id": "open-binder",
+        "reason": "open-binder is a separate model with its own identity and results; it does not satisfy bindcraft.",
+        "relationship": "independent-operational-alternative"
+      },
+      "artifact_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+      "artifact_status": "ArtifactVerified",
+      "asset_id": "pyrosetta-bindcraft",
+      "backend_id": "bindcraft-native-pyrosetta",
+      "delivery": {
+        "asset_gid": 65532,
+        "consumer_access": "supplemental-group",
+        "embed_in_image": false,
+        "install_relative_path": "site-packages",
+        "mode": "tenant-private-volume",
+        "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft"
+      },
+      "deployment_status": "MissingDeployment",
+      "display_name": "BindCraft native PyRosetta prerequisite",
+      "execution_authorization_status": "Authorized",
+      "formal_license_status": "FormalAcceptancePending",
+      "license_id": "Rosetta-and-PyRosetta-Non-Commercial-License-Chain",
+      "model_id": "bindcraft",
+      "runtime_image_digest": "sha256:fd76ade0c607f27677bc04be3c60749f400eedc941d9e72967e19a4cedff80c2",
+      "runtime_invocation": {
+        "image_repository": null,
+        "image_tag": null,
+        "model_dir": null,
+        "model_dir_flag": null,
+        "offline_validation_kind": "python-import",
+        "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
+      },
+      "runtime_status": "RuntimeReady",
+      "semantic_status": "MissingSemanticReadiness",
+      "state": "MissingDeployment",
+      "tenant_cache_status": "TenantCacheReady",
+      "use_authorization_status": "Granted"
+    }
+  ],
+  "runtime_path_state": "Blocked",
+  "schema": "fs2-serve.nebius.ai/academic-asset-readiness/v1"
+}

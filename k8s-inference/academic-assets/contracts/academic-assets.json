@@ -1,30 +1,44 @@
 {
-  "schema": "fs2-serve.nebius.ai/academic-assets/v2",
-  "observed_at": "2026-09-02T21:12:46Z",
+  "schema": "fs2-serve.nebius.ai/academic-assets/v3",
+  "observed_at": "2026-09-02T22:05:00Z",
   "activation_policy": {
-    "default_state": "LicenseAcceptancePending",
-    "acceptance_actor": "named-authorized-organization-representative",
-    "tenant_binding_required": true,
-    "institution_binding_required": true,
+    "operational_activation_requires": [
+      "UseAuthorizationGranted",
+      "ArtifactVerified",
+      "TenantCacheReady",
+      "RuntimeReady"
+    ],
+    "formal_acceptance_requires": [
+      "named-authorized-organization-representative",
+      "tenant-and-institution-binding",
+      "signed-terms-digests",
+      "entitlement-evidence-digests"
+    ],
+    "formal_acceptance_state": "Pending",
+    "formal_acceptance_blocks_operational_poc": false,
+    "institution_metadata_required_for_operational_poc": false,
     "general_shared_cache_allowed": false,
-    "credentials_in_contracts_or_state": false
-  },
-  "private_registry": {
-    "project_id": "project-e00rene",
-    "region": "eu-north1",
-    "registry_id": "registry-e00akg9ndpx77eaexh",
-    "tenant_repository_template": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/{tenant_id}/"
+    "embed_licensed_bytes_in_images": false,
+    "credentials_in_contracts_or_state": false,
+    "rationale": "Operational readiness and formal institutional license acceptance are separate axes. The platform owner authorized academic proof-of-concept installation and use, which activates the operational path. That authorization is not a substitute for the institutional acceptance each licensor requires before non-proof-of-concept use, so the formal axis stays truthfully Pending and is never synthesized from placeholder institution metadata.",
+    "world_readable_licensed_bytes": false
   },
   "quarantine_cache": {
-    "project_id": "project-e00rene",
-    "region": "eu-north1",
-    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
-    "filesystem_id": "computefilesystem-e00hdb1drrgsenr2j7",
     "pvc_namespace": "fs2-models",
     "pvc_name": "cancer-immunotherapy-academic-assets-rwx-v1",
-    "purpose": "technical-staging-quarantine-only",
+    "purpose": "historical-technical-quarantine",
     "runtime_mount_allowed": false,
     "catalog_visible": false
+  },
+  "runtime_cache": {
+    "pvc_namespace": "fs2-academic-poc",
+    "pvc_name": "academic-assets-runtime-rwx",
+    "storage_class": "csi-mounted-fs-path-sc",
+    "access_mode": "ReadWriteMany",
+    "purpose": "tenant-private-runtime-delivery",
+    "runtime_mount_allowed": true,
+    "general_shared_cache": false,
+    "catalog_visible": true
   },
   "assets": {
     "alphafold3": {
@@ -39,15 +53,14 @@
         "size_bytes": 1020545840,
         "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
         "magic_hex": "28b52ffd",
-        "structural_validation": "zstd-test",
+        "structural_validation": "zstd-stream",
         "source_url": "https://storage.googleapis.com/alphafold3/af3.bin.zst",
         "source_metadata": {
           "generation": "1780568696389861",
           "etag": "\"-COWBlqWv7ZQDEAQ=\"",
           "crc32c_base64": "0h6mjg==",
           "last_modified": "2026-06-04T10:24:56Z"
-        },
-        "technical_staging_without_acceptance": true
+        }
       },
       "license": {
         "license_id": "AlphaFold-3-Model-Parameters-Terms-of-Use-2024-11-09",
@@ -82,12 +95,52 @@
           "object_generation": "1780568696389861"
         }
       },
+      "delivery": {
+        "mode": "tenant-private-volume",
+        "embed_in_image": false,
+        "mount_path": "/opt/fs2/academic/alphafold3",
+        "install_mode": "none",
+        "install_relative_path": null,
+        "asset_gid": 65532,
+        "file_mode": "0440",
+        "directory_mode": "0550",
+        "consumer_access": "supplemental-group",
+        "asset_directory_mode": "0750",
+        "volume_root_mode": "2770",
+        "runtime_consumption": {
+          "mode": "direct-parameter-mount",
+          "pythonpath": null,
+          "per_request_install": false,
+          "note": "The runtime reads the pinned parameter object directly from the mounted volume via --model_dir."
+        }
+      },
       "runtime": {
         "code_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
-        "artifact_delivery": "tenant-private-volume",
-        "licensed_asset_embedded_in_image": false,
         "runtime_image_required": true,
-        "offline_validation": "load exact parameter identifier before semantic inference"
+        "runtime_image_contains_licensed_bytes": false,
+        "offline_validation": {
+          "kind": "official-parameter-loader",
+          "source_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+          "source_tag": "v3.0.4",
+          "expect_module": "alphafold3.model.params",
+          "expect_entrypoint": "get_model_haiku_params",
+          "expect_min_parameter_arrays": 100,
+          "model_dir": "/opt/fs2/academic/alphafold3",
+          "model_dir_flag": "--model_dir",
+          "network_disabled": true,
+          "description": "Run the official AlphaFold 3 parameter loader inside the published runtime image built from the pinned upstream revision, against the mounted af3.bin.zst, using one explicit --model_dir. A decompress-and-digest check alone is byte-integrity evidence, not a parameter load, and is recorded separately as such."
+        },
+        "runtime_image": {
+          "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3",
+          "tag": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+          "source_tag": "v3.0.4",
+          "contains_licensed_bytes": false,
+          "build_context": "published fs2 runtime image built from the official docker/Dockerfile at upstream revision 85c4d205 (tag v3.0.4); the packaged distribution reports 3.0.3.dev1+g85c4d2050 because the build checkout did not carry the v3.0.4 tag object, so the commit is authoritative",
+          "packaged_distribution_version": "3.0.3.dev1+g85c4d2050",
+          "expected_distribution_version": "3.0.4",
+          "identity_mismatch": "The published image's packaged distribution version does not equal the v3.0.4 tag because the build checkout lacked the tag object, so setuptools-scm derived a dev version from the previous tag. The commit 85c4d205 is authoritative and matches v3.0.4 exactly. This validation must be repeated once the image is rebuilt with the tag present.",
+          "revalidation_required": true
+        }
       }
     },
     "pyrosetta-bindcraft": {
@@ -95,28 +148,31 @@
       "backend_id": "bindcraft-native-pyrosetta",
       "display_name": "BindCraft native PyRosetta prerequisite",
       "artifact": {
-      "identity_status": "pinned",
+        "identity_status": "pinned",
         "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
         "version": "2026.29+releasequarterly.80a0635615",
         "source_revision": "https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/#2026.29+releasequarterly.80a0635615-cp310-linux_x86_64",
         "size_bytes": 1667097173,
-      "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
-      "sha256_policy": "immutable-verified-digest",
+        "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
         "magic_hex": "504b0304",
-        "structural_validation": "wheel-metadata-version-and-tags",
+        "structural_validation": "python-wheel",
         "source_url": "https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/pyrosetta-2026.29%2Breleasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
         "source_metadata": {
           "http_last_modified": "2026-07-24T02:44:31Z",
           "http_etag": "\"6a62d18f-635de255\"",
           "observed_at": "2026-09-02T21:12:46Z"
         },
-        "technical_staging_without_acceptance": false
+        "wheel_expectations": {
+          "distribution": "pyrosetta",
+          "version": "2026.29+releasequarterly.80a0635615",
+          "tag": "cp310-cp310-linux_x86_64"
+        }
       },
       "license": {
         "license_id": "Rosetta-and-PyRosetta-Non-Commercial-License-Chain",
         "allowed_users": "eligible non-commercial users operating within a licensed academic institution",
         "redistribution": "refer other users to the official distribution; do not publish the wheel, installed files, or private runtime image",
-        "containerization": "an installed image is private, tenant/institution bound, non-redistributable, and usable only while both entitlements remain valid",
+        "containerization": "the wheel and its installed tree stay on a tenant-private volume, are never embedded in an image, and are usable only while both entitlements remain valid",
         "access_procedure": "the institution obtains a Rosetta non-commercial license and the linked PyRosetta entitlement through UW CoMotion; PyRosetta is available only to entities already holding Rosetta rights"
       },
       "acceptance": {
@@ -150,19 +206,43 @@
           "bindcraft_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
         }
       },
+      "delivery": {
+        "mode": "tenant-private-volume",
+        "embed_in_image": false,
+        "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft",
+        "install_mode": "pip-wheel-to-volume",
+        "install_relative_path": "site-packages",
+        "asset_gid": 65532,
+        "file_mode": "0440",
+        "directory_mode": "0550",
+        "consumer_access": "supplemental-group",
+        "asset_directory_mode": "0750",
+        "volume_root_mode": "2770",
+        "runtime_consumption": {
+          "mode": "preinstalled-site-packages",
+          "pythonpath": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+          "per_request_install": false,
+          "note": "BindCraft consumes a tenant-private site-packages tree that is installed once and mounted read-only. The 1.67 GB wheel is never installed per request; a runtime only sets PYTHONPATH and joins the asset group."
+        }
+      },
       "runtime": {
-        "bindcraft_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
-        "python_abi": "cp310-cp310-linux_x86_64",
-        "pyrosetta_version": "2026.29+releasequarterly.80a0635615",
-        "artifact_delivery": "installed-private-image",
-        "licensed_asset_embedded_in_image": true,
+        "code_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
         "runtime_image_required": true,
-        "offline_validation": "python3.10 import pyrosetta and exact distribution-version assertion with network disabled"
+        "runtime_image_contains_licensed_bytes": false,
+        "offline_validation": {
+          "kind": "python-import",
+          "python_abi": "cp310-cp310-linux_x86_64",
+          "expect_distribution": "pyrosetta",
+          "expect_version": "2026.29+releasequarterly.80a0635615",
+          "network_disabled": true,
+          "description": "Install the pinned wheel into the tenant-private volume, then import PyRosetta from that volume with egress blocked, assert the exact installed distribution version, and build and score a real pose."
+        }
       }
     }
   },
   "quarantined_artifacts": {
     "pyrosetta-bindcraft-2025.24-conda": {
+      "asset_id": "pyrosetta-bindcraft",
       "filename": "pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda",
       "version": "2025.24+release.8e1e5e54f0=py310_0",
       "size_bytes": 1435146644,
@@ -174,25 +254,59 @@
   },
   "platform_consumers": {
     "catalog": {
-      "projection_field": "catalog",
-      "activation_requires": ["LicenseAccepted", "ArtifactStaged", "RuntimeReady", "SemanticReady"],
-      "native_models": ["alphafold3", "bindcraft"]
+      "contract_path": "catalog/runtime/contracts/academic-asset-readiness.json",
+      "schema_path": "catalog/runtime/schema/academic-asset-readiness.schema.json",
+      "activation_requires": [
+        "UseAuthorizationGranted",
+        "ArtifactVerified",
+        "TenantCacheReady",
+        "RuntimeReady"
+      ],
+      "native_models": [
+        "alphafold3",
+        "bindcraft"
+      ]
     },
     "control_plane": {
-      "projection_field": "control_plane",
-      "api_resource": "/admin/api/v1/scientific-models",
+      "api_resource": "/admin/api/v1/academic-assets",
       "access_gate_profile": "academic",
       "receipt_storage": "private-evidence-store-by-digest"
     },
     "admin": {
-      "projection_field": "admin",
-      "route": "/admin/scientific-models",
-      "show_fields": ["state", "artifact_status", "runtime_status", "tenant_binding_status", "receipt_digest"]
+      "route": "/admin/academic-assets",
+      "show_fields": [
+        "state",
+        "use_authorization_status",
+        "formal_license_status",
+        "artifact_status",
+        "tenant_cache_status",
+        "runtime_status",
+        "delivery_mode",
+        "artifact_sha256"
+      ]
+    },
+    "helm": {
+      "values_key": "academicAssets",
+      "mounts_licensed_bytes": true,
+      "embeds_licensed_bytes": false
     },
     "terraform": {
-      "projection_field": "terraform",
-      "allowed_inputs": ["enabled", "tenant_id", "institution_id", "status_manifest_uri", "status_manifest_sha256", "kubernetes_secret_ref_names"],
-      "forbidden_inputs": ["artifact_bytes", "credentials", "signed_urls", "acceptance_receipt_body"]
+      "variable": "academic_assets",
+      "allowed_inputs": [
+        "enabled",
+        "tenant_id",
+        "institution_id",
+        "namespace",
+        "pvc_name",
+        "storage_gib",
+        "readiness_manifest_sha256"
+      ],
+      "forbidden_inputs": [
+        "artifact_bytes",
+        "credentials",
+        "signed_urls",
+        "acceptance_receipt_body"
+      ]
     }
   },
   "fallbacks": {
@@ -200,13 +314,30 @@
       "model_id": "open-binder",
       "relationship": "independent-operational-alternative",
       "aliases": [],
-      "does_not_satisfy": ["bindcraft"]
+      "does_not_satisfy": [
+        "bindcraft"
+      ]
     },
     "openfold3": {
       "model_id": "openfold3",
       "relationship": "independent-operational-alternative",
       "aliases": [],
-      "does_not_satisfy": ["alphafold3"]
+      "does_not_satisfy": [
+        "alphafold3"
+      ]
     }
+  },
+  "environment_binding": {
+    "source": "generated-acceptance-state",
+    "path": "academic-assets/evidence/live-acceptance-state.json",
+    "fields": [
+      "project_id",
+      "region",
+      "cluster_id",
+      "pvc_uid",
+      "volume_handle",
+      "registry_id"
+    ],
+    "note": "Project, region, cluster, volume and registry identities are properties of a deployment, not of this contract. They are observed per environment and recorded in generated acceptance state and in stage receipts, so the contract stays reusable across projects and regions."
   }
 }

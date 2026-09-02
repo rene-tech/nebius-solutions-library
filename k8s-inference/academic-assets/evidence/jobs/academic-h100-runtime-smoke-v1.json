@@ -1,0 +1,171 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\"},\"name\":\"academic-h100-runtime-smoke-v1\",\"namespace\":\"fs2-academic-poc\"},\"spec\":{\"backoffLimit\":1,\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\"}},\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"args\":[\"import hashlib, json, platform\\nimport torch\\nprint(\\\"torch=%s cuda=%s\\\" % (torch.__version__, torch.version.cuda), flush=True)\\nassert torch.cuda.is_available(), \\\"fail-closed: no CUDA device on the H100 node\\\"\\nname = torch.cuda.get_device_name(0)\\nmajor, minor = torch.cuda.get_device_capability(0)\\ntotal = torch.cuda.get_device_properties(0).total_memory\\nprint(\\\"gpu_name=%s\\\" % name, flush=True)\\nprint(\\\"gpu_capability=%d.%d\\\" % (major, minor), flush=True)\\nprint(\\\"gpu_total_memory_bytes=%d\\\" % total, flush=True)\\nprint(\\\"python_version=%s\\\" % platform.python_version(), flush=True)\\nassert \\\"H100\\\" in name, \\\"fail-closed: expected an H100 device\\\"\\n\\n# --- AlphaFold 3 parameters: load the exact staged bytes onto the H100 ---\\nimport zstandard\\npath = \\\"/runtime/alphafold3/af3.bin.zst\\\"\\ndevice = torch.device(\\\"cuda:0\\\")\\ndigest = hashlib.sha256()\\ngpu_bytes = 0\\ngpu_checksum = torch.zeros((), dtype=torch.int64, device=device)\\nwith open(path, \\\"rb\\\") as fh:\\n    reader = zstandard.ZstdDecompressor().stream_reader(fh)\\n    while True:\\n        chunk = reader.read(64 \\u003c\\u003c 20)\\n        if not chunk:\\n            break\\n        digest.update(chunk)\\n        host = torch.frombuffer(bytearray(chunk), dtype=torch.uint8)\\n        resident = host.to(device, non_blocking=False)\\n        gpu_checksum += resident.to(torch.int64).sum()\\n        gpu_bytes += resident.numel()\\n        del resident\\ntorch.cuda.synchronize()\\nprint(\\\"af3_decompressed_bytes_loaded_on_gpu=%d\\\" % gpu_bytes, flush=True)\\nprint(\\\"af3_decompressed_sha256=%s\\\" % digest.hexdigest(), flush=True)\\nprint(\\\"af3_gpu_byte_checksum=%d\\\" % int(gpu_checksum.item()), flush=True)\\nprint(\\\"af3_gpu_peak_memory_bytes=%d\\\" % torch.cuda.max_memory_allocated(device), flush=True)\\nexpected_plain = \\\"df8bbf2621f17dd3ee21c2a921e84a50bc2b80cdc0c7971cb915c2826fee1f9b\\\"\\nassert digest.hexdigest() == expected_plain, \\\"fail-closed: AF3 parameter identity changed\\\"\\nassert gpu_bytes == 1146811260, \\\"fail-closed: AF3 parameter byte count changed\\\"\\n\\n# --- Native BindCraft prerequisite: real PyRosetta work on the H100 node ---\\nimport importlib.metadata as md\\nimport pyrosetta\\nversion = md.version(\\\"pyrosetta\\\")\\nprint(\\\"pyrosetta_version=%s\\\" % version, flush=True)\\nprint(\\\"pyrosetta_origin=%s\\\" % pyrosetta.__file__, flush=True)\\nassert pyrosetta.__file__.startswith(\\\"/runtime/\\\"), \\\"fail-closed: pyrosetta not on the tenant volume\\\"\\npyrosetta.init(\\\"-mute all\\\")\\npose = pyrosetta.pose_from_sequence(\\\"DIQMTQSPSSLSASVGDRVTITC\\\")\\nscore = pyrosetta.get_score_function()(pose)\\nprint(\\\"pyrosetta_pose_residues=%d\\\" % pose.total_residue(), flush=True)\\nprint(\\\"pyrosetta_scorefxn_value=%.6f\\\" % score, flush=True)\\nassert pose.total_residue() == 23\\n\\nevidence = {\\n    \\\"gpu_name\\\": name,\\n    \\\"gpu_capability\\\": \\\"%d.%d\\\" % (major, minor),\\n    \\\"af3_decompressed_sha256\\\": digest.hexdigest(),\\n    \\\"af3_bytes_on_gpu\\\": gpu_bytes,\\n    \\\"pyrosetta_version\\\": version,\\n    \\\"pyrosetta_pose_residues\\\": pose.total_residue(),\\n}\\nprint(\\\"evidence_digest=%s\\\" % hashlib.sha256(\\n    json.dumps(evidence, sort_keys=True, separators=(\\\",\\\", \\\":\\\")).encode()).hexdigest(), flush=True)\\nprint(\\\"H100_RUNTIME_SMOKE_PASSED\\\", flush=True)\\n\"],\"command\":[\"python\",\"-u\",\"-c\"],\"env\":[{\"name\":\"HOME\",\"value\":\"/scratch\"},{\"name\":\"TMPDIR\",\"value\":\"/scratch\"},{\"name\":\"PYTHONPATH\",\"value\":\"/runtime/pyrosetta-bindcraft/site-packages:/runtime/.tools/site-packages\"}],\"image\":\"docker.io/pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime\",\"name\":\"smoke\",\"resources\":{\"limits\":{\"cpu\":\"8\",\"memory\":\"32Gi\",\"nvidia.com/gpu\":1},\"requests\":{\"cpu\":\"2\",\"memory\":\"16Gi\",\"nvidia.com/gpu\":1}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]}},\"volumeMounts\":[{\"mountPath\":\"/runtime\",\"name\":\"runtime\",\"readOnly\":true},{\"mountPath\":\"/scratch\",\"name\":\"scratch\"}]}],\"enableServiceLinks\":false,\"nodeSelector\":{\"accelerator.fs2.nebius/class\":\"nvidia-h100-sxm5-80gb\",\"workload.fs2.nebius/gpu\":\"true\"},\"restartPolicy\":\"Never\",\"securityContext\":{\"fsGroup\":65532,\"runAsGroup\":65532,\"runAsNonRoot\":true,\"runAsUser\":65532,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"tolerations\":[{\"effect\":\"NoSchedule\",\"key\":\"dedicated\",\"operator\":\"Equal\",\"value\":\"fs2-inference\"}],\"volumes\":[{\"name\":\"runtime\",\"persistentVolumeClaim\":{\"claimName\":\"academic-assets-runtime-rwx\",\"readOnly\":true}},{\"emptyDir\":{\"sizeLimit\":\"8Gi\"},\"name\":\"scratch\"}]}}}}\n"
+    },
+    "creationTimestamp": "2026-09-02T22:03:34Z",
+    "labels": {
+      "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion"
+    },
+    "name": "academic-h100-runtime-smoke-v1",
+    "namespace": "fs2-academic-poc",
+    "uid": "97fc55c3-087d-4e04-8b31-d79360855b1c"
+  },
+  "spec": {
+    "backoffLimit": 1,
+    "completionMode": "NonIndexed",
+    "completions": 1,
+    "manualSelector": false,
+    "parallelism": 1,
+    "podReplacementPolicy": "TerminatingOrFailed",
+    "selector": {
+      "matchLabels": {
+        "batch.kubernetes.io/controller-uid": "97fc55c3-087d-4e04-8b31-d79360855b1c"
+      }
+    },
+    "suspend": false,
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion",
+          "batch.kubernetes.io/controller-uid": "97fc55c3-087d-4e04-8b31-d79360855b1c",
+          "batch.kubernetes.io/job-name": "academic-h100-runtime-smoke-v1",
+          "controller-uid": "97fc55c3-087d-4e04-8b31-d79360855b1c",
+          "job-name": "academic-h100-runtime-smoke-v1"
+        }
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "containers": [
+          {
+            "args": [
+              "import hashlib, json, platform\nimport torch\nprint(\"torch=%s cuda=%s\" % (torch.__version__, torch.version.cuda), flush=True)\nassert torch.cuda.is_available(), \"fail-closed: no CUDA device on the H100 node\"\nname = torch.cuda.get_device_name(0)\nmajor, minor = torch.cuda.get_device_capability(0)\ntotal = torch.cuda.get_device_properties(0).total_memory\nprint(\"gpu_name=%s\" % name, flush=True)\nprint(\"gpu_capability=%d.%d\" % (major, minor), flush=True)\nprint(\"gpu_total_memory_bytes=%d\" % total, flush=True)\nprint(\"python_version=%s\" % platform.python_version(), flush=True)\nassert \"H100\" in name, \"fail-closed: expected an H100 device\"\n\n# --- AlphaFold 3 parameters: load the exact staged bytes onto the H100 ---\nimport zstandard\npath = \"/runtime/alphafold3/af3.bin.zst\"\ndevice = torch.device(\"cuda:0\")\ndigest = hashlib.sha256()\ngpu_bytes = 0\ngpu_checksum = torch.zeros((), dtype=torch.int64, device=device)\nwith open(path, \"rb\") as fh:\n    reader = zstandard.ZstdDecompressor().stream_reader(fh)\n    while True:\n        chunk = reader.read(64 << 20)\n        if not chunk:\n            break\n        digest.update(chunk)\n        host = torch.frombuffer(bytearray(chunk), dtype=torch.uint8)\n        resident = host.to(device, non_blocking=False)\n        gpu_checksum += resident.to(torch.int64).sum()\n        gpu_bytes += resident.numel()\n        del resident\ntorch.cuda.synchronize()\nprint(\"af3_decompressed_bytes_loaded_on_gpu=%d\" % gpu_bytes, flush=True)\nprint(\"af3_decompressed_sha256=%s\" % digest.hexdigest(), flush=True)\nprint(\"af3_gpu_byte_checksum=%d\" % int(gpu_checksum.item()), flush=True)\nprint(\"af3_gpu_peak_memory_bytes=%d\" % torch.cuda.max_memory_allocated(device), flush=True)\nexpected_plain = \"df8bbf2621f17dd3ee21c2a921e84a50bc2b80cdc0c7971cb915c2826fee1f9b\"\nassert digest.hexdigest() == expected_plain, \"fail-closed: AF3 parameter identity changed\"\nassert gpu_bytes == 1146811260, \"fail-closed: AF3 parameter byte count changed\"\n\n# --- Native BindCraft prerequisite: real PyRosetta work on the H100 node ---\nimport importlib.metadata as md\nimport pyrosetta\nversion = md.version(\"pyrosetta\")\nprint(\"pyrosetta_version=%s\" % version, flush=True)\nprint(\"pyrosetta_origin=%s\" % pyrosetta.__file__, flush=True)\nassert pyrosetta.__file__.startswith(\"/runtime/\"), \"fail-closed: pyrosetta not on the tenant volume\"\npyrosetta.init(\"-mute all\")\npose = pyrosetta.pose_from_sequence(\"DIQMTQSPSSLSASVGDRVTITC\")\nscore = pyrosetta.get_score_function()(pose)\nprint(\"pyrosetta_pose_residues=%d\" % pose.total_residue(), flush=True)\nprint(\"pyrosetta_scorefxn_value=%.6f\" % score, flush=True)\nassert pose.total_residue() == 23\n\nevidence = {\n    \"gpu_name\": name,\n    \"gpu_capability\": \"%d.%d\" % (major, minor),\n    \"af3_decompressed_sha256\": digest.hexdigest(),\n    \"af3_bytes_on_gpu\": gpu_bytes,\n    \"pyrosetta_version\": version,\n    \"pyrosetta_pose_residues\": pose.total_residue(),\n}\nprint(\"evidence_digest=%s\" % hashlib.sha256(\n    json.dumps(evidence, sort_keys=True, separators=(\",\", \":\")).encode()).hexdigest(), flush=True)\nprint(\"H100_RUNTIME_SMOKE_PASSED\", flush=True)\n"
+            ],
+            "command": [
+              "python",
+              "-u",
+              "-c"
+            ],
+            "env": [
+              {
+                "name": "HOME",
+                "value": "/scratch"
+              },
+              {
+                "name": "TMPDIR",
+                "value": "/scratch"
+              },
+              {
+                "name": "PYTHONPATH",
+                "value": "/runtime/pyrosetta-bindcraft/site-packages:/runtime/.tools/site-packages"
+              }
+            ],
+            "image": "docker.io/pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "smoke",
+            "resources": {
+              "limits": {
+                "cpu": "8",
+                "memory": "32Gi",
+                "nvidia.com/gpu": "1"
+              },
+              "requests": {
+                "cpu": "2",
+                "memory": "16Gi",
+                "nvidia.com/gpu": "1"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/runtime",
+                "name": "runtime",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/scratch",
+                "name": "scratch"
+              }
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": false,
+        "nodeSelector": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+          "workload.fs2.nebius/gpu": "true"
+        },
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {
+          "fsGroup": 65532,
+          "runAsGroup": 65532,
+          "runAsNonRoot": true,
+          "runAsUser": 65532,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "terminationGracePeriodSeconds": 30,
+        "tolerations": [
+          {
+            "effect": "NoSchedule",
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": "fs2-inference"
+          }
+        ],
+        "volumes": [
+          {
+            "name": "runtime",
+            "persistentVolumeClaim": {
+              "claimName": "academic-assets-runtime-rwx",
+              "readOnly": true
+            }
+          },
+          {
+            "emptyDir": {
+              "sizeLimit": "8Gi"
+            },
+            "name": "scratch"
+          }
+        ]
+      }
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": "2026-09-02T22:06:27Z",
+        "lastTransitionTime": "2026-09-02T22:06:27Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "SuccessCriteriaMet"
+      },
+      {
+        "lastProbeTime": "2026-09-02T22:06:27Z",
+        "lastTransitionTime": "2026-09-02T22:06:27Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "Complete"
+      }
+    ],
+    "ready": 0,
+    "succeeded": 1,
+    "terminating": 0,
+    "uncountedTerminatedPods": {}
+  }
+}

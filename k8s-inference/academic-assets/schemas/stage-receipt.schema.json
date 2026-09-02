@@ -1,114 +1,465 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fs2-serve.nebius.ai/schema/academic-stage-receipt/v2",
-  "title": "Tenant-bound downstream academic evidence",
+  "$id": "https://fs2-serve.nebius.ai/schema/academic-stage-receipt/v3",
+  "title": "Tenant-bound downstream academic readiness evidence",
+  "description": "Every stage receipt is bound to one tenant and one exact artifact digest. institution_id is nullable because the operational proof-of-concept path deliberately does not invent institution metadata; it is populated only once a named representative records a formal acceptance.",
   "oneOf": [
-    {"$ref": "#/$defs/cache"},
-    {"$ref": "#/$defs/image"},
-    {"$ref": "#/$defs/deployment"},
-    {"$ref": "#/$defs/semantic"}
+    {
+      "$ref": "#/$defs/cache"
+    },
+    {
+      "$ref": "#/$defs/install"
+    },
+    {
+      "$ref": "#/$defs/runtime"
+    },
+    {
+      "$ref": "#/$defs/deployment"
+    },
+    {
+      "$ref": "#/$defs/semantic"
+    }
   ],
   "$defs": {
-    "identity": {
-      "type": "object",
-      "required": ["asset_id", "artifact_sha256", "observed_at", "tenant_id", "institution_id"],
-      "properties": {
-        "asset_id": {"enum": ["alphafold3", "pyrosetta-bindcraft"]},
-        "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "observed_at": {"type": "string", "format": "date-time"},
-        "tenant_id": {"type": "string", "minLength": 3},
-        "institution_id": {"type": "string", "minLength": 3}
-      }
+    "assetId": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ociDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "tenantId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "institutionId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 3,
+      "maxLength": 256
     },
     "cache": {
-      "allOf": [
-        {"$ref": "#/$defs/identity"},
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["schema", "asset_id", "artifact_sha256", "observed_at", "tenant_id", "institution_id", "project_id", "region", "cluster_id", "filesystem_id", "pvc_namespace", "pvc_name", "file_size_bytes", "verified", "runtime_mount_allowed", "general_shared_cache"],
-          "properties": {
-            "schema": {"const": "fs2-serve.nebius.ai/academic-cache-receipt/v2"},
-            "asset_id": {"enum": ["alphafold3", "pyrosetta-bindcraft"]},
-            "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-            "observed_at": {"type": "string", "format": "date-time"},
-            "tenant_id": {"type": "string", "minLength": 3},
-            "institution_id": {"type": "string", "minLength": 3},
-            "project_id": {"const": "project-e00rene"},
-            "region": {"const": "eu-north1"},
-            "cluster_id": {"const": "mk8scluster-e00j5z9te7x5dd9g6a"},
-            "filesystem_id": {"type": "string", "minLength": 3},
-            "pvc_namespace": {"type": "string", "not": {"const": "fs2-models"}},
-            "pvc_name": {"type": "string", "not": {"const": "cancer-immunotherapy-academic-assets-rwx-v1"}},
-            "file_size_bytes": {"type": "integer", "minimum": 1},
-            "verified": {"const": true},
-            "runtime_mount_allowed": {"const": true},
-            "general_shared_cache": {"const": false}
-          }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_sha256",
+        "asset_gid",
+        "asset_id",
+        "cluster_id",
+        "directory_mode",
+        "file_mode",
+        "file_size_bytes",
+        "filesystem_id",
+        "general_shared_cache",
+        "institution_id",
+        "observed_at",
+        "project_id",
+        "pvc_name",
+        "pvc_namespace",
+        "pvc_uid",
+        "region",
+        "runtime_mount_allowed",
+        "schema",
+        "tenant_id",
+        "verified",
+        "volume_handle"
+      ],
+      "properties": {
+        "schema": {
+          "const": "fs2-serve.nebius.ai/academic-cache-receipt/v3"
+        },
+        "asset_id": {
+          "$ref": "#/$defs/assetId"
+        },
+        "artifact_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/tenantId"
+        },
+        "institution_id": {
+          "$ref": "#/$defs/institutionId"
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cluster_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "filesystem_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "description": "Shared filesystem identity when the claim is backed by one. Null for a dynamically provisioned claim, which is identified by volume_handle instead."
+        },
+        "pvc_namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pvc_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pvc_uid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file_size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "verified": {
+          "const": true
+        },
+        "runtime_mount_allowed": {
+          "const": true
+        },
+        "general_shared_cache": {
+          "const": false
+        },
+        "volume_handle": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file_mode": {
+          "type": "string",
+          "pattern": "^0[0-7]{3}$"
+        },
+        "directory_mode": {
+          "type": "string",
+          "pattern": "^0[0-7]{3}$"
+        },
+        "asset_gid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
         }
-      ]
+      }
     },
-    "image": {
-      "allOf": [
-        {"$ref": "#/$defs/identity"},
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["schema", "asset_id", "artifact_sha256", "observed_at", "tenant_id", "institution_id", "repository", "image_digest", "visibility", "redistributable", "asset_delivery_mode", "contains_licensed_asset", "offline_import_passed", "python_version", "installed_distribution_version", "builder"],
-          "properties": {
-            "schema": {"const": "fs2-serve.nebius.ai/academic-image-receipt/v2"},
-            "asset_id": {"enum": ["alphafold3", "pyrosetta-bindcraft"]},
-            "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-            "observed_at": {"type": "string", "format": "date-time"},
-            "tenant_id": {"type": "string", "minLength": 3},
-            "institution_id": {"type": "string", "minLength": 3},
-            "repository": {"type": "string", "pattern": "^cr\\.eu-north1\\.nebius\\.cloud/e00akg9ndpx77eaexh/academic/"},
-            "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-            "visibility": {"const": "private"},
-            "redistributable": {"const": false},
-            "asset_delivery_mode": {"enum": ["external-tenant-private-volume", "installed-private-image"]},
-            "contains_licensed_asset": {"type": "boolean"},
-            "offline_import_passed": {"type": "boolean"},
-            "python_version": {"type": "string"},
-            "installed_distribution_version": {"type": "string"},
-            "builder": {"type": "string", "minLength": 1}
-          }
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "asset_id",
+        "artifact_sha256",
+        "observed_at",
+        "tenant_id",
+        "institution_id",
+        "image_digest",
+        "image_contains_licensed_bytes",
+        "asset_delivery_mode",
+        "offline_validation_kind",
+        "network_disabled",
+        "validation_passed",
+        "python_version",
+        "installed_distribution_version",
+        "loaded_parameter_arrays",
+        "loader_source_revision",
+        "predicted_structure_sha256",
+        "predicted_atom_records",
+        "inference_performed",
+        "evidence_digest"
+      ],
+      "properties": {
+        "schema": {
+          "const": "fs2-serve.nebius.ai/academic-runtime-receipt/v3"
+        },
+        "asset_id": {
+          "$ref": "#/$defs/assetId"
+        },
+        "artifact_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/tenantId"
+        },
+        "institution_id": {
+          "$ref": "#/$defs/institutionId"
+        },
+        "image_digest": {
+          "$ref": "#/$defs/ociDigest"
+        },
+        "image_contains_licensed_bytes": {
+          "const": false
+        },
+        "asset_delivery_mode": {
+          "const": "tenant-private-volume"
+        },
+        "offline_validation_kind": {
+          "enum": [
+            "python-import",
+            "zstd-stream-integrity",
+            "official-parameter-loader"
+          ]
+        },
+        "network_disabled": {
+          "const": true
+        },
+        "validation_passed": {
+          "const": true
+        },
+        "python_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "installed_distribution_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "evidence_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "loaded_parameter_arrays": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Number of parameter arrays the official loader materialised. Null when the validation kind is not a parameter load."
+        },
+        "loader_source_revision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Pinned upstream revision of the loader that read the parameters. Null when the validation kind is not a parameter load."
+        },
+        "inference_performed": {
+          "type": "boolean",
+          "description": "True when this validation ran a real model prediction, not only a parameter load."
+        },
+        "predicted_atom_records": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "predicted_structure_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
         }
-      ]
+      }
     },
     "deployment": {
-      "allOf": [
-        {"$ref": "#/$defs/identity"},
-        {
-          "type": "object",
-          "additionalProperties": true,
-          "required": ["schema", "model_id", "image_digest", "deployed", "resource_uid"],
-          "properties": {
-            "schema": {"const": "fs2-serve.nebius.ai/academic-deployment-receipt/v2"},
-            "model_id": {"enum": ["alphafold3", "bindcraft"]},
-            "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-            "deployed": {"const": true},
-            "resource_uid": {"type": "string", "minLength": 1}
-          }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "asset_id",
+        "artifact_sha256",
+        "observed_at",
+        "tenant_id",
+        "institution_id",
+        "model_id",
+        "image_digest",
+        "deployed",
+        "resource_uid"
+      ],
+      "properties": {
+        "schema": {
+          "const": "fs2-serve.nebius.ai/academic-deployment-receipt/v3"
+        },
+        "asset_id": {
+          "$ref": "#/$defs/assetId"
+        },
+        "artifact_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/tenantId"
+        },
+        "institution_id": {
+          "$ref": "#/$defs/institutionId"
+        },
+        "model_id": {
+          "$ref": "#/$defs/assetId"
+        },
+        "image_digest": {
+          "$ref": "#/$defs/ociDigest"
+        },
+        "deployed": {
+          "const": true
+        },
+        "resource_uid": {
+          "type": "string",
+          "minLength": 1
         }
-      ]
+      }
     },
     "semantic": {
-      "allOf": [
-        {"$ref": "#/$defs/identity"},
-        {
-          "type": "object",
-          "additionalProperties": true,
-          "required": ["schema", "model_id", "image_digest", "passed", "validator_digest"],
-          "properties": {
-            "schema": {"const": "fs2-serve.nebius.ai/academic-semantic-receipt/v2"},
-            "model_id": {"enum": ["alphafold3", "bindcraft"]},
-            "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-            "passed": {"const": true},
-            "validator_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
-          }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "asset_id",
+        "artifact_sha256",
+        "observed_at",
+        "tenant_id",
+        "institution_id",
+        "model_id",
+        "image_digest",
+        "passed",
+        "validator_digest"
+      ],
+      "properties": {
+        "schema": {
+          "const": "fs2-serve.nebius.ai/academic-semantic-receipt/v3"
+        },
+        "asset_id": {
+          "$ref": "#/$defs/assetId"
+        },
+        "artifact_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/tenantId"
+        },
+        "institution_id": {
+          "$ref": "#/$defs/institutionId"
+        },
+        "model_id": {
+          "$ref": "#/$defs/assetId"
+        },
+        "image_digest": {
+          "$ref": "#/$defs/ociDigest"
+        },
+        "passed": {
+          "const": true
+        },
+        "validator_digest": {
+          "$ref": "#/$defs/ociDigest"
         }
-      ]
+      }
+    },
+    "install": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_sha256",
+        "asset_gid",
+        "asset_id",
+        "atomic_promotion",
+        "directory_mode",
+        "evidence_digest",
+        "file_count",
+        "file_mode",
+        "import_verified",
+        "install_relative_path",
+        "installed_distribution",
+        "installed_distribution_version",
+        "institution_id",
+        "observed_at",
+        "python_version",
+        "schema",
+        "tenant_id",
+        "world_readable"
+      ],
+      "properties": {
+        "schema": {
+          "const": "fs2-serve.nebius.ai/academic-install-receipt/v3"
+        },
+        "asset_id": {
+          "$ref": "#/$defs/assetId"
+        },
+        "artifact_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/tenantId"
+        },
+        "institution_id": {
+          "$ref": "#/$defs/institutionId"
+        },
+        "install_relative_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "installed_distribution": {
+          "type": "string",
+          "minLength": 1
+        },
+        "installed_distribution_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "python_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "file_mode": {
+          "type": "string",
+          "pattern": "^0[0-7]{3}$"
+        },
+        "directory_mode": {
+          "type": "string",
+          "pattern": "^0[0-7]{3}$"
+        },
+        "asset_gid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "world_readable": {
+          "const": false
+        },
+        "atomic_promotion": {
+          "const": true
+        },
+        "import_verified": {
+          "const": true
+        },
+        "evidence_digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
     }
   }
 }

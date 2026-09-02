@@ -1,0 +1,179 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\"},\"name\":\"academic-af3-official-loader-v3\",\"namespace\":\"fs2-academic-poc\"},\"spec\":{\"backoffLimit\":0,\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\",\"fs2.nebius.ai/offline-validation\":\"true\"}},\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"args\":[\"set -e\\nPY=/opt/alphafold3-venv/bin/python\\necho \\\"=== identity ===\\\"\\nnvidia-smi --query-gpu=name,memory.total,compute_cap --format=csv,noheader\\n$PY - \\u003c\\u003c'PYEOF'\\nimport hashlib, json, os, socket, sys\\n# Offline proof: egress is denied by NetworkPolicy for this labelled pod.\\nblocked = []\\nfor host, port in ((\\\"1.1.1.1\\\", 443), (\\\"8.8.8.8\\\", 53)):\\n    try:\\n        socket.create_connection((host, port), timeout=6).close(); blocked.append(False)\\n    except OSError:\\n        blocked.append(True)\\nprint(\\\"network_disabled=%s\\\" % str(all(blocked)).lower(), flush=True)\\nif not all(blocked):\\n    sys.exit(\\\"fail-closed: egress reachable during offline validation\\\")\\n\\nimport importlib.metadata as md\\nimport alphafold3\\nfrom alphafold3.model import params as af3_params\\nmodel_dir = os.environ[\\\"MODEL_DIR\\\"]\\nprint(\\\"af3_distribution_version=%s\\\" % md.version(\\\"alphafold3\\\"), flush=True)\\nprint(\\\"loader_module=%s\\\" % af3_params.__name__, flush=True)\\nprint(\\\"loader_entrypoint=get_model_haiku_params\\\", flush=True)\\nprint(\\\"model_dir=%s\\\" % model_dir, flush=True)\\nfiles, compressed = af3_params.select_model_files(model_dir)\\nprint(\\\"selected_model_files=%s compressed=%s\\\" % ([f.name for f in files], compressed), flush=True)\\n\\n# The official loader call, exactly as run_alphafold.py invokes it.\\ntree = af3_params.get_model_haiku_params(model_dir=model_dir)\\nscopes = len(tree)\\narrays = sum(len(v) for v in tree.values())\\nelements = sum(int(a.size) for v in tree.values() for a in v.values())\\ndevices = sorted({str(a.device) for v in tree.values() for a in v.values()})\\ndtypes = sorted({str(a.dtype) for v in tree.values() for a in v.values()})\\nprint(\\\"loaded_scopes=%d\\\" % scopes, flush=True)\\nprint(\\\"loaded_parameter_arrays=%d\\\" % arrays, flush=True)\\nprint(\\\"loaded_parameter_elements=%d\\\" % elements, flush=True)\\nprint(\\\"parameter_devices=%s\\\" % \\\",\\\".join(devices), flush=True)\\nprint(\\\"parameter_dtypes=%s\\\" % \\\",\\\".join(dtypes), flush=True)\\nif arrays \\u003c 100:\\n    sys.exit(\\\"fail-closed: loader materialised too few parameter arrays\\\")\\nevidence = {\\\"model_dir\\\": model_dir, \\\"scopes\\\": scopes, \\\"arrays\\\": arrays, \\\"elements\\\": elements}\\nprint(\\\"loader_evidence_digest=%s\\\" % hashlib.sha256(\\n    json.dumps(evidence, sort_keys=True, separators=(\\\",\\\", \\\":\\\")).encode()).hexdigest(), flush=True)\\nprint(\\\"OFFICIAL_LOADER_PASSED\\\", flush=True)\\nPYEOF\\necho \\\"=== minimal inference ===\\\"\\nmkdir -p /scratch/out\\ncd /opt/alphafold3\\n$PY run_alphafold.py \\\\\\n  --model_dir=\\\"$MODEL_DIR\\\" \\\\\\n  --json_path=/input/fold_input.json \\\\\\n  --output_dir=/scratch/out \\\\\\n  --norun_data_pipeline \\\\\\n  --flash_attention_implementation=xla 2\\u003e\\u00261 | tail -30\\necho \\\"=== produced structures ===\\\"\\nfind /scratch/out -name '*.cif' | head -5\\n$PY - \\u003c\\u003c'PYEOF'\\nimport glob, hashlib, pathlib\\ncifs = sorted(glob.glob(\\\"/scratch/out/**/*.cif\\\", recursive=True))\\nif not cifs:\\n    raise SystemExit(\\\"fail-closed: inference produced no structure\\\")\\nbest = cifs[0]\\ntext = pathlib.Path(best).read_text()\\natoms = sum(1 for line in text.splitlines() if line.startswith(\\\"ATOM\\\"))\\nprint(\\\"predicted_cif=%s\\\" % pathlib.Path(best).name, flush=True)\\nprint(\\\"predicted_atom_records=%d\\\" % atoms, flush=True)\\nprint(\\\"predicted_cif_sha256=%s\\\" % hashlib.sha256(text.encode()).hexdigest(), flush=True)\\nif atoms \\u003c 10:\\n    raise SystemExit(\\\"fail-closed: predicted structure has too few atoms\\\")\\nprint(\\\"MINIMAL_INFERENCE_PASSED\\\", flush=True)\\nPYEOF\\n\"],\"command\":[\"/bin/sh\",\"-c\"],\"env\":[{\"name\":\"XLA_FLAGS\",\"value\":\"--xla_gpu_enable_triton_gemm=false\"},{\"name\":\"XLA_PYTHON_CLIENT_PREALLOCATE\",\"value\":\"false\"},{\"name\":\"HOME\",\"value\":\"/scratch\"},{\"name\":\"MODEL_DIR\",\"value\":\"/opt/fs2/academic/alphafold3\"}],\"image\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3@sha256:bead2e68627c1aa7d5fa80243b1164a18160f48cf3a1867090d72ff2b9270e37\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"af3\",\"resources\":{\"limits\":{\"cpu\":\"12\",\"memory\":\"64Gi\",\"nvidia.com/gpu\":1},\"requests\":{\"cpu\":\"4\",\"memory\":\"32Gi\",\"nvidia.com/gpu\":1}},\"volumeMounts\":[{\"mountPath\":\"/opt/fs2/academic\",\"name\":\"academic\",\"readOnly\":true},{\"mountPath\":\"/input\",\"name\":\"input\",\"readOnly\":true},{\"mountPath\":\"/scratch\",\"name\":\"scratch\"}]}],\"enableServiceLinks\":false,\"nodeSelector\":{\"accelerator.fs2.nebius/class\":\"nvidia-h100-sxm5-80gb\",\"workload.fs2.nebius/gpu\":\"true\"},\"restartPolicy\":\"Never\",\"securityContext\":{\"runAsNonRoot\":true,\"seccompProfile\":{\"type\":\"RuntimeDefault\"},\"supplementalGroups\":[65532]},\"tolerations\":[{\"effect\":\"NoSchedule\",\"key\":\"dedicated\",\"operator\":\"Equal\",\"value\":\"fs2-inference\"}],\"volumes\":[{\"name\":\"academic\",\"persistentVolumeClaim\":{\"claimName\":\"academic-assets-runtime-rwx\",\"readOnly\":true}},{\"configMap\":{\"name\":\"af3-minimal-input\"},\"name\":\"input\"},{\"emptyDir\":{\"sizeLimit\":\"16Gi\"},\"name\":\"scratch\"}]}}}}\n"
+    },
+    "creationTimestamp": "2026-09-02T22:40:26Z",
+    "labels": {
+      "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion"
+    },
+    "name": "academic-af3-official-loader-v3",
+    "namespace": "fs2-academic-poc",
+    "uid": "c5ac010c-ffda-4759-9b87-e9bcc607c108"
+  },
+  "spec": {
+    "backoffLimit": 0,
+    "completionMode": "NonIndexed",
+    "completions": 1,
+    "manualSelector": false,
+    "parallelism": 1,
+    "podReplacementPolicy": "TerminatingOrFailed",
+    "selector": {
+      "matchLabels": {
+        "batch.kubernetes.io/controller-uid": "c5ac010c-ffda-4759-9b87-e9bcc607c108"
+      }
+    },
+    "suspend": false,
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion",
+          "batch.kubernetes.io/controller-uid": "c5ac010c-ffda-4759-9b87-e9bcc607c108",
+          "batch.kubernetes.io/job-name": "academic-af3-official-loader-v3",
+          "controller-uid": "c5ac010c-ffda-4759-9b87-e9bcc607c108",
+          "fs2.nebius.ai/offline-validation": "true",
+          "job-name": "academic-af3-official-loader-v3"
+        }
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "containers": [
+          {
+            "args": [
+              "set -e\nPY=/opt/alphafold3-venv/bin/python\necho \"=== identity ===\"\nnvidia-smi --query-gpu=name,memory.total,compute_cap --format=csv,noheader\n$PY - <<'PYEOF'\nimport hashlib, json, os, socket, sys\n# Offline proof: egress is denied by NetworkPolicy for this labelled pod.\nblocked = []\nfor host, port in ((\"1.1.1.1\", 443), (\"8.8.8.8\", 53)):\n    try:\n        socket.create_connection((host, port), timeout=6).close(); blocked.append(False)\n    except OSError:\n        blocked.append(True)\nprint(\"network_disabled=%s\" % str(all(blocked)).lower(), flush=True)\nif not all(blocked):\n    sys.exit(\"fail-closed: egress reachable during offline validation\")\n\nimport importlib.metadata as md\nimport alphafold3\nfrom alphafold3.model import params as af3_params\nmodel_dir = os.environ[\"MODEL_DIR\"]\nprint(\"af3_distribution_version=%s\" % md.version(\"alphafold3\"), flush=True)\nprint(\"loader_module=%s\" % af3_params.__name__, flush=True)\nprint(\"loader_entrypoint=get_model_haiku_params\", flush=True)\nprint(\"model_dir=%s\" % model_dir, flush=True)\nfiles, compressed = af3_params.select_model_files(model_dir)\nprint(\"selected_model_files=%s compressed=%s\" % ([f.name for f in files], compressed), flush=True)\n\n# The official loader call, exactly as run_alphafold.py invokes it.\ntree = af3_params.get_model_haiku_params(model_dir=model_dir)\nscopes = len(tree)\narrays = sum(len(v) for v in tree.values())\nelements = sum(int(a.size) for v in tree.values() for a in v.values())\ndevices = sorted({str(a.device) for v in tree.values() for a in v.values()})\ndtypes = sorted({str(a.dtype) for v in tree.values() for a in v.values()})\nprint(\"loaded_scopes=%d\" % scopes, flush=True)\nprint(\"loaded_parameter_arrays=%d\" % arrays, flush=True)\nprint(\"loaded_parameter_elements=%d\" % elements, flush=True)\nprint(\"parameter_devices=%s\" % \",\".join(devices), flush=True)\nprint(\"parameter_dtypes=%s\" % \",\".join(dtypes), flush=True)\nif arrays < 100:\n    sys.exit(\"fail-closed: loader materialised too few parameter arrays\")\nevidence = {\"model_dir\": model_dir, \"scopes\": scopes, \"arrays\": arrays, \"elements\": elements}\nprint(\"loader_evidence_digest=%s\" % hashlib.sha256(\n    json.dumps(evidence, sort_keys=True, separators=(\",\", \":\")).encode()).hexdigest(), flush=True)\nprint(\"OFFICIAL_LOADER_PASSED\", flush=True)\nPYEOF\necho \"=== minimal inference ===\"\nmkdir -p /scratch/out\ncd /opt/alphafold3\n$PY run_alphafold.py \\\n  --model_dir=\"$MODEL_DIR\" \\\n  --json_path=/input/fold_input.json \\\n  --output_dir=/scratch/out \\\n  --norun_data_pipeline \\\n  --flash_attention_implementation=xla 2>&1 | tail -30\necho \"=== produced structures ===\"\nfind /scratch/out -name '*.cif' | head -5\n$PY - <<'PYEOF'\nimport glob, hashlib, pathlib\ncifs = sorted(glob.glob(\"/scratch/out/**/*.cif\", recursive=True))\nif not cifs:\n    raise SystemExit(\"fail-closed: inference produced no structure\")\nbest = cifs[0]\ntext = pathlib.Path(best).read_text()\natoms = sum(1 for line in text.splitlines() if line.startswith(\"ATOM\"))\nprint(\"predicted_cif=%s\" % pathlib.Path(best).name, flush=True)\nprint(\"predicted_atom_records=%d\" % atoms, flush=True)\nprint(\"predicted_cif_sha256=%s\" % hashlib.sha256(text.encode()).hexdigest(), flush=True)\nif atoms < 10:\n    raise SystemExit(\"fail-closed: predicted structure has too few atoms\")\nprint(\"MINIMAL_INFERENCE_PASSED\", flush=True)\nPYEOF\n"
+            ],
+            "command": [
+              "/bin/sh",
+              "-c"
+            ],
+            "env": [
+              {
+                "name": "XLA_FLAGS",
+                "value": "--xla_gpu_enable_triton_gemm=false"
+              },
+              {
+                "name": "XLA_PYTHON_CLIENT_PREALLOCATE",
+                "value": "false"
+              },
+              {
+                "name": "HOME",
+                "value": "/scratch"
+              },
+              {
+                "name": "MODEL_DIR",
+                "value": "/opt/fs2/academic/alphafold3"
+              }
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3@sha256:bead2e68627c1aa7d5fa80243b1164a18160f48cf3a1867090d72ff2b9270e37",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "af3",
+            "resources": {
+              "limits": {
+                "cpu": "12",
+                "memory": "64Gi",
+                "nvidia.com/gpu": "1"
+              },
+              "requests": {
+                "cpu": "4",
+                "memory": "32Gi",
+                "nvidia.com/gpu": "1"
+              }
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/opt/fs2/academic",
+                "name": "academic",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/input",
+                "name": "input",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/scratch",
+                "name": "scratch"
+              }
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": false,
+        "nodeSelector": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+          "workload.fs2.nebius/gpu": "true"
+        },
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {
+          "runAsNonRoot": true,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          },
+          "supplementalGroups": [
+            65532
+          ]
+        },
+        "terminationGracePeriodSeconds": 30,
+        "tolerations": [
+          {
+            "effect": "NoSchedule",
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": "fs2-inference"
+          }
+        ],
+        "volumes": [
+          {
+            "name": "academic",
+            "persistentVolumeClaim": {
+              "claimName": "academic-assets-runtime-rwx",
+              "readOnly": true
+            }
+          },
+          {
+            "configMap": {
+              "defaultMode": 420,
+              "name": "af3-minimal-input"
+            },
+            "name": "input"
+          },
+          {
+            "emptyDir": {
+              "sizeLimit": "16Gi"
+            },
+            "name": "scratch"
+          }
+        ]
+      }
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": "2026-09-02T22:41:52Z",
+        "lastTransitionTime": "2026-09-02T22:41:52Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "SuccessCriteriaMet"
+      },
+      {
+        "lastProbeTime": "2026-09-02T22:41:52Z",
+        "lastTransitionTime": "2026-09-02T22:41:52Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "Complete"
+      }
+    ],
+    "ready": 0,
+    "succeeded": 1,
+    "terminating": 0,
+    "uncountedTerminatedPods": {}
+  }
+}

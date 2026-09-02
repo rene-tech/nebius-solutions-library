@@ -6,6 +6,7 @@ import { OperationDetailPage } from "../pages/OperationDetailPage";
 import { OperationsPage } from "../pages/OperationsPage";
 import { OverviewPage } from "../pages/OverviewPage";
 import { SessionBoundary } from "../auth/SessionContext";
+import { AcademicAssetsPage } from "../pages/academic/AcademicAssetsPage";
 import { AccessPage } from "../pages/access/AccessPage";
 import { AuditPage } from "../pages/audit/AuditPage";
 import { CapacityPage } from "../pages/capacity/CapacityPage";
@@ -31,6 +32,7 @@ export function App() {
           <Route path="operations/:operationId" element={<OperationDetailPage />} />
           <Route path="scientific-runs" element={<ScientificRunsPage />} />
           <Route path="scientific-runs/:runId" element={<ScientificRunDetailPage />} />
+          <Route path="academic-assets" element={<AcademicAssetsPage />} />
           <Route path="access" element={<AccessPage />} />
           <Route path="capacity" element={<CapacityPage />} />
           <Route path="observability" element={<ObservabilityPage />} />

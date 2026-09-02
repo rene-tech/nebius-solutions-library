@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/academic-use-authorization/v1",
+  "title": "Platform-owner academic proof-of-concept use authorization",
+  "description": "Records that the platform owner authorized installing and operating a licensed academic asset for this proof of concept. It activates the operational path only. It is deliberately NOT an institutional license acceptance: it carries no representative identity, no signature, and no institution binding, and it may never claim to supersede the licensor's own acceptance requirement.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "asset_id",
+    "status",
+    "granted_at",
+    "granted_by_role",
+    "authorization_id",
+    "tenant_id",
+    "scope",
+    "provenance",
+    "supersedes_formal_acceptance",
+    "permitted_operations",
+    "use_class",
+    "non_exportable",
+    "licence_references",
+    "artifact_reference"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/academic-use-authorization/v1"
+    },
+    "asset_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "status": {
+      "const": "granted"
+    },
+    "granted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "granted_by_role": {
+      "const": "platform-owner"
+    },
+    "authorization_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "scope": {
+      "const": "academic-noncommercial"
+    },
+    "provenance": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 1024
+    },
+    "supersedes_formal_acceptance": {
+      "const": false
+    },
+    "permitted_operations": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "verify-artifact",
+          "stage-tenant-private-volume",
+          "install-to-tenant-private-volume",
+          "validate-runtime",
+          "execute-scientific-prediction"
+        ]
+      },
+      "description": "Operations the platform owner authorized for this tenant. execute-scientific-prediction is what makes the models actually usable for tenant-academic scientific runs; without it the assets may only be staged and validated. Redistribution and image embedding are not expressible here and are refused unconditionally."
+    },
+    "use_class": {
+      "const": "academic-non-commercial"
+    },
+    "non_exportable": {
+      "const": true,
+      "description": "The staged artifacts stay inside the tenant boundary and are never exported, published or shared onward."
+    },
+    "licence_references": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Official licence documents this authorization was granted against, each pinned by revision and digest so the terms relied upon are reproducible.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "document_id",
+          "url",
+          "pinned_revision",
+          "version",
+          "sha256",
+          "verified_at",
+          "basis"
+        ],
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https://"
+          },
+          "pinned_revision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "basis": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      }
+    },
+    "artifact_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "version",
+        "sha256",
+        "source_url"
+      ],
+      "properties": {
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_url": {
+          "type": "string",
+          "pattern": "^https://"
+        }
+      }
+    }
+  },
+  "not": {
+    "anyOf": [
+      {
+        "required": [
+          "actor"
+        ]
+      },
+      {
+        "required": [
+          "signature"
+        ]
+      },
+      {
+        "required": [
+          "institution_id"
+        ]
+      },
+      {
+        "required": [
+          "institution_name"
+        ]
+      },
+      {
+        "required": [
+          "accepted_terms_sha256"
+        ]
+      },
+      {
+        "required": [
+          "accepted_at"
+        ]
+      },
+      {
+        "required": [
+          "entitlements"
+        ]
+      }
+    ]
+  }
+}

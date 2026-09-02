@@ -143,26 +143,3 @@ resource "terraform_data" "deployment_contract" {
 
   }
 }
-resource "kubernetes_namespace_v1" "academic_assets" {
-  count = var.academic_assets.enabled ? 1 : 0
-  metadata { name = var.academic_assets.namespace }
-}
-
-resource "kubernetes_persistent_volume_claim_v1" "academic_assets_runtime" {
-  count = var.academic_assets.enabled ? 1 : 0
-  metadata {
-    name      = var.academic_assets.pvc_name
-    namespace = var.academic_assets.namespace
-    labels = {
-      "fs2.nebius.ai/tenant-id"        = var.academic_assets.tenant_id
-      "fs2.nebius.ai/institution-id"   = var.academic_assets.institution_id
-      "fs2.nebius.ai/academic-runtime" = "true"
-    }
-  }
-  spec {
-    access_modes       = ["ReadWriteMany"]
-    storage_class_name = "csi-mounted-fs-path-sc"
-    resources { requests = { storage = "${var.academic_assets.storage_gib}Gi" } }
-  }
-  depends_on = [kubernetes_namespace_v1.academic_assets]
-}

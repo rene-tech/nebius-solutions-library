@@ -1,0 +1,37 @@
+{
+  "canonical_volume": {
+    "access_modes": [
+      "ReadWriteMany"
+    ],
+    "asset_gid": 65532,
+    "claim": "academic-assets-runtime-rwx",
+    "csi_driver": "mounted-fs-path.csi.nebius.ai",
+    "filesystem_id": null,
+    "mount_root": "/opt/fs2/academic",
+    "namespace": "fs2-academic-poc",
+    "phase": "Bound",
+    "pvc_uid": "4d074d97-3391-46b9-9eea-ae57abc85d06",
+    "storage_class": "csi-mounted-fs-path-sc",
+    "volume_handle": "pvc-4d074d97-3391-46b9-9eea-ae57abc85d06",
+    "volume_name": "pvc-4d074d97-3391-46b9-9eea-ae57abc85d06"
+  },
+  "environment": {
+    "cluster_context": "k8s-inference-h100",
+    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "registry_id": "registry-e00akg9ndpx77eaexh"
+  },
+  "note": "Generated environment binding for one deployment. The reusable contract deliberately carries no project, region, cluster, volume or registry identity; those are observed here and in stage receipts so the contract stays portable.",
+  "observed_at": "2026-09-02T23:40:00Z",
+  "retained_quarantine_volume": {
+    "claim": "cancer-immunotherapy-academic-assets-rwx-v1",
+    "namespace": "fs2-models",
+    "phase": "Bound",
+    "purpose": "retained archive of the rejected PyRosetta 2025.24 conda package",
+    "pvc_uid": "0c67bc71-1735-4823-a932-478e5b8f85cb",
+    "reconciliation": "Contents were enumerated by digest: it holds one byte-identical duplicate of the AlphaFold 3 object already on the canonical volume, plus the rejected 2025.24 conda archive that the contract says to retain and never activate. Nothing unique to the canonical runtime path lives here.",
+    "runtime_mountable": false
+  },
+  "schema": "fs2-serve.nebius.ai/academic-assets-acceptance-state/v1"
+}

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fs2-serve.nebius.ai/schema/academic-license-acceptance/v2",
-  "title": "Private authorized-representative academic acceptance receipt",
+  "$id": "https://fs2-serve.nebius.ai/schema/academic-license-acceptance/v3",
+  "title": "Formal institutional academic license acceptance receipt",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -20,41 +20,96 @@
     "source_claims"
   ],
   "properties": {
-    "schema": {"const": "fs2-serve.nebius.ai/academic-license-acceptance/v2"},
-    "asset_id": {"enum": ["alphafold3", "pyrosetta-bindcraft"]},
-    "status": {"const": "accepted-by-authorized-representative"},
-    "accepted_at": {"type": "string", "format": "date-time"},
+    "schema": {
+      "const": "fs2-serve.nebius.ai/academic-license-acceptance/v3"
+    },
+    "asset_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "status": {
+      "const": "accepted-by-authorized-representative"
+    },
+    "accepted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
     "tenant": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tenant_id", "institution_id", "institution_name"],
+      "required": [
+        "tenant_id",
+        "institution_id",
+        "institution_name"
+      ],
       "properties": {
-        "tenant_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"},
-        "institution_id": {"type": "string", "minLength": 3, "maxLength": 256},
-        "institution_name": {"type": "string", "minLength": 3, "maxLength": 256}
+        "tenant_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+        },
+        "institution_id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 256
+        },
+        "institution_name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 256
+        }
       }
     },
     "actor": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["actor_id", "display_name", "role"],
+      "required": [
+        "actor_id",
+        "display_name",
+        "role"
+      ],
       "properties": {
-        "actor_id": {"type": "string", "minLength": 3, "maxLength": 256},
-        "display_name": {"type": "string", "minLength": 3, "maxLength": 256},
-        "role": {"const": "authorized-organization-representative"}
+        "actor_id": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 256
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 256
+        },
+        "role": {
+          "const": "authorized-organization-representative"
+        }
       }
     },
     "signature": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "sha256"],
+      "required": [
+        "type",
+        "sha256"
+      ],
       "properties": {
-        "type": {"enum": ["detached-signature", "signed-attestation-document"]},
-        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        "type": {
+          "enum": [
+            "detached-signature",
+            "signed-attestation-document"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
       }
     },
-    "scope": {"const": "academic-noncommercial"},
-    "distribution_scope": {"const": "tenant-institution-only"},
+    "scope": {
+      "const": "academic-noncommercial"
+    },
+    "distribution_scope": {
+      "const": "tenant-institution-only"
+    },
     "terms": {
       "type": "array",
       "minItems": 2,
@@ -62,14 +117,26 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["document_id", "sha256"],
+        "required": [
+          "document_id",
+          "sha256"
+        ],
         "properties": {
-          "document_id": {"type": "string", "minLength": 1},
-          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
         }
       }
     },
-    "accepted_terms_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "accepted_terms_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "entitlements": {
       "type": "array",
       "minItems": 1,
@@ -77,14 +144,31 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["entitlement_id", "issuer", "evidence_sha256"],
+        "required": [
+          "entitlement_id",
+          "issuer",
+          "evidence_sha256"
+        ],
         "properties": {
-          "entitlement_id": {"type": "string", "minLength": 1},
-          "issuer": {"type": "string", "minLength": 1},
-          "evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          "entitlement_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "issuer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
         }
       }
     },
-    "source_claims": {"type": "object", "minProperties": 3}
-  }
+    "source_claims": {
+      "type": "object",
+      "minProperties": 3
+    }
+  },
+  "description": "The licensor-required attestation. A named representative with authority to bind a specific academic institution accepts the exact pinned terms and supplies entitlement evidence digests. This is never synthesized from placeholder institution metadata and is never implied by the platform-owner proof-of-concept use authorization."
 }

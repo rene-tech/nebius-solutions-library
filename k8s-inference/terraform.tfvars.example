@@ -313,3 +313,50 @@ deployment = {
     create_probe_job = false
   }
 }
+
+# Tenant-private delivery of licensed academic assets.
+#
+# Project and region come from deployment.target, so this block is portable.
+# institution_id stays null on purpose: the operational proof-of-concept path must
+# not invent institution metadata. The formal institutional licence acceptance is
+# tracked separately by academic-assets/scripts/academic_assets.py and is reported
+# as FormalAcceptancePending until a named representative supplies a real receipt.
+#
+# Licensed bytes are mounted read-only from the canonical claim and are never baked
+# into an image. The canonical claim already holds verified bytes, so adopt it with
+# academic-assets/scripts/adopt-live-resources.sh instead of letting Terraform create it.
+academic_assets = {
+  enabled             = true
+  tenant_id           = "tenant-academic"
+  institution_id      = null
+  namespace           = "fs2-academic-poc"
+  runtime_pvc_name    = "academic-assets-runtime-rwx"
+  runtime_storage_gib = 128
+  storage_class       = "csi-mounted-fs-path-sc"
+  mount_root          = "/opt/fs2/academic"
+
+  # Consuming pods set securityContext.supplementalGroups = [asset_gid] to read the
+  # licensed bytes. The bytes stay group-readable only, never world-readable.
+  asset_gid = 65532
+
+  deny_egress_during_offline_validation = true
+
+  # Retained, never runtime-mountable. Holds the rejected PyRosetta 2025.24 archive.
+  legacy_quarantine = {
+    enabled  = true
+    retain   = true
+    pvc_name = "cancer-immunotherapy-academic-assets-rwx-v1"
+  }
+
+  assets = {
+    alphafold3 = {
+      model_id      = "alphafold3"
+      relative_path = "alphafold3/af3.bin.zst"
+    }
+    pyrosetta-bindcraft = {
+      model_id              = "bindcraft"
+      relative_path         = "pyrosetta-bindcraft/pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl"
+      install_relative_path = "pyrosetta-bindcraft/site-packages"
+    }
+  }
+}

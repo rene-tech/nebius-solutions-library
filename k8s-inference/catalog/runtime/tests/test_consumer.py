@@ -5281,6 +5281,7 @@ class JsonSchemaTests(unittest.TestCase):
             ("runtime-prerequisites.json", "runtime-prerequisites.schema.json"),
             ("scale-contracts.json", "scale-contracts.schema.json"),
             ("semantic-requests.json", "semantic-requests.schema.json"),
+            ("academic-asset-readiness.json", "academic-asset-readiness.schema.json"),
         ):
             with self.subTest(contract=contract_name):
                 document = json.loads(

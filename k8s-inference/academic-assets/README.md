@@ -1,210 +1,143 @@
-# Private academic asset ingestion
+# Licensed academic asset ingestion
 
-This directory implements the non-redistributing intake boundary for native
-BindCraft/PyRosetta and AlphaFold 3. It contains contracts, validators, and an
-optional PyRosetta-only private-layer build path, but no package, model
-parameter, credential, signed URL, license acceptance, or model output.
+Private, non-redistributable ingestion for the two licensed assets the cancer
+immunotherapy workload needs:
 
-No readiness claim is checked into Git. The 2026-09-02 inventory was completed
-before acquisition, and the subsequently authorized source bytes live only in
-owner-only state and the task-owned private cache. No organization-terms
-acceptance has been recorded: the current bytes are quarantined and both native
-models truthfully remain `MissingLicenseAcceptance`.
-OpenFold3 and `open-binder` remain independently named alternatives. Neither
-aliases nor satisfies the native `alphafold3` or `bindcraft` readiness gate.
+| Asset | Model | What it is |
+|---|---|---|
+| `alphafold3` | `alphafold3` | Google's AlphaFold 3 model parameters (`af3.bin.zst`) |
+| `pyrosetta-bindcraft` | `bindcraft` | The PyRosetta distribution native BindCraft requires |
 
-## Pinned sources and terms
+Neither may be redistributed. Nothing licensed is ever committed to this
+repository, baked into a container image, or placed in a general shared cache.
 
-This is an engineering control summary, not legal advice. An authorized person
-must review the linked source terms before each acquisition or use.
+## Two independent axes
 
-### PyRosetta for BindCraft
+The single most important rule here is that these two questions have different
+answers and neither implies the other.
 
-BindCraft tag `v.1.5.3` resolves to commit
-`a234a8d3af9fe3d2724209aa91d930280b72048b`. Its
-[pinned environment](https://github.com/martinpacesa/BindCraft/blob/a234a8d3af9fe3d2724209aa91d930280b72048b/environment.yml)
-uses Python 3.10 and
-`pyrosetta=2026.29+releasequarterly.80a0635615=cp310-cp310-linux_x86_64` selected by BindCraft commit `7cd4ace`. The former
-2025.24 conda archive is retained only as rejected quarantine evidence. The official RosettaCommons
-Linux conda index recorded:
+**Use authorization** is the platform owner's grant to install and operate an
+asset for this academic proof of concept. It activates the operational path and
+is recorded in `contracts/*-use-authorization.json`. It carries no institution,
+no representative and no signature, because it is not and must not be presented
+as a licence acceptance.
 
-- filename `pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda`;
-- size `1,435,146,644` bytes;
-- SHA-256 `d1170ee50d5f02c3a6c84a7d0035dc961c7737024836eb5da882abe6ca51afbb`.
+**Formal licence acceptance** is what each licensor actually requires: a named
+representative with authority to bind a specific academic institution accepts the
+exact pinned terms and supplies entitlement evidence. It is reported separately
+and is currently `FormalAcceptancePending`. It is never synthesized from
+placeholder institution metadata, which is why `institution_id` is nullable
+everywhere on the operational path.
 
-The exact [PyRosetta non-commercial license](https://github.com/RosettaCommons/rosetta/blob/de92a3c0dea8a010d372a22025e3e50bd4e2f33f/LICENSE.PyRosetta.md)
-has SHA-256
-`41de5b13b7ddb64fab2dda1cb45581b9d4c1ee6be7bd3ad90f562288bcdcffa1`.
-It defines eligible non-commercial users, permits internal non-commercial
-copies and use, requires commercial users to obtain a separate UW license, and
-directs other non-commercial users to obtain PyRosetta from the official
-distribution so they accept the terms. The
-[official download page](https://www.pyrosetta.org/downloads) documents the
-RosettaCommons conda channel and archive procedure.
+An asset can therefore be fully usable for the authorized proof of concept while
+formal acceptance is still outstanding, and the readiness projection says exactly
+that rather than rounding either way.
 
-Consequently, this workflow rejects a public image. An organization-internal
-PyRosetta private layer is allowed by platform policy only when an authorized
-organization representative records that scope. An individual acceptance stays
-user-bound and may only use private staged storage.
+## Delivery: mounted, never baked
 
-### AlphaFold 3 parameters
+Licensed bytes live on a tenant-private ReadWriteMany claim and are mounted
+read-only. They are never embedded in an image. `resolve --for-image-embedding`
+is refused unconditionally, and the contract cannot express an embedded delivery.
 
-The source instructions are pinned to AlphaFold3 commit
-`c0f97eda2f1f482fd94d3a38bece18c7069b4a5c`. The
-[official README](https://github.com/google-deepmind/alphafold3/blob/c0f97eda2f1f482fd94d3a38bece18c7069b4a5c/README.md)
-states that parameters may only be used if received directly from Google and
-now identifies Google's direct `af3.bin.zst` object. The pinned object metadata
-observed on 2026-09-02 is generation `1780568696389861`, size
-`1,020,545,840`, CRC32C `0h6mjg==`, and last modification
-`2026-06-04T10:24:56Z`.
+Access is by **shared non-root group**, not by matching user IDs:
 
-The exact [model-parameter terms](https://github.com/google-deepmind/alphafold3/blob/c0f97eda2f1f482fd94d3a38bece18c7069b4a5c/WEIGHTS_TERMS_OF_USE.md)
-and [prohibited-use policy](https://github.com/google-deepmind/alphafold3/blob/c0f97eda2f1f482fd94d3a38bece18c7069b4a5c/WEIGHTS_PROHIBITED_USE_POLICY.md)
-have SHA-256 values
-`41adf62ff5eabc58831c828793988537948663c139f8b87d8d413851b150b6e5`
-and `4992aebdc29bc7a9260bed6373bad05bb5a7e1b783451cd170163dd259f46c45`.
-The terms limit use to qualifying non-commercial organizations and research,
-prohibit publishing or sharing model parameters except within the accepting
-organization, distinguish individual from organization-authorized access, and
-require deletion after termination. They also impose separate requirements on
-outputs and exclude clinical use.
+| Object | Mode | Why |
+|---|---|---|
+| Volume root | `2770` | Owned by the asset group so a non-root installer can create asset directories |
+| Asset directory | `0750` | Owner-writable so a new tree promotes atomically; group-traversable; no world access |
+| Installed tree and files | `0550` / `0440` | Group-readable only. Never world-readable, never group-writable |
 
-Google does not publish a SHA-256 beside the current object. A direct download
-over a verified TLS connection was checked against the generation metadata,
-exact size, zstd framing, and full zstd stream on 2026-09-02. Its computed
-SHA-256, now pinned in the contract, is
-`74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff`.
-Every later copy of that object generation must match this digest.
+A consuming pod joins the group and mounts read-only:
 
-## One-step artifact intake
-
-1. Copy the matching acceptance templates to an owner-only directory outside
-   Git. Review the live terms, replace the timestamp, select the truthful
-   accepting role/scope, and change `accepted` to `true`. Do not add names,
-   credentials, download links, or tokens. The shared-cache command requires
-   `authorized-organization-representative` plus `organization-internal`; it
-   rejects an individual-only receipt.
-2. Obtain each exact artifact through its official process. Do not rename it.
-3. Set paths through environment references so private filesystem locations do
-   not appear in command history, then run the single intake-and-cache command:
-
-```bash
-export FS2_ACADEMIC_STATE=/secure/fs2-academic-assets
-export FS2_AF3_FILE=/secure/intake/af3.bin.zst
-export FS2_AF3_ACCEPTANCE=/secure/intake/alphafold3.acceptance.json
-export FS2_PYROSETTA_FILE=/secure/intake/pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl
-export FS2_PYROSETTA_ACCEPTANCE=/secure/intake/pyrosetta-bindcraft.acceptance.json
-export FS2_ACADEMIC_GENERATION=intake-YYYYMMDD
-
-export FS2_ACADEMIC_ASSET_STATE_DIR=${FS2_ACADEMIC_STATE}
-academic-assets/scripts/ingest-approved-assets.sh
+```yaml
+securityContext:
+  supplementalGroups: [65532]
+volumes:
+  - name: academic-assets
+    persistentVolumeClaim: { claimName: academic-assets-runtime-rwx, readOnly: true }
 ```
 
-The command validates and stages immutable generation files with mode `0400`,
-writes canonical receipts and pointers with mode `0600`, keeps the local root
-at `0700`, and atomically activates the complete generation. It then creates or
-reuses the task-owned PVC on the existing eu-north1 shared filesystem, streams
-each file through a short-lived non-root CPU pod, independently rehashes the
-cached bytes, records a non-secret cache receipt, and deletes the pod. It emits
-only the readiness projection. Reusing a generation ID is rejected.
+Consumers must **not** set `fsGroup`. Kubernetes fsGroup ownership management
+rewrites the tree to group-writable `0660` files and world-traversable `2775`
+directories, which is exactly the drift this contract exists to prevent.
 
-The agent cannot create the acceptance receipts on behalf of an individual or
-organization. Until a truthful receipt is supplied, source bytes may be hash-
-validated into an owner-only quarantine by omitting all acceptance arguments,
-but `resolve`, private-cache evidence, image build, deployment, and semantic
-readiness remain blocked. The cache may retain already acquired bytes by exact
-digest, but it has no active readiness receipt. Once the user supplies both
-receipts, the one-step command above rehashes those immutable cached bytes and
-advances only to `MissingImage`.
+BindCraft consumes a **preinstalled** `site-packages` tree via `PYTHONPATH`. The
+1.67 GB wheel is never installed per request.
 
-`--state-dir` is also accepted, but the environment form is preferred. No
-artifact URL or credential input exists; signed URLs therefore cannot enter
-Terraform state, Git, process output, or receipts.
-
-## Readiness and downstream evidence
-
-Readiness is per native model and moves through these fail-closed states:
-
-| State | Meaning |
-| --- | --- |
-| `InvalidContract` | The active generation belongs to a different contract revision and must be explicitly rotated. |
-| `MissingLicenseAcceptance` | Exact pinned terms/source claims have not been affirmatively accepted. |
-| `MissingArtifact` | Terms are accepted but no matching file is staged. |
-| `MissingCache` | Content is verified locally but no matching same-region private-cache receipt exists. |
-| `InvalidCacheReceipt` | Cache evidence does not match the artifact, license scope, or contracted infrastructure. |
-| `MissingImage` | The private cache is verified but no exact runtime-image receipt exists. |
-| `InvalidImageReceipt` | Image evidence is mismatched, public, redistributable, or embeds AF3 parameters. |
-| `MissingDeployment` | The private image exists but no bound live resource UID exists. |
-| `InvalidDeploymentReceipt` | Deployment evidence is not bound to the exact artifact/model/image chain. |
-| `MissingSemanticReadiness` | Deployment exists but the exact semantic validator has not passed. |
-| `InvalidSemanticReceipt` | Semantic evidence is not a passing validator bound to the exact runtime. |
-| `Ready` | License, artifact, private cache, image, deployment, and semantic receipts form one exact chain. |
-
-The admin/catalog-safe projection is stored as `readiness.json` in the active
-private generation and is also emitted by `status`. It exposes digests and
-states, never paths or acceptance material:
+## One documented step
 
 ```bash
-python3 academic-assets/scripts/academic_assets.py \
-  --contract academic-assets/contracts/academic-assets.json \
-  status --state-dir /secure/fs2-academic-assets
+export FS2_ACADEMIC_ASSET_STATE_DIR=~/.local/state/fs2-academic/private-state
+export FS2_ACADEMIC_GENERATION=poc-$(date -u +%Y%m%d)
+export FS2_AF3_FILE=/path/to/af3.bin.zst
+export FS2_PYROSETTA_WHEEL_FILE=/path/to/pyrosetta-2026.29+...-cp310-cp310-linux_x86_64.whl
+
+# Verify and record locally.
+scripts/ingest-approved-assets.sh
+
+# Also stage onto the tenant volume and build the installed tree.
+export FS2_ACADEMIC_STAGE_CACHE=1
+export FS2_ACADEMIC_PROJECT_ID=... FS2_ACADEMIC_REGION=... FS2_ACADEMIC_CLUSTER_ID=...
+scripts/ingest-approved-assets.sh
 ```
 
-Cache, image, deployment, and semantic automation records immutable receipts
-with `record`. Schemas are in `schemas/`. Every receipt must bind the active
-artifact SHA-256 and exact contracted infrastructure identity; deployment and
-semantic receipts must additionally bind the exact private image digest. A
-different receipt requires a new ingestion generation.
+Artifact locations are passed by environment reference, so no licensed path ever
+appears in argv, logs or receipts. Formal acceptance is optional and separate:
+set `FS2_AF3_ACCEPTANCE` / `FS2_PYROSETTA_ACCEPTANCE` only when a real
+institutional receipt exists. Templates for those live in `contracts/` and fail
+validation while any `REPLACE_` marker remains.
 
-## Optional private runtime layer
+## Readiness stages
 
-`scripts/build-private-layer.sh` copies the verified PyRosetta package into an
-already digest-pinned runtime image through a BuildKit secret mount, pushes
-only to the contracted eu-north1 private registry, requests provenance and an
-SBOM, and records the returned OCI digest. It deliberately refuses:
+`scripts/academic_assets.py status` reports, per asset:
 
-- an individual-only acceptance;
-- a non-digest base image;
-- a target outside the task's private registry prefix;
-- execution without `FS2_PARENT_INTEGRATION_APPROVED=yes`.
+1. `artifact` — bytes verified against the pinned size, magic, digest and a real
+   structural check (zstd frame test; wheel `dist-info`, `METADATA` version and
+   ABI tag).
+2. `cache` — bytes present on the tenant-private claim, re-hashed on the cluster,
+   with the observed volume identity and delivery modes.
+3. `install` — the contracted installed tree, promoted atomically and
+   import-verified in place. `NotApplicable` for assets consumed directly.
+4. `runtime` — offline proof that a runtime can consume the mounted asset.
+5. `deployment` and `semantic` — serving readiness, owned by the runtime
+   onboarding work.
 
-AlphaFold3 parameters are rejected by this wrapper and must remain an external
-private-volume mount; they are never embedded in a runtime image.
+A generation is bound to an exact contract digest. Changing the contract makes
+existing generations report `InvalidContract` until the evidence is replayed with
+`scripts/replay-live-evidence.sh`. That is intentional fail-closed behaviour.
 
-The wrapper reads registry authentication only through the existing Docker
-credential helper. It never accepts or prints a credential. The layer merely
-places the exact PyRosetta conda package at its contracted runtime path; the
-BindCraft runtime must install it offline. AlphaFold3 must point its model
-directory at the external private-cache parameter file.
+## Infrastructure
 
-Do not run the image wrapper before parent integration review. Artifact staging
-creates only the dedicated cache claim and short-lived loader pod; it does not
-change a shared service, deploy a model runtime, or use a GPU.
+Terraform owns the namespace, the tenant-private claim, the retained quarantine
+claim and the deny-egress policy. **A fresh deployment needs no manual step**:
+`terraform apply` creates everything from the `academic_assets` block in tfvars,
+which inherits project and region from `deployment.target`.
 
-## Rotation and rollback
+`scripts/adopt-live-resources.sh` is only for a claim that already holds verified
+bytes, where recreation would provision an empty volume and discard them. It is
+idempotent: addresses already in state are skipped, and objects that are not live
+are left for `apply` to create.
 
-Create a new immutable generation for any acceptance, source revision,
-artifact, or runtime rotation. Valid old generations and image digests remain intact.
-After validating the intended target, rollback changes only the atomic active
-pointer:
+## Portability
+
+The contract holds policy and asset identity only. Project, region, cluster,
+volume handle and registry are properties of a deployment, so they are observed
+per environment and recorded in stage receipts and generated acceptance state,
+never hard-coded in the reusable contract.
+
+## Alternatives
+
+OpenFold3 and the open binder lane are independent alternatives with their own
+identities and results. They are never aliased to, and never satisfy, AlphaFold 3
+or native BindCraft.
+
+## Checks
 
 ```bash
-python3 academic-assets/scripts/academic_assets.py \
-  --contract academic-assets/contracts/academic-assets.json \
-  rollback --state-dir /secure/fs2-academic-assets \
-  --to-generation intake-previous
+./run_checks.sh
 ```
 
-If an acceptance attribution was invalid or accepted terms terminate, activate
-a replacement quarantined generation first, then remove the invalid inactive
-generation while retaining a non-secret manifest tombstone:
-
-```bash
-python3 academic-assets/scripts/academic_assets.py \
-  --contract academic-assets/contracts/academic-assets.json \
-  revoke --state-dir /secure/fs2-academic-assets \
-  --generation invalid-generation \
-  --reason invalid-license-acceptance-attribution
-```
-
-Run all offline validation with `academic-assets/run_checks.sh`.
+Runs contract and schema validation, the unit and executable script suites, the
+anti-drift check that pins each stage validator to its published JSON Schema, and
+a confidentiality scan of the working tree for licensed artifacts, credentials
+and signed URLs.

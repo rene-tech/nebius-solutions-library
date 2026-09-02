@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 from uuid import UUID
 
 from pydantic import AwareDatetime, Field, model_validator
@@ -717,3 +717,114 @@ class AdminObservability(StrictModel):
 class AdminObservabilitySnapshot(StrictModel):
     observed_at: AwareDatetime
     data: AdminObservability
+
+
+class AcademicAssetState(StrEnum):
+    """Operational readiness of one licensed academic asset."""
+
+    USE_AUTHORIZATION_MISSING = "UseAuthorizationMissing"
+    MISSING_ARTIFACT = "MissingArtifact"
+    MISSING_TENANT_CACHE = "MissingTenantCache"
+    MISSING_RUNTIME_VALIDATION = "MissingRuntimeValidation"
+    MISSING_DEPLOYMENT = "MissingDeployment"
+    MISSING_SEMANTIC_READINESS = "MissingSemanticReadiness"
+    IMAGE_REBUILD_PENDING = "ImageRebuildPending"
+    READY = "Ready"
+    INVALID_CONTRACT = "InvalidContract"
+    INVALID_TENANT_CACHE_RECEIPT = "InvalidTenantCacheReceipt"
+    INVALID_RUNTIME_RECEIPT = "InvalidRuntimeReceipt"
+    INVALID_DEPLOYMENT_RECEIPT = "InvalidDeploymentReceipt"
+    INVALID_SEMANTIC_RECEIPT = "InvalidSemanticReceipt"
+
+
+class AcademicStageStatus(StrEnum):
+    MISSING_TENANT_CACHE = "MissingTenantCache"
+    TENANT_CACHE_READY = "TenantCacheReady"
+    MISSING_RUNTIME_VALIDATION = "MissingRuntimeValidation"
+    RUNTIME_READY = "RuntimeReady"
+    RUNTIME_SEMANTIC_PASSED_IMAGE_REBUILD_PENDING = "RuntimeSemanticPassedImageRebuildPending"
+    MISSING_DEPLOYMENT = "MissingDeployment"
+    DEPLOYMENT_READY = "DeploymentReady"
+    MISSING_SEMANTIC_READINESS = "MissingSemanticReadiness"
+    SEMANTIC_READY = "SemanticReady"
+    MISSING_ARTIFACT = "MissingArtifact"
+    ARTIFACT_VERIFIED = "ArtifactVerified"
+    INVALID_EVIDENCE = "InvalidEvidence"
+
+
+class AcademicUseAuthorizationStatus(StrEnum):
+    MISSING = "Missing"
+    GRANTED = "Granted"
+
+
+class AcademicExecutionAuthorizationStatus(StrEnum):
+    NOT_AUTHORIZED = "NotAuthorized"
+    AUTHORIZED = "Authorized"
+
+
+class AcademicFormalLicenseStatus(StrEnum):
+    """Deliberately independent of every operational status above."""
+
+    PENDING = "FormalAcceptancePending"
+    RECORDED = "FormalAcceptanceRecorded"
+
+
+class AcademicAssetDelivery(StrictModel):
+    """Licensed bytes are mounted, never embedded in an image."""
+
+    mode: Literal["tenant-private-volume"] = "tenant-private-volume"
+    mount_path: str = Field(min_length=1, max_length=512, pattern=r"^/")
+    embed_in_image: Literal[False] = False
+    asset_gid: int = Field(ge=1, le=65535)
+    consumer_access: Literal["supplemental-group"] = "supplemental-group"
+    install_relative_path: str | None = Field(default=None, max_length=512)
+
+
+class AcademicAssetAlternative(StrictModel):
+    model_id: str = Field(min_length=1, max_length=63)
+    relationship: Literal["independent-operational-alternative"] = "independent-operational-alternative"
+    reason: str = Field(min_length=1, max_length=512)
+
+
+class AcademicAssetReadiness(StrictModel):
+    asset_id: str = Field(min_length=1, max_length=63)
+    model_id: str = Field(min_length=1, max_length=63)
+    backend_id: str = Field(min_length=1, max_length=128)
+    display_name: str = Field(min_length=1, max_length=256)
+    state: AcademicAssetState
+    use_authorization_status: AcademicUseAuthorizationStatus
+    execution_authorization_status: AcademicExecutionAuthorizationStatus
+    formal_license_status: AcademicFormalLicenseStatus
+    artifact_status: AcademicStageStatus
+    tenant_cache_status: AcademicStageStatus
+    runtime_status: AcademicStageStatus
+    deployment_status: AcademicStageStatus
+    semantic_status: AcademicStageStatus
+    license_id: str = Field(min_length=1, max_length=256)
+    delivery: AcademicAssetDelivery
+    artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    runtime_image_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    alternative: AcademicAssetAlternative | None = None
+
+
+class AcademicAssetVolume(StrictModel):
+    namespace: str = Field(min_length=1, max_length=63)
+    claim: str = Field(min_length=1, max_length=253)
+    mount_root: str = Field(min_length=1, max_length=512, pattern=r"^/")
+    general_shared_cache: Literal[False] = False
+    world_readable: Literal[False] = False
+
+
+class AcademicAssetReadinessList(StrictModel):
+    """Two independent axes; neither may be inferred from the other."""
+
+    generation: str | None = Field(default=None, max_length=64)
+    runtime_path_state: Literal["Blocked", "Ready"]
+    formal_license_state: Literal["Pending", "Recorded"]
+    delivery: AcademicAssetVolume
+    items: list[AcademicAssetReadiness] = Field(max_length=64)
+
+
+class AcademicAssetSnapshot(StrictModel):
+    observed_at: AwareDatetime
+    data: AcademicAssetReadinessList

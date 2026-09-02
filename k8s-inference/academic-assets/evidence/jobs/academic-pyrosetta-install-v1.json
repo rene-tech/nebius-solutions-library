@@ -1,0 +1,151 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\"},\"name\":\"academic-pyrosetta-install-v1\",\"namespace\":\"fs2-academic-poc\"},\"spec\":{\"backoffLimit\":1,\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\"}},\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"args\":[\"set -eu\\nWHEEL=/runtime/pyrosetta-bindcraft/pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl\\nTARGET=/runtime/pyrosetta-bindcraft/site-packages\\npython -V\\nrm -rf \\\"$TARGET.partial\\\"\\nmkdir -p \\\"$TARGET.partial\\\"\\n# --no-index/--no-deps: the licensed wheel is installed from the mounted\\n# tenant-private volume only; nothing is resolved from an index.\\npip install --no-index --no-deps --disable-pip-version-check \\\\\\n  --target \\\"$TARGET.partial\\\" \\\"$WHEEL\\\"\\nrm -rf \\\"$TARGET\\\"\\nmv \\\"$TARGET.partial\\\" \\\"$TARGET\\\"\\nPYTHONPATH=\\\"$TARGET\\\" python -c \\\"\\nimport importlib.metadata as md\\nprint('installed_version=' + md.version('pyrosetta'))\\nprint('install_root_on_volume=true')\\n\\\"\\ndu -sh \\\"$TARGET\\\" | awk '{print \\\"installed_tree_size=\\\"$1}'\\necho INSTALL_COMPLETE\\n\"],\"command\":[\"sh\",\"-c\"],\"env\":[{\"name\":\"TMPDIR\",\"value\":\"/scratch\"},{\"name\":\"PIP_NO_CACHE_DIR\",\"value\":\"1\"}],\"image\":\"docker.io/library/python:3.10-slim\",\"name\":\"install\",\"resources\":{\"limits\":{\"cpu\":\"4\",\"memory\":\"8Gi\"},\"requests\":{\"cpu\":\"1\",\"memory\":\"2Gi\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"readOnlyRootFilesystem\":true},\"volumeMounts\":[{\"mountPath\":\"/runtime\",\"name\":\"runtime\"},{\"mountPath\":\"/scratch\",\"name\":\"scratch\"}]}],\"enableServiceLinks\":false,\"restartPolicy\":\"Never\",\"securityContext\":{\"fsGroup\":65532,\"runAsGroup\":65532,\"runAsNonRoot\":true,\"runAsUser\":65532,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"volumes\":[{\"name\":\"runtime\",\"persistentVolumeClaim\":{\"claimName\":\"academic-assets-runtime-rwx\"}},{\"emptyDir\":{\"sizeLimit\":\"8Gi\"},\"name\":\"scratch\"}]}}}}\n"
+    },
+    "creationTimestamp": "2026-09-02T21:54:07Z",
+    "labels": {
+      "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion"
+    },
+    "name": "academic-pyrosetta-install-v1",
+    "namespace": "fs2-academic-poc",
+    "uid": "ca85446d-cb49-4c40-a3d0-a2dc6b0d5d0e"
+  },
+  "spec": {
+    "backoffLimit": 1,
+    "completionMode": "NonIndexed",
+    "completions": 1,
+    "manualSelector": false,
+    "parallelism": 1,
+    "podReplacementPolicy": "TerminatingOrFailed",
+    "selector": {
+      "matchLabels": {
+        "batch.kubernetes.io/controller-uid": "ca85446d-cb49-4c40-a3d0-a2dc6b0d5d0e"
+      }
+    },
+    "suspend": false,
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion",
+          "batch.kubernetes.io/controller-uid": "ca85446d-cb49-4c40-a3d0-a2dc6b0d5d0e",
+          "batch.kubernetes.io/job-name": "academic-pyrosetta-install-v1",
+          "controller-uid": "ca85446d-cb49-4c40-a3d0-a2dc6b0d5d0e",
+          "job-name": "academic-pyrosetta-install-v1"
+        }
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "containers": [
+          {
+            "args": [
+              "set -eu\nWHEEL=/runtime/pyrosetta-bindcraft/pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl\nTARGET=/runtime/pyrosetta-bindcraft/site-packages\npython -V\nrm -rf \"$TARGET.partial\"\nmkdir -p \"$TARGET.partial\"\n# --no-index/--no-deps: the licensed wheel is installed from the mounted\n# tenant-private volume only; nothing is resolved from an index.\npip install --no-index --no-deps --disable-pip-version-check \\\n  --target \"$TARGET.partial\" \"$WHEEL\"\nrm -rf \"$TARGET\"\nmv \"$TARGET.partial\" \"$TARGET\"\nPYTHONPATH=\"$TARGET\" python -c \"\nimport importlib.metadata as md\nprint('installed_version=' + md.version('pyrosetta'))\nprint('install_root_on_volume=true')\n\"\ndu -sh \"$TARGET\" | awk '{print \"installed_tree_size=\"$1}'\necho INSTALL_COMPLETE\n"
+            ],
+            "command": [
+              "sh",
+              "-c"
+            ],
+            "env": [
+              {
+                "name": "TMPDIR",
+                "value": "/scratch"
+              },
+              {
+                "name": "PIP_NO_CACHE_DIR",
+                "value": "1"
+              }
+            ],
+            "image": "docker.io/library/python:3.10-slim",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "install",
+            "resources": {
+              "limits": {
+                "cpu": "4",
+                "memory": "8Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/runtime",
+                "name": "runtime"
+              },
+              {
+                "mountPath": "/scratch",
+                "name": "scratch"
+              }
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": false,
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {
+          "fsGroup": 65532,
+          "runAsGroup": 65532,
+          "runAsNonRoot": true,
+          "runAsUser": 65532,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "terminationGracePeriodSeconds": 30,
+        "volumes": [
+          {
+            "name": "runtime",
+            "persistentVolumeClaim": {
+              "claimName": "academic-assets-runtime-rwx"
+            }
+          },
+          {
+            "emptyDir": {
+              "sizeLimit": "8Gi"
+            },
+            "name": "scratch"
+          }
+        ]
+      }
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": "2026-09-02T21:56:41Z",
+        "lastTransitionTime": "2026-09-02T21:56:41Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "SuccessCriteriaMet"
+      },
+      {
+        "lastProbeTime": "2026-09-02T21:56:41Z",
+        "lastTransitionTime": "2026-09-02T21:56:41Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "Complete"
+      }
+    ],
+    "ready": 0,
+    "succeeded": 1,
+    "terminating": 0,
+    "uncountedTerminatedPods": {}
+  }
+}

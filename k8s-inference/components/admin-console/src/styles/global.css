@@ -345,6 +345,23 @@ a { color: inherit; }
 .resource-table--scientific-runs { min-width: 1780px; }
 .resource-table--scientific-models { min-width: 1580px; }
 .resource-table--scientific-artifacts { min-width: 1120px; }
+.resource-table--academic-assets { min-width: 1720px; }
+.academic-page .resource-table--academic-assets tbody th { max-width: 320px; }
+.academic-summary { align-items: start; }
+.academic-summary__states { display: grid; justify-items: start; gap: 5px; min-width: 250px; }
+.academic-axis-label { color: var(--fs2-text-muted); font-size: 9px; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
+.academic-axis-label + .academic-axis-label, .scientific-state + .academic-axis-label { margin-top: 9px; }
+.academic-delivery-grid { margin-top: 14px; }
+.academic-licence-notice { display: grid; gap: 6px; border-left: 4px solid var(--fs2-warning); }
+.academic-licence-notice p { max-width: 940px; margin: 0; }
+.academic-stage-lines { display: grid; justify-items: start; gap: 4px; min-width: 235px; }
+.academic-stage-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; }
+.academic-stage-line > span:first-child { color: var(--fs2-text-muted); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.academic-delivery { display: grid; justify-items: start; gap: 3px; }
+.academic-mount-path { display: block; max-width: 240px; font-family: var(--fs2-mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.academic-not-embedded { color: var(--fs2-info); font-size: 9px; font-weight: 750; text-transform: uppercase; }
+.academic-digest-line { display: block; margin-top: 3px; color: var(--fs2-text-muted); font-size: 10px; }
+.academic-digest-line code { color: var(--fs2-text-primary); font-family: var(--fs2-mono); font-size: 9px; }
 .scientific-secondary { max-width: 390px; white-space: normal; }
 .scientific-digest { display: block; max-width: 220px; margin-top: 4px; color: var(--fs2-text-muted); font-family: var(--fs2-mono); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scientific-state { display: inline-flex; align-items: center; gap: 6px; min-height: 25px; padding: 3px 8px; color: var(--fs2-info); background: var(--fs2-info-soft); border: 1px solid #b8d3ee; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: capitalize; white-space: nowrap; }
@@ -353,6 +370,8 @@ a { color: inherit; }
 .scientific-state--failed, .scientific-state--cancelled, .scientific-state--blocked, .scientific-state--inadmissible, .scientific-state--denied { color: var(--fs2-danger); background: var(--fs2-danger-soft); border-color: #efb9bf; }
 .scientific-state--preempted, .scientific-state--waiting-for-access, .scientific-state--unverified, .scientific-state--evicted { color: var(--fs2-warning); background: var(--fs2-warning-soft); border-color: #e7cc77; }
 .scientific-state--candidate, .scientific-state--unknown, .scientific-state--skipped { color: var(--fs2-unknown); background: var(--fs2-unknown-soft); border-color: #ccd1d6; }
+.scientific-state--formal-acceptance-pending { color: var(--fs2-warning); background: var(--fs2-warning-soft); border-color: #e7cc77; border-style: dashed; text-transform: none; }
+.scientific-state--formal-acceptance-recorded { color: var(--fs2-accent); background: var(--fs2-accent-soft); border-color: #abd7ba; border-style: dashed; text-transform: none; }
 .scientific-access { display: grid; justify-items: start; gap: 5px; margin-top: 7px; }
 .scientific-access--compact { min-width: 240px; margin-top: 0; }
 .scientific-alternative { display: block; max-width: 390px; color: var(--scientific-purple); font-size: 10px; line-height: 1.4; }
@@ -464,6 +483,7 @@ a { color: inherit; }
   .rollback-control { min-width: 0; display: grid; width: 100%; }
   .configuration-issue { grid-template-columns: 1fr; }
   .scientific-intro, .scientific-stage > header { display: grid; }
+  .academic-summary__states { min-width: 0; margin-top: 14px; }
   .scientific-phase-grid, .scientific-accounting-grid, .scientific-observability-links { grid-template-columns: 1fr; }
   .configuration-page > .inline-notice .button { display: block; margin: 10px 0 0; }
 }

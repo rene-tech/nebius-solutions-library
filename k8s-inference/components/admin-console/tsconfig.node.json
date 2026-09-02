@@ -13,6 +13,7 @@
     "src/api/modelDeploymentTypes.ts",
     "src/api/scientificTypes.ts",
     "src/api/types.ts",
+    "src/test/academicFixtures.ts",
     "src/test/browserFixtures.ts",
     "src/test/capacityObservabilityFixtures.ts",
     "src/test/configurationFixtures.ts",

@@ -537,3 +537,19 @@ podAnnotations: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+# Tenant-private delivery of licensed academic assets (AlphaFold 3 parameters and
+# the BindCraft PyRosetta prerequisite).
+#
+# The chart never mounts licensed bytes into the control plane and never embeds
+# them in an image. It publishes the non-secret delivery contract that a model
+# runtime pod uses to mount them: which claim to attach, where, and which
+# supplemental group grants read access. Licensed bytes stay group-readable on a
+# tenant-private volume and are never world-readable or shared cluster-wide.
+academicAssets:
+  enabled: false
+  namespace: fs2-academic-poc
+  claim: academic-assets-runtime-rwx
+  mountRoot: /opt/fs2/academic
+  assetGid: 65532
+  readOnly: true

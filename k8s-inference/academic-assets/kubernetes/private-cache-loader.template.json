@@ -3,7 +3,7 @@
   "kind": "Pod",
   "metadata": {
     "name": "ACADEMIC_ASSET_LOADER_NAME",
-    "namespace": "fs2-models",
+    "namespace": "fs2-academic-poc",
     "labels": {
       "app.kubernetes.io/name": "academic-asset-loader",
       "app.kubernetes.io/part-of": "fs2-serve",
@@ -15,30 +15,52 @@
     "enableServiceLinks": false,
     "restartPolicy": "Never",
     "securityContext": {
-      "fsGroup": 65532,
-      "fsGroupChangePolicy": "OnRootMismatch",
       "runAsGroup": 65532,
       "runAsNonRoot": true,
       "runAsUser": 65532,
-      "seccompProfile": {"type": "RuntimeDefault"}
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
     },
     "containers": [
       {
         "name": "loader",
-        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:e40c69a6363d1b873780869e3d8301121c7da410435f5d76481986cf2994b571",
+        "image": "docker.io/library/python:3.10-slim",
         "imagePullPolicy": "IfNotPresent",
-        "command": ["python3", "-c", "import time; time.sleep(3600)"],
+        "command": [
+          "python3",
+          "-c",
+          "import time; time.sleep(3600)"
+        ],
         "resources": {
-          "requests": {"cpu": "50m", "memory": "64Mi"},
-          "limits": {"cpu": "250m", "memory": "256Mi"}
+          "requests": {
+            "cpu": "50m",
+            "memory": "64Mi"
+          },
+          "limits": {
+            "cpu": "250m",
+            "memory": "256Mi"
+          }
         },
         "securityContext": {
           "allowPrivilegeEscalation": false,
-          "capabilities": {"drop": ["ALL"]},
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          },
           "readOnlyRootFilesystem": true
         },
         "volumeMounts": [
-          {"name": "private-cache", "mountPath": "/private-cache"}
+          {
+            "name": "private-cache",
+            "mountPath": "/private-cache"
+          },
+          {
+            "name": "installer",
+            "mountPath": "/opt/installer",
+            "readOnly": true
+          }
         ]
       }
     ],
@@ -46,8 +68,70 @@
       {
         "name": "private-cache",
         "persistentVolumeClaim": {
-          "claimName": "cancer-immunotherapy-academic-assets-rwx-v1"
+          "claimName": "academic-assets-runtime-rwx"
         }
+      },
+      {
+        "name": "installer",
+        "configMap": {
+          "name": "academic-tree-installer",
+          "defaultMode": 365
+        }
+      }
+    ],
+    "initContainers": [
+      {
+        "name": "prepare-root",
+        "image": "docker.io/library/python:3.10-slim",
+        "command": [
+          "python3",
+          "/opt/installer/install_tree.py",
+          "prepare",
+          "--root",
+          "/private-cache",
+          "--gid",
+          "ASSET_GID",
+          "--asset-dir",
+          "ASSET_DIR",
+          "--asset-dir-mode",
+          "ASSET_DIR_MODE"
+        ],
+        "securityContext": {
+          "runAsUser": 0,
+          "runAsGroup": 0,
+          "allowPrivilegeEscalation": false,
+          "readOnlyRootFilesystem": true,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ],
+            "add": [
+              "CHOWN",
+              "FOWNER"
+            ]
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "500m",
+            "memory": "512Mi"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "private-cache",
+            "mountPath": "/private-cache"
+          },
+          {
+            "name": "installer",
+            "mountPath": "/opt/installer",
+            "readOnly": true
+          }
+        ]
       }
     ]
   }

@@ -286,6 +286,40 @@ locals {
     }
   }
 
+  academic_assets_contract = {
+    enabled        = var.academic_assets.enabled
+    project_id     = var.deployment.target.project_id
+    region         = var.deployment.target.region
+    tenant_id      = var.academic_assets.tenant_id
+    institution_id = var.academic_assets.institution_id
+    namespace      = var.academic_assets.namespace
+    runtime_claim = {
+      name          = var.academic_assets.runtime_pvc_name
+      storage_gib   = var.academic_assets.runtime_storage_gib
+      storage_class = var.academic_assets.storage_class
+      access_mode   = var.academic_assets.access_mode
+    }
+    legacy_quarantine_claim = {
+      enabled     = var.academic_assets.legacy_quarantine.enabled
+      namespace   = var.academic_assets.legacy_quarantine.namespace
+      name        = var.academic_assets.legacy_quarantine.pvc_name
+      storage_gib = var.academic_assets.legacy_quarantine.storage_gib
+      retain      = var.academic_assets.legacy_quarantine.retain
+    }
+    delivery = {
+      mode                    = "tenant-private-volume"
+      mount_root              = var.academic_assets.mount_root
+      asset_gid               = var.academic_assets.asset_gid
+      consumer_access         = "supplemental-group"
+      world_readable          = false
+      embed_licensed_bytes    = false
+      general_shared_cache    = false
+      deny_egress_on_validate = var.academic_assets.deny_egress_during_offline_validation
+    }
+    assets                    = var.academic_assets.assets
+    readiness_manifest_sha256 = var.academic_assets.readiness_manifest_sha256
+  }
+
   workloads_variables = {
     deployment_profile              = local.model_profile
     enabled_model_ids               = local.selected_model_ids
@@ -307,6 +341,7 @@ locals {
       status    = var.deployment.storage.reference_data.status
       pipeline  = var.deployment.storage.reference_data.pipeline
     }
+    academic_assets = local.academic_assets_contract
     model_express = {
       enabled         = var.deployment.acceleration.model_express.enabled
       deployment_mode = var.deployment.acceleration.model_express.deployment_mode
@@ -391,6 +426,7 @@ locals {
       enabled = true
       source  = "derived-terraform-baseline"
     }
+    academic_assets = local.academic_assets_contract
     artifact_delivery = {
       mode                  = var.deployment.artifacts.registry_policy.mode
       repository_prefix     = var.deployment.artifacts.registry_policy.repository_prefix

@@ -1,0 +1,40 @@
+{{- if .Values.academicAssets.enabled }}
+{{- /*
+  Machine-readable delivery contract for licensed academic assets.
+
+  A model runtime pod reads this to learn which tenant-private claim to mount,
+  where to mount it, and which supplemental group grants read access. The
+  licensed bytes themselves are never in this ConfigMap, never in an image, and
+  never in a general shared cache.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-academic-assets
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+data:
+  delivery_mode: "tenant-private-volume"
+  namespace: {{ .Values.academicAssets.namespace | quote }}
+  claim: {{ .Values.academicAssets.claim | quote }}
+  mount_root: {{ .Values.academicAssets.mountRoot | quote }}
+  asset_gid: {{ .Values.academicAssets.assetGid | quote }}
+  consumer_access: "supplemental-group"
+  read_only: {{ .Values.academicAssets.readOnly | quote }}
+  embeds_licensed_bytes: "false"
+  general_shared_cache: "false"
+  world_readable: "false"
+  consumer_pod_contract: |
+    securityContext:
+      supplementalGroups: [{{ .Values.academicAssets.assetGid }}]
+    volumes:
+      - name: academic-assets
+        persistentVolumeClaim:
+          claimName: {{ .Values.academicAssets.claim }}
+          readOnly: true
+    volumeMounts:
+      - name: academic-assets
+        mountPath: {{ .Values.academicAssets.mountRoot }}
+        readOnly: true
+{{- end }}

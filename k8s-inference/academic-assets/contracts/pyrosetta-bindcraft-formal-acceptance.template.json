@@ -1,0 +1,51 @@
+{
+  "_template": "Copy this file outside the repository, replace every REPLACE_ value with real institutional evidence, and pass it with --pyrosetta-bindcraft-acceptance. It intentionally fails validation while any REPLACE_ marker remains. Never commit a completed receipt.",
+  "schema": "fs2-serve.nebius.ai/academic-license-acceptance/v3",
+  "asset_id": "pyrosetta-bindcraft",
+  "status": "accepted-by-authorized-representative",
+  "accepted_at": "REPLACE_RFC3339_UTC_TIMESTAMP",
+  "tenant": {
+    "tenant_id": "tenant-academic",
+    "institution_id": "REPLACE_INSTITUTION_IDENTIFIER",
+    "institution_name": "REPLACE_INSTITUTION_LEGAL_NAME"
+  },
+  "actor": {
+    "actor_id": "REPLACE_REPRESENTATIVE_IDENTIFIER",
+    "display_name": "REPLACE_REPRESENTATIVE_NAME",
+    "role": "authorized-organization-representative"
+  },
+  "signature": {
+    "type": "signed-attestation-document",
+    "sha256": "REPLACE_64_HEX_DIGEST_OF_THE_SIGNED_ATTESTATION"
+  },
+  "scope": "academic-noncommercial",
+  "distribution_scope": "tenant-institution-only",
+  "terms": [
+    {
+      "document_id": "rosetta-noncommercial-license@de92a3c0dea8a010d372a22025e3e50bd4e2f33f",
+      "sha256": "8cc2e394ee31761ac27a9ebee4fe2a567758e17cadc1ed0318c54e9cfe0d5214"
+    },
+    {
+      "document_id": "pyrosetta-noncommercial-license@de92a3c0dea8a010d372a22025e3e50bd4e2f33f",
+      "sha256": "41de5b13b7ddb64fab2dda1cb45581b9d4c1ee6be7bd3ad90f562288bcdcffa1"
+    }
+  ],
+  "accepted_terms_sha256": "REPLACE_64_HEX_DIGEST_OF_THE_ACCEPTED_TERMS_BUNDLE",
+  "entitlements": [
+    {
+      "entitlement_id": "rosetta-noncommercial-license",
+      "issuer": "University of Washington CoMotion",
+      "evidence_sha256": "REPLACE_64_HEX_DIGEST_OF_THE_ROSETTA_ENTITLEMENT"
+    },
+    {
+      "entitlement_id": "pyrosetta-academic-entitlement",
+      "issuer": "University of Washington CoMotion",
+      "evidence_sha256": "REPLACE_64_HEX_DIGEST_OF_THE_PYROSETTA_ENTITLEMENT"
+    }
+  ],
+  "source_claims": {
+    "received_directly_from_licensor": true,
+    "source": "rosettacommons-quarterly-release.cxx11thread.serialization",
+    "bindcraft_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
+  }
+}

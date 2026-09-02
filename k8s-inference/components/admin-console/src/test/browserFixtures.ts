@@ -1,3 +1,4 @@
+import { academicAssetReadinessFixture } from "./academicFixtures.ts";
 import { capacityFixture, observabilityFixture } from "./capacityObservabilityFixtures.ts";
 import {
   awaitingStatus,
@@ -199,6 +200,7 @@ export function browserFixture(path: string): unknown | undefined {
   if (path === "/admin/api/v1/scientific-runs") return envelope(scientificRunListFixture);
   if (path.startsWith("/admin/api/v1/scientific-runs/")) return envelope(scientificRunDetailFixture);
   if (path === "/admin/api/v1/scientific-models") return envelope(scientificModelReadinessFixture);
+  if (path === "/admin/api/v1/academic-assets") return envelope(academicAssetReadinessFixture);
   if (path === "/admin/api/v1/capacity") return envelope(capacityFixture);
   if (path === "/admin/api/v1/observability") return envelope(observabilityFixture);
   if (path === "/admin/api/v1/configuration") return envelope(configurationRevision);

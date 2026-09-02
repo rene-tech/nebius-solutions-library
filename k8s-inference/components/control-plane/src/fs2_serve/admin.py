@@ -14,6 +14,9 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .admin_models import (
+    AcademicAssetReadinessList,
+    AcademicAssetSnapshot,
+    AcademicAssetVolume,
     AdminActivationPhase,
     AdminAutoscalingProjection,
     AdminCapabilityHealth,
@@ -120,6 +123,17 @@ class ObservabilityAdminAdapter(Protocol):
     ) -> AdminObservabilitySnapshot: ...
 
 
+class AcademicAssetAdminAdapter(Protocol):
+    """Reads the non-secret academic asset readiness projection.
+
+    The projection contains identities and readiness state only: no licensed
+    bytes, no credentials and no acceptance receipt bodies ever cross this
+    boundary.
+    """
+
+    async def snapshot(self) -> AcademicAssetSnapshot: ...
+
+
 class UnavailableKubernetesAdminAdapter:
     async def snapshot(self, model_ids: tuple[str, ...]) -> AdminKubernetesSnapshot:
         del model_ids
@@ -137,6 +151,11 @@ class UnavailablePrometheusAdminAdapter:
 class UnavailableCapacityAdminAdapter:
     async def snapshot(self) -> AdminCapacitySnapshot:
         raise AdminAdapterUnavailableError("capacity admin adapter is not configured")
+
+
+class UnavailableAcademicAssetAdminAdapter:
+    async def snapshot(self) -> AcademicAssetSnapshot:
+        raise AdminAdapterUnavailableError("academic asset admin adapter is not configured")
 
 
 class UnavailableObservabilityAdminAdapter:
@@ -457,6 +476,7 @@ class AdminReadService:
         prometheus: PrometheusAdminAdapter | None = None,
         capacity: CapacityAdminAdapter | None = None,
         observability: ObservabilityAdminAdapter | None = None,
+        academic_assets: AcademicAssetAdminAdapter | None = None,
         contexts: AdminContextConfig | None = None,
         clock: Callable[[], datetime] | None = None,
         source_max_age_seconds: float = MAX_SOURCE_AGE_SECONDS,
@@ -472,10 +492,61 @@ class AdminReadService:
         self.prometheus = prometheus or UnavailablePrometheusAdminAdapter()
         self.capacity_adapter = capacity or UnavailableCapacityAdminAdapter()
         self.observability_adapter = observability or UnavailableObservabilityAdminAdapter()
+        self.academic_assets_adapter = academic_assets or UnavailableAcademicAssetAdminAdapter()
         self.contexts = contexts or AdminContextConfig()
         self.clock = clock or (lambda: datetime.now(UTC))
         self.source_max_age_seconds = source_max_age_seconds
         self.adapter_timeout_seconds = adapter_timeout_seconds
+
+    async def academic_assets(self, context: AdminContext) -> AdminEnvelope[AcademicAssetReadinessList]:
+        """Project licensed academic asset readiness for operators.
+
+        The two readiness axes stay separate: an asset can be operationally
+        usable for the authorized proof of concept while formal institutional
+        licence acceptance is still outstanding, and this never reports the
+        latter as satisfied because of the former.
+        """
+
+        observed_at = self.clock()
+        state = "available"
+        reason: str | None = None
+        try:
+            snapshot = await asyncio.wait_for(
+                self.academic_assets_adapter.snapshot(),
+                timeout=self.adapter_timeout_seconds,
+            )
+            data = snapshot.data
+            observed_at = snapshot.observed_at
+        except (AdminAdapterUnavailableError, TimeoutError, Exception) as error:
+            state = "unavailable"
+            reason = type(error).__name__
+            data = AcademicAssetReadinessList(
+                generation=None,
+                runtime_path_state="Blocked",
+                formal_license_state="Pending",
+                delivery=AcademicAssetVolume(
+                    namespace="fs2-academic-poc",
+                    claim="academic-assets-runtime-rwx",
+                    mount_root="/opt/fs2/academic",
+                ),
+                items=[],
+            )
+        source = AdminSource(
+            id="academic-assets",
+            state=AdminSourceState(state),
+            observed_at=observed_at,
+            age_seconds=max(0.0, (self.clock() - observed_at).total_seconds()),
+            reason=reason,
+        )
+        return AdminEnvelope[AcademicAssetReadinessList](
+            meta=AdminMeta(
+                generated_at=self.clock(),
+                context=context,
+                sources=[source],
+                warnings=[],
+            ),
+            data=data,
+        )
 
     async def _runtime_models(self) -> tuple[list[OperationalModel], PlatformConfiguration | None]:
         """Return configured deployments, not every canonical catalog candidate."""
