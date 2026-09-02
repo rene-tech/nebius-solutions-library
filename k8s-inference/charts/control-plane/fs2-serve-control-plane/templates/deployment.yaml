@@ -57,7 +57,7 @@
 {{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "8c81e640cb0bf30df242363518d307af68a5a19ad20b4cb2eac8d7b7b9081b99") (ne .Values.migration.releaseContract.migrationSetSha256 "cecfcd67151405ed5acf2b87c558051ff842a8a9a3a84f338e92142f49a7efc9") (ne (int .Values.migration.releaseContract.migrationCount) 15) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0015_scientific_batch_controller.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "c78c7a4d69f535260fb341687d328bfc1ba636dd1ef82c72d0a5dec71ecee7e7") (ne .Values.migration.releaseContract.migrationSetSha256 "2982db80a031571280fb9fb57a4fdae3a5f043a21af6ae4d476884164f10d6dd") (ne (int .Values.migration.releaseContract.migrationCount) 14) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0014_scientific_artifact_results.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}
@@ -122,31 +122,6 @@
 {{- end }}
 {{- if and .Values.modelController.writesEnabled (not .Values.adminReadAdapters.capacity.enabled) }}
 {{- fail "modelController.writesEnabled requires adminReadAdapters.capacity for the runtime Kubernetes credential" }}
-{{- end }}
-{{- if and .Values.scientificBatch.enabled (not .Values.scientificBatch.writesEnabled) }}
-{{- fail "scientificBatch.enabled requires its independent writesEnabled gate" }}
-{{- end }}
-{{- if and .Values.scientificBatch.writesEnabled (not .Values.scientificBatch.enabled) }}
-{{- fail "scientificBatch.writesEnabled requires scientificBatch.enabled" }}
-{{- end }}
-{{- if .Values.scientificBatch.enabled }}
-{{- if not .Values.artifactService.enabled }}
-{{- fail "scientificBatch requires artifactService.enabled" }}
-{{- end }}
-{{- if or (not (regexMatch "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" .Values.scientificBatch.schedulingContractConfigMapName)) (not (regexMatch "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" .Values.scientificBatch.executionMapConfigMapName)) }}
-{{- fail "scientificBatch requires immutable scheduling-contract and execution-map ConfigMaps" }}
-{{- end }}
-{{- if or (not .Values.networkPolicy.enabled) (eq (len .Values.networkPolicy.kubernetesApiCidrs) 0) }}
-{{- fail "scientificBatch requires bounded Kubernetes API egress" }}
-{{- end }}
-{{- end }}
-{{- if .Values.artifactService.enabled }}
-{{- if not (regexMatch "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" .Values.artifactService.credentialsSecretName) }}
-{{- fail "artifactService requires an existing credentials Secret" }}
-{{- end }}
-{{- if or (not .Values.networkPolicy.enabled) (eq (len .Values.networkPolicy.artifactStoreCidrs) 0) }}
-{{- fail "artifactService requires bounded object-store egress" }}
-{{- end }}
 {{- end }}
 {{- if or (lt (.Values.adminReadAdapters.adapterTimeoutSeconds | float64) 0.1) (gt (.Values.adminReadAdapters.adapterTimeoutSeconds | float64) 10.0) }}
 {{- fail "adminReadAdapters.adapterTimeoutSeconds must be between 0.1 and 10 seconds" }}

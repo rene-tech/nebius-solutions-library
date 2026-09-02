@@ -95,6 +95,53 @@ app.kubernetes.io/component: model-controller
       key: {{ .Values.secrets.maintenanceDatabase.key }}
 {{- end -}}
 
+{{- define "fs2-serve.scientificArtifactsEnv" -}}
+{{- if .Values.scientificArtifacts.enabled }}
+- name: FS2_SCIENTIFIC_ARTIFACTS_ENABLED
+  value: "true"
+- name: FS2_ARTIFACT_STORE_ENDPOINT
+  value: {{ required "scientificArtifacts.endpoint is required" .Values.scientificArtifacts.endpoint | quote }}
+- name: FS2_ARTIFACT_STORE_BUCKET
+  value: {{ required "scientificArtifacts.bucket is required" .Values.scientificArtifacts.bucket | quote }}
+- name: FS2_ARTIFACT_STORE_REGION
+  value: {{ required "scientificArtifacts.region is required" .Values.scientificArtifacts.region | quote }}
+- name: FS2_ARTIFACT_STORE_ADDRESSING_STYLE
+  value: {{ .Values.scientificArtifacts.addressingStyle | quote }}
+- name: FS2_ARTIFACT_STORE_VERIFY_TLS
+  value: {{ .Values.scientificArtifacts.verifyTls | quote }}
+- name: FS2_ARTIFACT_STORE_CREDENTIALS_FILE
+  value: /var/run/secrets/fs2-serve/artifact-store/credentials.json
+- name: FS2_ARTIFACT_HANDLE_TTL_SECONDS
+  value: {{ .Values.scientificArtifacts.handleTtlSeconds | int64 | quote }}
+- name: FS2_ARTIFACT_MAX_BYTES
+  value: {{ .Values.scientificArtifacts.maxBytes | int64 | quote }}
+- name: FS2_ARTIFACT_RETENTION_SECONDS
+  value: {{ .Values.scientificArtifacts.retentionSeconds | int64 | quote }}
+- name: FS2_ARTIFACT_MEDIA_TYPES
+  value: {{ join "," .Values.scientificArtifacts.mediaTypes | quote }}
+{{- end }}
+{{- end -}}
+
+{{- define "fs2-serve.scientificArtifactsVolumes" -}}
+{{- if .Values.scientificArtifacts.enabled }}
+- name: artifact-store
+  secret:
+    secretName: {{ .Values.secrets.artifactStore.name }}
+    defaultMode: 0400
+    items:
+      - key: {{ .Values.secrets.artifactStore.key }}
+        path: credentials.json
+{{- end }}
+{{- end -}}
+
+{{- define "fs2-serve.scientificArtifactsVolumeMounts" -}}
+{{- if .Values.scientificArtifacts.enabled }}
+- name: artifact-store
+  mountPath: /var/run/secrets/fs2-serve/artifact-store
+  readOnly: true
+{{- end }}
+{{- end -}}
+
 {{- define "fs2-serve.cryptoEnv" -}}
 - name: FS2_PAYLOAD_KEYRING_FILE
   value: /var/run/secrets/fs2-serve/crypto/payload-keyring.json
@@ -122,6 +169,7 @@ app.kubernetes.io/component: model-controller
 {{ include "fs2-serve.databaseEnv" . }}
 {{ include "fs2-serve.cryptoEnv" . }}
 {{ include "fs2-serve.payloadEnv" . }}
+{{- include "fs2-serve.scientificArtifactsEnv" . }}
 - name: FS2_CATALOG_DIR
   value: {{ ternary .Values.catalog.imagePath "/etc/fs2-serve/catalog" (eq .Values.catalog.delivery "image") | quote }}
 {{- if eq .Values.catalog.delivery "image" }}
@@ -363,6 +411,7 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeVolumeMounts" -}}
 {{ include "fs2-serve.cryptoVolumeMounts" . }}
+{{- include "fs2-serve.scientificArtifactsVolumeMounts" . }}
 {{ include "fs2-serve.databaseCaVolumeMount" . }}
 {{- if eq .Values.catalog.delivery "pvc" }}
 - name: catalog
@@ -465,6 +514,7 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeVolumes" -}}
 {{ include "fs2-serve.cryptoVolumes" . }}
+{{- include "fs2-serve.scientificArtifactsVolumes" . }}
 {{ include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) }}
 {{- if eq .Values.catalog.delivery "pvc" }}
 - name: catalog

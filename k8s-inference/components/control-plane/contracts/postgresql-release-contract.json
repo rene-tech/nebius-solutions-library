@@ -1,6 +1,6 @@
 {
   "canonicalization": "utf8-json-sort-keys-no-whitespace",
-  "contract_payload_sha256": "8c81e640cb0bf30df242363518d307af68a5a19ad20b4cb2eac8d7b7b9081b99",
+  "contract_payload_sha256": "c78c7a4d69f535260fb341687d328bfc1ba636dd1ef82c72d0a5dec71ecee7e7",
   "migration_set": {
     "algorithm": "sha256",
     "ordered_migrations": [
@@ -71,16 +71,11 @@
       },
       {
         "ordinal": 14,
-        "sha256": "88239e15fef20d10c515611d6c9336364a06d9752c475401de56af890c74ec4f",
+        "sha256": "97be6f57c64944418fa9719a58bacd8040402d21fa874f7af3a773c02b68b675",
         "version": "0014_scientific_artifact_results.sql"
-      },
-      {
-        "ordinal": 15,
-        "sha256": "459ee647dfa4857ffffad7a4384c25395803becc441a9dda5e84ac8d099ab444",
-        "version": "0015_scientific_batch_controller.sql"
       }
     ],
-    "sha256": "cecfcd67151405ed5acf2b87c558051ff842a8a9a3a84f338e92142f49a7efc9"
+    "sha256": "2982db80a031571280fb9fb57a4fdae3a5f043a21af6ae4d476884164f10d6dd"
   },
   "namespace_role_ownership": {
     "credential_secrets": [
@@ -193,9 +188,9 @@
   "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
   "required_release_receipt_inputs": {
     "first_migration_version": "0001_initial.sql",
-    "last_migration_version": "0015_scientific_batch_controller.sql",
-    "migration_count": 15,
-    "migration_set_sha256": "cecfcd67151405ed5acf2b87c558051ff842a8a9a3a84f338e92142f49a7efc9",
+    "last_migration_version": "0014_scientific_artifact_results.sql",
+    "migration_count": 14,
+    "migration_set_sha256": "2982db80a031571280fb9fb57a4fdae3a5f043a21af6ae4d476884164f10d6dd",
     "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"
   },
   "schema": "fs2-serve.nebius.ai/postgresql-release-contract/v1"

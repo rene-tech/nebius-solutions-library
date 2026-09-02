@@ -177,6 +177,14 @@ Public routes are:
 MCP calls use the same authorization and durable admission path and receive no
 Kubernetes, GPU, database, artifact, or activation credential.
 
+Scientific model adapters additionally use `/internal/scientific-artifacts/*`,
+which is mounted only when `scientificArtifacts.enabled` is set and object
+storage is fully configured. Writes there require the `artifacts.write` scope
+and reads require `operations.result`; the tenant always comes from the bearer
+principal. Callers receive short-lived presigned handles and never a stored
+credential. See `docs/scientific-artifact-results.md` for the storage,
+retention and fencing contract.
+
 ### Operator session and API-key workflow
 
 The SPA owns `/admin/login`; the FastAPI control plane owns only the versioned
@@ -346,13 +354,13 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`39536717cf8fbb35325bc7ccf0585247ace2f0b9446b3340724fecfab0e430c3`,
+`2982db80a031571280fb9fb57a4fdae3a5f043a21af6ae4d476884164f10d6dd`,
 count `14`, first version `0001_initial.sql`, last version
 `0014_scientific_artifact_results.sql`,
 and namespace/role ownership SHA-256
 `47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca`.
 The whole logical contract payload is SHA-256
-`85ccac5ef465e21bb88e2232c3783967d5265bd16378af1506d1119cdcf354e8`.
+`c78c7a4d69f535260fb341687d328bfc1ba636dd1ef82c72d0a5dec71ecee7e7`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not
