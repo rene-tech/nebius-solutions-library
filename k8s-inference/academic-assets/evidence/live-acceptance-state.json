@@ -23,7 +23,7 @@
     "registry_id": "registry-e00akg9ndpx77eaexh"
   },
   "note": "Generated environment binding for one deployment. The reusable contract deliberately carries no project, region, cluster, volume or registry identity; those are observed here and in stage receipts so the contract stays portable.",
-  "observed_at": "2026-09-03T00:20:00Z",
+  "observed_at": "2026-09-02T23:27:00Z",
   "open_items": [
     "Serving deployment and model-level semantic readiness for both models belong to the runtime onboarding work; they are truthfully reported as missing here.",
     "Formal institutional licence acceptance is outstanding and is deliberately not synthesized; it does not block the authorized proof-of-concept path.",
