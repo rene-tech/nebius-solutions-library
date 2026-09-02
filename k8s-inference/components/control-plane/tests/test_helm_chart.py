@@ -794,6 +794,12 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert environment["FS2_MODEL_CONTROLLER_ENABLED"]["value"] == "true"
     assert environment["FS2_MODEL_CONTROLLER_WRITES_ENABLED"]["value"] == "true"
     assert environment["FS2_MODEL_CONTROLLER_HOLDER_IDENTITY"]["value"] == "$(POD_NAMESPACE)/$(POD_NAME):$(POD_UID)"
+    assert environment["FS2_ADMIN_CAPACITY_ENABLED"]["value"] == "true"
+    assert environment["FS2_ADMIN_KUBERNETES_API_URL"]["value"] == "https://kubernetes.default.svc"
+    assert environment["FS2_ADMIN_KUBERNETES_TOKEN_FILE"]["value"] == "/var/run/secrets/fs2-model-controller/token"
+    assert environment["FS2_ADMIN_KUBERNETES_CA_FILE"]["value"] == "/var/run/secrets/fs2-model-controller/ca.crt"
+    assert environment["FS2_ADMIN_KUBERNETES_MODEL_NAMESPACE"]["value"] == "fs2-models"
+    assert environment["FS2_ADMIN_KUBERNETES_SYSTEM_NAMESPACE"]["value"] == "fs2-system"
     assert environment["FS2_DATABASE_URL"]["valueFrom"]["secretKeyRef"] == {
         "name": "fs2-serve-database",
         "key": "url",

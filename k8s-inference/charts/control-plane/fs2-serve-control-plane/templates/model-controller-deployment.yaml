@@ -101,6 +101,18 @@ spec:
               value: "$(POD_NAMESPACE)/$(POD_NAME):$(POD_UID)"
             - name: FS2_MODEL_CONTROLLER_API_URL
               value: "https://kubernetes.default.svc"
+            - name: FS2_ADMIN_CAPACITY_ENABLED
+              value: "true"
+            - name: FS2_ADMIN_KUBERNETES_API_URL
+              value: "https://kubernetes.default.svc"
+            - name: FS2_ADMIN_KUBERNETES_TOKEN_FILE
+              value: /var/run/secrets/fs2-model-controller/token
+            - name: FS2_ADMIN_KUBERNETES_CA_FILE
+              value: /var/run/secrets/fs2-model-controller/ca.crt
+            - name: FS2_ADMIN_KUBERNETES_MODEL_NAMESPACE
+              value: {{ $controller.modelNamespace | quote }}
+            - name: FS2_ADMIN_KUBERNETES_SYSTEM_NAMESPACE
+              value: {{ $controller.systemNamespace | quote }}
             - name: FS2_MODEL_CONTROLLER_TOKEN_FILE
               value: /var/run/secrets/fs2-model-controller/token
             - name: FS2_MODEL_CONTROLLER_CA_FILE
