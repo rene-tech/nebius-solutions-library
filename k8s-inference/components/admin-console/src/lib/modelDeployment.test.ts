@@ -194,6 +194,8 @@ describe("ModelDeployment draft helpers", () => {
       assignedLevel: "L2",
       effectiveLevel: "L2",
       qualifiedLevel: "L2",
+      selectedIdentityDigest: `sha256:${"1".repeat(64)}`,
+      effectiveIdentityDigest: `sha256:${"1".repeat(64)}`,
       targetSeconds: 120,
       qualification: {
         state: "Fallback",
@@ -236,6 +238,8 @@ describe("ModelDeployment draft helpers", () => {
       state: "Fallback",
       reason: "Requested L3 is not qualified; L2 is assigned.",
       qualificationReason: "RequestedLevelUnqualified",
+      selectedIdentityDigest: `sha256:${"1".repeat(64)}`,
+      effectiveIdentityDigest: `sha256:${"1".repeat(64)}`,
       lastObservedSeconds: 91.2,
       observedP50Seconds: 88.4,
       observedP95Seconds: 112.7,

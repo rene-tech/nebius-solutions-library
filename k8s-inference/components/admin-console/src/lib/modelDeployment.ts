@@ -49,6 +49,8 @@ export interface NormalizedFastStartStatus {
   assignedLevel: ModelDeploymentFastStartLevel | null;
   effectiveLevel: ModelDeploymentEffectiveFastStartLevel | null;
   qualifiedLevel: ModelDeploymentFastStartLevel | null;
+  selectedIdentityDigest: string | null;
+  effectiveIdentityDigest: string | null;
   state: string | null;
   reason: string | null;
   qualificationReason: string | null;
@@ -122,6 +124,8 @@ export function normalizedFastStartStatus(view: ModelDeploymentStatusView): Norm
     assignedLevel: status.assignedLevel ?? status.assigned_level ?? null,
     effectiveLevel: status.effectiveLevel ?? status.effective_level ?? null,
     qualifiedLevel: status.qualifiedLevel ?? status.qualified_level ?? null,
+    selectedIdentityDigest: status.selectedIdentityDigest ?? status.selected_identity_digest ?? null,
+    effectiveIdentityDigest: status.effectiveIdentityDigest ?? status.effective_identity_digest ?? null,
     state: status.qualification?.state ?? status.state ?? null,
     reason: status.qualification?.message ?? status.qualification?.reason ?? status.reason ?? null,
     qualificationReason: status.qualification?.reason ?? null,

@@ -393,15 +393,36 @@ def test_crd_is_structural_versioned_and_has_explicit_terraform_upgrade_owner() 
     pool_properties = pool_status["items"]["properties"]
     assert pool_properties["selectedMechanism"]["pattern"] == "^[a-z][a-z0-9-]*$"
     assert pool_properties["selectedCompatibilityTupleDigest"]["pattern"] == "^sha256:[a-f0-9]{64}$"
+    assert pool_properties["selectedIdentityDigest"]["pattern"] == "^sha256:[a-f0-9]{64}$"
+    assert fast_start_status["properties"]["selectedIdentityDigest"]["pattern"] == "^sha256:[a-f0-9]{64}$"
+    assert fast_start_status["properties"]["effectiveIdentityDigest"]["pattern"] == "^sha256:[a-f0-9]{64}$"
     path_status = pool_status["items"]["properties"]["paths"]
-    assert path_status["x-kubernetes-list-map-keys"] == ["mechanism", "compatibilityTupleDigest"]
+    assert path_status["x-kubernetes-list-map-keys"] == [
+        "mechanism",
+        "identityDigest",
+        "compatibilityTupleDigest",
+    ]
     assert set(path_status["items"]["required"]) == {
         "mechanism",
+        "identityDigest",
         "compatibilityTupleDigest",
         "qualifiedLevel",
         "reason",
         "receiptDigests",
     }
+    retained = pool_status["items"]["properties"]["retainedPaths"]
+    assert retained["maxItems"] == 256
+    assert set(retained["items"]["required"]) >= {
+        "identityState",
+        "mismatches",
+        "receiptDigests",
+    }
+    assert retained["items"]["properties"]["mismatches"]["items"]["properties"]["code"]["enum"] == [
+        "LegacyUnbound",
+        "MissingExpectedValue",
+        "ValueMismatch",
+        "Expired",
+    ]
     modelexpress = fast_start_status["properties"]["mechanisms"]["properties"]["modelexpress"]
     assert modelexpress["properties"]["coordinatorNetworkType"]["enum"] == ["pod-selector", "ip-blocks"]
     pool_transport = modelexpress["properties"]["poolTransports"]["additionalProperties"]

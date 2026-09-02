@@ -20,8 +20,11 @@ recovery path is still only qualified at L1.
 
 ## Evidence files
 
-Each raw attempt uses
-`fs2-serve.nebius.ai/fast-start-benchmark-attempt/v1`. It records:
+Legacy raw attempts use
+`fs2-serve.nebius.ai/fast-start-benchmark-attempt/v1`. They remain valid
+historical evidence but project as `LegacyUnbound` and cannot qualify a level.
+New attempts use `fast-start-benchmark-attempt/v2` and add the complete
+`runtime-evidence-identity/v2` plus its canonical digest. They record:
 
 - the exact model content, runtime image, GPU, pool, cache/snapshot mechanism,
   storage, request, client, and source-code tuple;
@@ -44,6 +47,22 @@ The aggregate schema is
 validates every attempt, rejects mixed tuples or missing ordinals, calculates
 nearest-rank p50/p95 and median absolute deviation, and derives the observed and
 qualified levels. A receipt digest covers all evidence and derived values.
+
+The live runner requires two reviewed, non-secret inputs before it changes any
+replica or capacity state:
+
+- `runtime-environment-qualification-set/v1` binds observed project, region,
+  cluster context, accelerator, driver/CUDA, host runtime and storage runtime
+  to explicit pool/capacity members and an expiry;
+- `fast-start-measurement-contract/v1` binds the exact payload digest,
+  protocol, endpoint, streaming behavior, semantic validator, benchmark
+  client and client placement.
+
+Both documents are self-digested. The runner verifies their raw values against
+the live Pod, node, PVC, access bundle and request before emitting v2. It fails
+before mutation when either input is structurally invalid. If an activation
+fails before GPU/driver/storage facts can be observed, the failure remains a v1
+`LegacyUnbound` attempt; v1 and v2 attempts cannot share a cohort.
 
 ## Clock interpretation
 
@@ -91,6 +110,25 @@ attempts, a complete exact tuple, and a p95 that meets the class threshold.
 Missing or failed runs must remain in the sequence; the contiguous ordinal and
 unique raw-artifact requirements prevent selecting only the fastest attempts.
 
+A representative live invocation includes both identity contracts:
+
+```bash
+python3 k8s-inference/models/cold-start/run_live_fast_start_benchmark.py \
+  --kubeconfig /absolute/private/kubeconfig --context fs2-h100 \
+  --access-bundle /absolute/private/access-bundle.json \
+  --token-file /absolute/private/inference-token \
+  --request-file /absolute/private/qwen-request.json \
+  --environment-qualifications /absolute/reviewed/environment-qualifications.json \
+  --measurement-contract /absolute/reviewed/qwen-measurement.json \
+  --output /absolute/private/run/qwen3-8b/attempt-001.json \
+  --raw-output /absolute/private/run/qwen3-8b/attempt-001.raw.json \
+  --model-id qwen3-8b --deployment qwen3-8b \
+  --service qwen3-8b --scaled-object qwen3-8b \
+  --requested-level L2 --ordinal 1 --expected-floor 0 \
+  --capacity-state fresh-node-zero-pod --mechanism shared-cache \
+  --modality text --expected-text READY
+```
+
 ## Publish evidence to the controller
 
 The benchmark receipt remains the source of truth. Project one or more
@@ -104,12 +142,27 @@ python3 k8s-inference/models/cold-start/project_fast_start_evidence.py \
   --output /absolute/private/run/fast-start-evidence.json
 ```
 
-The projection keeps every success and failure, the full compatibility-tuple
-digest and its completeness result, binds the artifact, runtime-template,
-image, accelerator, pool, cache and snapshot tuple, and expires after 30 days
-by default. Terraform validates the bounded wire shape before mounting it into
-the immutable infrastructure envelope. The controller groups evidence only by
-the same mechanism and full tuple digest, then independently applies the
-20-success, zero-failure, tuple-completeness, and p95 rules. An exploratory
-three-run or incomplete-tuple receipt therefore appears with timings in the
-admin console but cannot raise `qualifiedLevel`.
+The v2 projection keeps every success and failure, the full compatibility tuple
+and runtime-evidence identities, and expires after 30 days by default. The v1
+projection explicitly sets `identityState=LegacyUnbound`. Terraform validates
+the bounded wire shape and derives a runtime-only contract per model and pool
+from the exact rendered command, arguments and non-secret environment. Set all
+three reviewed inputs in `terraform.tfvars`:
+
+```hcl
+deployment = {
+  dynamic_models = {
+    fast_start_evidence_file                   = "/absolute/reviewed/fast-start-evidence.json"
+    fast_start_environment_qualifications_file = "/absolute/reviewed/environment-qualifications.json"
+    fast_start_measurement_contracts_file      = "/absolute/reviewed/measurement-contracts.json"
+  }
+}
+```
+
+The measurement set is
+`{"schema":"fs2-serve.nebius.ai/fast-start-measurement-contract-set/v1","models":{...}}`.
+When either current qualification input is omitted, Terraform invents no
+binding: historical evidence stays visible and every L1-L4 result is `Off`.
+The controller groups only exact compatible v2 identities, then applies the
+20-success, zero-failure and p95 rules. Exploratory, LegacyUnbound, expired,
+incomplete or mismatched evidence cannot raise `qualifiedLevel`.

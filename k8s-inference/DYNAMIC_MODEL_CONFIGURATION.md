@@ -131,9 +131,10 @@ mechanism costs, and persisted promotion/demotion hysteresis. It can select
 only a level supported by qualified paths inside `[minimumLevel,
 maximumLevel]`. A level is qualified only by compatible benchmark evidence in
 the Terraform-owned envelope
-(`qualifications.<modelRef>.fastStartEvidence`) for the exact artifact
-manifest, runtime image, runtime template, cache tier, snapshot, accelerator
-class, and accelerator count the deployment will run, with at least 20
+(`qualifications.<modelRef>.fastStartEvidence`) for the complete v2 runtime
+identity: artifact/source, image, rendered argv/environment, reviewed
+cluster/GPU/driver/CUDA/storage environment, pool/capacity/startup scenario,
+cache/mechanism/snapshot, and semantic measurement contract, with at least 20
 successful samples, no failed or timed-out attempts, and a nearest-rank p95
 model-start time within the target. Mechanism names such as
 regional caches, snapshots, host RAM residency, or ModelExpress are operator
@@ -149,7 +150,11 @@ needs no cold cutover.
 `status.fastStart` keeps `requestedLevel`, `qualifiedLevel`, `assignedLevel`,
 and `effectiveLevel` apart. The effective level is claimed only once the
 desired render has converged; until then the previously effective level, if
-any, is carried forward. `modelStart`, `capacityWait`, and `endToEnd` carry
+any, is carried forward for that same `effectiveIdentityDigest`.
+`selectedIdentityDigest` identifies the current qualifying evidence.
+`pools[].retainedPaths` preserves LegacyUnbound, expired and mismatched
+evidence with bounded JSON-path reasons without allowing it to qualify.
+`modelStart`, `capacityWait`, and `endToEnd` carry
 latest/p50/p95 seconds per binding pool and per pool in `pools[]`, and are
 omitted entirely when no compatible evidence exists. The `FastStartQualified`
 condition is `True` for `NoTarget` and `Qualified`, `False` for `Fallback` and
@@ -159,6 +164,11 @@ Benchmark receipts are not pasted into `terraform.tfvars`. Use
 `models/cold-start/project_fast_start_evidence.py` to create a compact JSON
 projection and set only
 `deployment.dynamic_models.fast_start_evidence_file` to its absolute path.
+Qualification also requires reviewed absolute
+`fast_start_environment_qualifications_file` and
+`fast_start_measurement_contracts_file` inputs. Omitting either fails closed;
+Terraform never derives live driver/CUDA or semantic-validator facts from a
+catalog declaration.
 Changing that file content changes the immutable envelope digest and rolls the
 controller without rewriting any live `ModelDeployment` policy.
 
@@ -279,11 +289,14 @@ initial desired revisions:
 
 ```hcl
 dynamic_models = {
-  enabled             = true
-  writes_enabled      = true
-  workload_owner      = "controller"
-  bootstrap_model_ids = ["cosmos3-nano", "qwen3-8b"]
-  fresh_install       = true
+  enabled                                    = true
+  writes_enabled                             = true
+  workload_owner                             = "controller"
+  bootstrap_model_ids                        = ["cosmos3-nano", "qwen3-8b"]
+  fresh_install                              = true
+  fast_start_evidence_file                   = "/absolute/reviewed/fast-start-evidence.json"
+  fast_start_environment_qualifications_file = "/absolute/reviewed/environment-qualifications.json"
+  fast_start_measurement_contracts_file      = "/absolute/reviewed/measurement-contracts.json"
 }
 ```
 

@@ -271,6 +271,8 @@ describe("ModelDeployment workspace", () => {
       assignedLevel: "Off",
       effectiveLevel: "Off",
       qualifiedLevel: "Off",
+      selectedIdentityDigest: `sha256:${"c".repeat(64)}`,
+      effectiveIdentityDigest: `sha256:${"c".repeat(64)}`,
       qualification: {
         state: "Fallback",
         reason: "RequestedLevelUnqualified",
@@ -291,6 +293,7 @@ describe("ModelDeployment workspace", () => {
         reason: "InsufficientBenchmarkSamples",
         mechanisms: ["shared-cache"],
         selectedMechanism: "shared-cache",
+        selectedIdentityDigest: `sha256:${"c".repeat(64)}`,
         selectedCompatibilityTupleDigest: `sha256:${"a".repeat(64)}`,
         modelStart: {
           sampleCount: 3,
@@ -302,6 +305,7 @@ describe("ModelDeployment workspace", () => {
         },
         paths: [{
           mechanism: "shared-cache",
+          identityDigest: `sha256:${"c".repeat(64)}`,
           compatibilityTupleDigest: `sha256:${"a".repeat(64)}`,
           qualifiedLevel: "Off",
           reason: "InsufficientBenchmarkSamples",
@@ -315,6 +319,7 @@ describe("ModelDeployment workspace", () => {
           },
         }, {
           mechanism: "local-snapshot",
+          identityDigest: `sha256:${"d".repeat(64)}`,
           compatibilityTupleDigest: `sha256:${"b".repeat(64)}`,
           qualifiedLevel: "Off",
           reason: "BenchmarkFailuresPresent",
@@ -326,6 +331,17 @@ describe("ModelDeployment workspace", () => {
             p50Seconds: 57.1,
             p95Seconds: 58.3,
           },
+        }],
+        retainedPaths: [{
+          mechanism: "shared-cache",
+          identityState: "LegacyUnbound",
+          identityDigest: null,
+          compatibilityTupleDigest: `sha256:${"e".repeat(64)}`,
+          observedPoolRef: "preemptible-h100",
+          observedCapacityType: "preemptible",
+          reason: "LegacyIdentityUnbound",
+          mismatches: [{ code: "LegacyUnbound", field: "$.identity" }],
+          receiptDigests: [`sha256:${"f".repeat(64)}`],
         }],
       }],
     };
@@ -340,10 +356,15 @@ describe("ModelDeployment workspace", () => {
     expect(within(fastStart).getByText("Failed attempts").parentElement).toHaveTextContent("0");
     const poolEvidence = screen.getByLabelText("Per-pool fast-start evidence");
     expect(poolEvidence).toHaveTextContent("Evidence Exploratory");
-    expect(poolEvidence).toHaveTextContent("Path shared-cache · evidence Exploratory");
-    expect(poolEvidence).toHaveTextContent("Path local-snapshot · evidence Measured · failures present");
+    expect(poolEvidence).toHaveTextContent("Path shared-cache · identity");
+    expect(poolEvidence).toHaveTextContent("evidence Exploratory");
+    expect(poolEvidence).toHaveTextContent("Path local-snapshot · identity");
+    expect(poolEvidence).toHaveTextContent("evidence Measured · failures present");
     expect(within(poolEvidence).getAllByText("InsufficientBenchmarkSamples")).toHaveLength(2);
     expect(within(poolEvidence).getByText("BenchmarkFailuresPresent")).toBeInTheDocument();
+    expect(poolEvidence).toHaveTextContent("Retained LegacyUnbound evidence");
+    expect(poolEvidence).toHaveTextContent("LegacyUnbound $.identity");
+    expect(poolEvidence).toHaveTextContent(`Selected identity sha256:${"c".repeat(64)}`);
   });
 
   it("shows ModelExpress binding separately from customer qualification and keeps transfer evidence unavailable", async () => {

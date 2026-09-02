@@ -212,6 +212,41 @@ success/failure result, p50/p95, sample count, exact tuple, mechanism inventory,
 and benchmark-tool version. Capacity-wait and end-to-end percentiles are useful
 operational evidence but do not decide the fast-start level.
 
+### Exact runtime-evidence identity
+
+New qualifying attempts use
+`fs2-serve.nebius.ai/runtime-evidence-identity/v2`. The receipt, Terraform
+envelope, controller and admin page carry the same canonical SHA-256 identity.
+Compatibility is exact equality across these immutable groups:
+
+| Group | Equality-bound values |
+| --- | --- |
+| Runtime | model/source revision, content and artifact-manifest digests, runtime profile and image digest, renderer-template digest, rendered command/arguments digest, non-secret environment digest, and their runtime-contract digest |
+| Environment | reviewed project/region/cluster scope, accelerator class/product/capability/memory, driver/CUDA, host-runtime and storage-runtime component digests |
+| Placement | accelerator count, topology policy and the post-capacity startup scenario |
+| Cache | tier, mechanism configuration, snapshot and exact storage contract |
+| Measurement | capacity-available-to-semantic-ready basis, request-payload digest, protocol/path/streaming, semantic validator, benchmark client and client placement |
+
+The environment document explicitly lists each `(poolRef, capacityType)` member.
+Regular and preemptible pools may share evidence only when one reviewed binding
+names both members and all environment components are identical. A matching GPU
+label alone never implies equivalence. An expired binding or any unavailable
+expected component makes the current level `Off` while preserving the receipt
+under `retainedPaths` with bounded mismatch paths.
+
+Replica floors/ceilings, queue and access policy, OpenAI/MCP exposure, automatic
+versus fixed selection, cost inputs and demand history are intentionally outside
+the performance identity. Changing those policy fields does not invalidate a
+still-identical executable runtime. Changing an artifact, render, environment,
+placement, cache or measurement field does.
+
+Legacy v1 receipts remain visible as `LegacyUnbound`; they cannot qualify a
+level because their full current identity cannot be reconstructed safely. This
+migration therefore leaves the retained Qwen and Cosmos n=3 campaigns at
+`Off`. Removing the v2 environment/measurement file inputs is the rollback:
+the controller retains all evidence but fails closed rather than falling back
+to v1 compatibility rules.
+
 ## Current retained H100 boundary
 
 The retained H100 deployment currently has a regional OCI mirror and shared

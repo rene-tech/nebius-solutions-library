@@ -254,6 +254,8 @@ function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spe
           <div><dt>Snapshot identity</dt><dd>{spec.cache.snapshotRef ? `${spec.cache.snapshotRef.name} · ${spec.cache.snapshotRef.strategy}` : "Not configured"}</dd></div>
           <div><dt>Evidence observed</dt><dd>{observed?.observedAt ? formatTimestamp(observed.observedAt) : "Unavailable"}</dd></div>
           <div><dt>Qualification reason</dt><dd>{observed?.qualificationReason ? <code>{observed.qualificationReason}</code> : "Unavailable"}</dd></div>
+          <div><dt>Selected evidence identity</dt><dd><code>{observed?.selectedIdentityDigest ?? "Unavailable"}</code></dd></div>
+          <div><dt>Effective runtime identity</dt><dd><code>{observed?.effectiveIdentityDigest ?? "Unavailable"}</code></dd></div>
           {observed?.automatic ? <>
             <div><dt>Automatic decision</dt><dd>{observed.automatic.reason ?? "Unavailable"}</dd></div>
             <div><dt>Automatic evaluated</dt><dd>{(observed.automatic.evaluatedAt ?? observed.automatic.evaluated_at) ? formatTimestamp(observed.automatic.evaluatedAt ?? observed.automatic.evaluated_at ?? "") : "Unavailable"}</dd></div>
@@ -287,6 +289,8 @@ function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spe
             const poolModelStart = pool.modelStart ?? pool.model_start;
             const selectedMechanism = pool.selectedMechanism ?? pool.selected_mechanism;
             const selectedTuple = pool.selectedCompatibilityTupleDigest ?? pool.selected_compatibility_tuple_digest;
+            const selectedIdentity = pool.selectedIdentityDigest ?? pool.selected_identity_digest;
+            const retainedPaths = pool.retainedPaths ?? pool.retained_paths ?? [];
             return <div key={poolRef}>
               <span className="mini-chip">{poolRef} · {pool.acceleratorClass ?? pool.accelerator_class ?? "accelerator unavailable"}</span>
               <strong>Qualified {poolLevel}</strong>
@@ -294,12 +298,24 @@ function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spe
               <span>Reason <code>{pool.reason ?? "Unavailable"}</code></span>
               <span>Selected mechanism {selectedMechanism ?? "Unavailable"}</span>
               <span>Observed attempts {statisticValue(poolModelStart, "sample")} · failures {statisticValue(poolModelStart, "failed")} · p50 {statisticValue(poolModelStart, "p50")} · p95 {statisticValue(poolModelStart, "p95")}</span>
+              <span>Selected identity <code>{selectedIdentity ?? "Unavailable"}</code></span>
               {selectedTuple ? <span>Compatibility tuple <code>{selectedTuple}</code></span> : null}
               {(pool.paths ?? []).map((path, pathIndex) => {
                 const pathModelStart = path.modelStart ?? path.model_start;
                 const pathLevel = path.qualifiedLevel ?? path.qualified_level ?? "Off";
-                return <span key={`${path.mechanism ?? "path"}-${path.compatibilityTupleDigest ?? path.compatibility_tuple_digest ?? pathIndex}`}>
-                  Path {path.mechanism ?? "Unavailable"} · evidence {evidenceClass(path.reason, pathLevel, pathModelStart)} · qualified {pathLevel} · reason <code>{path.reason ?? "Unavailable"}</code> · attempts {statisticValue(pathModelStart, "sample")} · failures {statisticValue(pathModelStart, "failed")} · p95 {statisticValue(pathModelStart, "p95")}
+                const identity = path.identityDigest ?? path.identity_digest;
+                return <span key={`${path.mechanism ?? "path"}-${identity ?? path.compatibilityTupleDigest ?? path.compatibility_tuple_digest ?? pathIndex}`}>
+                  Path {path.mechanism ?? "Unavailable"} · identity <code>{identity ?? "Unavailable"}</code> · evidence {evidenceClass(path.reason, pathLevel, pathModelStart)} · qualified {pathLevel} · reason <code>{path.reason ?? "Unavailable"}</code> · attempts {statisticValue(pathModelStart, "sample")} · failures {statisticValue(pathModelStart, "failed")} · p95 {statisticValue(pathModelStart, "p95")}
+                </span>;
+              })}
+              {retainedPaths.map((path, pathIndex) => {
+                const identityState = path.identityState ?? path.identity_state ?? "Unavailable";
+                const identity = path.identityDigest ?? path.identity_digest ?? "Unavailable";
+                const observedPool = path.observedPoolRef ?? path.observed_pool_ref ?? "Unavailable";
+                const capacity = path.observedCapacityType ?? path.observed_capacity_type ?? "Unavailable";
+                const mismatches = path.mismatches ?? [];
+                return <span key={`retained-${path.mechanism ?? "path"}-${identity}-${pathIndex}`}>
+                  Retained {identityState} evidence · {path.mechanism ?? "Unavailable"} · identity <code>{identity}</code> · observed on {observedPool} ({capacity}) · reason <code>{path.reason ?? "Unavailable"}</code>{mismatches.length ? <> · mismatches {mismatches.map((mismatch) => `${mismatch.code ?? "Unavailable"} ${mismatch.field ?? "$"}`).join(", ")}</> : " · mismatch detail unavailable"}
                 </span>;
               })}
             </div>;

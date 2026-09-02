@@ -168,11 +168,46 @@ export interface ModelDeploymentFastStartStatistics {
 
 export interface ModelDeploymentFastStartPathStatus {
   mechanism?: string | null;
+  identityDigest?: string | null;
+  identity_digest?: string | null;
   compatibilityTupleDigest?: string | null;
   compatibility_tuple_digest?: string | null;
   qualifiedLevel?: ModelDeploymentFastStartLevel | null;
   qualified_level?: ModelDeploymentFastStartLevel | null;
   reason?: string | null;
+  receiptDigests?: string[] | null;
+  receipt_digests?: string[] | null;
+  modelStart?: ModelDeploymentFastStartStatistics | null;
+  model_start?: ModelDeploymentFastStartStatistics | null;
+  capacityWait?: ModelDeploymentFastStartStatistics | null;
+  capacity_wait?: ModelDeploymentFastStartStatistics | null;
+  endToEnd?: ModelDeploymentFastStartStatistics | null;
+  end_to_end?: ModelDeploymentFastStartStatistics | null;
+}
+
+export interface ModelDeploymentFastStartIdentityMismatch {
+  code?: "LegacyUnbound" | "MissingExpectedValue" | "ValueMismatch" | "Expired" | null;
+  field?: string | null;
+  expectedDigest?: string | null;
+  expected_digest?: string | null;
+  observedDigest?: string | null;
+  observed_digest?: string | null;
+}
+
+export interface ModelDeploymentFastStartRetainedPathStatus {
+  mechanism?: string | null;
+  identityState?: "LegacyUnbound" | "Bound" | null;
+  identity_state?: "LegacyUnbound" | "Bound" | null;
+  identityDigest?: string | null;
+  identity_digest?: string | null;
+  compatibilityTupleDigest?: string | null;
+  compatibility_tuple_digest?: string | null;
+  observedPoolRef?: string | null;
+  observed_pool_ref?: string | null;
+  observedCapacityType?: "regular" | "preemptible" | null;
+  observed_capacity_type?: "regular" | "preemptible" | null;
+  reason?: string | null;
+  mismatches?: ModelDeploymentFastStartIdentityMismatch[] | null;
   receiptDigests?: string[] | null;
   receipt_digests?: string[] | null;
   modelStart?: ModelDeploymentFastStartStatistics | null;
@@ -196,6 +231,8 @@ export interface ModelDeploymentFastStartPoolStatus {
   selected_mechanism?: string | null;
   selectedCompatibilityTupleDigest?: string | null;
   selected_compatibility_tuple_digest?: string | null;
+  selectedIdentityDigest?: string | null;
+  selected_identity_digest?: string | null;
   receiptDigests?: string[] | null;
   receipt_digests?: string[] | null;
   modelStart?: ModelDeploymentFastStartStatistics | null;
@@ -205,6 +242,8 @@ export interface ModelDeploymentFastStartPoolStatus {
   endToEnd?: ModelDeploymentFastStartStatistics | null;
   end_to_end?: ModelDeploymentFastStartStatistics | null;
   paths?: ModelDeploymentFastStartPathStatus[] | null;
+  retainedPaths?: ModelDeploymentFastStartRetainedPathStatus[] | null;
+  retained_paths?: ModelDeploymentFastStartRetainedPathStatus[] | null;
 }
 
 export interface ModelExpressPoolTransportStatus {
@@ -274,6 +313,10 @@ export interface ModelDeploymentFastStartStatus {
   effective_level?: ModelDeploymentEffectiveFastStartLevel | null;
   qualifiedLevel?: ModelDeploymentFastStartLevel | null;
   qualified_level?: ModelDeploymentFastStartLevel | null;
+  selectedIdentityDigest?: string | null;
+  selected_identity_digest?: string | null;
+  effectiveIdentityDigest?: string | null;
+  effective_identity_digest?: string | null;
   state?: string | null;
   reason?: string | null;
   qualification?: {
