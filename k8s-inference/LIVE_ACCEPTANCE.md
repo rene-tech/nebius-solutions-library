@@ -19,13 +19,31 @@ class:
 | `h100-reserved-8x` | regular, strict capacity block | fixed at 2 | 8x H100 80 GB | disabled |
 | `h100-1x` | preemptible | 0..2 | 1x H100 80 GB | disabled |
 
-Both selected models, `qwen3-8b` and `cosmos3-nano`, are placed on the reserved
-pool in the retained configuration. Qwen has a one-replica hot floor and Cosmos
-has a zero-replica floor; each has a ceiling of two. The preemptible pool
-remains available in the Terraform capacity envelope for later placement or
-burst use. A regular CPU system pool hosts Kubernetes and platform services.
-The platform database is CloudNativePG inside the cluster, not Nebius Managed
+Both selected models, `qwen3-8b` and `cosmos3-nano`, carry the same durable
+`placement.poolRefs = ["h100-1x", "h100-reserved-8x"]` desired revision. That is
+the server-authoritative create default of every compatible pool, so each model
+receives durable reserved placement and preemptible burst wherever the envelope
+allows it. Qwen has a one-replica hot floor and Cosmos a zero-replica floor;
+each has a ceiling of two. Qwen's hot replica is admitted on the reserved
+capacity-block pool `h100-reserved-8x`; its second, autoscaled replica bursts
+onto the preemptible pool `h100-1x`. Cosmos, at a zero hot floor, has only a
+preemptible burst segment, so activating it from zero provisions an `h100-1x`
+node. A regular CPU system pool hosts Kubernetes and platform services. The
+platform database is CloudNativePG inside the cluster, not Nebius Managed
 PostgreSQL.
+
+The active placement therefore drives the observed cold-start cost, and an
+operator controls it live. Cosmos activating from zero onto a fresh preemptible
+node measured 444.020 seconds end to end, dominated by preemptible node
+provisioning and a fresh 9.19 GB runtime image pull. The same model revision
+activating on the already-running reserved pool, where the image is cached and
+weights are on the shared filesystem, reached Ready in 91.169 seconds in the
+[shared-cache elasticity qualification](#h100-shared-cache-elasticity-qualification-2026-09-02).
+Narrowing a model's `poolRefs` to `h100-reserved-8x` through the admin console
+(live model policy, no Terraform) trades the preemptible cost saving for that
+faster warm-node activation; widening it again restores cheap preemptible burst.
+Both are routine, reversible live edits inside the existing Terraform-owned
+capacity envelope.
 
 ## Historical 2026-08-31 topology
 

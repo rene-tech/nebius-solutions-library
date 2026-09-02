@@ -114,6 +114,16 @@ pool so a newly selected model immediately receives both durable hot placement
 and preemptible burst where available. The admin form exposes those choices as
 independent checkboxes; an operator may deliberately narrow the non-empty set.
 
+Because burst prefers preemptible capacity, a zero-hot-floor model activated
+from cold provisions a fresh preemptible node and pulls its runtime image before
+serving. That is the cheapest steady state but the slowest cold start. An
+operator who wants faster cold activation can narrow `poolRefs` to an
+already-running regular/reserved pool, where the image is cached and shared-cache
+weights are already localized; this trades preemptible cost savings for
+warm-node activation latency and is a routine, reversible live edit. The
+retained H100 measurements for exactly this trade-off are recorded in
+[LIVE_ACCEPTANCE.md](LIVE_ACCEPTANCE.md#current-retained-h100-topology-2026-09-02).
+
 The envelope must give every pool the unique
 `accelerator.fs2.nebius/pool-id=<poolRef>` node selector. Each generated
 Deployment has that exact selector and the pool's accelerator resource name.
