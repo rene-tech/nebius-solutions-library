@@ -313,7 +313,7 @@ variable "shared_cache" {
 }
 
 variable "reference_data" {
-  description = "Dedicated durable same-region filesystem and versioned object storage for immutable scientific reference data."
+  description = "Dedicated same-region filesystem and versioned object storage for immutable scientific reference data. The portable default is disposable; retained storage is explicit opt-in."
   type = object({
     enabled = bool
     lifecycle = object({
@@ -348,7 +348,7 @@ variable "reference_data" {
   default = {
     enabled = false
     lifecycle = {
-      retention_mode = "retain"
+      retention_mode = "disposable"
     }
     cpu_pool = {
       platform   = "cpu-d3"
@@ -369,7 +369,7 @@ variable "reference_data" {
       size_gib         = 2048
       type             = "NETWORK_SSD"
       block_size_bytes = 4096
-      forbid_deletion  = true
+      forbid_deletion  = false
     }
     object_storage = {
       bucket_name  = "disabled-reference-data.invalid"
@@ -419,7 +419,7 @@ variable "reference_data" {
       ),
       false,
     )
-    error_message = "enabled reference_data requires exact retain+forbid_deletion or disposable+deletable lifecycle semantics, a bounded dedicated CPU pool with conservative schedulable capacity, a valid bucket and dedicated filesystem/object capacity of 1611-65536 whole GiB."
+    error_message = "enabled reference_data requires the default disposable+deletable lifecycle or explicit retain+forbid_deletion semantics, a bounded dedicated CPU pool with conservative schedulable capacity, a valid bucket and dedicated filesystem/object capacity of 1611-65536 whole GiB."
   }
 }
 

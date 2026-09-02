@@ -1664,7 +1664,7 @@ class InferenceStackTests(unittest.TestCase):
         )
         mirror_images.assert_not_called()
 
-    def test_retained_reference_data_partially_destroys_and_emits_adoption_receipt(
+    def test_retained_reference_data_releases_downstream_and_emits_adoption_receipt(
         self,
     ) -> None:
         configuration = contract()

@@ -753,7 +753,7 @@ class DeploymentContractTests(unittest.TestCase):
             controller,
         )
 
-    def test_reference_data_plane_is_root_configured_sized_and_cpu_only(self) -> None:
+    def test_reference_data_plane_defaults_to_disposable_full_teardown(self) -> None:
         image = f"cr.eu-north1.nebius.cloud/test/reference-stager@sha256:{'a' * 64}"
         deployment = {
             "schema_version": 1,
@@ -762,7 +762,7 @@ class DeploymentContractTests(unittest.TestCase):
             "storage": {
                 "reference_data": {
                     "enabled": True,
-                    "filesystem": {"size_gib": 2048, "forbid_deletion": True},
+                    "filesystem": {"size_gib": 2048},
                     "object_storage": {"max_size_gib": 2048},
                     "network": {
                         "allow_public_source_staging": True,
@@ -780,7 +780,7 @@ class DeploymentContractTests(unittest.TestCase):
         workloads = contract["stages"]["workloads"]["reference_data"]
 
         self.assertTrue(infrastructure["enabled"])
-        self.assertEqual("retain", infrastructure["lifecycle"]["retention_mode"])
+        self.assertEqual("disposable", infrastructure["lifecycle"]["retention_mode"])
         self.assertEqual("fs2-reference-data", workloads["namespace"])
         self.assertEqual("8vcpu-32gb", infrastructure["cpu_pool"]["preset"])
         self.assertEqual(1, infrastructure["cpu_pool"]["node_count"])
@@ -807,13 +807,13 @@ class DeploymentContractTests(unittest.TestCase):
             2048, outputs["effective_configuration"]["reference_data"]["filesystem_size_gib"]
         )
         self.assertEqual(
-            "full-stack-destroy-incomplete-infrastructure-retained",
+            "full-only-when-versioned-bucket-empty",
             outputs["effective_configuration"]["reference_data"]["destroy_completion"],
         )
-        self.assertTrue(
+        self.assertFalse(
             outputs["effective_configuration"]["reference_data"]["adoption_required"]
         )
-        self.assertTrue(
+        self.assertFalse(
             outputs["effective_configuration"]["reference_data"][
                 "filesystem_forbid_deletion"
             ]
@@ -849,6 +849,55 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn(
             "local.reference_data_required_capacity",
             (DEPLOY_ROOT / "main.tf").read_text(encoding="utf-8"),
+        )
+
+    def test_reference_data_retention_is_an_explicit_matched_opt_in(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-reference-retained-opt-in",
+            "target": self.catalog_target(),
+            "storage": {
+                "reference_data": {
+                    "enabled": True,
+                    "lifecycle": {"retention_mode": "retain"},
+                    "filesystem": {"forbid_deletion": True},
+                }
+            },
+        }
+        variable_file = self._write_configuration(
+            "reference-retained-opt-in", deployment
+        )
+        outputs = self._planned_outputs(variable_file, "reference-retained-opt-in")
+        reference = outputs["effective_configuration"]["reference_data"]
+        self.assertEqual("retain", reference["retention_mode"])
+        self.assertTrue(reference["filesystem_forbid_deletion"])
+        self.assertTrue(reference["adoption_required"])
+        self.assertEqual(
+            "full-stack-destroy-incomplete-infrastructure-retained",
+            reference["destroy_completion"],
+        )
+
+        unmatched = {
+            "schema_version": 1,
+            "name": "fs2-reference-retained-unmatched",
+            "target": self.catalog_target(),
+            "storage": {
+                "reference_data": {
+                    "enabled": True,
+                    "lifecycle": {"retention_mode": "retain"},
+                }
+            },
+        }
+        unmatched_file = self._write_configuration(
+            "reference-retained-unmatched", unmatched
+        )
+        result, _ = self._plan_file(
+            unmatched_file, "reference-retained-unmatched"
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(
+            "explicit retain+forbid_deletion semantics",
+            f"{result.stdout}\n{result.stderr}",
         )
 
     def test_reference_filesystem_attachment_is_explicit_per_accelerator_pool(self) -> None:

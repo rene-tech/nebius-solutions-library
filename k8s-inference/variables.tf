@@ -248,7 +248,7 @@ variable "deployment" {
       reference_data = optional(object({
         enabled = optional(bool, false)
         lifecycle = optional(object({
-          retention_mode = optional(string, "retain")
+          retention_mode = optional(string, "disposable")
         }), {})
         cpu_pool = optional(object({
           platform   = optional(string, "cpu-d3")
@@ -269,7 +269,7 @@ variable "deployment" {
           size_gib         = optional(number, 2048)
           type             = optional(string, "NETWORK_SSD")
           block_size_bytes = optional(number, 4096)
-          forbid_deletion  = optional(bool, true)
+          forbid_deletion  = optional(bool, false)
         }), {})
         object_storage = optional(object({
           bucket_name  = optional(string)
@@ -691,7 +691,7 @@ variable "deployment" {
       ),
       false,
     )
-    error_message = "enabled storage.reference_data requires the dedicated fs2-reference-data namespace (never the live fs2-data database namespace), retain+forbid_deletion or disposable+deletable lifecycle semantics, a bounded dedicated regular CPU pool with positive conservative schedulable CPU/memory/ephemeral capacity, DNS-safe names and dedicated filesystem/object capacities of at least 1611 GiB (the 630 GB official AlphaFold3 expansion estimate plus 1 TiB headroom)."
+    error_message = "enabled storage.reference_data requires the dedicated fs2-reference-data namespace (never the live fs2-data database namespace), the default disposable+deletable lifecycle or explicit retain+forbid_deletion semantics, a bounded dedicated regular CPU pool with positive conservative schedulable CPU/memory/ephemeral capacity, DNS-safe names and dedicated filesystem/object capacities of at least 1611 GiB (the 630 GB official AlphaFold3 expansion estimate plus 1 TiB headroom)."
   }
 
   validation {

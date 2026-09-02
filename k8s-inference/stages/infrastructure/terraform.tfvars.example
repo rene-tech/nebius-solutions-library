@@ -73,3 +73,7 @@ gpu_floor_profile = "zero"
 #   block_size_bytes = 4096
 #   forbid_deletion  = false
 # }
+# reference_data is disabled by default. Its portable lifecycle defaults to
+# retention_mode="disposable" with filesystem.forbid_deletion=false. A direct
+# stage caller must opt into both retention_mode="retain" and
+# filesystem.forbid_deletion=true when retained/adopted semantics are intended.

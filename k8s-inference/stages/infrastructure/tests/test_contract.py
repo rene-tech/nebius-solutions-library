@@ -96,6 +96,16 @@ class DisposableTerraformContractTests(unittest.TestCase):
         self.assertIn("full-only-when-versioned-bucket-empty", outputs)
         self.assertIn("ids-exported-for-explicit-state-adoption", outputs)
 
+    def test_reference_data_stage_defaults_to_disposable_and_deletable(self) -> None:
+        variables = (ROOT / "variables.tf").read_text(encoding="utf-8")
+        reference_default = variables.split(
+            'variable "reference_data"', 1
+        )[1].split("  validation {", 1)[0]
+        self.assertIn('retention_mode = "disposable"', reference_default)
+        self.assertIn("forbid_deletion  = false", reference_default)
+        self.assertNotIn('retention_mode = "retain"', reference_default)
+        self.assertNotIn("forbid_deletion  = true", reference_default)
+
     def test_current_gpu_resources_derive_from_typed_b300_pool_profile(self) -> None:
         cluster = (ROOT / "cluster.tf").read_text(encoding="utf-8")
         variables = (ROOT / "variables.tf").read_text(encoding="utf-8")

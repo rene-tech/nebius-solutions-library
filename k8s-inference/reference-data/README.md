@@ -144,7 +144,7 @@ storage = {
   reference_data = {
     enabled = true
     namespace = "fs2-reference-data"
-    lifecycle = { retention_mode = "retain" }
+    lifecycle = { retention_mode = "disposable" }
     cpu_pool = {
       platform        = "cpu-d3"
       preset          = "8vcpu-32gb"
@@ -160,7 +160,7 @@ storage = {
       max_unavailable = 0
       drain_timeout   = "15m"
     }
-    filesystem    = { size_gib = 2048, forbid_deletion = true }
+    filesystem    = { size_gib = 2048, forbid_deletion = false }
     object_storage = { max_size_gib = 2048 }
     network = {
       allow_public_source_staging = true
@@ -184,17 +184,22 @@ Accelerator attachment is independent of generic shared-cache attachment. Set
 GPU Jobs consume an immutable reference tree. The default is false, so enabling
 reference data cannot silently mutate future heterogeneous pools.
 
-Production uses `retention_mode = "retain"` with `forbid_deletion = true`.
+The portable default uses `retention_mode = "disposable"` with
+`forbid_deletion = false`. It selects full reverse-order teardown across
+workloads, foundation and infrastructure. Completion remains truthful: a
+versioned bucket is deletable only while it has no current objects or retained
+versions, and a provider teardown failure is never reported as success.
+
+Retained storage remains available only through the explicit
+`retention_mode = "retain"` with `forbid_deletion = true` opt-in. In that mode,
 `inference-stack destroy` removes the workload and foundation states but keeps
 the complete infrastructure state. It reports `infrastructure-retained` and
-`full-stack-destroy-incomplete-infrastructure-retained`, then writes a non-secret
-`reference-data-retention.json` adoption receipt containing the filesystem,
-bucket, CPU-pool and last-applied status/pipeline identities. This is a
-downstream-stage release, not a full stack destroy; full completion remains
-blocked until the protected storage has been explicitly adopted or migrated
-into another durable state. The `disposable` mode is limited to fresh
-empty-volume acceptance, requires `forbid_deletion = false`, and is deletable
-only while the versioned bucket has no current objects or retained versions.
+`full-stack-destroy-incomplete-infrastructure-retained`, then writes a
+non-secret `reference-data-retention.json` adoption receipt containing the
+filesystem, bucket, CPU-pool and last-applied status/pipeline identities. This
+is a downstream-stage release, not a full stack destroy; full completion
+remains blocked until the protected storage has been explicitly adopted or
+migrated into another durable state.
 
 `Dockerfile.stager` is the pinned CPU worker image. It contains only Python,
 zstd, CA roots and the AWS CLI; the reviewed staging program and selected

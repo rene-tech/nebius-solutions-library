@@ -12,10 +12,11 @@ dependency order:
 3. model workloads, autoscaling, control plane, MCP, and admin services
 
 The cluster remains running after `apply` so it can be tested. An explicit
-`destroy` removes it only for a fully disposable contract. Retained reference
-storage turns that command into a downstream-stage release, not a full stack
-destroy. The protected infrastructure remains managed until it is adopted by a
-separate durable state.
+`destroy` removes it only for a fully disposable contract. The portable
+reference-data defaults are disposable and deletable; retained reference
+storage is an explicit opt-in that turns the command into a downstream-stage
+release, not a full stack destroy. Protected infrastructure remains managed
+until it is adopted by a separate durable state.
 
 Routine model lifecycle is implemented through the authenticated admin API and
 the Kubernetes-native `ModelDeployment` reconciler. Operators can add, edit,
@@ -523,9 +524,18 @@ NEBIUS_PROFILE=sandbox ./inference-stack destroy --var-file terraform.tfvars
 Review the output and verify `status` before separately removing retained local
 evidence. The wrapper never deletes the run directory automatically.
 
-With `storage.reference_data.lifecycle.retention_mode = "retain"`, destroy is
-a downstream-stage release, not a full stack destroy. It removes only workloads
-and foundation, leaves the entire infrastructure state untouched, and emits
+The portable default is
+`storage.reference_data.lifecycle.retention_mode = "disposable"` with
+`filesystem.forbid_deletion = false`. It selects the normal reverse-order
+workloads, foundation and infrastructure teardown and reports
+`completion: "complete"` only after all three stages succeed. A versioned bucket
+containing any object or old version is not promised deletable and must fail
+provider teardown rather than be reported destroyed.
+
+With the explicit `retention_mode = "retain"` and `forbid_deletion = true`
+opt-in, destroy is a downstream-stage release, not a full stack destroy. It
+removes only workloads and foundation, leaves the entire infrastructure state
+untouched, and emits
 `status: "infrastructure-retained"` with
 `completion: "full-stack-destroy-incomplete-infrastructure-retained"` plus exact
 filesystem, bucket, CPU-pool and last-applied status/pipeline identities. The
@@ -534,12 +544,6 @@ same non-secret receipt is written to
 move the protected filesystem and versioned bucket to a separately owned durable
 state before attempting infrastructure teardown. The wrapper never reports a
 complete destroy while those protected resources remain.
-
-`retention_mode = "disposable"` is for fresh empty-volume acceptance only. It
-requires `forbid_deletion = false`; the wrapper destroys all three stages and
-reports `completion: "complete"`. A versioned bucket containing any object or
-old version is not promised deletable and must fail provider teardown rather
-than be reported destroyed.
 
 ## Acceptance checks
 

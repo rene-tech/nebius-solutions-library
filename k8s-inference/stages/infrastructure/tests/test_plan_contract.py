@@ -211,7 +211,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                             "retention_mode": (
                                 reference_data_mode
                                 if reference_data_mode != "disabled"
-                                else "retain"
+                                else "disposable"
                             )
                         },
                         "filesystem": {

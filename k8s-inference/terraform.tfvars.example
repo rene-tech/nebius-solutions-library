@@ -210,11 +210,11 @@ deployment = {
   # storage = {
   #   reference_data = {
   #     enabled = true
+  #     # The portable default is disposable with forbid_deletion=false. This
+  #     # selects the full three-stage teardown path while the versioned bucket
+  #     # remains empty.
   #     lifecycle = {
-  #       # retain makes destroy a downstream-only release: full-stack destroy
-  #       # remains blocked and retained IDs are exported for explicit adoption.
-  #       # disposable is for empty-volume acceptance only and requires forbid_deletion=false.
-  #       retention_mode = "retain"
+  #       retention_mode = "disposable"
   #     }
   #     namespace = "fs2-reference-data"
   #     cpu_pool = {
@@ -237,7 +237,7 @@ deployment = {
   #       size_gib         = 2048
   #       type             = "NETWORK_SSD"
   #       block_size_bytes = 4096
-  #       forbid_deletion  = true
+  #       forbid_deletion  = false
   #     }
   #     object_storage = {
   #       # Omit bucket_name for the deterministic deployment/run-derived name.
@@ -265,6 +265,9 @@ deployment = {
   #     }
   #   }
   # }
+  # To retain populated storage, explicitly set retention_mode="retain" and
+  # forbid_deletion=true. That opt-in blocks full-stack destroy and exports
+  # exact retained IDs for adoption; it is never inferred from environment.
 
   # By default the wrapper copies every selected digest-pinned application and
   # model image into the registry created beside this cluster. Workloads then
