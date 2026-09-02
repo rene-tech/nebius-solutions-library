@@ -1,0 +1,148 @@
+{
+  "schema": "fs2-serve.nebius.ai/academic-assets/v1",
+  "observed_at": "2026-09-02T20:30:00Z",
+  "private_registry": {
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "registry_id": "registry-e00akg9ndpx77eaexh",
+    "repository_prefix": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/"
+  },
+  "private_cache": {
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "filesystem_id": "computefilesystem-e00hdb1drrgsenr2j7",
+    "pvc_namespace": "fs2-models",
+    "pvc_name": "cancer-immunotherapy-academic-assets-rwx-v1",
+    "distribution_scope": "organization-internal"
+  },
+  "assets": {
+    "alphafold3": {
+      "model_id": "alphafold3",
+      "display_name": "AlphaFold 3 (native Google parameters)",
+      "artifact": {
+        "filename": "af3.bin.zst",
+        "version": "Google object generation 1780568696389861",
+        "source_revision": "gs://alphafold3/af3.bin.zst#1780568696389861",
+        "size_bytes": 1020545840,
+        "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+        "magic_hex": "28b52ffd",
+        "structural_validation": "zstd-test",
+        "source_url": "https://storage.googleapis.com/alphafold3/af3.bin.zst",
+        "source_metadata": {
+          "etag": "\"-COWBlqWv7ZQDEAQ=\"",
+          "crc32c_base64": "0h6mjg==",
+          "last_modified": "2026-06-04T10:24:56Z"
+        }
+      },
+      "license": {
+        "license_id": "AlphaFold-3-Model-Parameters-Terms-of-Use-2024-11-09",
+        "allowed_users": "non-commercial organizations and qualifying affiliated researchers, for non-commercial use only",
+        "redistribution": "model parameters must not be published or shared outside the accepting organization; individual grants cannot be shared",
+        "containerization": "only a private organization-internal layer when an authorized organization representative accepted the terms; otherwise use a user-bound private volume",
+        "access_procedure": "accept the current terms, then obtain af3.bin.zst directly from the Google URL documented by the pinned AlphaFold3 repository revision"
+      },
+      "acceptance": {
+        "scope": "academic-noncommercial",
+        "accepted_by_roles": [
+          "authorized-individual",
+          "authorized-organization-representative"
+        ],
+        "distribution_scopes": [
+          "individual-only",
+          "organization-internal"
+        ],
+        "terms": [
+          {
+            "document_id": "alphafold3-weights-terms-2024-11-09@c0f97eda2f1f482fd94d3a38bece18c7069b4a5c",
+            "sha256": "41adf62ff5eabc58831c828793988537948663c139f8b87d8d413851b150b6e5"
+          },
+          {
+            "document_id": "alphafold3-prohibited-use-policy-2024-11-09@c0f97eda2f1f482fd94d3a38bece18c7069b4a5c",
+            "sha256": "4992aebdc29bc7a9260bed6373bad05bb5a7e1b783451cd170163dd259f46c45"
+          }
+        ],
+        "source_claims": {
+          "received_directly_from_licensor": true,
+          "source": "google-direct-download",
+          "object_generation": "1780568696389861"
+        }
+      },
+      "private_layer": {
+        "allowed": false,
+        "destination": "/opt/fs2/academic-assets/alphafold3/af3.bin.zst",
+        "redistributable": false
+      }
+    },
+    "pyrosetta-bindcraft": {
+      "model_id": "bindcraft",
+      "display_name": "BindCraft PyRosetta prerequisite",
+      "artifact": {
+        "filename": "pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda",
+        "version": "2025.24+release.8e1e5e54f0=py310_0",
+        "source_revision": "https://conda.rosettacommons.org/linux-64/repodata.json#pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda",
+        "size_bytes": 1435146644,
+        "sha256": "d1170ee50d5f02c3a6c84a7d0035dc961c7737024836eb5da882abe6ca51afbb",
+        "magic_hex": "504b0304",
+        "structural_validation": "conda-v2",
+        "source_url": "https://conda.rosettacommons.org/linux-64/pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda",
+        "source_metadata": {
+          "repodata_sha256": "4a5fa91055666b09669c81d2e393a42365f4758f7434704d5aa26ded447e442c",
+          "repodata_observed_at": "2026-09-02T20:30:00Z"
+        }
+      },
+      "license": {
+        "license_id": "PyRosetta-Software-Non-Commercial-License-Agreement",
+        "allowed_users": "defined Non-Commercial Users at not-for-profit research institutions, government laboratories, universities, and qualifying individuals",
+        "redistribution": "refer other users to the official distribution; do not publish or make Rosetta executable/source copies available outside the licensed internal scope",
+        "containerization": "private internal copies only within the accepted non-commercial institutional scope; public images are forbidden",
+        "access_procedure": "accept the current Rosetta/PyRosetta non-commercial terms and obtain the exact package from the official RosettaCommons conda channel"
+      },
+      "acceptance": {
+        "scope": "academic-noncommercial",
+        "accepted_by_roles": [
+          "authorized-individual",
+          "authorized-organization-representative"
+        ],
+        "distribution_scopes": [
+          "individual-only",
+          "organization-internal"
+        ],
+        "terms": [
+          {
+            "document_id": "pyrosetta-noncommercial-license@de92a3c0dea8a010d372a22025e3e50bd4e2f33f",
+            "sha256": "41de5b13b7ddb64fab2dda1cb45581b9d4c1ee6be7bd3ad90f562288bcdcffa1"
+          }
+        ],
+        "source_claims": {
+          "received_directly_from_licensor": true,
+          "source": "rosettacommons-conda-channel",
+          "package_sha256": "d1170ee50d5f02c3a6c84a7d0035dc961c7737024836eb5da882abe6ca51afbb"
+        }
+      },
+      "private_layer": {
+        "allowed": true,
+        "destination": "/opt/fs2/academic-assets/pyrosetta/pyrosetta-2025.24+release.8e1e5e54f0-py310_0.conda",
+        "redistributable": false
+      }
+    }
+  },
+  "fallbacks": {
+    "open-binder": {
+      "model_id": "open-binder",
+      "relationship": "independent-operational-fallback",
+      "aliases": [],
+      "does_not_satisfy": [
+        "bindcraft"
+      ]
+    },
+    "openfold3": {
+      "model_id": "openfold3",
+      "relationship": "independent-operational-fallback",
+      "aliases": [],
+      "does_not_satisfy": [
+        "alphafold3"
+      ]
+    }
+  }
+}

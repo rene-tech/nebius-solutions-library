@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/academic-stage-receipt/v1",
+  "title": "Academic asset downstream evidence receipts",
+  "oneOf": [
+    {"$ref": "#/$defs/cache"},
+    {"$ref": "#/$defs/image"},
+    {"$ref": "#/$defs/deployment"},
+    {"$ref": "#/$defs/semantic"}
+  ],
+  "$defs": {
+    "common": {
+      "type": "object",
+      "properties": {
+        "asset_id": {"enum": ["alphafold3", "pyrosetta-bindcraft"]},
+        "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "observed_at": {"type": "string", "format": "date-time"}
+      },
+      "required": ["asset_id", "artifact_sha256", "observed_at"]
+    },
+    "cache": {
+      "allOf": [
+        {"$ref": "#/$defs/common"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "asset_id", "artifact_sha256", "observed_at", "project_id", "region", "cluster_id", "filesystem_id", "pvc_namespace", "pvc_name", "file_size_bytes", "verified"],
+          "properties": {
+            "schema": {"const": "fs2-serve.nebius.ai/academic-cache-receipt/v1"},
+            "asset_id": {"enum": ["alphafold3", "pyrosetta-bindcraft"]},
+            "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "observed_at": {"type": "string", "format": "date-time"},
+            "project_id": {"const": "project-e00rene"},
+            "region": {"const": "eu-north1"},
+            "cluster_id": {"const": "mk8scluster-e00j5z9te7x5dd9g6a"},
+            "filesystem_id": {"const": "computefilesystem-e00hdb1drrgsenr2j7"},
+            "pvc_namespace": {"const": "fs2-models"},
+            "pvc_name": {"const": "cancer-immunotherapy-academic-assets-rwx-v1"},
+            "file_size_bytes": {"type": "integer", "minimum": 1},
+            "verified": {"const": true}
+          }
+        }
+      ]
+    },
+    "image": {
+      "allOf": [
+        {"$ref": "#/$defs/common"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "asset_id", "artifact_sha256", "observed_at", "repository", "image_digest", "visibility", "redistributable", "asset_delivery_mode", "contains_licensed_asset", "builder"],
+          "properties": {
+            "schema": {"const": "fs2-serve.nebius.ai/academic-image-receipt/v1"},
+            "asset_id": {"enum": ["alphafold3", "pyrosetta-bindcraft"]},
+            "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "observed_at": {"type": "string", "format": "date-time"},
+            "repository": {"type": "string", "pattern": "^cr\\.eu-north1\\.nebius\\.cloud/e00akg9ndpx77eaexh/academic/"},
+            "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "visibility": {"const": "private"},
+            "redistributable": {"const": false},
+            "asset_delivery_mode": {"enum": ["external-private-cache", "embedded-private-layer"]},
+            "contains_licensed_asset": {"type": "boolean"},
+            "builder": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "deployment": {
+      "allOf": [
+        {"$ref": "#/$defs/common"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "asset_id", "artifact_sha256", "observed_at", "model_id", "image_digest", "deployed", "resource_uid"],
+          "properties": {
+            "schema": {"const": "fs2-serve.nebius.ai/academic-deployment-receipt/v1"},
+            "asset_id": {"enum": ["alphafold3", "pyrosetta-bindcraft"]},
+            "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "observed_at": {"type": "string", "format": "date-time"},
+            "model_id": {"enum": ["alphafold3", "bindcraft"]},
+            "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "deployed": {"const": true},
+            "resource_uid": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "semantic": {
+      "allOf": [
+        {"$ref": "#/$defs/common"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "asset_id", "artifact_sha256", "observed_at", "model_id", "image_digest", "passed", "validator_digest"],
+          "properties": {
+            "schema": {"const": "fs2-serve.nebius.ai/academic-semantic-receipt/v1"},
+            "asset_id": {"enum": ["alphafold3", "pyrosetta-bindcraft"]},
+            "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "observed_at": {"type": "string", "format": "date-time"},
+            "model_id": {"enum": ["alphafold3", "bindcraft"]},
+            "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "passed": {"const": true},
+            "validator_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+          }
+        }
+      ]
+    }
+  }
+}
