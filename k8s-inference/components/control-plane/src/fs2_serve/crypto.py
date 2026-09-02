@@ -88,6 +88,8 @@ class KeyedHasher:
     def __init__(self, *, active_key_id: str, keys: dict[str, bytes]) -> None:
         if active_key_id not in keys:
             raise ValueError("active ledger HMAC key is absent from key ring")
+        if not 1 <= len(keys) <= 32:
+            raise ValueError("ledger HMAC key ring must contain between 1 and 32 keys")
         if any(KEY_ID_RE.fullmatch(key_id) is None or len(key) < 32 for key_id, key in keys.items()):
             raise ValueError("ledger HMAC keys must be bounded and contain at least 32 bytes")
         self.active_key_id = active_key_id
@@ -126,3 +128,16 @@ class KeyedHasher:
         except KeyError as exc:
             raise ValueError("ledger HMAC replay key is unavailable") from exc
         return hmac.new(key, context.encode() + b"\0" + value, hashlib.sha256).hexdigest()
+
+    def candidate_digests(self, value: bytes, *, context: str) -> tuple[tuple[str, str], ...]:
+        """Return bounded replay identities for every retained rotation key.
+
+        Callers persist only the selected key ID and HMAC.  A later replay can
+        therefore locate receipts created before key rotation without storing
+        or logging the caller-provided idempotency key.
+        """
+
+        return tuple(
+            (key_id, self.digest_for(key_id, value, context=context))
+            for key_id in sorted(self._keys)
+        )

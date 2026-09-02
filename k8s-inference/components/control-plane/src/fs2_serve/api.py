@@ -67,6 +67,7 @@ from .auth import (
 )
 from .configuration import ConfigurationService
 from .configuration_routes import configuration_router
+from .model_deployment_admin import ModelDeploymentReadService, model_deployment_read_router
 from .model_deployment_preview import ModelDeploymentPreviewService, model_deployment_preview_router
 from .models import (
     MAX_IDEMPOTENCY_KEY_LENGTH,
@@ -166,6 +167,7 @@ class AppRuntime:
     configuration: ConfigurationService | None = None
     configuration_sync_error: str | None = None
     model_deployment_preview: ModelDeploymentPreviewService | None = None
+    model_deployment_read: ModelDeploymentReadService | None = None
 
     async def revalidate_routes(self) -> bool:
         if self.route_revalidator is None:
@@ -1274,6 +1276,17 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         app.include_router(
             model_deployment_preview_router(
                 service=runtime.model_deployment_preview,
+                access=admin_access,
+                operator_dependency=operator,
+                envelope=access_envelope,
+                problem_responses=admin_problem_responses,
+            )
+        )
+
+    if runtime.model_deployment_read is not None:
+        app.include_router(
+            model_deployment_read_router(
+                service=runtime.model_deployment_read,
                 access=admin_access,
                 operator_dependency=operator,
                 envelope=access_envelope,

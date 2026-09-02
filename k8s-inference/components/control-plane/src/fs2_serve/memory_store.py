@@ -47,6 +47,16 @@ from .configuration_models import (
     TerraformApplyReceipt,
 )
 from .crypto import Ciphertext, KeyedHasher, PayloadCipher
+from .model_deployment import spec_digest
+from .model_deployment_records import (
+    ModelDeploymentAppendRequest,
+    ModelDeploymentAppendResult,
+    ModelDeploymentRevision,
+    ModelDeploymentRevisionAction,
+    ModelDeploymentStatusObservation,
+    model_deployment_append_payload,
+    model_deployment_audit_target,
+)
 from .models import (
     ActivationAction,
     ActivationIntent,
@@ -167,6 +177,14 @@ class MemoryStore:
         self.configuration_revisions: dict[int, ConfigurationRevision] = {}
         self.configuration_plans: dict[UUID, ConfigurationPlan] = {}
         self.configuration_status_events: dict[UUID, list[ReconciliationStatus]] = {}
+        self.model_deployment_revisions: dict[tuple[str, str], list[ModelDeploymentRevision]] = {}
+        self.model_deployment_idempotency: dict[
+            tuple[UUID, str, str], tuple[str, str, str, int]
+        ] = {}
+        self.model_deployment_status_events: dict[
+            tuple[str, str], list[ModelDeploymentStatusObservation]
+        ] = {}
+        self.model_deployment_status_by_id: dict[UUID, ModelDeploymentStatusObservation] = {}
 
     def _activation_event(self, intent: ActivationIntent, event: str) -> None:
         self.activation_events.append(
@@ -1053,6 +1071,217 @@ class MemoryStore:
     async def configuration_get_status(self, reconciliation_id: UUID) -> ReconciliationStatus | None:
         async with self._lock:
             events = self.configuration_status_events.get(reconciliation_id, [])
+            return events[-1].model_copy(deep=True) if events else None
+
+    async def model_deployment_append_revision(
+        self,
+        request: ModelDeploymentAppendRequest,
+    ) -> ModelDeploymentAppendResult:
+        key_value = request.idempotency_key.encode("utf-8")
+        request_value = model_deployment_append_payload(request)
+        candidates = self.hasher.candidate_digests(
+            key_value,
+            context="fs2-serve.model-deployment-idempotency/v1",
+        )
+        async with self._lock:
+            for key_id, key_hmac in candidates:
+                receipt = self.model_deployment_idempotency.get((request.actor_id, key_id, key_hmac))
+                if receipt is None:
+                    continue
+                stored_request_hmac, namespace, name, revision = receipt
+                replay_hmac = self.hasher.digest_for(
+                    key_id,
+                    request_value,
+                    context="fs2-serve.model-deployment-request/v1",
+                )
+                if not secrets.compare_digest(replay_hmac, stored_request_hmac):
+                    raise ConflictError("model deployment idempotency key is bound to another request")
+                rows = self.model_deployment_revisions.get((namespace, name), [])
+                value = next((item for item in rows if item.revision == revision), None)
+                if value is None:
+                    raise ConflictError("model deployment idempotency receipt is incomplete")
+                return ModelDeploymentAppendResult(value=value.model_copy(deep=True), reused=True)
+
+            rows = self.model_deployment_revisions.setdefault((request.namespace, request.name), [])
+            current = rows[-1] if rows else None
+            if current is None:
+                if request.action is not ModelDeploymentRevisionAction.CREATE or request.expected_etag is not None:
+                    raise ConflictError("model deployment create does not match current state")
+                revision_number = 1
+                previous_revision = None
+            else:
+                if request.action is ModelDeploymentRevisionAction.CREATE:
+                    raise ConflictError("model deployment already exists")
+                if request.expected_etag != current.etag:
+                    raise ConflictError("model deployment ETag is stale")
+                if (
+                    request.spec.tenant_id != current.tenant_id
+                    or request.spec.model_ref != current.spec.model_ref
+                    or request.spec.runtime.profile != current.spec.runtime.profile
+                ):
+                    raise ConflictError("model deployment immutable identity changed")
+                if spec_digest(request.spec) == current.etag:
+                    raise ConflictError("model deployment revision contains no desired-state change")
+                revision_number = current.revision + 1
+                previous_revision = current.revision
+
+            now = datetime.now(UTC)
+            value = ModelDeploymentRevision(
+                namespace=request.namespace,
+                name=request.name,
+                tenant_id=request.spec.tenant_id,
+                revision=revision_number,
+                etag=spec_digest(request.spec),
+                spec=request.spec.model_copy(deep=True),
+                action=request.action,
+                created_at=now,
+                created_by=request.actor,
+                previous_revision=previous_revision,
+            )
+            active_key_id, key_hmac = self.hasher.digest(
+                key_value,
+                context="fs2-serve.model-deployment-idempotency/v1",
+            )
+            request_hmac = self.hasher.digest_for(
+                active_key_id,
+                request_value,
+                context="fs2-serve.model-deployment-request/v1",
+            )
+            rows.append(value)
+            self.model_deployment_idempotency[(request.actor_id, active_key_id, key_hmac)] = (
+                request_hmac,
+                request.namespace,
+                request.name,
+                value.revision,
+            )
+            self._audit(
+                actor=request.actor,
+                tenant_id=request.spec.tenant_id,
+                token_id=None,
+                action=f"model_deployment.revision.{request.action.value}",
+                target_type="model_deployment",
+                target_id=model_deployment_audit_target(request.namespace, request.name),
+                outcome="succeeded",
+                detail={
+                    "revision": value.revision,
+                    "previous_revision": value.previous_revision,
+                    "etag": value.etag,
+                    "idempotent_replay": False,
+                    "namespace": request.namespace,
+                    "name": request.name,
+                },
+            )
+            return ModelDeploymentAppendResult(value=value.model_copy(deep=True))
+
+    @staticmethod
+    def _validate_model_deployment_read(
+        *,
+        namespace: str,
+        tenant_id: str | None,
+        limit: int,
+    ) -> None:
+        if not 1 <= len(namespace) <= 63 or not 1 <= limit <= 201:
+            raise ValueError("model deployment read is outside the bound")
+        if tenant_id is not None and not 1 <= len(tenant_id) <= 120:
+            raise ValueError("model deployment tenant is outside the bound")
+
+    async def model_deployment_list(
+        self,
+        *,
+        namespace: str,
+        tenant_id: str | None,
+        after_name: str | None,
+        limit: int,
+    ) -> list[ModelDeploymentRevision]:
+        self._validate_model_deployment_read(namespace=namespace, tenant_id=tenant_id, limit=limit)
+        if after_name is not None and not 1 <= len(after_name) <= 253:
+            raise ValueError("model deployment cursor is outside the bound")
+        async with self._lock:
+            values = [
+                rows[-1]
+                for (row_namespace, name), rows in self.model_deployment_revisions.items()
+                if row_namespace == namespace
+                and (tenant_id is None or rows[-1].tenant_id == tenant_id)
+                and (after_name is None or name > after_name)
+            ]
+            values.sort(key=lambda item: item.name)
+            return [item.model_copy(deep=True) for item in values[:limit]]
+
+    async def model_deployment_current(
+        self,
+        *,
+        namespace: str,
+        name: str,
+        tenant_id: str | None,
+    ) -> ModelDeploymentRevision | None:
+        self._validate_model_deployment_read(namespace=namespace, tenant_id=tenant_id, limit=1)
+        if not 1 <= len(name) <= 253:
+            raise ValueError("model deployment name is outside the bound")
+        async with self._lock:
+            rows = self.model_deployment_revisions.get((namespace, name), [])
+            if not rows or (tenant_id is not None and rows[-1].tenant_id != tenant_id):
+                return None
+            return rows[-1].model_copy(deep=True)
+
+    async def model_deployment_history(
+        self,
+        *,
+        namespace: str,
+        name: str,
+        tenant_id: str | None,
+        before_revision: int | None,
+        limit: int,
+    ) -> list[ModelDeploymentRevision]:
+        self._validate_model_deployment_read(namespace=namespace, tenant_id=tenant_id, limit=limit)
+        if not 1 <= len(name) <= 253 or (before_revision is not None and before_revision < 2):
+            raise ValueError("model deployment history query is outside the bound")
+        async with self._lock:
+            rows = self.model_deployment_revisions.get((namespace, name), [])
+            if not rows or (tenant_id is not None and rows[-1].tenant_id != tenant_id):
+                return []
+            values = [item for item in reversed(rows) if before_revision is None or item.revision < before_revision]
+            return [item.model_copy(deep=True) for item in values[:limit]]
+
+    async def model_deployment_append_status(
+        self,
+        observation: ModelDeploymentStatusObservation,
+    ) -> ModelDeploymentStatusObservation:
+        async with self._lock:
+            existing = self.model_deployment_status_by_id.get(observation.observation_id)
+            if existing is not None:
+                if existing != observation:
+                    raise ConflictError("model deployment observation identity was reused")
+                return existing.model_copy(deep=True)
+            revisions = self.model_deployment_revisions.get((observation.namespace, observation.name), [])
+            revision = next((item for item in revisions if item.revision == observation.revision), None)
+            if (
+                revision is None
+                or revision.tenant_id != observation.tenant_id
+                or revision.etag != observation.status.spec_digest
+            ):
+                raise ConflictError("model deployment observation has no matching desired revision")
+            value = observation.model_copy(deep=True)
+            self.model_deployment_status_events.setdefault(
+                (observation.namespace, observation.name), []
+            ).append(value)
+            self.model_deployment_status_by_id[value.observation_id] = value
+            return value.model_copy(deep=True)
+
+    async def model_deployment_status(
+        self,
+        *,
+        namespace: str,
+        name: str,
+        tenant_id: str | None,
+    ) -> ModelDeploymentStatusObservation | None:
+        self._validate_model_deployment_read(namespace=namespace, tenant_id=tenant_id, limit=1)
+        if not 1 <= len(name) <= 253:
+            raise ValueError("model deployment name is outside the bound")
+        async with self._lock:
+            revisions = self.model_deployment_revisions.get((namespace, name), [])
+            if not revisions or (tenant_id is not None and revisions[-1].tenant_id != tenant_id):
+                return None
+            events = self.model_deployment_status_events.get((namespace, name), [])
             return events[-1].model_copy(deep=True) if events else None
 
     async def admin_key_usage(self, token_ids: tuple[UUID, ...], *, tenant_id: str | None) -> list[AdminKeyUsageRecord]:

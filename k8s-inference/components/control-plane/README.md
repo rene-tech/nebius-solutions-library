@@ -168,8 +168,8 @@ reviewed activation child and are merged only by the later integration lane.
 
 `fs2-serve postgresql-release-contract` emits the non-secret cross-lane receipt
 inputs. The committed contract under `contracts/` hash-binds the exact ordered
-`0001`-`0010` set (including the immutable activation lineage and additive
-maintenance boundary), the `fs2-data`
+`0001`-`0012` set (including the immutable activation lineage, additive
+maintenance boundary, admin configuration, and ModelDeployment ledger), the `fs2-data`
 database-resource versus `fs2-system` credential-Secret namespace split, and
 the sole migration/group-role owner. Migration and schema-wait paths reject
 missing, extra, reordered, or changed source and applied-ledger entries.

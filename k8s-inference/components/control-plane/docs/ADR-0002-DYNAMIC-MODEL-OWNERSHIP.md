@@ -164,8 +164,8 @@ feature-gated until their live acceptance is complete.
 
 ## Current feature gate and next tranche
 
-The first implementation tranche installs only the versioned API definition
-and exposes authenticated, read-only admin validation/render previews:
+The source-only implementation installs the versioned API definition and
+provides authenticated, read-only admin validation/render previews:
 
 - `POST /admin/api/v1/model-deployments:validate-preview`
 - `POST /admin/api/v1/model-deployments:plan-preview`
@@ -174,6 +174,22 @@ The preview service has no Kubernetes writer dependency. Apply, adopt, and
 delete routes return `501 model_deployment_writer_disabled`. A preview is
 optimistically bound to the current ETag, records a secret-free audit event,
 and states `mutation_supported=false`.
+
+The second source tranche adds an append-only PostgreSQL desired-revision
+ledger, HMAC-only idempotency receipts, atomic revision audit records, and
+append-only bounded status observations. It also provides optional,
+tenant-filtered read seams:
+
+- `GET /admin/api/v1/model-deployments`
+- `GET /admin/api/v1/model-deployments/{name}`
+- `GET /admin/api/v1/model-deployments/{name}/history`
+- `GET /admin/api/v1/model-deployments/{name}/status`
+
+These routes are absent unless a read service is explicitly injected. The
+default runtime does not mount them, no mutation service exists, and a database
+revision never claims that Kubernetes has applied or observed it. Status is
+reported as unavailable or stale until a matching controller observation is
+durable.
 
 The chart keeps the CRD under `crds/` for fresh standalone Helm installs. Helm
 does not upgrade or delete CRDs. Solution installs therefore apply and upgrade
@@ -185,7 +201,19 @@ or model workload.
 The next tranche must implement and test all of the following before enabling
 mutation or adoption:
 
-- a PostgreSQL revision/idempotency/approval store and durable audit adapter;
+- an approval/admission workflow that is the only caller of the durable
+  revision append seam, preferably through a dedicated database writer role,
+  plus lifecycle and retention policy for its receipts;
+- explicit rollback target semantics (the current durable action is an audit
+  label, not proof of which earlier revision was selected) and conformance
+  checks that the selected spec is an exact prior revision;
+- a controller-writer identity and fencing contract for status events,
+  monotonic Kubernetes resource-version handling, and a transactionally
+  consistent status/head read so a stale controller cannot publish newer
+  readiness evidence;
+- an operational HMAC key-retention policy that keeps every idempotency key
+  version for at least the receipt replay horizon and blocks removal while a
+  retained receipt still depends on it;
 - a Kubernetes server-side-apply adapter, controller Deployment, leader
   election, least-privilege RBAC, finalizer/status writer, bounded work queue,
   metrics, and restart/failure recovery;
@@ -200,7 +228,8 @@ mutation or adoption:
 - HTTPRoute generation, a Ready-gated publication projector, and dynamic
   OpenAI/MCP catalog consumption;
 - complete controller phase/condition projection and the add/edit/drain/delete,
-  history, rollback, and status admin APIs and UI.
+  rollback mutation APIs and UI; the source-only read/history/status seams must
+  be wired only with the reviewed production repository.
 
 Until these gates pass, no retained-cluster model may be adopted and Terraform
 continues to own every existing per-model workload.

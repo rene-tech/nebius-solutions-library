@@ -30,6 +30,12 @@ from .configuration_models import (
     ReconciliationStatus,
     TerraformApplyReceipt,
 )
+from .model_deployment_records import (
+    ModelDeploymentAppendRequest,
+    ModelDeploymentAppendResult,
+    ModelDeploymentRevision,
+    ModelDeploymentStatusObservation,
+)
 from .models import (
     ActivationIntent,
     ActivationLeaderIdentity,
@@ -216,6 +222,51 @@ class Store(Protocol):
     async def configuration_save_status(self, status: ReconciliationStatus) -> None: ...
 
     async def configuration_get_status(self, reconciliation_id: UUID) -> ReconciliationStatus | None: ...
+
+    async def model_deployment_append_revision(
+        self,
+        request: ModelDeploymentAppendRequest,
+    ) -> ModelDeploymentAppendResult: ...
+
+    async def model_deployment_list(
+        self,
+        *,
+        namespace: str,
+        tenant_id: str | None,
+        after_name: str | None,
+        limit: int,
+    ) -> list[ModelDeploymentRevision]: ...
+
+    async def model_deployment_current(
+        self,
+        *,
+        namespace: str,
+        name: str,
+        tenant_id: str | None,
+    ) -> ModelDeploymentRevision | None: ...
+
+    async def model_deployment_history(
+        self,
+        *,
+        namespace: str,
+        name: str,
+        tenant_id: str | None,
+        before_revision: int | None,
+        limit: int,
+    ) -> list[ModelDeploymentRevision]: ...
+
+    async def model_deployment_append_status(
+        self,
+        observation: ModelDeploymentStatusObservation,
+    ) -> ModelDeploymentStatusObservation: ...
+
+    async def model_deployment_status(
+        self,
+        *,
+        namespace: str,
+        name: str,
+        tenant_id: str | None,
+    ) -> ModelDeploymentStatusObservation | None: ...
 
     async def admin_key_usage(
         self, token_ids: tuple[UUID, ...], *, tenant_id: str | None

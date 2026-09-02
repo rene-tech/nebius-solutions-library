@@ -39,6 +39,14 @@ from fs2_serve.configuration import (
 )
 from fs2_serve.configuration_models import ConfigurationProposal, ReconciliationPhase, TerraformApplyReceipt
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
+from fs2_serve.model_deployment_admin import (
+    ModelDeploymentReadService,
+    StoreModelDeploymentRepository,
+)
+from fs2_serve.model_deployment_records import (
+    ModelDeploymentRevisionAction,
+    ModelDeploymentStatusAvailability,
+)
 from fs2_serve.models import (
     ActivationIntentStatus,
     ActivationLeaderIdentity,
@@ -150,7 +158,9 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
     await asyncio.gather(store.migrate(), store.migrate())
     async with store.pool.acquire() as connection:
         await connection.execute(
-            "TRUNCATE fs2_configuration_reconciliation_events,fs2_configuration_plans,"
+            "TRUNCATE fs2_model_deployment_status_events,fs2_model_deployment_idempotency,"
+            "fs2_model_deployments,fs2_model_deployment_revisions,"
+            "fs2_configuration_reconciliation_events,fs2_configuration_plans,"
             "fs2_configuration_revisions,fs2_activation_controller_status,fs2_activation_target_state,"
             "fs2_activation_model_fences,fs2_activation_intents,"
             "fs2_operator_sessions,fs2_usage_facts,fs2_audit_events,"
@@ -163,7 +173,9 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
     finally:
         async with store.pool.acquire() as connection:
             await connection.execute(
-                "TRUNCATE fs2_configuration_reconciliation_events,fs2_configuration_plans,"
+                "TRUNCATE fs2_model_deployment_status_events,fs2_model_deployment_idempotency,"
+                "fs2_model_deployments,fs2_model_deployment_revisions,"
+                "fs2_configuration_reconciliation_events,fs2_configuration_plans,"
                 "fs2_configuration_revisions,fs2_activation_controller_status,fs2_activation_target_state,"
                 "fs2_activation_model_fences,fs2_activation_intents,"
                 "fs2_operator_sessions,fs2_usage_facts,fs2_audit_events,"
@@ -231,6 +243,101 @@ async def test_admin_configuration_receipt_is_atomic_durable_and_exactly_replaya
             )
             == 1
         )
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_model_deployment_revisions_idempotency_status_and_audit_are_durable(
+    postgres_store: PostgresStore,
+) -> None:
+    from test_model_deployment_admin import append_request, observation
+
+    create = append_request(key="postgres-create-qwen-0001")
+    first_result, replay_result = await asyncio.gather(
+        postgres_store.model_deployment_append_revision(create),
+        postgres_store.model_deployment_append_revision(create),
+    )
+    assert first_result.value == replay_result.value
+    assert {first_result.reused, replay_result.reused} == {False, True}
+    first = first_result.value
+
+    with pytest.raises(ConflictError, match="bound to another request"):
+        await postgres_store.model_deployment_append_revision(
+            append_request(key=create.idempotency_key, max_replicas=3)
+        )
+
+    first_observation = observation(revision=1, etag=first.etag)
+    assert await postgres_store.model_deployment_append_status(first_observation) == first_observation
+    assert await postgres_store.model_deployment_append_status(first_observation) == first_observation
+
+    second = (
+        await postgres_store.model_deployment_append_revision(
+            append_request(
+                key="postgres-update-qwen-0002",
+                action=ModelDeploymentRevisionAction.UPDATE,
+                expected_etag=first.etag,
+                max_replicas=3,
+            )
+        )
+    ).value
+    await postgres_store.model_deployment_append_revision(
+        append_request(
+            key="postgres-create-cosmos-0003",
+            tenant_id="tenant-b",
+            name="cosmos-live",
+        )
+    )
+
+    service = ModelDeploymentReadService(StoreModelDeploymentRepository(postgres_store))
+    tenant_models = await service.list(
+        namespace="fs2-models",
+        tenant_id="tenant-a",
+        after_name=None,
+        limit=100,
+    )
+    assert [item.name for item in tenant_models.items] == ["qwen-live"]
+    history = await service.history(
+        namespace="fs2-models",
+        name="qwen-live",
+        tenant_id="tenant-a",
+        before_revision=None,
+        limit=100,
+    )
+    assert [item.revision for item in history.items] == [2, 1]
+    stale = await service.status(
+        namespace="fs2-models",
+        name="qwen-live",
+        tenant_id="tenant-a",
+    )
+    assert stale.state is ModelDeploymentStatusAvailability.STALE
+
+    second_observation = observation(revision=2, etag=second.etag)
+    await postgres_store.model_deployment_append_status(second_observation)
+    observed = await service.status(
+        namespace="fs2-models",
+        name="qwen-live",
+        tenant_id="tenant-a",
+    )
+    assert observed.state is ModelDeploymentStatusAvailability.OBSERVED
+    assert observed.observation == second_observation
+
+    async with postgres_store.pool.acquire() as connection:
+        assert await connection.fetchval("SELECT count(*) FROM fs2_model_deployment_revisions") == 3
+        assert await connection.fetchval("SELECT count(*) FROM fs2_model_deployment_idempotency") == 3
+        assert await connection.fetchval("SELECT count(*) FROM fs2_model_deployment_status_events") == 2
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_audit_events WHERE action LIKE 'model_deployment.revision.%'"
+            )
+            == 3
+        )
+        columns = await connection.fetch(
+            """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='fs2_model_deployment_idempotency'
+            """
+        )
+        assert "idempotency_key" not in {str(row["column_name"]) for row in columns}
 
 
 @pytest.mark.postgres
@@ -495,7 +602,7 @@ async def test_real_postgres_rejects_extra_or_reordered_applied_migration_ledger
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
-async def test_real_postgres_upgrade_preserves_0001_through_0009_and_applies_only_0010(
+async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0012(
     postgres_store: PostgresStore,
     tmp_path: Path,
 ) -> None:
@@ -505,7 +612,8 @@ async def test_real_postgres_upgrade_preserves_0001_through_0009_and_applies_onl
     database_name = f"fs2_activation_upgrade_{uuid4().hex[:10]}"
     prior_dir = tmp_path / "prior-migrations"
     prior_dir.mkdir()
-    for migration in sorted((CONTROL_ROOT / "migrations").glob("000[1-9]_*.sql")):
+    for version, _ in EXPECTED_MIGRATIONS[:-1]:
+        migration = CONTROL_ROOT / "migrations" / version
         shutil.copy2(migration, prior_dir / migration.name)
     admin = await asyncpg.connect(database_url)
     try:
@@ -546,7 +654,11 @@ async def test_real_postgres_upgrade_preserves_0001_through_0009_and_applies_onl
                 "WHERE table_schema='public' AND table_name='fs2_operations' "
                 "AND column_name='payload_purged_at')"
             )
-            assert await before_connection.fetchval("SELECT to_regclass('public.fs2_operator_principals')") is None
+            assert (
+                await before_connection.fetchval("SELECT to_regclass('public.fs2_operator_principals')")
+                == "fs2_operator_principals"
+            )
+            assert await before_connection.fetchval("SELECT to_regclass('public.fs2_model_deployments')") is None
         finally:
             await before_connection.close()
 
@@ -560,7 +672,7 @@ async def test_real_postgres_upgrade_preserves_0001_through_0009_and_applies_onl
                 )
             }
             assert {version: after[version] for version in before} == before
-            assert list(after)[-1] == "0011_admin_configuration.sql"
+            assert list(after)[-1] == "0012_model_deployments.sql"
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_activation_model_fences')")
                 == "fs2_activation_model_fences"
@@ -573,6 +685,10 @@ async def test_real_postgres_upgrade_preserves_0001_through_0009_and_applies_onl
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_operator_principals')")
                 == "fs2_operator_principals"
+            )
+            assert (
+                await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_model_deployments')")
+                == "fs2_model_deployments"
             )
         finally:
             await upgraded_connection.close()
@@ -1215,6 +1331,8 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
     cipher: PayloadCipher,
     hasher: KeyedHasher,
 ) -> None:
+    from test_model_deployment_admin import append_request, observation
+
     database_url = os.environ["FS2_TEST_DATABASE_URL"]
     suffix = uuid4().hex[:10]
     reporting_role = f"fs2_test_reporting_{suffix}"
@@ -1284,6 +1402,27 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
             hasher,
             payload_ttl_seconds=3600,
         )
+        model_revision = (
+            await runtime_store.model_deployment_append_revision(
+                append_request(key="restricted-runtime-model-0001")
+            )
+        ).value
+        assert (
+            await runtime_store.model_deployment_current(
+                namespace=model_revision.namespace,
+                name=model_revision.name,
+                tenant_id=model_revision.tenant_id,
+            )
+        ) == model_revision
+        model_observation = observation(revision=1, etag=model_revision.etag)
+        assert await runtime_store.model_deployment_append_status(model_observation) == model_observation
+        assert (
+            await runtime_store.model_deployment_status(
+                namespace=model_revision.namespace,
+                name=model_revision.name,
+                tenant_id=model_revision.tenant_id,
+            )
+        ) == model_observation
         intent = await runtime_store.ensure_activation_intent(
             operation,
             binding_digest=model.binding.binding_digest,
@@ -1380,6 +1519,11 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
                 "DELETE FROM fs2_usage_facts",
                 "UPDATE fs2_audit_events SET outcome='forged'",
                 "DELETE FROM fs2_audit_events",
+                "UPDATE fs2_model_deployment_revisions SET action='rollback'",
+                "UPDATE fs2_model_deployment_idempotency SET request_hmac=repeat('f',64)",
+                "UPDATE fs2_model_deployment_status_events SET revision=777",
+                "DELETE FROM fs2_model_deployments",
+                "DELETE FROM fs2_model_deployment_revisions",
                 "DELETE FROM fs2_operations",
                 "DELETE FROM fs2_tokens",
                 f'CREATE TABLE public."fs2_runtime_forbidden_{suffix}" (id integer)',
@@ -1440,6 +1584,8 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
                 "SELECT outcome FROM fs2_usage_facts LIMIT 0",
                 "SELECT * FROM fs2_operation_events LIMIT 0",
                 "SELECT last_value FROM fs2_operation_events_id_seq",
+                "SELECT * FROM fs2_model_deployments LIMIT 0",
+                "SELECT * FROM fs2_model_deployment_status_events LIMIT 0",
                 f"INSERT INTO fs2_operation_events(operation_id,event,status,attempt) "
                 f"VALUES('{operation.id}','forged','failed',1)",
                 "UPDATE fs2_audit_events SET outcome='forged'",
@@ -1457,6 +1603,8 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
                 "FROM fs2_operations LIMIT 0",
                 "SELECT * FROM fs2_tokens LIMIT 0",
                 "SELECT * FROM fs2_audit_events LIMIT 0",
+                "SELECT * FROM fs2_model_deployments LIMIT 0",
+                "SELECT * FROM fs2_model_deployment_revisions LIMIT 0",
                 "SELECT * FROM fs2_activation_events LIMIT 0",
                 "SELECT last_value FROM fs2_activation_events_id_seq",
                 f'CREATE TABLE public."fs2_activation_forbidden_{suffix}" (id integer)',

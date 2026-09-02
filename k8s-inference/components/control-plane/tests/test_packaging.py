@@ -218,6 +218,7 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
         "0009_maintenance_least_privilege.sql",
         "0010_admin_access_accounting.sql",
         "0011_admin_configuration.sql",
+        "0012_model_deployments.sql",
     ]
     assert hashlib.sha256((migration_dir / "0005_terminal_accounting.sql").read_bytes()).hexdigest() == (
         "fedb6789a4839d42645c5ffb6905ce46525c213d81f15d9d987eacc109614197"
@@ -240,11 +241,14 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
     assert hashlib.sha256((migration_dir / "0011_admin_configuration.sql").read_bytes()).hexdigest() == (
         "fa8ab57dcf32bba741c149352e796cb261341df535d0b972af432792bbd8da43"
     )
+    assert hashlib.sha256((migration_dir / "0012_model_deployments.sql").read_bytes()).hexdigest() == (
+        "bf4dfbff463a88f3be1cc04e452900d4eff9c18024161069d7beb281229f3eef"
+    )
     dockerfile = (CONTROL_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert dockerfile.count("WORKDIR /workspace/k8s-inference/components/control-plane") == 2
     assert "COPY k8s-inference/components/control-plane/migrations ./migrations" in dockerfile
     assert "Settings.model_fields['migrations_dir'].default" in dockerfile
-    assert "migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 11" in dockerfile
+    assert "migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 12" in dockerfile
     assert "store.migrate" not in inspect.getsource(cli.build_runtime)
     assert "store.migrate" not in inspect.getsource(cli.maintain)
     assert "PostgresStore.migrate_database" in inspect.getsource(cli.migrate)
@@ -309,6 +313,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
             "fs2_serve/migrations/0009_maintenance_least_privilege.sql",
             "fs2_serve/migrations/0010_admin_access_accounting.sql",
             "fs2_serve/migrations/0011_admin_configuration.sql",
+            "fs2_serve/migrations/0012_model_deployments.sql",
         ]
         entry_point_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         assert len(entry_point_files) == 1
@@ -372,7 +377,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
                 "assert pathlib.Path(fs2_serve_catalog.__file__).resolve().is_relative_to(root);"
                 "migration_dir=Settings.model_fields['migrations_dir'].default;"
                 "assert migration_dir.parent == pathlib.Path(fs2_serve.__file__).resolve().parent;"
-                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 11;"
+                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 12;"
                 "assert Registry and load_gateway_catalog"
             ),
         ],

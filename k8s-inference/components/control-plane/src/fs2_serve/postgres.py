@@ -7,6 +7,7 @@ import base64
 import functools
 import hashlib
 import json
+import secrets
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -47,6 +48,17 @@ from .configuration_models import (
     TerraformApplyReceipt,
 )
 from .crypto import Ciphertext, KeyedHasher, PayloadCipher
+from .model_deployment import ModelDeploymentSpec, spec_digest
+from .model_deployment_records import (
+    ModelDeploymentAppendRequest,
+    ModelDeploymentAppendResult,
+    ModelDeploymentObservedStatus,
+    ModelDeploymentRevision,
+    ModelDeploymentRevisionAction,
+    ModelDeploymentStatusObservation,
+    model_deployment_append_payload,
+    model_deployment_audit_target,
+)
 from .models import (
     ActivationIntent,
     ActivationLeaderIdentity,
@@ -157,6 +169,26 @@ class PostgresStore:
     @staticmethod
     async def _configuration_lock(connection: asyncpg.Connection[Any]) -> None:
         await connection.execute("SELECT pg_advisory_xact_lock(727201920011)")
+
+    @staticmethod
+    async def _model_deployment_lock(
+        connection: asyncpg.Connection[Any],
+        namespace: str,
+        name: str,
+    ) -> None:
+        identity = f"{namespace}\0{name}".encode()
+        key = int.from_bytes(hashlib.blake2b(identity, digest_size=8).digest(), "big", signed=True)
+        await connection.execute("SELECT pg_advisory_xact_lock($1::bigint)", key)
+
+    @staticmethod
+    async def _model_deployment_idempotency_lock(
+        connection: asyncpg.Connection[Any],
+        actor_id: UUID,
+        idempotency_key: str,
+    ) -> None:
+        identity = f"{actor_id}\0{idempotency_key}".encode()
+        key = int.from_bytes(hashlib.blake2b(identity, digest_size=8).digest(), "big", signed=True)
+        await connection.execute("SELECT pg_advisory_xact_lock($1::bigint)", key)
 
     def __init__(
         self,
@@ -309,6 +341,8 @@ class PostgresStore:
                     f"fs2_operator_principals,fs2_operator_sessions,"
                     f"fs2_configuration_revisions,fs2_configuration_plans,"
                     f"fs2_configuration_reconciliation_events,"
+                    f"fs2_model_deployment_revisions,fs2_model_deployments,"
+                    f"fs2_model_deployment_idempotency,fs2_model_deployment_status_events,"
                     f"fs2_reporting_model_usage,fs2_reporting_principal_usage,"
                     f"fs2_reporting_terminal_totals,fs2_activation_intents,fs2_activation_events,"
                     f"fs2_activation_target_state,fs2_activation_controller_status,"
@@ -317,7 +351,8 @@ class PostgresStore:
                 await connection.execute(
                     f"REVOKE ALL ON fs2_operation_events_id_seq,fs2_audit_events_id_seq,"
                     f"fs2_activation_events_id_seq,fs2_configuration_revisions_revision_seq,"
-                    f"fs2_configuration_reconciliation_events_id_seq FROM {role}"
+                    f"fs2_configuration_reconciliation_events_id_seq,"
+                    f"fs2_model_deployment_status_events_id_seq FROM {role}"
                 )
                 await connection.execute(
                     f"REVOKE ALL ON FUNCTION fs2_activation_model_lock_key(text),"
@@ -340,6 +375,13 @@ class PostgresStore:
                 f"fs2_configuration_reconciliation_events TO {quoted_runtime}"
             )
             await connection.execute(
+                f"GRANT SELECT,INSERT ON fs2_model_deployment_revisions,"
+                f"fs2_model_deployment_idempotency,fs2_model_deployment_status_events TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT SELECT,INSERT,UPDATE ON fs2_model_deployments TO {quoted_runtime}"
+            )
+            await connection.execute(
                 f"GRANT SELECT ON fs2_schema_migrations,fs2_reporting_terminal_totals TO {quoted_runtime}"
             )
             # API-key inventory joins runtime-owned token identities to a
@@ -357,7 +399,8 @@ class PostgresStore:
             )
             await connection.execute(
                 f"GRANT USAGE,SELECT ON fs2_configuration_revisions_revision_seq,"
-                f"fs2_configuration_reconciliation_events_id_seq TO {quoted_runtime}"
+                f"fs2_configuration_reconciliation_events_id_seq,"
+                f"fs2_model_deployment_status_events_id_seq TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT EXECUTE ON FUNCTION fs2_runtime_ensure_activation_intent(uuid,integer,text,text,"
@@ -552,6 +595,37 @@ class PostgresStore:
             created_by=row["created_by"],
             previous_revision=row["previous_revision"],
             reconciliation_id=row["reconciliation_id"],
+        )
+
+    @staticmethod
+    def _model_deployment_revision(row: asyncpg.Record) -> ModelDeploymentRevision:
+        return ModelDeploymentRevision(
+            namespace=row["namespace"],
+            name=row["name"],
+            tenant_id=row["tenant_id"],
+            revision=row["revision"],
+            etag=row["etag"],
+            spec=ModelDeploymentSpec.model_validate(
+                _decode_configuration_json(row["spec"], "model deployment desired state")
+            ),
+            action=row["action"],
+            created_at=row["created_at"],
+            created_by=row["created_by"],
+            previous_revision=row["previous_revision"],
+        )
+
+    @staticmethod
+    def _model_deployment_status(row: asyncpg.Record) -> ModelDeploymentStatusObservation:
+        return ModelDeploymentStatusObservation(
+            observation_id=row["observation_id"],
+            namespace=row["namespace"],
+            name=row["name"],
+            tenant_id=row["tenant_id"],
+            revision=row["revision"],
+            status=ModelDeploymentObservedStatus.model_validate(
+                _decode_configuration_json(row["status"], "model deployment status")
+            ),
+            observed_at=row["observed_at"],
         )
 
     @staticmethod
@@ -1626,6 +1700,373 @@ class PostgresStore:
         return ReconciliationStatus.model_validate(
             _decode_configuration_json(payload, "configuration reconciliation status")
         )
+
+    @retry_serialization
+    async def model_deployment_append_revision(
+        self,
+        request: ModelDeploymentAppendRequest,
+    ) -> ModelDeploymentAppendResult:
+        key_value = request.idempotency_key.encode("utf-8")
+        request_value = model_deployment_append_payload(request)
+        candidates = self.hasher.candidate_digests(
+            key_value,
+            context="fs2-serve.model-deployment-idempotency/v1",
+        )
+        async with self.pool.acquire() as connection, connection.transaction():
+            await self._model_deployment_idempotency_lock(
+                connection,
+                request.actor_id,
+                request.idempotency_key,
+            )
+            for key_id, key_hmac in candidates:
+                receipt = await connection.fetchrow(
+                    """
+                    SELECT request_hmac,namespace,name,revision
+                    FROM fs2_model_deployment_idempotency
+                    WHERE actor_id=$1 AND hmac_key_id=$2 AND key_hmac=$3
+                    """,
+                    request.actor_id,
+                    key_id,
+                    key_hmac,
+                )
+                if receipt is None:
+                    continue
+                replay_hmac = self.hasher.digest_for(
+                    key_id,
+                    request_value,
+                    context="fs2-serve.model-deployment-request/v1",
+                )
+                if not secrets.compare_digest(replay_hmac, receipt["request_hmac"]):
+                    raise ConflictError("model deployment idempotency key is bound to another request")
+                row = await connection.fetchrow(
+                    """
+                    SELECT * FROM fs2_model_deployment_revisions
+                    WHERE namespace=$1 AND name=$2 AND revision=$3
+                    """,
+                    receipt["namespace"],
+                    receipt["name"],
+                    receipt["revision"],
+                )
+                if row is None:
+                    raise ConflictError("model deployment idempotency receipt is incomplete")
+                return ModelDeploymentAppendResult(
+                    value=self._model_deployment_revision(row),
+                    reused=True,
+                )
+
+            await self._model_deployment_lock(connection, request.namespace, request.name)
+            current_row = await connection.fetchrow(
+                """
+                SELECT revision.*
+                FROM fs2_model_deployments deployment
+                JOIN fs2_model_deployment_revisions revision
+                  ON revision.namespace=deployment.namespace
+                 AND revision.name=deployment.name
+                 AND revision.revision=deployment.current_revision
+                WHERE deployment.namespace=$1 AND deployment.name=$2
+                FOR UPDATE OF deployment
+                """,
+                request.namespace,
+                request.name,
+            )
+            current = self._model_deployment_revision(current_row) if current_row is not None else None
+            if current is None:
+                if request.action is not ModelDeploymentRevisionAction.CREATE or request.expected_etag is not None:
+                    raise ConflictError("model deployment create does not match current state")
+                revision_number = 1
+                previous_revision = None
+            else:
+                if request.action is ModelDeploymentRevisionAction.CREATE:
+                    raise ConflictError("model deployment already exists")
+                if request.expected_etag != current.etag:
+                    raise ConflictError("model deployment ETag is stale")
+                if (
+                    request.spec.tenant_id != current.tenant_id
+                    or request.spec.model_ref != current.spec.model_ref
+                    or request.spec.runtime.profile != current.spec.runtime.profile
+                ):
+                    raise ConflictError("model deployment immutable identity changed")
+                if spec_digest(request.spec) == current.etag:
+                    raise ConflictError("model deployment revision contains no desired-state change")
+                revision_number = current.revision + 1
+                previous_revision = current.revision
+
+            etag = spec_digest(request.spec)
+            row = await connection.fetchrow(
+                """
+                INSERT INTO fs2_model_deployment_revisions(
+                    namespace,name,tenant_id,revision,etag,spec,action,created_by,previous_revision
+                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *
+                """,
+                request.namespace,
+                request.name,
+                request.spec.tenant_id,
+                revision_number,
+                etag,
+                json.dumps(
+                    request.spec.model_dump(mode="json", by_alias=True),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                request.action.value,
+                request.actor,
+                previous_revision,
+            )
+            assert row is not None
+            if current is None:
+                await connection.execute(
+                    """
+                    INSERT INTO fs2_model_deployments(
+                        namespace,name,tenant_id,current_revision,current_etag,updated_by
+                    ) VALUES($1,$2,$3,$4,$5,$6)
+                    """,
+                    request.namespace,
+                    request.name,
+                    request.spec.tenant_id,
+                    revision_number,
+                    etag,
+                    request.actor,
+                )
+            else:
+                await connection.execute(
+                    """
+                    UPDATE fs2_model_deployments
+                    SET current_revision=$3,current_etag=$4,updated_at=clock_timestamp(),updated_by=$5
+                    WHERE namespace=$1 AND name=$2
+                    """,
+                    request.namespace,
+                    request.name,
+                    revision_number,
+                    etag,
+                    request.actor,
+                )
+            active_key_id, key_hmac = self.hasher.digest(
+                key_value,
+                context="fs2-serve.model-deployment-idempotency/v1",
+            )
+            request_hmac = self.hasher.digest_for(
+                active_key_id,
+                request_value,
+                context="fs2-serve.model-deployment-request/v1",
+            )
+            await connection.execute(
+                """
+                INSERT INTO fs2_model_deployment_idempotency(
+                    actor_id,hmac_key_id,key_hmac,request_hmac,namespace,name,revision
+                ) VALUES($1,$2,$3,$4,$5,$6,$7)
+                """,
+                request.actor_id,
+                active_key_id,
+                key_hmac,
+                request_hmac,
+                request.namespace,
+                request.name,
+                revision_number,
+            )
+            await self._audit(
+                connection,
+                actor=request.actor,
+                tenant_id=request.spec.tenant_id,
+                token_id=None,
+                action=f"model_deployment.revision.{request.action.value}",
+                target_type="model_deployment",
+                target_id=model_deployment_audit_target(request.namespace, request.name),
+                outcome="succeeded",
+                detail={
+                    "namespace": request.namespace,
+                    "name": request.name,
+                    "revision": revision_number,
+                    "previous_revision": previous_revision,
+                    "etag": etag,
+                    "idempotent_replay": False,
+                },
+            )
+            return ModelDeploymentAppendResult(value=self._model_deployment_revision(row))
+
+    @staticmethod
+    def _validate_model_deployment_read(
+        *,
+        namespace: str,
+        tenant_id: str | None,
+        limit: int,
+    ) -> None:
+        if not 1 <= len(namespace) <= 63 or not 1 <= limit <= 201:
+            raise ValueError("model deployment read is outside the bound")
+        if tenant_id is not None and not 1 <= len(tenant_id) <= 120:
+            raise ValueError("model deployment tenant is outside the bound")
+
+    async def model_deployment_list(
+        self,
+        *,
+        namespace: str,
+        tenant_id: str | None,
+        after_name: str | None,
+        limit: int,
+    ) -> list[ModelDeploymentRevision]:
+        self._validate_model_deployment_read(namespace=namespace, tenant_id=tenant_id, limit=limit)
+        if after_name is not None and not 1 <= len(after_name) <= 253:
+            raise ValueError("model deployment cursor is outside the bound")
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """
+                SELECT revision.*
+                FROM fs2_model_deployments deployment
+                JOIN fs2_model_deployment_revisions revision
+                  ON revision.namespace=deployment.namespace
+                 AND revision.name=deployment.name
+                 AND revision.revision=deployment.current_revision
+                WHERE deployment.namespace=$1
+                  AND ($2::text IS NULL OR deployment.tenant_id=$2)
+                  AND ($3::text IS NULL OR deployment.name>$3)
+                ORDER BY deployment.name
+                LIMIT $4
+                """,
+                namespace,
+                tenant_id,
+                after_name,
+                limit,
+            )
+        return [self._model_deployment_revision(row) for row in rows]
+
+    async def model_deployment_current(
+        self,
+        *,
+        namespace: str,
+        name: str,
+        tenant_id: str | None,
+    ) -> ModelDeploymentRevision | None:
+        self._validate_model_deployment_read(namespace=namespace, tenant_id=tenant_id, limit=1)
+        if not 1 <= len(name) <= 253:
+            raise ValueError("model deployment name is outside the bound")
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                SELECT revision.*
+                FROM fs2_model_deployments deployment
+                JOIN fs2_model_deployment_revisions revision
+                  ON revision.namespace=deployment.namespace
+                 AND revision.name=deployment.name
+                 AND revision.revision=deployment.current_revision
+                WHERE deployment.namespace=$1 AND deployment.name=$2
+                  AND ($3::text IS NULL OR deployment.tenant_id=$3)
+                """,
+                namespace,
+                name,
+                tenant_id,
+            )
+        return self._model_deployment_revision(row) if row is not None else None
+
+    async def model_deployment_history(
+        self,
+        *,
+        namespace: str,
+        name: str,
+        tenant_id: str | None,
+        before_revision: int | None,
+        limit: int,
+    ) -> list[ModelDeploymentRevision]:
+        self._validate_model_deployment_read(namespace=namespace, tenant_id=tenant_id, limit=limit)
+        if not 1 <= len(name) <= 253 or (before_revision is not None and before_revision < 2):
+            raise ValueError("model deployment history query is outside the bound")
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """
+                SELECT revision.*
+                FROM fs2_model_deployment_revisions revision
+                JOIN fs2_model_deployments deployment
+                  ON deployment.namespace=revision.namespace AND deployment.name=revision.name
+                WHERE revision.namespace=$1 AND revision.name=$2
+                  AND ($3::text IS NULL OR deployment.tenant_id=$3)
+                  AND ($4::bigint IS NULL OR revision.revision<$4)
+                ORDER BY revision.revision DESC
+                LIMIT $5
+                """,
+                namespace,
+                name,
+                tenant_id,
+                before_revision,
+                limit,
+            )
+        return [self._model_deployment_revision(row) for row in rows]
+
+    async def model_deployment_append_status(
+        self,
+        observation: ModelDeploymentStatusObservation,
+    ) -> ModelDeploymentStatusObservation:
+        payload_value = observation.status.model_dump(mode="json")
+        payload = json.dumps(payload_value, sort_keys=True, separators=(",", ":"))
+        async with self.pool.acquire() as connection, connection.transaction():
+            await self._token_lock(connection, observation.observation_id)
+            existing_row = await connection.fetchrow(
+                "SELECT * FROM fs2_model_deployment_status_events WHERE observation_id=$1",
+                observation.observation_id,
+            )
+            if existing_row is not None:
+                existing = self._model_deployment_status(existing_row)
+                if existing != observation:
+                    raise ConflictError("model deployment observation identity was reused")
+                return existing
+            await self._model_deployment_lock(connection, observation.namespace, observation.name)
+            revision = await connection.fetchrow(
+                """
+                SELECT tenant_id,etag FROM fs2_model_deployment_revisions
+                WHERE namespace=$1 AND name=$2 AND revision=$3
+                """,
+                observation.namespace,
+                observation.name,
+                observation.revision,
+            )
+            if (
+                revision is None
+                or revision["tenant_id"] != observation.tenant_id
+                or revision["etag"] != observation.status.spec_digest
+            ):
+                raise ConflictError("model deployment observation has no matching desired revision")
+            row = await connection.fetchrow(
+                """
+                INSERT INTO fs2_model_deployment_status_events(
+                    observation_id,namespace,name,tenant_id,revision,spec_etag,status,observed_at
+                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *
+                """,
+                observation.observation_id,
+                observation.namespace,
+                observation.name,
+                observation.tenant_id,
+                observation.revision,
+                observation.status.spec_digest,
+                payload,
+                observation.observed_at,
+            )
+            assert row is not None
+            return self._model_deployment_status(row)
+
+    async def model_deployment_status(
+        self,
+        *,
+        namespace: str,
+        name: str,
+        tenant_id: str | None,
+    ) -> ModelDeploymentStatusObservation | None:
+        self._validate_model_deployment_read(namespace=namespace, tenant_id=tenant_id, limit=1)
+        if not 1 <= len(name) <= 253:
+            raise ValueError("model deployment name is outside the bound")
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                SELECT event.*
+                FROM fs2_model_deployment_status_events event
+                JOIN fs2_model_deployments deployment
+                  ON deployment.namespace=event.namespace AND deployment.name=event.name
+                WHERE event.namespace=$1 AND event.name=$2
+                  AND ($3::text IS NULL OR deployment.tenant_id=$3)
+                ORDER BY event.id DESC
+                LIMIT 1
+                """,
+                namespace,
+                name,
+                tenant_id,
+            )
+        return self._model_deployment_status(row) if row is not None else None
 
     async def admin_key_usage(self, token_ids: tuple[UUID, ...], *, tenant_id: str | None) -> list[AdminKeyUsageRecord]:
         if len(token_ids) > 1000 or len(set(token_ids)) != len(token_ids):
