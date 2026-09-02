@@ -413,6 +413,7 @@ def _validate_asset(asset_id: str, asset: dict[str, Any]) -> None:
             "volume_root_mode",
             "consumer_access",
             "runtime_consumption",
+            "runtime_binding",
         },
         label=f"assets.{asset_id}.delivery",
     )
@@ -441,6 +442,48 @@ def _validate_asset(asset_id: str, asset: dict[str, Any]) -> None:
         raise IngestionError("InvalidInput", f"{asset_id} volume_root_mode must be an octal mode string")
     if int(root_mode, 8) & 0o007:
         raise IngestionError("InvalidInput", f"{asset_id} volume root must not be world-accessible")
+
+    # Onboarding addresses these objects by its own artifact IDs and paths. The
+    # binding localizes the same verified bytes for that consumer without copying
+    # or embedding them, so both contracts can name the object their own way.
+    binding = delivery["runtime_binding"]
+    if not isinstance(binding, dict) or set(binding) != {
+        "artifact_id",
+        "source_sub_path",
+        "consumer_path",
+        "mechanism",
+        "read_only",
+        "duplicates_bytes",
+        "embeds_bytes",
+        "note",
+    }:
+        raise IngestionError("InvalidInput", f"{asset_id} runtime_binding is invalid")
+    _require_nonempty_string(binding["artifact_id"], label=f"{asset_id} binding artifact_id")
+    if binding["mechanism"] not in {"subpath-file-mount", "subpath-directory-mount"}:
+        raise IngestionError("InvalidInput", f"{asset_id} binding must localize by subPath mount")
+    _require_bool(binding["read_only"], True, label=f"{asset_id} binding read_only")
+    _require_bool(binding["duplicates_bytes"], False, label=f"{asset_id} binding duplicates_bytes")
+    _require_bool(binding["embeds_bytes"], False, label=f"{asset_id} binding embeds_bytes")
+    source_sub_path = _require_nonempty_string(
+        binding["source_sub_path"], label=f"{asset_id} binding source_sub_path"
+    )
+    if source_sub_path.startswith("/") or ".." in Path(source_sub_path).parts:
+        raise IngestionError("InvalidInput", f"{asset_id} binding source_sub_path must be a safe relative path")
+    # The subPath must name the object this asset actually staged.
+    expected_sub_paths = {f"{asset_id}/{artifact['filename']}"}
+    if delivery["install_relative_path"]:
+        expected_sub_paths.add(f"{asset_id}/{delivery['install_relative_path']}")
+    if source_sub_path not in expected_sub_paths:
+        raise IngestionError(
+            "InvalidInput", f"{asset_id} binding must point at this asset's staged object"
+        )
+    consumer_path = _require_nonempty_string(binding["consumer_path"], label=f"{asset_id} binding consumer_path")
+    if not consumer_path.startswith("/") or ".." in Path(consumer_path).parts:
+        raise IngestionError("InvalidInput", f"{asset_id} binding consumer_path must be an absolute safe path")
+    if binding["mechanism"] == "subpath-file-mount" and Path(consumer_path).name != artifact["filename"]:
+        raise IngestionError(
+            "InvalidInput", f"{asset_id} file binding must expose the artifact under its own filename"
+        )
 
     consumption = delivery["runtime_consumption"]
     if not isinstance(consumption, dict) or set(consumption) != {
@@ -554,7 +597,15 @@ def _validate_asset(asset_id: str, asset: dict[str, Any]) -> None:
                 "InvalidInput", f"{asset_id} loader revision must be the runtime code revision"
             )
         image = runtime.get("runtime_image")
-        required_image = {"repository", "tag", "source_tag", "contains_licensed_bytes", "build_context"}
+        required_image = {
+            "repository",
+            "tag",
+            "source_tag",
+            "contains_licensed_bytes",
+            "build_context",
+            "role",
+            "final_wrapper",
+        }
         optional_image = {
             "digest",
             "packaged_distribution_version",
@@ -578,6 +629,12 @@ def _validate_asset(asset_id: str, asset: dict[str, Any]) -> None:
                 )
         if image["contains_licensed_bytes"] is not False:
             raise IngestionError("InvalidInput", f"{asset_id} runtime image must not contain licensed bytes")
+        if image["role"] not in {"historical-semantic-evidence", "final-runtime-wrapper"}:
+            raise IngestionError("InvalidInput", f"{asset_id} runtime image role is unsupported")
+        if not isinstance(image["final_wrapper"], bool):
+            raise IngestionError("InvalidInput", f"{asset_id} runtime image final_wrapper must be a boolean")
+        if image["final_wrapper"] != (image["role"] == "final-runtime-wrapper"):
+            raise IngestionError("InvalidInput", f"{asset_id} runtime image role and final_wrapper disagree")
         if image["source_tag"] != offline["source_tag"]:
             raise IngestionError("InvalidInput", f"{asset_id} runtime image is not built from the pinned tag")
         if "digest" in image and not OCI_DIGEST_RE.fullmatch(str(image["digest"])):
@@ -1483,7 +1540,8 @@ def asset_readiness(
             # populate runtime_image_digest when the contract declares a published
             # image for this asset.
             projection["runtime_environment_digest"] = image_digest
-            if (spec["runtime"].get("runtime_image") or {}).get("digest"):
+            declared_image = spec["runtime"].get("runtime_image") or {}
+            if declared_image.get("digest") and declared_image.get("final_wrapper") is True:
                 projection["runtime_image_digest"] = image_digest
             # The runtime proof is real, but a runtime image whose packaged identity
             # disagrees with its pinned tag is not a finished runtime. Report the

@@ -9,7 +9,7 @@
   },
   "formal_license_state": "Pending",
   "generated_by": "academic-assets/scripts/project_catalog_readiness.py",
-  "generation": "live-v304-20260903",
+  "generation": "live-binding-20260903",
   "models": [
     {
       "access_profile": "academic",
@@ -36,10 +36,21 @@
       "formal_license_status": "FormalAcceptancePending",
       "license_id": "AlphaFold-3-Model-Parameters-Terms-of-Use-2024-11-09",
       "model_id": "alphafold3",
+      "runtime_binding": {
+        "artifact_id": "alphafold3-parameters",
+        "consumer_path": "/models/af3.bin.zst",
+        "duplicates_bytes": false,
+        "embeds_bytes": false,
+        "mechanism": "subpath-file-mount",
+        "read_only": true,
+        "source_sub_path": "alphafold3/af3.bin.zst"
+      },
       "runtime_environment_digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
-      "runtime_image_digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
+      "runtime_image_digest": null,
       "runtime_invocation": {
+        "image_is_final_wrapper": false,
         "image_repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3",
+        "image_role": "historical-semantic-evidence",
         "image_tag": "v3.0.4",
         "model_dir": "/opt/fs2/academic/alphafold3",
         "model_dir_flag": "--model_dir",
@@ -78,10 +89,21 @@
       "formal_license_status": "FormalAcceptancePending",
       "license_id": "Rosetta-and-PyRosetta-Non-Commercial-License-Chain",
       "model_id": "bindcraft",
+      "runtime_binding": {
+        "artifact_id": "bindcraft-pyrosetta",
+        "consumer_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+        "duplicates_bytes": false,
+        "embeds_bytes": false,
+        "mechanism": "subpath-directory-mount",
+        "read_only": true,
+        "source_sub_path": "pyrosetta-bindcraft/site-packages"
+      },
       "runtime_environment_digest": "sha256:fd76ade0c607f27677bc04be3c60749f400eedc941d9e72967e19a4cedff80c2",
       "runtime_image_digest": null,
       "runtime_invocation": {
+        "image_is_final_wrapper": false,
         "image_repository": null,
+        "image_role": null,
         "image_tag": null,
         "model_dir": null,
         "model_dir_flag": null,

@@ -124,6 +124,11 @@ class AcademicAssetTestCase(unittest.TestCase):
         image["packaged_distribution_version"] = image["expected_distribution_version"]
         image.pop("identity_mismatch", None)
         image["revalidation_required"] = False
+        # Default fixture: a final runtime wrapper. The committed contract currently
+        # pins an evidence-only stock image; that case is exercised explicitly in
+        # test_evidence_only_image_is_not_published_as_a_runtime_image.
+        image["role"] = "final-runtime-wrapper"
+        image["final_wrapper"] = True
         return contract
 
     def write_contract(self, document: dict[str, Any]) -> None:
@@ -703,6 +708,28 @@ class ReadinessStateMachineTests(AcademicAssetTestCase):
         self.assertIsNotNone(pyrosetta["runtime_environment_digest"])
         declared = self.contract_document["assets"]["alphafold3"]["runtime"]["runtime_image"]["digest"]
         self.assertEqual(declared, alphafold3["runtime_image_digest"])
+
+    def test_evidence_only_image_is_not_published_as_a_runtime_image(self) -> None:
+        """A stock image that proved the asset works is evidence, not the shipped wrapper."""
+
+        document = copy.deepcopy(self.contract_document)
+        image = document["assets"]["alphafold3"]["runtime"]["runtime_image"]
+        image["role"] = "historical-semantic-evidence"
+        image["final_wrapper"] = False
+        self.write_contract(document)
+        self.contract_document = document
+
+        self.ingest("poc-evidence-image")
+        self.record("alphafold3", "cache", self.cache_receipt("alphafold3"))
+        code, projection = self.record("alphafold3", "runtime", self.runtime_receipt("alphafold3"))
+        self.assertEqual(0, code)
+        self.assert_schema_valid(projection)
+        alphafold3 = self.asset(projection, "alphafold3")
+        self.assertIsNone(alphafold3["runtime_image_digest"])
+        self.assertEqual(
+            document["assets"]["alphafold3"]["runtime"]["runtime_image"]["digest"],
+            alphafold3["runtime_environment_digest"],
+        )
 
     def test_runtime_evidence_must_run_against_the_pinned_image(self) -> None:
         self.ingest("poc-wrong-image")

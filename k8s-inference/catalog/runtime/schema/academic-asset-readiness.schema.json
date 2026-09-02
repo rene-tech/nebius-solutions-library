@@ -126,7 +126,8 @@
           "runtime_invocation",
           "alternative",
           "serving_admission",
-          "runtime_environment_digest"
+          "runtime_environment_digest",
+          "runtime_binding"
         ],
         "properties": {
           "asset_id": {
@@ -276,7 +277,9 @@
               "model_dir_flag",
               "source_revision",
               "image_repository",
-              "image_tag"
+              "image_tag",
+              "image_role",
+              "image_is_final_wrapper"
             ],
             "properties": {
               "offline_validation_kind": {
@@ -314,6 +317,20 @@
                   "string",
                   "null"
                 ]
+              },
+              "image_role": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "historical-semantic-evidence",
+                  "final-runtime-wrapper",
+                  null
+                ]
+              },
+              "image_is_final_wrapper": {
+                "type": "boolean"
               }
             }
           },
@@ -351,6 +368,50 @@
           "runtime_environment_digest": {
             "$ref": "#/$defs/ociDigest",
             "description": "Digest of the image that executed the runtime validation, which is not necessarily a published model runtime image."
+          },
+          "runtime_binding": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "artifact_id",
+              "source_sub_path",
+              "consumer_path",
+              "mechanism",
+              "read_only",
+              "duplicates_bytes",
+              "embeds_bytes"
+            ],
+            "description": "Canonical localizer: how a model runtime addresses this object. The same verified bytes are exposed by a subPath mount, never duplicated or embedded.",
+            "properties": {
+              "artifact_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "source_sub_path": {
+                "type": "string",
+                "pattern": "^[^/].*"
+              },
+              "consumer_path": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "mechanism": {
+                "enum": [
+                  "subpath-file-mount",
+                  "subpath-directory-mount"
+                ]
+              },
+              "read_only": {
+                "const": true
+              },
+              "duplicates_bytes": {
+                "const": false
+              },
+              "embeds_bytes": {
+                "const": false
+              }
+            }
           }
         }
       }

@@ -115,6 +115,16 @@
           "per_request_install": false,
           "note": "The runtime reads the pinned parameter object directly from the mounted volume via --model_dir.",
           "request_time_license_receipt_required": false
+        },
+        "runtime_binding": {
+          "artifact_id": "alphafold3-parameters",
+          "source_sub_path": "alphafold3/af3.bin.zst",
+          "consumer_path": "/models/af3.bin.zst",
+          "mechanism": "subpath-file-mount",
+          "read_only": true,
+          "duplicates_bytes": false,
+          "embeds_bytes": false,
+          "note": "Model onboarding addresses this object as artifact alphafold3-parameters at /models/af3.bin.zst. The same verified bytes on the tenant-private claim are exposed there by a subPath mount, so the object is localized rather than copied; the private contract keeps its own asset id and volume-level mount root unchanged."
         }
       },
       "runtime": {
@@ -138,11 +148,13 @@
           "tag": "v3.0.4",
           "source_tag": "v3.0.4",
           "contains_licensed_bytes": false,
-          "build_context": "built from the official docker/Dockerfile at upstream tag v3.0.4 (commit 85c4d205) with the tag object present, so setuptools-scm derives the exact release version; contains AlphaFold 3's own Apache-2.0 code wheel and no licensed parameters",
+          "build_context": "stock upstream image built from the official docker/Dockerfile at tag v3.0.4 (commit 85c4d205). Retained as historical semantic evidence that the exact staged parameters load and infer on H100. It is not the final runtime wrapper; that image is owned by the runtime image work.",
           "packaged_distribution_version": "3.0.4",
           "expected_distribution_version": "3.0.4",
           "revalidation_required": false,
-          "digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887"
+          "digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
+          "role": "historical-semantic-evidence",
+          "final_wrapper": false
         }
       }
     },
@@ -227,6 +239,16 @@
           "per_request_install": false,
           "note": "BindCraft consumes a tenant-private site-packages tree that is installed once and mounted read-only. The 1.67 GB wheel is never installed per request; a runtime only sets PYTHONPATH and joins the asset group.",
           "request_time_license_receipt_required": false
+        },
+        "runtime_binding": {
+          "artifact_id": "bindcraft-pyrosetta",
+          "source_sub_path": "pyrosetta-bindcraft/site-packages",
+          "consumer_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+          "mechanism": "subpath-directory-mount",
+          "read_only": true,
+          "duplicates_bytes": false,
+          "embeds_bytes": false,
+          "note": "The preinstalled tree is localized read-only for PYTHONPATH. Runtime wiring for native BindCraft belongs to the runtime image work; this only publishes where the bytes are."
         }
       },
       "runtime": {

@@ -64,6 +64,28 @@ directories, which is exactly the drift this contract exists to prevent.
 BindCraft consumes a **preinstalled** `site-packages` tree via `PYTHONPATH`. The
 1.67 GB wheel is never installed per request.
 
+### Canonical runtime binding
+
+Model onboarding addresses these objects by its own artifact IDs and paths, which
+differ from the private contract's. Each asset therefore publishes a localizer that
+points the consumer at the *same* verified bytes by subPath mount, so nothing is
+copied or embedded:
+
+| Private asset | Onboarding artifact | Source subPath on the claim | Consumer path |
+|---|---|---|---|
+| `alphafold3` | `alphafold3-parameters` | `alphafold3/af3.bin.zst` | `/models/af3.bin.zst` |
+| `pyrosetta-bindcraft` | `bindcraft-pyrosetta` | `pyrosetta-bindcraft/site-packages` | `/opt/fs2/academic/pyrosetta-bindcraft/site-packages` |
+
+`contracts/onboarding-binding-expectations.json` pins that interface, and
+`tests/test_onboarding_cross_contract.py` fails if either side drifts on artifact
+ID, digest, size, filename or path.
+
+The stock upstream AlphaFold 3 image that proved the parameters load and infer is
+retained as **historical semantic evidence only**. It is not the final runtime
+wrapper, so it is never published as the model's runtime image: readiness reports
+it as `runtime_environment_digest` and leaves `runtime_image_digest` null until a
+final wrapper exists.
+
 ## One documented step
 
 ```bash

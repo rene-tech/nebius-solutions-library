@@ -72,6 +72,17 @@ def build_projection(contract: dict[str, Any], readiness: dict[str, Any]) -> dic
                     "consumer_access": delivery["consumer_access"],
                     "install_relative_path": delivery["install_relative_path"],
                 },
+                # How a model runtime addresses this object. The bytes are localized
+                # by subPath, never copied or embedded.
+                "runtime_binding": {
+                    "artifact_id": delivery["runtime_binding"]["artifact_id"],
+                    "source_sub_path": delivery["runtime_binding"]["source_sub_path"],
+                    "consumer_path": delivery["runtime_binding"]["consumer_path"],
+                    "mechanism": delivery["runtime_binding"]["mechanism"],
+                    "read_only": delivery["runtime_binding"]["read_only"],
+                    "duplicates_bytes": delivery["runtime_binding"]["duplicates_bytes"],
+                    "embeds_bytes": delivery["runtime_binding"]["embeds_bytes"],
+                },
                 "runtime_invocation": {
                     "offline_validation_kind": offline["kind"],
                     "model_dir": offline.get("model_dir"),
@@ -79,6 +90,8 @@ def build_projection(contract: dict[str, Any], readiness: dict[str, Any]) -> dic
                     "source_revision": spec["runtime"]["code_revision"],
                     "image_repository": None if image is None else image["repository"],
                     "image_tag": None if image is None else image["tag"],
+                    "image_role": None if image is None else image["role"],
+                    "image_is_final_wrapper": False if image is None else image["final_wrapper"],
                 },
                 "alternative": (
                     None
