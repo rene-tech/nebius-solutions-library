@@ -1,0 +1,695 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/fast-start-benchmark-receipt/v1",
+  "title": "FS2 model fast-start benchmark receipt",
+  "description": "A reproducible model cold-start and first-inference measurement. The customer performance clock starts only when the requested GPU capacity is available; capacity wait and end-to-end time remain separate evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "receipt_digest",
+    "generated_at",
+    "status",
+    "performance_class",
+    "compatibility_tuple",
+    "compatibility_tuple_digest",
+    "attempts",
+    "aggregates",
+    "qualification"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/fast-start-benchmark-receipt/v1"
+    },
+    "receipt_digest": {"$ref": "#/$defs/digest"},
+    "generated_at": {"$ref": "#/$defs/timestamp"},
+    "status": {"enum": ["PASS", "FAIL"]},
+    "performance_class": {"$ref": "#/$defs/performanceClass"},
+    "compatibility_tuple": {"$ref": "#/$defs/compatibilityTuple"},
+    "compatibility_tuple_digest": {"$ref": "#/$defs/digest"},
+    "attempts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/attempt"}
+    },
+    "aggregates": {"$ref": "#/$defs/aggregates"},
+    "qualification": {"$ref": "#/$defs/qualification"}
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "shaDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "nullableTimestamp": {
+      "anyOf": [
+        {"$ref": "#/$defs/timestamp"},
+        {"type": "null"}
+      ]
+    },
+    "seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "nullableSeconds": {
+      "anyOf": [
+        {"$ref": "#/$defs/seconds"},
+        {"type": "null"}
+      ]
+    },
+    "level": {
+      "enum": ["Off", "L1", "L2", "L3", "L4"]
+    },
+    "nullableLevel": {
+      "anyOf": [
+        {"$ref": "#/$defs/level"},
+        {"type": "null"}
+      ]
+    },
+    "performanceClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requested_level",
+        "clock_boundary",
+        "capacity_wait_reported_separately",
+        "end_to_end_reported_separately",
+        "targets_seconds"
+      ],
+      "properties": {
+        "requested_level": {"$ref": "#/$defs/level"},
+        "clock_boundary": {
+          "const": "gpu-capacity-available-to-endpoint-ready"
+        },
+        "capacity_wait_reported_separately": {"const": true},
+        "end_to_end_reported_separately": {"const": true},
+        "targets_seconds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["Off", "L1", "L2", "L3", "L4"],
+          "properties": {
+            "Off": {"type": "null"},
+            "L1": {"const": 300},
+            "L2": {"const": 120},
+            "L3": {"const": 60},
+            "L4": {"const": 30}
+          }
+        }
+      }
+    },
+    "compatibilityTuple": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_commit",
+        "project_id",
+        "region",
+        "cluster_context",
+        "namespace",
+        "model_id",
+        "model_revision",
+        "model_content_digest",
+        "artifact_manifest_digest",
+        "runtime_image_ref",
+        "runtime_image_digest",
+        "runtime_template_digest",
+        "runtime_argv_digest",
+        "runtime_environment_digest",
+        "accelerator_class",
+        "gpu_product",
+        "gpu_compute_capability",
+        "gpu_memory_bytes",
+        "gpu_count",
+        "driver_version",
+        "cuda_version",
+        "pool_id",
+        "capacity_type",
+        "capacity_state",
+        "cache_tier",
+        "mechanism",
+        "snapshot_digest",
+        "storage_class",
+        "storage_mode",
+        "payload_digest",
+        "interface_protocol",
+        "endpoint_path",
+        "streaming",
+        "semantic_validator_digest",
+        "benchmark_client_digest",
+        "client_placement"
+      ],
+      "properties": {
+        "source_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "project_id": {
+          "type": "string",
+          "pattern": "^project-[a-z0-9]+$"
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^[a-z]{2}-[a-z]+[0-9]+$"
+        },
+        "cluster_context": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253
+        },
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "model_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "model_revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "model_content_digest": {"$ref": "#/$defs/shaDigest"},
+        "artifact_manifest_digest": {"$ref": "#/$defs/shaDigest"},
+        "runtime_image_ref": {
+          "type": "string",
+          "pattern": "^[^\\s]+@sha256:[0-9a-f]{64}$",
+          "maxLength": 1024
+        },
+        "runtime_image_digest": {"$ref": "#/$defs/shaDigest"},
+        "runtime_template_digest": {"$ref": "#/$defs/shaDigest"},
+        "runtime_argv_digest": {
+          "anyOf": [
+            {"$ref": "#/$defs/digest"},
+            {"type": "null"}
+          ]
+        },
+        "runtime_environment_digest": {
+          "anyOf": [
+            {"$ref": "#/$defs/digest"},
+            {"type": "null"}
+          ]
+        },
+        "accelerator_class": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$",
+          "maxLength": 127
+        },
+        "gpu_product": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "gpu_compute_capability": {
+          "anyOf": [
+            {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+            {"type": "null"}
+          ]
+        },
+        "gpu_memory_bytes": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "gpu_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "driver_version": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 127
+        },
+        "cuda_version": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 127
+        },
+        "pool_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "capacity_type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 63
+        },
+        "capacity_state": {
+          "enum": [
+            "prepared-node-zero-pod",
+            "fresh-node-zero-pod",
+            "preemption-replacement",
+            "durable-cache-loss-fallback"
+          ]
+        },
+        "cache_tier": {
+          "enum": [
+            "Disabled",
+            "ObjectStore",
+            "SharedFilesystem",
+            "NodeLocal",
+            "HostMemory"
+          ]
+        },
+        "mechanism": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 63
+        },
+        "snapshot_digest": {
+          "anyOf": [
+            {"$ref": "#/$defs/shaDigest"},
+            {"type": "null"}
+          ]
+        },
+        "storage_class": {
+          "type": ["string", "null"],
+          "maxLength": 253
+        },
+        "storage_mode": {
+          "type": ["string", "null"],
+          "maxLength": 63
+        },
+        "payload_digest": {"$ref": "#/$defs/digest"},
+        "interface_protocol": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 63
+        },
+        "endpoint_path": {
+          "type": "string",
+          "pattern": "^/",
+          "maxLength": 512
+        },
+        "streaming": {"type": "boolean"},
+        "semantic_validator_digest": {
+          "anyOf": [
+            {"$ref": "#/$defs/digest"},
+            {"type": "null"}
+          ]
+        },
+        "benchmark_client_digest": {"$ref": "#/$defs/digest"},
+        "client_placement": {
+          "enum": [
+            "same-pod",
+            "same-node",
+            "in-cluster",
+            "same-region",
+            "cross-region",
+            "external"
+          ]
+        }
+      }
+    },
+    "timestamps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "activation_accepted",
+        "gpu_capacity_requested",
+        "gpu_capacity_available",
+        "endpoint_ready",
+        "request_started",
+        "first_response_byte",
+        "first_semantic_output",
+        "request_completed",
+        "return_to_floor"
+      ],
+      "properties": {
+        "activation_accepted": {"$ref": "#/$defs/timestamp"},
+        "gpu_capacity_requested": {"$ref": "#/$defs/nullableTimestamp"},
+        "gpu_capacity_available": {"$ref": "#/$defs/nullableTimestamp"},
+        "endpoint_ready": {"$ref": "#/$defs/nullableTimestamp"},
+        "request_started": {"$ref": "#/$defs/nullableTimestamp"},
+        "first_response_byte": {"$ref": "#/$defs/nullableTimestamp"},
+        "first_semantic_output": {"$ref": "#/$defs/nullableTimestamp"},
+        "request_completed": {"$ref": "#/$defs/nullableTimestamp"},
+        "return_to_floor": {"$ref": "#/$defs/nullableTimestamp"}
+      }
+    },
+    "durations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capacity_wait",
+        "gpu_capacity_available_to_ready",
+        "activation_to_ready",
+        "request_to_first_byte",
+        "request_to_first_semantic_output",
+        "request_completion",
+        "activation_to_first_semantic_output"
+      ],
+      "properties": {
+        "capacity_wait": {"$ref": "#/$defs/nullableSeconds"},
+        "gpu_capacity_available_to_ready": {"$ref": "#/$defs/nullableSeconds"},
+        "activation_to_ready": {"$ref": "#/$defs/nullableSeconds"},
+        "request_to_first_byte": {"$ref": "#/$defs/nullableSeconds"},
+        "request_to_first_semantic_output": {"$ref": "#/$defs/nullableSeconds"},
+        "request_completion": {"$ref": "#/$defs/nullableSeconds"},
+        "activation_to_first_semantic_output": {"$ref": "#/$defs/nullableSeconds"}
+      }
+    },
+    "unitCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "count"],
+      "properties": {
+        "unit": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 63
+        },
+        "count": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "throughput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "value"],
+      "properties": {
+        "unit": {
+          "enum": [
+            "output-tokens-per-second",
+            "images-per-second",
+            "frames-per-second",
+            "generated-seconds-per-second",
+            "items-per-second",
+            "requests-per-second",
+            "bytes-per-second"
+          ]
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "inference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modality",
+        "first_output_kind",
+        "valid_output",
+        "http_status",
+        "request_count",
+        "warmup_count",
+        "concurrency",
+        "input_units",
+        "output_units",
+        "throughput"
+      ],
+      "properties": {
+        "modality": {
+          "enum": ["text", "image", "video", "audio", "embedding", "other"]
+        },
+        "first_output_kind": {
+          "enum": ["token", "media", "response", "none"]
+        },
+        "valid_output": {"type": "boolean"},
+        "http_status": {
+          "type": ["integer", "null"],
+          "minimum": 100,
+          "maximum": 599
+        },
+        "request_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "warmup_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "input_units": {
+          "anyOf": [
+            {"$ref": "#/$defs/unitCount"},
+            {"type": "null"}
+          ]
+        },
+        "output_units": {
+          "anyOf": [
+            {"$ref": "#/$defs/unitCount"},
+            {"type": "null"}
+          ]
+        },
+        "throughput": {
+          "anyOf": [
+            {"$ref": "#/$defs/throughput"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_attempt_sha256",
+        "semantic_output_sha256",
+        "runtime_log_sha256",
+        "gpu_metrics_sha256"
+      ],
+      "properties": {
+        "raw_attempt_sha256": {"$ref": "#/$defs/digest"},
+        "semantic_output_sha256": {
+          "anyOf": [
+            {"$ref": "#/$defs/digest"},
+            {"type": "null"}
+          ]
+        },
+        "runtime_log_sha256": {
+          "anyOf": [
+            {"$ref": "#/$defs/digest"},
+            {"type": "null"}
+          ]
+        },
+        "gpu_metrics_sha256": {
+          "anyOf": [
+            {"$ref": "#/$defs/digest"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "attempt_id",
+        "ordinal",
+        "observed_at",
+        "status",
+        "failure_code",
+        "requested_level",
+        "compatibility_tuple",
+        "compatibility_tuple_digest",
+        "timestamps",
+        "durations_seconds",
+        "inference",
+        "artifacts"
+      ],
+      "properties": {
+        "schema": {
+          "const": "fs2-serve.nebius.ai/fast-start-benchmark-attempt/v1"
+        },
+        "attempt_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 127
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "observed_at": {"$ref": "#/$defs/timestamp"},
+        "status": {"enum": ["PASS", "FAIL"]},
+        "failure_code": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "maxLength": 127
+        },
+        "requested_level": {"$ref": "#/$defs/level"},
+        "compatibility_tuple": {"$ref": "#/$defs/compatibilityTuple"},
+        "compatibility_tuple_digest": {"$ref": "#/$defs/digest"},
+        "timestamps": {"$ref": "#/$defs/timestamps"},
+        "durations_seconds": {"$ref": "#/$defs/durations"},
+        "inference": {"$ref": "#/$defs/inference"},
+        "artifacts": {"$ref": "#/$defs/artifacts"}
+      }
+    },
+    "metricAggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_count",
+        "minimum",
+        "maximum",
+        "mean",
+        "p50",
+        "p95",
+        "median_absolute_deviation"
+      ],
+      "properties": {
+        "sample_count": {"type": "integer", "minimum": 1},
+        "minimum": {"type": "number", "minimum": 0},
+        "maximum": {"type": "number", "minimum": 0},
+        "mean": {"type": "number", "minimum": 0},
+        "p50": {"type": "number", "minimum": 0},
+        "p95": {"type": "number", "minimum": 0},
+        "median_absolute_deviation": {"type": "number", "minimum": 0}
+      }
+    },
+    "nullableMetricAggregate": {
+      "anyOf": [
+        {"$ref": "#/$defs/metricAggregate"},
+        {"type": "null"}
+      ]
+    },
+    "throughputAggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "statistics"],
+      "properties": {
+        "unit": {"$ref": "#/$defs/throughput/properties/unit"},
+        "statistics": {"$ref": "#/$defs/metricAggregate"}
+      }
+    },
+    "aggregates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt_count",
+        "success_count",
+        "failure_count",
+        "failure_codes",
+        "percentile_estimator",
+        "metrics_seconds",
+        "throughput"
+      ],
+      "properties": {
+        "attempt_count": {"type": "integer", "minimum": 1},
+        "success_count": {"type": "integer", "minimum": 0},
+        "failure_count": {"type": "integer", "minimum": 0},
+        "failure_codes": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "percentile_estimator": {"const": "nearest-rank-successful-attempts"},
+        "metrics_seconds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "capacity_wait",
+            "gpu_capacity_available_to_ready",
+            "activation_to_ready",
+            "request_to_first_byte",
+            "request_to_first_semantic_output",
+            "request_completion",
+            "activation_to_first_semantic_output"
+          ],
+          "properties": {
+            "capacity_wait": {"$ref": "#/$defs/nullableMetricAggregate"},
+            "gpu_capacity_available_to_ready": {"$ref": "#/$defs/nullableMetricAggregate"},
+            "activation_to_ready": {"$ref": "#/$defs/nullableMetricAggregate"},
+            "request_to_first_byte": {"$ref": "#/$defs/nullableMetricAggregate"},
+            "request_to_first_semantic_output": {"$ref": "#/$defs/nullableMetricAggregate"},
+            "request_completion": {"$ref": "#/$defs/nullableMetricAggregate"},
+            "activation_to_first_semantic_output": {"$ref": "#/$defs/nullableMetricAggregate"}
+          }
+        },
+        "throughput": {
+          "anyOf": [
+            {"$ref": "#/$defs/throughputAggregate"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "minimum_exploratory_attempts",
+        "minimum_successful_attempts",
+        "comparable_successful_attempts",
+        "failure_free",
+        "compatibility_tuple_complete",
+        "target_seconds",
+        "target_met",
+        "observed_level",
+        "qualified_level",
+        "p95_eligible_for_qualification",
+        "reasons"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "disabled",
+            "insufficient-evidence",
+            "exploratory",
+            "failed-attempts",
+            "incomplete-evidence",
+            "target-missed",
+            "qualified"
+          ]
+        },
+        "minimum_exploratory_attempts": {"const": 3},
+        "minimum_successful_attempts": {"const": 20},
+        "comparable_successful_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failure_free": {"type": "boolean"},
+        "compatibility_tuple_complete": {"type": "boolean"},
+        "target_seconds": {"$ref": "#/$defs/nullableSeconds"},
+        "target_met": {
+          "type": ["boolean", "null"]
+        },
+        "observed_level": {"$ref": "#/$defs/level"},
+        "qualified_level": {"$ref": "#/$defs/nullableLevel"},
+        "p95_eligible_for_qualification": {"type": "boolean"},
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "no-cold-start-target",
+              "minimum-exploratory-attempts-not-met",
+              "minimum-successful-attempts-not-met",
+              "failed-attempts-present",
+              "incomplete-compatibility-tuple",
+              "target-p95-exceeded",
+              "target-met"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

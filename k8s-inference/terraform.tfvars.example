@@ -108,6 +108,13 @@ deployment = {
     # remains Terraform-owned until that retained qualification is promoted.
     bootstrap_model_ids = ["qwen3-8b"]
     fresh_install       = true
+    # Optional, machine-generated benchmark projection. Keep the receipt
+    # cohort outside this human-authored file.
+    # fast_start_evidence_file = "/absolute/private/run/fast-start-evidence.json"
+    # Optional relative hourly costs let Automatic mode balance wait time
+    # against mechanism cost; unknown mechanisms use zero marginal cost.
+    # fast_start_wait_second_value = 0.01
+    # fast_start_mechanism_hourly_costs = { "shared-cache" = 0.10, "ram-resident" = 1.00 }
     # Existing clusters use the documented terraform -> released -> controller
     # handoff instead; set handoff_receipt there and omit fresh_install.
   }

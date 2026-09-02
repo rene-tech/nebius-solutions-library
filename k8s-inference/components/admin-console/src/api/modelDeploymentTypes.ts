@@ -3,6 +3,10 @@ export type ModelDeploymentTopologyPolicy = "Any" | "SingleNode" | "HighBandwidt
 export type ModelDeploymentCacheTier = "Disabled" | "ObjectStore" | "SharedFilesystem" | "NodeLocal";
 export type ModelDeploymentSnapshotPreference = "Never" | "Prefer" | "Require";
 export type ModelDeploymentSnapshotStrategy = "Weights" | "RuntimeNative" | "CudaCheckpoint";
+export type ModelDeploymentFastStartLevel = "Off" | "L1" | "L2" | "L3" | "L4";
+export type ModelDeploymentEffectiveFastStartLevel = ModelDeploymentFastStartLevel | "Hot";
+export type ModelDeploymentFastStartMode = "Fixed" | "Automatic";
+export type ModelDeploymentFastStartFallbackPolicy = "AllowLowerLevel" | "RequireTarget";
 export type ModelDeploymentRolloutStrategy = "Rolling" | "Recreate";
 export type ModelDeploymentVisibility = "Private" | "Tenant";
 export type ModelDeploymentAdoptionMode = "None" | "Observe" | "Claim";
@@ -10,6 +14,14 @@ export type ModelDeploymentAdoptionMode = "None" | "Observe" | "Claim";
 export interface ModelDeploymentNamedDigest {
   name: string;
   digest: string;
+}
+
+export interface ModelDeploymentFastStartPolicy {
+  mode: ModelDeploymentFastStartMode;
+  level?: ModelDeploymentFastStartLevel;
+  minimumLevel?: ModelDeploymentFastStartLevel;
+  maximumLevel?: ModelDeploymentFastStartLevel;
+  fallbackPolicy?: ModelDeploymentFastStartFallbackPolicy;
 }
 
 export interface ModelDeploymentSpec {
@@ -56,6 +68,8 @@ export interface ModelDeploymentSpec {
     snapshotPreference: ModelDeploymentSnapshotPreference;
     snapshotRef: (ModelDeploymentNamedDigest & { strategy: ModelDeploymentSnapshotStrategy }) | null;
   };
+  /** Optional while older ModelDeployment revisions are still being migrated. */
+  fastStart?: ModelDeploymentFastStartPolicy | null;
   queue: {
     localQueue: string;
     priorityClass: string;
@@ -134,7 +148,135 @@ export type ModelDeploymentConditionType =
   | "Draining"
   | "InfrastructureRequired"
   | "Failed"
-  | "Progressing";
+  | "Progressing"
+  | "FastStartQualified";
+
+export interface ModelDeploymentFastStartStatistics {
+  sampleCount?: number | null;
+  sample_count?: number | null;
+  failedCount?: number | null;
+  failed_count?: number | null;
+  latestSeconds?: number | null;
+  latest_seconds?: number | null;
+  latestObservedAt?: string | null;
+  latest_observed_at?: string | null;
+  p50Seconds?: number | null;
+  p50_seconds?: number | null;
+  p95Seconds?: number | null;
+  p95_seconds?: number | null;
+}
+
+export interface ModelDeploymentFastStartPathStatus {
+  mechanism?: string | null;
+  compatibilityTupleDigest?: string | null;
+  compatibility_tuple_digest?: string | null;
+  qualifiedLevel?: ModelDeploymentFastStartLevel | null;
+  qualified_level?: ModelDeploymentFastStartLevel | null;
+  reason?: string | null;
+  receiptDigests?: string[] | null;
+  receipt_digests?: string[] | null;
+  modelStart?: ModelDeploymentFastStartStatistics | null;
+  model_start?: ModelDeploymentFastStartStatistics | null;
+  capacityWait?: ModelDeploymentFastStartStatistics | null;
+  capacity_wait?: ModelDeploymentFastStartStatistics | null;
+  endToEnd?: ModelDeploymentFastStartStatistics | null;
+  end_to_end?: ModelDeploymentFastStartStatistics | null;
+}
+
+export interface ModelDeploymentFastStartPoolStatus {
+  poolRef?: string | null;
+  pool_ref?: string | null;
+  acceleratorClass?: string | null;
+  accelerator_class?: string | null;
+  qualifiedLevel?: ModelDeploymentFastStartLevel | null;
+  qualified_level?: ModelDeploymentFastStartLevel | null;
+  reason?: string | null;
+  mechanisms?: string[] | null;
+  selectedMechanism?: string | null;
+  selected_mechanism?: string | null;
+  selectedCompatibilityTupleDigest?: string | null;
+  selected_compatibility_tuple_digest?: string | null;
+  receiptDigests?: string[] | null;
+  receipt_digests?: string[] | null;
+  modelStart?: ModelDeploymentFastStartStatistics | null;
+  model_start?: ModelDeploymentFastStartStatistics | null;
+  capacityWait?: ModelDeploymentFastStartStatistics | null;
+  capacity_wait?: ModelDeploymentFastStartStatistics | null;
+  endToEnd?: ModelDeploymentFastStartStatistics | null;
+  end_to_end?: ModelDeploymentFastStartStatistics | null;
+  paths?: ModelDeploymentFastStartPathStatus[] | null;
+}
+
+export interface ModelDeploymentFastStartStatus {
+  requestedLevel?: ModelDeploymentFastStartLevel | null;
+  requested_level?: ModelDeploymentFastStartLevel | null;
+  assignedLevel?: ModelDeploymentFastStartLevel | null;
+  assigned_level?: ModelDeploymentFastStartLevel | null;
+  effectiveLevel?: ModelDeploymentEffectiveFastStartLevel | null;
+  effective_level?: ModelDeploymentEffectiveFastStartLevel | null;
+  qualifiedLevel?: ModelDeploymentFastStartLevel | null;
+  qualified_level?: ModelDeploymentFastStartLevel | null;
+  state?: string | null;
+  reason?: string | null;
+  qualification?: {
+    state?: string | null;
+    reason?: string | null;
+    message?: string | null;
+  } | null;
+  targetSeconds?: number | null;
+  target_seconds?: number | null;
+  lastObservedSeconds?: number | null;
+  last_observed_seconds?: number | null;
+  qualifiedP50Seconds?: number | null;
+  qualified_p50_seconds?: number | null;
+  qualifiedP95Seconds?: number | null;
+  qualified_p95_seconds?: number | null;
+  capacityWaitSeconds?: number | null;
+  capacity_wait_seconds?: number | null;
+  endToEndSeconds?: number | null;
+  end_to_end_seconds?: number | null;
+  observedAt?: string | null;
+  observed_at?: string | null;
+  mechanisms?: Record<string, unknown> | null;
+  hot?: boolean | null;
+  modelStart?: ModelDeploymentFastStartStatistics | null;
+  model_start?: ModelDeploymentFastStartStatistics | null;
+  capacityWait?: ModelDeploymentFastStartStatistics | null;
+  capacity_wait?: ModelDeploymentFastStartStatistics | null;
+  endToEnd?: ModelDeploymentFastStartStatistics | null;
+  end_to_end?: ModelDeploymentFastStartStatistics | null;
+  pools?: ModelDeploymentFastStartPoolStatus[] | null;
+  automatic?: {
+    reason?: string | null;
+    evaluatedAt?: string | null;
+    evaluated_at?: string | null;
+    historyComplete?: boolean | null;
+    history_complete?: boolean | null;
+    mechanismId?: string | null;
+    mechanism_id?: string | null;
+    score?: number | null;
+    pendingLevel?: ModelDeploymentFastStartLevel | null;
+    pending_level?: ModelDeploymentFastStartLevel | null;
+    pendingSince?: string | null;
+    pending_since?: string | null;
+    consecutiveWins?: number | null;
+    consecutive_wins?: number | null;
+    lastTransitionAt?: string | null;
+    last_transition_at?: string | null;
+    shortWindowRequests?: number | null;
+    short_window_requests?: number | null;
+    shortWindowColdActivations?: number | null;
+    short_window_cold_activations?: number | null;
+    shortWindowIdleGapEpisodes?: number | null;
+    short_window_idle_gap_episodes?: number | null;
+    longWindowRequests?: number | null;
+    long_window_requests?: number | null;
+    longWindowColdActivations?: number | null;
+    long_window_cold_activations?: number | null;
+    longWindowIdleGapEpisodes?: number | null;
+    long_window_idle_gap_episodes?: number | null;
+  } | null;
+}
 
 export interface ModelDeploymentObservedStatus {
   observed_generation: number;
@@ -168,6 +310,9 @@ export interface ModelDeploymentObservedStatus {
     digest: string | null;
     observed_at: string | null;
   } | null;
+  /** `fast_start` is accepted during the API's snake_case migration window. */
+  fastStart?: ModelDeploymentFastStartStatus | null;
+  fast_start?: ModelDeploymentFastStartStatus | null;
   publication: {
     open_ai: boolean;
     mcp: boolean;

@@ -1,5 +1,9 @@
 # FS2 cold-start cache quick wins
 
+The customer performance-class measurement and promotion boundary is defined
+in [`FAST_START_BENCHMARK.md`](FAST_START_BENCHMARK.md). It keeps GPU capacity
+wait separate from model startup and supports both token and media workloads.
+
 This optional Kustomize package keeps selected exact, already-qualified runtime
 images resident on explicitly opted-in B300 nodes. The retained direct-model
 manifests also put Hugging Face downloads and CUDA/Triton/Torch/vLLM compile

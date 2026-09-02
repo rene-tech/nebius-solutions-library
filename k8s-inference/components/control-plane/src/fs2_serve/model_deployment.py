@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -257,6 +258,8 @@ class FastStartEvidence(KubernetesModel):
 
     receipt_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
     mechanism: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9-]*$")
+    compatibility_tuple_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
+    compatibility_tuple_complete: bool
     measurement_basis: Literal["CapacityAvailableToSemanticReady"]
     accelerator_class: str = Field(min_length=1, max_length=128)
     pool_ref: PoolRef | None = None
@@ -502,6 +505,8 @@ class InfrastructureEnvelope(KubernetesModel):
     priority_classes: list[str] = Field(min_length=1, max_length=128)
     tenant_ids: list[str] = Field(min_length=1, max_length=1024)
     max_accelerators_per_model: int = Field(default=1024, ge=1, le=640000)
+    fast_start_wait_second_value: float = Field(default=0.01, ge=0, le=1000000)
+    fast_start_mechanism_hourly_costs: dict[str, float] = Field(default_factory=dict, max_length=128)
 
     @model_validator(mode="after")
     def key_identities_match(self) -> InfrastructureEnvelope:
@@ -509,6 +514,11 @@ class InfrastructureEnvelope(KubernetesModel):
             raise ValueError("pool map key must match poolId")
         if any(key != item.model_ref for key, item in self.qualifications.items()):
             raise ValueError("qualification map key must match modelRef")
+        if any(
+            re.fullmatch(r"^[a-z][a-z0-9-]{0,63}$", name) is None or not math.isfinite(cost) or cost < 0
+            for name, cost in self.fast_start_mechanism_hourly_costs.items()
+        ):
+            raise ValueError("fast-start mechanism costs must map bounded names to finite non-negative values")
         return self
 
 

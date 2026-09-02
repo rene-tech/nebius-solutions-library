@@ -614,6 +614,75 @@ spec:
                       minimum: 1
                     hot:
                       type: boolean
+                    automatic:
+                      type: object
+                      required:
+                        - reason
+                        - evaluatedAt
+                        - historyComplete
+                        - consecutiveWins
+                        - shortWindowRequests
+                        - shortWindowColdActivations
+                        - shortWindowIdleGapEpisodes
+                        - longWindowRequests
+                        - longWindowColdActivations
+                        - longWindowIdleGapEpisodes
+                      properties:
+                        reason:
+                          type: string
+                          minLength: 1
+                          maxLength: 64
+                          pattern: ^[A-Za-z][A-Za-z0-9]*$
+                        evaluatedAt:
+                          type: string
+                          format: date-time
+                        historyComplete:
+                          type: boolean
+                        mechanismId:
+                          type: string
+                          minLength: 1
+                          maxLength: 128
+                        score:
+                          type: number
+                          minimum: 0
+                        pendingLevel:
+                          type: string
+                          enum: ["Off", L1, L2, L3, L4]
+                        pendingSince:
+                          type: string
+                          format: date-time
+                        consecutiveWins:
+                          type: integer
+                          format: int32
+                          minimum: 0
+                          maximum: 1000
+                        lastTransitionAt:
+                          type: string
+                          format: date-time
+                        shortWindowRequests:
+                          type: integer
+                          format: int64
+                          minimum: 0
+                        shortWindowColdActivations:
+                          type: integer
+                          format: int64
+                          minimum: 0
+                        shortWindowIdleGapEpisodes:
+                          type: integer
+                          format: int64
+                          minimum: 0
+                        longWindowRequests:
+                          type: integer
+                          format: int64
+                          minimum: 0
+                        longWindowColdActivations:
+                          type: integer
+                          format: int64
+                          minimum: 0
+                        longWindowIdleGapEpisodes:
+                          type: integer
+                          format: int64
+                          minimum: 0
                     qualification:
                       type: object
                       required: [state, reason, message]
@@ -735,6 +804,14 @@ spec:
                               type: string
                               minLength: 1
                               maxLength: 64
+                          selectedMechanism:
+                            type: string
+                            minLength: 1
+                            maxLength: 64
+                            pattern: ^[a-z][a-z0-9-]*$
+                          selectedCompatibilityTupleDigest:
+                            type: string
+                            pattern: ^sha256:[a-f0-9]{64}$
                           receiptDigests:
                             type: array
                             maxItems: 256
@@ -814,6 +891,115 @@ spec:
                               p95Seconds:
                                 type: number
                                 minimum: 0
+                          paths:
+                            type: array
+                            maxItems: 256
+                            x-kubernetes-list-type: map
+                            x-kubernetes-list-map-keys: [mechanism, compatibilityTupleDigest]
+                            items:
+                              type: object
+                              required:
+                                - mechanism
+                                - compatibilityTupleDigest
+                                - qualifiedLevel
+                                - reason
+                                - receiptDigests
+                              properties:
+                                mechanism:
+                                  type: string
+                                  minLength: 1
+                                  maxLength: 64
+                                  pattern: ^[a-z][a-z0-9-]*$
+                                compatibilityTupleDigest:
+                                  type: string
+                                  pattern: ^sha256:[a-f0-9]{64}$
+                                qualifiedLevel:
+                                  type: string
+                                  enum: ["Off", L1, L2, L3, L4]
+                                reason:
+                                  type: string
+                                  minLength: 1
+                                  maxLength: 64
+                                  pattern: ^[A-Za-z][A-Za-z0-9]*$
+                                receiptDigests:
+                                  type: array
+                                  maxItems: 256
+                                  x-kubernetes-list-type: set
+                                  items:
+                                    type: string
+                                    pattern: ^sha256:[a-f0-9]{64}$
+                                modelStart:
+                                  type: object
+                                  required: [sampleCount, latestObservedAt]
+                                  properties:
+                                    sampleCount:
+                                      type: integer
+                                      format: int32
+                                      minimum: 1
+                                    failedCount:
+                                      type: integer
+                                      format: int32
+                                      minimum: 0
+                                    latestSeconds:
+                                      type: number
+                                      minimum: 0
+                                    latestObservedAt:
+                                      type: string
+                                      format: date-time
+                                    p50Seconds:
+                                      type: number
+                                      minimum: 0
+                                    p95Seconds:
+                                      type: number
+                                      minimum: 0
+                                capacityWait:
+                                  type: object
+                                  required: [sampleCount, latestObservedAt]
+                                  properties:
+                                    sampleCount:
+                                      type: integer
+                                      format: int32
+                                      minimum: 1
+                                    failedCount:
+                                      type: integer
+                                      format: int32
+                                      minimum: 0
+                                    latestSeconds:
+                                      type: number
+                                      minimum: 0
+                                    latestObservedAt:
+                                      type: string
+                                      format: date-time
+                                    p50Seconds:
+                                      type: number
+                                      minimum: 0
+                                    p95Seconds:
+                                      type: number
+                                      minimum: 0
+                                endToEnd:
+                                  type: object
+                                  required: [sampleCount, latestObservedAt]
+                                  properties:
+                                    sampleCount:
+                                      type: integer
+                                      format: int32
+                                      minimum: 1
+                                    failedCount:
+                                      type: integer
+                                      format: int32
+                                      minimum: 0
+                                    latestSeconds:
+                                      type: number
+                                      minimum: 0
+                                    latestObservedAt:
+                                      type: string
+                                      format: date-time
+                                    p50Seconds:
+                                      type: number
+                                      minimum: 0
+                                    p95Seconds:
+                                      type: number
+                                      minimum: 0
                 publication:
                   type: object
                   required: [openAI, mcp]

@@ -114,12 +114,15 @@ variable "deployment" {
     }), {})
 
     dynamic_models = optional(object({
-      enabled             = optional(bool, false)
-      writes_enabled      = optional(bool, false)
-      workload_owner      = optional(string, "terraform")
-      bootstrap_model_ids = optional(set(string), [])
-      fresh_install       = optional(bool, false)
-      handoff_receipt     = optional(string)
+      enabled                           = optional(bool, false)
+      writes_enabled                    = optional(bool, false)
+      workload_owner                    = optional(string, "terraform")
+      bootstrap_model_ids               = optional(set(string), [])
+      fresh_install                     = optional(bool, false)
+      handoff_receipt                   = optional(string)
+      fast_start_evidence_file          = optional(string)
+      fast_start_wait_second_value      = optional(number, 0.01)
+      fast_start_mechanism_hourly_costs = optional(map(number), {})
       priority_classes = optional(map(number), {
         interactive = 100
         standard    = 0
@@ -438,10 +441,22 @@ variable "deployment" {
       length(setsubtract(
         var.deployment.models.enabled,
         toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).profiles[var.deployment.profiles.models].canonical_routes),
-      )) == 0,
+      )) == 0 &&
+      (
+        var.deployment.dynamic_models.fast_start_evidence_file == null ? true :
+        startswith(pathexpand(var.deployment.dynamic_models.fast_start_evidence_file), "/") &&
+        can(jsondecode(file(pathexpand(var.deployment.dynamic_models.fast_start_evidence_file))))
+      ) &&
+      var.deployment.dynamic_models.fast_start_wait_second_value >= 0 &&
+      var.deployment.dynamic_models.fast_start_wait_second_value <= 1000000 &&
+      length(var.deployment.dynamic_models.fast_start_mechanism_hourly_costs) <= 128 &&
+      alltrue([
+        for name, cost in var.deployment.dynamic_models.fast_start_mechanism_hourly_costs :
+        can(regex("^[a-z][a-z0-9-]{0,63}$", name)) && cost >= 0
+      ]),
       false,
     )
-    error_message = "models.selection must be profile or explicit; profile requires an empty enabled set, while explicit IDs must belong to the model profile."
+    error_message = "models.selection must be profile or explicit; explicit IDs must belong to the profile; fast-start evidence must be readable JSON at an absolute path; and bounded economic inputs must be valid."
   }
 
   validation {

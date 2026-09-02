@@ -20,7 +20,9 @@ or drain a qualified model and change its hot floor, ceiling, placement, cache
 policy, and exposure without running Terraform. Terraform continues to own the cluster
 and its capacity, storage, registry, operator, and policy envelopes. See
 [Dynamic model configuration](DYNAMIC_MODEL_CONFIGURATION.md) for the exact
-ownership boundary, current renderer, and optional extension points.
+ownership boundary, current renderer, and optional extension points. See
+[Model fast-start levels](FAST_START_LEVELS.md) for the customer timing classes,
+clock boundaries, automatic policy, and evidence requirements.
 
 ## Accelerator and qualification boundary
 

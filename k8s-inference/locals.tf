@@ -257,13 +257,16 @@ locals {
       tempo        = { url = "", verified_external_route = false }
     }
     model_controller = {
-      enabled             = var.deployment.dynamic_models.enabled
-      writes_enabled      = var.deployment.dynamic_models.writes_enabled
-      workload_owner      = var.deployment.dynamic_models.workload_owner
-      bootstrap_model_ids = sort(tolist(var.deployment.dynamic_models.bootstrap_model_ids))
-      fresh_install       = var.deployment.dynamic_models.fresh_install
-      handoff_receipt     = var.deployment.dynamic_models.handoff_receipt
-      priority_classes    = var.deployment.dynamic_models.priority_classes
+      enabled                           = var.deployment.dynamic_models.enabled
+      writes_enabled                    = var.deployment.dynamic_models.writes_enabled
+      workload_owner                    = var.deployment.dynamic_models.workload_owner
+      bootstrap_model_ids               = sort(tolist(var.deployment.dynamic_models.bootstrap_model_ids))
+      fresh_install                     = var.deployment.dynamic_models.fresh_install
+      handoff_receipt                   = var.deployment.dynamic_models.handoff_receipt
+      fast_start_evidence_file          = var.deployment.dynamic_models.fast_start_evidence_file
+      fast_start_wait_second_value      = var.deployment.dynamic_models.fast_start_wait_second_value
+      fast_start_mechanism_hourly_costs = var.deployment.dynamic_models.fast_start_mechanism_hourly_costs
+      priority_classes                  = var.deployment.dynamic_models.priority_classes
     }
   }
 

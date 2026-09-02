@@ -1,5 +1,11 @@
 import type {
   ModelDeploymentConfigurationOption,
+  ModelDeploymentEffectiveFastStartLevel,
+  ModelDeploymentFastStartFallbackPolicy,
+  ModelDeploymentFastStartLevel,
+  ModelDeploymentFastStartMode,
+  ModelDeploymentFastStartPolicy,
+  ModelDeploymentFastStartStatus,
   ModelDeploymentRuntimePhase,
   ModelDeploymentSpec,
   ModelDeploymentStatusView,
@@ -14,6 +20,151 @@ const tenant = /^[A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9])?$/;
 const revision = /^[A-Za-z0-9][A-Za-z0-9._:/+\-]*$/;
 const openAIAlias = /^[A-Za-z0-9](?:[A-Za-z0-9._:/-]*[A-Za-z0-9])?$/;
 const principalId = /^[A-Za-z0-9](?:[A-Za-z0-9_.:@/-]*[A-Za-z0-9])?$/;
+
+export const modelDeploymentFastStartLevels = ["Off", "L1", "L2", "L3", "L4"] as const;
+
+export const modelDeploymentFastStartLevelDetails: Record<ModelDeploymentFastStartLevel, {
+  customerLabel: string;
+  targetSeconds: number | null;
+}> = {
+  Off: { customerLabel: "Standard loading", targetSeconds: null },
+  L1: { customerLabel: "Ready within 5 minutes", targetSeconds: 300 },
+  L2: { customerLabel: "Ready within 2 minutes", targetSeconds: 120 },
+  L3: { customerLabel: "Ready within 60 seconds", targetSeconds: 60 },
+  L4: { customerLabel: "Ready within 30 seconds", targetSeconds: 30 },
+};
+
+export interface NormalizedFastStartPolicy {
+  configured: boolean;
+  mode: ModelDeploymentFastStartMode;
+  level: ModelDeploymentFastStartLevel;
+  minimumLevel: ModelDeploymentFastStartLevel;
+  maximumLevel: ModelDeploymentFastStartLevel;
+  fallbackPolicy: ModelDeploymentFastStartFallbackPolicy;
+}
+
+export interface NormalizedFastStartStatus {
+  requestedLevel: ModelDeploymentFastStartLevel | null;
+  assignedLevel: ModelDeploymentFastStartLevel | null;
+  effectiveLevel: ModelDeploymentEffectiveFastStartLevel | null;
+  qualifiedLevel: ModelDeploymentFastStartLevel | null;
+  state: string | null;
+  reason: string | null;
+  targetSeconds: number | null;
+  lastObservedSeconds: number | null;
+  qualifiedP50Seconds: number | null;
+  qualifiedP95Seconds: number | null;
+  capacityWaitSeconds: number | null;
+  endToEndSeconds: number | null;
+  observedAt: string | null;
+  mechanisms: Record<string, unknown> | null;
+  automatic: ModelDeploymentFastStartStatus["automatic"];
+}
+
+const fastStartLevelOrder = new Map<ModelDeploymentFastStartLevel, number>(
+  modelDeploymentFastStartLevels.map((level, index) => [level, index]),
+);
+
+export function normalizeFastStartPolicy(policy: ModelDeploymentFastStartPolicy | null | undefined): NormalizedFastStartPolicy {
+  const mode = policy?.mode === "Automatic" ? "Automatic" : "Fixed";
+  const level = policy?.level ?? "Off";
+  const minimumLevel = policy?.minimumLevel ?? "Off";
+  const maximumLevel = policy?.maximumLevel ?? (policy?.level ?? "L1");
+  return {
+    configured: Boolean(policy),
+    mode,
+    level,
+    minimumLevel,
+    maximumLevel,
+    fallbackPolicy: policy?.fallbackPolicy ?? "AllowLowerLevel",
+  };
+}
+
+export function fastStartTarget(level: ModelDeploymentEffectiveFastStartLevel | null | undefined): string {
+  if (!level) return "Unavailable";
+  if (level === "Hot") return "Already serving";
+  const targetSeconds = modelDeploymentFastStartLevelDetails[level].targetSeconds;
+  return targetSeconds === null ? "No start-time target" : `≤${targetSeconds} seconds`;
+}
+
+export function fastStartLevelLabel(level: ModelDeploymentEffectiveFastStartLevel | null | undefined): string {
+  if (!level) return "Unavailable";
+  if (level === "Hot") return "Hot · already serving";
+  return `${level} · ${modelDeploymentFastStartLevelDetails[level].customerLabel}`;
+}
+
+export function fastStartPolicySummary(policy: ModelDeploymentFastStartPolicy | null | undefined): string {
+  if (!policy) return "Not configured";
+  const normalized = normalizeFastStartPolicy(policy);
+  if (normalized.mode === "Automatic") return `Automatic · ${normalized.minimumLevel}–${normalized.maximumLevel}`;
+  return fastStartLevelLabel(normalized.level);
+}
+
+export function fastStartStatus(view: ModelDeploymentStatusView): ModelDeploymentFastStartStatus | null {
+  const status = view.observation?.status;
+  return status?.fastStart ?? status?.fast_start ?? null;
+}
+
+export function normalizedFastStartStatus(view: ModelDeploymentStatusView): NormalizedFastStartStatus | null {
+  const status = fastStartStatus(view);
+  if (!status) return null;
+  const modelStart = status.modelStart ?? status.model_start ?? null;
+  const capacityWait = status.capacityWait ?? status.capacity_wait ?? null;
+  const endToEnd = status.endToEnd ?? status.end_to_end ?? null;
+  const pools = status.pools ?? [];
+  const mechanismDetails = Object.fromEntries(pools.map((pool, index) => {
+    const poolRef = pool.poolRef ?? pool.pool_ref ?? `pool-${index + 1}`;
+    return [poolRef, {
+      acceleratorClass: pool.acceleratorClass ?? pool.accelerator_class ?? null,
+      qualifiedLevel: pool.qualifiedLevel ?? pool.qualified_level ?? null,
+      reason: pool.reason ?? null,
+      selectedMechanism: pool.selectedMechanism ?? pool.selected_mechanism ?? null,
+      selectedCompatibilityTupleDigest: pool.selectedCompatibilityTupleDigest ?? pool.selected_compatibility_tuple_digest ?? null,
+      mechanisms: pool.mechanisms ?? [],
+      receiptDigests: pool.receiptDigests ?? pool.receipt_digests ?? [],
+      paths: pool.paths ?? [],
+    }];
+  }));
+  return {
+    requestedLevel: status.requestedLevel ?? status.requested_level ?? null,
+    assignedLevel: status.assignedLevel ?? status.assigned_level ?? null,
+    effectiveLevel: status.effectiveLevel ?? status.effective_level ?? null,
+    qualifiedLevel: status.qualifiedLevel ?? status.qualified_level ?? null,
+    state: status.qualification?.state ?? status.state ?? null,
+    reason: status.qualification?.message ?? status.qualification?.reason ?? status.reason ?? null,
+    targetSeconds: status.targetSeconds ?? status.target_seconds ?? null,
+    lastObservedSeconds: status.lastObservedSeconds ?? status.last_observed_seconds
+      ?? modelStart?.latestSeconds ?? modelStart?.latest_seconds ?? null,
+    qualifiedP50Seconds: status.qualifiedP50Seconds ?? status.qualified_p50_seconds
+      ?? modelStart?.p50Seconds ?? modelStart?.p50_seconds ?? null,
+    qualifiedP95Seconds: status.qualifiedP95Seconds ?? status.qualified_p95_seconds
+      ?? modelStart?.p95Seconds ?? modelStart?.p95_seconds ?? null,
+    capacityWaitSeconds: status.capacityWaitSeconds ?? status.capacity_wait_seconds
+      ?? capacityWait?.latestSeconds ?? capacityWait?.latest_seconds ?? null,
+    endToEndSeconds: status.endToEndSeconds ?? status.end_to_end_seconds
+      ?? endToEnd?.latestSeconds ?? endToEnd?.latest_seconds ?? null,
+    observedAt: status.observedAt ?? status.observed_at
+      ?? modelStart?.latestObservedAt ?? modelStart?.latest_observed_at ?? null,
+    mechanisms: status.mechanisms ?? (pools.length ? mechanismDetails : null),
+    automatic: status.automatic ?? null,
+  };
+}
+
+export function effectiveFastStartLevel(view: ModelDeploymentStatusView): ModelDeploymentEffectiveFastStartLevel | null {
+  const status = view.observation?.status;
+  if (
+    view.state === "observed"
+    && status?.replicas?.ready !== null
+    && status?.replicas?.ready !== undefined
+    && status.replicas.ready > 0
+  ) return "Hot";
+  return normalizedFastStartStatus(view)?.effectiveLevel ?? null;
+}
+
+export function fastStartSeconds(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "Unavailable";
+  return `${value < 10 ? value.toFixed(2) : value.toFixed(1)} s`;
+}
 
 export function uniqueCsv(value: string): string[] {
   return [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
@@ -37,6 +188,7 @@ export function createEmptyModelDeploymentSpec(tenantId = ""): ModelDeploymentSp
       warmWindows: [],
     },
     cache: { tier: "Disabled", snapshotPreference: "Never", snapshotRef: null },
+    fastStart: { mode: "Fixed", level: "Off", fallbackPolicy: "AllowLowerLevel" },
     queue: { localQueue: "", priorityClass: "", maxQueueSeconds: 900 },
     rollout: { strategy: "Rolling", maxUnavailable: 0, maxSurge: 1, progressDeadlineSeconds: 1800 },
     exposure: { openAI: false, openAIAliases: [], mcp: false, mcpToolName: null },
@@ -76,6 +228,7 @@ export function draftFromConfigurationOption(
   next.rollout = structuredClone(current.rollout);
   next.exposure = structuredClone(current.exposure);
   next.policy = structuredClone(current.policy);
+  if (current.fastStart !== undefined) next.fastStart = structuredClone(current.fastStart);
   return next;
 }
 
@@ -155,6 +308,13 @@ export function localModelDeploymentProblem(
   if (spec.cache.snapshotPreference === "Require" && spec.cache.tier === "Disabled") return "A required snapshot needs an enabled cache tier.";
   if (spec.cache.snapshotRef && !dnsSubdomain.test(spec.cache.snapshotRef.name)) return "Snapshot name must be a Kubernetes DNS subdomain.";
   if (spec.cache.snapshotRef && !sha256.test(spec.cache.snapshotRef.digest)) return "Snapshot digest must be a complete sha256 digest.";
+  if (spec.fastStart) {
+    if (spec.fastStart.mode === "Fixed" && !spec.fastStart.level) return "A fixed fast-start policy needs a level.";
+    if (spec.fastStart.mode === "Automatic") {
+      if (!spec.fastStart.minimumLevel || !spec.fastStart.maximumLevel) return "An automatic fast-start policy needs minimum and maximum levels.";
+      if ((fastStartLevelOrder.get(spec.fastStart.minimumLevel) ?? -1) > (fastStartLevelOrder.get(spec.fastStart.maximumLevel) ?? -1)) return "Automatic fast-start minimum cannot exceed its maximum.";
+    }
+  }
   if (!dnsSubdomain.test(spec.queue.localQueue) || !dnsSubdomain.test(spec.queue.priorityClass)) return "Queue and priority-class references must be Kubernetes DNS subdomains.";
   if (spec.rollout.strategy === "Rolling" && spec.rollout.maxUnavailable + spec.rollout.maxSurge === 0) return "A rolling rollout must permit unavailability or surge.";
   if (spec.rollout.strategy === "Recreate" && (spec.rollout.maxUnavailable !== 1 || spec.rollout.maxSurge !== 0)) return "Recreate rollout uses maximum unavailable 1 and maximum surge 0.";

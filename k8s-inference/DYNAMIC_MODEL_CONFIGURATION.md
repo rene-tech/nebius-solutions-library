@@ -124,14 +124,18 @@ fastStart:
   fallbackPolicy: AllowLowerLevel | RequireTarget   # default AllowLowerLevel
 ```
 
-`Fixed` targets exactly `level`; `Automatic` selects the highest qualified
-level inside `[minimumLevel, maximumLevel]`. A level is qualified only by
-compatible benchmark evidence in the Terraform-owned envelope
+`Fixed` targets exactly `level`. `Automatic` starts at its configured minimum
+and evaluates at most every five minutes using payload-free one-hour and
+seven-day request and idle-gap aggregates, qualified model-start p95, configured
+mechanism costs, and persisted promotion/demotion hysteresis. It can select
+only a level supported by qualified paths inside `[minimumLevel,
+maximumLevel]`. A level is qualified only by compatible benchmark evidence in
+the Terraform-owned envelope
 (`qualifications.<modelRef>.fastStartEvidence`) for the exact artifact
 manifest, runtime image, runtime template, cache tier, snapshot, accelerator
-class, and accelerator count the deployment will run, with at least five
-samples whose nearest-rank p95 model-start time is within the target. Failed
-attempts rank after every successful duration. Mechanism names such as
+class, and accelerator count the deployment will run, with at least 20
+successful samples, no failed or timed-out attempts, and a nearest-rank p95
+model-start time within the target. Mechanism names such as
 regional caches, snapshots, host RAM residency, or ModelExpress are operator
 detail carried by the evidence; a name alone never qualifies a level. With
 several pools, the slowest pool binds the deployment.
@@ -150,6 +154,30 @@ latest/p50/p95 seconds per binding pool and per pool in `pools[]`, and are
 omitted entirely when no compatible evidence exists. The `FastStartQualified`
 condition is `True` for `NoTarget` and `Qualified`, `False` for `Fallback` and
 `Unqualified`.
+
+Benchmark receipts are not pasted into `terraform.tfvars`. Use
+`models/cold-start/project_fast_start_evidence.py` to create a compact JSON
+projection and set only
+`deployment.dynamic_models.fast_start_evidence_file` to its absolute path.
+Changing that file content changes the immutable envelope digest and rolls the
+controller without rewriting any live `ModelDeployment` policy.
+
+The cluster-wide economic inputs are
+`deployment.dynamic_models.fast_start_wait_second_value` and
+`deployment.dynamic_models.fast_start_mechanism_hourly_costs`. The controller
+combines them with demand history to compare multiple qualified mechanisms.
+An unlisted mechanism has zero additional hourly cache cost; this is a cost
+default only and never fabricates timing evidence. The existing operation
+latency spans request acceptance through readiness and therefore is not used
+as a fast-start target-miss signal. That signal remains disabled until the
+capacity-available boundary is stored explicitly.
+
+Automatic mode evaluates only mechanisms compatible with the revision's
+existing artifact, runtime template, cache tier, snapshot identity, accelerator
+class, and accelerator count. It does not mutate those desired fields. A
+different physical path is selected through a reviewed live revision once its
+template and evidence are in the Terraform-owned envelope; provisioning a new
+storage or pool capability still belongs to Terraform.
 
 ### Implemented heterogeneous elasticity
 

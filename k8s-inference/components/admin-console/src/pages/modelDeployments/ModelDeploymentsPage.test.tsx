@@ -24,7 +24,9 @@ describe("ModelDeployment list", () => {
     expect(await within(row).findByText("Ready")).toBeInTheDocument();
     expect(within(row).getByText("Enabled")).toBeInTheDocument();
     expect(within(row).getByText("0 / 4")).toBeInTheDocument();
-    expect(within(row).getByText("NodeLocal")).toBeInTheDocument();
+    expect(within(row).getByText("Hot · already serving")).toBeInTheDocument();
+    expect(within(row).getByText("Assigned L2 · ≤120 seconds")).toBeInTheDocument();
+    expect(within(row).getByText("Qualified L2")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Draft model deployment" })).toBeInTheDocument();
   });
 

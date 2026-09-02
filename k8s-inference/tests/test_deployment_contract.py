@@ -251,6 +251,9 @@ class DeploymentContractTests(unittest.TestCase):
                 "bootstrap_model_ids": [],
                 "fresh_install": False,
                 "handoff_receipt": None,
+                "fast_start_evidence_file": None,
+                "fast_start_wait_second_value": 0.01,
+                "fast_start_mechanism_hourly_costs": {},
                 "priority_classes": {
                     "interactive": 100,
                     "standard": 0,
@@ -347,6 +350,9 @@ class DeploymentContractTests(unittest.TestCase):
                 "bootstrap_model_ids": ["qwen3-8b"],
                 "fresh_install": True,
                 "handoff_receipt": None,
+                "fast_start_evidence_file": None,
+                "fast_start_wait_second_value": 0.01,
+                "fast_start_mechanism_hourly_costs": {},
                 "priority_classes": {
                     "interactive": 100,
                     "standard": 0,
@@ -356,6 +362,49 @@ class DeploymentContractTests(unittest.TestCase):
         )
         self.assertNotIn("infrastructure_envelope_json", dynamic)
         self.assertNotIn("renderer_bundles_json", dynamic)
+
+    def test_fast_start_inputs_propagate_to_the_workload_stage(self) -> None:
+        evidence_file = self.run_root / "fast-start-evidence.json"
+        evidence_file.write_text("{}\n", encoding="utf-8")
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-fast-start-input-test",
+            "target": self.catalog_target(),
+            "profiles": {"models": "full_catalog"},
+            "models": {
+                "selection": "explicit",
+                "enabled": ["qwen3-8b"],
+                "scaling": {"mode": "keda", "hot": ["qwen3-8b"]},
+            },
+            "dynamic_models": {
+                "enabled": True,
+                "writes_enabled": True,
+                "workload_owner": "controller",
+                "bootstrap_model_ids": ["qwen3-8b"],
+                "fresh_install": True,
+                "fast_start_evidence_file": str(evidence_file),
+                "fast_start_wait_second_value": 0.025,
+                "fast_start_mechanism_hourly_costs": {
+                    "shared-cache": 0.1,
+                    "ram-resident": 1.25,
+                },
+            },
+        }
+
+        outputs = self._planned_outputs(
+            self._write_configuration("fast-start-inputs", deployment),
+            "fast-start-inputs",
+        )
+        dynamic = outputs["deployment_contract"]["stages"]["workloads"][
+            "model_controller"
+        ]
+
+        self.assertEqual(dynamic["fast_start_evidence_file"], str(evidence_file))
+        self.assertEqual(dynamic["fast_start_wait_second_value"], 0.025)
+        self.assertEqual(
+            dynamic["fast_start_mechanism_hourly_costs"],
+            {"shared-cache": 0.1, "ram-resident": 1.25},
+        )
 
     def test_dynamic_model_ownership_rejects_a_concurrent_writer(self) -> None:
         deployment = {
@@ -409,7 +458,13 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("scaleToZeroQualified", controller_source)
         # Fast-start levels need explicit benchmark evidence; the envelope must
         # never derive them from activation-based elasticity timings.
-        self.assertIn("fastStartEvidence = []", controller_source)
+        self.assertIn(
+            "fastStartEvidence = try(local.model_controller_fast_start_evidence[model_id], [])",
+            controller_source,
+        )
+        self.assertIn("model_controller_fast_start_evidence_valid", controller_source)
+        self.assertIn('"compatibilityTupleDigest"', controller_source)
+        self.assertIn('"compatibilityTupleComplete"', controller_source)
         self.assertNotIn("sha256(jsonencode({ source = model.model.source", controller_source)
         self.assertIn(
             "!contains(local.model_controller_dynamic_model_ids, model_id)",

@@ -84,6 +84,8 @@ describe("ModelDeployment workspace", () => {
     expect(screen.getByRole("checkbox", { name: "Use reserved-h100" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Use preemptible-h100" })).toBeChecked();
     expect(screen.getByLabelText("Hot floor")).toHaveValue(modelDeploymentSpecFixture.availability.minReplicas);
+    expect(screen.getByLabelText("Fast-start mode")).toHaveValue("Fixed");
+    expect(screen.getByLabelText("Fast-start level")).toHaveValue("L3");
     expect(screen.getByRole("button", { name: "Validate draft" })).toBeEnabled();
     expect(screen.getByText(/No observed state or history yet/)).toBeInTheDocument();
   });
@@ -215,16 +217,24 @@ describe("ModelDeployment workspace", () => {
     expect(screen.getByLabelText("Hot floor")).toHaveValue(0);
     expect(screen.getByLabelText("Replica ceiling")).toHaveValue(4);
     expect(screen.getByLabelText("Snapshot preference")).toHaveValue("Prefer");
+    expect(screen.getByLabelText("Fast-start mode")).toHaveValue("Fixed");
+    expect(screen.getByLabelText("Fast-start level")).toHaveValue("L3");
     expect(screen.getByLabelText("OpenAI aliases")).toHaveValue("qwen3-8b");
     expect(screen.getByLabelText("Allowed principals")).toHaveValue("research-agent");
 
     fireEvent.change(screen.getByLabelText("Cooldown (seconds)"), { target: { value: "240" } });
+    fireEvent.change(screen.getByLabelText("Fast-start mode"), { target: { value: "Automatic" } });
+    fireEvent.change(screen.getByLabelText("Minimum fast-start level"), { target: { value: "L1" } });
+    fireEvent.change(screen.getByLabelText("Maximum fast-start level"), { target: { value: "L4" } });
     fireEvent.click(screen.getByRole("button", { name: "Validate draft" }));
     await waitFor(() => expect(validate).toHaveBeenCalledWith(expect.objectContaining({
       name: "qwen-live",
       namespace: "fs2-models",
       base_etag: modelDeploymentRevisionFixture.etag,
-      spec: expect.objectContaining({ availability: expect.objectContaining({ cooldownSeconds: 240 }) }),
+      spec: expect.objectContaining({
+        availability: expect.objectContaining({ cooldownSeconds: 240 }),
+        fastStart: { mode: "Automatic", minimumLevel: "L1", maximumLevel: "L4", fallbackPolicy: "AllowLowerLevel" },
+      }),
     })));
     expect(await screen.findByText("No validation issues were published.")).toBeInTheDocument();
 
@@ -237,6 +247,11 @@ describe("ModelDeployment workspace", () => {
     expect(screen.getByRole("button", { name: "Delete" })).toHaveAttribute("title", modelDeploymentMutationCapabilitiesFixture.hard_delete.reason);
 
     expect(screen.getByRole("heading", { name: "Ready" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Fast start" })).toBeInTheDocument();
+    expect(screen.getAllByText("Hot · already serving").length).toBeGreaterThan(0);
+    expect(screen.getByText("91.2 s")).toBeInTheDocument();
+    expect(screen.getByText("112.7 s")).toBeInTheDocument();
+    expect(screen.getByText(/requested L3 path is not qualified/)).toBeInTheDocument();
     const track = screen.getByLabelText("Model deployment lifecycle phases");
     for (const phase of ["Admitted", "Node pending", "Localizing", "Runtime starting", "Warming", "Ready", "Cached", "Cold", "Draining", "Failed", "Infrastructure required"]) {
       expect(within(track).getByText(phase)).toBeInTheDocument();
@@ -257,6 +272,23 @@ describe("ModelDeployment workspace", () => {
     expect(await screen.findByText("Observed runtime state is unavailable")).toBeInTheDocument();
     expect(screen.getByText(/No replica, cache, readiness or publication value is inferred/)).toBeInTheDocument();
     expect(screen.queryByText("Ready replicas", { selector: "dt" })).not.toBeInTheDocument();
+  });
+
+  it("renders legacy desired state without inventing a fast-start assignment or qualification", async () => {
+    const legacyRevision = structuredClone(modelDeploymentRevisionFixture);
+    delete legacyRevision.spec.fastStart;
+    const legacyStatus = structuredClone(modelDeploymentStatusFixture);
+    delete legacyStatus.observation!.status.fastStart;
+    vi.spyOn(adminApi, "modelDeployment").mockResolvedValue(testEnvelope(legacyRevision));
+    vi.spyOn(adminApi, "modelDeploymentStatus").mockResolvedValue(testEnvelope(legacyStatus));
+    vi.spyOn(adminApi, "modelDeploymentHistory").mockResolvedValue(testEnvelope({ items: [legacyRevision], next_before_revision: null }));
+    vi.spyOn(adminApi, "modelDeploymentCapabilities").mockResolvedValue(testEnvelope(modelDeploymentMutationCapabilitiesFixture));
+    renderPage();
+
+    expect(await screen.findByText("Legacy policy.")).toBeInTheDocument();
+    expect(screen.getByText(/controller has not published fast-start evidence/)).toBeInTheDocument();
+    expect(screen.getByText("Not configured")).toBeInTheDocument();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
   });
 
   it("role-gates planning and has no accessibility violations in the viewer workflow", async () => {

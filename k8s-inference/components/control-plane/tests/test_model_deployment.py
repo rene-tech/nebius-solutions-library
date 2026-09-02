@@ -363,7 +363,20 @@ def test_crd_is_structural_versioned_and_has_explicit_terraform_upgrade_owner() 
     ]
     for measurement in ("modelStart", "capacityWait", "endToEnd"):
         assert fast_start_status["properties"][measurement]["required"] == ["sampleCount", "latestObservedAt"]
-    assert fast_start_status["properties"]["pools"]["x-kubernetes-list-map-keys"] == ["poolRef"]
+    pool_status = fast_start_status["properties"]["pools"]
+    assert pool_status["x-kubernetes-list-map-keys"] == ["poolRef"]
+    pool_properties = pool_status["items"]["properties"]
+    assert pool_properties["selectedMechanism"]["pattern"] == "^[a-z][a-z0-9-]*$"
+    assert pool_properties["selectedCompatibilityTupleDigest"]["pattern"] == "^sha256:[a-f0-9]{64}$"
+    path_status = pool_status["items"]["properties"]["paths"]
+    assert path_status["x-kubernetes-list-map-keys"] == ["mechanism", "compatibilityTupleDigest"]
+    assert set(path_status["items"]["required"]) == {
+        "mechanism",
+        "compatibilityTupleDigest",
+        "qualifiedLevel",
+        "reason",
+        "receiptDigests",
+    }
     assert "FastStartQualified" in condition["properties"]["type"]["enum"]
     assert [column["name"] for column in version["additionalPrinterColumns"] if column["name"] == "FastStart"]
 

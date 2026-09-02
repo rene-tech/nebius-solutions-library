@@ -64,8 +64,10 @@ def evidence(
     values: dict[str, Any] = {
         "receipt_digest": digest("f"),
         "mechanism": "shared-cache",
+        "compatibility_tuple_complete": True,
         "measurement_basis": "CapacityAvailableToSemanticReady",
         "accelerator_class": pool.accelerator_class,
+        "pool_ref": pool.pool_id,
         "accelerators_per_replica": spec.placement.accelerators_per_replica,
         "artifact_manifest_digest": spec.artifact.manifest_digest,
         "runtime_image": spec.runtime.image,
@@ -74,6 +76,22 @@ def evidence(
         "samples": samples(*seconds),
     }
     values.update(overrides)
+    values.setdefault(
+        "compatibility_tuple_digest",
+        canonical_digest(
+            {
+                "mechanism": values["mechanism"],
+                "acceleratorClass": values["accelerator_class"],
+                "poolRef": values["pool_ref"],
+                "acceleratorsPerReplica": values["accelerators_per_replica"],
+                "artifactManifestDigest": values["artifact_manifest_digest"],
+                "runtimeImage": values["runtime_image"],
+                "templateDigest": values["template_digest"],
+                "cacheTier": str(values["cache_tier"]),
+                "snapshotDigest": values.get("snapshot_digest"),
+            }
+        ),
+    )
     return FastStartEvidence(**values)
 
 
@@ -93,8 +111,18 @@ def qualified_l2_envelope() -> InfrastructureEnvelope:
     pools = envelope().pools
     return with_evidence(
         envelope(),
-        evidence(base, pools["pool-a"], seconds=[40, 45, 50, 55, 58], mechanism="regional-oci-cache"),
-        evidence(base, pools["pool-b"], seconds=[70, 80, 90, 100, 110], receipt_digest=digest("e")),
+        evidence(
+            base,
+            pools["pool-a"],
+            seconds=[40] * 10 + [45] * 5 + [50] * 3 + [58] * 2,
+            mechanism="regional-oci-cache",
+        ),
+        evidence(
+            base,
+            pools["pool-b"],
+            seconds=[70] * 5 + [80] * 4 + [90] * 5 + [100] * 4 + [110] * 2,
+            receipt_digest=digest("e"),
+        ),
     )
 
 
@@ -195,7 +223,7 @@ def test_absent_evidence_is_unavailable_and_unqualified_never_zero() -> None:
 def test_mechanism_names_and_incompatible_tuples_never_qualify() -> None:
     spec = with_fast_start(model_spec(), mode="Fixed", level="L4")
     pool_a, pool_b = envelope().pools["pool-a"], envelope().pools["pool-b"]
-    fast = [5.0, 6.0, 7.0, 8.0, 9.0]
+    fast = [5.0, 6.0, 7.0, 8.0, 9.0] * 4
     incompatible = [
         evidence(spec, pool_a, seconds=fast, mechanism="cuda-criu-snapshot", template_digest=digest("9")),
         evidence(
@@ -235,20 +263,112 @@ def test_mechanism_names_and_incompatible_tuples_never_qualify() -> None:
     pool_a_sparse = next(pool for pool in sparse.pools if pool.pool_ref == "pool-a")
     assert pool_a_sparse.qualified_level is FastStartLevel.OFF
     assert pool_a_sparse.reason == "InsufficientBenchmarkSamples"
-    assert pool_a_sparse.model_start is not None and pool_a_sparse.model_start.sample_count == 4
+    assert pool_a_sparse.model_start is not None
+    assert pool_a_sparse.model_start.sample_count == MINIMUM_QUALIFYING_SAMPLES - 1
 
     failing = evaluate_fast_start(
         spec,
-        with_evidence(envelope(), evidence(spec, pool_a, seconds=[5.0, 6.0, 7.0, 8.0, None])),
+        with_evidence(envelope(), evidence(spec, pool_a, seconds=[5.0] * 19 + [None])),
         evaluation_time=NOW,
     )
     pool_a_failing = next(pool for pool in failing.pools if pool.pool_ref == "pool-a")
     assert pool_a_failing.qualified_level is FastStartLevel.OFF
-    assert pool_a_failing.reason == "BenchmarkFailuresExceedPercentile"
+    assert pool_a_failing.reason == "BenchmarkFailuresPresent"
     assert pool_a_failing.model_start is not None
     assert pool_a_failing.model_start.failed_count == 1
-    assert pool_a_failing.model_start.p95_seconds is None and pool_a_failing.model_start.p50_seconds == 7.0
+    assert pool_a_failing.model_start.p95_seconds == 5.0 and pool_a_failing.model_start.p50_seconds == 5.0
     assert pool_a_failing.model_start.latest_seconds is None
+
+
+def test_incomplete_compatibility_tuple_never_qualifies() -> None:
+    base = model_spec()
+    spec = with_fast_start(
+        base.model_copy(update={"placement": base.placement.model_copy(update={"pool_refs": ["pool-a"]})}),
+        level="L2",
+    )
+    pool = envelope().pools["pool-a"]
+    incomplete = evidence(
+        spec,
+        pool,
+        seconds=[90.0] * MINIMUM_QUALIFYING_SAMPLES,
+        compatibility_tuple_complete=False,
+    )
+
+    assessment = evaluate_fast_start(spec, with_evidence(envelope(), incomplete), evaluation_time=NOW)
+
+    assert assessment.qualified_level is FastStartLevel.OFF
+    assert assessment.qualification.state is FastStartQualificationState.FALLBACK
+    assert assessment.pools[0].reason == "IncompleteCompatibilityTuple"
+    assert assessment.pools[0].paths[0].reason == "IncompleteCompatibilityTuple"
+
+
+def test_different_mechanism_cohorts_never_combine_to_qualify() -> None:
+    base = model_spec()
+    spec = with_fast_start(
+        base.model_copy(update={"placement": base.placement.model_copy(update={"pool_refs": ["pool-a"]})}),
+        level="L2",
+    )
+    pool = envelope().pools["pool-a"]
+    conventional = evidence(spec, pool, seconds=[90.0] * 10, mechanism="conventional")
+    shared = evidence(
+        spec,
+        pool,
+        seconds=[90.0] * 10,
+        mechanism="shared-cache",
+        receipt_digest=digest("e"),
+    )
+
+    assessment = evaluate_fast_start(
+        spec,
+        with_evidence(envelope(), conventional, shared),
+        evaluation_time=NOW,
+    )
+
+    assert assessment.qualified_level is FastStartLevel.OFF
+    assert assessment.pools[0].model_start is not None
+    assert assessment.pools[0].model_start.sample_count == 10
+    assert assessment.pools[0].selected_mechanism == "conventional"
+    assert assessment.pools[0].selected_compatibility_tuple_digest == conventional.compatibility_tuple_digest
+    assert [(path.mechanism, path.model_start.sample_count) for path in assessment.pools[0].paths] == [
+        ("conventional", 10),
+        ("shared-cache", 10),
+    ]
+
+
+def test_same_mechanism_and_exact_tuple_receipts_form_one_cohort() -> None:
+    base = model_spec()
+    spec = with_fast_start(
+        base.model_copy(update={"placement": base.placement.model_copy(update={"pool_refs": ["pool-a"]})}),
+        level="L2",
+    )
+    pool = envelope().pools["pool-a"]
+    tuple_digest = canonical_digest("one-exact-tuple")
+    first = evidence(
+        spec,
+        pool,
+        seconds=[90.0] * 10,
+        compatibility_tuple_digest=tuple_digest,
+    )
+    second = evidence(
+        spec,
+        pool,
+        seconds=[90.0] * 10,
+        compatibility_tuple_digest=tuple_digest,
+        receipt_digest=digest("e"),
+    )
+
+    assessment = evaluate_fast_start(
+        spec,
+        with_evidence(envelope(), first, second),
+        evaluation_time=NOW,
+    )
+
+    assert assessment.qualified_level is FastStartLevel.L2
+    assert len(assessment.pools[0].paths) == 1
+    assert assessment.pools[0].selected_mechanism == "shared-cache"
+    assert assessment.pools[0].selected_compatibility_tuple_digest == tuple_digest
+    assert assessment.pools[0].paths[0].model_start is not None
+    assert assessment.pools[0].paths[0].model_start.sample_count == MINIMUM_QUALIFYING_SAMPLES
 
 
 def test_fixed_mode_honours_requests_only_with_evidence_then_falls_back_or_rejects() -> None:
@@ -262,7 +382,8 @@ def test_fixed_mode_honours_requests_only_with_evidence_then_falls_back_or_rejec
     assert honoured.qualified_level is FastStartLevel.L2
     assert honoured.model_start is not None
     assert (honoured.model_start.p50_seconds, honoured.model_start.p95_seconds) == (90.0, 110.0)
-    assert honoured.model_start.latest_seconds == 110.0 and honoured.model_start.sample_count == 5
+    assert honoured.model_start.latest_seconds == 110.0
+    assert honoured.model_start.sample_count == MINIMUM_QUALIFYING_SAMPLES
     assert [pool.qualified_level for pool in honoured.pools] == [FastStartLevel.L3, FastStartLevel.L2]
     assert honoured.pools[0].mechanisms == ["regional-oci-cache"]
     assert honoured.pools[1].receipt_digests == [digest("e")]
@@ -345,9 +466,9 @@ def test_capacity_wait_and_end_to_end_are_measured_separately_from_model_start()
     single = base.model_copy(update={"placement": base.placement.model_copy(update={"pool_refs": ["pool-a"]})})
     spec = with_fast_start(single, level="L3")
     pool_a = envelope().pools["pool-a"]
-    slow_capacity = evidence(spec, pool_a, seconds=[50.0] * 5)
+    slow_capacity = evidence(spec, pool_a, seconds=[50.0] * MINIMUM_QUALIFYING_SAMPLES)
     slow_capacity = slow_capacity.model_copy(
-        update={"samples": samples(50.0, 50.0, 50.0, 50.0, 50.0, capacity_wait=400.0, end_to_end=460.0)}
+        update={"samples": samples(*([50.0] * MINIMUM_QUALIFYING_SAMPLES), capacity_wait=400.0, end_to_end=460.0)}
     )
     assessment = evaluate_fast_start(spec, with_evidence(envelope(), slow_capacity), evaluation_time=NOW)
     assert assessment.qualification.state is FastStartQualificationState.QUALIFIED
@@ -357,7 +478,9 @@ def test_capacity_wait_and_end_to_end_are_measured_separately_from_model_start()
     assert assessment.end_to_end.failed_count == 0 and assessment.end_to_end.latest_seconds == 460.0
 
     unmeasured = evaluate_fast_start(
-        spec, with_evidence(envelope(), evidence(spec, pool_a, seconds=[50.0] * 5)), evaluation_time=NOW
+        spec,
+        with_evidence(envelope(), evidence(spec, pool_a, seconds=[50.0] * MINIMUM_QUALIFYING_SAMPLES)),
+        evaluation_time=NOW,
     )
     assert unmeasured.model_start is not None
     assert unmeasured.capacity_wait is None and unmeasured.end_to_end is None

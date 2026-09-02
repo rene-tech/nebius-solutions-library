@@ -18,8 +18,14 @@ import { formatTimestamp } from "../../lib/format";
 import {
   createEmptyModelDeploymentSpec,
   draftFromConfigurationOption,
+  effectiveFastStartLevel,
+  fastStartLevelLabel,
+  fastStartPolicySummary,
+  fastStartSeconds,
+  fastStartTarget,
   localModelDeploymentProblem,
   modelDeploymentPhaseLabels,
+  normalizedFastStartStatus,
   observedValue,
 } from "../../lib/modelDeployment";
 import { sharedContextParams } from "../../lib/search";
@@ -130,7 +136,74 @@ function capabilityReason(
   return null;
 }
 
-function RuntimeStatus({ view, expectedRevision }: { view: ModelDeploymentStatusView; expectedRevision: number }) {
+function mechanismValue(value: unknown): string {
+  if (value === null || value === undefined) return "Unavailable";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map(mechanismValue).join(", ");
+  try { return JSON.stringify(value); } catch { return "Unavailable"; }
+}
+
+function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spec: ModelDeploymentSpec }) {
+  const observed = normalizedFastStartStatus(view);
+  const effective = effectiveFastStartLevel(view);
+  const requested = observed?.requestedLevel
+    ? fastStartLevelLabel(observed.requestedLevel)
+    : fastStartPolicySummary(spec.fastStart);
+  const assigned = observed?.assignedLevel ? fastStartLevelLabel(observed.assignedLevel) : "Unavailable";
+  const qualified = observed?.qualifiedLevel ? fastStartLevelLabel(observed.qualifiedLevel) : "Unavailable";
+  const target = observed?.targetSeconds === null || observed?.targetSeconds === undefined
+    ? fastStartTarget(observed?.assignedLevel)
+    : `≤${observed.targetSeconds} seconds`;
+  const mechanisms = observed?.mechanisms ? Object.entries(observed.mechanisms) : [];
+  return (
+    <section className="subpanel section-stack" aria-labelledby="fast-start-runtime-title">
+      <div className="section-heading">
+        <div><span className="eyebrow">Customer start-time class</span><h3 id="fast-start-runtime-title">Fast start</h3></div>
+        <span className={`capability-chip ${effective === "Hot" ? "capability-chip--healthy" : observed ? "capability-chip--unknown" : "capability-chip--unavailable"}`}>{effective ? fastStartLevelLabel(effective) : "Unavailable"}</span>
+      </div>
+      <div className="fast-start-status">
+        <div><span>Requested</span><strong>{requested}</strong></div>
+        <div><span>Assigned</span><strong>{assigned}</strong></div>
+        <div><span>Effective</span><strong>{effective ? fastStartLevelLabel(effective) : "Unavailable"}</strong></div>
+        <div><span>Qualified</span><strong>{qualified}</strong></div>
+      </div>
+      <div className="fast-start-observation">
+        <span>Target <strong>{target}</strong></span>
+        <span>Model ready <strong>{fastStartSeconds(observed?.lastObservedSeconds)}</strong></span>
+        <span>Qualified p50 <strong>{fastStartSeconds(observed?.qualifiedP50Seconds)}</strong></span>
+        <span>Qualified p95 <strong>{fastStartSeconds(observed?.qualifiedP95Seconds)}</strong></span>
+        <span>Capacity wait <strong>{fastStartSeconds(observed?.capacityWaitSeconds)}</strong></span>
+        <span>Request to ready <strong>{fastStartSeconds(observed?.endToEndSeconds)}</strong></span>
+      </div>
+      {!observed ? <div className="inline-notice inline-notice--warning" role="status"><strong>Qualification unavailable.</strong> The controller has not published fast-start evidence for this revision; cache settings are not treated as proof.</div> : observed.reason ? <div className="inline-notice" role="status"><strong>{observed.state ?? "Fast-start status"}.</strong> {observed.reason}</div> : null}
+      <details className="fast-start-status-details">
+        <summary>Operator mechanism details</summary>
+        <dl className="definition-grid">
+          <div><dt>Desired cache tier</dt><dd>{spec.cache.tier}</dd></div>
+          <div><dt>Snapshot preference</dt><dd>{spec.cache.snapshotPreference}</dd></div>
+          <div><dt>Snapshot identity</dt><dd>{spec.cache.snapshotRef ? `${spec.cache.snapshotRef.name} · ${spec.cache.snapshotRef.strategy}` : "Not configured"}</dd></div>
+          <div><dt>Evidence observed</dt><dd>{observed?.observedAt ? formatTimestamp(observed.observedAt) : "Unavailable"}</dd></div>
+          {observed?.automatic ? <>
+            <div><dt>Automatic decision</dt><dd>{observed.automatic.reason ?? "Unavailable"}</dd></div>
+            <div><dt>Automatic evaluated</dt><dd>{(observed.automatic.evaluatedAt ?? observed.automatic.evaluated_at) ? formatTimestamp(observed.automatic.evaluatedAt ?? observed.automatic.evaluated_at ?? "") : "Unavailable"}</dd></div>
+            <div><dt>Demand history</dt><dd>{(observed.automatic.historyComplete ?? observed.automatic.history_complete) ? "Complete" : "Unavailable · minimum/fallback used"}</dd></div>
+            <div><dt>Selected mechanism</dt><dd>{observed.automatic.mechanismId ?? observed.automatic.mechanism_id ?? "Unavailable"}</dd></div>
+            <div><dt>Pending level</dt><dd>{observed.automatic.pendingLevel ?? observed.automatic.pending_level ?? "None"}</dd></div>
+            <div><dt>Promotion wins</dt><dd>{observed.automatic.consecutiveWins ?? observed.automatic.consecutive_wins ?? 0}</dd></div>
+            <div><dt>Requests · 1h / 7d</dt><dd>{observed.automatic.shortWindowRequests ?? observed.automatic.short_window_requests ?? "Unavailable"} / {observed.automatic.longWindowRequests ?? observed.automatic.long_window_requests ?? "Unavailable"}</dd></div>
+            <div><dt>Exact cold activations · 1h / 7d</dt><dd>{observed.automatic.shortWindowColdActivations ?? observed.automatic.short_window_cold_activations ?? "Unavailable"} / {observed.automatic.longWindowColdActivations ?? observed.automatic.long_window_cold_activations ?? "Unavailable"}</dd></div>
+            <div><dt>Idle-gap episodes · 1h / 7d</dt><dd>{observed.automatic.shortWindowIdleGapEpisodes ?? observed.automatic.short_window_idle_gap_episodes ?? "Unavailable"} / {observed.automatic.longWindowIdleGapEpisodes ?? observed.automatic.long_window_idle_gap_episodes ?? "Unavailable"}</dd></div>
+          </> : null}
+          {mechanisms.map(([name, value]) => <div key={name}><dt>{name.replaceAll("_", " ")}</dt><dd>{mechanismValue(value)}</dd></div>)}
+          {!mechanisms.length ? <div><dt>Controller mechanisms</dt><dd>Unavailable</dd></div> : null}
+        </dl>
+      </details>
+      <p className="empty-copy">Model-ready time starts when compatible accelerator capacity is available. Capacity wait and request-to-ready time remain separate.</p>
+    </section>
+  );
+}
+
+function RuntimeStatus({ view, expectedRevision, spec }: { view: ModelDeploymentStatusView; expectedRevision: number; spec: ModelDeploymentSpec }) {
   if (view.state === "unavailable") {
     return <div className="state-panel state-panel--error" role="status"><strong>Observed runtime state is unavailable</strong><span>{view.reason ?? "The controller has not published an observation."}</span><span>No replica, cache, readiness or publication value is inferred.</span></div>;
   }
@@ -148,6 +221,7 @@ function RuntimeStatus({ view, expectedRevision }: { view: ModelDeploymentStatus
       <div className="runtime-phase-track" aria-label="Model deployment lifecycle phases">
         {(["Admitted", "NodePending", "Localizing", "RuntimeStarting", "Warming", "Ready", "Cached", "Cold", "Draining", "Failed", "InfrastructureRequired"] as const).map((phase) => <span aria-current={phase === status.phase ? "step" : undefined} className={phase === status.phase ? "runtime-phase runtime-phase--current" : "runtime-phase"} key={phase}>{phase === "Cached" ? "Cached" : phase in modelDeploymentPhaseLabels ? modelDeploymentPhaseLabels[phase as keyof typeof modelDeploymentPhaseLabels] : phase}</span>)}
       </div>
+      <FastStartRuntime spec={spec} view={view} />
       <dl className="definition-grid">
         <div><dt>Desired replicas</dt><dd>{observedValue(status.replicas?.desired)}</dd></div>
         <div><dt>Admitted replicas</dt><dd>{observedValue(status.replicas?.admitted)}</dd></div>
@@ -545,7 +619,7 @@ export function ModelDeploymentWorkspacePage({ create = false }: { create?: bool
 
       {!create ? (
         <>
-          <DataBoundary data={statusQuery.data} error={statusQuery.error} pending={statusQuery.isPending}>{({ data }) => <RuntimeStatus expectedRevision={desiredRevision?.revision ?? data.revision} view={data} />}</DataBoundary>
+          <DataBoundary data={statusQuery.data} error={statusQuery.error} pending={statusQuery.isPending}>{({ data }) => <RuntimeStatus expectedRevision={desiredRevision?.revision ?? data.revision} spec={draft} view={data} />}</DataBoundary>
           <DataBoundary data={historyQuery.data} error={historyQuery.error} pending={historyQuery.isPending}>{({ data }) => <History rows={data.items} />}</DataBoundary>
         </>
       ) : mutationResult ? <div className="state-panel"><strong>The first durable revision was created</strong><span>Open the deployment from the list to follow controller status and revision history.</span></div> : <div className="state-panel"><strong>No observed state or history yet</strong><span>These views become available only after a durable revision exists and the controller publishes an independent observation.</span></div>}

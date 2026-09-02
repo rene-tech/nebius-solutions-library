@@ -1,4 +1,81 @@
 locals {
+  # Benchmark receipts are projected by models/cold-start/project_fast_start_evidence.py.
+  # Keeping this optional file outside terraform.tfvars avoids embedding a large,
+  # machine-generated evidence cohort in the human-authored cluster settings.
+  model_controller_fast_start_evidence = (
+    var.model_controller.fast_start_evidence_file == null ? {} :
+    jsondecode(file(pathexpand(var.model_controller.fast_start_evidence_file)))
+  )
+  model_controller_fast_start_evidence_valid = try(alltrue([
+    for model_id, evidence in local.model_controller_fast_start_evidence :
+    contains(local.model_controller_dynamic_model_ids, model_id) &&
+    length(evidence) <= 256 &&
+    alltrue([
+      for item in evidence :
+      length(keys(item)) == 15 && length(setsubtract(toset(keys(item)), toset([
+        "receiptDigest",
+        "mechanism",
+        "compatibilityTupleDigest",
+        "compatibilityTupleComplete",
+        "measurementBasis",
+        "acceleratorClass",
+        "poolRef",
+        "acceleratorsPerReplica",
+        "artifactManifestDigest",
+        "runtimeImage",
+        "templateDigest",
+        "cacheTier",
+        "snapshotDigest",
+        "samples",
+        "validUntil",
+      ]))) == 0 &&
+      can(regex("^sha256:[a-f0-9]{64}$", item.receiptDigest)) &&
+      can(regex("^[a-z][a-z0-9-]{0,63}$", item.mechanism)) &&
+      can(regex("^sha256:[a-f0-9]{64}$", item.compatibilityTupleDigest)) &&
+      (item.compatibilityTupleComplete == true || item.compatibilityTupleComplete == false) &&
+      item.measurementBasis == "CapacityAvailableToSemanticReady" &&
+      length(trimspace(item.acceleratorClass)) >= 1 && length(item.acceleratorClass) <= 128 &&
+      (
+        item.poolRef == null ||
+        can(regex("^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$", item.poolRef)) && length(item.poolRef) <= 128
+      ) &&
+      floor(item.acceleratorsPerReplica) == item.acceleratorsPerReplica &&
+      item.acceleratorsPerReplica >= 1 && item.acceleratorsPerReplica <= 64 &&
+      can(regex("^sha256:[a-f0-9]{64}$", item.artifactManifestDigest)) &&
+      can(regex("^[^[:space:]@]+@sha256:[a-f0-9]{64}$", item.runtimeImage)) && length(item.runtimeImage) <= 768 &&
+      can(regex("^sha256:[a-f0-9]{64}$", item.templateDigest)) &&
+      contains(["Disabled", "ObjectStore", "SharedFilesystem", "NodeLocal"], item.cacheTier) &&
+      (item.snapshotDigest == null || can(regex("^sha256:[a-f0-9]{64}$", item.snapshotDigest))) &&
+      length(item.samples) >= 1 && length(item.samples) <= 256 &&
+      alltrue([
+        for sample in item.samples :
+        length(keys(sample)) == 4 && length(setsubtract(toset(keys(sample)), toset([
+          "observedAt",
+          "modelStartSeconds",
+          "capacityWaitSeconds",
+          "endToEndSeconds",
+        ]))) == 0 &&
+        can(timecmp(sample.observedAt, sample.observedAt)) &&
+        (
+          sample.modelStartSeconds == null ||
+          sample.modelStartSeconds >= 0 && sample.modelStartSeconds <= 86400
+        ) &&
+        (
+          sample.capacityWaitSeconds == null ||
+          sample.capacityWaitSeconds >= 0 && sample.capacityWaitSeconds <= 604800
+        ) &&
+        (
+          sample.endToEndSeconds == null ||
+          sample.endToEndSeconds >= 0 && sample.endToEndSeconds <= 604800
+        ) && (
+          sample.endToEndSeconds == null ||
+          (sample.modelStartSeconds == null || sample.modelStartSeconds <= sample.endToEndSeconds) &&
+          (sample.capacityWaitSeconds == null || sample.capacityWaitSeconds <= sample.endToEndSeconds)
+        )
+      ]) &&
+      (item.validUntil == null || can(timecmp(item.validUntil, item.validUntil)))
+    ])
+  ]), false)
   model_controller_supported_template_gvks = toset([
     "v1/ConfigMap",
     "v1/Service",
@@ -249,7 +326,7 @@ locals {
       # compatible evidence. Until a fast-start benchmark receipt is retained
       # and projected here, every level above Off stays unqualified and the
       # controller reports that truthfully.
-      fastStartEvidence = []
+      fastStartEvidence = try(local.model_controller_fast_start_evidence[model_id], [])
     }
   }
   model_controller_pool_envelope = {
@@ -266,12 +343,14 @@ locals {
     }
   }
   model_controller_envelope_without_revision = {
-    pools                   = local.model_controller_pool_envelope
-    qualifications          = local.model_controller_qualifications
-    localQueues             = [local.selected_accelerator_pool_profile.queue.local_queue_name]
-    priorityClasses         = sort(keys(var.model_controller.priority_classes))
-    tenantIds               = [local.selected_target.tenant_id]
-    maxAcceleratorsPerModel = sum([for pool in values(local.selected_queue_pools) : pool.node.gpus_per_node * pool.capacity.max_nodes])
+    pools                         = local.model_controller_pool_envelope
+    qualifications                = local.model_controller_qualifications
+    localQueues                   = [local.selected_accelerator_pool_profile.queue.local_queue_name]
+    priorityClasses               = sort(keys(var.model_controller.priority_classes))
+    tenantIds                     = [local.selected_target.tenant_id]
+    maxAcceleratorsPerModel       = sum([for pool in values(local.selected_queue_pools) : pool.node.gpus_per_node * pool.capacity.max_nodes])
+    fastStartWaitSecondValue      = var.model_controller.fast_start_wait_second_value
+    fastStartMechanismHourlyCosts = var.model_controller.fast_start_mechanism_hourly_costs
   }
   model_controller_envelope = merge(local.model_controller_envelope_without_revision, {
     revision = "sha256:${sha256(jsonencode(local.model_controller_envelope_without_revision))}"
@@ -423,6 +502,11 @@ resource "terraform_data" "model_controller_contract" {
   }
 
   lifecycle {
+    precondition {
+      condition     = local.model_controller_fast_start_evidence_valid
+      error_message = "Fast-start evidence must map only controller-qualified model IDs to the exact bounded wire shape emitted by project_fast_start_evidence.py."
+    }
+
     precondition {
       condition = !var.model_controller.enabled || (
         length(local.model_controller_dynamic_model_ids) > 0 &&

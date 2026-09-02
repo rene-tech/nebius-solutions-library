@@ -7,7 +7,15 @@ import type {
   ModelDeploymentStatusView,
 } from "../../api/modelDeploymentTypes";
 import { DataBoundary } from "../../components/DataBoundary";
-import { modelDeploymentPhaseLabels, statusPhase } from "../../lib/modelDeployment";
+import {
+  effectiveFastStartLevel,
+  fastStartLevelLabel,
+  fastStartPolicySummary,
+  fastStartTarget,
+  modelDeploymentPhaseLabels,
+  normalizedFastStartStatus,
+  statusPhase,
+} from "../../lib/modelDeployment";
 import { formatTimestamp } from "../../lib/format";
 import { sharedContextParams } from "../../lib/search";
 
@@ -40,6 +48,29 @@ function ObservedState({ deployment }: { deployment: ModelDeploymentRevision }) 
     <span className="dense-stack">
       <span className={`capability-chip ${phaseClass(phase, view.state)}`}>{label}</span>
       <span>{view.state === "stale" ? `Stale · ${reason ?? "reason unavailable"}` : reason ?? `Revision ${view.revision} observed`}</span>
+    </span>
+  );
+}
+
+function ObservedFastStart({ deployment }: { deployment: ModelDeploymentRevision }) {
+  const query = useQuery({
+    queryKey: ["admin-model-deployment-status", deployment.namespace, deployment.name, deployment.tenant_id],
+    queryFn: ({ signal }) => adminApi.modelDeploymentStatus(deployment.name, {
+      namespace: deployment.namespace,
+      tenantId: deployment.tenant_id,
+    }, signal),
+  });
+  const requested = fastStartPolicySummary(deployment.spec.fastStart);
+  if (query.isPending) return <span className="dense-stack"><strong>{requested}</strong><span>Checking assignment</span></span>;
+  if (query.isError || !query.data) return <span className="dense-stack"><strong>{requested}</strong><span>Observed qualification unavailable</span></span>;
+  const view = query.data.data;
+  const observed = normalizedFastStartStatus(view);
+  const effective = effectiveFastStartLevel(view);
+  return (
+    <span className="dense-stack">
+      <strong>{effective ? fastStartLevelLabel(effective) : requested}</strong>
+      <span>{observed?.assignedLevel ? `Assigned ${observed.assignedLevel} · ${fastStartTarget(observed.assignedLevel)}` : "Assignment unavailable"}</span>
+      <span>{observed?.qualifiedLevel ? `Qualified ${observed.qualifiedLevel}` : "Qualification unavailable"}</span>
     </span>
   );
 }
@@ -121,7 +152,7 @@ export function ModelDeploymentsPage() {
                     <td><ObservedState deployment={deployment} /></td>
                     <td>{deployment.spec.availability.minReplicas} / {deployment.spec.availability.maxReplicas}<span className="secondary-line">idle after {deployment.spec.availability.idleSeconds}s</span></td>
                     <td>{deployment.spec.placement.acceleratorsPerReplica} accelerator{deployment.spec.placement.acceleratorsPerReplica === 1 ? "" : "s"}<span className="secondary-line">{deployment.spec.placement.poolRefs.join(", ")}</span></td>
-                    <td>{deployment.spec.cache.tier}<span className="secondary-line">snapshot {deployment.spec.cache.snapshotPreference}</span></td>
+                    <td><ObservedFastStart deployment={deployment} /></td>
                     <td>{deployment.spec.exposure.openAI ? "OpenAI" : "Private runtime"}<span className="secondary-line">MCP {deployment.spec.exposure.mcp ? "enabled" : "disabled"}</span></td>
                     <td>r{deployment.revision}<span className="secondary-line">{deployment.action} · {formatTimestamp(deployment.created_at)}</span></td>
                   </tr>

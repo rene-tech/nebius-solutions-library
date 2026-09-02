@@ -65,7 +65,7 @@ LEVEL_TARGET_SECONDS: dict[FastStartLevel, int | None] = {
 MEASUREMENT_BASIS = "CapacityAvailableToSemanticReady"
 # Nearest-rank p95 over fewer samples than this is just the maximum of a tiny
 # set; it cannot support a customer-facing startup-time class.
-MINIMUM_QUALIFYING_SAMPLES = 5
+MINIMUM_QUALIFYING_SAMPLES = 20
 QUALIFYING_PERCENTILE = 0.95
 REASON_PATTERN = r"^[A-Za-z][A-Za-z0-9]*$"
 
@@ -161,6 +161,19 @@ class FastStartStatistics(KubernetesModel):
         return self
 
 
+class FastStartPathAssessment(KubernetesModel):
+    """One mechanism and exact benchmark-tuple cohort within a pool."""
+
+    mechanism: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9-]*$")
+    compatibility_tuple_digest: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+    qualified_level: FastStartLevel
+    reason: str = Field(min_length=1, max_length=64, pattern=REASON_PATTERN)
+    receipt_digests: list[str] = Field(default_factory=list, max_length=256)
+    model_start: FastStartStatistics | None = None
+    capacity_wait: FastStartStatistics | None = None
+    end_to_end: FastStartStatistics | None = None
+
+
 class FastStartPoolAssessment(KubernetesModel):
     """Per-pool qualification so heterogeneous placements stay truthful."""
 
@@ -169,10 +182,39 @@ class FastStartPoolAssessment(KubernetesModel):
     qualified_level: FastStartLevel
     reason: str = Field(min_length=1, max_length=64, pattern=REASON_PATTERN)
     mechanisms: list[str] = Field(default_factory=list, max_length=64)
+    selected_mechanism: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z][a-z0-9-]*$",
+    )
+    selected_compatibility_tuple_digest: str | None = Field(
+        default=None,
+        pattern=r"^sha256:[a-f0-9]{64}$",
+    )
     receipt_digests: list[str] = Field(default_factory=list, max_length=256)
     model_start: FastStartStatistics | None = None
     capacity_wait: FastStartStatistics | None = None
     end_to_end: FastStartStatistics | None = None
+    paths: list[FastStartPathAssessment] = Field(default_factory=list, max_length=256)
+
+    @model_validator(mode="after")
+    def consistent_selected_path(self) -> FastStartPoolAssessment:
+        identities = {(item.mechanism, item.compatibility_tuple_digest) for item in self.paths}
+        if len(identities) != len(self.paths):
+            raise ValueError("fast-start mechanism and compatibility-tuple paths must be unique")
+        selected = (self.selected_mechanism, self.selected_compatibility_tuple_digest)
+        if (selected[0] is None) != (selected[1] is None):
+            raise ValueError("fast-start selected mechanism and compatibility tuple must be set together")
+        if not self.paths:
+            if selected[0] is not None:
+                raise ValueError("fast-start cannot select a path when no paths are available")
+            return self
+        if selected[0] is None:
+            raise ValueError("fast-start must identify the selected path when paths are available")
+        if selected not in identities:
+            raise ValueError("fast-start selected path must match an assessed path")
+        return self
 
 
 class FastStartQualification(KubernetesModel):
@@ -220,6 +262,26 @@ class FastStartAssessment(KubernetesModel):
         return self.assigned_level is not None
 
 
+class FastStartAutomaticStatus(KubernetesModel):
+    """Payload-free rolling-demand decision detail for operator diagnosis."""
+
+    reason: str = Field(min_length=1, max_length=64, pattern=REASON_PATTERN)
+    evaluated_at: AwareDatetime
+    history_complete: bool
+    mechanism_id: str | None = Field(default=None, min_length=1, max_length=128)
+    score: float | None = Field(default=None, ge=0)
+    pending_level: FastStartLevel | None = None
+    pending_since: AwareDatetime | None = None
+    consecutive_wins: int = Field(default=0, ge=0, le=1000)
+    last_transition_at: AwareDatetime | None = None
+    short_window_requests: int = Field(ge=0)
+    short_window_cold_activations: int = Field(ge=0)
+    short_window_idle_gap_episodes: int = Field(ge=0)
+    long_window_requests: int = Field(ge=0)
+    long_window_cold_activations: int = Field(ge=0)
+    long_window_idle_gap_episodes: int = Field(ge=0)
+
+
 class FastStartStatus(FastStartAssessment):
     """Controller-observed projection; adds what only runtime can tell.
 
@@ -231,6 +293,7 @@ class FastStartStatus(FastStartAssessment):
 
     effective_level: FastStartLevel | None = None
     hot: bool | None = None
+    automatic: FastStartAutomaticStatus | None = None
 
 
 def nearest_rank(values: Sequence[float | None], fraction: float) -> float | None:
@@ -300,6 +363,63 @@ def _highest_level_within(p95_seconds: float) -> FastStartLevel:
     return FastStartLevel.OFF
 
 
+def _assess_path(
+    mechanism: str,
+    compatibility_tuple_digest: str,
+    evidence: Sequence[FastStartEvidence],
+) -> FastStartPathAssessment:
+    model_start = _statistics(
+        [(sample.observed_at, sample.model_start_seconds) for item in evidence for sample in item.samples],
+        failures_rank_last=True,
+    )
+    capacity_wait = _statistics(
+        [(sample.observed_at, sample.capacity_wait_seconds) for item in evidence for sample in item.samples],
+        failures_rank_last=False,
+    )
+    end_to_end = _statistics(
+        [(sample.observed_at, sample.end_to_end_seconds) for item in evidence for sample in item.samples],
+        failures_rank_last=False,
+    )
+    assert model_start is not None
+    qualified = FastStartLevel.OFF
+    if not all(item.compatibility_tuple_complete for item in evidence):
+        reason = "IncompleteCompatibilityTuple"
+    elif model_start.sample_count < MINIMUM_QUALIFYING_SAMPLES:
+        reason = "InsufficientBenchmarkSamples"
+    elif model_start.failed_count != 0:
+        # A customer-facing startup class is a reliability claim as well as a
+        # latency percentile.  Do not let a low failure rate disappear above
+        # the p95 rank boundary; failed and timed-out attempts keep the exact
+        # tuple exploratory until a failure-free cohort is collected.
+        reason = "BenchmarkFailuresPresent"
+    elif model_start.p95_seconds is None:
+        reason = "BenchmarkFailuresExceedPercentile"
+    else:
+        qualified = _highest_level_within(model_start.p95_seconds)
+        reason = "BenchmarkP95WithinTarget" if qualified is not FastStartLevel.OFF else "BenchmarkP95ExceedsEveryTarget"
+    return FastStartPathAssessment(
+        mechanism=mechanism,
+        compatibility_tuple_digest=compatibility_tuple_digest,
+        qualified_level=qualified,
+        reason=reason,
+        receipt_digests=sorted({item.receipt_digest for item in evidence}),
+        model_start=model_start,
+        capacity_wait=capacity_wait,
+        end_to_end=end_to_end,
+    )
+
+
+def _path_order(item: FastStartPathAssessment) -> tuple[int, float, int, str, str]:
+    model_start = item.model_start
+    return (
+        -item.qualified_level.rank,
+        math.inf if model_start is None or model_start.p95_seconds is None else model_start.p95_seconds,
+        0 if model_start is None else -model_start.sample_count,
+        item.mechanism,
+        item.compatibility_tuple_digest,
+    )
+
+
 def _assess_pool(
     spec: ModelDeploymentSpec,
     pool: PoolEnvelope,
@@ -314,37 +434,30 @@ def _assess_pool(
             qualified_level=FastStartLevel.OFF,
             reason="NoCompatibleBenchmarkEvidence",
         )
-    model_start = _statistics(
-        [(sample.observed_at, sample.model_start_seconds) for item in compatible for sample in item.samples],
-        failures_rank_last=True,
+    grouped: dict[tuple[str, str], list[FastStartEvidence]] = {}
+    for item in compatible:
+        grouped.setdefault((item.mechanism, item.compatibility_tuple_digest), []).append(item)
+    paths = sorted(
+        (
+            _assess_path(mechanism, compatibility_tuple_digest, cohort)
+            for (mechanism, compatibility_tuple_digest), cohort in grouped.items()
+        ),
+        key=lambda item: (item.mechanism, item.compatibility_tuple_digest),
     )
-    capacity_wait = _statistics(
-        [(sample.observed_at, sample.capacity_wait_seconds) for item in compatible for sample in item.samples],
-        failures_rank_last=False,
-    )
-    end_to_end = _statistics(
-        [(sample.observed_at, sample.end_to_end_seconds) for item in compatible for sample in item.samples],
-        failures_rank_last=False,
-    )
-    assert model_start is not None
-    qualified = FastStartLevel.OFF
-    if model_start.sample_count < MINIMUM_QUALIFYING_SAMPLES:
-        reason = "InsufficientBenchmarkSamples"
-    elif model_start.p95_seconds is None:
-        reason = "BenchmarkFailuresExceedPercentile"
-    else:
-        qualified = _highest_level_within(model_start.p95_seconds)
-        reason = "BenchmarkP95WithinTarget" if qualified is not FastStartLevel.OFF else "BenchmarkP95ExceedsEveryTarget"
+    selected = min(paths, key=_path_order)
     return FastStartPoolAssessment(
         pool_ref=pool.pool_id,
         accelerator_class=pool.accelerator_class,
-        qualified_level=qualified,
-        reason=reason,
-        mechanisms=sorted({item.mechanism for item in compatible}),
-        receipt_digests=sorted({item.receipt_digest for item in compatible}),
-        model_start=model_start,
-        capacity_wait=capacity_wait,
-        end_to_end=end_to_end,
+        qualified_level=selected.qualified_level,
+        reason=selected.reason,
+        mechanisms=sorted({item.mechanism for item in paths}),
+        selected_mechanism=selected.mechanism,
+        selected_compatibility_tuple_digest=selected.compatibility_tuple_digest,
+        receipt_digests=sorted({digest for item in paths for digest in item.receipt_digests}),
+        model_start=selected.model_start,
+        capacity_wait=selected.capacity_wait,
+        end_to_end=selected.end_to_end,
+        paths=paths,
     )
 
 

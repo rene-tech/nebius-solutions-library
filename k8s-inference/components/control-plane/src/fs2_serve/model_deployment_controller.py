@@ -30,7 +30,23 @@ from pydantic import Field
 
 from .admin import AdminAdapterUnavailableError
 from .admin_adapters import HttpPrometheusScalarReader
-from .fast_start import FastStartAssessment, FastStartLevel, FastStartQualificationState, FastStartStatus
+from .fast_start import (
+    FastStartAssessment,
+    FastStartAutomaticStatus,
+    FastStartLevel,
+    FastStartMode,
+    FastStartPathAssessment,
+    FastStartQualification,
+    FastStartQualificationState,
+    FastStartStatus,
+)
+from .fast_start_policy import (
+    AutomaticFastStartPolicy,
+    AutomaticFastStartState,
+    FastStartHistoryWindow,
+    FastStartPath,
+    evaluate_automatic_fast_start,
+)
 from .model_deployment import (
     API_VERSION,
     FIELD_MANAGER,
@@ -1283,12 +1299,270 @@ def _cache_status(
     return {"state": "Unknown", "tier": tier, "digest": digest}
 
 
+def _previous_automatic_state(previous: Mapping[str, Any]) -> AutomaticFastStartState | None:
+    detail = _mapping(previous.get("automatic"))
+    assigned = previous.get("assignedLevel")
+    if not isinstance(assigned, str) or assigned not in {level.value for level in FastStartLevel}:
+        return None
+    pending = detail.get("pendingLevel")
+    pending_level = FastStartLevel(pending) if pending in {level.value for level in FastStartLevel} else None
+    pending_since = _parse_timestamp(detail.get("pendingSince"))
+    last_transition = _parse_timestamp(detail.get("lastTransitionAt"))
+    wins = detail.get("consecutiveWins", 0)
+    if not isinstance(wins, int) or wins < 0 or (pending_level is None) != (pending_since is None):
+        return None
+    try:
+        return AutomaticFastStartState(
+            assigned_level=FastStartLevel(assigned),
+            pending_level=pending_level,
+            pending_since=pending_since,
+            consecutive_wins=wins,
+            last_transition_at=last_transition,
+        )
+    except ValueError:
+        return None
+
+
+def _automatic_fast_start_assessment(
+    *,
+    spec: ModelDeploymentSpec,
+    envelope: InfrastructureEnvelope | None,
+    assessment: FastStartAssessment,
+    converged: bool,
+    previous: Mapping[str, Any],
+    history: tuple[FastStartHistoryWindow, FastStartHistoryWindow] | None,
+    now: datetime,
+) -> tuple[FastStartAssessment, FastStartAutomaticStatus | None]:
+    if spec.fast_start.mode is not FastStartMode.AUTOMATIC or envelope is None:
+        return assessment, None
+    assert spec.fast_start.minimum_level is not None and spec.fast_start.maximum_level is not None
+    previous_detail_raw = _mapping(previous.get("automatic"))
+    previous_detail: FastStartAutomaticStatus | None = None
+    if previous_detail_raw:
+        try:
+            previous_detail = FastStartAutomaticStatus.model_validate(previous_detail_raw)
+        except ValueError:
+            previous_detail = None
+    prior_state = _previous_automatic_state(previous)
+    if (
+        previous_detail is not None
+        and prior_state is not None
+        and now - previous_detail.evaluated_at < timedelta(minutes=5)
+        and spec.fast_start.minimum_level.rank <= prior_state.assigned_level.rank <= spec.fast_start.maximum_level.rank
+        and prior_state.assigned_level.rank <= assessment.qualified_level.rank
+        and converged
+        and history is not None
+    ):
+        retained_level = prior_state.assigned_level
+        qualification = FastStartQualification(
+            state=(
+                FastStartQualificationState.NO_TARGET
+                if retained_level is FastStartLevel.OFF
+                else FastStartQualificationState.QUALIFIED
+            ),
+            reason=previous_detail.reason,
+            message=(
+                "automatic policy assigned Off; no model-start target is claimed"
+                if retained_level is FastStartLevel.OFF
+                else f"automatic policy retains qualified {retained_level.value} until its next five-minute evaluation"
+            ),
+        )
+        return (
+            FastStartAssessment.model_validate(
+                {
+                    **assessment.model_dump(),
+                    "assigned_level": retained_level,
+                    "target_seconds": retained_level.target_seconds,
+                    "qualification": qualification,
+                }
+            ),
+            previous_detail,
+        )
+    pool_paths = [pool.paths for pool in assessment.pools]
+    common_mechanisms = (
+        set.intersection(*({path.mechanism for path in paths} for paths in pool_paths))
+        if pool_paths and all(pool_paths)
+        else set()
+    )
+    paths: list[FastStartPath] = []
+    for mechanism in sorted(common_mechanisms):
+        selected_paths = [
+            min(
+                (path for path in pool.paths if path.mechanism == mechanism),
+                key=lambda path: (
+                    -path.qualified_level.rank,
+                    float("inf")
+                    if path.model_start is None or path.model_start.p95_seconds is None
+                    else path.model_start.p95_seconds,
+                    path.compatibility_tuple_digest,
+                ),
+            )
+            for pool in assessment.pools
+        ]
+        binding = min(
+            selected_paths,
+            key=lambda path: (
+                path.qualified_level.rank,
+                -(
+                    0.0
+                    if path.model_start is None or path.model_start.p95_seconds is None
+                    else path.model_start.p95_seconds
+                ),
+            ),
+        )
+        statistics = binding.model_start
+        paths.append(
+            FastStartPath(
+                mechanism_id=mechanism,
+                qualified_level=binding.qualified_level,
+                ready=converged,
+                qualification_current=statistics is not None,
+                qualified_p95_model_start_seconds=(None if statistics is None else statistics.p95_seconds),
+                successful_attempts=(0 if statistics is None else statistics.sample_count - statistics.failed_count),
+                failed_attempts=0 if statistics is None else statistics.failed_count,
+                hourly_cost=envelope.fast_start_mechanism_hourly_costs.get(mechanism, 0.0),
+            )
+        )
+    if not paths:
+        selected_mechanisms = sorted(
+            {pool.selected_mechanism for pool in assessment.pools if pool.selected_mechanism is not None}
+        )
+        mechanism_id = "+".join(selected_mechanisms)[:128] or "conventional"
+        statistics = assessment.model_start
+        paths.append(
+            FastStartPath(
+                mechanism_id=mechanism_id,
+                qualified_level=assessment.qualified_level,
+                ready=converged,
+                qualification_current=statistics is not None,
+                qualified_p95_model_start_seconds=(None if statistics is None else statistics.p95_seconds),
+                successful_attempts=(0 if statistics is None else statistics.sample_count - statistics.failed_count),
+                failed_attempts=0 if statistics is None else statistics.failed_count,
+                hourly_cost=sum(
+                    envelope.fast_start_mechanism_hourly_costs.get(name, 0.0) for name in selected_mechanisms
+                ),
+            )
+        )
+    policy = AutomaticFastStartPolicy(
+        minimum_level=spec.fast_start.minimum_level,
+        maximum_level=spec.fast_start.maximum_level,
+        wait_second_value=envelope.fast_start_wait_second_value,
+        fallback_policy=spec.fast_start.fallback_policy,
+    )
+    short_history = None if history is None else history[0]
+    long_history = None if history is None else history[1]
+    decision = evaluate_automatic_fast_start(
+        policy=policy,
+        paths=paths,
+        short_history=short_history,
+        long_history=long_history,
+        prior_state=prior_state,
+        now=now,
+    )
+    chosen_mechanism = decision.mechanism_id or decision.fallback_mechanism_id
+    selected_statistics = assessment.model_start
+    selected_capacity_wait = assessment.capacity_wait
+    selected_end_to_end = assessment.end_to_end
+    if chosen_mechanism is not None:
+        selected_pool_paths: list[FastStartPathAssessment] = []
+        for pool in assessment.pools:
+            candidates = [path for path in pool.paths if path.mechanism == chosen_mechanism]
+            if not candidates:
+                selected_pool_paths = []
+                break
+            selected_pool_paths.append(
+                min(
+                    candidates,
+                    key=lambda path: (
+                        -path.qualified_level.rank,
+                        float("inf")
+                        if path.model_start is None or path.model_start.p95_seconds is None
+                        else path.model_start.p95_seconds,
+                        path.compatibility_tuple_digest,
+                    ),
+                )
+            )
+        if selected_pool_paths:
+            binding_path = min(
+                selected_pool_paths,
+                key=lambda path: (
+                    path.qualified_level.rank,
+                    -(
+                        0.0
+                        if path.model_start is None or path.model_start.p95_seconds is None
+                        else path.model_start.p95_seconds
+                    ),
+                ),
+            )
+            selected_statistics = binding_path.model_start
+            selected_capacity_wait = binding_path.capacity_wait
+            selected_end_to_end = binding_path.end_to_end
+    selected = decision.assigned_level if decision.satisfied else decision.fallback_level
+    if selected is None:
+        qualification = FastStartQualification(
+            state=FastStartQualificationState.UNQUALIFIED,
+            reason="AutomaticTargetUnavailable",
+            message=f"automatic policy {decision.reason.value} has no qualified path inside the required bounds",
+        )
+    elif selected is FastStartLevel.OFF and decision.satisfied:
+        qualification = FastStartQualification(
+            state=FastStartQualificationState.NO_TARGET,
+            reason=decision.reason.value,
+            message="automatic policy assigned Off; no model-start target is claimed",
+        )
+    elif selected.rank < spec.fast_start.minimum_level.rank:
+        qualification = FastStartQualification(
+            state=FastStartQualificationState.FALLBACK,
+            reason=decision.reason.value,
+            message=f"automatic policy fell back to qualified {selected.value} below the configured minimum",
+        )
+    else:
+        qualification = FastStartQualification(
+            state=FastStartQualificationState.QUALIFIED,
+            reason=decision.reason.value,
+            message=(f"automatic policy assigned qualified {selected.value} from rolling demand and mechanism cost"),
+        )
+    updated = FastStartAssessment.model_validate(
+        {
+            **assessment.model_dump(),
+            "assigned_level": selected,
+            "target_seconds": None if selected is None else selected.target_seconds,
+            "qualification": qualification,
+            "model_start": selected_statistics,
+            "capacity_wait": selected_capacity_wait,
+            "end_to_end": selected_end_to_end,
+        }
+    )
+    automatic = FastStartAutomaticStatus(
+        reason=decision.reason.value,
+        evaluated_at=now,
+        history_complete=history is not None,
+        mechanism_id=decision.mechanism_id or decision.fallback_mechanism_id,
+        score=decision.score,
+        pending_level=decision.state.pending_level,
+        pending_since=decision.state.pending_since,
+        consecutive_wins=decision.state.consecutive_wins,
+        last_transition_at=decision.state.last_transition_at,
+        short_window_requests=0 if short_history is None else short_history.request_count,
+        short_window_cold_activations=0 if short_history is None else short_history.cold_activation_count,
+        short_window_idle_gap_episodes=0 if short_history is None else short_history.idle_gap_episode_count,
+        long_window_requests=0 if long_history is None else long_history.request_count,
+        long_window_cold_activations=0 if long_history is None else long_history.cold_activation_count,
+        long_window_idle_gap_episodes=0 if long_history is None else long_history.idle_gap_episode_count,
+    )
+    return updated, automatic
+
+
 def _fast_start_status(
     *,
+    spec: ModelDeploymentSpec,
+    envelope: InfrastructureEnvelope | None,
     assessment: FastStartAssessment | None,
     converged: bool,
     ready_replicas: int | None,
     previous_status: Mapping[str, Any],
+    history: tuple[FastStartHistoryWindow, FastStartHistoryWindow] | None,
+    now: datetime,
 ) -> FastStartStatus | None:
     """Add what only observed runtime can tell to the deterministic policy outcome.
 
@@ -1300,6 +1574,15 @@ def _fast_start_status(
     if assessment is None:
         return None
     previous = _mapping(previous_status.get("fastStart"))
+    assessment, automatic = _automatic_fast_start_assessment(
+        spec=spec,
+        envelope=envelope,
+        assessment=assessment,
+        converged=converged,
+        previous=previous,
+        history=history,
+        now=now,
+    )
     effective: FastStartLevel | None = None
     if converged and assessment.assigned_level is not None:
         effective = assessment.assigned_level
@@ -1311,6 +1594,7 @@ def _fast_start_status(
         **assessment.model_dump(),
         effective_level=effective,
         hot=None if ready_replicas is None else ready_replicas > 0,
+        automatic=automatic,
     )
 
 
@@ -1324,6 +1608,8 @@ def build_status(
     previous_status: Mapping[str, Any],
     drain: DrainObservation | None,
     now: datetime | None = None,
+    envelope: InfrastructureEnvelope | None = None,
+    fast_start_history: tuple[FastStartHistoryWindow, FastStartHistoryWindow] | None = None,
 ) -> dict[str, Any]:
     """Project only observed state; desired state alone never becomes Ready."""
 
@@ -1436,10 +1722,14 @@ def build_status(
         )
     )
     fast_start = _fast_start_status(
+        spec=spec,
+        envelope=envelope,
         assessment=plan.validation.fast_start,
         converged=converged,
         ready_replicas=ready,
         previous_status=previous_status,
+        history=fast_start_history,
+        now=observed_at,
     )
     if fast_start is not None:
         satisfied = fast_start.qualification.state in {
@@ -1584,9 +1874,26 @@ def build_status(
 class ActiveOperationsReader(Protocol):
     async def active_operations(self, *, tenant_id: str, model_ref: str) -> int | None: ...
 
+    async def fast_start_history(
+        self,
+        *,
+        model_ref: str,
+        idle_seconds: int,
+        now: datetime,
+    ) -> tuple[FastStartHistoryWindow, FastStartHistoryWindow] | None: ...
+
 
 class UnknownActiveOperations:
     async def active_operations(self, *, tenant_id: str, model_ref: str) -> int | None:
+        return None
+
+    async def fast_start_history(
+        self,
+        *,
+        model_ref: str,
+        idle_seconds: int,
+        now: datetime,
+    ) -> tuple[FastStartHistoryWindow, FastStartHistoryWindow] | None:
         return None
 
 
@@ -1634,6 +1941,63 @@ class PostgresActiveOperations:
             return None
         return int(value) if isinstance(value, int) and 0 <= value <= 1_000_000_000 else None
 
+    async def fast_start_history(
+        self,
+        *,
+        model_ref: str,
+        idle_seconds: int,
+        now: datetime,
+    ) -> tuple[FastStartHistoryWindow, FastStartHistoryWindow] | None:
+        """Read payload-free demand without reusing the legacy cold-start clock."""
+
+        async def window(connection: asyncpg.Connection[Any], started_at: datetime) -> FastStartHistoryWindow:
+            row = await connection.fetchrow(
+                """
+                WITH ordered AS (
+                    SELECT accepted_at,
+                           lag(accepted_at) OVER (ORDER BY accepted_at,id) AS previous_accepted_at
+                    FROM fs2_operations
+                    WHERE model_id=$1 AND accepted_at >= $2 AND accepted_at < $3
+                )
+                SELECT count(*)::bigint AS request_count,
+                       count(*) FILTER (
+                           WHERE previous_accepted_at IS NOT NULL
+                             AND extract(epoch FROM accepted_at-previous_accepted_at) >= $4
+                       )::bigint AS idle_gap_episode_count
+                FROM ordered
+                """,
+                model_ref,
+                started_at,
+                now,
+                float(idle_seconds),
+            )
+            assert row is not None
+            return FastStartHistoryWindow(
+                started_at=started_at,
+                ended_at=now,
+                request_count=int(row["request_count"]),
+                # activation_started_at is an operation-worker transition and
+                # occurs for hot requests too.  Only idle-gap episodes are a
+                # defensible cold-start demand proxy until an exact model
+                # activation boundary is persisted.
+                cold_activation_count=0,
+                idle_gap_episode_count=int(row["idle_gap_episode_count"]),
+                # The retained accepted-to-ready value includes capacity wait.
+                # It must not be re-labelled as a model-start target miss.
+                target_miss_count=0,
+                complete=True,
+            )
+
+        try:
+            async with self.pool.acquire() as connection, connection.transaction(readonly=True):
+                return (
+                    await window(connection, now - timedelta(hours=1)),
+                    await window(connection, now - timedelta(days=7)),
+                )
+        except (asyncpg.PostgresError, TimeoutError, ValueError):
+            LOGGER.warning("automatic fast-start demand history is unavailable for model %s", model_ref)
+            return None
+
 
 class PrometheusActiveOperations:
     """Conservatively project in-flight durable demand for controller drains.
@@ -1658,6 +2022,16 @@ class PrometheusActiveOperations:
         if value is None or value > 1_000_000_000:
             return None
         return math.ceil(value)
+
+    async def fast_start_history(
+        self,
+        *,
+        model_ref: str,
+        idle_seconds: int,
+        now: datetime,
+    ) -> tuple[FastStartHistoryWindow, FastStartHistoryWindow] | None:
+        del model_ref, idle_seconds, now
+        return None
 
 
 class ModelDeploymentController:
@@ -1728,6 +2102,15 @@ class ModelDeploymentController:
         if generation < 1:
             raise ControllerError("ModelDeployment generation is unavailable")
         spec = ModelDeploymentSpec.model_validate(raw.get("spec"))
+        fast_start_history = (
+            await self.active_operations.fast_start_history(
+                model_ref=spec.model_ref,
+                idle_seconds=spec.availability.idle_seconds,
+                now=_utc_now(),
+            )
+            if spec.fast_start.mode is FastStartMode.AUTOMATIC
+            else None
+        )
         deleting = isinstance(metadata.get("deletionTimestamp"), str)
         finalizers = _string_list(metadata.get("finalizers"))
         has_finalizer = FINALIZER in finalizers
@@ -1976,6 +2359,8 @@ class ModelDeploymentController:
             discovery=discovery,
             previous_status=previous,
             drain=drain,
+            envelope=self.envelope,
+            fast_start_history=fast_start_history,
         )
         wrote = (
             await self.api.patch_status(

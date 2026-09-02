@@ -12,6 +12,7 @@ from test_fast_start import evidence, with_evidence, with_fast_start
 from test_model_deployment import envelope, model_spec, renderer, reserved_and_preemptible_envelope
 
 from fs2_serve.fast_start import FastStartLevel
+from fs2_serve.fast_start_policy import FastStartHistoryWindow
 from fs2_serve.model_deployment import (
     FIELD_MANAGER,
     FINALIZER,
@@ -817,8 +818,8 @@ def test_status_keeps_fast_start_levels_apart_and_claims_effective_only_when_con
     pools = envelope().pools
     installed = with_evidence(
         envelope(),
-        evidence(model_spec(), pools["pool-a"], seconds=[40, 45, 50, 55, 58]),
-        evidence(model_spec(), pools["pool-b"], seconds=[70, 80, 90, 100, 110]),
+        evidence(model_spec(), pools["pool-a"], seconds=[40, 45, 50, 55, 58] * 4),
+        evidence(model_spec(), pools["pool-b"], seconds=[70, 80, 90, 100, 110] * 4),
     )
     plan = plan_reconciliation(
         generation=1,
@@ -847,9 +848,11 @@ def test_status_keeps_fast_start_levels_apart_and_claims_effective_only_when_con
     # Not converged: the previously effective level is carried, the new one is not claimed.
     assert fast_start["effectiveLevel"] == "L1"
     assert fast_start["hot"] is False
-    assert fast_start["modelStart"]["p95Seconds"] == 110 and fast_start["modelStart"]["sampleCount"] == 5
+    assert fast_start["modelStart"]["p95Seconds"] == 110 and fast_start["modelStart"]["sampleCount"] == 20
     assert "capacityWait" not in fast_start and "endToEnd" not in fast_start
     assert {pool["poolRef"]: pool["qualifiedLevel"] for pool in fast_start["pools"]} == {"pool-a": "L3", "pool-b": "L2"}
+    assert {pool["selectedMechanism"] for pool in fast_start["pools"]} == {"shared-cache"}
+    assert all(pool["selectedCompatibilityTupleDigest"].startswith("sha256:") for pool in fast_start["pools"])
     condition = next(item for item in pending["conditions"] if item["type"] == "FastStartQualified")
     assert (condition["status"], condition["reason"]) == ("False", "RequestedLevelUnqualified")
 
@@ -873,6 +876,187 @@ def test_status_keeps_fast_start_levels_apart_and_claims_effective_only_when_con
     assert observed.fast_start.effective_level is FastStartLevel.L2
     assert observed.fast_start.model_start is not None and observed.fast_start.model_start.p95_seconds == 110
     assert {item.type.value for item in observed.conditions} >= {"Ready", "Cached", "FastStartQualified"}
+
+
+def test_automatic_status_uses_durable_demand_history_and_persists_hysteresis() -> None:
+    base = model_spec()
+    pools = envelope().pools
+    installed = with_evidence(
+        envelope(),
+        evidence(base, pools["pool-a"], seconds=[50.0] * 20),
+        evidence(base, pools["pool-b"], seconds=[100.0] * 20),
+    )
+    spec = with_fast_start(base, mode="Automatic", minimum_level="Off", maximum_level="L2")
+    context = RenderContext(
+        name="qwen-live",
+        namespace="fs2-models",
+        uid="cr-uid-1",
+        generation=1,
+        pool=pools["pool-b"],
+        eligible_pools=[pools[pool_ref] for pool_ref in spec.placement.pool_refs],
+        prometheus_server_address="http://prometheus:9090",
+    )
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+    render = renderer().render(spec, context)
+    discovery = Discovery(
+        resources=[snapshot(item, ready=True) for item in render.resources],
+        complete=True,
+    )
+    now = datetime(2026, 9, 2, 16, tzinfo=UTC)
+    history = (
+        FastStartHistoryWindow(
+            started_at=now - timedelta(hours=1),
+            ended_at=now,
+            request_count=12,
+            cold_activation_count=2,
+            idle_gap_episode_count=2,
+            target_miss_count=0,
+        ),
+        FastStartHistoryWindow(
+            started_at=now - timedelta(days=7),
+            ended_at=now,
+            request_count=70,
+            cold_activation_count=10,
+            idle_gap_episode_count=10,
+            target_miss_count=0,
+        ),
+    )
+
+    missing_history = build_status(
+        spec=spec,
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plan,
+        discovery=discovery,
+        previous_status={},
+        drain=None,
+        now=now,
+        envelope=installed,
+        fast_start_history=None,
+    )
+    assert missing_history["fastStart"]["assignedLevel"] == "Off"
+    assert missing_history["fastStart"]["automatic"]["reason"] == "MissingDataMinimum"
+    assert missing_history["fastStart"]["automatic"]["historyComplete"] is False
+
+    status: dict[str, Any] = {}
+    for offset in (0, 5, 10):
+        status = build_status(
+            spec=spec,
+            owner_uid="cr-uid-1",
+            generation=1,
+            plan=plan,
+            discovery=discovery,
+            previous_status=status,
+            drain=None,
+            now=now + timedelta(minutes=offset),
+            envelope=installed,
+            fast_start_history=history,
+        )
+
+    fast_start = status["fastStart"]
+    assert fast_start["assignedLevel"] == "L1"
+    assert fast_start["qualification"]["state"] == "Qualified"
+    assert fast_start["automatic"]["reason"] == "Promoted"
+    assert fast_start["automatic"]["historyComplete"] is True
+    assert fast_start["automatic"]["shortWindowRequests"] == 12
+    assert fast_start["automatic"]["longWindowColdActivations"] == 10
+    assert fast_start["automatic"]["shortWindowIdleGapEpisodes"] == 2
+    assert fast_start["automatic"]["longWindowIdleGapEpisodes"] == 10
+
+
+def test_automatic_status_selects_the_cheapest_common_qualified_mechanism() -> None:
+    base = model_spec()
+    pools = envelope().pools
+    installed = with_evidence(
+        envelope(),
+        *[
+            evidence(
+                base,
+                pool,
+                seconds=[seconds] * 20,
+                mechanism=mechanism,
+                receipt_digest=canonical_digest({"pool": pool.pool_id, "mechanism": mechanism}),
+            )
+            for pool in pools.values()
+            for mechanism, seconds in (("slow-cache", 100.0), ("fast-snapshot", 20.0))
+        ],
+    ).model_copy(
+        update={
+            "fast_start_mechanism_hourly_costs": {
+                "slow-cache": 0.0,
+                "fast-snapshot": 10.0,
+            }
+        }
+    )
+    spec = with_fast_start(base, mode="Automatic", minimum_level="Off", maximum_level="L4")
+    context = RenderContext(
+        name="qwen-live",
+        namespace="fs2-models",
+        uid="cr-uid-1",
+        generation=1,
+        pool=pools["pool-b"],
+        eligible_pools=[pools[pool_ref] for pool_ref in spec.placement.pool_refs],
+        prometheus_server_address="http://prometheus:9090",
+    )
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+    render = renderer().render(spec, context)
+    discovery = Discovery(resources=[snapshot(item, ready=True) for item in render.resources], complete=True)
+    now = datetime(2026, 9, 2, 16, tzinfo=UTC)
+    history = (
+        FastStartHistoryWindow(
+            started_at=now - timedelta(hours=1),
+            ended_at=now,
+            request_count=10,
+            cold_activation_count=0,
+            idle_gap_episode_count=1,
+            target_miss_count=0,
+        ),
+        FastStartHistoryWindow(
+            started_at=now - timedelta(days=7),
+            ended_at=now,
+            request_count=100,
+            cold_activation_count=0,
+            idle_gap_episode_count=10,
+            target_miss_count=0,
+        ),
+    )
+
+    status: dict[str, Any] = {}
+    for offset in (0, 5, 10):
+        status = build_status(
+            spec=spec,
+            owner_uid="cr-uid-1",
+            generation=1,
+            plan=plan,
+            discovery=discovery,
+            previous_status=status,
+            drain=None,
+            now=now + timedelta(minutes=offset),
+            envelope=installed,
+            fast_start_history=history,
+        )
+
+    assert status["fastStart"]["assignedLevel"] == "L1"
+    assert status["fastStart"]["automatic"]["mechanismId"] == "slow-cache"
+    assert status["fastStart"]["modelStart"]["p95Seconds"] == 100.0
 
 
 def test_renderer_propagates_controller_identity_to_runtime_pod_template() -> None:

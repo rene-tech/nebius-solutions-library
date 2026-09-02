@@ -4,6 +4,9 @@ import type {
   ModelDeploymentCacheTier,
   ModelDeploymentConfigurationOption,
   ModelDeploymentDesiredState,
+  ModelDeploymentFastStartFallbackPolicy,
+  ModelDeploymentFastStartLevel,
+  ModelDeploymentFastStartMode,
   ModelDeploymentRolloutStrategy,
   ModelDeploymentSnapshotPreference,
   ModelDeploymentSnapshotStrategy,
@@ -11,7 +14,13 @@ import type {
   ModelDeploymentTopologyPolicy,
   ModelDeploymentVisibility,
 } from "../../api/modelDeploymentTypes";
-import { uniqueCsv } from "../../lib/modelDeployment";
+import {
+  fastStartLevelLabel,
+  fastStartTarget,
+  modelDeploymentFastStartLevels,
+  normalizeFastStartPolicy,
+  uniqueCsv,
+} from "../../lib/modelDeployment";
 
 interface TextFieldProps {
   label: string;
@@ -39,10 +48,10 @@ function NumberField({ label, value, onChange, min = 0, max, hint, disabled }: O
   return <TextField disabled={disabled} hint={hint} label={label} max={max} min={min} onChange={(value) => onChange(Number(value))} required type="number" value={String(value)} />;
 }
 
-function SelectField<T extends string>({ label, value, values, onChange, hint, disabled }: { label: string; value: T; values: readonly T[]; onChange: (value: T) => void; hint?: string; disabled?: boolean }) {
+function SelectField<T extends string>({ label, value, values, onChange, hint, disabled, formatOption = (item) => item }: { label: string; value: T; values: readonly T[]; onChange: (value: T) => void; hint?: string; disabled?: boolean; formatOption?: (value: T) => string }) {
   return (
     <label>{label}
-      <select aria-label={label} disabled={disabled} onChange={(event) => onChange(event.target.value as T)} value={value}>{values.map((item) => <option key={item} value={item}>{item}</option>)}</select>
+      <select aria-label={label} disabled={disabled} onChange={(event) => onChange(event.target.value as T)} value={value}>{values.map((item) => <option key={item} value={item}>{formatOption(item)}</option>)}</select>
       {hint ? <small>{hint}</small> : null}
     </label>
   );
@@ -72,6 +81,7 @@ interface Props {
 
 export function ModelDeploymentForm({ name, namespace, spec, identityLocked, disabled, configurationOption, onNameChange, onNamespaceChange, onChange }: Props) {
   const presetLocked = Boolean(configurationOption);
+  const fastStart = normalizeFastStartPolicy(spec.fastStart);
   function update(change: (next: ModelDeploymentSpec) => void) {
     const next = structuredClone(spec);
     change(next);
@@ -80,6 +90,10 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
 
   function updateWarmWindow(index: number, patch: Partial<ModelDeploymentSpec["availability"]["warmWindows"][number]>) {
     update((next) => Object.assign(next.availability.warmWindows[index], patch));
+  }
+
+  function fastStartIndex(level: ModelDeploymentFastStartLevel) {
+    return modelDeploymentFastStartLevels.indexOf(level);
   }
 
   return (
@@ -166,12 +180,80 @@ export function ModelDeploymentForm({ name, namespace, spec, identityLocked, dis
         <button className="button" onClick={() => update((next) => { next.availability.warmWindows.push({ name: `window-${next.availability.warmWindows.length + 1}`, schedule: "0 8 * * 1-5", timeZone: "UTC", durationSeconds: 3600, minReplicas: Math.max(1, next.availability.minReplicas) }); })} type="button">Add warm window</button>
       </fieldset>
 
-      <FormSection disabled={disabled} title="Cache and snapshot" detail="Cache residency and runtime readiness are independent. Require fails closed when a qualified snapshot or cache tier is unavailable.">
-        <SelectField<ModelDeploymentCacheTier> disabled={presetLocked} label="Cache tier" onChange={(value) => update((next) => { next.cache.tier = value; })} value={spec.cache.tier} values={["Disabled", "ObjectStore", "SharedFilesystem", "NodeLocal"]} />
-        <SelectField<ModelDeploymentSnapshotPreference> disabled={presetLocked} label="Snapshot preference" onChange={(value) => update((next) => { next.cache.snapshotPreference = value; next.cache.snapshotRef = value === "Never" ? null : next.cache.snapshotRef ?? { name: "", digest: "", strategy: "Weights" }; })} value={spec.cache.snapshotPreference} values={["Never", "Prefer", "Require"]} />
-        <TextField disabled={presetLocked || !spec.cache.snapshotRef} label="Snapshot name" onChange={(value) => update((next) => { if (next.cache.snapshotRef) next.cache.snapshotRef.name = value; })} placeholder={spec.cache.snapshotRef ? "Qualified snapshot" : "Not used"} value={spec.cache.snapshotRef?.name ?? ""} />
-        <TextField disabled={presetLocked || !spec.cache.snapshotRef} label="Snapshot digest" onChange={(value) => update((next) => { if (next.cache.snapshotRef) next.cache.snapshotRef.digest = value; })} placeholder={spec.cache.snapshotRef ? "sha256:…" : "Not used"} value={spec.cache.snapshotRef?.digest ?? ""} />
-        <SelectField<ModelDeploymentSnapshotStrategy> disabled={presetLocked || !spec.cache.snapshotRef} label="Snapshot strategy" onChange={(value) => update((next) => { if (next.cache.snapshotRef) next.cache.snapshotRef.strategy = value; })} value={spec.cache.snapshotRef?.strategy ?? "Weights"} values={["Weights", "RuntimeNative", "CudaCheckpoint"]} />
+      <FormSection disabled={disabled} title="Fast start" detail="Choose the model-ready target customers can understand. Hot is derived from a currently serving replica and is not a selectable cache level.">
+        {!fastStart.configured ? <div className="inline-notice inline-notice--warning form-grid__wide" role="status"><strong>Legacy policy.</strong> This revision has no explicit fast-start class. Select a mode or level to migrate it; no qualification is inferred from its cache fields.</div> : null}
+        <SelectField<ModelDeploymentFastStartMode>
+          label="Fast-start mode"
+          onChange={(value) => update((next) => {
+            next.fastStart = value === "Fixed"
+              ? { mode: value, level: fastStart.mode === "Fixed" ? fastStart.level : fastStart.maximumLevel, fallbackPolicy: fastStart.fallbackPolicy }
+              : { mode: value, minimumLevel: fastStart.mode === "Automatic" ? fastStart.minimumLevel : "Off", maximumLevel: fastStart.mode === "Automatic" ? fastStart.maximumLevel : fastStart.level === "Off" ? "L4" : fastStart.level, fallbackPolicy: fastStart.fallbackPolicy };
+          })}
+          value={fastStart.mode}
+          values={["Fixed", "Automatic"]}
+          formatOption={(value) => value === "Fixed" ? "Fixed target" : "Automatic from qualified paths"}
+        />
+        {fastStart.mode === "Fixed" ? (
+          <SelectField<ModelDeploymentFastStartLevel>
+            hint="Hot appears automatically while a replica is ready."
+            label="Fast-start level"
+            onChange={(value) => update((next) => { next.fastStart = { mode: "Fixed", level: value, fallbackPolicy: fastStart.fallbackPolicy }; })}
+            value={fastStart.level}
+            values={modelDeploymentFastStartLevels}
+            formatOption={fastStartLevelLabel}
+          />
+        ) : (
+          <>
+            <SelectField<ModelDeploymentFastStartLevel>
+              label="Minimum fast-start level"
+              onChange={(value) => update((next) => {
+                const maximumLevel = fastStartIndex(value) > fastStartIndex(fastStart.maximumLevel) ? value : fastStart.maximumLevel;
+                next.fastStart = { mode: "Automatic", minimumLevel: value, maximumLevel, fallbackPolicy: fastStart.fallbackPolicy };
+              })}
+              value={fastStart.minimumLevel}
+              values={modelDeploymentFastStartLevels}
+              formatOption={fastStartLevelLabel}
+            />
+            <SelectField<ModelDeploymentFastStartLevel>
+              label="Maximum fast-start level"
+              onChange={(value) => update((next) => {
+                const minimumLevel = fastStartIndex(value) < fastStartIndex(fastStart.minimumLevel) ? value : fastStart.minimumLevel;
+                next.fastStart = { mode: "Automatic", minimumLevel, maximumLevel: value, fallbackPolicy: fastStart.fallbackPolicy };
+              })}
+              value={fastStart.maximumLevel}
+              values={modelDeploymentFastStartLevels}
+              formatOption={fastStartLevelLabel}
+            />
+          </>
+        )}
+        <SelectField<ModelDeploymentFastStartFallbackPolicy>
+          hint="Require target blocks an unqualified slower path."
+          label="When the target is unavailable"
+          onChange={(value) => update((next) => {
+            next.fastStart = fastStart.mode === "Fixed"
+              ? { mode: "Fixed", level: fastStart.level, fallbackPolicy: value }
+              : { mode: "Automatic", minimumLevel: fastStart.minimumLevel, maximumLevel: fastStart.maximumLevel, fallbackPolicy: value };
+          })}
+          value={fastStart.fallbackPolicy}
+          values={["AllowLowerLevel", "RequireTarget"]}
+          formatOption={(value) => value === "AllowLowerLevel" ? "Allow a slower qualified level" : "Require the selected target"}
+        />
+        <div className="fast-start-policy-summary form-grid__wide" role="status">
+          <strong>{fastStart.mode === "Fixed" ? fastStartLevelLabel(fastStart.level) : `Automatic ${fastStart.minimumLevel}–${fastStart.maximumLevel}`}</strong>
+          <span>{fastStart.mode === "Fixed" ? fastStartTarget(fastStart.level) : `Best target ${fastStartTarget(fastStart.maximumLevel)}; never below ${fastStart.minimumLevel}.`}</span>
+          <small>The target clock starts when compatible accelerator capacity is available. Capacity wait and total request-to-ready time are reported separately.</small>
+        </div>
+        <details className="fast-start-mechanisms form-grid__wide">
+          <summary>Operator mechanism details</summary>
+          <p>These implementation controls remain visible for diagnosis and backwards compatibility. A cache or snapshot setting alone does not prove a fast-start level.</p>
+          <div className="model-deployment-form-grid">
+            <SelectField<ModelDeploymentCacheTier> disabled={presetLocked} label="Cache tier" onChange={(value) => update((next) => { next.cache.tier = value; })} value={spec.cache.tier} values={["Disabled", "ObjectStore", "SharedFilesystem", "NodeLocal"]} />
+            <SelectField<ModelDeploymentSnapshotPreference> disabled={presetLocked} label="Snapshot preference" onChange={(value) => update((next) => { next.cache.snapshotPreference = value; next.cache.snapshotRef = value === "Never" ? null : next.cache.snapshotRef ?? { name: "", digest: "", strategy: "Weights" }; })} value={spec.cache.snapshotPreference} values={["Never", "Prefer", "Require"]} />
+            <TextField disabled={presetLocked || !spec.cache.snapshotRef} label="Snapshot name" onChange={(value) => update((next) => { if (next.cache.snapshotRef) next.cache.snapshotRef.name = value; })} placeholder={spec.cache.snapshotRef ? "Qualified snapshot" : "Not used"} value={spec.cache.snapshotRef?.name ?? ""} />
+            <TextField disabled={presetLocked || !spec.cache.snapshotRef} label="Snapshot digest" onChange={(value) => update((next) => { if (next.cache.snapshotRef) next.cache.snapshotRef.digest = value; })} placeholder={spec.cache.snapshotRef ? "sha256:…" : "Not used"} value={spec.cache.snapshotRef?.digest ?? ""} />
+            <SelectField<ModelDeploymentSnapshotStrategy> disabled={presetLocked || !spec.cache.snapshotRef} label="Snapshot strategy" onChange={(value) => update((next) => { if (next.cache.snapshotRef) next.cache.snapshotRef.strategy = value; })} value={spec.cache.snapshotRef?.strategy ?? "Weights"} values={["Weights", "RuntimeNative", "CudaCheckpoint"]} />
+          </div>
+        </details>
       </FormSection>
 
       <FormSection disabled={disabled} title="Queue and rollout" detail="Queue admission remains separate from replica autoscaling; rollout bounds protect serving availability.">

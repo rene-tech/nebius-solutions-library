@@ -234,13 +234,16 @@ variable "enabled_model_ids" {
 variable "model_controller" {
   description = "Feature-gated dynamic ModelDeployment controller. Internal envelopes and renderer bundles are derived from the selected catalog, effective accelerator pools, queue, tenant, images, and scaling inputs."
   type = object({
-    enabled             = bool
-    writes_enabled      = bool
-    workload_owner      = string
-    bootstrap_model_ids = set(string)
-    fresh_install       = bool
-    handoff_receipt     = optional(string)
-    priority_classes    = map(number)
+    enabled                           = bool
+    writes_enabled                    = bool
+    workload_owner                    = string
+    bootstrap_model_ids               = set(string)
+    fresh_install                     = bool
+    handoff_receipt                   = optional(string)
+    fast_start_evidence_file          = optional(string)
+    fast_start_wait_second_value      = optional(number, 0.01)
+    fast_start_mechanism_hourly_costs = optional(map(number), {})
+    priority_classes                  = map(number)
   })
   default = {
     enabled             = false
@@ -286,6 +289,18 @@ variable "model_controller" {
         var.enabled_model_ids,
       )) == 0 &&
       (var.model_controller.handoff_receipt == null || can(regex("^sha256:[0-9a-f]{64}$", var.model_controller.handoff_receipt))) &&
+      (
+        var.model_controller.fast_start_evidence_file == null ? true :
+        startswith(pathexpand(var.model_controller.fast_start_evidence_file), "/") &&
+        can(jsondecode(file(pathexpand(var.model_controller.fast_start_evidence_file))))
+      ) &&
+      var.model_controller.fast_start_wait_second_value >= 0 &&
+      var.model_controller.fast_start_wait_second_value <= 1000000 &&
+      length(var.model_controller.fast_start_mechanism_hourly_costs) <= 128 &&
+      alltrue([
+        for name, cost in var.model_controller.fast_start_mechanism_hourly_costs :
+        can(regex("^[a-z][a-z0-9-]{0,63}$", name)) && cost >= 0
+      ]) &&
       length(var.model_controller.priority_classes) > 0 &&
       contains(keys(var.model_controller.priority_classes), "standard") &&
       alltrue([
@@ -295,7 +310,7 @@ variable "model_controller" {
       ]),
       false,
     )
-    error_message = "model_controller must preserve one owner: terraform is read-only, released is the explicit removal phase, and controller requires writes, KEDA, a selected bootstrap subset, and exactly one of fresh_install or a valid handoff receipt."
+    error_message = "model_controller must preserve one owner; controller mode requires writes, KEDA, a valid bootstrap/handoff; fast-start evidence must be readable JSON at an absolute path; and bounded economic inputs must be valid."
   }
 }
 
