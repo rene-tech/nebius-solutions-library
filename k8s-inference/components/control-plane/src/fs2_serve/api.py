@@ -86,6 +86,8 @@ from .models import (
 )
 from .registry import OperationalModel, Registry, RegistryError
 from .route_revalidation import RouteRevalidator
+from .scientific_artifact_routes import scientific_artifact_router
+from .scientific_artifacts import ScientificArtifactControllerPort
 from .settings import Settings
 from .store import (
     BudgetExceededError,
@@ -171,6 +173,7 @@ class AppRuntime:
     model_deployment_read: ModelDeploymentReadService | None = None
     model_deployment_mutation: ModelDeploymentMutationService | None = None
     model_deployment_bridge: ModelDeploymentRuntimeBridge | None = None
+    artifact_service: ScientificArtifactControllerPort | None = None
 
     async def revalidate_routes(self) -> bool:
         if self.route_revalidator is not None and not await self.route_revalidator.refresh():
@@ -1319,6 +1322,14 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 operator_dependency=operator,
                 envelope=access_envelope,
                 problem_responses=admin_problem_responses,
+            )
+        )
+
+    if runtime.artifact_service is not None:
+        app.include_router(
+            scientific_artifact_router(
+                service=runtime.artifact_service,
+                principal_dependency=principal,
             )
         )
 
