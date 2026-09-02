@@ -33,8 +33,8 @@ def _sha256(path: Path) -> str:
 
 def _bind_msa_mode(document: dict[str, object], mode: str) -> None:
     queries = document.get("queries")
-    if not isinstance(queries, dict) or not queries:
-        raise SystemExit("OpenFold3 input must contain a non-empty queries object")
+    if not isinstance(queries, dict) or len(queries) != 1:
+        raise SystemExit("OpenFold3 input must contain exactly one query object")
     for query_name, query in queries.items():
         if not isinstance(query, dict) or not isinstance(query.get("chains"), list):
             raise SystemExit(f"OpenFold3 query {query_name!r} must contain a chains array")
@@ -113,12 +113,10 @@ def main() -> None:
     )
     marker = {
         "schema": "fs2.nebius.ai/openfold3-prepared-query/v1",
-        "query_json": str(query),
         "query_sha256": _sha256(query),
         "msa_mode": args.msa_mode,
         "model_seeds": seeds,
-        "runner_yaml": str(runner),
-        "ccd_path": str(ccd),
+        "runner_yaml_sha256": _sha256(runner),
         "ccd_sha256": ccd_sha256,
         "network_policy": "offline",
     }

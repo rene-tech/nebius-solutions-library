@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 import sys
 
+from result_contract import finite_metric, write_confidence_envelope
+
 
 CCD_BYTES = 417_306_584
 CCD_SHA256 = "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5"
@@ -142,28 +144,36 @@ def _fold(args: argparse.Namespace) -> None:
         complex_id=args.complex_id,
     )
     output.write_text(result.complex.to_mmcif(), encoding="utf-8")
-    plddt = (
-        result.plddt.detach().float().cpu().tolist()
-        if result.plddt is not None
-        else None
-    )
-    confidence_path = output.parent / "confidence.json"
-    confidence = {
-        "schema": "fs2.nebius.ai/esmfold2-confidence/v1",
-        "runtime_id": runtime_id,
-        "model_revision": os.environ.get("FS2_MODEL_REVISION"),
-        "plddt": plddt,
-        "plddt_mean": (
-            float(result.plddt.detach().float().mean().cpu())
-            if result.plddt is not None
-            else None
-        ),
-        "ptm": float(result.ptm) if result.ptm is not None else None,
-        "iptm": float(result.iptm) if result.iptm is not None else None,
+    if result.plddt is None:
+        raise SystemExit("ESMFold2 produced no bounded pLDDT summary")
+    metrics: dict[str, float] = {
+        "plddt_mean": finite_metric(
+            "plddt_mean",
+            float(result.plddt.detach().float().mean().cpu()),
+            0.0,
+            100.0,
+        )
     }
-    confidence_path.write_text(
-        json.dumps(confidence, sort_keys=True, separators=(",", ":")) + "\n",
-        encoding="utf-8",
+    if result.ptm is not None:
+        metrics["ptm"] = finite_metric("ptm", float(result.ptm), 0.0, 1.0)
+    if result.iptm is not None:
+        metrics["iptm"] = finite_metric("iptm", float(result.iptm), 0.0, 1.0)
+    confidence_path = output.parent / "confidence.json"
+    confidence = write_confidence_envelope(
+        output.parent,
+        runtime_id=runtime_id,
+        model_revision=os.environ.get("FS2_MODEL_REVISION", ""),
+        seeds=[args.seed],
+        samples_per_seed=1,
+        results=[
+            {
+                "seed": args.seed,
+                "sample_index": 0,
+                "structure": output,
+                "summary": None,
+                "metrics": metrics,
+            }
+        ],
     )
     evidence = {
         "schema": "fs2.nebius.ai/esmfold2-semantic-smoke/v1",
@@ -177,9 +187,9 @@ def _fold(args: argparse.Namespace) -> None:
         "output": str(output),
         "output_bytes": output.stat().st_size,
         "confidence_output": str(confidence_path),
-        "plddt_mean": confidence["plddt_mean"],
-        "ptm": confidence["ptm"],
-        "iptm": confidence["iptm"],
+        "plddt_mean": metrics["plddt_mean"],
+        "ptm": metrics.get("ptm"),
+        "iptm": metrics.get("iptm"),
         "status": "passed",
     }
     print(json.dumps(evidence, sort_keys=True, separators=(",", ":")))

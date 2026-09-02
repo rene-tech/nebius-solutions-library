@@ -14,6 +14,8 @@ import subprocess
 import sys
 from typing import Any
 
+from result_contract import sha256_file
+
 
 SOURCE_REVISION_FILE = Path("/opt/fs2/source-revision")
 EXTERNAL_ROOTS = (Path("/models"), Path("/databases"))
@@ -107,16 +109,27 @@ def _build_smoke(runtime_id: str) -> dict[str, Any]:
         if not extension.is_file():
             raise RuntimeError("prebuilt Protenix layer norm extension is missing")
         if (layer_norm / "torch_ext_compile.py").exists() or (layer_norm / "kernel").exists():
-            raise RuntimeError("runtime Protenix package still contains a JIT compilation path")
+            raise RuntimeError("runtime Protenix package still contains the fast-layernorm build path")
         if shutil.which("nvcc"):
             raise RuntimeError("Protenix runtime unexpectedly contains nvcc")
+        triton_cache = Path(os.environ.get("TRITON_CACHE_DIR", ""))
+        cueq_cache = Path(os.environ.get("CUEQ_TRITON_CACHE_DIR", ""))
+        for cache in (triton_cache, cueq_cache):
+            if not cache.is_absolute() or not cache.is_dir() or not os.access(cache, os.W_OK):
+                raise RuntimeError(f"Protenix runtime cache is not writable: {cache}")
         _run_cli(["/opt/protenix-venv/bin/protenix", "--help"], "pred")
         result = _torch_build_smoke()
         result["package_version"] = importlib.metadata.version("protenix")
         result["cli"] = "protenix prep|pred"
         result["module_resolutions"] = resolutions
         result["prebuilt_extension"] = str(extension)
-        result["runtime_jit"] = "disabled"
+        result["runtime_compilation"] = {
+            "fast_layernorm": "prebuilt-sm90-cubin-plus-compute90-ptx",
+            "cuequivariance": "active-triton-jit-first-shape-then-cache",
+            "triton_cache_dir": str(triton_cache),
+            "cueq_triton_cache_dir": str(cueq_cache),
+            "h100_first_call_vs_warm_call": "pending-semantic-measurement",
+        }
         return result
 
     if runtime_id == "alphafold3":
@@ -286,10 +299,41 @@ def _semantic_smoke(
     nonempty = [path for path in structures if path.stat().st_size > 0]
     if not nonempty:
         raise RuntimeError("semantic wrapper produced no non-empty structure artifact")
+    confidence_path = output_dir / "confidence.json"
+    try:
+        confidence = json.loads(confidence_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"semantic wrapper produced no valid confidence.json: {exc}") from exc
+    if not isinstance(confidence, dict):
+        raise RuntimeError("semantic confidence envelope must be a JSON object")
+    results = confidence.get("results")
+    if (
+        confidence.get("schema") != "fs2.nebius.ai/structure-confidence/v1"
+        or confidence.get("runtime_id") != runtime_id
+        or not isinstance(results, list)
+        or not 1 <= len(results) <= 256
+    ):
+        raise RuntimeError("semantic confidence envelope is missing or unbounded")
+    for result in results:
+        structure = result.get("structure") if isinstance(result, dict) else None
+        filename = structure.get("filename") if isinstance(structure, dict) else None
+        if not isinstance(filename, str):
+            raise RuntimeError("semantic confidence result lacks a relative structure filename")
+        path = output_dir / filename
+        if (
+            Path(filename).is_absolute()
+            or ".." in Path(filename).parts
+            or not path.is_file()
+            or structure.get("bytes") != path.stat().st_size
+            or structure.get("sha256") != sha256_file(path)
+        ):
+            raise RuntimeError("semantic confidence result does not bind its structure bytes")
     return {
         "argv": command,
         "output_file_count": len(nonempty),
         "output_bytes": sum(path.stat().st_size for path in nonempty),
+        "confidence_sha256": sha256_file(confidence_path),
+        "confidence_result_count": len(results),
         "stdout_tail": completed.stdout[-2000:],
     }
 

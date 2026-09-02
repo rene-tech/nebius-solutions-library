@@ -79,21 +79,27 @@ RUN apt-get update \
     && ! command -v nvcc \
     && groupadd --gid 10001 fs2 \
     && useradd --uid 10001 --gid 10001 --create-home --home-dir /tmp/fs2-home fs2 \
-    && mkdir -p /opt/fs2/runtime /models/protenix-v2/checkpoint /databases/protenix /outputs /tmp/fs2-cache \
+    && mkdir -p /opt/fs2/runtime /models/protenix-v2/checkpoint /models/protenix-v2/common /outputs /tmp/fs2-cache /cache/protenix/triton /cache/protenix/cueq-triton \
     && printf '%s\n' "${SOURCE_REVISION}" > /opt/fs2/source-revision \
-    && chown -R 10001:10001 /models /databases /outputs /tmp/fs2-home /tmp/fs2-cache \
+    && chown -R 10001:10001 /models /outputs /cache/protenix /tmp/fs2-home /tmp/fs2-cache \
     && chmod 0555 /opt/fs2/runtime
 COPY --from=builder /opt/protenix-venv /opt/protenix-venv
 COPY --chmod=0555 entrypoint.sh /usr/local/bin/fs2-entrypoint
 COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
 COPY --chmod=0555 run_protenix.py /usr/local/bin/fs2-run-protenix
 COPY --chmod=0555 run_protenix.py /opt/fs2/run_protenix.py
+COPY --chmod=0444 result_contract.py /usr/local/bin/result_contract.py
+COPY --chmod=0444 result_contract.py /opt/fs2/result_contract.py
+COPY --chmod=0444 confidence.schema.json /opt/fs2/confidence.schema.json
 
 ENV FS2_RUNTIME_ID=protenix-v2 \
     FS2_SOURCE_REVISION=${SOURCE_REVISION} \
     FS2_MODEL_DIR=/models/protenix-v2 \
+    FS2_PROTENIX_ARTIFACT_MANIFEST=/models/protenix-v2/manifest.json \
     FS2_PROTENIX_CHECKPOINT=/models/protenix-v2/checkpoint/protenix-v2.pt \
     PROTENIX_ROOT_DIR=/models/protenix-v2 \
+    TRITON_CACHE_DIR=/cache/protenix/triton \
+    CUEQ_TRITON_CACHE_DIR=/cache/protenix/cueq-triton \
     HOME=/tmp/fs2-home \
     XDG_CACHE_HOME=/tmp/fs2-cache \
     SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}

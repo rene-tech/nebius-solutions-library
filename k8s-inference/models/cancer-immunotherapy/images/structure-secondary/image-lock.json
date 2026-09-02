@@ -61,7 +61,7 @@
           "state": "available-external",
           "mount": "/models/esmfold2",
           "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
-          "content_digest": "3bb081b48f0ccf70ee38b86a3c7e014554d4bf9e4148e709c2d97519e28c4b80",
+          "content_digest": "136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c",
           "baked_into_image": false
         },
         {
@@ -181,26 +181,32 @@
       "build_args": {},
       "external_artifacts": [
         {
-          "id": "protenix-v2-checkpoint",
+          "id": "protenix-v2",
           "state": "third-party-mirror-verified-not-publisher-byte-compared",
-          "mount": "/models/protenix-v2/checkpoint/protenix-v2.pt",
-          "revision": "TMF001/protenix-v2-weights@653edab28103133512575365130916e3fd23ecc3",
-          "sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
-          "bytes": 1859785497,
-          "localization_marker": "/models/protenix-v2/checkpoint/protenix-v2.pt.fs2.json",
-          "baked_into_image": false
-        },
-        {
-          "id": "protenix-v2-inference-data-2026-01-29",
-          "state": "available-external",
-          "mount": "/databases/protenix",
-          "revision": "v2.0.0-inference-plus-mmcif-20260129",
-          "source_sha256": "27da2585d0ea1d820f4693099653aab1fdff7d4e18c21e6d90a0dc18f718dd89",
+          "mount": "/models/protenix-v2",
+          "revision": "code-2475421477ab414b571149ad4a875c390ff8a35d_checkpoint-653edab28103133512575365130916e3fd23ecc3_common-2026-01-29",
+          "manifest": "/models/protenix-v2/manifest.json",
+          "ready_marker": "/models/protenix-v2/.fs2-manifest-sha256",
+          "checkpoint": {
+            "path": "checkpoint/protenix-v2.pt",
+            "revision": "TMF001/protenix-v2-weights@653edab28103133512575365130916e3fd23ecc3",
+            "sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+            "md5": "49016ebf4775bf6b629bc4dc77b6673e",
+            "bytes": 1859785497,
+            "parameter_count": 464442431
+          },
+          "common": {
+            "revision": "protenix-v2-inference-data-2026-01-29",
+            "source_sha256": "27da2585d0ea1d820f4693099653aab1fdff7d4e18c21e6d90a0dc18f718dd89"
+          },
           "expected_paths": [
+            "checkpoint/protenix-v2.pt",
             "common/components.cif",
             "common/components.cif.rdkit_mol.pkl",
             "common/clusters-by-entity-40.txt",
-            "common/obsolete_release_date.csv"
+            "common/obsolete_release_date.csv",
+            "manifest.json",
+            ".fs2-manifest-sha256"
           ],
           "baked_into_image": false
         }
@@ -208,8 +214,10 @@
       "runtime_contract": {
         "entrypoint": "/usr/local/bin/fs2-run-protenix",
         "subcommands": ["prep", "pred"],
-        "network_policy": "cpu-prep-private-reference-bundle-gpu-pred-enriched-input-and-weights-only",
-        "required_mounts": ["/models/protenix-v2/checkpoint/protenix-v2.pt", "/models/protenix-v2/checkpoint/protenix-v2.pt.fs2.json", "/databases/protenix"],
+        "network_policy": "offline-single-composite-artifact-cpu-prep-gpu-pred",
+        "required_mounts": ["/models/protenix-v2"],
+        "writable_cache_mounts": ["/cache/protenix"],
+        "runtime_compilation": "prebuilt-fast-layernorm; cuequivariance-ops-torch-0.8.0-triton-jit-with-persistable-cache",
         "commands": [
           "/usr/local/bin/fs2-run-protenix prep --input <raw.json> --output-dir <dir> --processed-json <enriched.json> --msa-mode <none|precomputed>",
           "/usr/local/bin/fs2-run-protenix pred --input <enriched.json> --output-dir <dir> --msa-mode <none|precomputed> --seeds <csv>"

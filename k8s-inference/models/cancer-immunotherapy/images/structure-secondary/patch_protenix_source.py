@@ -23,8 +23,8 @@ new = """    # FS2 accepts only an explicit no-MSA or already-precomputed MSA
         input_json=input,
         out_dir=out_dir,
         use_msa=False,
-        use_template=True,
-        use_rna_msa=True,
+        use_template=False,
+        use_rna_msa=False,
 """
 if source.count(old) != 1:
     raise SystemExit("expected exact Protenix v2 inputprep block was not found once")

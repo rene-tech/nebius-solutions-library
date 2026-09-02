@@ -11,7 +11,7 @@ CCDs, MSAs, and reference databases are never copied into an image.
 |---|---|---|
 | ESMFold2 | Biohub ESM `827ec128e4cdaf80f7d6f95fb367a08980b34918` (`v3.4.0`) | trunk `8fc3ff471022fdce52c77030685eb775de0c00a3`, ESMC-6B `45b0fa5d7fb06faefbd5e3b89bdcef35d564e79a`, and CCD SHA-256 `9ff44b19…38fc5` |
 | ESMFold2-Fast | same code, distinct runtime/model/tag | Fast trunk `c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6`, the same exact ESMC-6B, and the same exact CCD |
-| Protenix v2 | `2475421477ab414b571149ad4a875c390ff8a35d` (`v2.0.0`) | canonical checkpoint plus localization marker under `/models/protenix-v2/checkpoint`; CPU prep bundle `protenix-v2-inference-data-2026-01-29` at `/databases/protenix` |
+| Protenix v2 | `2475421477ab414b571149ad4a875c390ff8a35d` (`v2.0.0`) | one composite artifact `protenix-v2` at `/models/protenix-v2`, containing the canonical checkpoint, four common files, `manifest.json`, and `.fs2-manifest-sha256` |
 | AlphaFold3 | `85c4d20505fd5cef05eac22b534d4e793971ae69` (`v3.0.4`) | privately staged academic `/models/af3.bin.zst` and official public databases rooted at `/databases` |
 | OpenFold3 | `c4771653c5d0a3ebb0b3af71b05efd64bc44ee86` (`v0.5.0`) | OpenBind-0 checkpoint SHA-256 `bd43301c…e29e4` and `components.bcif` SHA-256 `473d845c…fcc0c` |
 
@@ -22,24 +22,26 @@ third-party mirror `TMF001/protenix-v2-weights@653edab…ecc3` and validated as
 byte-compared with the unavailable publisher CDN object, so that limitation is
 preserved in the lock and evidence.
 
-Protenix CPU prep fails unless the mounted bundle manifest identifies revision
-`v2.0.0-inference-plus-mmcif-20260129`, binds downloader SHA-256
-`27da2585…dd89`, and contains all four required files:
+Protenix CPU prep and prediction both fail unless the single mounted artifact
+manifest identifies the exact code, checkpoint, and common-data revisions,
+binds downloader SHA-256 `27da2585…dd89`, and enumerates the checkpoint plus
+all four required common files with byte counts and SHA-256 identities:
 
 - `common/components.cif`
 - `common/components.cif.rdkit_mol.pkl`
 - `common/clusters-by-entity-40.txt`
 - `common/obsolete_release_date.csv`
 
-The GPU stage consumes the enriched prep output and checkpoint only. It sets
-`PROTENIX_ROOT_DIR=/models/protenix-v2`; an explicit `none` handoff disables
-MSA/template/RNA-MSA consumption, while `precomputed` enables only data already
-bound into the enriched input. No mode can invoke an online MSA server, and the
-wrapper cannot accept pass-through arguments that change input, output, model,
-or online behavior. Cache localization hashes the 1.86 GB checkpoint once and
-writes `/models/protenix-v2/checkpoint/protenix-v2.pt.fs2.json`; prediction
-checks that immutable marker and file size rather than rehashing the checkpoint
-on every invocation.
+The GPU stage consumes the enriched prep output and weights from the same
+artifact root. It sets `PROTENIX_ROOT_DIR=/models/protenix-v2`; an explicit
+`none` handoff disables MSA/template/RNA-MSA consumption, while `precomputed`
+enables only MSA data already bound into the enriched input. No mode can invoke
+an online MSA server, and the wrapper cannot accept pass-through arguments that
+change input, output, model, or online behavior. Cache localization hashes all
+five payload files once, writes their path-independent identities to
+`manifest.json`, then atomically promotes the tree with one
+`.fs2-manifest-sha256` ready marker. Both stages validate that one marker and
+cheap file-size guards rather than rehashing the 1.86 GB checkpoint per run.
 
 ## Runtime boundaries
 
@@ -78,8 +80,9 @@ for ESMC and disables ESMFold2 trunk `FLASH_ATTN_AVAILABLE` before model
 construction. The full and Fast identities mount their distinct trunks at
 `/models/esmfold2` and `/models/esmfold2-fast`, respectively, and share exact
 `/models/esmc-6b` plus `/databases/esmfold2/ccd.pkl`. A successful fold writes
-the structure and sibling `confidence.json` containing per-token pLDDT, mean
-pLDDT, pTM, and ipTM.
+the structure and sibling `confidence.json`. The envelope contains bounded
+mean pLDDT, pTM, and ipTM summaries plus the exact relative structure filename,
+SHA-256, and byte size; it never serializes unbounded per-token pLDDT.
 
 AlphaFold3 does not expose an unrestricted upstream remainder. `data` accepts a
 raw input JSON and runs only the CPU data pipeline; `inference` accepts the
@@ -97,7 +100,12 @@ Prediction validates that list, always supplies an explicit checkpoint, omits
 the upstream random `--num-model-seeds` override, forces the MSA server off,
 defaults templates off, and calls the public
 `biotite.structure.info.ccd.set_ccd_path()` API so all CCD-dependent caches are
-cleared before the packaged `run_openfold predict` API runs.
+cleared before the packaged `run_openfold predict` API runs. Protenix,
+AlphaFold3, and OpenFold3 return from their upstream runner and then write the
+same `fs2.nebius.ai/structure-confidence/v1` envelope. Every upstream summary
+is paired one-to-one with its structure, all accepted metrics are finite and
+bounded, and result count is capped at 16 seeds by 16 samples. The shared
+machine-readable contract is installed at `/opt/fs2/confidence.schema.json`.
 
 ## H100 readiness versus Blackwell portability
 
@@ -111,10 +119,16 @@ These are H100-tagged images. A build/import check is not semantic readiness.
 | OpenFold3 | pending OpenBind-0 plus exact CCD H100 run | not qualified |
 
 Protenix’s task-owned layer-normalization extension is prebuilt with an SM90
-cubin and compute_90 PTX, then all extension source/compiler paths are removed
-from the runtime stage. That one extension does not make the whole CUDA 12.6
-image Blackwell-portable. Blackwell requires a separate CUDA 13 target build
-and its own semantic qualification.
+cubin and compute_90 PTX, then its source/compiler paths are removed from the
+runtime stage. This does **not** eliminate all runtime compilation: pinned
+`cuequivariance-ops-torch` 0.8.0 uses Triton JIT for triangle operations above
+its fallback thresholds. `TRITON_CACHE_DIR=/cache/protenix/triton` and
+`CUEQ_TRITON_CACHE_DIR=/cache/protenix/cueq-triton` are writable stable paths;
+mount `/cache/protenix` persistently to retain a warmed shape cache. Exact H100
+first-call versus warm-call measurements remain pending the semantic run. That
+one prebuilt extension does not make the whole CUDA 12.6 image
+Blackwell-portable. Blackwell requires a separate CUDA 13 target build and its
+own semantic qualification.
 
 ## Build and publication
 
@@ -161,7 +175,7 @@ network-disabled task-owned H100 Job, for example:
 
 OpenFold3 additionally requires `--runner-yaml` and `--prepared-marker` from
 its preparation stage; Protenix additionally requires the matching
-`--msa-mode`. These semantic runs
+`--msa-mode` and the single `protenix-v2` composite artifact. These semantic runs
 are valid only on the `k8s-inference-h100` H100 target with the exact mounts.
 
 No model endpoint or shared service is deployed by this image task.

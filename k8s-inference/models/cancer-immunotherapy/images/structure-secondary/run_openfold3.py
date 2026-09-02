@@ -8,8 +8,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 
 import yaml
+
+from result_contract import load_bounded_metrics, write_confidence_envelope
 
 
 CCD_BYTES = 63_393_643
@@ -52,7 +55,6 @@ def _validate_prepared_handoff(
     query: Path,
     runner_yaml: Path,
     seeds: list[int],
-    ccd_path: Path,
 ) -> None:
     try:
         marker = json.loads(marker_path.read_text(encoding="utf-8"))
@@ -60,12 +62,10 @@ def _validate_prepared_handoff(
         raise SystemExit(f"prepared-marker is invalid: {exc}") from exc
     expected_keys = {
         "schema",
-        "query_json",
         "query_sha256",
         "msa_mode",
         "model_seeds",
-        "runner_yaml",
-        "ccd_path",
+        "runner_yaml_sha256",
         "ccd_sha256",
         "network_policy",
     }
@@ -73,12 +73,11 @@ def _validate_prepared_handoff(
         raise SystemExit("prepared-marker has an unexpected shape")
     if (
         marker.get("schema") != "fs2.nebius.ai/openfold3-prepared-query/v1"
-        or marker.get("query_json") != str(query)
         or marker.get("query_sha256") != hashlib.sha256(query.read_bytes()).hexdigest()
         or marker.get("msa_mode") not in {"none", "precomputed"}
         or marker.get("model_seeds") != seeds
-        or marker.get("runner_yaml") != str(runner_yaml)
-        or marker.get("ccd_path") != str(ccd_path)
+        or marker.get("runner_yaml_sha256")
+        != hashlib.sha256(runner_yaml.read_bytes()).hexdigest()
         or marker.get("ccd_sha256") != CCD_SHA256
         or marker.get("network_policy") != "offline"
     ):
@@ -115,6 +114,63 @@ def build_command(
     return command
 
 
+def _write_confidence(
+    output_dir: Path, *, seeds: list[int], samples_per_seed: int
+) -> dict[str, object]:
+    summaries = sorted(output_dir.rglob("*_confidences_aggregated.json"))
+    pattern = re.compile(
+        r"^(?P<prefix>.+)_seed_(?P<seed>[0-9]+)_sample_"
+        r"(?P<sample>[1-9][0-9]*)_confidences_aggregated\.json$"
+    )
+    results: list[dict[str, object]] = []
+    for summary in summaries:
+        matched = pattern.fullmatch(summary.name)
+        if matched is None:
+            raise SystemExit(f"OpenFold3 confidence filename is not canonical: {summary}")
+        prefix = (
+            f"{matched.group('prefix')}_seed_{matched.group('seed')}_"
+            f"sample_{matched.group('sample')}_model"
+        )
+        structures = sorted(
+            path
+            for path in summary.parent.glob(f"{prefix}.*")
+            if path.suffix.lower() in {".cif", ".mmcif", ".pdb"}
+        )
+        if len(structures) != 1:
+            raise SystemExit(
+                f"OpenFold3 summary must pair with exactly one sample structure: {summary}"
+            )
+        metrics = load_bounded_metrics(
+            summary,
+            {
+                "avg_plddt": (0.0, 100.0),
+                "gpde": (0.0, 64.0),
+                "ptm": (0.0, 1.0),
+                "iptm": (0.0, 1.0),
+                "disorder": (0.0, 1.0),
+                "sample_ranking_score": (-100.0, 2.0),
+            },
+            required={"avg_plddt", "gpde"},
+        )
+        results.append(
+            {
+                "seed": int(matched.group("seed")),
+                "sample_index": int(matched.group("sample")) - 1,
+                "structure": structures[0],
+                "summary": summary,
+                "metrics": metrics,
+            }
+        )
+    return write_confidence_envelope(
+        output_dir,
+        runtime_id="openfold3",
+        model_revision="c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+        seeds=seeds,
+        samples_per_seed=samples_per_seed,
+        results=results,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--query-json", required=True)
@@ -132,6 +188,9 @@ def main() -> None:
     parser.add_argument("--print-command", action="store_true")
     args = parser.parse_args()
 
+    if not 1 <= args.num_diffusion_samples <= 16:
+        raise SystemExit("num-diffusion-samples must be in [1, 16]")
+
     query = _file(args.query_json, "query-json")
     checkpoint = _file(args.checkpoint, "checkpoint")
     ccd_path = _file(args.ccd_path, "ccd-path")
@@ -148,7 +207,7 @@ def main() -> None:
     seeds = _parse_seeds(args.seeds)
     _validate_runner_seeds(runner_yaml, seeds)
     prepared_marker = _file(args.prepared_marker, "prepared-marker")
-    _validate_prepared_handoff(prepared_marker, query, runner_yaml, seeds, ccd_path)
+    _validate_prepared_handoff(prepared_marker, query, runner_yaml, seeds)
     command = build_command(
         query=query,
         output=output,
@@ -178,7 +237,13 @@ def main() -> None:
     ccd.set_ccd_path(ccd_path)
     from openfold3.run_openfold import cli
 
-    cli.main(args=command[1:], prog_name="run_openfold", standalone_mode=True)
+    cli.main(args=command[1:], prog_name="run_openfold", standalone_mode=False)
+    confidence = _write_confidence(
+        output,
+        seeds=seeds,
+        samples_per_seed=args.num_diffusion_samples,
+    )
+    print(json.dumps(confidence, sort_keys=True, separators=(",", ":")))
 
 
 if __name__ == "__main__":

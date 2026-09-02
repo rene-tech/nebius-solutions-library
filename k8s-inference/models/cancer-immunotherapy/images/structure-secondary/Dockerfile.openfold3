@@ -53,6 +53,9 @@ COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
 COPY --chmod=0555 run_openfold3.py /usr/local/bin/fs2-run-openfold3
 COPY --chmod=0555 run_openfold3.py /opt/fs2/run_openfold3.py
 COPY --chmod=0555 prepare_openfold3.py /opt/fs2/prepare_openfold3.py
+COPY --chmod=0444 result_contract.py /usr/local/bin/result_contract.py
+COPY --chmod=0444 result_contract.py /opt/fs2/result_contract.py
+COPY --chmod=0444 confidence.schema.json /opt/fs2/confidence.schema.json
 
 ENV FS2_RUNTIME_ID=openfold3 \
     FS2_SOURCE_REVISION=${SOURCE_REVISION} \

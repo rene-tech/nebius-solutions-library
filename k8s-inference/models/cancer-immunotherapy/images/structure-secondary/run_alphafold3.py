@@ -8,8 +8,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
+
+from result_contract import load_bounded_metrics, write_confidence_envelope
 
 
 UPSTREAM = [
@@ -17,6 +20,8 @@ UPSTREAM = [
     "/opt/alphafold3/run_alphafold.py",
 ]
 PARAMETER_BYTES = 1_020_545_840
+DATABASE_ARTIFACT_ID = "alphafold3-public-databases-v3.0"
+DATABASE_REVISION = "fetch_databases.sh@231efc9bb9c13b45cc59e43f7107869084ee9624"
 
 
 def _absolute(path: str, label: str, *, directory: bool) -> Path:
@@ -75,7 +80,7 @@ def _assert_processed_seeds(processed: Path, seeds: list[int]) -> None:
 
 
 def _validate_processed_handoff(
-    processed: Path, marker_path: Path, seeds: list[int], db_dir: Path
+    processed: Path, marker_path: Path, seeds: list[int]
 ) -> None:
     marker = _load_document(
         _absolute(str(marker_path), "processed-json marker", directory=False)
@@ -83,19 +88,19 @@ def _validate_processed_handoff(
     expected_keys = {
         "schema",
         "input_json_sha256",
-        "processed_json",
         "processed_json_sha256",
         "model_seeds",
-        "database_root",
+        "database_artifact_id",
+        "database_revision",
     }
     if set(marker) != expected_keys:
         raise SystemExit("processed-json marker has an unexpected shape")
     if (
         marker.get("schema") != "fs2.nebius.ai/alphafold3-processed-input/v1"
-        or marker.get("processed_json") != str(processed)
         or marker.get("processed_json_sha256") != _sha256(processed)
         or marker.get("model_seeds") != seeds
-        or marker.get("database_root") != str(db_dir)
+        or marker.get("database_artifact_id") != DATABASE_ARTIFACT_ID
+        or marker.get("database_revision") != DATABASE_REVISION
         or not isinstance(marker.get("input_json_sha256"), str)
         or len(str(marker["input_json_sha256"])) != 64
     ):
@@ -124,6 +129,50 @@ def build_command(
     if stage == "inference":
         command.append(f"--num_diffusion_samples={num_diffusion_samples}")
     return command
+
+
+def _write_confidence(
+    output_dir: Path, *, seeds: list[int], samples_per_seed: int
+) -> dict[str, object]:
+    summaries = sorted(output_dir.rglob("summary_confidences.json"))
+    results: list[dict[str, object]] = []
+    pattern = re.compile(r"^seed-(?P<seed>[0-9]+)_sample-(?P<sample>[0-9]+)$")
+    for summary in summaries:
+        matched = pattern.fullmatch(summary.parent.name)
+        if matched is None:
+            raise SystemExit(f"AlphaFold3 confidence directory is not canonical: {summary}")
+        structures = sorted(summary.parent.glob("*.cif"))
+        if len(structures) != 1:
+            raise SystemExit(
+                f"AlphaFold3 summary must pair with exactly one sample CIF: {summary}"
+            )
+        metrics = load_bounded_metrics(
+            summary,
+            {
+                "ptm": (0.0, 1.0),
+                "iptm": (0.0, 1.0),
+                "fraction_disordered": (0.0, 1.0),
+                "ranking_score": (-100.0, 2.0),
+            },
+            required={"ptm", "ranking_score"},
+        )
+        results.append(
+            {
+                "seed": int(matched.group("seed")),
+                "sample_index": int(matched.group("sample")),
+                "structure": structures[0],
+                "summary": summary,
+                "metrics": metrics,
+            }
+        )
+    return write_confidence_envelope(
+        output_dir,
+        runtime_id="alphafold3",
+        model_revision="85c4d20505fd5cef05eac22b534d4e793971ae69",
+        seeds=seeds,
+        samples_per_seed=samples_per_seed,
+        results=results,
+    )
 
 
 def _run(args: argparse.Namespace) -> None:
@@ -160,7 +209,7 @@ def _run(args: argparse.Namespace) -> None:
         marker_path = Path(
             args.processed_json_marker or f"{json_path}.fs2.json"
         )
-        _validate_processed_handoff(json_path, marker_path, seeds, db_dir)
+        _validate_processed_handoff(json_path, marker_path, seeds)
         command_input = json_path
 
     command = build_command(
@@ -198,7 +247,16 @@ def _run(args: argparse.Namespace) -> None:
             )
         environment = dict(os.environ)
         environment.update({"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"})
-        os.execve(command[0], command, environment)
+        completed = subprocess.run(command, check=False, env=environment)
+        if completed.returncode != 0:
+            raise SystemExit(completed.returncode)
+        confidence = _write_confidence(
+            output_dir,
+            seeds=seeds,
+            samples_per_seed=args.num_diffusion_samples,
+        )
+        print(json.dumps(confidence, sort_keys=True, separators=(",", ":")))
+        return
 
     environment = dict(os.environ)
     environment.update({"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"})
@@ -219,10 +277,10 @@ def _run(args: argparse.Namespace) -> None:
     marker = {
         "schema": "fs2.nebius.ai/alphafold3-processed-input/v1",
         "input_json_sha256": _sha256(json_path),
-        "processed_json": str(processed_output),
         "processed_json_sha256": _sha256(processed_output),
         "model_seeds": seeds,
-        "database_root": str(db_dir),
+        "database_artifact_id": DATABASE_ARTIFACT_ID,
+        "database_revision": DATABASE_REVISION,
     }
     Path(f"{processed_output}.fs2.json").write_text(
         json.dumps(marker, sort_keys=True, separators=(",", ":")) + "\n",

@@ -43,6 +43,9 @@ COPY --chmod=0555 entrypoint.sh /usr/local/bin/fs2-entrypoint
 COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
 COPY --chmod=0555 run_esmfold2.py /usr/local/bin/fs2-run-esmfold2
 COPY --chmod=0555 run_esmfold2.py /opt/fs2/run_esmfold2.py
+COPY --chmod=0444 result_contract.py /usr/local/bin/result_contract.py
+COPY --chmod=0444 result_contract.py /opt/fs2/result_contract.py
+COPY --chmod=0444 confidence.schema.json /opt/fs2/confidence.schema.json
 
 # Keep variant identity after the shared 7+ GiB environment layer so the full
 # and Fast images reuse identical heavy layers.

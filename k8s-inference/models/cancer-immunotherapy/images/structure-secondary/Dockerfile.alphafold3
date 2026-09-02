@@ -67,6 +67,9 @@ COPY --chmod=0555 entrypoint.sh /usr/local/bin/fs2-entrypoint
 COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
 COPY --chmod=0555 run_alphafold3.py /usr/local/bin/fs2-run-alphafold3
 COPY --chmod=0555 run_alphafold3.py /opt/fs2/run_alphafold3.py
+COPY --chmod=0444 result_contract.py /usr/local/bin/result_contract.py
+COPY --chmod=0444 result_contract.py /opt/fs2/result_contract.py
+COPY --chmod=0444 confidence.schema.json /opt/fs2/confidence.schema.json
 
 ENV FS2_RUNTIME_ID=alphafold3 \
     FS2_SOURCE_REVISION=${SOURCE_REVISION} \

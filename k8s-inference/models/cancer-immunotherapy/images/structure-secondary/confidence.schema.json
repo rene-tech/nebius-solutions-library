@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2.nebius.ai/schemas/structure-confidence-v1.schema.json",
+  "title": "FS2 bounded structure confidence envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "runtime_id", "model_revision", "seeds", "samples_per_seed", "results"],
+  "properties": {
+    "schema": {"const": "fs2.nebius.ai/structure-confidence/v1"},
+    "runtime_id": {"enum": ["esmfold2", "esmfold2-fast", "protenix-v2", "alphafold3", "openfold3"]},
+    "model_revision": {"type": "string", "minLength": 1},
+    "seeds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"type": "integer", "minimum": 0, "maximum": 4294967295}
+    },
+    "samples_per_seed": {"type": "integer", "minimum": 1, "maximum": 16},
+    "results": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["seed", "sample_index", "upstream_summary", "structure", "metrics"],
+        "properties": {
+          "seed": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "sample_index": {"type": "integer", "minimum": 0, "maximum": 15},
+          "upstream_summary": {
+            "type": ["string", "null"],
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+          },
+          "structure": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["filename", "sha256", "bytes"],
+            "properties": {
+              "filename": {
+                "type": "string",
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.(?:cif|mmcif|pdb)$"
+              },
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "bytes": {"type": "integer", "minimum": 1}
+            }
+          },
+          "metrics": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "maxProperties": 16,
+            "properties": {
+              "plddt": {"type": "number", "minimum": 0, "maximum": 100},
+              "plddt_mean": {"type": "number", "minimum": 0, "maximum": 100},
+              "avg_plddt": {"type": "number", "minimum": 0, "maximum": 100},
+              "gpde": {"type": "number", "minimum": 0, "maximum": 64},
+              "ptm": {"type": "number", "minimum": 0, "maximum": 1},
+              "iptm": {"type": "number", "minimum": 0, "maximum": 1},
+              "fraction_disordered": {"type": "number", "minimum": 0, "maximum": 1},
+              "disorder": {"type": "number", "minimum": 0, "maximum": 1},
+              "ranking_score": {"type": "number", "minimum": -100, "maximum": 2},
+              "sample_ranking_score": {"type": "number", "minimum": -100, "maximum": 2}
+            }
+          }
+        }
+      }
+    }
+  }
+}

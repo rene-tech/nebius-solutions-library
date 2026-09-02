@@ -9,25 +9,41 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
+from result_contract import load_bounded_metrics, write_confidence_envelope
 
-CHECKPOINT = Path("/models/protenix-v2/checkpoint/protenix-v2.pt")
-CHECKPOINT_MARKER = Path(f"{CHECKPOINT}.fs2.json")
+
+PROTENIX_ROOT = Path("/models/protenix-v2")
+ARTIFACT_ID = "protenix-v2"
+ARTIFACT_REVISION = (
+    "code-2475421477ab414b571149ad4a875c390ff8a35d_"
+    "checkpoint-653edab28103133512575365130916e3fd23ecc3_"
+    "common-2026-01-29"
+)
+ARTIFACT_MANIFEST = PROTENIX_ROOT / "manifest.json"
+ARTIFACT_READY = PROTENIX_ROOT / ".fs2-manifest-sha256"
+CHECKPOINT = PROTENIX_ROOT / "checkpoint/protenix-v2.pt"
 CHECKPOINT_BYTES = 1_859_785_497
 CHECKPOINT_SHA256 = "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
+CHECKPOINT_MD5 = "49016ebf4775bf6b629bc4dc77b6673e"
+CHECKPOINT_PARAMETER_COUNT = 464_442_431
 CHECKPOINT_REVISION = "TMF001/protenix-v2-weights@653edab28103133512575365130916e3fd23ecc3"
-DATABASE_ROOT = Path("/databases/protenix")
-REFERENCE_BUNDLE_ID = "protenix-v2-inference-data-2026-01-29"
-REFERENCE_REVISION = "v2.0.0-inference-plus-mmcif-20260129"
-REFERENCE_SOURCE_SHA256 = "27da2585d0ea1d820f4693099653aab1fdff7d4e18c21e6d90a0dc18f718dd89"
-REFERENCE_REQUIRED_PATHS = (
+CODE_REVISION = "2475421477ab414b571149ad4a875c390ff8a35d"
+COMMON_DATA_REVISION = "protenix-v2-inference-data-2026-01-29"
+COMMON_DATA_SOURCE_SHA256 = "27da2585d0ea1d820f4693099653aab1fdff7d4e18c21e6d90a0dc18f718dd89"
+COMMON_REQUIRED_PATHS = (
     Path("common/components.cif"),
     Path("common/components.cif.rdkit_mol.pkl"),
     Path("common/clusters-by-entity-40.txt"),
     Path("common/obsolete_release_date.csv"),
 )
+ARTIFACT_REQUIRED_PATHS = (Path("checkpoint/protenix-v2.pt"), *COMMON_REQUIRED_PATHS)
+PROTENIX_CLI = "/opt/protenix-venv/bin/protenix"
+TRITON_CACHE = Path("/cache/protenix/triton")
+CUEQ_TRITON_CACHE = Path("/cache/protenix/cueq-triton")
 
 
 def _file(path: str | Path, label: str) -> Path:
@@ -91,72 +107,96 @@ def _validate_installed_runtime() -> None:
             raise SystemExit(f"{module} does not resolve from the installed runtime: {spec}")
 
 
-def _validate_checkpoint() -> None:
-    checkpoint = _file(CHECKPOINT, "canonical Protenix v2 checkpoint")
-    marker = _load_object(
-        _file(CHECKPOINT_MARKER, "checkpoint localization marker"),
-        "checkpoint localization marker",
-    )
-    expected = {
-        "schema": "fs2.nebius.ai/localized-artifact/v1",
-        "artifact_id": "protenix-v2-checkpoint",
-        "path": str(CHECKPOINT),
-        "bytes": CHECKPOINT_BYTES,
-        "sha256": CHECKPOINT_SHA256,
-        "revision": CHECKPOINT_REVISION,
-        "verified": True,
-    }
-    if marker != expected:
-        raise SystemExit("checkpoint localization marker does not bind the canonical Protenix v2 object")
-    # Localization/cache promotion hashes the 1.86 GB object once. Runtime
-    # admission checks the fixed path and byte count but never rehashes it.
-    if checkpoint.stat().st_size != CHECKPOINT_BYTES:
-        raise SystemExit("canonical Protenix v2 checkpoint byte count changed after localization")
-
-
-def _validate_reference_data(manifest_path: Path) -> str:
-    _directory(DATABASE_ROOT, "Protenix reference-data mount")
-    missing = [
-        str(path)
-        for path in REFERENCE_REQUIRED_PATHS
-        if not (DATABASE_ROOT / path).is_file()
-    ]
-    if missing:
-        raise SystemExit(f"Protenix reference-data bundle is incomplete: {', '.join(missing)}")
+def _validate_artifact() -> str:
+    """Validate one localized composite artifact without rehashing 1.86 GB/run."""
+    _directory(PROTENIX_ROOT, "canonical Protenix v2 artifact root")
     manifest = _load_object(
-        _file(manifest_path, "reference-data manifest"), "reference-data manifest"
+        _file(ARTIFACT_MANIFEST, "Protenix v2 composite manifest"),
+        "Protenix v2 composite manifest",
     )
+    if set(manifest) != {"schema", "artifact_id", "revision", "sources", "files"}:
+        raise SystemExit("Protenix v2 composite manifest has an unexpected shape")
+    expected_sources = {
+        "code": {"revision": CODE_REVISION},
+        "checkpoint": {
+            "revision": CHECKPOINT_REVISION,
+            "bytes": CHECKPOINT_BYTES,
+            "sha256": CHECKPOINT_SHA256,
+            "md5": CHECKPOINT_MD5,
+            "parameter_count": CHECKPOINT_PARAMETER_COUNT,
+            "verification": "third-party-mirror-verified-not-publisher-byte-compared",
+        },
+        "common": {
+            "revision": COMMON_DATA_REVISION,
+            "source_sha256": COMMON_DATA_SOURCE_SHA256,
+        },
+    }
     if (
-        manifest.get("bundle_id") != REFERENCE_BUNDLE_ID
-        or manifest.get("revision") != REFERENCE_REVISION
+        manifest.get("schema") != "fs2.nebius.ai/protenix-v2-composite-artifact/v1"
+        or manifest.get("artifact_id") != ARTIFACT_ID
+        or manifest.get("revision") != ARTIFACT_REVISION
+        or manifest.get("sources") != expected_sources
     ):
-        raise SystemExit("reference-data manifest does not identify the exact Protenix v2 bundle")
-    upstream = manifest.get("upstream")
+        raise SystemExit("composite manifest does not identify the exact Protenix v2 artifact")
+
+    raw_files = manifest.get("files")
+    if not isinstance(raw_files, list):
+        raise SystemExit("Protenix v2 composite manifest files must be a list")
+    files: dict[str, dict[str, object]] = {}
+    for entry in raw_files:
+        if not isinstance(entry, dict) or set(entry) != {"path", "bytes", "sha256"}:
+            raise SystemExit("Protenix v2 composite manifest has an invalid file entry")
+        relative = entry.get("path")
+        byte_count = entry.get("bytes")
+        sha256 = entry.get("sha256")
+        if (
+            not isinstance(relative, str)
+            or Path(relative).is_absolute()
+            or ".." in Path(relative).parts
+            or not isinstance(byte_count, int)
+            or isinstance(byte_count, bool)
+            or byte_count < 1
+            or not isinstance(sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", sha256) is None
+            or relative in files
+        ):
+            raise SystemExit("Protenix v2 composite manifest has an invalid file identity")
+        files[relative] = entry
+    expected_paths = {path.as_posix() for path in ARTIFACT_REQUIRED_PATHS}
+    if set(files) != expected_paths:
+        raise SystemExit("Protenix v2 composite manifest does not bind the complete artifact tree")
+    checkpoint_entry = files[ARTIFACT_REQUIRED_PATHS[0].as_posix()]
     if (
-        not isinstance(upstream, dict)
-        or upstream.get("source_sha256") != REFERENCE_SOURCE_SHA256
+        checkpoint_entry["bytes"] != CHECKPOINT_BYTES
+        or checkpoint_entry["sha256"] != CHECKPOINT_SHA256
     ):
-        raise SystemExit("reference-data manifest does not bind the reviewed Protenix downloader")
+        raise SystemExit("composite manifest does not bind the exact Protenix v2 checkpoint")
+    for relative, entry in files.items():
+        localized = _file(PROTENIX_ROOT / relative, f"localized Protenix v2 file {relative}")
+        if localized.stat().st_size != entry["bytes"]:
+            raise SystemExit(f"localized Protenix v2 file size changed after promotion: {relative}")
+
+    # The localizer hashes every file and writes this marker only after an
+    # atomic immutable promotion. Runtime admission checks that one manifest
+    # digest and cheap file sizes; it never rehashes the 1.86 GB checkpoint.
     manifest_sha256 = _canonical_json_sha256(manifest)
-    ready = _file(
-        DATABASE_ROOT / ".fs2-manifest-sha256", "reference-data ready marker"
-    )
+    ready = _file(ARTIFACT_READY, "Protenix v2 composite ready marker")
     if ready.read_text(encoding="utf-8").strip() != manifest_sha256:
-        raise SystemExit("reference-data ready marker does not match the exact manifest")
+        raise SystemExit("Protenix v2 ready marker does not match the composite manifest")
     return manifest_sha256
 
 
-def _validate_preprocessed_input(input_path: Path, marker_path: Path) -> None:
+def _validate_preprocessed_input(
+    input_path: Path, marker_path: Path, artifact_manifest_sha256: str
+) -> dict[str, object]:
     marker = _load_object(
         _file(marker_path, "preprocessing marker"), "preprocessing marker"
     )
     expected_keys = {
         "schema",
-        "processed_json",
         "processed_json_sha256",
-        "reference_bundle_id",
-        "reference_revision",
-        "reference_manifest_sha256",
+        "artifact_id",
+        "artifact_manifest_sha256",
         "msa_mode",
     }
     if set(marker) != expected_keys:
@@ -164,20 +204,18 @@ def _validate_preprocessed_input(input_path: Path, marker_path: Path) -> None:
     if (
         marker.get("schema")
         != "fs2.nebius.ai/protenix-preprocess-result/v1"
-        or marker.get("processed_json") != str(input_path)
         or marker.get("processed_json_sha256") != _sha256(input_path)
-        or marker.get("reference_bundle_id") != REFERENCE_BUNDLE_ID
-        or marker.get("reference_revision") != REFERENCE_REVISION
+        or marker.get("artifact_id") != ARTIFACT_ID
+        or marker.get("artifact_manifest_sha256") != artifact_manifest_sha256
         or marker.get("msa_mode") not in {"none", "precomputed"}
-        or not isinstance(marker.get("reference_manifest_sha256"), str)
-        or len(str(marker["reference_manifest_sha256"])) != 64
     ):
         raise SystemExit("preprocessing marker does not bind the enriched Protenix input")
+    return marker
 
 
 def build_prep_command(input_path: Path, output_dir: Path) -> list[str]:
     return [
-        "/opt/protenix-venv/bin/protenix",
+        PROTENIX_CLI,
         "prep",
         "--input",
         str(input_path),
@@ -200,7 +238,7 @@ def build_pred_command(
 ) -> list[str]:
     use_precomputed = str(msa_mode == "precomputed").lower()
     return [
-        "/opt/protenix-venv/bin/protenix",
+        PROTENIX_CLI,
         "pred",
         "--input",
         str(input_path),
@@ -221,10 +259,63 @@ def build_pred_command(
         "--use_msa",
         use_precomputed,
         "--use_template",
-        use_precomputed,
+        "false",
         "--use_rna_msa",
-        use_precomputed,
+        "false",
     ]
+
+
+def _write_confidence(
+    output_dir: Path, *, seeds: list[int], samples_per_seed: int
+) -> dict[str, object]:
+    candidates = sorted(
+        output_dir.rglob("*_seed_*_summary_confidence_sample_*.json"),
+        key=lambda path: path.relative_to(output_dir).as_posix(),
+    )
+    if not candidates:
+        raise SystemExit("Protenix produced no summary confidence artifacts")
+    results: list[dict[str, object]] = []
+    pattern = re.compile(
+        r"^(?P<prefix>.+)_seed_(?P<seed>[0-9]+)_summary_confidence_"
+        r"sample_(?P<sample>[0-9]+)\.json$"
+    )
+    for path in candidates:
+        matched = pattern.fullmatch(path.name)
+        if matched is None:
+            raise SystemExit(f"Protenix confidence filename is not canonical: {path}")
+        seed = int(matched.group("seed"))
+        sample_index = int(matched.group("sample"))
+        structure = path.with_name(
+            f"{matched.group('prefix')}_seed_{seed}_sample_{sample_index}.cif"
+        )
+        metrics = load_bounded_metrics(
+            path,
+            {
+                "plddt": (0.0, 100.0),
+                "ptm": (0.0, 1.0),
+                "iptm": (0.0, 1.0),
+                "ranking_score": (-100.0, 2.0),
+            },
+            required={"plddt", "ptm", "iptm", "ranking_score"},
+        )
+        results.append(
+            {
+                "seed": seed,
+                "sample_index": sample_index,
+                "structure": structure,
+                "summary": path,
+                "metrics": metrics,
+            }
+        )
+    confidence = write_confidence_envelope(
+        output_dir,
+        runtime_id="protenix-v2",
+        model_revision=CHECKPOINT_REVISION,
+        seeds=seeds,
+        samples_per_seed=samples_per_seed,
+        results=results,
+    )
+    return confidence
 
 
 def _prep(args: argparse.Namespace) -> None:
@@ -237,7 +328,7 @@ def _prep(args: argparse.Namespace) -> None:
         raise SystemExit("processed-json must be located below output-dir")
     output_dir.mkdir(parents=True, exist_ok=True)
     processed_json.parent.mkdir(parents=True, exist_ok=True)
-    manifest_sha256 = _validate_reference_data(Path(args.reference_manifest))
+    manifest_sha256 = _validate_artifact()
     command = build_prep_command(input_path, output_dir)
     if args.print_command:
         print(
@@ -250,7 +341,7 @@ def _prep(args: argparse.Namespace) -> None:
     environment = dict(os.environ)
     environment.update(
         {
-            "PROTENIX_ROOT_DIR": str(DATABASE_ROOT),
+            "PROTENIX_ROOT_DIR": str(PROTENIX_ROOT),
             "FS2_MSA_MODE": args.msa_mode,
             "HF_HUB_OFFLINE": "1",
             "TRANSFORMERS_OFFLINE": "1",
@@ -285,11 +376,9 @@ def _prep(args: argparse.Namespace) -> None:
     _file(processed_json, "processed-json produced by Protenix prep")
     marker = {
         "schema": "fs2.nebius.ai/protenix-preprocess-result/v1",
-        "processed_json": str(processed_json),
         "processed_json_sha256": _sha256(processed_json),
-        "reference_bundle_id": REFERENCE_BUNDLE_ID,
-        "reference_revision": REFERENCE_REVISION,
-        "reference_manifest_sha256": manifest_sha256,
+        "artifact_id": ARTIFACT_ID,
+        "artifact_manifest_sha256": manifest_sha256,
         "msa_mode": args.msa_mode,
     }
     Path(f"{processed_json}.fs2.json").write_text(
@@ -305,16 +394,18 @@ def _pred(args: argparse.Namespace) -> None:
     if not output_dir.is_absolute():
         raise SystemExit("output-dir must be absolute")
     output_dir.mkdir(parents=True, exist_ok=True)
-    _validate_preprocessed_input(input_path, marker_path)
-    marker = _load_object(marker_path, "preprocessing marker")
+    manifest_sha256 = _validate_artifact()
+    marker = _validate_preprocessed_input(input_path, marker_path, manifest_sha256)
     if marker.get("msa_mode") != args.msa_mode:
         raise SystemExit("requested msa-mode does not match the immutable preprocessing handoff")
-    _validate_checkpoint()
     _validate_installed_runtime()
+    canonical_seeds = _canonical_seeds(args.seeds)
+    if not 1 <= args.sample <= 16:
+        raise SystemExit("sample must be in [1, 16]")
     command = build_pred_command(
         input_path,
         output_dir,
-        seeds=_canonical_seeds(args.seeds),
+        seeds=canonical_seeds,
         cycle=args.cycle,
         step=args.step,
         sample=args.sample,
@@ -337,6 +428,9 @@ def _pred(args: argparse.Namespace) -> None:
         raise SystemExit(
             "the qualified Protenix v2 semantic boundary requires an H100 (SM90)"
         )
+    for cache in (TRITON_CACHE, CUEQ_TRITON_CACHE):
+        if not cache.is_dir() or not os.access(cache, os.W_OK):
+            raise SystemExit(f"required writable Protenix Triton cache is unavailable: {cache}")
     environment = dict(os.environ)
     environment.update(
         {
@@ -344,9 +438,19 @@ def _pred(args: argparse.Namespace) -> None:
             "FS2_MSA_MODE": args.msa_mode,
             "HF_HUB_OFFLINE": "1",
             "TRANSFORMERS_OFFLINE": "1",
+            "TRITON_CACHE_DIR": str(TRITON_CACHE),
+            "CUEQ_TRITON_CACHE_DIR": str(CUEQ_TRITON_CACHE),
         }
     )
-    os.execve(command[0], command, environment)
+    completed = subprocess.run(command, check=False, env=environment)
+    if completed.returncode != 0:
+        raise SystemExit(completed.returncode)
+    confidence = _write_confidence(
+        output_dir,
+        seeds=[int(seed) for seed in canonical_seeds.split(",")],
+        samples_per_seed=args.sample,
+    )
+    print(json.dumps(confidence, sort_keys=True, separators=(",", ":")))
 
 
 def main() -> None:
@@ -358,9 +462,6 @@ def main() -> None:
     prep.add_argument("--output-dir", required=True)
     prep.add_argument("--processed-json", required=True)
     prep.add_argument("--msa-mode", choices=("none", "precomputed"), required=True)
-    prep.add_argument(
-        "--reference-manifest", default="/databases/protenix/manifest.json"
-    )
     prep.add_argument("--print-command", action="store_true")
     prep.set_defaults(handler=_prep)
 
