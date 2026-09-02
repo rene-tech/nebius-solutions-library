@@ -807,7 +807,7 @@ class DeploymentContractTests(unittest.TestCase):
             2048, outputs["effective_configuration"]["reference_data"]["filesystem_size_gib"]
         )
         self.assertEqual(
-            "downstream-only-infrastructure-retained",
+            "full-stack-destroy-incomplete-infrastructure-retained",
             outputs["effective_configuration"]["reference_data"]["destroy_completion"],
         )
         self.assertTrue(

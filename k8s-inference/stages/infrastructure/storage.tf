@@ -100,7 +100,6 @@ resource "nebius_storage_v1_bucket" "reference_data" {
   max_size_bytes        = var.reference_data.object_storage.max_size_gib * 1024 * 1024 * 1024
   default_storage_class = "STANDARD"
   force_storage_class   = true
-  object_audit_logging  = "ALL"
   labels = merge(local.common_labels, {
     purpose   = "scientific-reference-data"
     retention = "durable"
@@ -129,7 +128,6 @@ resource "nebius_storage_v1_bucket" "reference_data_disposable" {
   max_size_bytes        = var.reference_data.object_storage.max_size_gib * 1024 * 1024 * 1024
   default_storage_class = "STANDARD"
   force_storage_class   = true
-  object_audit_logging  = "ALL"
   labels = merge(local.common_labels, {
     purpose   = "scientific-reference-data"
     retention = "disposable-empty-only"

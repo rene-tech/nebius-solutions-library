@@ -169,8 +169,8 @@ def complete_reference_access_bundle() -> dict:
     bundle["reference_data"] = {
         "lifecycle": {
             "retention_mode": "retain",
-            "destroy_status": "partial-destroy-requires-adoption",
-            "destroy_completion": "downstream-only-infrastructure-retained",
+            "destroy_status": "blocked-retained",
+            "destroy_completion": "full-stack-destroy-incomplete-infrastructure-retained",
             "adoption_status": "ids-exported-for-explicit-state-adoption",
         },
         "filesystem_id": "computefilesystem-test",
@@ -1121,8 +1121,8 @@ class InferenceStackTests(unittest.TestCase):
             "cpu_pool": {"id": "mk8snodegroup-test"},
             "lifecycle": {
                 "retention_mode": "retain",
-                "destroy_status": "partial-destroy-requires-adoption",
-                "destroy_completion": "downstream-only-infrastructure-retained",
+                "destroy_status": "blocked-retained",
+                "destroy_completion": "full-stack-destroy-incomplete-infrastructure-retained",
             },
         }
         lifecycle = {
@@ -1684,8 +1684,8 @@ class InferenceStackTests(unittest.TestCase):
         lifecycle = {
             "retention_mode": "retain",
             "status": "managed-retained",
-            "destroy_status": "partial-destroy-requires-adoption",
-            "destroy_completion": "downstream-only-infrastructure-retained",
+            "destroy_status": "blocked-retained",
+            "destroy_completion": "full-stack-destroy-incomplete-infrastructure-retained",
             "adoption_status": "ids-exported-for-explicit-state-adoption",
         }
         plane = {
@@ -1755,7 +1755,11 @@ class InferenceStackTests(unittest.TestCase):
             [STACK.WORKLOADS_ROOT, STACK.FOUNDATION_ROOT],
         )
         self.assertEqual(receipt, json.loads(output.getvalue()))
-        self.assertEqual(receipt["status"], "partial-destroy")
+        self.assertEqual(receipt["status"], "infrastructure-retained")
+        self.assertEqual(
+            receipt["completion"],
+            "full-stack-destroy-incomplete-infrastructure-retained",
+        )
         self.assertEqual(receipt["retained_stages"], ["infrastructure"])
         self.assertEqual(
             receipt["reference_data"]["filesystem_id"],

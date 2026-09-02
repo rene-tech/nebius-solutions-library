@@ -118,8 +118,8 @@ The default dedicated filesystem and object-store cap are both 2 TiB. Terraform
 rejects less than 1,611 GiB: the official 630,000,000,000-byte AlphaFold3
 expanded estimate plus 1 TiB of headroom, rounded up to GiB. Both sizes remain
 tfvars parameters. The filesystem defaults to deletion protection; the bucket
-uses versioning, forced STANDARD storage, object audit logging and a policy that
-limits the staging identity to `reference-data/`, `inputs/` and `preprocessing/`.
+uses versioning, forced STANDARD storage and a policy that limits the staging
+identity to `reference-data/`, `inputs/` and `preprocessing/`.
 
 ## Operator workflow
 
@@ -186,14 +186,15 @@ reference data cannot silently mutate future heterogeneous pools.
 
 Production uses `retention_mode = "retain"` with `forbid_deletion = true`.
 `inference-stack destroy` removes the workload and foundation states but keeps
-the complete infrastructure state, reports `partial-destroy`, and writes a
-non-secret `reference-data-retention.json` adoption receipt containing the
-filesystem, bucket, CPU-pool and last-applied status/pipeline identities. It
-cannot claim full completion until the protected storage has been explicitly
-adopted or migrated into another durable state. The `disposable` mode is limited
-to fresh empty-volume acceptance, requires `forbid_deletion = false`, and is
-deletable only while the versioned bucket has no current objects or retained
-versions.
+the complete infrastructure state. It reports `infrastructure-retained` and
+`full-stack-destroy-incomplete-infrastructure-retained`, then writes a non-secret
+`reference-data-retention.json` adoption receipt containing the filesystem,
+bucket, CPU-pool and last-applied status/pipeline identities. This is a
+downstream-stage release, not a full stack destroy; full completion remains
+blocked until the protected storage has been explicitly adopted or migrated
+into another durable state. The `disposable` mode is limited to fresh
+empty-volume acceptance, requires `forbid_deletion = false`, and is deletable
+only while the versioned bucket has no current objects or retained versions.
 
 `Dockerfile.stager` is the pinned CPU worker image. It contains only Python,
 zstd, CA roots and the AWS CLI; the reviewed staging program and selected

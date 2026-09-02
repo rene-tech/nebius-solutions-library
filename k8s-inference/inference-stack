@@ -1838,9 +1838,9 @@ def workload_access_bundle(
                 lifecycle.get("retention_mode") == "retain"
                 and (
                     lifecycle.get("destroy_status")
-                    != "partial-destroy-requires-adoption"
+                    != "blocked-retained"
                     or lifecycle.get("destroy_completion")
-                    != "downstream-only-infrastructure-retained"
+                    != "full-stack-destroy-incomplete-infrastructure-retained"
                     or lifecycle.get("adoption_status")
                     != "ids-exported-for-explicit-state-adoption"
                 )
@@ -2254,8 +2254,8 @@ def destroy_stack(
         receipt_path = run_root / "reference-data-retention.json"
         result = {
             "schema": "fs2-serve.nebius.ai/destroy-result/v1",
-            "status": "partial-destroy",
-            "completion": "downstream-destroyed-infrastructure-retained",
+            "status": "infrastructure-retained",
+            "completion": "full-stack-destroy-incomplete-infrastructure-retained",
             "destroyed_stages": destroyed_stages,
             "retained_stages": ["infrastructure"],
             "reference_data": reference_data,

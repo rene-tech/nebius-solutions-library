@@ -183,9 +183,9 @@ output "reference_data_storage_contract" {
     public_msa_default = false
     lifecycle = {
       retention_mode = var.reference_data.lifecycle.retention_mode
-      destroy_status = var.reference_data.lifecycle.retention_mode == "retain" ? "partial-destroy-requires-adoption" : "eligible-only-while-bucket-empty"
+      destroy_status = var.reference_data.lifecycle.retention_mode == "retain" ? "blocked-retained" : "eligible-only-while-bucket-empty"
       destroy_completion = var.reference_data.lifecycle.retention_mode == "retain" ? (
-        "downstream-only-infrastructure-retained"
+        "full-stack-destroy-incomplete-infrastructure-retained"
       ) : "full-only-when-versioned-bucket-empty"
       adoption_status = var.reference_data.lifecycle.retention_mode == "retain" ? "ids-exported-for-explicit-state-adoption" : "not-applicable"
       retained_ids = var.reference_data.lifecycle.retention_mode == "retain" ? {
@@ -197,13 +197,13 @@ output "reference_data_storage_contract" {
 }
 
 output "reference_data_lifecycle" {
-  description = "Truthful retention/adoption contract. Retained production permits downstream-only partial destroy; disposable acceptance storage is deletable only while its versioned bucket is empty."
+  description = "Truthful retention/adoption contract. Retained production blocks full-stack destroy even when downstream stages are released; disposable acceptance storage is deletable only while its versioned bucket is empty."
   value = var.reference_data.enabled ? {
     retention_mode = var.reference_data.lifecycle.retention_mode
     status         = var.reference_data.lifecycle.retention_mode == "retain" ? "managed-retained" : "managed-disposable-empty"
-    destroy_status = var.reference_data.lifecycle.retention_mode == "retain" ? "partial-destroy-requires-adoption" : "eligible-only-while-bucket-empty"
+    destroy_status = var.reference_data.lifecycle.retention_mode == "retain" ? "blocked-retained" : "eligible-only-while-bucket-empty"
     destroy_completion = var.reference_data.lifecycle.retention_mode == "retain" ? (
-      "downstream-only-infrastructure-retained"
+      "full-stack-destroy-incomplete-infrastructure-retained"
     ) : "full-only-when-versioned-bucket-empty"
     adoption_status = var.reference_data.lifecycle.retention_mode == "retain" ? "ids-exported-for-explicit-state-adoption" : "not-applicable"
     resource_ids = {

@@ -84,12 +84,14 @@ class DisposableTerraformContractTests(unittest.TestCase):
         self.assertEqual(storage.count('retention = "durable"'), 5)
         self.assertIn('retention = "disposable-empty-only"', storage)
 
-    def test_reference_lifecycle_distinguishes_partial_and_empty_full_destroy(
+    def test_reference_lifecycle_distinguishes_retained_and_empty_full_destroy(
         self,
     ) -> None:
         outputs = (ROOT / "outputs.tf").read_text(encoding="utf-8")
-        self.assertIn("partial-destroy-requires-adoption", outputs)
-        self.assertIn("downstream-only-infrastructure-retained", outputs)
+        self.assertIn("blocked-retained", outputs)
+        self.assertIn(
+            "full-stack-destroy-incomplete-infrastructure-retained", outputs
+        )
         self.assertIn("eligible-only-while-bucket-empty", outputs)
         self.assertIn("full-only-when-versioned-bucket-empty", outputs)
         self.assertIn("ids-exported-for-explicit-state-adoption", outputs)

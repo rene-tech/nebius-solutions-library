@@ -184,8 +184,8 @@ variable "reference_data" {
         (
           var.reference_data.storage_contract.lifecycle.retention_mode == "retain" ?
           (
-            var.reference_data.storage_contract.lifecycle.destroy_status == "partial-destroy-requires-adoption" &&
-            var.reference_data.storage_contract.lifecycle.destroy_completion == "downstream-only-infrastructure-retained"
+            var.reference_data.storage_contract.lifecycle.destroy_status == "blocked-retained" &&
+            var.reference_data.storage_contract.lifecycle.destroy_completion == "full-stack-destroy-incomplete-infrastructure-retained"
           ) :
           (
             var.reference_data.storage_contract.lifecycle.destroy_status == "eligible-only-while-bucket-empty" &&

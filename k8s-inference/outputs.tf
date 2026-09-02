@@ -28,7 +28,7 @@ output "effective_configuration" {
       retention_mode       = var.deployment.storage.reference_data.lifecycle.retention_mode
       destroy_completion = (
         var.deployment.storage.reference_data.lifecycle.retention_mode == "retain" ?
-        "downstream-only-infrastructure-retained" :
+        "full-stack-destroy-incomplete-infrastructure-retained" :
         "full-only-when-versioned-bucket-empty"
       )
       adoption_required          = var.deployment.storage.reference_data.lifecycle.retention_mode == "retain"
