@@ -38,6 +38,30 @@ and timestamps remain internal. The shared contract branch owns the public
 ArtifactRef/`scientific-artifact-pointer/v1` schema; focused tests validate the
 projection against that merged schema without redefining it here.
 
+## Controller interface and routes
+
+`ScientificArtifactControllerPort` is the typed controller seam. A controller
+can begin/finalize uploads, commit a terminal result, or request a download
+through that port without receiving an object-store implementation or writing
+to persistence tables directly. `ScientificArtifactService` implements the
+port structurally.
+
+`scientific_artifact_router(...)` provides the corresponding internal HTTP
+adapter when an application injects a service into `AppRuntime.artifact_service`:
+
+- `POST /internal/scientific-artifacts/uploads` returns an upload UUID and a
+  short-lived write-once handle.
+- `POST /internal/scientific-artifacts/uploads/{upload_id}:finalize` returns
+  only the public artifact pointer.
+- `GET /internal/scientific-artifacts/{artifact_id}:download` returns the
+  public pointer plus a short-lived read handle.
+
+These routes are controller-facing and bearer-authenticated; they are not MCP
+tools and never serialize `ArtifactRecord`. The public pointer portion omits
+tenant, attempt, storage key, access receipt, and bearer locations. The API
+application mounts them only when an integration owner explicitly injects the
+service, so an unwired deployment cannot accidentally advertise the routes.
+
 A terminal internal result record contains content-addressed input/output
 records, exact model/runtime/workload/scheduling identities, bounded
 Kubernetes execution UIDs, and a semantic-validator identity plus its evidence

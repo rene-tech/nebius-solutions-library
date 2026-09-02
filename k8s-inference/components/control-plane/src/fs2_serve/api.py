@@ -87,7 +87,13 @@ from .models import (
 )
 from .registry import OperationalModel, Registry, RegistryError
 from .route_revalidation import RouteRevalidator
-from .scientific_artifacts import ArtifactConflictError, ArtifactNotFoundError, ArtifactPolicyError
+from .scientific_artifact_routes import scientific_artifact_router
+from .scientific_artifacts import (
+    ArtifactConflictError,
+    ArtifactNotFoundError,
+    ArtifactPolicyError,
+    ScientificArtifactControllerPort,
+)
 from .scientific_batch.kubernetes import HttpScientificBatchCluster
 from .scientific_batch.postgres_repository import ScientificBatchNotFoundError
 from .scientific_batch.profile_catalog import ScientificProfileError, ScientificRequestError
@@ -181,6 +187,7 @@ class AppRuntime:
     scientific_batches: ScientificBatchService | None = None
     scientific_batch_worker: ScientificBatchWorker | None = None
     scientific_batch_cluster: HttpScientificBatchCluster | None = None
+    artifact_service: ScientificArtifactControllerPort | None = None
 
     async def revalidate_routes(self) -> bool:
         if self.route_revalidator is not None and not await self.route_revalidator.refresh():
@@ -1471,6 +1478,14 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 operator_dependency=operator,
                 envelope=access_envelope,
                 problem_responses=admin_problem_responses,
+            )
+        )
+
+    if runtime.artifact_service is not None:
+        app.include_router(
+            scientific_artifact_router(
+                service=runtime.artifact_service,
+                principal_dependency=principal,
             )
         )
 
