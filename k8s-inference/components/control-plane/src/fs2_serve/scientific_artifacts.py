@@ -1,49 +1,80 @@
-"""Durable, payload-free scientific artifact and result-manifest service.
+"""Durable scientific artifact provenance and result service.
 
-The module deliberately has no HTTP, MCP, Kubernetes, or model-adapter wiring.
-Object-store implementations expose only independently measured metadata to
-``finalize_upload``; biological bytes and signed handles never cross the
-repository boundary.
+Artifacts are content addressed and scoped to the exact stage, shard and
+attempt that produced them, together with the Kueue admission identity that
+attempt actually received. Stage completion publishes exactly one immutable
+``scientific-artifact-manifest/v1`` commit, which is the value the scientific
+batch controller reads back as its ``ArtifactCommit``. Operation completion
+publishes exactly one immutable canonical ``scientific-run-result/v1``.
+
+Two invariants are enforced everywhere, including in SQL:
+
+* Object bytes, presigned URLs, signed headers and credentials are never
+  persisted and never logged. Only content addresses and identities are stored.
+* A terminal result fences the operation. A superseded attempt cannot write.
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
-import hmac
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Annotated, Any, Literal, Protocol, cast
-from urllib.parse import quote, urlsplit
+from typing import Annotated, Any, Final, Literal, Protocol
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import asyncpg
-import httpx
 from pydantic import AwareDatetime, ConfigDict, Field, StringConstraints, model_validator
 
 from .models import StrictModel
+from .scientific_batch.models import ArtifactCommit, BatchClaim, batch_identity, workload_identity
+from .scientific_run_result import (
+    SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA,
+    SCIENTIFIC_RUN_RESULT_SCHEMA,
+    AccessAdmission,
+    AccessProfile,
+    AccessState,
+    ArtifactRef,
+    Compression,
+    ManifestEntry,
+    ResultAttempt,
+    SchedulingAdmission,
+    ScientificArtifactManifest,
+    ScientificRunResult,
+)
+from .scientific_run_result import (
+    AttemptStatus as PublicAttemptStatus,
+)
 
-ARTIFACT_RECORD_SCHEMA = "fs2-serve.nebius.ai/scientific-artifact-record/v1"
-RESULT_RECORD_SCHEMA = "fs2-serve.nebius.ai/scientific-result-record/v1"
+ARTIFACT_RECORD_SCHEMA: Final = "fs2-serve.nebius.ai/scientific-artifact-record/v1"
 SCIENTIFIC_ARTIFACT_MIGRATION = "0014_scientific_artifact_results.sql"
 MAX_ARTIFACT_BYTES = 1 << 40
 MAX_HANDLE_TTL = timedelta(minutes=15)
+HANDLE_CLOCK_SKEW = timedelta(minutes=1)
+DEFAULT_HANDLE_TTL = timedelta(minutes=10)
+DEFAULT_RETENTION = timedelta(days=90)
+MAX_RETENTION = timedelta(days=3650)
+NO_SHARD = "-"
+"""Stored sentinel for a gang-scheduled stage that has no shard identity."""
 
 SHA256_PATTERN = r"^sha256:[a-f0-9]{64}$"
 TENANT_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"
-SAFE_ID_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9_.:@/+\-]*[A-Za-z0-9])?$"
-MEDIA_TYPE_PATTERN = r"^[a-z0-9][a-z0-9.+\-]*/[A-Za-z0-9][A-Za-z0-9.+_\-]*$"
+STAGE_PATTERN = r"^[a-z][a-z0-9-]*$"
+SHARD_PATTERN = r"^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+MEDIA_TYPE_PATTERN = r"^[a-z0-9][a-z0-9.+-]*/[A-Za-z0-9][A-Za-z0-9.+_-]*$"
+UID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
 
 TenantId = Annotated[str, StringConstraints(min_length=1, max_length=120, pattern=TENANT_PATTERN)]
-SafeId = Annotated[str, StringConstraints(min_length=1, max_length=256, pattern=SAFE_ID_PATTERN)]
+StageId = Annotated[str, StringConstraints(min_length=1, max_length=63, pattern=STAGE_PATTERN)]
+ShardId = Annotated[str, StringConstraints(min_length=1, max_length=253, pattern=SHARD_PATTERN)]
 Sha256Digest = Annotated[str, StringConstraints(pattern=SHA256_PATTERN)]
 MediaType = Annotated[str, StringConstraints(min_length=3, max_length=128, pattern=MEDIA_TYPE_PATTERN)]
+Uid = Annotated[str, StringConstraints(min_length=1, max_length=128, pattern=UID_PATTERN)]
 
 
 class ScientificArtifactModel(StrictModel):
@@ -81,6 +112,12 @@ class ArtifactPolicyError(ArtifactServiceError):
     code = "artifact_policy_rejected"
 
 
+class ResultAlreadyTerminalError(ArtifactServiceError):
+    """The operation already published its immutable terminal result."""
+
+    code = "scientific_result_terminal"
+
+
 class ArtifactDirection(StrEnum):
     INPUT = "input"
     OUTPUT = "output"
@@ -91,6 +128,18 @@ class ArtifactCompression(StrEnum):
     ZSTD = "zstd"
 
 
+class AttemptStatus(StrEnum):
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    PREEMPTED = "preempted"
+
+    @property
+    def terminal(self) -> bool:
+        return self is not AttemptStatus.RUNNING
+
+
 class ArtifactAccessProfile(StrEnum):
     PUBLIC = "public"
     RESTRICTED = "restricted"
@@ -98,23 +147,12 @@ class ArtifactAccessProfile(StrEnum):
 
 
 class ArtifactEventType(StrEnum):
+    ATTEMPT_OPENED = "attempt_opened"
+    ATTEMPT_CLOSED = "attempt_closed"
     UPLOAD_BEGUN = "upload_begun"
     ARTIFACT_FINALIZED = "artifact_finalized"
+    STAGE_COMMITTED = "stage_committed"
     RESULT_COMMITTED = "result_committed"
-
-
-class TerminalResultStatus(StrEnum):
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-    PREEMPTED = "preempted"
-    EXPIRED = "expired"
-
-
-class SemanticValidationStatus(StrEnum):
-    PASSED = "passed"
-    FAILED = "failed"
-    NOT_RUN = "not_run"
 
 
 class ArtifactAccess(ScientificArtifactModel):
@@ -131,14 +169,151 @@ class ArtifactAccess(ScientificArtifactModel):
             raise ValueError("gated artifacts require a non-secret access receipt digest")
         return self
 
+    def to_admission(self) -> AccessAdmission:
+        """Project onto the canonical public access-admission shape."""
 
-class BeginArtifactUpload(ScientificArtifactModel):
-    """Idempotent upload intent; callers reuse ``upload_id`` after timeouts."""
+        if self.profile is ArtifactAccessProfile.PUBLIC:
+            return AccessAdmission(profile=AccessProfile.STANDARD, state=AccessState.NOT_REQUIRED)
+        profile = AccessProfile.ACADEMIC if self.profile is ArtifactAccessProfile.ACADEMIC else AccessProfile.STANDARD
+        assert self.receipt_digest is not None
+        return AccessAdmission(
+            profile=profile,
+            state=AccessState.VERIFIED,
+            receipt_digest=self.receipt_digest.removeprefix("sha256:"),
+        )
 
-    upload_id: UUID
+
+class KueueAdmission(ScientificArtifactModel):
+    """The accelerator identity Kueue admitted for one stage/shard attempt."""
+
+    resolved_pool_id: Annotated[str, StringConstraints(max_length=128)] | None = None
+    admitted_resource_flavor: Annotated[str, StringConstraints(max_length=253)] | None = None
+    accelerator_resource_name: Annotated[str, StringConstraints(max_length=253)] | None = None
+    accelerator_count: int = Field(default=0, ge=0, le=1024)
+    admitted_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def identity_matches_count(self) -> KueueAdmission:
+        bound = (self.resolved_pool_id, self.admitted_resource_flavor, self.accelerator_resource_name)
+        if self.accelerator_count >= 1 and any(item is None for item in bound):
+            raise ValueError("an accelerator admission must name its pool, flavor and resource")
+        if self.accelerator_count == 0 and any(item is not None for item in bound):
+            raise ValueError("a non-accelerator admission cannot name a pool, flavor or resource")
+        return self
+
+    def to_public(self) -> SchedulingAdmission:
+        return SchedulingAdmission(
+            resolved_pool_id=self.resolved_pool_id,
+            admitted_resource_flavor=self.admitted_resource_flavor,
+            accelerator_resource_name=self.accelerator_resource_name,
+            accelerator_count=self.accelerator_count,
+            admitted_at=self.admitted_at,
+        )
+
+
+class OpenStageAttempt(ScientificArtifactModel):
+    """Register one scheduled stage/shard attempt before it writes anything."""
+
+    attempt_id: UUID
     operation_id: UUID
     tenant_id: TenantId
-    attempt: int = Field(ge=0, le=10)
+    stage_id: StageId
+    shard_id: ShardId | None = None
+    attempt_number: int = Field(ge=1, le=10)
+    admission: KueueAdmission | None = None
+    kueue_workload_uid: Uid | None = None
+    k8s_job_uid: Uid | None = None
+    started_at: AwareDatetime
+
+
+class CloseStageAttempt(ScientificArtifactModel):
+    """Record the terminal outcome and observed GPU lifecycle identity."""
+
+    attempt_id: UUID
+    operation_id: UUID
+    tenant_id: TenantId
+    status: AttemptStatus
+    completed_at: AwareDatetime
+    admission: KueueAdmission | None = None
+    kueue_workload_uid: Uid | None = None
+    k8s_job_uid: Uid | None = None
+    pod_uids: tuple[Uid, ...] = Field(default=(), max_length=1024)
+    node_uids: tuple[Uid, ...] = Field(default=(), max_length=1024)
+    gpu_uuids: tuple[Uid, ...] = Field(default=(), max_length=1024)
+
+    @model_validator(mode="after")
+    def outcome_is_terminal_and_unique(self) -> CloseStageAttempt:
+        if not self.status.terminal:
+            raise ValueError("closing an attempt requires a terminal outcome")
+        for values, label in ((self.pod_uids, "pod"), (self.node_uids, "node"), (self.gpu_uuids, "gpu")):
+            if len(set(values)) != len(values):
+                raise ValueError(f"{label} identities must be unique")
+        return self
+
+
+class StageAttemptRecord(ScientificArtifactModel):
+    """Persisted stage/shard attempt with its frozen admission identity."""
+
+    attempt_id: UUID
+    operation_id: UUID
+    tenant_id: TenantId
+    stage_id: StageId
+    shard_id: ShardId | None = None
+    attempt_number: int = Field(ge=1, le=10)
+    status: AttemptStatus
+    admission: KueueAdmission | None = None
+    kueue_workload_uid: Uid | None = None
+    k8s_job_uid: Uid | None = None
+    pod_uids: tuple[Uid, ...] = Field(default=(), max_length=1024)
+    node_uids: tuple[Uid, ...] = Field(default=(), max_length=1024)
+    gpu_uuids: tuple[Uid, ...] = Field(default=(), max_length=1024)
+    started_at: AwareDatetime
+    completed_at: AwareDatetime | None = None
+    retention_expires_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def completion_matches_status(self) -> StageAttemptRecord:
+        if self.status.terminal != (self.completed_at is not None):
+            raise ValueError("attempt completion time must accompany a terminal outcome")
+        if self.completed_at is not None and self.completed_at < self.started_at:
+            raise ValueError("an attempt cannot complete before it starts")
+        if self.status in {AttemptStatus.SUCCEEDED, AttemptStatus.PREEMPTED} and self.admission is None:
+            raise ValueError("an admitted attempt must retain its Kueue admission identity")
+        return self
+
+    @property
+    def shard_key(self) -> str:
+        return self.shard_id or NO_SHARD
+
+    def to_public_attempt(self) -> ResultAttempt:
+        """Project onto one canonical ``scientific-run-result/v1`` attempt."""
+
+        if self.completed_at is None:
+            raise ArtifactConflictError("a running attempt cannot appear in a terminal result")
+        return ResultAttempt(
+            attempt_id=str(self.attempt_id),
+            stage_id=self.stage_id,
+            shard_id=self.shard_id,
+            attempt_number=self.attempt_number,
+            status=PublicAttemptStatus(self.status.value),
+            started_at=self.started_at,
+            completed_at=self.completed_at,
+            scheduling_admission=self.admission.to_public() if self.admission else None,
+            kueue_workload_uid=self.kueue_workload_uid,
+            k8s_job_uid=self.k8s_job_uid,
+            pod_uids=self.pod_uids,
+            node_uids=self.node_uids,
+            gpu_uuids=self.gpu_uuids,
+        )
+
+
+class BeginArtifactUpload(ScientificArtifactModel):
+    """Idempotent upload intent; callers reuse ``upload_id`` after a timeout."""
+
+    upload_id: UUID
+    attempt_id: UUID
+    operation_id: UUID
+    tenant_id: TenantId
     direction: ArtifactDirection
     expected_digest: Sha256Digest
     expected_size_bytes: int = Field(ge=0, le=MAX_ARTIFACT_BYTES)
@@ -151,7 +326,6 @@ class FinalizeArtifactUpload(ScientificArtifactModel):
     upload_id: UUID
     operation_id: UUID
     tenant_id: TenantId
-    attempt: int = Field(ge=0, le=10)
 
 
 class VerifiedStoredObject(ScientificArtifactModel):
@@ -164,26 +338,16 @@ class VerifiedStoredObject(ScientificArtifactModel):
     compression: ArtifactCompression | None = None
 
 
-class ArtifactRefProjection(ScientificArtifactModel):
-    """Schema-neutral value matching the shared public ArtifactRef fields."""
-
-    artifact_id: UUID
-    sha256: Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")]
-    size_bytes: int = Field(ge=0, le=MAX_ARTIFACT_BYTES)
-    media_type: MediaType
-    compression: ArtifactCompression | None = None
-
-
 class ArtifactRecord(ScientificArtifactModel):
-    """Internal persisted content address and attempt-scoped storage identity."""
+    """Internal content address bound to the attempt that produced it."""
 
-    schema_version: Literal["fs2-serve.nebius.ai/scientific-artifact-record/v1"] = (
-        "fs2-serve.nebius.ai/scientific-artifact-record/v1"
-    )
+    schema_version: Literal["fs2-serve.nebius.ai/scientific-artifact-record/v1"] = ARTIFACT_RECORD_SCHEMA
     artifact_id: UUID
+    attempt_id: UUID
     operation_id: UUID
     tenant_id: TenantId
-    attempt: int = Field(ge=0, le=10)
+    stage_id: StageId
+    shard_id: ShardId | None = None
     direction: ArtifactDirection
     digest: Sha256Digest
     size_bytes: int = Field(ge=0, le=MAX_ARTIFACT_BYTES)
@@ -191,6 +355,7 @@ class ArtifactRecord(ScientificArtifactModel):
     compression: ArtifactCompression | None = None
     storage_key: str = Field(min_length=1, max_length=1024)
     access: ArtifactAccess
+    retention_expires_at: AwareDatetime
     created_at: AwareDatetime
 
     @model_validator(mode="after")
@@ -198,31 +363,37 @@ class ArtifactRecord(ScientificArtifactModel):
         expected = artifact_storage_key(
             tenant_id=self.tenant_id,
             operation_id=self.operation_id,
-            attempt=self.attempt,
+            stage_id=self.stage_id,
+            shard_id=self.shard_id,
+            attempt_id=self.attempt_id,
             direction=self.direction,
             digest=self.digest,
         )
         if self.storage_key != expected:
-            raise ValueError("artifact storage key is not the canonical attempt-scoped content address")
+            raise ValueError("artifact storage key is not the canonical content address")
         return self
 
-    def to_public_ref(self) -> ArtifactRefProjection:
-        """Drop every persistence/fencing/location field at the public boundary."""
+    def to_public_ref(self) -> ArtifactRef:
+        """Project onto the canonical public pointer; no location is exposed."""
 
-        return ArtifactRefProjection(
-            artifact_id=self.artifact_id,
+        return ArtifactRef(
+            artifact_id=str(self.artifact_id),
             sha256=self.digest.removeprefix("sha256:"),
             size_bytes=self.size_bytes,
             media_type=self.media_type,
-            compression=self.compression,
+            compression=Compression(self.compression.value) if self.compression else Compression.NONE,
         )
 
 
 class UploadIntent(ScientificArtifactModel):
+    """Durable upload expectation; the signed handle itself is never stored."""
+
     upload_id: UUID
+    attempt_id: UUID
     operation_id: UUID
     tenant_id: TenantId
-    attempt: int = Field(ge=0, le=10)
+    stage_id: StageId
+    shard_id: ShardId | None = None
     direction: ArtifactDirection
     expected_digest: Sha256Digest
     expected_size_bytes: int = Field(ge=0, le=MAX_ARTIFACT_BYTES)
@@ -232,143 +403,122 @@ class UploadIntent(ScientificArtifactModel):
     access: ArtifactAccess
     begun_at: AwareDatetime
     finalized_at: AwareDatetime | None = None
-    artifact: ArtifactRecord | None = None
+    artifact_id: UUID | None = None
 
     @model_validator(mode="after")
     def state_and_scope_are_consistent(self) -> UploadIntent:
         expected = artifact_storage_key(
             tenant_id=self.tenant_id,
             operation_id=self.operation_id,
-            attempt=self.attempt,
+            stage_id=self.stage_id,
+            shard_id=self.shard_id,
+            attempt_id=self.attempt_id,
             direction=self.direction,
             digest=self.expected_digest,
         )
         if self.storage_key != expected:
             raise ValueError("upload storage key is not canonical")
-        if (self.finalized_at is None) != (self.artifact is None):
+        if (self.finalized_at is None) != (self.artifact_id is None):
             raise ValueError("upload finalization state is incomplete")
-        if self.artifact is not None:
-            artifact = self.artifact
-            if (
-                artifact.operation_id != self.operation_id
-                or artifact.tenant_id != self.tenant_id
-                or artifact.attempt != self.attempt
-                or artifact.direction is not self.direction
-                or artifact.digest != self.expected_digest
-                or artifact.size_bytes != self.expected_size_bytes
-                or artifact.media_type != self.media_type
-                or artifact.compression != self.compression
-                or artifact.storage_key != self.storage_key
-                or artifact.access != self.access
-            ):
-                raise ValueError("finalized artifact differs from its upload intent")
         return self
 
 
-class ExecutionProvenance(ScientificArtifactModel):
-    """Bounded execution identity; payloads, argv, environment, and credentials are absent."""
+class ManifestEntryDraft(ScientificArtifactModel):
+    """One named, typed output an adapter publishes for a completed stage."""
 
-    model_id: SafeId
-    model_revision: SafeId
-    runtime_image_digest: Sha256Digest
-    workload_spec_digest: Sha256Digest
-    scheduling_snapshot_digest: Sha256Digest
-    job_uid: SafeId | None = None
-    pod_uids: tuple[SafeId, ...] = Field(default=(), max_length=64)
-    started_at: AwareDatetime
-    completed_at: AwareDatetime
-
-    @model_validator(mode="after")
-    def execution_is_consistent(self) -> ExecutionProvenance:
-        if self.completed_at < self.started_at:
-            raise ValueError("execution completion precedes its start")
-        if len(self.pod_uids) != len(set(self.pod_uids)):
-            raise ValueError("execution Pod identities must be unique")
-        return self
+    name: Annotated[str, StringConstraints(max_length=128, pattern=r"^[a-z][a-z0-9_.-]*$")]
+    semantic_type: Annotated[str, StringConstraints(max_length=128, pattern=r"^[a-z][a-z0-9_.-]*/v[1-9][0-9]*$")]
+    artifact_id: UUID
 
 
-class SemanticValidation(ScientificArtifactModel):
-    validator_id: SafeId
-    validator_revision: Sha256Digest
-    status: SemanticValidationStatus
-    evidence_artifact: ArtifactRecord | None = None
+class CommitStageResult(ScientificArtifactModel):
+    """Publish exactly one validated manifest for a completed stage."""
 
-    @model_validator(mode="after")
-    def evidence_matches_status(self) -> SemanticValidation:
-        if self.status is SemanticValidationStatus.PASSED and self.evidence_artifact is None:
-            raise ValueError("passed semantic validation requires a content-addressed evidence artifact")
-        if self.status is SemanticValidationStatus.NOT_RUN and self.evidence_artifact is not None:
-            raise ValueError("semantic validation that did not run cannot have evidence")
-        return self
-
-
-class TerminalResultDraft(ScientificArtifactModel):
     operation_id: UUID
     tenant_id: TenantId
-    attempt: int = Field(ge=0, le=10)
-    status: TerminalResultStatus
-    input_artifacts: tuple[ArtifactRecord, ...] = Field(default=(), max_length=256)
-    output_artifacts: tuple[ArtifactRecord, ...] = Field(default=(), max_length=256)
-    provenance: ExecutionProvenance
-    validation: SemanticValidation
-    completed_at: AwareDatetime
+    stage_id: StageId
+    attempt_ids: tuple[UUID, ...] = Field(min_length=1, max_length=10240)
+    entries: tuple[ManifestEntryDraft, ...] = Field(min_length=1, max_length=10000)
+    validation_digest: Sha256Digest
+    semantic_valid: bool
+    committed_at: AwareDatetime
+    validated_at: AwareDatetime
 
     @model_validator(mode="after")
-    def references_are_scoped_and_validated(self) -> TerminalResultDraft:
-        all_artifacts = (*self.input_artifacts, *self.output_artifacts)
-        if len({item.artifact_id for item in all_artifacts}) != len(all_artifacts):
-            raise ValueError("terminal result contains duplicate artifact references")
-        for expected_direction, artifacts in (
-            (ArtifactDirection.INPUT, self.input_artifacts),
-            (ArtifactDirection.OUTPUT, self.output_artifacts),
-        ):
-            for artifact in artifacts:
-                if (
-                    artifact.operation_id != self.operation_id
-                    or artifact.tenant_id != self.tenant_id
-                    or artifact.attempt != self.attempt
-                    or artifact.direction is not expected_direction
-                ):
-                    raise ValueError("terminal result contains an artifact outside its fenced attempt")
-        evidence = self.validation.evidence_artifact
-        if evidence is not None and evidence not in self.output_artifacts:
-            raise ValueError("semantic evidence must be one of the committed output artifacts")
-        if self.completed_at != self.provenance.completed_at:
-            raise ValueError("result and execution completion times differ")
-        if self.status is TerminalResultStatus.SUCCEEDED:
-            if not self.output_artifacts:
-                raise ValueError("successful result requires at least one output artifact")
-            if self.validation.status is not SemanticValidationStatus.PASSED:
-                raise ValueError("successful result requires passed semantic validation")
+    def commit_identity_is_sound(self) -> CommitStageResult:
+        if len(set(self.attempt_ids)) != len(self.attempt_ids):
+            raise ValueError("stage commit attempt identities must be unique")
+        names = [entry.name for entry in self.entries]
+        if len(set(names)) != len(names):
+            raise ValueError("stage manifest entry names must be unique")
+        if self.validated_at < self.committed_at:
+            raise ValueError("semantic validation cannot precede the atomic commit")
         return self
 
 
-class TerminalResultManifest(TerminalResultDraft):
-    """Internal persisted result; public projections use the catalog schema."""
+class StageCommitRecord(ScientificArtifactModel):
+    """Immutable per-stage manifest commit read back by the batch controller."""
 
-    schema_version: Literal["fs2-serve.nebius.ai/scientific-result-record/v1"] = (
-        "fs2-serve.nebius.ai/scientific-result-record/v1"
-    )
+    operation_id: UUID
+    tenant_id: TenantId
+    stage_id: StageId
+    attempt_ids: tuple[UUID, ...] = Field(min_length=1)
+    manifest: ScientificArtifactManifest
     manifest_digest: Sha256Digest
+    validation_digest: Sha256Digest
+    semantic_valid: bool
     committed_at: AwareDatetime
+    validated_at: AwareDatetime
 
     @model_validator(mode="after")
-    def digest_matches_manifest(self) -> TerminalResultManifest:
-        if self.committed_at < self.completed_at:
-            raise ValueError("terminal result was committed before it completed")
-        if self.manifest_digest != result_manifest_digest(self):
-            raise ValueError("terminal result manifest digest does not match its canonical body")
+    def digest_matches_manifest(self) -> StageCommitRecord:
+        if self.manifest_digest != self.manifest.digest:
+            raise ValueError("stage manifest digest does not match its canonical document")
+        return self
+
+    def to_controller_commit(self) -> ArtifactCommit:
+        """Return the exact value ``ScientificBatchRepository`` must hand back."""
+
+        return ArtifactCommit(
+            operation_id=self.operation_id,
+            stage_id=self.stage_id,
+            attempt_ids=tuple(self.attempt_ids),
+            manifest_digest=self.manifest_digest,
+            validation_digest=self.validation_digest,
+            committed_at=self.committed_at,
+            validated_at=self.validated_at,
+            semantic_valid=self.semantic_valid,
+        )
+
+
+class RunResultRecord(ScientificArtifactModel):
+    """The stored canonical terminal result plus its immutable commit identity."""
+
+    operation_id: UUID
+    tenant_id: TenantId
+    result: ScientificRunResult
+    result_digest: Sha256Digest
+    committed_at: AwareDatetime
+    retention_expires_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def digest_matches_document(self) -> RunResultRecord:
+        if self.result_digest != self.result.digest:
+            raise ValueError("terminal result digest does not match its canonical document")
+        if self.committed_at < self.result.completed_at:
+            raise ValueError("a terminal result cannot be committed before it completes")
         return self
 
 
 class ArtifactEvent(ScientificArtifactModel):
-    """Closed, payload-free durable event; there is intentionally no detail map."""
+    """Closed, payload-free durable event; there is no free-form detail map."""
 
     event_id: int = Field(ge=1)
     event_type: ArtifactEventType
     operation_id: UUID
     tenant_id: TenantId
-    attempt: int = Field(ge=0, le=10)
+    stage_id: StageId | None = None
+    attempt_id: UUID | None = None
     upload_id: UUID | None = None
     artifact_id: UUID | None = None
     manifest_digest: Sha256Digest | None = None
@@ -376,257 +526,52 @@ class ArtifactEvent(ScientificArtifactModel):
 
     @model_validator(mode="after")
     def identity_matches_event(self) -> ArtifactEvent:
-        if self.event_type is ArtifactEventType.UPLOAD_BEGUN:
-            valid = self.upload_id is not None and self.artifact_id is None and self.manifest_digest is None
-        elif self.event_type is ArtifactEventType.ARTIFACT_FINALIZED:
-            valid = self.upload_id is not None and self.artifact_id is not None and self.manifest_digest is None
-        else:
-            valid = self.upload_id is None and self.artifact_id is None and self.manifest_digest is not None
-        if not valid:
+        required, forbidden = _EVENT_SHAPE[self.event_type]
+        present = {
+            "stage_id": self.stage_id is not None,
+            "attempt_id": self.attempt_id is not None,
+            "upload_id": self.upload_id is not None,
+            "artifact_id": self.artifact_id is not None,
+            "manifest_digest": self.manifest_digest is not None,
+        }
+        if any(not present[name] for name in required) or any(present[name] for name in forbidden):
             raise ValueError("artifact event has an invalid identity shape")
         return self
 
 
-class ArtifactObjectStore(Protocol):
-    async def inspect(self, storage_key: str) -> VerifiedStoredObject:
-        """Hash and size the stored bytes without returning them to this service."""
-
-
-class ArtifactHandleSigner(Protocol):
-    async def issue_upload(
-        self,
-        *,
-        storage_key: str,
-        media_type: str,
-        compression: ArtifactCompression | None,
-        expected_digest: str,
-        expires_at: datetime,
-    ) -> EphemeralHandle: ...
-
-    async def issue_download(self, *, storage_key: str, expires_at: datetime) -> EphemeralHandle: ...
-
-
-def _uri_encode(value: str, *, encode_slash: bool = True) -> str:
-    return quote(value, safe="-_.~" if encode_slash else "/-_.~")
-
-
-def _hmac(key: bytes, value: str) -> bytes:
-    return hmac.new(key, value.encode(), hashlib.sha256).digest()
-
-
-class _S3SigV4:
-    """Minimal AWS Signature V4 query signer for one path-style S3 endpoint."""
-
-    def __init__(self, *, endpoint: str, bucket: str, region: str, access_key: str, secret_key: str) -> None:
-        parsed = urlsplit(endpoint)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.path not in {"", "/"}
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError("artifact endpoint must be an exact HTTPS authority")
-        if re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,62}[a-z0-9]", bucket) is None:
-            raise ValueError("artifact bucket is invalid")
-        if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", region) is None:
-            raise ValueError("artifact region is invalid")
-        if not 3 <= len(access_key) <= 256 or not 8 <= len(secret_key) <= 1024:
-            raise ValueError("artifact S3 credentials are absent or invalid")
-        self.endpoint = f"https://{parsed.netloc}"
-        self.host = parsed.netloc.lower()
-        self.bucket = bucket
-        self.region = region
-        self.access_key = access_key
-        self.secret_key = secret_key
-
-    def presign(
-        self,
-        method: Literal["GET", "PUT", "HEAD"],
-        storage_key: str,
-        *,
-        now: datetime,
-        expires_at: datetime,
-        headers: Mapping[str, str] | None = None,
-    ) -> tuple[str, dict[str, str]]:
-        if now.tzinfo is None or expires_at.tzinfo is None:
-            raise ValueError("artifact signature timestamps must be timezone-aware")
-        seconds = int((expires_at - now).total_seconds())
-        if not 1 <= seconds <= 604800:
-            raise ValueError("artifact signature expiry is outside the SigV4 bound")
-        timestamp = now.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
-        date = timestamp[:8]
-        scope = f"{date}/{self.region}/s3/aws4_request"
-        request_headers = {key.lower(): " ".join(value.strip().split()) for key, value in (headers or {}).items()}
-        if "host" in request_headers or any(not key or not value for key, value in request_headers.items()):
-            raise ValueError("artifact signed headers are invalid")
-        canonical_headers = {"host": self.host, **request_headers}
-        signed_headers = ";".join(sorted(canonical_headers))
-        query = {
-            "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
-            "X-Amz-Credential": f"{self.access_key}/{scope}",
-            "X-Amz-Date": timestamp,
-            "X-Amz-Expires": str(seconds),
-            "X-Amz-SignedHeaders": signed_headers,
-        }
-        canonical_query = "&".join(f"{_uri_encode(key)}={_uri_encode(value)}" for key, value in sorted(query.items()))
-        canonical_uri = f"/{_uri_encode(self.bucket)}/{_uri_encode(storage_key, encode_slash=False)}"
-        canonical_header_block = "".join(f"{key}:{canonical_headers[key]}\n" for key in sorted(canonical_headers))
-        canonical_request = "\n".join(
-            (method, canonical_uri, canonical_query, canonical_header_block, signed_headers, "UNSIGNED-PAYLOAD")
-        )
-        string_to_sign = "\n".join(
-            (
-                "AWS4-HMAC-SHA256",
-                timestamp,
-                scope,
-                hashlib.sha256(canonical_request.encode()).hexdigest(),
-            )
-        )
-        date_key = _hmac(f"AWS4{self.secret_key}".encode(), date)
-        region_key = _hmac(date_key, self.region)
-        service_key = _hmac(region_key, "s3")
-        signing_key = _hmac(service_key, "aws4_request")
-        signature = hmac.new(signing_key, string_to_sign.encode(), hashlib.sha256).hexdigest()
-        return f"{self.endpoint}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}", request_headers
-
-
-class S3CompatibleArtifactObjectStore:
-    """Verify immutable upload metadata with an authenticated S3 HEAD."""
-
-    def __init__(self, *, endpoint: str, bucket: str, region: str, access_key: str, secret_key: str) -> None:
-        self.signer = _S3SigV4(
-            endpoint=endpoint,
-            bucket=bucket,
-            region=region,
-            access_key=access_key,
-            secret_key=secret_key,
-        )
-
-    async def inspect(self, storage_key: str) -> VerifiedStoredObject:
-        now = datetime.now(UTC)
-        url, headers = self.signer.presign(
-            "HEAD",
-            storage_key,
-            now=now,
-            expires_at=now + timedelta(minutes=1),
-            headers={"x-amz-checksum-mode": "ENABLED"},
-        )
-        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            response = await client.head(url, headers=headers)
-            response.raise_for_status()
-        encoded_checksum = response.headers.get("x-amz-checksum-sha256")
-        if encoded_checksum is None:
-            raise ArtifactVerificationError("stored object has no SHA-256 checksum")
-        try:
-            checksum = base64.b64decode(encoded_checksum, validate=True)
-        except ValueError as error:
-            raise ArtifactVerificationError("stored object SHA-256 checksum is invalid") from error
-        if len(checksum) != hashlib.sha256().digest_size:
-            raise ArtifactVerificationError("stored object SHA-256 checksum is invalid")
-        compression_value = response.headers.get("content-encoding")
-        try:
-            compression = None if compression_value is None else ArtifactCompression(compression_value)
-        except ValueError as error:
-            raise ArtifactVerificationError("stored object compression is unsupported") from error
-        try:
-            size_bytes = int(response.headers["content-length"])
-        except (KeyError, ValueError):
-            raise ArtifactVerificationError("stored object size is invalid") from None
-        return VerifiedStoredObject(
-            storage_key=storage_key,
-            digest="sha256:" + checksum.hex(),
-            size_bytes=size_bytes,
-            media_type=response.headers.get("content-type", "application/octet-stream").split(";", 1)[0],
-            compression=compression,
-        )
-
-
-class S3CompatibleArtifactHandleSigner:
-    """Issue real SigV4 query-authenticated handles; credentials stay local."""
-
-    def __init__(self, *, endpoint: str, bucket: str, region: str, access_key: str, secret_key: str) -> None:
-        self.signer = _S3SigV4(
-            endpoint=endpoint,
-            bucket=bucket,
-            region=region,
-            access_key=access_key,
-            secret_key=secret_key,
-        )
-
-    async def issue_upload(
-        self,
-        *,
-        storage_key: str,
-        media_type: str,
-        compression: ArtifactCompression | None,
-        expected_digest: str,
-        expires_at: datetime,
-    ) -> EphemeralHandle:
-        now = datetime.now(UTC)
-        encoded_checksum = base64.b64encode(bytes.fromhex(expected_digest.removeprefix("sha256:"))).decode()
-        signed = {"content-type": media_type, "x-amz-checksum-sha256": encoded_checksum}
-        if compression is not None:
-            signed["content-encoding"] = compression.value
-        url, headers = self.signer.presign("PUT", storage_key, now=now, expires_at=expires_at, headers=signed)
-        return EphemeralHandle(method="PUT", url=url, expires_at=expires_at, write_once=True, headers=headers)
-
-    async def issue_download(self, *, storage_key: str, expires_at: datetime) -> EphemeralHandle:
-        now = datetime.now(UTC)
-        url, headers = self.signer.presign("GET", storage_key, now=now, expires_at=expires_at)
-        return EphemeralHandle(method="GET", url=url, expires_at=expires_at, headers=headers)
-
-
-class ArtifactRepository(Protocol):
-    async def begin_upload(self, request: BeginArtifactUpload, storage_key: str) -> UploadIntent: ...
-
-    async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent: ...
-
-    async def finalize_upload(
-        self,
-        request: FinalizeArtifactUpload,
-        verified: VerifiedStoredObject,
-        *,
-        artifact_id: UUID,
-    ) -> ArtifactRecord: ...
-
-    async def get_artifact(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactRecord: ...
-
-    async def commit_terminal_result(self, manifest: TerminalResultManifest) -> TerminalResultManifest: ...
-
-    async def get_terminal_result(self, operation_id: UUID, *, tenant_id: str) -> TerminalResultManifest: ...
-
-    async def list_events(self, operation_id: UUID, *, tenant_id: str) -> list[ArtifactEvent]: ...
-
-
-class ScientificArtifactControllerPort(Protocol):
-    """Stable controller port; implementations never expose persistence records publicly."""
-
-    async def begin_upload(
-        self,
-        request: BeginArtifactUpload,
-        *,
-        handle_ttl: timedelta | None = None,
-    ) -> BeginUploadResult: ...
-
-    async def finalize_upload(self, request: FinalizeArtifactUpload) -> ArtifactRecord: ...
-
-    async def commit_terminal_result(self, draft: TerminalResultDraft) -> TerminalResultManifest: ...
-
-    async def download(
-        self,
-        artifact_id: UUID,
-        *,
-        tenant_id: str,
-        handle_ttl: timedelta | None = None,
-    ) -> ArtifactDownload: ...
+_EVENT_SHAPE: Mapping[ArtifactEventType, tuple[frozenset[str], frozenset[str]]] = MappingProxyType(
+    {
+        ArtifactEventType.ATTEMPT_OPENED: (
+            frozenset({"stage_id", "attempt_id"}),
+            frozenset({"upload_id", "artifact_id", "manifest_digest"}),
+        ),
+        ArtifactEventType.ATTEMPT_CLOSED: (
+            frozenset({"stage_id", "attempt_id"}),
+            frozenset({"upload_id", "artifact_id", "manifest_digest"}),
+        ),
+        ArtifactEventType.UPLOAD_BEGUN: (
+            frozenset({"stage_id", "attempt_id", "upload_id"}),
+            frozenset({"artifact_id", "manifest_digest"}),
+        ),
+        ArtifactEventType.ARTIFACT_FINALIZED: (
+            frozenset({"stage_id", "attempt_id", "upload_id", "artifact_id"}),
+            frozenset({"manifest_digest"}),
+        ),
+        ArtifactEventType.STAGE_COMMITTED: (
+            frozenset({"stage_id", "manifest_digest"}),
+            frozenset({"attempt_id", "upload_id", "artifact_id"}),
+        ),
+        ArtifactEventType.RESULT_COMMITTED: (
+            frozenset({"manifest_digest"}),
+            frozenset({"stage_id", "attempt_id", "upload_id", "artifact_id"}),
+        ),
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
 class EphemeralHandle:
-    """Short-lived secret returned to a caller and excluded from object repr."""
+    """Short-lived bearer material returned to a caller and never persisted."""
 
     method: Literal["GET", "PUT"]
     url: str = field(repr=False)
@@ -650,38 +595,25 @@ class ArtifactDownload:
     handle: EphemeralHandle = field(repr=False)
 
 
-def _canonical_json(value: object) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+@dataclass(frozen=True, slots=True)
+class RetentionPurge:
+    """One completed retention deletion, retained as durable evidence."""
 
-
-def _manifest_body(value: TerminalResultDraft | TerminalResultManifest) -> dict[str, Any]:
-    body = value.model_dump(mode="json", exclude={"manifest_digest", "committed_at"})
-    body.setdefault("schema_version", RESULT_RECORD_SCHEMA)
-    return body
-
-
-def result_manifest_digest(value: TerminalResultDraft | TerminalResultManifest) -> str:
-    return "sha256:" + hashlib.sha256(_canonical_json(_manifest_body(value))).hexdigest()
-
-
-def build_terminal_manifest(
-    draft: TerminalResultDraft,
-    *,
-    committed_at: datetime,
-) -> TerminalResultManifest:
-    body = draft.model_dump()
-    return TerminalResultManifest(
-        **body,
-        manifest_digest=result_manifest_digest(draft),
-        committed_at=committed_at,
-    )
+    operation_id: UUID
+    tenant_id: str
+    artifact_count: int
+    byte_count: int
+    retention_expired_at: datetime
+    purged_at: datetime
 
 
 def artifact_storage_key(
     *,
     tenant_id: str,
     operation_id: UUID,
-    attempt: int,
+    stage_id: str,
+    shard_id: str | None,
+    attempt_id: UUID,
     direction: ArtifactDirection,
     digest: str,
 ) -> str:
@@ -689,13 +621,33 @@ def artifact_storage_key(
 
     if re.fullmatch(TENANT_PATTERN, tenant_id) is None or len(tenant_id) > 120:
         raise ValueError("tenant identity is not canonical")
-    if not 0 <= attempt <= 10:
-        raise ValueError("artifact attempt is outside the supported range")
+    if re.fullmatch(STAGE_PATTERN, stage_id) is None or len(stage_id) > 63:
+        raise ValueError("stage identity is not canonical")
+    shard = shard_id or NO_SHARD
+    if shard != NO_SHARD and (re.fullmatch(SHARD_PATTERN, shard) is None or len(shard) > 253):
+        raise ValueError("shard identity is not canonical")
     if re.fullmatch(SHA256_PATTERN, digest) is None:
         raise ValueError("artifact digest is not canonical")
     return (
-        f"scientific/v1/tenants/{tenant_id}/operations/{operation_id}/attempts/{attempt}/"
-        f"{direction.value}/sha256/{digest.removeprefix('sha256:')}"
+        f"scientific/v1/tenants/{tenant_id}/operations/{operation_id}"
+        f"/stages/{stage_id}/shards/{shard}/attempts/{attempt_id}"
+        f"/{direction.value}/sha256/{digest.removeprefix('sha256:')}"
+    )
+
+
+def build_stage_manifest(
+    *, operation_id: UUID, stage_id: str, entries: Sequence[tuple[ManifestEntryDraft, ArtifactRecord]]
+) -> ScientificArtifactManifest:
+    """Build the canonical stage manifest in a deterministic entry order."""
+
+    ordered = sorted(entries, key=lambda item: item[0].name)
+    return ScientificArtifactManifest(
+        schema=SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA,
+        manifest_id=f"{operation_id}:{stage_id}",
+        entries=tuple(
+            ManifestEntry(name=draft.name, semantic_type=draft.semantic_type, artifact=record.to_public_ref())
+            for draft, record in ordered
+        ),
     )
 
 
@@ -708,16 +660,24 @@ def _validate_handle(
     *,
     method: Literal["GET", "PUT"],
     now: datetime,
-    deadline: datetime,
+    ttl: timedelta,
+    require_tls: bool,
 ) -> None:
+    """Reject any handle that is long-lived, reusable, or not bearer-safe.
+
+    The adapter stamps the deadline from the same wall clock the gateway checks,
+    so the bound below allows one minute of skew against the service clock.
+    """
+
+    deadline = now + ttl + HANDLE_CLOCK_SKEW
     parsed = urlsplit(handle.url)
+    allowed_schemes = ("https",) if require_tls else ("https", "http")
     if (
         handle.method != method
-        or (method == "PUT" and not handle.write_once)
-        or (method == "GET" and handle.write_once)
+        or (method == "PUT") != handle.write_once
         or handle.expires_at.tzinfo is None
         or not now < handle.expires_at <= deadline
-        or parsed.scheme != "https"
+        or parsed.scheme not in allowed_schemes
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
@@ -725,15 +685,15 @@ def _validate_handle(
             not isinstance(key, str) or not key or not isinstance(value, str) for key, value in handle.headers.items()
         )
     ):
-        raise ArtifactPolicyError("artifact handle violates the short-lived HTTPS policy")
+        raise ArtifactPolicyError("artifact handle violates the short-lived bearer policy")
 
 
 def _same_upload_request(intent: UploadIntent, request: BeginArtifactUpload, storage_key: str) -> bool:
     return (
         intent.upload_id == request.upload_id
+        and intent.attempt_id == request.attempt_id
         and intent.operation_id == request.operation_id
         and intent.tenant_id == request.tenant_id
-        and intent.attempt == request.attempt
         and intent.direction is request.direction
         and intent.expected_digest == request.expected_digest
         and intent.expected_size_bytes == request.expected_size_bytes
@@ -745,6 +705,8 @@ def _same_upload_request(intent: UploadIntent, request: BeginArtifactUpload, sto
 
 
 def _verify_object(intent: UploadIntent, verified: VerifiedStoredObject) -> None:
+    """Reject any stored object that differs from the declared expectation."""
+
     if verified.storage_key != intent.storage_key:
         raise ArtifactVerificationError("stored object key differs from the upload intent")
     if verified.digest != intent.expected_digest:
@@ -757,163 +719,441 @@ def _verify_object(intent: UploadIntent, verified: VerifiedStoredObject) -> None
         raise ArtifactVerificationError("stored object compression differs from the upload intent")
 
 
+class ArtifactObjectStorePort(Protocol):
+    """Trusted adapter that owns bytes, signatures and independent measurement."""
+
+    async def presign_upload(
+        self,
+        *,
+        storage_key: str,
+        media_type: str,
+        compression: ArtifactCompression | None,
+        ttl: timedelta,
+    ) -> EphemeralHandle: ...
+
+    async def presign_download(self, *, storage_key: str, ttl: timedelta) -> EphemeralHandle: ...
+
+    async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject: ...
+
+    async def delete(self, storage_key: str) -> None: ...
+
+
+class ArtifactRepository(Protocol):
+    """Durable persistence bound to an already-admitted Operation identity."""
+
+    async def open_attempt(self, request: OpenStageAttempt, *, retention: timedelta) -> StageAttemptRecord: ...
+
+    async def close_attempt(self, request: CloseStageAttempt) -> StageAttemptRecord: ...
+
+    async def get_attempt(self, attempt_id: UUID, *, tenant_id: str) -> StageAttemptRecord: ...
+
+    async def list_attempts(self, operation_id: UUID, *, tenant_id: str) -> list[StageAttemptRecord]: ...
+
+    async def begin_upload(
+        self, request: BeginArtifactUpload, storage_key: str, *, retention: timedelta
+    ) -> UploadIntent: ...
+
+    async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent: ...
+
+    async def finalize_upload(
+        self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject, *, artifact_id: UUID
+    ) -> ArtifactRecord: ...
+
+    async def get_artifact(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactRecord: ...
+
+    async def commit_stage(self, request: CommitStageResult) -> StageCommitRecord: ...
+
+    async def stage_commit(
+        self, operation_id: UUID, *, stage_id: str, tenant_id: str | None = None
+    ) -> StageCommitRecord | None: ...
+
+    async def commit_run_result(self, record: RunResultRecord) -> RunResultRecord: ...
+
+    async def get_run_result(self, operation_id: UUID, *, tenant_id: str) -> RunResultRecord: ...
+
+    async def list_events(
+        self, operation_id: UUID, *, tenant_id: str, after_id: int = 0, limit: int = 500
+    ) -> list[ArtifactEvent]: ...
+
+    async def claim_expired(self, *, now: datetime, limit: int) -> list[tuple[UUID, str, datetime]]: ...
+
+    async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge: ...
+
+    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[str]: ...
+
+
+class ScientificArtifactControllerPort(Protocol):
+    """Stable port consumed by the scientific batch controller and routes."""
+
+    async def open_attempt(self, request: OpenStageAttempt) -> StageAttemptRecord: ...
+
+    async def close_attempt(self, request: CloseStageAttempt) -> StageAttemptRecord: ...
+
+    async def begin_upload(
+        self, request: BeginArtifactUpload, *, handle_ttl: timedelta | None = None
+    ) -> BeginUploadResult: ...
+
+    async def finalize_upload(self, request: FinalizeArtifactUpload) -> ArtifactRecord: ...
+
+    async def download(
+        self, artifact_id: UUID, *, tenant_id: str, handle_ttl: timedelta | None = None
+    ) -> ArtifactDownload: ...
+
+    async def commit_stage(self, request: CommitStageResult) -> StageCommitRecord: ...
+
+    async def artifact_commit(
+        self, operation_id: UUID, *, stage_id: str, tenant_id: str | None = None
+    ) -> ArtifactCommit | None: ...
+
+    async def stage_commit(
+        self, operation_id: UUID, *, stage_id: str, tenant_id: str | None = None
+    ) -> StageCommitRecord | None: ...
+
+    async def commit_run_result(self, draft: RunResultDraft) -> RunResultRecord: ...
+
+    async def get_run_result(self, operation_id: UUID, *, tenant_id: str) -> RunResultRecord: ...
+
+    async def list_events(
+        self, operation_id: UUID, *, tenant_id: str, after_id: int = 0, limit: int = 500
+    ) -> list[ArtifactEvent]: ...
+
+
+class RunResultDraft(ScientificArtifactModel):
+    """Everything the caller supplies; attempts and digests come from storage."""
+
+    operation_id: UUID
+    tenant_id: TenantId
+    terminal_status: Literal["succeeded", "failed", "cancelled"]
+    submitted_at: AwareDatetime
+    completed_at: AwareDatetime
+    execution_identity: Mapping[str, Any]
+    access: ArtifactAccess = Field(default_factory=ArtifactAccess)
+    scheduling_snapshot: Mapping[str, Any]
+    input_manifest_artifact_id: UUID
+    output_manifest_artifact_id: UUID | None = None
+    validator_id: Annotated[str, StringConstraints(max_length=253)]
+    validation_status: Literal["passed", "failed", "not-run"]
+    validation_receipt_digest: Sha256Digest | None = None
+    error_code: Annotated[str, StringConstraints(max_length=64, pattern=r"^[A-Z][A-Z0-9_]*$")] | None = None
+    error_message: Annotated[str, StringConstraints(min_length=1, max_length=2000)] | None = None
+    error_retryable: bool | None = None
+
+    @model_validator(mode="after")
+    def error_fields_travel_together(self) -> RunResultDraft:
+        supplied = (self.error_code, self.error_message, self.error_retryable)
+        if any(item is None for item in supplied) and any(item is not None for item in supplied):
+            raise ValueError("an error must supply a code, a message and a retryable flag together")
+        if self.terminal_status == "failed" and self.error_code is None:
+            raise ValueError("a failed run requires a structured error")
+        if self.terminal_status == "succeeded" and self.error_code is not None:
+            raise ValueError("a succeeded run cannot carry an error")
+        return self
+
+
 class ScientificArtifactService:
-    """Coordinates verified storage, ephemeral handles, and durable metadata."""
+    """Coordinates verified storage, ephemeral handles and durable provenance."""
 
     def __init__(
         self,
         *,
         repository: ArtifactRepository,
-        object_store: ArtifactObjectStore,
-        signer: ArtifactHandleSigner,
-        allowed_media_types: set[str] | frozenset[str],
+        object_store: ArtifactObjectStorePort,
+        allowed_media_types: Iterable[str],
         max_artifact_bytes: int = MAX_ARTIFACT_BYTES,
         max_handle_ttl: timedelta = MAX_HANDLE_TTL,
+        default_handle_ttl: timedelta = DEFAULT_HANDLE_TTL,
+        retention: timedelta = DEFAULT_RETENTION,
+        require_tls_handles: bool = True,
         clock: Callable[[], datetime] = _utc_now,
     ) -> None:
-        if not allowed_media_types or any(
-            re.fullmatch(MEDIA_TYPE_PATTERN, item) is None for item in allowed_media_types
-        ):
+        allowed = frozenset(allowed_media_types)
+        if not allowed or any(re.fullmatch(MEDIA_TYPE_PATTERN, item) is None for item in allowed):
             raise ValueError("allowed media types must be a non-empty exact allowlist")
-        if not 0 <= max_artifact_bytes <= MAX_ARTIFACT_BYTES:
-            raise ValueError("maximum artifact size is outside the supported range")
-        if not timedelta(seconds=1) <= max_handle_ttl <= MAX_HANDLE_TTL:
-            raise ValueError("maximum handle TTL is outside the supported range")
-        self.repository = repository
-        self.object_store = object_store
-        self.signer = signer
-        self.allowed_media_types = frozenset(allowed_media_types)
-        self.max_artifact_bytes = max_artifact_bytes
-        self.max_handle_ttl = max_handle_ttl
-        self.clock = clock
+        if not 0 < max_artifact_bytes <= MAX_ARTIFACT_BYTES:
+            raise ValueError("the artifact ceiling is outside the supported range")
+        if not timedelta(0) < max_handle_ttl <= MAX_HANDLE_TTL:
+            raise ValueError("handle lifetime must be positive and at most fifteen minutes")
+        if not timedelta(0) < default_handle_ttl <= max_handle_ttl:
+            raise ValueError("the default handle lifetime must not exceed the maximum")
+        if not timedelta(0) < retention <= MAX_RETENTION:
+            raise ValueError("artifact retention is outside the supported range")
+        self._repository = repository
+        self._store = object_store
+        self._allowed_media_types = allowed
+        self._max_artifact_bytes = max_artifact_bytes
+        self._max_handle_ttl = max_handle_ttl
+        self._default_handle_ttl = default_handle_ttl
+        self._retention = retention
+        self._require_tls = require_tls_handles
+        self._clock = clock
+
+    @property
+    def retention(self) -> timedelta:
+        return self._retention
 
     def _check_policy(self, media_type: str, size_bytes: int) -> None:
-        if media_type not in self.allowed_media_types:
-            raise ArtifactPolicyError("artifact media type is not allowlisted")
-        if size_bytes > self.max_artifact_bytes:
-            raise ArtifactPolicyError("artifact exceeds the configured size bound")
+        if media_type not in self._allowed_media_types:
+            raise ArtifactPolicyError("artifact media type is outside the accepted allowlist")
+        if size_bytes > self._max_artifact_bytes:
+            raise ArtifactPolicyError("artifact exceeds the accepted size ceiling")
 
-    def _deadline(self, ttl: timedelta | None) -> tuple[datetime, datetime]:
-        now = self.clock()
-        requested = ttl or self.max_handle_ttl
-        if now.tzinfo is None or not timedelta(seconds=1) <= requested <= self.max_handle_ttl:
-            raise ArtifactPolicyError("artifact handle TTL is outside the configured range")
-        return now, now + requested
+    def _ttl(self, ttl: timedelta | None) -> timedelta:
+        requested = ttl or self._default_handle_ttl
+        if requested <= timedelta(0) or requested > self._max_handle_ttl:
+            raise ArtifactPolicyError("requested handle lifetime is outside the accepted range")
+        return requested
+
+    async def open_attempt(self, request: OpenStageAttempt) -> StageAttemptRecord:
+        return await self._repository.open_attempt(request, retention=self._retention)
+
+    async def close_attempt(self, request: CloseStageAttempt) -> StageAttemptRecord:
+        return await self._repository.close_attempt(request)
 
     async def begin_upload(
-        self,
-        request: BeginArtifactUpload,
-        *,
-        handle_ttl: timedelta | None = None,
+        self, request: BeginArtifactUpload, *, handle_ttl: timedelta | None = None
     ) -> BeginUploadResult:
+        """Reserve one content address and issue a write-once upload handle."""
+
         self._check_policy(request.media_type, request.expected_size_bytes)
+        attempt = await self._repository.get_attempt(request.attempt_id, tenant_id=request.tenant_id)
+        if attempt.operation_id != request.operation_id:
+            raise ArtifactNotFoundError("attempt not found")
+        if attempt.status.terminal:
+            raise StaleArtifactAttemptError("a closed attempt cannot accept new artifacts")
         storage_key = artifact_storage_key(
             tenant_id=request.tenant_id,
             operation_id=request.operation_id,
-            attempt=request.attempt,
+            stage_id=attempt.stage_id,
+            shard_id=attempt.shard_id,
+            attempt_id=request.attempt_id,
             direction=request.direction,
             digest=request.expected_digest,
         )
-        upload = await self.repository.begin_upload(request, storage_key)
-        if upload.artifact is not None:
-            raise ArtifactConflictError("upload is already finalized")
-        now, deadline = self._deadline(handle_ttl)
-        try:
-            handle = await self.signer.issue_upload(
-                storage_key=upload.storage_key,
-                media_type=upload.media_type,
-                compression=upload.compression,
-                expected_digest=upload.expected_digest,
-                expires_at=deadline,
-            )
-        except Exception:
-            raise ArtifactPolicyError("artifact handle generation failed") from None
-        _validate_handle(handle, method="PUT", now=now, deadline=deadline)
-        return BeginUploadResult(upload=upload, handle=handle)
+        lifetime = self._ttl(handle_ttl)
+        intent = await self._repository.begin_upload(request, storage_key, retention=self._retention)
+        if not _same_upload_request(intent, request, storage_key):
+            raise ArtifactConflictError("upload identity is already bound to different content")
+        handle = await self._store.presign_upload(
+            storage_key=storage_key,
+            media_type=request.media_type,
+            compression=request.compression,
+            ttl=lifetime,
+        )
+        _validate_handle(handle, method="PUT", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
+        return BeginUploadResult(upload=intent, handle=handle)
 
     async def finalize_upload(self, request: FinalizeArtifactUpload) -> ArtifactRecord:
-        upload = await self.repository.get_upload(request)
-        self._check_policy(upload.media_type, upload.expected_size_bytes)
-        try:
-            verified = await self.object_store.inspect(upload.storage_key)
-        except Exception:
-            raise ArtifactVerificationError("stored object inspection failed") from None
-        if not isinstance(verified, VerifiedStoredObject):
-            raise ArtifactVerificationError("stored object inspection returned invalid metadata")
-        _verify_object(upload, verified)
-        return await self.repository.finalize_upload(request, verified, artifact_id=uuid4())
+        """Verify the stored bytes independently, then publish the content address."""
+
+        intent = await self._repository.get_upload(request)
+        if intent.artifact_id is not None:
+            return await self._repository.get_artifact(intent.artifact_id, tenant_id=intent.tenant_id)
+        verified = await self._store.inspect(
+            intent.storage_key, max_bytes=min(self._max_artifact_bytes, intent.expected_size_bytes)
+        )
+        _verify_object(intent, verified)
+        self._check_policy(verified.media_type, verified.size_bytes)
+        return await self._repository.finalize_upload(request, verified, artifact_id=uuid4())
 
     async def download(
-        self,
-        artifact_id: UUID,
-        *,
-        tenant_id: str,
-        handle_ttl: timedelta | None = None,
+        self, artifact_id: UUID, *, tenant_id: str, handle_ttl: timedelta | None = None
     ) -> ArtifactDownload:
-        artifact = await self.repository.get_artifact(artifact_id, tenant_id=tenant_id)
-        now, deadline = self._deadline(handle_ttl)
-        try:
-            handle = await self.signer.issue_download(storage_key=artifact.storage_key, expires_at=deadline)
-        except Exception:
-            raise ArtifactPolicyError("artifact handle generation failed") from None
-        _validate_handle(handle, method="GET", now=now, deadline=deadline)
-        return ArtifactDownload(artifact=artifact, handle=handle)
+        record = await self._repository.get_artifact(artifact_id, tenant_id=tenant_id)
+        lifetime = self._ttl(handle_ttl)
+        handle = await self._store.presign_download(storage_key=record.storage_key, ttl=lifetime)
+        _validate_handle(handle, method="GET", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
+        return ArtifactDownload(artifact=record, handle=handle)
 
-    async def commit_terminal_result(self, draft: TerminalResultDraft) -> TerminalResultManifest:
-        manifest = build_terminal_manifest(draft, committed_at=self.clock())
-        return await self.repository.commit_terminal_result(manifest)
+    async def commit_stage(self, request: CommitStageResult) -> StageCommitRecord:
+        """Publish exactly one immutable manifest commit for a completed stage."""
 
-    async def get_terminal_result(self, operation_id: UUID, *, tenant_id: str) -> TerminalResultManifest:
-        return await self.repository.get_terminal_result(operation_id, tenant_id=tenant_id)
+        return await self._repository.commit_stage(request)
+
+    async def stage_commit(
+        self, operation_id: UUID, *, stage_id: str, tenant_id: str | None = None
+    ) -> StageCommitRecord | None:
+        """Return the full immutable manifest commit published for one stage."""
+
+        return await self._repository.stage_commit(operation_id, stage_id=stage_id, tenant_id=tenant_id)
+
+    async def artifact_commit(
+        self, operation_id: UUID, *, stage_id: str, tenant_id: str | None = None
+    ) -> ArtifactCommit | None:
+        """Return the batch controller's ``ArtifactCommit`` for one stage."""
+
+        record = await self.stage_commit(operation_id, stage_id=stage_id, tenant_id=tenant_id)
+        return record.to_controller_commit() if record is not None else None
+
+    async def commit_run_result(self, draft: RunResultDraft) -> RunResultRecord:
+        """Assemble and durably publish the canonical terminal run result."""
+
+        attempts = await self._repository.list_attempts(draft.operation_id, tenant_id=draft.tenant_id)
+        terminal = [attempt for attempt in attempts if attempt.status.terminal]
+        if len(terminal) != len(attempts):
+            raise ArtifactConflictError("every attempt must be terminal before the run result is published")
+        input_manifest = await self._repository.get_artifact(
+            draft.input_manifest_artifact_id, tenant_id=draft.tenant_id
+        )
+        output_manifest = None
+        if draft.output_manifest_artifact_id is not None:
+            output_manifest = await self._repository.get_artifact(
+                draft.output_manifest_artifact_id, tenant_id=draft.tenant_id
+            )
+            if output_manifest.operation_id != draft.operation_id:
+                raise ArtifactConflictError("the output manifest belongs to another operation")
+        if input_manifest.operation_id != draft.operation_id:
+            raise ArtifactConflictError("the input manifest belongs to another operation")
+        error = None
+        if draft.error_code is not None:
+            error = {
+                "code": draft.error_code,
+                "message": draft.error_message,
+                "retryable": draft.error_retryable,
+            }
+        result = ScientificRunResult.model_validate(
+            {
+                "schema": SCIENTIFIC_RUN_RESULT_SCHEMA,
+                "operation_id": str(draft.operation_id),
+                "batch_id": str(batch_identity(draft.operation_id)),
+                "workload_id": str(workload_identity(draft.operation_id)),
+                "terminal_status": draft.terminal_status,
+                "submitted_at": draft.submitted_at,
+                "completed_at": draft.completed_at,
+                "execution_identity": dict(draft.execution_identity),
+                "access_admission": draft.access.to_admission().model_dump(mode="json"),
+                "scheduling_snapshot": dict(draft.scheduling_snapshot),
+                "input_manifest": input_manifest.to_public_ref().model_dump(mode="json"),
+                "output_manifest": (
+                    output_manifest.to_public_ref().model_dump(mode="json") if output_manifest else None
+                ),
+                "attempts": [
+                    attempt.to_public_attempt().model_dump(mode="json")
+                    for attempt in sorted(
+                        terminal, key=lambda item: (item.stage_id, item.shard_key, item.attempt_number)
+                    )
+                ],
+                "semantic_validation": {
+                    "validator_id": draft.validator_id,
+                    "status": draft.validation_status,
+                    "receipt_digest": (
+                        draft.validation_receipt_digest.removeprefix("sha256:")
+                        if draft.validation_receipt_digest
+                        else None
+                    ),
+                },
+                "error": error,
+            }
+        )
+        now = self._clock()
+        record = RunResultRecord(
+            operation_id=draft.operation_id,
+            tenant_id=draft.tenant_id,
+            result=result,
+            result_digest=result.digest,
+            committed_at=max(now, draft.completed_at),
+            retention_expires_at=max(now, draft.completed_at) + self._retention,
+        )
+        return await self._repository.commit_run_result(record)
+
+    async def get_run_result(self, operation_id: UUID, *, tenant_id: str) -> RunResultRecord:
+        return await self._repository.get_run_result(operation_id, tenant_id=tenant_id)
+
+    async def list_events(
+        self, operation_id: UUID, *, tenant_id: str, after_id: int = 0, limit: int = 500
+    ) -> list[ArtifactEvent]:
+        return await self._repository.list_events(operation_id, tenant_id=tenant_id, after_id=after_id, limit=limit)
+
+    async def purge_expired(self, *, limit: int = 50) -> list[RetentionPurge]:
+        """Delete retired objects, then their metadata, and record the evidence.
+
+        Object deletion is idempotent and runs before the durable rows are
+        removed, so an interrupted purge converges on the next pass instead of
+        leaving metadata that points at bytes which are already gone.
+        """
+
+        now = self._clock()
+        purges: list[RetentionPurge] = []
+        for operation_id, tenant_id, _ in await self._repository.claim_expired(now=now, limit=limit):
+            for storage_key in await self._repository.purge_keys(operation_id, tenant_id=tenant_id):
+                await self._store.delete(storage_key)
+            try:
+                purges.append(await self._repository.purge_operation(operation_id, tenant_id=tenant_id, now=now))
+            except ArtifactConflictError:
+                # Another worker claimed this operation between the scan and the
+                # delete. Its purge is authoritative, so skip rather than fail.
+                continue
+        return purges
 
 
-@dataclass(slots=True)
+class ScientificArtifactBatchBridge:
+    """Adapts the artifact service onto the batch repository's commit contract.
+
+    ``ScientificBatchRepository.artifact_commit`` is delegated here so the batch
+    controller reads exactly the manifest this service committed, rather than a
+    second, independently maintained copy of the same state. The signature
+    matches that protocol member exactly, so a production batch repository can
+    forward to it without adapting anything.
+
+    The claim already authorizes the operation and stage commits are
+    operation-scoped, so no further tenant predicate is applied here.
+    """
+
+    def __init__(self, service: ScientificArtifactControllerPort) -> None:
+        self._service = service
+
+    async def artifact_commit(self, claim: BatchClaim, *, stage_id: str) -> ArtifactCommit | None:
+        return await self._service.artifact_commit(claim.operation_id, stage_id=stage_id)
+
+
+@dataclass
 class _MemoryOperation:
     tenant_id: str
-    attempt: int
 
 
 class MemoryArtifactRepository:
-    """Deterministic repository used for adapter and concurrency tests."""
+    """Reference in-process implementation with the same fences as PostgreSQL.
+
+    Every mutating call holds one lock, so the fencing and exactly-once rules
+    are exercised under concurrency exactly as the SQL implementation is.
+    """
 
     def __init__(self, *, clock: Callable[[], datetime] = _utc_now) -> None:
         self._clock = clock
         self._lock = asyncio.Lock()
         self._operations: dict[UUID, _MemoryOperation] = {}
+        self._attempts: dict[UUID, StageAttemptRecord] = {}
         self._uploads: dict[UUID, UploadIntent] = {}
-        self._uploads_by_key: dict[tuple[UUID, int, str], UUID] = {}
         self._artifacts: dict[UUID, ArtifactRecord] = {}
-        self._artifacts_by_key: dict[tuple[UUID, int, str], UUID] = {}
-        self._manifests: dict[UUID, TerminalResultManifest] = {}
+        self._stage_commits: dict[tuple[UUID, str], StageCommitRecord] = {}
+        self._run_results: dict[UUID, RunResultRecord] = {}
         self._events: list[ArtifactEvent] = []
+        self._purged: set[UUID] = set()
+        self._next_event_id = 1
 
-    async def register_operation(self, operation_id: UUID, *, tenant_id: str, attempt: int = 0) -> None:
-        if re.fullmatch(TENANT_PATTERN, tenant_id) is None or not 1 <= len(tenant_id) <= 120:
-            raise ValueError("tenant identity is not canonical")
-        if not 0 <= attempt <= 10:
-            raise ValueError("operation attempt is outside the supported range")
+    async def register_operation(self, operation_id: UUID, *, tenant_id: str) -> None:
         async with self._lock:
-            if operation_id in self._operations:
-                raise ArtifactConflictError("operation is already registered")
-            self._operations[operation_id] = _MemoryOperation(tenant_id=tenant_id, attempt=attempt)
+            self._operations[operation_id] = _MemoryOperation(tenant_id=tenant_id)
 
-    async def advance_attempt(self, operation_id: UUID, *, attempt: int) -> None:
-        async with self._lock:
-            operation = self._operations.get(operation_id)
-            if operation is None:
-                raise ArtifactNotFoundError("operation does not exist")
-            if attempt <= operation.attempt or attempt > 10:
-                raise ValueError("operation attempt must advance monotonically")
-            operation.attempt = attempt
-
-    def _assert_current(self, operation_id: UUID, tenant_id: str, attempt: int) -> None:
+    def _assert_writable(self, operation_id: UUID, tenant_id: str) -> None:
         operation = self._operations.get(operation_id)
-        if operation is None:
-            raise ArtifactNotFoundError("operation does not exist")
-        if operation.tenant_id != tenant_id:
-            raise ArtifactNotFoundError("operation does not exist")
-        if operation.attempt != attempt:
-            raise StaleArtifactAttemptError()
+        if operation is None or operation.tenant_id != tenant_id:
+            raise ArtifactNotFoundError("operation not found")
+        if operation_id in self._run_results:
+            raise ResultAlreadyTerminalError("the operation already published a terminal result")
+
+    def _assert_live_attempt(self, attempt: StageAttemptRecord) -> None:
+        newest = max(
+            (
+                item.attempt_number
+                for item in self._attempts.values()
+                if item.operation_id == attempt.operation_id
+                and item.stage_id == attempt.stage_id
+                and item.shard_key == attempt.shard_key
+            ),
+            default=attempt.attempt_number,
+        )
+        if attempt.attempt_number < newest:
+            raise StaleArtifactAttemptError("a superseded attempt cannot write artifacts")
 
     def _append_event(
         self,
@@ -921,596 +1161,1172 @@ class MemoryArtifactRepository:
         *,
         operation_id: UUID,
         tenant_id: str,
-        attempt: int,
+        stage_id: str | None = None,
+        attempt_id: UUID | None = None,
         upload_id: UUID | None = None,
         artifact_id: UUID | None = None,
         manifest_digest: str | None = None,
+        occurred_at: datetime,
     ) -> None:
         self._events.append(
             ArtifactEvent(
-                event_id=len(self._events) + 1,
+                event_id=self._next_event_id,
                 event_type=event_type,
                 operation_id=operation_id,
                 tenant_id=tenant_id,
-                attempt=attempt,
+                stage_id=stage_id,
+                attempt_id=attempt_id,
                 upload_id=upload_id,
                 artifact_id=artifact_id,
                 manifest_digest=manifest_digest,
-                occurred_at=self._clock(),
+                occurred_at=occurred_at,
             )
         )
+        self._next_event_id += 1
 
-    async def begin_upload(self, request: BeginArtifactUpload, storage_key: str) -> UploadIntent:
+    async def open_attempt(self, request: OpenStageAttempt, *, retention: timedelta) -> StageAttemptRecord:
         async with self._lock:
-            self._assert_current(request.operation_id, request.tenant_id, request.attempt)
-            current = self._uploads.get(request.upload_id)
-            if current is not None:
-                if not _same_upload_request(current, request, storage_key):
-                    raise ArtifactConflictError("upload ID was already used for a different intent")
-                return current.model_copy(deep=True)
-            key = (request.operation_id, request.attempt, storage_key)
-            if key in self._uploads_by_key:
-                raise ArtifactConflictError("content address already has a different upload ID")
-            intent = UploadIntent(
-                **request.model_dump(),
-                storage_key=storage_key,
-                begun_at=self._clock(),
-            )
-            self._uploads[request.upload_id] = intent
-            self._uploads_by_key[key] = request.upload_id
-            self._append_event(
-                ArtifactEventType.UPLOAD_BEGUN,
+            self._assert_writable(request.operation_id, request.tenant_id)
+            existing = self._attempts.get(request.attempt_id)
+            record = StageAttemptRecord(
+                attempt_id=request.attempt_id,
                 operation_id=request.operation_id,
                 tenant_id=request.tenant_id,
-                attempt=request.attempt,
-                upload_id=request.upload_id,
+                stage_id=request.stage_id,
+                shard_id=request.shard_id,
+                attempt_number=request.attempt_number,
+                status=AttemptStatus.RUNNING,
+                admission=request.admission,
+                kueue_workload_uid=request.kueue_workload_uid,
+                k8s_job_uid=request.k8s_job_uid,
+                started_at=request.started_at,
+                retention_expires_at=request.started_at + retention,
             )
-            return intent.model_copy(deep=True)
+            if existing is not None:
+                if (
+                    existing.operation_id != record.operation_id
+                    or existing.stage_id != record.stage_id
+                    or existing.shard_key != record.shard_key
+                    or existing.attempt_number != record.attempt_number
+                ):
+                    raise ArtifactConflictError("attempt identity is already bound to another scope")
+                return existing
+            duplicate = any(
+                item.operation_id == record.operation_id
+                and item.stage_id == record.stage_id
+                and item.shard_key == record.shard_key
+                and item.attempt_number == record.attempt_number
+                for item in self._attempts.values()
+            )
+            if duplicate:
+                raise ArtifactConflictError("this stage, shard and attempt number already exists")
+            self._attempts[record.attempt_id] = record
+            self._append_event(
+                ArtifactEventType.ATTEMPT_OPENED,
+                operation_id=record.operation_id,
+                tenant_id=record.tenant_id,
+                stage_id=record.stage_id,
+                attempt_id=record.attempt_id,
+                occurred_at=record.started_at,
+            )
+            return record
+
+    async def close_attempt(self, request: CloseStageAttempt) -> StageAttemptRecord:
+        async with self._lock:
+            self._assert_writable(request.operation_id, request.tenant_id)
+            existing = self._attempts.get(request.attempt_id)
+            if (
+                existing is None
+                or existing.operation_id != request.operation_id
+                or existing.tenant_id != request.tenant_id
+            ):
+                raise ArtifactNotFoundError("attempt not found")
+            if existing.status.terminal:
+                if existing.status is not request.status or existing.completed_at != request.completed_at:
+                    raise ArtifactConflictError("the attempt already recorded a different outcome")
+                return existing
+            record = existing.model_copy(
+                update={
+                    "status": request.status,
+                    "completed_at": request.completed_at,
+                    "admission": request.admission or existing.admission,
+                    "kueue_workload_uid": request.kueue_workload_uid or existing.kueue_workload_uid,
+                    "k8s_job_uid": request.k8s_job_uid or existing.k8s_job_uid,
+                    "pod_uids": request.pod_uids,
+                    "node_uids": request.node_uids,
+                    "gpu_uuids": request.gpu_uuids,
+                }
+            )
+            StageAttemptRecord.model_validate(record.model_dump())
+            self._attempts[record.attempt_id] = record
+            self._append_event(
+                ArtifactEventType.ATTEMPT_CLOSED,
+                operation_id=record.operation_id,
+                tenant_id=record.tenant_id,
+                stage_id=record.stage_id,
+                attempt_id=record.attempt_id,
+                occurred_at=request.completed_at,
+            )
+            return record
+
+    async def get_attempt(self, attempt_id: UUID, *, tenant_id: str) -> StageAttemptRecord:
+        async with self._lock:
+            record = self._attempts.get(attempt_id)
+            if record is None or record.tenant_id != tenant_id:
+                raise ArtifactNotFoundError("attempt not found")
+            return record
+
+    async def list_attempts(self, operation_id: UUID, *, tenant_id: str) -> list[StageAttemptRecord]:
+        async with self._lock:
+            return [
+                item
+                for item in self._attempts.values()
+                if item.operation_id == operation_id and item.tenant_id == tenant_id
+            ]
+
+    async def begin_upload(
+        self, request: BeginArtifactUpload, storage_key: str, *, retention: timedelta
+    ) -> UploadIntent:
+        async with self._lock:
+            self._assert_writable(request.operation_id, request.tenant_id)
+            attempt = self._attempts.get(request.attempt_id)
+            if (
+                attempt is None
+                or attempt.operation_id != request.operation_id
+                or attempt.tenant_id != request.tenant_id
+            ):
+                raise ArtifactNotFoundError("attempt not found")
+            self._assert_live_attempt(attempt)
+            existing = self._uploads.get(request.upload_id)
+            if existing is not None:
+                return existing
+            now = self._clock()
+            intent = UploadIntent(
+                upload_id=request.upload_id,
+                attempt_id=request.attempt_id,
+                operation_id=request.operation_id,
+                tenant_id=request.tenant_id,
+                stage_id=attempt.stage_id,
+                shard_id=attempt.shard_id,
+                direction=request.direction,
+                expected_digest=request.expected_digest,
+                expected_size_bytes=request.expected_size_bytes,
+                media_type=request.media_type,
+                compression=request.compression,
+                storage_key=storage_key,
+                access=request.access,
+                begun_at=now,
+            )
+            collision = any(
+                item.storage_key == storage_key and item.upload_id != intent.upload_id
+                for item in self._uploads.values()
+            )
+            if collision:
+                raise ArtifactConflictError("this content address is already reserved")
+            self._uploads[intent.upload_id] = intent
+            self._append_event(
+                ArtifactEventType.UPLOAD_BEGUN,
+                operation_id=intent.operation_id,
+                tenant_id=intent.tenant_id,
+                stage_id=intent.stage_id,
+                attempt_id=intent.attempt_id,
+                upload_id=intent.upload_id,
+                occurred_at=now,
+            )
+            return intent
 
     async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent:
         async with self._lock:
-            self._assert_current(request.operation_id, request.tenant_id, request.attempt)
             intent = self._uploads.get(request.upload_id)
-            if intent is None:
-                raise ArtifactNotFoundError("upload does not exist")
-            if (
-                intent.operation_id != request.operation_id
-                or intent.tenant_id != request.tenant_id
-                or intent.attempt != request.attempt
-            ):
-                raise ArtifactNotFoundError("upload does not exist")
-            return intent.model_copy(deep=True)
+            if intent is None or intent.operation_id != request.operation_id or intent.tenant_id != request.tenant_id:
+                raise ArtifactNotFoundError("upload not found")
+            return intent
 
     async def finalize_upload(
-        self,
-        request: FinalizeArtifactUpload,
-        verified: VerifiedStoredObject,
-        *,
-        artifact_id: UUID,
+        self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject, *, artifact_id: UUID
     ) -> ArtifactRecord:
         async with self._lock:
-            self._assert_current(request.operation_id, request.tenant_id, request.attempt)
+            self._assert_writable(request.operation_id, request.tenant_id)
             intent = self._uploads.get(request.upload_id)
-            if intent is None or (
-                intent.operation_id != request.operation_id
-                or intent.tenant_id != request.tenant_id
-                or intent.attempt != request.attempt
-            ):
-                raise ArtifactNotFoundError("upload does not exist")
+            if intent is None or intent.operation_id != request.operation_id or intent.tenant_id != request.tenant_id:
+                raise ArtifactNotFoundError("upload not found")
+            if intent.artifact_id is not None:
+                return self._artifacts[intent.artifact_id]
+            attempt = self._attempts[intent.attempt_id]
+            self._assert_live_attempt(attempt)
             _verify_object(intent, verified)
-            if intent.artifact is not None:
-                return intent.artifact.model_copy(deep=True)
-            artifact_key = (intent.operation_id, intent.attempt, intent.storage_key)
-            existing_id = self._artifacts_by_key.get(artifact_key)
-            if existing_id is None:
-                artifact = ArtifactRecord(
-                    artifact_id=artifact_id,
-                    operation_id=intent.operation_id,
-                    tenant_id=intent.tenant_id,
-                    attempt=intent.attempt,
-                    direction=intent.direction,
-                    digest=verified.digest,
-                    size_bytes=verified.size_bytes,
-                    media_type=verified.media_type,
-                    compression=verified.compression,
-                    storage_key=verified.storage_key,
-                    access=intent.access,
-                    created_at=self._clock(),
-                )
-                self._artifacts[artifact.artifact_id] = artifact
-                self._artifacts_by_key[artifact_key] = artifact.artifact_id
-            else:
-                artifact = self._artifacts[existing_id]
-                if (
-                    artifact.direction is not intent.direction
-                    or artifact.digest != verified.digest
-                    or artifact.size_bytes != verified.size_bytes
-                    or artifact.media_type != verified.media_type
-                    or artifact.compression != verified.compression
-                    or artifact.access != intent.access
-                ):
-                    raise ArtifactConflictError("content address already has different immutable metadata")
-            finalized_at = self._clock()
-            self._uploads[request.upload_id] = intent.model_copy(
-                update={"artifact": artifact, "finalized_at": finalized_at},
-                deep=True,
+            now = self._clock()
+            record = ArtifactRecord(
+                artifact_id=artifact_id,
+                attempt_id=intent.attempt_id,
+                operation_id=intent.operation_id,
+                tenant_id=intent.tenant_id,
+                stage_id=intent.stage_id,
+                shard_id=intent.shard_id,
+                direction=intent.direction,
+                digest=verified.digest,
+                size_bytes=verified.size_bytes,
+                media_type=verified.media_type,
+                compression=verified.compression,
+                storage_key=verified.storage_key,
+                access=intent.access,
+                retention_expires_at=now + (attempt.retention_expires_at - attempt.started_at),
+                created_at=now,
+            )
+            self._artifacts[record.artifact_id] = record
+            self._uploads[intent.upload_id] = intent.model_copy(
+                update={"artifact_id": record.artifact_id, "finalized_at": now}
             )
             self._append_event(
                 ArtifactEventType.ARTIFACT_FINALIZED,
-                operation_id=intent.operation_id,
-                tenant_id=intent.tenant_id,
-                attempt=intent.attempt,
+                operation_id=record.operation_id,
+                tenant_id=record.tenant_id,
+                stage_id=record.stage_id,
+                attempt_id=record.attempt_id,
                 upload_id=intent.upload_id,
-                artifact_id=artifact.artifact_id,
+                artifact_id=record.artifact_id,
+                occurred_at=now,
             )
-            return artifact.model_copy(deep=True)
+            return record
 
     async def get_artifact(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactRecord:
         async with self._lock:
-            artifact = self._artifacts.get(artifact_id)
-            if artifact is None or artifact.tenant_id != tenant_id:
-                raise ArtifactNotFoundError("artifact does not exist")
-            return artifact.model_copy(deep=True)
+            record = self._artifacts.get(artifact_id)
+            if record is None or record.tenant_id != tenant_id:
+                raise ArtifactNotFoundError("artifact not found")
+            return record
 
-    def _validate_manifest_artifacts(self, manifest: TerminalResultManifest) -> None:
-        refs = [*manifest.input_artifacts, *manifest.output_artifacts]
-        for reference in refs:
-            stored = self._artifacts.get(reference.artifact_id)
-            if stored is None or stored != reference:
-                raise ArtifactConflictError("result manifest references an unknown or changed artifact")
+    def _validate_commit(self, request: CommitStageResult) -> ScientificArtifactManifest:
+        """Prove the commit names exactly the stage's succeeded attempts."""
 
-    async def commit_terminal_result(self, manifest: TerminalResultManifest) -> TerminalResultManifest:
+        succeeded = {
+            item.attempt_id
+            for item in self._attempts.values()
+            if item.operation_id == request.operation_id
+            and item.stage_id == request.stage_id
+            and item.status is AttemptStatus.SUCCEEDED
+        }
+        if succeeded != set(request.attempt_ids):
+            raise ArtifactConflictError("the commit does not name the stage's succeeded attempts")
+        pairs: list[tuple[ManifestEntryDraft, ArtifactRecord]] = []
+        for entry in request.entries:
+            record = self._artifacts.get(entry.artifact_id)
+            if (
+                record is None
+                or record.tenant_id != request.tenant_id
+                or record.operation_id != request.operation_id
+                or record.stage_id != request.stage_id
+            ):
+                raise ArtifactNotFoundError("artifact not found")
+            if record.direction is not ArtifactDirection.OUTPUT:
+                raise ArtifactConflictError("only output artifacts can be committed to a stage manifest")
+            if record.attempt_id not in succeeded:
+                raise StaleArtifactAttemptError("a committed artifact belongs to a non-succeeded attempt")
+            pairs.append((entry, record))
+        return build_stage_manifest(operation_id=request.operation_id, stage_id=request.stage_id, entries=pairs)
+
+    async def commit_stage(self, request: CommitStageResult) -> StageCommitRecord:
         async with self._lock:
-            self._assert_current(manifest.operation_id, manifest.tenant_id, manifest.attempt)
-            self._validate_manifest_artifacts(manifest)
-            current = self._manifests.get(manifest.operation_id)
-            if current is not None:
-                if current.manifest_digest != manifest.manifest_digest:
-                    raise ArtifactConflictError("operation already has a different terminal result")
-                return current.model_copy(deep=True)
-            self._manifests[manifest.operation_id] = manifest
+            self._assert_writable(request.operation_id, request.tenant_id)
+            manifest = self._validate_commit(request)
+            record = StageCommitRecord(
+                operation_id=request.operation_id,
+                tenant_id=request.tenant_id,
+                stage_id=request.stage_id,
+                attempt_ids=tuple(sorted(request.attempt_ids, key=str)),
+                manifest=manifest,
+                manifest_digest=manifest.digest,
+                validation_digest=request.validation_digest,
+                semantic_valid=request.semantic_valid,
+                committed_at=request.committed_at,
+                validated_at=request.validated_at,
+            )
+            existing = self._stage_commits.get((request.operation_id, request.stage_id))
+            if existing is not None:
+                if existing.manifest_digest != record.manifest_digest:
+                    raise ArtifactConflictError("this stage already committed a different manifest")
+                return existing
+            self._stage_commits[(request.operation_id, request.stage_id)] = record
+            self._append_event(
+                ArtifactEventType.STAGE_COMMITTED,
+                operation_id=record.operation_id,
+                tenant_id=record.tenant_id,
+                stage_id=record.stage_id,
+                manifest_digest=record.manifest_digest,
+                occurred_at=record.committed_at,
+            )
+            return record
+
+    async def stage_commit(
+        self, operation_id: UUID, *, stage_id: str, tenant_id: str | None = None
+    ) -> StageCommitRecord | None:
+        async with self._lock:
+            record = self._stage_commits.get((operation_id, stage_id))
+            if record is None or (tenant_id is not None and record.tenant_id != tenant_id):
+                return None
+            return record
+
+    async def commit_run_result(self, record: RunResultRecord) -> RunResultRecord:
+        async with self._lock:
+            operation = self._operations.get(record.operation_id)
+            if operation is None or operation.tenant_id != record.tenant_id:
+                raise ArtifactNotFoundError("operation not found")
+            existing = self._run_results.get(record.operation_id)
+            if existing is not None:
+                if existing.result_digest != record.result_digest:
+                    raise ResultAlreadyTerminalError("the operation already published a terminal result")
+                return existing
+            self._run_results[record.operation_id] = record
             self._append_event(
                 ArtifactEventType.RESULT_COMMITTED,
-                operation_id=manifest.operation_id,
-                tenant_id=manifest.tenant_id,
-                attempt=manifest.attempt,
-                manifest_digest=manifest.manifest_digest,
+                operation_id=record.operation_id,
+                tenant_id=record.tenant_id,
+                manifest_digest=record.result_digest,
+                occurred_at=record.committed_at,
             )
-            return manifest.model_copy(deep=True)
+            return record
 
-    async def get_terminal_result(self, operation_id: UUID, *, tenant_id: str) -> TerminalResultManifest:
+    async def get_run_result(self, operation_id: UUID, *, tenant_id: str) -> RunResultRecord:
         async with self._lock:
-            operation = self._operations.get(operation_id)
-            manifest = self._manifests.get(operation_id)
-            if operation is None or operation.tenant_id != tenant_id or manifest is None:
-                raise ArtifactNotFoundError("terminal result does not exist")
-            return manifest.model_copy(deep=True)
+            record = self._run_results.get(operation_id)
+            if record is None or record.tenant_id != tenant_id:
+                raise ArtifactNotFoundError("terminal result not found")
+            return record
 
-    async def list_events(self, operation_id: UUID, *, tenant_id: str) -> list[ArtifactEvent]:
+    async def list_events(
+        self, operation_id: UUID, *, tenant_id: str, after_id: int = 0, limit: int = 500
+    ) -> list[ArtifactEvent]:
         async with self._lock:
-            operation = self._operations.get(operation_id)
-            if operation is None or operation.tenant_id != tenant_id:
-                raise ArtifactNotFoundError("operation does not exist")
-            return [
-                event.model_copy(deep=True)
+            matching = [
+                event
                 for event in self._events
-                if event.operation_id == operation_id and event.tenant_id == tenant_id
+                if event.operation_id == operation_id and event.tenant_id == tenant_id and event.event_id > after_id
+            ]
+            return matching[: max(1, limit)]
+
+    async def claim_expired(self, *, now: datetime, limit: int) -> list[tuple[UUID, str, datetime]]:
+        async with self._lock:
+            return [
+                (record.operation_id, record.tenant_id, record.retention_expires_at)
+                for record in self._run_results.values()
+                if record.retention_expires_at <= now and record.operation_id not in self._purged
+            ][: max(1, limit)]
+
+    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[str]:
+        async with self._lock:
+            return [
+                record.storage_key
+                for record in self._artifacts.values()
+                if record.operation_id == operation_id and record.tenant_id == tenant_id
             ]
 
+    async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge:
+        async with self._lock:
+            result = self._run_results.get(operation_id)
+            if result is None or result.tenant_id != tenant_id:
+                raise ArtifactNotFoundError("terminal result not found")
+            if operation_id in self._purged:
+                raise ArtifactConflictError("this operation was already purged")
+            doomed = [
+                record
+                for record in self._artifacts.values()
+                if record.operation_id == operation_id and record.tenant_id == tenant_id
+            ]
+            purge = RetentionPurge(
+                operation_id=operation_id,
+                tenant_id=tenant_id,
+                artifact_count=len(doomed),
+                byte_count=sum(record.size_bytes for record in doomed),
+                retention_expired_at=result.retention_expires_at,
+                purged_at=now,
+            )
+            for record in doomed:
+                del self._artifacts[record.artifact_id]
+            for upload_id in [key for key, item in self._uploads.items() if item.operation_id == operation_id]:
+                del self._uploads[upload_id]
+            for key in [item for item in self._stage_commits if item[0] == operation_id]:
+                del self._stage_commits[key]
+            for attempt_id in [key for key, item in self._attempts.items() if item.operation_id == operation_id]:
+                del self._attempts[attempt_id]
+            self._events = [event for event in self._events if event.operation_id != operation_id]
+            self._purged.add(operation_id)
+            return purge
 
-def _decode_json_object(value: object, *, label: str, maximum_bytes: int) -> dict[str, Any]:
-    if isinstance(value, str):
-        if len(value.encode("utf-8")) > maximum_bytes:
-            raise RuntimeError(f"stored {label} is invalid")
-        try:
-            value = json.loads(value)
-        except (RecursionError, ValueError):
-            raise RuntimeError(f"stored {label} is invalid") from None
-    if not isinstance(value, dict):
-        raise RuntimeError(f"stored {label} is invalid")
-    return cast(dict[str, Any], value)
+
+MAX_STORED_JSON_BYTES = 8 * 1024 * 1024
+_SQLSTATE_ERRORS: Mapping[str, type[ArtifactServiceError]] = MappingProxyType(
+    {
+        "FS201": StaleArtifactAttemptError,
+        "FS202": ArtifactConflictError,
+        "FS203": ResultAlreadyTerminalError,
+    }
+)
 
 
-def _access_from_record(record: Mapping[str, Any]) -> ArtifactAccess:
+def _decode_json_object(value: object, *, label: str) -> dict[str, Any]:
+    if isinstance(value, str | bytes | bytearray):
+        if len(value) > MAX_STORED_JSON_BYTES:
+            raise ArtifactConflictError(f"stored {label} exceeds the accepted size")
+        decoded = json.loads(value)
+    else:
+        decoded = value
+    if not isinstance(decoded, dict):
+        raise ArtifactConflictError(f"stored {label} is not a JSON object")
+    return decoded
+
+
+def _shard_from_storage(value: str) -> str | None:
+    return None if value == NO_SHARD else value
+
+
+def _access_from_row(row: Mapping[str, Any]) -> ArtifactAccess:
     return ArtifactAccess(
-        profile=ArtifactAccessProfile(str(record["access_profile"])),
-        receipt_digest=record["access_receipt_digest"],
+        profile=ArtifactAccessProfile(row["access_profile"]),
+        receipt_digest=row["access_receipt_digest"],
     )
 
 
-def _artifact_from_record(record: Mapping[str, Any]) -> ArtifactRecord:
+def _admission_from_row(row: Mapping[str, Any]) -> KueueAdmission | None:
+    if row["admitted_at"] is None:
+        return None
+    return KueueAdmission(
+        resolved_pool_id=row["resolved_pool_id"],
+        admitted_resource_flavor=row["admitted_resource_flavor"],
+        accelerator_resource_name=row["accelerator_resource_name"],
+        accelerator_count=row["accelerator_count"],
+        admitted_at=row["admitted_at"],
+    )
+
+
+def _attempt_from_row(row: Mapping[str, Any]) -> StageAttemptRecord:
+    return StageAttemptRecord(
+        attempt_id=row["attempt_id"],
+        operation_id=row["operation_id"],
+        tenant_id=row["tenant_id"],
+        stage_id=row["stage_id"],
+        shard_id=_shard_from_storage(row["shard_id"]),
+        attempt_number=row["attempt_number"],
+        status=AttemptStatus(row["status"]),
+        admission=_admission_from_row(row),
+        kueue_workload_uid=row["kueue_workload_uid"],
+        k8s_job_uid=row["k8s_job_uid"],
+        pod_uids=tuple(row["pod_uids"] or ()),
+        node_uids=tuple(row["node_uids"] or ()),
+        gpu_uuids=tuple(row["gpu_uuids"] or ()),
+        started_at=row["started_at"],
+        completed_at=row["completed_at"],
+        retention_expires_at=row["retention_expires_at"],
+    )
+
+
+def _artifact_from_row(row: Mapping[str, Any]) -> ArtifactRecord:
     return ArtifactRecord(
-        artifact_id=record["id"],
-        operation_id=record["operation_id"],
-        tenant_id=record["tenant_id"],
-        attempt=record["attempt"],
-        direction=record["direction"],
-        digest=record["digest"],
-        size_bytes=record["size_bytes"],
-        media_type=record["media_type"],
-        compression=record["compression"],
-        storage_key=record["storage_key"],
-        access=_access_from_record(record),
-        created_at=record["created_at"],
+        artifact_id=row["id"],
+        attempt_id=row["attempt_id"],
+        operation_id=row["operation_id"],
+        tenant_id=row["tenant_id"],
+        stage_id=row["stage_id"],
+        shard_id=_shard_from_storage(row["shard_id"]),
+        direction=ArtifactDirection(row["direction"]),
+        digest=row["digest"],
+        size_bytes=row["size_bytes"],
+        media_type=row["media_type"],
+        compression=ArtifactCompression(row["compression"]) if row["compression"] else None,
+        storage_key=row["storage_key"],
+        access=_access_from_row(row),
+        retention_expires_at=row["retention_expires_at"],
+        created_at=row["created_at"],
     )
 
 
-async def _upload_from_record(connection: asyncpg.Connection[Any], record: Mapping[str, Any]) -> UploadIntent:
-    artifact = None
-    if record["artifact_id"] is not None:
-        artifact_record = await connection.fetchrow(
-            "SELECT * FROM fs2_scientific_artifacts WHERE id=$1",
-            record["artifact_id"],
-        )
-        if artifact_record is None:
-            raise RuntimeError("stored upload references a missing artifact")
-        artifact = _artifact_from_record(artifact_record)
+def _upload_from_row(row: Mapping[str, Any]) -> UploadIntent:
     return UploadIntent(
-        upload_id=record["id"],
-        operation_id=record["operation_id"],
-        tenant_id=record["tenant_id"],
-        attempt=record["attempt"],
-        direction=record["direction"],
-        expected_digest=record["expected_digest"],
-        expected_size_bytes=record["expected_size_bytes"],
-        media_type=record["media_type"],
-        compression=record["compression"],
-        storage_key=record["storage_key"],
-        access=_access_from_record(record),
-        begun_at=record["begun_at"],
-        finalized_at=record["finalized_at"],
-        artifact=artifact,
+        upload_id=row["id"],
+        attempt_id=row["attempt_id"],
+        operation_id=row["operation_id"],
+        tenant_id=row["tenant_id"],
+        stage_id=row["stage_id"],
+        shard_id=_shard_from_storage(row["shard_id"]),
+        direction=ArtifactDirection(row["direction"]),
+        expected_digest=row["expected_digest"],
+        expected_size_bytes=row["expected_size_bytes"],
+        media_type=row["media_type"],
+        compression=ArtifactCompression(row["compression"]) if row["compression"] else None,
+        storage_key=row["storage_key"],
+        access=_access_from_row(row),
+        begun_at=row["begun_at"],
+        finalized_at=row["finalized_at"],
+        artifact_id=row["artifact_id"],
     )
+
+
+def _event_from_row(row: Mapping[str, Any]) -> ArtifactEvent:
+    return ArtifactEvent(
+        event_id=row["id"],
+        event_type=ArtifactEventType(row["event_type"]),
+        operation_id=row["operation_id"],
+        tenant_id=row["tenant_id"],
+        stage_id=row["stage_id"],
+        attempt_id=row["attempt_id"],
+        upload_id=row["upload_id"],
+        artifact_id=row["artifact_id"],
+        manifest_digest=row["manifest_digest"],
+        occurred_at=row["occurred_at"],
+    )
+
+
+# The column lists below are module-level literals interpolated into otherwise
+# parameterised statements; every caller-supplied value travels as a bound
+# parameter, which is why the S608 suppressions on those queries are safe.
+_ATTEMPT_COLUMNS = """attempt_id,operation_id,tenant_id,stage_id,shard_id,attempt_number,status,
+    resolved_pool_id,admitted_resource_flavor,accelerator_resource_name,accelerator_count,admitted_at,
+    kueue_workload_uid,k8s_job_uid,pod_uids,node_uids,gpu_uuids,started_at,completed_at,
+    retention_expires_at"""
+_ARTIFACT_COLUMNS = """id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
+    media_type,compression,storage_key,access_profile,access_receipt_digest,retention_expires_at,created_at"""
+_UPLOAD_COLUMNS = """id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,expected_digest,
+    expected_size_bytes,media_type,compression,storage_key,access_profile,access_receipt_digest,
+    artifact_id,begun_at,finalized_at"""
+
+
+_SELECT_ARTIFACT_SQL = f"""
+    SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts WHERE id=$1 AND tenant_id=$2
+"""  # noqa: S608
+
+
+_CLOSE_ATTEMPT_SQL = f"""
+    UPDATE fs2_scientific_stage_attempts SET
+        status=$4,
+        completed_at=$5,
+        resolved_pool_id=COALESCE($6,resolved_pool_id),
+        admitted_resource_flavor=COALESCE($7,admitted_resource_flavor),
+        accelerator_resource_name=COALESCE($8,accelerator_resource_name),
+        accelerator_count=COALESCE($9,accelerator_count),
+        admitted_at=COALESCE($10,admitted_at),
+        kueue_workload_uid=COALESCE($11,kueue_workload_uid),
+        k8s_job_uid=COALESCE($12,k8s_job_uid),
+        pod_uids=$13,node_uids=$14,gpu_uuids=$15
+    WHERE attempt_id=$1 AND operation_id=$2 AND tenant_id=$3 AND status='running'
+    RETURNING {_ATTEMPT_COLUMNS}
+"""  # noqa: S608
 
 
 class PostgresArtifactRepository:
-    """PostgreSQL implementation using the existing operation row as its fence."""
+    """Durable repository whose fences are enforced by SQL, not by callers."""
 
     def __init__(self, pool: asyncpg.Pool[Any]) -> None:
         self.pool = pool
 
     @staticmethod
-    async def _assert_current(
+    def _translate(error: asyncpg.PostgresError) -> ArtifactServiceError | None:
+        failure = _SQLSTATE_ERRORS.get(str(getattr(error, "sqlstate", "")))
+        return failure("the scientific artifact store rejected this write") if failure else None
+
+    async def _append_event(
+        self,
         connection: asyncpg.Connection[Any],
+        event_type: ArtifactEventType,
+        *,
         operation_id: UUID,
         tenant_id: str,
-        attempt: int,
+        stage_id: str | None = None,
+        attempt_id: UUID | None = None,
+        upload_id: UUID | None = None,
+        artifact_id: UUID | None = None,
+        manifest_digest: str | None = None,
+        occurred_at: datetime,
     ) -> None:
-        record = await connection.fetchrow(
-            "SELECT tenant_id,attempt FROM fs2_operations WHERE id=$1 FOR SHARE",
+        await connection.execute(
+            """
+            INSERT INTO fs2_scientific_artifact_events
+                (event_type,operation_id,tenant_id,stage_id,attempt_id,upload_id,artifact_id,
+                 manifest_digest,occurred_at)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+            """,
+            event_type.value,
             operation_id,
+            tenant_id,
+            stage_id,
+            attempt_id,
+            upload_id,
+            artifact_id,
+            manifest_digest,
+            occurred_at,
         )
-        if record is None:
-            raise ArtifactNotFoundError("operation does not exist")
-        if record["tenant_id"] != tenant_id:
-            raise ArtifactNotFoundError("operation does not exist")
-        if record["attempt"] != attempt:
-            raise StaleArtifactAttemptError()
 
-    @staticmethod
-    def _translate_database_error(error: asyncpg.PostgresError) -> ArtifactServiceError | None:
-        if error.sqlstate == "FS201":
-            return StaleArtifactAttemptError()
-        if isinstance(error, asyncpg.UniqueViolationError | asyncpg.CheckViolationError):
-            return ArtifactConflictError("database rejected conflicting artifact metadata")
-        return None
-
-    async def begin_upload(self, request: BeginArtifactUpload, storage_key: str) -> UploadIntent:
+    async def open_attempt(self, request: OpenStageAttempt, *, retention: timedelta) -> StageAttemptRecord:
+        admission = request.admission
         try:
             async with self.pool.acquire() as connection, connection.transaction():
-                await self._assert_current(connection, request.operation_id, request.tenant_id, request.attempt)
-                record = await connection.fetchrow(
-                    """
-                    INSERT INTO fs2_scientific_uploads(
-                        id,operation_id,tenant_id,attempt,direction,expected_digest,
-                        expected_size_bytes,media_type,compression,storage_key,
-                        access_profile,access_receipt_digest
-                    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-                    ON CONFLICT (id) DO NOTHING
-                    RETURNING *
-                    """,
-                    request.upload_id,
+                row = await connection.fetchrow(
+                    f"""
+                    INSERT INTO fs2_scientific_stage_attempts
+                        (attempt_id,operation_id,tenant_id,stage_id,shard_id,attempt_number,status,
+                         resolved_pool_id,admitted_resource_flavor,accelerator_resource_name,
+                         accelerator_count,admitted_at,kueue_workload_uid,k8s_job_uid,
+                         started_at,retention_expires_at)
+                    VALUES($1,$2,$3,$4,$5,$6,'running',$7,$8,$9,$10,$11,$12,$13,$14,$15)
+                    ON CONFLICT (attempt_id) DO NOTHING
+                    RETURNING {_ATTEMPT_COLUMNS}
+                    """,  # noqa: S608
+                    request.attempt_id,
                     request.operation_id,
                     request.tenant_id,
-                    request.attempt,
+                    request.stage_id,
+                    request.shard_id or NO_SHARD,
+                    request.attempt_number,
+                    admission.resolved_pool_id if admission else None,
+                    admission.admitted_resource_flavor if admission else None,
+                    admission.accelerator_resource_name if admission else None,
+                    admission.accelerator_count if admission else 0,
+                    admission.admitted_at if admission else None,
+                    request.kueue_workload_uid,
+                    request.k8s_job_uid,
+                    request.started_at,
+                    request.started_at + retention,
+                )
+                if row is not None:
+                    await self._append_event(
+                        connection,
+                        ArtifactEventType.ATTEMPT_OPENED,
+                        operation_id=request.operation_id,
+                        tenant_id=request.tenant_id,
+                        stage_id=request.stage_id,
+                        attempt_id=request.attempt_id,
+                        occurred_at=request.started_at,
+                    )
+                    return _attempt_from_row(row)
+        except asyncpg.PostgresError as error:
+            raise (self._translate(error) or ArtifactConflictError("attempt could not be opened")) from None
+        existing = await self.get_attempt(request.attempt_id, tenant_id=request.tenant_id)
+        if (
+            existing.operation_id != request.operation_id
+            or existing.stage_id != request.stage_id
+            or existing.shard_key != (request.shard_id or NO_SHARD)
+            or existing.attempt_number != request.attempt_number
+        ):
+            raise ArtifactConflictError("attempt identity is already bound to another scope")
+        return existing
+
+    async def close_attempt(self, request: CloseStageAttempt) -> StageAttemptRecord:
+        admission = request.admission
+        try:
+            async with self.pool.acquire() as connection, connection.transaction():
+                row = await connection.fetchrow(
+                    _CLOSE_ATTEMPT_SQL,
+                    request.attempt_id,
+                    request.operation_id,
+                    request.tenant_id,
+                    request.status.value,
+                    request.completed_at,
+                    admission.resolved_pool_id if admission else None,
+                    admission.admitted_resource_flavor if admission else None,
+                    admission.accelerator_resource_name if admission else None,
+                    admission.accelerator_count if admission else None,
+                    admission.admitted_at if admission else None,
+                    request.kueue_workload_uid,
+                    request.k8s_job_uid,
+                    list(request.pod_uids),
+                    list(request.node_uids),
+                    list(request.gpu_uuids),
+                )
+                if row is not None:
+                    await self._append_event(
+                        connection,
+                        ArtifactEventType.ATTEMPT_CLOSED,
+                        operation_id=request.operation_id,
+                        tenant_id=request.tenant_id,
+                        stage_id=str(row["stage_id"]),
+                        attempt_id=request.attempt_id,
+                        occurred_at=request.completed_at,
+                    )
+                    return _attempt_from_row(row)
+        except asyncpg.PostgresError as error:
+            raise (self._translate(error) or ArtifactConflictError("attempt could not be closed")) from None
+        existing = await self.get_attempt(request.attempt_id, tenant_id=request.tenant_id)
+        if existing.status is not request.status or existing.completed_at != request.completed_at:
+            raise ArtifactConflictError("the attempt already recorded a different outcome")
+        return existing
+
+    async def get_attempt(self, attempt_id: UUID, *, tenant_id: str) -> StageAttemptRecord:
+        row = await self.pool.fetchrow(
+            f"SELECT {_ATTEMPT_COLUMNS} FROM fs2_scientific_stage_attempts "  # noqa: S608
+            "WHERE attempt_id=$1 AND tenant_id=$2",
+            attempt_id,
+            tenant_id,
+        )
+        if row is None:
+            raise ArtifactNotFoundError("attempt not found")
+        return _attempt_from_row(row)
+
+    async def list_attempts(self, operation_id: UUID, *, tenant_id: str) -> list[StageAttemptRecord]:
+        rows = await self.pool.fetch(
+            f"SELECT {_ATTEMPT_COLUMNS} FROM fs2_scientific_stage_attempts "  # noqa: S608
+            "WHERE operation_id=$1 AND tenant_id=$2 ORDER BY stage_id,shard_id,attempt_number",
+            operation_id,
+            tenant_id,
+        )
+        return [_attempt_from_row(row) for row in rows]
+
+    async def begin_upload(
+        self, request: BeginArtifactUpload, storage_key: str, *, retention: timedelta
+    ) -> UploadIntent:
+        try:
+            async with self.pool.acquire() as connection, connection.transaction():
+                attempt = await connection.fetchrow(
+                    "SELECT stage_id,shard_id FROM fs2_scientific_stage_attempts "
+                    "WHERE attempt_id=$1 AND operation_id=$2 AND tenant_id=$3",
+                    request.attempt_id,
+                    request.operation_id,
+                    request.tenant_id,
+                )
+                if attempt is None:
+                    raise ArtifactNotFoundError("attempt not found")
+                row = await connection.fetchrow(
+                    f"""
+                    INSERT INTO fs2_scientific_uploads
+                        (id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,expected_digest,
+                         expected_size_bytes,media_type,compression,storage_key,access_profile,
+                         access_receipt_digest,begun_at)
+                    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,clock_timestamp())
+                    ON CONFLICT (id) DO NOTHING
+                    RETURNING {_UPLOAD_COLUMNS}
+                    """,
+                    request.upload_id,
+                    request.attempt_id,
+                    request.operation_id,
+                    request.tenant_id,
+                    attempt["stage_id"],
+                    attempt["shard_id"],
                     request.direction.value,
                     request.expected_digest,
                     request.expected_size_bytes,
                     request.media_type,
-                    request.compression.value if request.compression is not None else None,
+                    request.compression.value if request.compression else None,
                     storage_key,
                     request.access.profile.value,
                     request.access.receipt_digest,
                 )
-                created = record is not None
-                if record is None:
-                    record = await connection.fetchrow(
-                        "SELECT * FROM fs2_scientific_uploads WHERE id=$1 FOR SHARE",
-                        request.upload_id,
+                if row is not None:
+                    await self._append_event(
+                        connection,
+                        ArtifactEventType.UPLOAD_BEGUN,
+                        operation_id=request.operation_id,
+                        tenant_id=request.tenant_id,
+                        stage_id=str(attempt["stage_id"]),
+                        attempt_id=request.attempt_id,
+                        upload_id=request.upload_id,
+                        occurred_at=row["begun_at"],
                     )
-                if record is None:
-                    raise RuntimeError("upload insert did not produce a durable row")
-                intent = await _upload_from_record(connection, record)
-                if not _same_upload_request(intent, request, storage_key):
-                    raise ArtifactConflictError("upload ID was already used for a different intent")
-                if created:
-                    await connection.execute(
-                        """
-                        INSERT INTO fs2_scientific_artifact_events(
-                            event_type,operation_id,tenant_id,attempt,upload_id
-                        ) VALUES('upload_begun',$1,$2,$3,$4)
-                        """,
-                        request.operation_id,
-                        request.tenant_id,
-                        request.attempt,
-                        request.upload_id,
-                    )
-                return intent
+                    return _upload_from_row(row)
         except asyncpg.PostgresError as error:
-            translated = self._translate_database_error(error)
-            if translated is not None:
-                raise translated from None
-            raise
+            raise (self._translate(error) or ArtifactConflictError("upload could not be reserved")) from None
+        return await self.get_upload(
+            FinalizeArtifactUpload(
+                upload_id=request.upload_id,
+                operation_id=request.operation_id,
+                tenant_id=request.tenant_id,
+            )
+        )
 
     async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent:
-        async with self.pool.acquire() as connection, connection.transaction():
-            await self._assert_current(connection, request.operation_id, request.tenant_id, request.attempt)
-            record = await connection.fetchrow(
-                """
-                SELECT * FROM fs2_scientific_uploads
-                WHERE id=$1 AND operation_id=$2 AND tenant_id=$3 AND attempt=$4
-                """,
-                request.upload_id,
-                request.operation_id,
-                request.tenant_id,
-                request.attempt,
-            )
-            if record is None:
-                raise ArtifactNotFoundError("upload does not exist")
-            return await _upload_from_record(connection, record)
+        row = await self.pool.fetchrow(
+            f"SELECT {_UPLOAD_COLUMNS} FROM fs2_scientific_uploads "  # noqa: S608
+            "WHERE id=$1 AND operation_id=$2 AND tenant_id=$3",
+            request.upload_id,
+            request.operation_id,
+            request.tenant_id,
+        )
+        if row is None:
+            raise ArtifactNotFoundError("upload not found")
+        return _upload_from_row(row)
 
     async def finalize_upload(
-        self,
-        request: FinalizeArtifactUpload,
-        verified: VerifiedStoredObject,
-        *,
-        artifact_id: UUID,
+        self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject, *, artifact_id: UUID
     ) -> ArtifactRecord:
         try:
             async with self.pool.acquire() as connection, connection.transaction():
-                await self._assert_current(connection, request.operation_id, request.tenant_id, request.attempt)
-                record = await connection.fetchrow(
-                    """
-                    SELECT * FROM fs2_scientific_uploads
-                    WHERE id=$1 AND operation_id=$2 AND tenant_id=$3 AND attempt=$4
-                    FOR UPDATE
-                    """,
+                intent_row = await connection.fetchrow(
+                    f"SELECT {_UPLOAD_COLUMNS} FROM fs2_scientific_uploads "  # noqa: S608
+                    "WHERE id=$1 AND operation_id=$2 AND tenant_id=$3 FOR UPDATE",
                     request.upload_id,
                     request.operation_id,
                     request.tenant_id,
-                    request.attempt,
                 )
-                if record is None:
-                    raise ArtifactNotFoundError("upload does not exist")
-                intent = await _upload_from_record(connection, record)
+                if intent_row is None:
+                    raise ArtifactNotFoundError("upload not found")
+                intent = _upload_from_row(intent_row)
+                if intent.artifact_id is not None:
+                    # Read on the locked connection rather than borrowing a
+                    # second one from the pool while this row lock is held.
+                    existing = await connection.fetchrow(_SELECT_ARTIFACT_SQL, intent.artifact_id, intent.tenant_id)
+                    if existing is None:
+                        raise ArtifactNotFoundError("artifact not found")
+                    return _artifact_from_row(existing)
                 _verify_object(intent, verified)
-                if intent.artifact is not None:
-                    return intent.artifact
-                artifact_record = await connection.fetchrow(
-                    """
-                    INSERT INTO fs2_scientific_artifacts(
-                        id,operation_id,tenant_id,attempt,direction,digest,size_bytes,
-                        media_type,compression,storage_key,access_profile,access_receipt_digest
-                    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-                    ON CONFLICT (operation_id,attempt,storage_key) DO NOTHING
-                    RETURNING *
+                retention_row = await connection.fetchrow(
+                    "SELECT retention_expires_at,started_at FROM fs2_scientific_stage_attempts WHERE attempt_id=$1",
+                    intent.attempt_id,
+                )
+                if retention_row is None:
+                    raise ArtifactNotFoundError("attempt not found")
+                window = retention_row["retention_expires_at"] - retention_row["started_at"]
+                row = await connection.fetchrow(
+                    f"""
+                    INSERT INTO fs2_scientific_artifacts
+                        (id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
+                         media_type,compression,storage_key,access_profile,access_receipt_digest,
+                         retention_expires_at,created_at)
+                    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,clock_timestamp()+$15,
+                           clock_timestamp())
+                    RETURNING {_ARTIFACT_COLUMNS}
                     """,
                     artifact_id,
+                    intent.attempt_id,
                     intent.operation_id,
                     intent.tenant_id,
-                    intent.attempt,
+                    intent.stage_id,
+                    intent.shard_id or NO_SHARD,
                     intent.direction.value,
                     verified.digest,
                     verified.size_bytes,
                     verified.media_type,
-                    verified.compression.value if verified.compression is not None else None,
+                    verified.compression.value if verified.compression else None,
                     verified.storage_key,
                     intent.access.profile.value,
                     intent.access.receipt_digest,
+                    window,
                 )
-                if artifact_record is None:
-                    artifact_record = await connection.fetchrow(
-                        """
-                        SELECT * FROM fs2_scientific_artifacts
-                        WHERE operation_id=$1 AND attempt=$2 AND storage_key=$3
-                        """,
-                        intent.operation_id,
-                        intent.attempt,
-                        intent.storage_key,
-                    )
-                if artifact_record is None:
-                    raise RuntimeError("artifact insert did not produce a durable row")
-                artifact = _artifact_from_record(artifact_record)
-                if (
-                    artifact.direction is not intent.direction
-                    or artifact.digest != verified.digest
-                    or artifact.size_bytes != verified.size_bytes
-                    or artifact.media_type != verified.media_type
-                    or artifact.compression != verified.compression
-                    or artifact.access != intent.access
-                ):
-                    raise ArtifactConflictError("content address already has different immutable metadata")
+                assert row is not None
                 await connection.execute(
-                    """
-                    UPDATE fs2_scientific_uploads
-                    SET artifact_id=$2,finalized_at=clock_timestamp()
-                    WHERE id=$1
-                    """,
+                    "UPDATE fs2_scientific_uploads SET artifact_id=$2,finalized_at=clock_timestamp() WHERE id=$1",
                     request.upload_id,
-                    artifact.artifact_id,
+                    artifact_id,
                 )
-                await connection.execute(
-                    """
-                    INSERT INTO fs2_scientific_artifact_events(
-                        event_type,operation_id,tenant_id,attempt,upload_id,artifact_id
-                    ) VALUES('artifact_finalized',$1,$2,$3,$4,$5)
-                    """,
-                    intent.operation_id,
-                    intent.tenant_id,
-                    intent.attempt,
-                    intent.upload_id,
-                    artifact.artifact_id,
+                await self._append_event(
+                    connection,
+                    ArtifactEventType.ARTIFACT_FINALIZED,
+                    operation_id=intent.operation_id,
+                    tenant_id=intent.tenant_id,
+                    stage_id=intent.stage_id,
+                    attempt_id=intent.attempt_id,
+                    upload_id=request.upload_id,
+                    artifact_id=artifact_id,
+                    occurred_at=row["created_at"],
                 )
-                return artifact
+                return _artifact_from_row(row)
         except asyncpg.PostgresError as error:
-            translated = self._translate_database_error(error)
-            if translated is not None:
-                raise translated from None
-            raise
+            raise (self._translate(error) or ArtifactConflictError("artifact could not be published")) from None
 
     async def get_artifact(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactRecord:
-        async with self.pool.acquire() as connection:
-            record = await connection.fetchrow(
-                "SELECT * FROM fs2_scientific_artifacts WHERE id=$1 AND tenant_id=$2",
-                artifact_id,
-                tenant_id,
-            )
-            if record is None:
-                raise ArtifactNotFoundError("artifact does not exist")
-            return _artifact_from_record(record)
+        row = await self.pool.fetchrow(
+            f"SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts WHERE id=$1 AND tenant_id=$2",  # noqa: S608
+            artifact_id,
+            tenant_id,
+        )
+        if row is None:
+            raise ArtifactNotFoundError("artifact not found")
+        return _artifact_from_row(row)
 
-    async def commit_terminal_result(self, manifest: TerminalResultManifest) -> TerminalResultManifest:
+    async def commit_stage(self, request: CommitStageResult) -> StageCommitRecord:
         try:
             async with self.pool.acquire() as connection, connection.transaction():
-                await self._assert_current(connection, manifest.operation_id, manifest.tenant_id, manifest.attempt)
-                references = [*manifest.input_artifacts, *manifest.output_artifacts]
-                if references:
-                    records = await connection.fetch(
-                        "SELECT * FROM fs2_scientific_artifacts WHERE id=ANY($1::uuid[])",
-                        [item.artifact_id for item in references],
+                succeeded_rows = await connection.fetch(
+                    "SELECT attempt_id FROM fs2_scientific_stage_attempts "
+                    "WHERE operation_id=$1 AND tenant_id=$2 AND stage_id=$3 AND status='succeeded' "
+                    "FOR SHARE",
+                    request.operation_id,
+                    request.tenant_id,
+                    request.stage_id,
+                )
+                succeeded = {row["attempt_id"] for row in succeeded_rows}
+                if succeeded != set(request.attempt_ids):
+                    raise ArtifactConflictError("the commit does not name the stage's succeeded attempts")
+                pairs: list[tuple[ManifestEntryDraft, ArtifactRecord]] = []
+                for entry in request.entries:
+                    row = await connection.fetchrow(
+                        f"SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts "  # noqa: S608
+                        "WHERE id=$1 AND tenant_id=$2 AND operation_id=$3 AND stage_id=$4",
+                        entry.artifact_id,
+                        request.tenant_id,
+                        request.operation_id,
+                        request.stage_id,
                     )
-                    stored = {record["id"]: _artifact_from_record(record) for record in records}
-                    if any(stored.get(item.artifact_id) != item for item in references):
-                        raise ArtifactConflictError("result manifest references an unknown or changed artifact")
-                payload = manifest.model_dump(mode="json")
-                record = await connection.fetchrow(
+                    if row is None:
+                        raise ArtifactNotFoundError("artifact not found")
+                    record = _artifact_from_row(row)
+                    if record.direction is not ArtifactDirection.OUTPUT:
+                        raise ArtifactConflictError("only output artifacts can be committed to a stage manifest")
+                    if record.attempt_id not in succeeded:
+                        raise StaleArtifactAttemptError("a committed artifact belongs to a non-succeeded attempt")
+                    pairs.append((entry, record))
+                manifest = build_stage_manifest(
+                    operation_id=request.operation_id, stage_id=request.stage_id, entries=pairs
+                )
+                inserted = await connection.fetchrow(
                     """
-                    INSERT INTO fs2_scientific_result_manifests(
-                        operation_id,tenant_id,attempt,manifest_digest,status,
-                        semantic_validation_status,manifest,completed_at,committed_at
-                    ) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9)
-                    ON CONFLICT (operation_id) DO NOTHING
-                    RETURNING *
+                    INSERT INTO fs2_scientific_stage_commits
+                        (operation_id,stage_id,tenant_id,manifest_digest,validation_digest,semantic_valid,
+                         manifest,committed_at,validated_at)
+                    VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9)
+                    ON CONFLICT (operation_id,stage_id) DO NOTHING
+                    RETURNING manifest_digest
                     """,
-                    manifest.operation_id,
-                    manifest.tenant_id,
-                    manifest.attempt,
-                    manifest.manifest_digest,
-                    manifest.status.value,
-                    manifest.validation.status.value,
-                    json.dumps(payload, sort_keys=True, separators=(",", ":")),
-                    manifest.completed_at,
-                    manifest.committed_at,
+                    request.operation_id,
+                    request.stage_id,
+                    request.tenant_id,
+                    manifest.digest,
+                    request.validation_digest,
+                    request.semantic_valid,
+                    json.dumps(manifest.to_document(), sort_keys=True, separators=(",", ":")),
+                    request.committed_at,
+                    request.validated_at,
                 )
-                created = record is not None
-                if record is None:
-                    record = await connection.fetchrow(
-                        "SELECT * FROM fs2_scientific_result_manifests WHERE operation_id=$1",
-                        manifest.operation_id,
+                if inserted is None:
+                    existing = await self._read_stage_commit(
+                        connection, request.operation_id, stage_id=request.stage_id, tenant_id=None
                     )
-                if record is None:
-                    raise RuntimeError("result insert did not produce a durable row")
-                stored_manifest = TerminalResultManifest.model_validate(
-                    _decode_json_object(record["manifest"], label="scientific result manifest", maximum_bytes=1 << 20)
+                    if existing is None or existing.manifest_digest != manifest.digest:
+                        raise ArtifactConflictError("this stage already committed a different manifest")
+                    return existing
+                await connection.executemany(
+                    "INSERT INTO fs2_scientific_stage_commit_attempts"
+                    "(operation_id,stage_id,attempt_id) VALUES($1,$2,$3)",
+                    [
+                        (request.operation_id, request.stage_id, attempt_id)
+                        for attempt_id in sorted(request.attempt_ids, key=str)
+                    ],
                 )
-                if stored_manifest.manifest_digest != manifest.manifest_digest:
-                    raise ArtifactConflictError("operation already has a different terminal result")
-                if created:
-                    await connection.execute(
-                        """
-                        INSERT INTO fs2_scientific_artifact_events(
-                            event_type,operation_id,tenant_id,attempt,manifest_digest
-                        ) VALUES('result_committed',$1,$2,$3,$4)
-                        """,
-                        manifest.operation_id,
-                        manifest.tenant_id,
-                        manifest.attempt,
-                        manifest.manifest_digest,
-                    )
-                return stored_manifest
+                await self._append_event(
+                    connection,
+                    ArtifactEventType.STAGE_COMMITTED,
+                    operation_id=request.operation_id,
+                    tenant_id=request.tenant_id,
+                    stage_id=request.stage_id,
+                    manifest_digest=manifest.digest,
+                    occurred_at=request.committed_at,
+                )
+                return StageCommitRecord(
+                    operation_id=request.operation_id,
+                    tenant_id=request.tenant_id,
+                    stage_id=request.stage_id,
+                    attempt_ids=tuple(sorted(request.attempt_ids, key=str)),
+                    manifest=manifest,
+                    manifest_digest=manifest.digest,
+                    validation_digest=request.validation_digest,
+                    semantic_valid=request.semantic_valid,
+                    committed_at=request.committed_at,
+                    validated_at=request.validated_at,
+                )
         except asyncpg.PostgresError as error:
-            translated = self._translate_database_error(error)
-            if translated is not None:
-                raise translated from None
-            raise
+            raise (self._translate(error) or ArtifactConflictError("stage commit was rejected")) from None
 
-    async def get_terminal_result(self, operation_id: UUID, *, tenant_id: str) -> TerminalResultManifest:
-        async with self.pool.acquire() as connection:
-            record = await connection.fetchrow(
-                "SELECT manifest FROM fs2_scientific_result_manifests WHERE operation_id=$1 AND tenant_id=$2",
-                operation_id,
-                tenant_id,
-            )
-        if record is None:
-            raise ArtifactNotFoundError("terminal result does not exist")
-        return TerminalResultManifest.model_validate(
-            _decode_json_object(record["manifest"], label="scientific result manifest", maximum_bytes=1 << 20)
+    @staticmethod
+    async def _read_stage_commit(
+        connection: asyncpg.Connection[Any], operation_id: UUID, *, stage_id: str, tenant_id: str | None
+    ) -> StageCommitRecord | None:
+        row = await connection.fetchrow(
+            """
+            SELECT c.operation_id,c.stage_id,c.tenant_id,c.manifest_digest,c.validation_digest,
+                   c.semantic_valid,c.manifest,c.committed_at,c.validated_at,
+                   COALESCE(array_agg(a.attempt_id ORDER BY a.attempt_id)
+                            FILTER (WHERE a.attempt_id IS NOT NULL),'{}') AS attempt_ids
+            FROM fs2_scientific_stage_commits c
+            LEFT JOIN fs2_scientific_stage_commit_attempts a
+                ON a.operation_id=c.operation_id AND a.stage_id=c.stage_id
+            WHERE c.operation_id=$1 AND c.stage_id=$2 AND ($3::text IS NULL OR c.tenant_id=$3)
+            GROUP BY c.operation_id,c.stage_id,c.tenant_id,c.manifest_digest,c.validation_digest,
+                     c.semantic_valid,c.manifest,c.committed_at,c.validated_at
+            """,
+            operation_id,
+            stage_id,
+            tenant_id,
+        )
+        if row is None:
+            return None
+        manifest = ScientificArtifactManifest.model_validate(
+            _decode_json_object(row["manifest"], label="stage manifest")
+        )
+        return StageCommitRecord(
+            operation_id=row["operation_id"],
+            tenant_id=row["tenant_id"],
+            stage_id=row["stage_id"],
+            attempt_ids=tuple(row["attempt_ids"]),
+            manifest=manifest,
+            manifest_digest=row["manifest_digest"],
+            validation_digest=row["validation_digest"],
+            semantic_valid=row["semantic_valid"],
+            committed_at=row["committed_at"],
+            validated_at=row["validated_at"],
         )
 
-    async def list_events(self, operation_id: UUID, *, tenant_id: str) -> list[ArtifactEvent]:
+    async def stage_commit(
+        self, operation_id: UUID, *, stage_id: str, tenant_id: str | None = None
+    ) -> StageCommitRecord | None:
         async with self.pool.acquire() as connection:
-            exists = await connection.fetchval(
-                "SELECT true FROM fs2_operations WHERE id=$1 AND tenant_id=$2",
-                operation_id,
-                tenant_id,
-            )
-            if not exists:
-                raise ArtifactNotFoundError("operation does not exist")
-            records = await connection.fetch(
-                """
-                SELECT id,event_type,operation_id,tenant_id,attempt,upload_id,
-                       artifact_id,manifest_digest,occurred_at
-                FROM fs2_scientific_artifact_events
-                WHERE operation_id=$1 AND tenant_id=$2
-                ORDER BY id
-                """,
-                operation_id,
-                tenant_id,
-            )
-            return [
-                ArtifactEvent(
-                    event_id=record["id"],
-                    event_type=record["event_type"],
-                    operation_id=record["operation_id"],
-                    tenant_id=record["tenant_id"],
-                    attempt=record["attempt"],
-                    upload_id=record["upload_id"],
-                    artifact_id=record["artifact_id"],
-                    manifest_digest=record["manifest_digest"],
-                    occurred_at=record["occurred_at"],
+            return await self._read_stage_commit(connection, operation_id, stage_id=stage_id, tenant_id=tenant_id)
+
+    async def commit_run_result(self, record: RunResultRecord) -> RunResultRecord:
+        document = record.result.to_document()
+        try:
+            async with self.pool.acquire() as connection, connection.transaction():
+                inserted = await connection.fetchrow(
+                    """
+                    INSERT INTO fs2_scientific_run_results
+                        (operation_id,tenant_id,result_digest,terminal_status,semantic_validation_status,
+                         document,submitted_at,completed_at,committed_at,retention_expires_at)
+                    VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10)
+                    ON CONFLICT (operation_id) DO NOTHING
+                    RETURNING result_digest
+                    """,
+                    record.operation_id,
+                    record.tenant_id,
+                    record.result_digest,
+                    record.result.terminal_status.value,
+                    record.result.semantic_validation.status.value,
+                    json.dumps(document, sort_keys=True, separators=(",", ":")),
+                    record.result.submitted_at,
+                    record.result.completed_at,
+                    record.committed_at,
+                    record.retention_expires_at,
                 )
-                for record in records
-            ]
+                if inserted is None:
+                    existing = await self.get_run_result(record.operation_id, tenant_id=record.tenant_id)
+                    if existing.result_digest != record.result_digest:
+                        raise ResultAlreadyTerminalError("the operation already published a terminal result")
+                    return existing
+                await self._append_event(
+                    connection,
+                    ArtifactEventType.RESULT_COMMITTED,
+                    operation_id=record.operation_id,
+                    tenant_id=record.tenant_id,
+                    manifest_digest=record.result_digest,
+                    occurred_at=record.committed_at,
+                )
+                return record
+        except asyncpg.PostgresError as error:
+            raise (self._translate(error) or ArtifactConflictError("terminal result was rejected")) from None
 
+    async def get_run_result(self, operation_id: UUID, *, tenant_id: str) -> RunResultRecord:
+        row = await self.pool.fetchrow(
+            "SELECT operation_id,tenant_id,result_digest,document,committed_at,retention_expires_at "
+            "FROM fs2_scientific_run_results WHERE operation_id=$1 AND tenant_id=$2",
+            operation_id,
+            tenant_id,
+        )
+        if row is None:
+            raise ArtifactNotFoundError("terminal result not found")
+        return RunResultRecord(
+            operation_id=row["operation_id"],
+            tenant_id=row["tenant_id"],
+            result=ScientificRunResult.model_validate(_decode_json_object(row["document"], label="terminal result")),
+            result_digest=row["result_digest"],
+            committed_at=row["committed_at"],
+            retention_expires_at=row["retention_expires_at"],
+        )
 
-# The repository's migration runner is intentionally forward-only. This
-# explicit owner-only down path is for disposable pre-release verification and
-# removes its own ledger entry so an up/down/up test exercises the real runner.
-SCIENTIFIC_ARTIFACT_ROLLBACK_SQL = """
-DROP TRIGGER IF EXISTS fs2_scientific_artifact_events_immutable ON fs2_scientific_artifact_events;
-DROP TRIGGER IF EXISTS fs2_scientific_result_manifests_immutable ON fs2_scientific_result_manifests;
-DROP TRIGGER IF EXISTS fs2_scientific_artifacts_immutable ON fs2_scientific_artifacts;
-DROP TRIGGER IF EXISTS fs2_scientific_upload_transition ON fs2_scientific_uploads;
-DROP TRIGGER IF EXISTS fs2_scientific_events_attempt_fence ON fs2_scientific_artifact_events;
-DROP TRIGGER IF EXISTS fs2_scientific_results_attempt_fence ON fs2_scientific_result_manifests;
-DROP TRIGGER IF EXISTS fs2_scientific_artifacts_attempt_fence ON fs2_scientific_artifacts;
-DROP TRIGGER IF EXISTS fs2_scientific_uploads_attempt_fence ON fs2_scientific_uploads;
-DROP TABLE IF EXISTS fs2_scientific_artifact_events;
-DROP TABLE IF EXISTS fs2_scientific_result_manifests;
-DROP TABLE IF EXISTS fs2_scientific_uploads;
-DROP TABLE IF EXISTS fs2_scientific_artifacts;
-DROP FUNCTION IF EXISTS fs2_scientific_reject_mutation();
-DROP FUNCTION IF EXISTS fs2_scientific_validate_upload_transition();
-DROP FUNCTION IF EXISTS fs2_scientific_assert_current_attempt();
-DELETE FROM fs2_schema_migrations WHERE version='0014_scientific_artifact_results.sql';
-""".strip()
+    async def list_events(
+        self, operation_id: UUID, *, tenant_id: str, after_id: int = 0, limit: int = 500
+    ) -> list[ArtifactEvent]:
+        rows = await self.pool.fetch(
+            """
+            SELECT id,event_type,operation_id,tenant_id,stage_id,attempt_id,upload_id,artifact_id,
+                   manifest_digest,occurred_at
+            FROM fs2_scientific_artifact_events
+            WHERE operation_id=$1 AND tenant_id=$2 AND id>$3
+            ORDER BY id
+            LIMIT $4
+            """,
+            operation_id,
+            tenant_id,
+            max(0, after_id),
+            min(max(1, limit), 1000),
+        )
+        return [_event_from_row(row) for row in rows]
+
+    async def claim_expired(self, *, now: datetime, limit: int) -> list[tuple[UUID, str, datetime]]:
+        rows = await self.pool.fetch(
+            """
+            SELECT r.operation_id,r.tenant_id,r.retention_expires_at
+            FROM fs2_scientific_run_results r
+            WHERE r.retention_expires_at<=$1
+              AND NOT EXISTS (
+                  SELECT 1 FROM fs2_scientific_retention_ledger l WHERE l.operation_id=r.operation_id
+              )
+            ORDER BY r.retention_expires_at
+            LIMIT $2
+            """,
+            now,
+            min(max(1, limit), 500),
+        )
+        return [(row["operation_id"], row["tenant_id"], row["retention_expires_at"]) for row in rows]
+
+    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[str]:
+        rows = await self.pool.fetch(
+            "SELECT storage_key FROM fs2_scientific_artifacts WHERE operation_id=$1 AND tenant_id=$2",
+            operation_id,
+            tenant_id,
+        )
+        return [str(row["storage_key"]) for row in rows]
+
+    async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge:
+        """Delete retired rows under the one session flag the triggers accept."""
+
+        try:
+            async with self.pool.acquire() as connection, connection.transaction():
+                await connection.execute("SET LOCAL fs2.retention_purge = 'on'")
+                result = await connection.fetchrow(
+                    "SELECT retention_expires_at FROM fs2_scientific_run_results "
+                    "WHERE operation_id=$1 AND tenant_id=$2",
+                    operation_id,
+                    tenant_id,
+                )
+                if result is None:
+                    raise ArtifactNotFoundError("terminal result not found")
+                totals = await connection.fetchrow(
+                    "SELECT count(*) AS artifacts,COALESCE(sum(size_bytes),0) AS bytes "
+                    "FROM fs2_scientific_artifacts WHERE operation_id=$1 AND tenant_id=$2",
+                    operation_id,
+                    tenant_id,
+                )
+                assert totals is not None
+                # Claim the purge first. The ledger's unique operation identity is
+                # the lock, so a concurrent purge conflicts here rather than racing
+                # two deletions. The terminal result row itself stays unlockable
+                # because the runtime role deliberately has no UPDATE on it.
+                claimed = await connection.fetchrow(
+                    """
+                    INSERT INTO fs2_scientific_retention_ledger
+                        (operation_id,tenant_id,purged_at,artifact_count,byte_count,retention_expired_at)
+                    VALUES($1,$2,$3,$4,$5,$6)
+                    ON CONFLICT (operation_id) DO NOTHING
+                    RETURNING operation_id
+                    """,
+                    operation_id,
+                    tenant_id,
+                    now,
+                    int(totals["artifacts"]),
+                    int(totals["bytes"]),
+                    result["retention_expires_at"],
+                )
+                if claimed is None:
+                    raise ArtifactConflictError("this operation was already purged")
+                for statement in (
+                    "DELETE FROM fs2_scientific_artifact_events WHERE operation_id=$1 AND tenant_id=$2",
+                    "DELETE FROM fs2_scientific_stage_commit_attempts WHERE operation_id=$1 AND $2::text IS NOT NULL",
+                    "DELETE FROM fs2_scientific_stage_commits WHERE operation_id=$1 AND tenant_id=$2",
+                    "DELETE FROM fs2_scientific_uploads WHERE operation_id=$1 AND tenant_id=$2",
+                    "DELETE FROM fs2_scientific_artifacts WHERE operation_id=$1 AND tenant_id=$2",
+                    "DELETE FROM fs2_scientific_stage_attempts WHERE operation_id=$1 AND tenant_id=$2",
+                ):
+                    await connection.execute(statement, operation_id, tenant_id)
+                return RetentionPurge(
+                    operation_id=operation_id,
+                    tenant_id=tenant_id,
+                    artifact_count=int(totals["artifacts"]),
+                    byte_count=int(totals["bytes"]),
+                    retention_expired_at=result["retention_expires_at"],
+                    purged_at=now,
+                )
+        except asyncpg.PostgresError as error:
+            raise (self._translate(error) or ArtifactConflictError("retention purge was rejected")) from None

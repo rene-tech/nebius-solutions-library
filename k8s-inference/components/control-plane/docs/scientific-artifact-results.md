@@ -1,130 +1,174 @@
-# Scientific artifact and result backend
+# Scientific artifact provenance and result service
 
-`fs2_serve.scientific_artifacts` is the reusable persistence boundary for
-asynchronous scientific workloads. No API, MCP, controller, model-adapter, or
-live-deployment wiring is included in this slice.
+This service is what every scientific model adapter writes through. It records
+what each stage attempt produced, proves the bytes match what was declared, and
+publishes two immutable documents: one manifest per stage, and one canonical
+result per operation.
 
-## Contract and lifecycle
+The public JSON Schemas in `catalog/runtime/schema` own the shape of everything
+that leaves this component. The control plane projects onto them and never
+defines a competing schema of its own.
 
-An adapter creates a stable UUID for `BeginArtifactUpload` and retries that
-same intent after a timeout. The service derives the only accepted object key:
+## What is stored, and what is not
 
-```text
-scientific/v1/tenants/{tenant}/operations/{operation}/attempts/{attempt}/{input|output}/sha256/{digest}
+Only content addresses and identities are persisted. No table holds object
+bytes, a presigned URL, a signed header, or a credential, and no code path logs
+one. `tests/test_scientific_artifacts.py` asserts this against the migration's
+own DDL and against a debug-level log capture.
+
+## Scope
+
+An artifact belongs to exactly one stage attempt:
+
+```
+(operation_id, stage_id, shard_id, attempt_id)
 ```
 
-The repository atomically compares `tenant_id` and `attempt` with the current
-`fs2_operations` row before it appends the upload and its `upload_begun` event.
-The returned PUT handle is generated only after that commit, must be
-write-once, and expires within 15 minutes. A content address has one upload
-intent: retry the same upload UUID, because a different UUID cannot mint a
-second handle for the same key. Handles are never accepted by, or sent to, a
-repository method; finalized intents never mint another PUT handle.
+`shard_id` is stored as the sentinel `-` for a gang-scheduled stage with no
+shard identity, so every foreign key stays composite and `NOT NULL`. The object
+key is derived from that scope and is the only key the service accepts:
 
-Finalization asks the trusted object-store adapter to hash and measure the
-stored bytes. It compares the measured SHA-256 digest, byte count, media type,
-optional compression, and storage key with the durable upload intent before
-appending an immutable internal `ArtifactRecord` and `artifact_finalized`
-event. The record uses
-`fs2-serve.nebius.ai/scientific-artifact-record/v1`; it does not claim or reuse
-the shared public ArtifactRef schema. The object-store protocol returns
-metadata only; the service never receives biological bytes.
+```
+scientific/v1/tenants/{tenant}/operations/{operation}/stages/{stage}
+  /shards/{shard}/attempts/{attempt}/{input|output}/sha256/{digest}
+```
 
-`ArtifactRecord.to_public_ref()` is the only projection boundary supplied by
-this module. Its schema-neutral value contains exactly `artifact_id`, raw
-lowercase 64-character `sha256`, `size_bytes`, `media_type`, and optional
-`compression`. Tenant, attempt, direction, storage key, access profile/receipt,
-and timestamps remain internal. The shared contract branch owns the public
-ArtifactRef/`scientific-artifact-pointer/v1` schema; focused tests validate the
-projection against that merged schema without redefining it here.
+A row whose `storage_key` disagrees with that derivation is rejected by a CHECK
+constraint, not only by the application.
 
-## Controller interface and routes
+Each attempt also records the Kueue admission it actually received: resolved
+pool, admitted resource flavor, accelerator resource name and count, plus the
+Kueue workload, Job, Pod, node and GPU identities observed while it ran. Those
+are what the canonical result reports per attempt.
 
-`ScientificArtifactControllerPort` is the typed controller seam. A controller
-can begin/finalize uploads, commit a terminal result, or request a download
-through that port without receiving an object-store implementation or writing
-to persistence tables directly. `ScientificArtifactService` implements the
-port structurally.
+## Lifecycle
 
-`scientific_artifact_router(...)` provides the corresponding internal HTTP
-adapter when an application injects a service into `AppRuntime.artifact_service`:
+1. **Open the attempt.** The controller registers the attempt before anything
+   can be written under it.
+2. **Begin an upload.** The service reserves the content address and returns a
+   short-lived write-once handle. Reusing the same `upload_id` returns the same
+   reservation, so a client that timed out can retry safely.
+3. **Finalize.** The service streams the stored object back from the gateway,
+   recomputes its digest, and refuses to publish unless digest, size, media type
+   and compression all match the declared intent. Finalize is idempotent:
+   concurrent callers get one artifact and one durable event.
+4. **Close the attempt** with its terminal outcome and observed GPU lifecycle.
+5. **Commit the stage.** Exactly one `scientific-artifact-manifest/v1` per
+   `(operation, stage)`. The commit must name precisely the stage's succeeded
+   attempts, and every committed artifact must belong to one of them.
+6. **Commit the result.** Exactly one canonical `scientific-run-result/v1` per
+   operation, assembled from the stored attempts rather than from caller input.
 
-- `POST /internal/scientific-artifacts/uploads` returns an upload UUID and a
-  short-lived write-once handle.
-- `POST /internal/scientific-artifacts/uploads/{upload_id}:finalize` returns
-  only the public artifact pointer.
-- `GET /internal/scientific-artifacts/{artifact_id}:download` returns the
-  public pointer plus a short-lived read handle.
+## Fences
 
-These routes are controller-facing and bearer-authenticated; they are not MCP
-tools and never serialize `ArtifactRecord`. The public pointer portion omits
-tenant, attempt, storage key, access receipt, and bearer locations. The API
-application mounts them only when an integration owner explicitly injects the
-service, so an unwired deployment cannot accidentally advertise the routes.
+Three fences are enforced in SQL, so they hold even if a caller misbehaves:
 
-A terminal internal result record contains content-addressed input/output
-records, exact model/runtime/workload/scheduling identities, bounded
-Kubernetes execution UIDs, and a semantic-validator identity plus its evidence
-artifact. Successful results require a validated output. Canonical JSON
-produces the manifest SHA-256. A unique operation key and an immutable-row
-trigger permit exactly one terminal record; an identical replay is idempotent
-and a different replay is a conflict. Its internal schema is
-`fs2-serve.nebius.ai/scientific-result-record/v1`, leaving the shared contract
-branch as the sole owner of public result schemas.
+| Fence | Rule | SQLSTATE |
+| --- | --- | --- |
+| Scope | The operation must exist and own the tenant | `FS201` |
+| Stale attempt | A superseded attempt number cannot write | `FS201` |
+| Terminal | A published result blocks all later writes | `FS203` |
 
-All write transactions hold a share lock on the operation row. A retry that
-advances the operation attempt therefore fences late upload, finalize, event,
-and result commits. The database trigger repeats that check even for writes
-outside the repository.
+Rows are immutable: `UPDATE` is refused except for the two documented one-way
+transitions, running to terminal on an attempt and unfinalized to finalized on
+an upload. Everything else raises `FS202`.
 
-## Privacy and gated artifacts
+The runtime database role has no table-level `UPDATE` on artifacts, commits,
+results or events at all, so an attempted rewrite is refused by the grant before
+the trigger is even reached.
 
-The persistence schema contains hashes, sizes, closed media types, object keys,
-non-secret execution identities, and a gated-access receipt digest. It has no
-object bytes, request/response body, credential, presigned URL, signed header,
-free-form event detail, argv, or environment field. Restricted and academic
-artifacts require a non-secret access receipt digest; public artifacts cannot
-claim one.
+## Handles
 
-Pydantic validation errors suppress input values. Handles redact their URL and
-headers from `repr`, and the service performs no logging. Integrators must keep
-the same boundary: return a handle directly to the authorized caller, never
-serialize it into an operation, event, manifest, audit record, exception, or
-log field.
+Handles are presigned by the AWS SDK, so they carry a real SigV4 signature that
+an unmodified S3-compatible gateway accepts. The upload signature binds the
+object key **and** the declared content type, so a client that uploads different
+bytes under a different media type is rejected by the gateway rather than only
+by finalize.
 
-## Repository and migration integration
+Handles live at most fifteen minutes, default to ten, and are never persisted.
+The deadline is stamped from the same wall clock the SDK signs with, because
+`generate_presigned_url` accepts a duration rather than a deadline; anchoring it
+anywhere else would advertise an expiry the gateway does not enforce.
 
-`MemoryArtifactRepository` is a deterministic backend for adapter and
-concurrency tests. `PostgresArtifactRepository` uses the existing asyncpg pool
-and operation ledger. The additive migration is
-`0014_scientific_artifact_results.sql`; the normal migration runner applies it
-under the sole DDL owner and grants the runtime role only the bounded DML needed
-by this repository.
+## Retention
 
-Production migrations are forward-only and immutable. For disposable
-pre-release databases, `SCIENTIFIC_ARTIFACT_ROLLBACK_SQL` is an explicit
-owner-only down path. It removes the four tables, their triggers/functions, and
-the `0014` ledger row. The focused PostgreSQL test executes up/down/up against
-the real migration runner. Do not run the down path after later migrations or
-against a database containing retained scientific results.
+Retention only ever applies to an operation that has already published its
+terminal result. A purge claims the operation by inserting into
+`fs2_scientific_retention_ledger`, whose unique operation identity is the lock,
+then deletes the objects and finally the rows. Deletes are refused unless that
+transaction sets `fs2.retention_purge`, so the immutability guarantee still
+holds for everything else.
 
-Integration owners should wire the service only after the shared scientific
-batch API and controller contracts are merged. The object-store adapter must
-independently stream/hash the stored object; trusting caller-provided metadata
-does not satisfy finalization. API authorization must scope every begin,
-finalize, download, result, and event call to the operation tenant.
+Object deletion runs before the durable rows are removed and is idempotent, so
+an interrupted purge converges on the next pass instead of leaving metadata
+pointing at bytes that are already gone. The ledger survives the purge it
+records, so what was deleted and when remains provable.
 
-## Verification
+## Configuration
 
-From `components/control-plane`:
+The service is disabled by default. It is mounted only when object storage is
+fully configured, so an unconfigured cluster never exposes an endpoint backed by
+absent credentials.
+
+| Helm value | Environment variable | Notes |
+| --- | --- | --- |
+| `scientificArtifacts.enabled` | `FS2_SCIENTIFIC_ARTIFACTS_ENABLED` | Gates the routes entirely |
+| `scientificArtifacts.endpoint` | `FS2_ARTIFACT_STORE_ENDPOINT` | HTTPS unless TLS verification is off |
+| `scientificArtifacts.bucket` | `FS2_ARTIFACT_STORE_BUCKET` | Same region as the cluster |
+| `scientificArtifacts.region` | `FS2_ARTIFACT_STORE_REGION` | |
+| `scientificArtifacts.addressingStyle` | `FS2_ARTIFACT_STORE_ADDRESSING_STYLE` | `path` or `virtual` |
+| `scientificArtifacts.handleTtlSeconds` | `FS2_ARTIFACT_HANDLE_TTL_SECONDS` | 30 to 900 |
+| `scientificArtifacts.maxBytes` | `FS2_ARTIFACT_MAX_BYTES` | |
+| `scientificArtifacts.retentionSeconds` | `FS2_ARTIFACT_RETENTION_SECONDS` | |
+| `scientificArtifacts.mediaTypes` | `FS2_ARTIFACT_MEDIA_TYPES` | Exact allowlist |
+| `secrets.artifactStore` | `FS2_ARTIFACT_STORE_CREDENTIALS_FILE` | Mounted `0400`, never an env value |
+
+Credentials are a JSON object with `access_key_id` and `secret_access_key`,
+projected read-only into the pod. They are never passed as environment values.
+
+`scientificArtifacts.egressCidrs` opens TCP 443 to object storage in the
+default-deny NetworkPolicy. Leave it empty and finalize cannot reach the
+gateway, because presigning is local but digest verification is not.
+
+## Authorization
+
+All routes are under `/internal/scientific-artifacts` and take the tenant from
+the verified bearer principal; no request body can choose one. Writes require
+the `artifacts.write` scope, reads require `operations.result`. A caller from
+another tenant receives `404`, never `403`, so the surface leaks no existence.
+
+| Route | Scope |
+| --- | --- |
+| `POST /attempts` | `artifacts.write` |
+| `POST /attempts/{id}:close` | `artifacts.write` |
+| `POST /uploads` | `artifacts.write` |
+| `POST /uploads/{id}:finalize` | `artifacts.write` |
+| `POST /stages:commit` | `artifacts.write` |
+| `POST /operations/{id}:result` | `artifacts.write` |
+| `GET /{id}:download` | `operations.result` |
+| `GET /operations/{id}/stages/{stage}:commit` | `operations.result` |
+| `GET /operations/{id}:result` | `operations.result` |
+| `GET /operations/{id}/events` | `operations.result` |
+
+## How the batch controller consumes this
+
+`ScientificBatchRepository.artifact_commit` is answered from the stage commit
+this service published, through `ScientificArtifactBatchBridge`. The controller
+accepts a commit only when it is semantically valid and its attempt identities
+are exactly the stage's succeeded attempts, so the repository must not maintain
+a second copy of that state.
+
+## Testing
 
 ```bash
-uv run pytest -q tests/test_scientific_artifacts.py
-uv run ruff check src/fs2_serve/scientific_artifacts.py tests/test_scientific_artifacts.py
-uv run ruff format --check src/fs2_serve/scientific_artifacts.py tests/test_scientific_artifacts.py
-PYTHONPATH="src:../../catalog/runtime" uv run mypy src
+# Contract, fencing, privacy and retention, plus real PostgreSQL
+FS2_TEST_DATABASE_URL=postgresql://... uv run pytest -q tests/test_scientific_artifacts.py
+
+# Real S3-compatible gateway, including signature acceptance and expiry
+FS2_TEST_S3_ENDPOINT=http://127.0.0.1:9000 \
+FS2_TEST_S3_ACCESS_KEY=... FS2_TEST_S3_SECRET_KEY=... \
+  uv run pytest -q tests/test_scientific_object_store.py
 ```
 
-Set `FS2_TEST_DATABASE_URL` to a disposable PostgreSQL database to exercise the
-real concurrency fences and migration up/down/up path. The tests clean their
-artifact and operation fixtures and leave the migration reapplied.
+Both suites skip cleanly when their environment is absent, so the default run
+stays offline.

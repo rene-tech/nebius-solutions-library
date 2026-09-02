@@ -595,3 +595,29 @@ academicAssets:
     namespace: fs2-academic-poc
     localQueue: academic-scientific
     serviceAccount: fs2-academic-runner
+
+# Scientific artifact provenance and result service. Disabled by default: the
+# routes are mounted only when object storage is fully configured, so an
+# unconfigured cluster never exposes an endpoint backed by absent credentials.
+scientificArtifacts:
+  enabled: false
+  endpoint: https://storage.eu-north1.nebius.cloud
+  bucket: fs2-scientific-artifacts
+  region: eu-north1
+  addressingStyle: path
+  verifyTls: true
+  handleTtlSeconds: 600
+  maxBytes: 1099511627776
+  retentionSeconds: 7776000
+  mediaTypes:
+    - application/octet-stream
+    - application/json
+    - application/gzip
+    - application/vnd.fs2.scientific-manifest+json
+    - chemical/x-pdb
+    - chemical/x-cif
+    - text/plain
+    - text/x-fasta
+  # CIDRs the control plane may reach on 443 to serve artifact handles and
+  # verify stored objects. Empty keeps the default-deny egress policy intact.
+  egressCidrs: []

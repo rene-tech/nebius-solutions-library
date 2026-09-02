@@ -47,11 +47,7 @@ EXPECTED_MIGRATIONS: Final = (
     ),
     (
         "0014_scientific_artifact_results.sql",
-        "88239e15fef20d10c515611d6c9336364a06d9752c475401de56af890c74ec4f",
-    ),
-    (
-        "0015_scientific_batch_controller.sql",
-        "459ee647dfa4857ffffad7a4384c25395803becc441a9dda5e84ac8d099ab444",
+        "97be6f57c64944418fa9719a58bacd8040402d21fa874f7af3a773c02b68b675",
     ),
 )
 

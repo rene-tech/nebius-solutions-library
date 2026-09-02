@@ -1,3 +1,10 @@
+"""Contract, fencing, privacy and storage tests for the artifact service.
+
+The canonical JSON Schemas in ``catalog/runtime/schema`` are loaded directly so
+the control plane can never drift into a look-alike of a public contract it does
+not own.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -5,7 +12,10 @@ import hashlib
 import json
 import logging
 import os
+import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -18,53 +28,80 @@ from pydantic import ValidationError
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
 from fs2_serve.postgres import PostgresStore
 from fs2_serve.scientific_artifacts import (
+    HANDLE_CLOCK_SKEW,
     MAX_HANDLE_TTL,
+    NO_SHARD,
     SCIENTIFIC_ARTIFACT_MIGRATION,
-    SCIENTIFIC_ARTIFACT_ROLLBACK_SQL,
     ArtifactAccess,
     ArtifactAccessProfile,
     ArtifactCompression,
     ArtifactConflictError,
     ArtifactDirection,
     ArtifactEventType,
+    ArtifactNotFoundError,
     ArtifactPolicyError,
     ArtifactVerificationError,
+    AttemptStatus,
     BeginArtifactUpload,
+    CloseStageAttempt,
+    CommitStageResult,
     EphemeralHandle,
-    ExecutionProvenance,
     FinalizeArtifactUpload,
+    KueueAdmission,
+    ManifestEntryDraft,
     MemoryArtifactRepository,
+    OpenStageAttempt,
     PostgresArtifactRepository,
+    ResultAlreadyTerminalError,
+    RunResultDraft,
     ScientificArtifactService,
-    SemanticValidation,
-    SemanticValidationStatus,
     StaleArtifactAttemptError,
-    TerminalResultDraft,
-    TerminalResultManifest,
-    TerminalResultStatus,
     VerifiedStoredObject,
     artifact_storage_key,
-    result_manifest_digest,
 )
-from fs2_serve.scientific_batch.postgres_repository import SCIENTIFIC_BATCH_ROLLBACK_SQL
+from fs2_serve.scientific_batch.controller import ScientificBatchController
+from fs2_serve.scientific_batch.models import AttemptOutcome, ScientificAttemptState, WorkloadKind, WorkloadRef
 
+SCHEMA_ROOT = CONTROL_ROOT.parents[1] / "catalog/runtime/schema"
 NOW = datetime(2026, 9, 2, 20, 0, tzinfo=UTC)
-ALLOWED_MEDIA_TYPES = {"application/json", "chemical/x-pdb", "text/x-fasta"}
-PUBLIC_ARTIFACT_SCHEMA = json.loads(
-    (CONTROL_ROOT.parents[1] / "catalog/runtime/schema/scientific-artifact-pointer.schema.json").read_text(
-        encoding="utf-8"
-    )
+TENANT = "tenant-a"
+ALLOWED_MEDIA_TYPES = {
+    "application/json",
+    "application/vnd.fs2.scientific-manifest+json",
+    "chemical/x-pdb",
+    "text/x-fasta",
+}
+ADMISSION = KueueAdmission(
+    resolved_pool_id="gpu-preemptible",
+    admitted_resource_flavor="gpu-preemptible",
+    accelerator_resource_name="nvidia.com/gpu",
+    accelerator_count=1,
+    admitted_at=NOW,
 )
+
+
+def load_schema(name: str) -> Draft202012Validator:
+    return Draft202012Validator(json.loads((SCHEMA_ROOT / f"{name}.schema.json").read_text(encoding="utf-8")))
+
+
+POINTER_SCHEMA = load_schema("scientific-artifact-pointer")
+MANIFEST_SCHEMA = load_schema("scientific-artifact-manifest")
+RESULT_SCHEMA = load_schema("scientific-run-result")
 
 
 def digest(value: bytes) -> str:
     return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
-class MeasuringObjectStore:
-    def __init__(self) -> None:
+class FakeObjectStore:
+    """Records what was stored and honours the test clock exactly."""
+
+    def __init__(self, *, clock=lambda: NOW) -> None:
         self.objects: dict[str, tuple[bytes, str, ArtifactCompression | None]] = {}
+        self.deleted: list[str] = []
         self.override: VerifiedStoredObject | None = None
+        self.issued: list[EphemeralHandle] = []
+        self._clock = clock
 
     def put(
         self,
@@ -75,9 +112,38 @@ class MeasuringObjectStore:
     ) -> None:
         self.objects[storage_key] = (value, media_type, compression)
 
-    async def inspect(self, storage_key: str) -> VerifiedStoredObject:
+    def _handle(self, method: str, storage_key: str, ttl: timedelta, headers: dict[str, str]) -> EphemeralHandle:
+        handle = EphemeralHandle(
+            method=method,  # type: ignore[arg-type]
+            url=f"https://store.invalid/bucket/{storage_key}?X-Amz-Signature={'a' * 64}",
+            expires_at=self._clock() + ttl,
+            write_once=method == "PUT",
+            headers=headers,
+        )
+        self.issued.append(handle)
+        return handle
+
+    async def presign_upload(
+        self,
+        *,
+        storage_key: str,
+        media_type: str,
+        compression: ArtifactCompression | None,
+        ttl: timedelta,
+    ) -> EphemeralHandle:
+        headers = {"content-type": media_type}
+        if compression is not None:
+            headers["content-encoding"] = compression.value
+        return self._handle("PUT", storage_key, ttl, headers)
+
+    async def presign_download(self, *, storage_key: str, ttl: timedelta) -> EphemeralHandle:
+        return self._handle("GET", storage_key, ttl, {})
+
+    async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject:
         if self.override is not None:
             return self.override
+        if storage_key not in self.objects:
+            raise ArtifactNotFoundError("stored object is absent")
         value, media_type, compression = self.objects[storage_key]
         return VerifiedStoredObject(
             storage_key=storage_key,
@@ -87,551 +153,980 @@ class MeasuringObjectStore:
             compression=compression,
         )
 
-
-class SecretHandleSigner:
-    def __init__(self, *, extra_ttl: timedelta = timedelta(), write_once: bool = True) -> None:
-        self.extra_ttl = extra_ttl
-        self.write_once = write_once
-        self.signed: list[tuple[str, str]] = []
-
-    async def issue_upload(
-        self,
-        *,
-        storage_key: str,
-        media_type: str,
-        compression: ArtifactCompression | None,
-        expected_digest: str,
-        expires_at: datetime,
-    ) -> EphemeralHandle:
-        del compression, expected_digest
-        self.signed.append(("PUT", storage_key))
-        return EphemeralHandle(
-            method="PUT",
-            url=f"https://objects.example.test/{storage_key}?signature=SIGNED_UPLOAD_SECRET",
-            expires_at=expires_at + self.extra_ttl,
-            write_once=self.write_once,
-            headers={"x-upload-token": "UPLOAD_HEADER_SECRET", "content-type": media_type},
-        )
-
-    async def issue_download(self, *, storage_key: str, expires_at: datetime) -> EphemeralHandle:
-        self.signed.append(("GET", storage_key))
-        return EphemeralHandle(
-            method="GET",
-            url=f"https://objects.example.test/{storage_key}?signature=SIGNED_DOWNLOAD_SECRET",
-            expires_at=expires_at + self.extra_ttl,
-            headers={"x-download-token": "DOWNLOAD_HEADER_SECRET"},
-        )
+    async def delete(self, storage_key: str) -> None:
+        self.deleted.append(storage_key)
+        self.objects.pop(storage_key, None)
 
 
-class LeakyBoundarySigner(SecretHandleSigner):
-    async def issue_upload(
-        self,
-        *,
-        storage_key: str,
-        media_type: str,
-        compression: ArtifactCompression | None,
-        expected_digest: str,
-        expires_at: datetime,
-    ) -> EphemeralHandle:
-        del storage_key, media_type, compression, expected_digest, expires_at
-        raise RuntimeError("SIGNER_CREDENTIAL_MUST_BE_SUPPRESSED")
-
-    async def issue_download(self, *, storage_key: str, expires_at: datetime) -> EphemeralHandle:
-        del storage_key, expires_at
-        raise RuntimeError("SIGNED_DOWNLOAD_LOCATION_MUST_BE_SUPPRESSED")
-
-
-class LeakyBoundaryObjectStore(MeasuringObjectStore):
-    async def inspect(self, storage_key: str) -> VerifiedStoredObject:
-        del storage_key
-        raise RuntimeError("BIOLOGICAL_OBJECT_BYTES_MUST_BE_SUPPRESSED")
-
-
-async def memory_service(
-    *,
-    attempt: int = 1,
-    signer: SecretHandleSigner | None = None,
-) -> tuple[ScientificArtifactService, MemoryArtifactRepository, MeasuringObjectStore, UUID]:
-    repository = MemoryArtifactRepository(clock=lambda: NOW)
-    object_store = MeasuringObjectStore()
-    operation_id = uuid4()
-    await repository.register_operation(operation_id, tenant_id="tenant-a", attempt=attempt)
-    service = ScientificArtifactService(
+def build_service(repository: Any, object_store: FakeObjectStore, **kwargs: Any) -> ScientificArtifactService:
+    return ScientificArtifactService(
         repository=repository,
         object_store=object_store,
-        signer=signer or SecretHandleSigner(),
         allowed_media_types=ALLOWED_MEDIA_TYPES,
         clock=lambda: NOW,
+        **kwargs,
     )
-    return service, repository, object_store, operation_id
 
 
-async def upload_artifact(
+async def open_attempt(
     service: ScientificArtifactService,
-    object_store: MeasuringObjectStore,
     *,
     operation_id: UUID,
-    attempt: int,
-    direction: ArtifactDirection,
-    value: bytes,
-    media_type: str,
-    compression: ArtifactCompression | None = None,
-    access: ArtifactAccess | None = None,
-):
-    begin = BeginArtifactUpload(
-        upload_id=uuid4(),
-        operation_id=operation_id,
-        tenant_id="tenant-a",
-        attempt=attempt,
-        direction=direction,
-        expected_digest=digest(value),
-        expected_size_bytes=len(value),
-        media_type=media_type,
-        compression=compression,
-        access=access or ArtifactAccess(),
-    )
-    started = await service.begin_upload(begin, handle_ttl=timedelta(minutes=2))
-    object_store.put(started.upload.storage_key, value, media_type, compression)
-    artifact = await service.finalize_upload(
-        FinalizeArtifactUpload(
-            upload_id=begin.upload_id,
+    stage_id: str = "design",
+    shard_id: str | None = None,
+    attempt_number: int = 1,
+    attempt_id: UUID | None = None,
+) -> UUID:
+    identity = attempt_id or uuid4()
+    await service.open_attempt(
+        OpenStageAttempt(
+            attempt_id=identity,
             operation_id=operation_id,
-            tenant_id="tenant-a",
-            attempt=attempt,
+            tenant_id=TENANT,
+            stage_id=stage_id,
+            shard_id=shard_id,
+            attempt_number=attempt_number,
+            admission=ADMISSION,
+            kueue_workload_uid=f"kueue-{identity.hex[:8]}",
+            k8s_job_uid=f"job-{identity.hex[:8]}",
+            started_at=NOW,
         )
     )
-    return begin, started, artifact
+    return identity
 
 
-def result_draft(
-    operation_id: UUID,
-    output,
+async def upload(
+    service: ScientificArtifactService,
+    store: FakeObjectStore,
     *,
-    model_revision: str = "revision-a",
-) -> TerminalResultDraft:
-    return TerminalResultDraft(
-        operation_id=operation_id,
-        tenant_id="tenant-a",
-        attempt=output.attempt,
-        status=TerminalResultStatus.SUCCEEDED,
-        output_artifacts=(output,),
-        provenance=ExecutionProvenance(
-            model_id="proteina-complexa",
-            model_revision=model_revision,
-            runtime_image_digest="sha256:" + "1" * 64,
-            workload_spec_digest="sha256:" + "2" * 64,
-            scheduling_snapshot_digest="sha256:" + "3" * 64,
-            job_uid="job-uid-1",
-            pod_uids=("pod-uid-1",),
-            started_at=NOW - timedelta(minutes=1),
-            completed_at=NOW,
-        ),
-        validation=SemanticValidation(
-            validator_id="complexa-structure-validator",
-            validator_revision="sha256:" + "4" * 64,
-            status=SemanticValidationStatus.PASSED,
-            evidence_artifact=output,
-        ),
-        completed_at=NOW,
+    operation_id: UUID,
+    attempt_id: UUID,
+    value: bytes,
+    media_type: str = "chemical/x-pdb",
+    direction: ArtifactDirection = ArtifactDirection.OUTPUT,
+    compression: ArtifactCompression | None = None,
+) -> Any:
+    upload_id = uuid4()
+    begun = await service.begin_upload(
+        BeginArtifactUpload(
+            upload_id=upload_id,
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=direction,
+            expected_digest=digest(value),
+            expected_size_bytes=len(value),
+            media_type=media_type,
+            compression=compression,
+        )
+    )
+    store.put(begun.upload.storage_key, value, media_type, compression)
+    return await service.finalize_upload(
+        FinalizeArtifactUpload(upload_id=upload_id, operation_id=operation_id, tenant_id=TENANT)
     )
 
 
-@pytest.mark.asyncio
-async def test_content_address_finalize_and_handles_stay_ephemeral_and_payload_free(caplog) -> None:
-    caplog.set_level(logging.DEBUG)
-    service, repository, object_store, operation_id = await memory_service()
-    biological_payload = b">neoantigen\nMKWVTFISLLFLFSSAYSRGVFRR"
-    access = ArtifactAccess(
-        profile=ArtifactAccessProfile.ACADEMIC,
-        receipt_digest="sha256:" + "a" * 64,
-    )
-
-    begin, started, artifact = await upload_artifact(
-        service,
-        object_store,
-        operation_id=operation_id,
-        attempt=1,
-        direction=ArtifactDirection.INPUT,
-        value=biological_payload,
-        media_type="text/x-fasta",
-        access=access,
-    )
-
-    expected_key = artifact_storage_key(
-        tenant_id="tenant-a",
-        operation_id=operation_id,
-        attempt=1,
-        direction=ArtifactDirection.INPUT,
-        digest=digest(biological_payload),
-    )
-    assert artifact.storage_key == expected_key
-    assert artifact.digest == digest(biological_payload)
-    assert artifact.size_bytes == len(biological_payload)
-    assert artifact.access == access
-    assert artifact.schema_version == "fs2-serve.nebius.ai/scientific-artifact-record/v1"
-    assert started.upload.upload_id == begin.upload_id
-    assert "SIGNED_UPLOAD_SECRET" not in repr(started)
-    assert "UPLOAD_HEADER_SECRET" not in repr(started)
-
-    download = await service.download(artifact.artifact_id, tenant_id="tenant-a", handle_ttl=timedelta(minutes=1))
-    assert download.handle.method == "GET"
-    assert download.handle.expires_at == NOW + timedelta(minutes=1)
-    assert "SIGNED_DOWNLOAD_SECRET" not in repr(download)
-    assert "DOWNLOAD_HEADER_SECRET" not in repr(download)
-
-    public = artifact.to_public_ref().model_dump(mode="json", exclude_none=True)
-    assert public == {
-        "artifact_id": str(artifact.artifact_id),
-        "sha256": digest(biological_payload).removeprefix("sha256:"),
-        "size_bytes": len(biological_payload),
-        "media_type": "text/x-fasta",
+def execution_identity() -> dict[str, str]:
+    return {
+        "model_id": "proteina-complexa",
+        "model_revision": "a" * 40,
+        "runtime_image_digest": "sha256:" + "b" * 64,
+        "runtime_recipe_sha256": "c" * 64,
+        "workload_recipe_sha256": "d" * 64,
+        "model_artifact_manifest_digest": "e" * 64,
+        "execution_identity_sha256": "f" * 64,
     }
-    Draft202012Validator(PUBLIC_ARTIFACT_SCHEMA).validate(public)
-    serialized_public = json.dumps(public, sort_keys=True)
-    for internal_field in ("tenant_id", "attempt", "storage_key", "access", "receipt_digest"):
-        assert internal_field not in serialized_public
-
-    events = await repository.list_events(operation_id, tenant_id="tenant-a")
-    durable = json.dumps([event.model_dump(mode="json") for event in events], sort_keys=True)
-    assert [event.event_type for event in events] == [
-        ArtifactEventType.UPLOAD_BEGUN,
-        ArtifactEventType.ARTIFACT_FINALIZED,
-    ]
-    for secret in (
-        biological_payload.decode(),
-        "SIGNED_UPLOAD_SECRET",
-        "SIGNED_DOWNLOAD_SECRET",
-        "UPLOAD_HEADER_SECRET",
-        "DOWNLOAD_HEADER_SECRET",
-    ):
-        assert secret not in durable
-        assert secret not in caplog.text
 
 
-@pytest.mark.asyncio
-async def test_public_projection_includes_only_optional_compression_metadata() -> None:
-    service, _, object_store, operation_id = await memory_service()
-    body = b"compressed-object-bytes"
-    _, _, artifact = await upload_artifact(
+def scheduling_snapshot(stage_ids: tuple[str, ...] = ("design",)) -> dict[str, Any]:
+    return {
+        "policy_revision": "1" * 64,
+        "captured_at": NOW.isoformat().replace("+00:00", "Z"),
+        "service_class": "customer-batch",
+        "tenant_queue": "tenant-academic",
+        "model_lane": "proteina-complexa",
+        "stages": [
+            {
+                "stage_id": stage_id,
+                "resource_class": "gpu",
+                "resolved_cluster_queue": "inference-accelerators",
+                "resolved_local_queue": "fs2-models",
+                "workload_priority_class": "customer-batch",
+                "workload_priority_value": 500,
+                "resolved_pool_preference": ["gpu-preemptible"],
+                "accelerator_resource_name": "nvidia.com/gpu",
+                "accelerator_count": 1,
+                "max_queue_seconds": 3600,
+                "max_execution_seconds": 21600,
+                "checkpoint_mode": "restart",
+                "preemption_mode": "restartable",
+            }
+            for stage_id in stage_ids
+        ],
+    }
+
+
+# --------------------------------------------------------------------------
+# Canonical public contract conformance
+# --------------------------------------------------------------------------
+
+
+async def test_public_pointer_matches_the_canonical_artifact_schema() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    record = await upload(service, store, operation_id=operation_id, attempt_id=attempt_id, value=b"ATOM  CA")
+    document = record.to_public_ref().model_dump(mode="json")
+    POINTER_SCHEMA.validate(document)
+    assert set(document) <= {"artifact_id", "sha256", "size_bytes", "media_type", "compression"}
+    assert "storage_key" not in document
+    assert "tenant_id" not in document
+    assert document["sha256"] == record.digest.removeprefix("sha256:")
+
+
+async def test_stage_commit_publishes_a_canonical_artifact_manifest() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    record = await upload(service, store, operation_id=operation_id, attempt_id=attempt_id, value=b"ATOM  CA  ALA")
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.SUCCEEDED,
+            completed_at=NOW + timedelta(minutes=5),
+            gpu_uuids=("GPU-0000",),
+        )
+    )
+    commit = await service.commit_stage(
+        CommitStageResult(
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            stage_id="design",
+            attempt_ids=(attempt_id,),
+            entries=(
+                ManifestEntryDraft(
+                    name="designed-backbone", semantic_type="protein.structure/v1", artifact_id=record.artifact_id
+                ),
+            ),
+            validation_digest="sha256:" + "9" * 64,
+            semantic_valid=True,
+            committed_at=NOW + timedelta(minutes=6),
+            validated_at=NOW + timedelta(minutes=7),
+        )
+    )
+    MANIFEST_SCHEMA.validate(commit.manifest.to_document())
+    assert commit.manifest_digest == commit.manifest.digest
+
+
+async def test_terminal_result_matches_the_canonical_run_result_schema() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id, shard_id="candidate-0001")
+    inputs = await upload(
         service,
-        object_store,
+        store,
         operation_id=operation_id,
-        attempt=1,
+        attempt_id=attempt_id,
+        value=b'{"sequence":"MKT"}',
+        media_type="application/vnd.fs2.scientific-manifest+json",
+        direction=ArtifactDirection.INPUT,
+    )
+    outputs = await upload(
+        service,
+        store,
+        operation_id=operation_id,
+        attempt_id=attempt_id,
+        value=b'{"designs":3}',
+        media_type="application/vnd.fs2.scientific-manifest+json",
+    )
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.SUCCEEDED,
+            completed_at=NOW + timedelta(minutes=5),
+            pod_uids=("pod-1",),
+            node_uids=("node-1",),
+            gpu_uuids=("GPU-1",),
+        )
+    )
+    record = await service.commit_run_result(
+        RunResultDraft(
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            terminal_status="succeeded",
+            submitted_at=NOW,
+            completed_at=NOW + timedelta(minutes=5),
+            execution_identity=execution_identity(),
+            scheduling_snapshot=scheduling_snapshot(),
+            input_manifest_artifact_id=inputs.artifact_id,
+            output_manifest_artifact_id=outputs.artifact_id,
+            validator_id="proteina-complexa-validator",
+            validation_status="passed",
+            validation_receipt_digest="sha256:" + "2" * 64,
+        )
+    )
+    document = record.result.to_document()
+    RESULT_SCHEMA.validate(document)
+    assert document["schema"] == "fs2-serve.nebius.ai/scientific-run-result/v1"
+    assert document["attempts"][0]["scheduling_admission"]["accelerator_count"] == 1
+    assert document["attempts"][0]["shard_id"] == "candidate-0001"
+    assert document["attempts"][0]["gpu_uuids"] == ["GPU-1"]
+    assert record.result_digest == record.result.digest
+    assert "tenant_id" not in document
+    assert "storage_key" not in json.dumps(document)
+
+
+async def test_failed_result_carries_a_structured_error_and_no_output_manifest() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    inputs = await upload(
+        service,
+        store,
+        operation_id=operation_id,
+        attempt_id=attempt_id,
+        value=b'{"sequence":"MKT"}',
+        media_type="application/vnd.fs2.scientific-manifest+json",
+        direction=ArtifactDirection.INPUT,
+    )
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.FAILED,
+            completed_at=NOW + timedelta(minutes=2),
+        )
+    )
+    record = await service.commit_run_result(
+        RunResultDraft(
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            terminal_status="failed",
+            submitted_at=NOW,
+            completed_at=NOW + timedelta(minutes=2),
+            execution_identity=execution_identity(),
+            scheduling_snapshot=scheduling_snapshot(),
+            input_manifest_artifact_id=inputs.artifact_id,
+            validator_id="proteina-complexa-validator",
+            validation_status="not-run",
+            error_code="SEMANTIC_VALIDATION_FAILED",
+            error_message="designed backbone did not satisfy the clash threshold",
+            error_retryable=False,
+        )
+    )
+    RESULT_SCHEMA.validate(record.result.to_document())
+    assert record.result.output_manifest is None
+    assert record.result.error is not None
+    assert record.result.error.retryable is False
+
+
+# --------------------------------------------------------------------------
+# The batch controller's ArtifactCommit contract
+# --------------------------------------------------------------------------
+
+
+async def test_stage_commit_satisfies_the_batch_controller_identity_check() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    shards = ("candidate-0001", "candidate-0002")
+    attempts: list[UUID] = []
+    entries: list[ManifestEntryDraft] = []
+    for index, shard in enumerate(shards):
+        attempt_id = await open_attempt(service, operation_id=operation_id, shard_id=shard)
+        record = await upload(
+            service,
+            store,
+            operation_id=operation_id,
+            attempt_id=attempt_id,
+            value=f"ATOM {index}".encode(),
+        )
+        await service.close_attempt(
+            CloseStageAttempt(
+                attempt_id=attempt_id,
+                operation_id=operation_id,
+                tenant_id=TENANT,
+                status=AttemptStatus.SUCCEEDED,
+                completed_at=NOW + timedelta(minutes=5),
+            )
+        )
+        attempts.append(attempt_id)
+        entries.append(
+            ManifestEntryDraft(
+                name=f"design-{index}", semantic_type="protein.structure/v1", artifact_id=record.artifact_id
+            )
+        )
+    await service.commit_stage(
+        CommitStageResult(
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            stage_id="design",
+            attempt_ids=tuple(attempts),
+            entries=tuple(entries),
+            validation_digest="sha256:" + "9" * 64,
+            semantic_valid=True,
+            committed_at=NOW + timedelta(minutes=6),
+            validated_at=NOW + timedelta(minutes=6),
+        )
+    )
+    commit = await service.artifact_commit(operation_id, stage_id="design", tenant_id=TENANT)
+    assert commit is not None
+
+    stage_state = _stage_state("design", attempts, shards)
+    record = _batch_record(operation_id)
+    assert ScientificBatchController._commit_matches(record, stage_state, commit)
+
+
+def _stage_state(stage_id: str, attempts: list[UUID], shards: tuple[str, ...]) -> Any:
+    from fs2_serve.scientific_batch.models import ScientificStageState
+
+    return ScientificStageState(
+        stage_id=stage_id,
+        attempts=tuple(
+            ScientificAttemptState(
+                attempt_id=attempt_id,
+                stage_id=stage_id,
+                shard_id=shard,
+                attempt_number=1,
+                workload=WorkloadRef(namespace="fs2-system", name=f"fs2-{shard}", kind=WorkloadKind.JOB),
+                outcome=AttemptOutcome.SUCCEEDED,
+            )
+            for attempt_id, shard in zip(attempts, shards, strict=True)
+        ),
+    )
+
+
+def _batch_record(operation_id: UUID) -> Any:
+    class _Record:
+        pass
+
+    record = _Record()
+    record.operation_id = operation_id  # type: ignore[attr-defined]
+    return record
+
+
+async def test_a_commit_that_omits_a_succeeded_attempt_is_rejected() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    kept = await open_attempt(service, operation_id=operation_id, shard_id="candidate-0001")
+    other = await open_attempt(service, operation_id=operation_id, shard_id="candidate-0002")
+    record = await upload(service, store, operation_id=operation_id, attempt_id=kept, value=b"ATOM  CA")
+    for attempt_id in (kept, other):
+        await service.close_attempt(
+            CloseStageAttempt(
+                attempt_id=attempt_id,
+                operation_id=operation_id,
+                tenant_id=TENANT,
+                status=AttemptStatus.SUCCEEDED,
+                completed_at=NOW + timedelta(minutes=5),
+            )
+        )
+    with pytest.raises(ArtifactConflictError):
+        await service.commit_stage(
+            CommitStageResult(
+                operation_id=operation_id,
+                tenant_id=TENANT,
+                stage_id="design",
+                attempt_ids=(kept,),
+                entries=(
+                    ManifestEntryDraft(
+                        name="design-0", semantic_type="protein.structure/v1", artifact_id=record.artifact_id
+                    ),
+                ),
+                validation_digest="sha256:" + "9" * 64,
+                semantic_valid=True,
+                committed_at=NOW,
+                validated_at=NOW,
+            )
+        )
+
+
+# --------------------------------------------------------------------------
+# Content addressing, verification and idempotency
+# --------------------------------------------------------------------------
+
+
+def test_storage_key_binds_tenant_stage_shard_attempt_and_digest() -> None:
+    operation_id = UUID("00000000-0000-0000-0000-0000000000ab")
+    attempt_id = UUID("00000000-0000-0000-0000-0000000000cd")
+    key = artifact_storage_key(
+        tenant_id=TENANT,
+        operation_id=operation_id,
+        stage_id="design",
+        shard_id=None,
+        attempt_id=attempt_id,
         direction=ArtifactDirection.OUTPUT,
-        value=body,
-        media_type="application/json",
-        compression=ArtifactCompression.GZIP,
+        digest=digest(b"x"),
     )
-    public = artifact.to_public_ref().model_dump(mode="json", exclude_none=True)
-    assert public == {
-        "artifact_id": str(artifact.artifact_id),
-        "sha256": digest(body).removeprefix("sha256:"),
-        "size_bytes": len(body),
-        "media_type": "application/json",
-        "compression": "gzip",
-    }
-    Draft202012Validator(PUBLIC_ARTIFACT_SCHEMA).validate(public)
+    assert f"/shards/{NO_SHARD}/" in key
+    assert f"/attempts/{attempt_id}/" in key
+    assert key.endswith(digest(b"x").removeprefix("sha256:"))
+    with pytest.raises(ValueError, match="stage identity"):
+        artifact_storage_key(
+            tenant_id=TENANT,
+            operation_id=operation_id,
+            stage_id="Design",
+            shard_id=None,
+            attempt_id=attempt_id,
+            direction=ArtifactDirection.OUTPUT,
+            digest=digest(b"x"),
+        )
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mismatch", ["key", "digest", "size", "media_type", "compression"])
-async def test_finalize_rejects_every_storage_identity_mismatch_without_reflecting_values(
-    caplog, mismatch: str
-) -> None:
-    caplog.set_level(logging.DEBUG)
-    service, _, object_store, operation_id = await memory_service()
-    body = b"BIOLOGICAL_PAYLOAD_MUST_NOT_BE_REFLECTED"
+async def test_finalize_is_idempotent_and_returns_one_artifact() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    upload_id = uuid4()
+    payload = b"ATOM  CA  ALA A   1"
     request = BeginArtifactUpload(
-        upload_id=uuid4(),
+        upload_id=upload_id,
+        attempt_id=attempt_id,
         operation_id=operation_id,
-        tenant_id="tenant-a",
-        attempt=1,
+        tenant_id=TENANT,
         direction=ArtifactDirection.OUTPUT,
-        expected_digest=digest(body),
-        expected_size_bytes=len(body),
+        expected_digest=digest(payload),
+        expected_size_bytes=len(payload),
         media_type="chemical/x-pdb",
     )
-    started = await service.begin_upload(request)
-    observed = {
-        "storage_key": started.upload.storage_key,
-        "digest": digest(body),
-        "size_bytes": len(body),
+    first = await service.begin_upload(request)
+    second = await service.begin_upload(request)
+    assert first.upload == second.upload
+    assert first.handle.url != "" and first.handle is not second.handle
+    store.put(first.upload.storage_key, payload, "chemical/x-pdb")
+    finalize = FinalizeArtifactUpload(upload_id=upload_id, operation_id=operation_id, tenant_id=TENANT)
+    one, two = await asyncio.gather(service.finalize_upload(finalize), service.finalize_upload(finalize))
+    assert one.artifact_id == two.artifact_id
+    events = await service.list_events(operation_id, tenant_id=TENANT)
+    assert [event.event_type for event in events].count(ArtifactEventType.ARTIFACT_FINALIZED) == 1
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ({"digest": digest(b"different")}, "digest"),
+        ({"size_bytes": 9999}, "size"),
+        ({"media_type": "text/x-fasta"}, "media type"),
+        ({"compression": ArtifactCompression.GZIP}, "compression"),
+    ],
+)
+async def test_finalize_rejects_an_object_that_differs_from_its_intent(mutation: dict[str, Any], message: str) -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    payload = b"ATOM  CA  ALA A   1"
+    upload_id = uuid4()
+    begun = await service.begin_upload(
+        BeginArtifactUpload(
+            upload_id=upload_id,
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(payload),
+            expected_size_bytes=len(payload),
+            media_type="chemical/x-pdb",
+        )
+    )
+    measured = {
+        "storage_key": begun.upload.storage_key,
+        "digest": digest(payload),
+        "size_bytes": len(payload),
         "media_type": "chemical/x-pdb",
         "compression": None,
     }
-    replacements = {
-        "key": "scientific/v1/other-object",
-        "digest": "sha256:" + "f" * 64,
-        "size": len(body) + 1,
-        "media_type": "application/json",
-        "compression": ArtifactCompression.GZIP,
-    }
-    field = "storage_key" if mismatch == "key" else ("size_bytes" if mismatch == "size" else mismatch)
-    observed[field] = replacements[mismatch]
-    object_store.override = VerifiedStoredObject(**observed)
-
-    with pytest.raises(ArtifactVerificationError) as raised:
+    store.override = VerifiedStoredObject(**{**measured, **mutation})
+    with pytest.raises(ArtifactVerificationError, match=message):
         await service.finalize_upload(
-            FinalizeArtifactUpload(
-                upload_id=request.upload_id,
-                operation_id=operation_id,
-                tenant_id="tenant-a",
-                attempt=1,
-            )
+            FinalizeArtifactUpload(upload_id=upload_id, operation_id=operation_id, tenant_id=TENANT)
         )
-    assert body.decode() not in str(raised.value)
-    assert body.decode() not in caplog.text
 
 
-@pytest.mark.asyncio
-async def test_policy_rejects_unlisted_media_oversize_and_overlong_signatures() -> None:
-    signer = SecretHandleSigner(extra_ttl=timedelta(seconds=1))
-    service, _, _, operation_id = await memory_service(signer=signer)
-    request = BeginArtifactUpload(
-        upload_id=uuid4(),
-        operation_id=operation_id,
-        tenant_id="tenant-a",
-        attempt=1,
-        direction=ArtifactDirection.INPUT,
-        expected_digest=digest(b"{}"),
-        expected_size_bytes=2,
-        media_type="application/json",
-    )
-    with pytest.raises(ArtifactPolicyError, match="short-lived HTTPS policy"):
-        await service.begin_upload(request, handle_ttl=MAX_HANDLE_TTL)
+async def test_media_type_allowlist_and_size_ceiling_are_enforced() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store, max_artifact_bytes=1024)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
 
-    unsafe_service, _, _, unsafe_operation = await memory_service(signer=SecretHandleSigner(write_once=False))
-    with pytest.raises(ArtifactPolicyError, match="short-lived HTTPS policy"):
-        await unsafe_service.begin_upload(request.model_copy(update={"operation_id": unsafe_operation}))
-
-    valid_signer = SecretHandleSigner()
-    bounded = ScientificArtifactService(
-        repository=service.repository,
-        object_store=service.object_store,
-        signer=valid_signer,
-        allowed_media_types={"application/json"},
-        max_artifact_bytes=1,
-        clock=lambda: NOW,
-    )
-    with pytest.raises(ArtifactPolicyError, match="size bound"):
-        await bounded.begin_upload(request)
-
-    disallowed = request.model_copy(update={"upload_id": uuid4(), "media_type": "chemical/x-pdb"})
-    with pytest.raises(ArtifactPolicyError, match="not allowlisted"):
-        await bounded.begin_upload(disallowed)
-
-
-@pytest.mark.asyncio
-async def test_finalized_content_address_never_mints_another_upload_handle() -> None:
-    signer = SecretHandleSigner()
-    service, _, object_store, operation_id = await memory_service(signer=signer)
-    body = b"immutable-output"
-    begin, _, _ = await upload_artifact(
-        service,
-        object_store,
-        operation_id=operation_id,
-        attempt=1,
-        direction=ArtifactDirection.OUTPUT,
-        value=body,
-        media_type="application/json",
-    )
-    signed_before = list(signer.signed)
-    with pytest.raises(ArtifactConflictError, match="already finalized"):
-        await service.begin_upload(begin)
-    assert signer.signed == signed_before
-
-    duplicate_address = begin.model_copy(update={"upload_id": uuid4()})
-    with pytest.raises(ArtifactConflictError, match="content address"):
-        await service.begin_upload(duplicate_address)
-
-
-@pytest.mark.asyncio
-async def test_storage_and_signer_failures_drop_secret_exception_context(caplog) -> None:
-    caplog.set_level(logging.DEBUG)
-    service, repository, _, operation_id = await memory_service(signer=LeakyBoundarySigner())
-    request = BeginArtifactUpload(
-        upload_id=uuid4(),
-        operation_id=operation_id,
-        tenant_id="tenant-a",
-        attempt=1,
-        direction=ArtifactDirection.INPUT,
-        expected_digest=digest(b"private-sequence"),
-        expected_size_bytes=len(b"private-sequence"),
-        media_type="text/x-fasta",
-    )
-    with pytest.raises(ArtifactPolicyError, match="handle generation failed") as signer_error:
-        await service.begin_upload(request)
-    assert signer_error.value.__cause__ is None
-    assert "SIGNER_CREDENTIAL_MUST_BE_SUPPRESSED" not in str(signer_error.value)
-
-    retry_service = ScientificArtifactService(
-        repository=repository,
-        object_store=LeakyBoundaryObjectStore(),
-        signer=SecretHandleSigner(),
-        allowed_media_types=ALLOWED_MEDIA_TYPES,
-        clock=lambda: NOW,
-    )
-    await retry_service.begin_upload(request)
-    with pytest.raises(ArtifactVerificationError, match="inspection failed") as store_error:
-        await retry_service.finalize_upload(
-            FinalizeArtifactUpload(
-                upload_id=request.upload_id,
-                operation_id=operation_id,
-                tenant_id="tenant-a",
-                attempt=1,
-            )
-        )
-    assert store_error.value.__cause__ is None
-    for secret in (
-        "SIGNER_CREDENTIAL_MUST_BE_SUPPRESSED",
-        "BIOLOGICAL_OBJECT_BYTES_MUST_BE_SUPPRESSED",
-    ):
-        assert secret not in str(store_error.value)
-        assert secret not in caplog.text
-
-
-def test_gated_receipts_are_required_and_validation_errors_hide_payload_values() -> None:
-    with pytest.raises(ValidationError):
-        ArtifactAccess(profile=ArtifactAccessProfile.RESTRICTED)
-
-    credential = "ACADEMIC_LICENSE_CREDENTIAL_DO_NOT_LOG"
-    sequence = "MKWVTFISLLFLFSSAYSRGVFRR"
-    with pytest.raises(ValidationError) as raised:
-        BeginArtifactUpload.model_validate(
-            {
-                "upload_id": str(uuid4()),
-                "operation_id": str(uuid4()),
-                "tenant_id": "tenant-a",
-                "attempt": 1,
-                "direction": "input",
-                "expected_digest": "sha256:" + "a" * 64,
-                "expected_size_bytes": len(sequence),
-                "media_type": "text/x-fasta",
-                "credential": credential,
-                "sequence": sequence,
-            }
-        )
-    assert credential not in str(raised.value)
-    assert sequence not in str(raised.value)
-
-
-@pytest.mark.asyncio
-async def test_stale_attempt_cannot_begin_finalize_or_commit() -> None:
-    service, repository, object_store, operation_id = await memory_service(attempt=1)
-    body = b"MODEL_OUTPUT"
-    request = BeginArtifactUpload(
-        upload_id=uuid4(),
-        operation_id=operation_id,
-        tenant_id="tenant-a",
-        attempt=1,
-        direction=ArtifactDirection.OUTPUT,
-        expected_digest=digest(body),
-        expected_size_bytes=len(body),
-        media_type="chemical/x-pdb",
-    )
-    started = await service.begin_upload(request)
-    object_store.put(started.upload.storage_key, body, "chemical/x-pdb")
-    artifact = await service.finalize_upload(
-        FinalizeArtifactUpload(
-            upload_id=request.upload_id,
+    def request(media_type: str, size: int) -> BeginArtifactUpload:
+        return BeginArtifactUpload(
+            upload_id=uuid4(),
+            attempt_id=attempt_id,
             operation_id=operation_id,
-            tenant_id="tenant-a",
-            attempt=1,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(b"x"),
+            expected_size_bytes=size,
+            media_type=media_type,
+        )
+
+    with pytest.raises(ArtifactPolicyError, match="allowlist"):
+        await service.begin_upload(request("application/x-msdownload", 10))
+    with pytest.raises(ArtifactPolicyError, match="ceiling"):
+        await service.begin_upload(request("chemical/x-pdb", 2048))
+
+
+async def test_gated_artifacts_carry_a_receipt_and_project_academic_admission() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    receipt = "sha256:" + "7" * 64
+    access = ArtifactAccess(profile=ArtifactAccessProfile.ACADEMIC, receipt_digest=receipt)
+    payload = b"ATOM  CA  ALA A   1"
+    upload_id = uuid4()
+    begun = await service.begin_upload(
+        BeginArtifactUpload(
+            upload_id=upload_id,
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.INPUT,
+            expected_digest=digest(payload),
+            expected_size_bytes=len(payload),
+            media_type="chemical/x-pdb",
+            access=access,
         )
     )
-    await repository.advance_attempt(operation_id, attempt=2)
+    store.put(begun.upload.storage_key, payload, "chemical/x-pdb")
+    record = await service.finalize_upload(
+        FinalizeArtifactUpload(upload_id=upload_id, operation_id=operation_id, tenant_id=TENANT)
+    )
+    assert record.access == access
+    # The receipt proves lawful access; it is a digest, never the gated bytes.
+    admission = access.to_admission().model_dump(mode="json")
+    assert admission == {
+        "profile": "academic",
+        "state": "verified",
+        "receipt_digest": "7" * 64,
+    }
+    assert record.to_public_ref().model_dump(mode="json").get("receipt_digest") is None
 
+    with pytest.raises(ValidationError, match="gated artifacts require"):
+        ArtifactAccess(profile=ArtifactAccessProfile.ACADEMIC)
+    with pytest.raises(ValidationError, match="public artifacts cannot"):
+        ArtifactAccess(receipt_digest=receipt)
+
+
+# --------------------------------------------------------------------------
+# Fencing
+# --------------------------------------------------------------------------
+
+
+async def test_a_superseded_attempt_cannot_reserve_new_content() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    first = await open_attempt(service, operation_id=operation_id, shard_id="candidate-0001")
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=first,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.PREEMPTED,
+            completed_at=NOW + timedelta(minutes=1),
+            admission=ADMISSION,
+        )
+    )
+    await open_attempt(service, operation_id=operation_id, shard_id="candidate-0001", attempt_number=2)
     with pytest.raises(StaleArtifactAttemptError):
-        await service.begin_upload(request)
-    with pytest.raises(StaleArtifactAttemptError):
-        await service.finalize_upload(
-            FinalizeArtifactUpload(
-                upload_id=request.upload_id,
+        await service.begin_upload(
+            BeginArtifactUpload(
+                upload_id=uuid4(),
+                attempt_id=first,
                 operation_id=operation_id,
-                tenant_id="tenant-a",
-                attempt=1,
+                tenant_id=TENANT,
+                direction=ArtifactDirection.OUTPUT,
+                expected_digest=digest(b"stale"),
+                expected_size_bytes=5,
+                media_type="chemical/x-pdb",
             )
         )
-    with pytest.raises(StaleArtifactAttemptError):
-        await service.commit_terminal_result(result_draft(operation_id, artifact))
 
 
-@pytest.mark.asyncio
-async def test_exactly_one_terminal_manifest_wins_concurrent_conflicting_commits() -> None:
-    service, repository, object_store, operation_id = await memory_service()
-    _, _, artifact = await upload_artifact(
+async def test_a_terminal_result_fences_every_later_write() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    inputs = await upload(
         service,
-        object_store,
+        store,
         operation_id=operation_id,
-        attempt=1,
-        direction=ArtifactDirection.OUTPUT,
-        value=b"ATOM      1  CA  ALA A   1",
-        media_type="chemical/x-pdb",
+        attempt_id=attempt_id,
+        value=b'{"sequence":"MKT"}',
+        media_type="application/vnd.fs2.scientific-manifest+json",
+        direction=ArtifactDirection.INPUT,
     )
-    first = result_draft(operation_id, artifact, model_revision="revision-a")
-    second = result_draft(operation_id, artifact, model_revision="revision-b")
-
-    outcomes = await asyncio.gather(
-        service.commit_terminal_result(first),
-        service.commit_terminal_result(second),
-        return_exceptions=True,
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.CANCELLED,
+            completed_at=NOW + timedelta(minutes=1),
+        )
     )
-    manifests = [value for value in outcomes if isinstance(value, TerminalResultManifest)]
-    conflicts = [value for value in outcomes if isinstance(value, ArtifactConflictError)]
-    assert len(manifests) == 1
-    assert len(conflicts) == 1
-    assert manifests[0].manifest_digest in {result_manifest_digest(first), result_manifest_digest(second)}
-    events = await repository.list_events(operation_id, tenant_id="tenant-a")
-    assert [event.event_type for event in events].count(ArtifactEventType.RESULT_COMMITTED) == 1
+    draft = RunResultDraft(
+        operation_id=operation_id,
+        tenant_id=TENANT,
+        terminal_status="cancelled",
+        submitted_at=NOW,
+        completed_at=NOW + timedelta(minutes=1),
+        execution_identity=execution_identity(),
+        scheduling_snapshot=scheduling_snapshot(),
+        input_manifest_artifact_id=inputs.artifact_id,
+        validator_id="proteina-complexa-validator",
+        validation_status="not-run",
+    )
+    first = await service.commit_run_result(draft)
+    again = await service.commit_run_result(draft)
+    assert first.result_digest == again.result_digest
+
+    with pytest.raises(ResultAlreadyTerminalError):
+        await open_attempt(service, operation_id=operation_id, stage_id="score")
 
 
-@pytest.mark.asyncio
-async def test_identical_terminal_manifest_commit_is_idempotent_and_digest_is_canonical() -> None:
-    service, repository, object_store, operation_id = await memory_service()
-    _, _, artifact = await upload_artifact(
+async def test_a_second_different_terminal_result_is_refused() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    inputs = await upload(
         service,
-        object_store,
+        store,
         operation_id=operation_id,
-        attempt=1,
-        direction=ArtifactDirection.OUTPUT,
-        value=b'{"score":0.98}',
-        media_type="application/json",
+        attempt_id=attempt_id,
+        value=b'{"sequence":"MKT"}',
+        media_type="application/vnd.fs2.scientific-manifest+json",
+        direction=ArtifactDirection.INPUT,
     )
-    draft = result_draft(operation_id, artifact)
-    first, second = await asyncio.gather(
-        service.commit_terminal_result(draft),
-        service.commit_terminal_result(draft),
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.CANCELLED,
+            completed_at=NOW + timedelta(minutes=1),
+        )
     )
-    assert first == second
-    assert first.manifest_digest == result_manifest_digest(first)
-    reloaded = TerminalResultManifest.model_validate_json(first.model_dump_json())
-    assert reloaded == first
-    assert first.schema_version == "fs2-serve.nebius.ai/scientific-result-record/v1"
-    events = await repository.list_events(operation_id, tenant_id="tenant-a")
-    assert [event.event_type for event in events].count(ArtifactEventType.RESULT_COMMITTED) == 1
+
+    def draft(status: str) -> RunResultDraft:
+        return RunResultDraft(
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            terminal_status=status,  # type: ignore[arg-type]
+            submitted_at=NOW,
+            completed_at=NOW + timedelta(minutes=1),
+            execution_identity=execution_identity(),
+            scheduling_snapshot=scheduling_snapshot(),
+            input_manifest_artifact_id=inputs.artifact_id,
+            validator_id="proteina-complexa-validator",
+            validation_status="not-run",
+            **(
+                {}
+                if status == "cancelled"
+                else {
+                    "error_code": "RUN_FAILED",
+                    "error_message": "the run failed",
+                    "error_retryable": True,
+                }
+            ),
+        )
+
+    await service.commit_run_result(draft("cancelled"))
+    with pytest.raises(ResultAlreadyTerminalError):
+        await service.commit_run_result(draft("failed"))
 
 
-def test_migration_has_closed_payload_free_tables_fences_and_one_owner_down_path() -> None:
-    migration_path = CONTROL_ROOT / "migrations" / SCIENTIFIC_ARTIFACT_MIGRATION
-    sql = migration_path.read_text(encoding="utf-8")
-    assert "UNIQUE (operation_id,manifest_digest)" in sql
-    assert "fs2_scientific_assert_current_attempt" in sql
-    assert "fs2_scientific_reject_mutation" in sql
-    assert "REVOKE ALL ON fs2_scientific_artifacts" in sql
-    assert " bytea" not in sql.lower()
-    assert " presigned_url" not in sql.lower()
-    assert " credential text" not in sql.lower()
-    assert " detail jsonb" not in sql.lower()
-    assert "scientific-artifact-ref/v1" not in sql
-    assert "scientific-result-manifest/v1" not in sql
-    for table in (
-        "fs2_scientific_artifact_events",
-        "fs2_scientific_result_manifests",
-        "fs2_scientific_uploads",
-        "fs2_scientific_artifacts",
+async def test_only_one_stage_commit_survives_concurrent_writers() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    record = await upload(service, store, operation_id=operation_id, attempt_id=attempt_id, value=b"ATOM  CA")
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.SUCCEEDED,
+            completed_at=NOW + timedelta(minutes=5),
+        )
+    )
+    request = CommitStageResult(
+        operation_id=operation_id,
+        tenant_id=TENANT,
+        stage_id="design",
+        attempt_ids=(attempt_id,),
+        entries=(
+            ManifestEntryDraft(name="design-0", semantic_type="protein.structure/v1", artifact_id=record.artifact_id),
+        ),
+        validation_digest="sha256:" + "9" * 64,
+        semantic_valid=True,
+        committed_at=NOW,
+        validated_at=NOW,
+    )
+    results = await asyncio.gather(*(service.commit_stage(request) for _ in range(8)))
+    assert len({item.manifest_digest for item in results}) == 1
+    events = await service.list_events(operation_id, tenant_id=TENANT)
+    assert [event.event_type for event in events].count(ArtifactEventType.STAGE_COMMITTED) == 1
+
+
+async def test_a_foreign_tenant_cannot_read_another_tenants_artifact() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    record = await upload(service, store, operation_id=operation_id, attempt_id=attempt_id, value=b"ATOM  CA")
+    with pytest.raises(ArtifactNotFoundError):
+        await service.download(record.artifact_id, tenant_id="tenant-b")
+
+
+# --------------------------------------------------------------------------
+# Handles and privacy
+# --------------------------------------------------------------------------
+
+
+async def test_handles_are_short_lived_write_once_and_never_persisted() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    payload = b"ATOM  CA"
+    upload_id = uuid4()
+    begun = await service.begin_upload(
+        BeginArtifactUpload(
+            upload_id=upload_id,
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(payload),
+            expected_size_bytes=len(payload),
+            media_type="chemical/x-pdb",
+        )
+    )
+    assert begun.handle.write_once is True
+    assert begun.handle.expires_at <= NOW + MAX_HANDLE_TTL + HANDLE_CLOCK_SKEW
+    assert "X-Amz-Signature" not in repr(begun.handle)
+    assert begun.handle.url not in begun.upload.model_dump_json()
+    with pytest.raises(TypeError):
+        begun.handle.headers["content-type"] = "text/plain"  # type: ignore[index]
+
+    with pytest.raises(ArtifactPolicyError, match="lifetime"):
+        await service.begin_upload(
+            BeginArtifactUpload(
+                upload_id=uuid4(),
+                attempt_id=attempt_id,
+                operation_id=operation_id,
+                tenant_id=TENANT,
+                direction=ArtifactDirection.OUTPUT,
+                expected_digest=digest(b"other"),
+                expected_size_bytes=5,
+                media_type="chemical/x-pdb",
+            ),
+            handle_ttl=timedelta(hours=2),
+        )
+
+
+async def test_no_durable_record_or_log_line_carries_bearer_material(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    with caplog.at_level(logging.DEBUG):
+        attempt_id = await open_attempt(service, operation_id=operation_id)
+        record = await upload(service, store, operation_id=operation_id, attempt_id=attempt_id, value=b"ATOM  CA")
+        download = await service.download(record.artifact_id, tenant_id=TENANT)
+    serialized = json.dumps(
+        {
+            "artifact": record.model_dump(mode="json"),
+            "events": [
+                event.model_dump(mode="json") for event in await service.list_events(operation_id, tenant_id=TENANT)
+            ],
+        }
+    )
+    for secret in ("X-Amz-Signature", "X-Amz-Credential", download.handle.url):
+        assert secret not in serialized
+    assert not [line for line in caplog.text.splitlines() if "X-Amz" in line]
+
+
+def test_migration_is_payload_free_and_fences_every_write_path() -> None:
+    sql = (CONTROL_ROOT / "migrations" / SCIENTIFIC_ARTIFACT_MIGRATION).read_text(encoding="utf-8")
+    for fence in (
+        "fs2_scientific_assert_writable",
+        "fs2_scientific_assert_live_attempt",
+        "fs2_scientific_validate_attempt_transition",
+        "fs2_scientific_validate_upload_transition",
+        "fs2_scientific_reject_mutation",
+        "fs2_scientific_guard_retention_delete",
     ):
-        assert f"DROP TABLE IF EXISTS {table}" in SCIENTIFIC_ARTIFACT_ROLLBACK_SQL
-    assert f"version='{SCIENTIFIC_ARTIFACT_MIGRATION}'" in SCIENTIFIC_ARTIFACT_ROLLBACK_SQL
+        assert fence in sql
+    assert "REVOKE ALL ON fs2_scientific_stage_attempts" in sql
+    # Scan identifiers and types only. Comments and quoted literals are prose,
+    # and the file's own prose is what documents these exclusions.
+    identifiers = re.sub(
+        r"'(?:[^']|'')*'",
+        "''",
+        "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith("--")),
+    ).lower()
+    for forbidden in (" bytea", "presigned", "signature", " url ", "secret", "detail jsonb"):
+        assert forbidden not in identifiers, forbidden
+    assert "fs2-serve.nebius.ai/scientific-run-result/v1" in sql
+    assert "fs2-serve.nebius.ai/scientific-artifact-manifest/v1" in sql
+
+
+def test_settings_reject_an_insecure_artifact_store() -> None:
+    from fs2_serve.settings import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(
+            scientific_artifacts_enabled=True,
+            artifact_store_endpoint="http://storage.invalid",
+            artifact_store_verify_tls=True,
+        )
+    relaxed = Settings(
+        scientific_artifacts_enabled=True,
+        artifact_store_endpoint="http://127.0.0.1:9000",
+        artifact_store_verify_tls=False,
+        allow_non_cluster_urls=True,
+    )
+    assert "chemical/x-pdb" in relaxed.artifact_media_types_set()
+
+
+def test_artifact_store_credentials_come_from_a_mounted_secret(tmp_path: Path) -> None:
+    from fs2_serve.settings import Settings
+
+    path = tmp_path / "credentials.json"
+    path.write_text(json.dumps({"access_key_id": "AKIA", "secret_access_key": "s" * 24}), encoding="utf-8")
+    settings = Settings(artifact_store_credentials_file=path)
+    assert settings.artifact_store_credentials() == ("AKIA", "s" * 24)
+    path.write_text(json.dumps({"access_key_id": "AKIA"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="secret_access_key"):
+        settings.artifact_store_credentials()
+
+
+# --------------------------------------------------------------------------
+# Retention
+# --------------------------------------------------------------------------
+
+
+async def test_retention_deletes_objects_then_metadata_and_records_evidence() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store, retention=timedelta(days=1))
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    inputs = await upload(
+        service,
+        store,
+        operation_id=operation_id,
+        attempt_id=attempt_id,
+        value=b'{"sequence":"MKT"}',
+        media_type="application/vnd.fs2.scientific-manifest+json",
+        direction=ArtifactDirection.INPUT,
+    )
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.CANCELLED,
+            completed_at=NOW + timedelta(minutes=1),
+        )
+    )
+    await service.commit_run_result(
+        RunResultDraft(
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            terminal_status="cancelled",
+            submitted_at=NOW,
+            completed_at=NOW + timedelta(minutes=1),
+            execution_identity=execution_identity(),
+            scheduling_snapshot=scheduling_snapshot(),
+            input_manifest_artifact_id=inputs.artifact_id,
+            validator_id="proteina-complexa-validator",
+            validation_status="not-run",
+        )
+    )
+    assert await service.purge_expired() == []
+
+    expired = ScientificArtifactService(
+        repository=repository,
+        object_store=store,
+        allowed_media_types=ALLOWED_MEDIA_TYPES,
+        clock=lambda: NOW + timedelta(days=2),
+    )
+    purges = await expired.purge_expired()
+    assert len(purges) == 1
+    assert purges[0].artifact_count == 1
+    assert purges[0].byte_count == len(b'{"sequence":"MKT"}')
+    assert inputs.storage_key in store.deleted
+    with pytest.raises(ArtifactNotFoundError):
+        await service.download(inputs.artifact_id, tenant_id=TENANT)
+    assert await expired.purge_expired() == []
+
+
+# --------------------------------------------------------------------------
+# PostgreSQL
+# --------------------------------------------------------------------------
+
+TRUNCATE = """
+TRUNCATE fs2_scientific_retention_ledger,fs2_scientific_artifact_events,
+    fs2_scientific_stage_commit_attempts,fs2_scientific_stage_commits,
+    fs2_scientific_run_results,fs2_scientific_uploads,fs2_scientific_artifacts,
+    fs2_scientific_stage_attempts,fs2_operation_events,fs2_usage_facts,
+    fs2_operations,fs2_tokens RESTART IDENTITY CASCADE
+"""
 
 
 async def insert_operation(pool: asyncpg.Pool, operation_id: UUID, *, attempt: int = 1) -> None:
@@ -647,7 +1142,7 @@ async def insert_operation(pool: asyncpg.Pool, operation_id: UUID, *, attempt: i
             token_id,
             f"fst_{token_id.hex[:12]}",
             "d" * 64,
-            ["inference.invoke"],
+            ["inference.invoke", "artifacts.write"],
             ["proteina-complexa"],
         )
         await connection.execute(
@@ -657,18 +1152,19 @@ async def insert_operation(pool: asyncpg.Pool, operation_id: UUID, *, attempt: i
                 operation,idempotency_key,request_hmac_key_id,request_hmac,
                 request_content_type,payload_expires_at,max_attempts,attempt
             ) VALUES($1,'tenant-a','principal-a',$2,'proteina-complexa','revision-a',
-                'scientific-batch','design','scientific-test-key','ledger-v1',$3,
+                'scientific-batch','design',$5,'ledger-v1',$3,
                 'application/json',clock_timestamp()+interval '1 hour',3,$4)
             """,
             operation_id,
             token_id,
             "e" * 64,
             attempt,
+            f"scientific-{operation_id}",
         )
 
 
 @pytest_asyncio.fixture
-async def postgres_artifact_store():
+async def postgres_store():
     database_url = os.environ.get("FS2_TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("FS2_TEST_DATABASE_URL is not set")
@@ -683,152 +1179,348 @@ async def postgres_artifact_store():
     )
     await store.migrate()
     async with store.pool.acquire() as connection:
-        await connection.execute(
-            """
-            TRUNCATE fs2_scientific_artifact_events,fs2_scientific_result_manifests,
-                fs2_scientific_uploads,fs2_scientific_artifacts,fs2_operation_events,
-                fs2_usage_facts,fs2_operations,fs2_tokens RESTART IDENTITY CASCADE
-            """
-        )
+        await connection.execute(TRUNCATE)
     try:
         yield store
     finally:
         async with store.pool.acquire() as connection:
-            await connection.execute(
-                """
-                TRUNCATE fs2_scientific_artifact_events,fs2_scientific_result_manifests,
-                    fs2_scientific_uploads,fs2_scientific_artifacts,fs2_operation_events,
-                    fs2_usage_facts,fs2_operations,fs2_tokens RESTART IDENTITY CASCADE
-                """
-            )
+            await connection.execute(TRUNCATE)
         await store.close()
 
 
-@pytest.mark.postgres
-@pytest.mark.asyncio
-async def test_postgres_repository_fences_attempt_and_commits_one_manifest(postgres_artifact_store) -> None:
-    operation_id = uuid4()
-    await insert_operation(postgres_artifact_store.pool, operation_id)
-    object_store = MeasuringObjectStore()
+@pytest_asyncio.fixture
+async def runtime_pool(postgres_store):
+    """A pool restricted to the least-privilege runtime role, as in production."""
+
     database_url = os.environ["FS2_TEST_DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://", 1)
 
     async def assume_runtime_role(connection) -> None:
         await connection.execute("SET ROLE fs2_serve_runtime")
 
-    runtime_pool = await asyncpg.create_pool(
-        dsn=database_url,
-        min_size=2,
-        max_size=8,
-        init=assume_runtime_role,
-    )
-    assert runtime_pool is not None
+    pool = await asyncpg.create_pool(dsn=database_url, min_size=2, max_size=8, init=assume_runtime_role)
+    assert pool is not None
     try:
-        repository = PostgresArtifactRepository(runtime_pool)
-        service = ScientificArtifactService(
-            repository=repository,
-            object_store=object_store,
-            signer=SecretHandleSigner(),
-            allowed_media_types=ALLOWED_MEDIA_TYPES,
-            clock=lambda: NOW,
-        )
-        original_upload, _, artifact = await upload_artifact(
-            service,
-            object_store,
-            operation_id=operation_id,
-            attempt=1,
-            direction=ArtifactDirection.OUTPUT,
-            value=b"ATOM      1  CA  ALA A   1",
-            media_type="chemical/x-pdb",
-        )
-
-        duplicate_address = BeginArtifactUpload(
-            upload_id=uuid4(),
-            operation_id=operation_id,
-            tenant_id="tenant-a",
-            attempt=1,
-            direction=ArtifactDirection.OUTPUT,
-            expected_digest=artifact.digest,
-            expected_size_bytes=artifact.size_bytes,
-            media_type=artifact.media_type,
-        )
-        with pytest.raises(ArtifactConflictError):
-            await service.begin_upload(duplicate_address)
-
-        outcomes = await asyncio.gather(
-            service.commit_terminal_result(result_draft(operation_id, artifact, model_revision="revision-a")),
-            service.commit_terminal_result(result_draft(operation_id, artifact, model_revision="revision-b")),
-            return_exceptions=True,
-        )
-        assert sum(isinstance(value, TerminalResultManifest) for value in outcomes) == 1, outcomes
-        assert sum(isinstance(value, ArtifactConflictError) for value in outcomes) == 1, outcomes
-        events = await repository.list_events(operation_id, tenant_id="tenant-a")
-        assert [event.event_type for event in events] == [
-            ArtifactEventType.UPLOAD_BEGUN,
-            ArtifactEventType.ARTIFACT_FINALIZED,
-            ArtifactEventType.RESULT_COMMITTED,
-        ]
-
-        async with postgres_artifact_store.pool.acquire() as connection:
-            await connection.execute("UPDATE fs2_operations SET attempt=2 WHERE id=$1", operation_id)
-        stale = BeginArtifactUpload(
-            upload_id=uuid4(),
-            operation_id=operation_id,
-            tenant_id="tenant-a",
-            attempt=1,
-            direction=ArtifactDirection.INPUT,
-            expected_digest=digest(b"stale"),
-            expected_size_bytes=5,
-            media_type="application/json",
-        )
-        stale_outcomes = await asyncio.gather(
-            service.begin_upload(stale),
-            service.finalize_upload(
-                FinalizeArtifactUpload(
-                    upload_id=original_upload.upload_id,
-                    operation_id=operation_id,
-                    tenant_id="tenant-a",
-                    attempt=1,
-                )
-            ),
-            service.commit_terminal_result(result_draft(operation_id, artifact)),
-            return_exceptions=True,
-        )
-        assert all(isinstance(value, StaleArtifactAttemptError) for value in stale_outcomes), stale_outcomes
+        yield pool
     finally:
-        await runtime_pool.close()
-
-    async with postgres_artifact_store.pool.acquire() as connection:
-        with pytest.raises(asyncpg.PostgresError, match="immutable scientific artifact record"):
-            await connection.execute(
-                "UPDATE fs2_scientific_artifacts SET media_type='application/json' WHERE id=$1",
-                artifact.artifact_id,
-            )
+        await pool.close()
 
 
 @pytest.mark.postgres
-@pytest.mark.asyncio
-async def test_scientific_migration_executes_up_down_up(postgres_artifact_store) -> None:
-    async with postgres_artifact_store.pool.acquire() as connection:
-        assert await connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')") is not None
-        await connection.execute(SCIENTIFIC_BATCH_ROLLBACK_SQL)
-        await connection.execute(SCIENTIFIC_ARTIFACT_ROLLBACK_SQL)
-        assert await connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')") is None
-        assert not await connection.fetchval(
-            "SELECT EXISTS(SELECT 1 FROM fs2_schema_migrations WHERE version=$1)",
-            SCIENTIFIC_ARTIFACT_MIGRATION,
+async def test_postgres_enforces_attempt_terminal_and_immutability_fences(runtime_pool) -> None:
+    operation_id = uuid4()
+    await insert_operation(runtime_pool, operation_id)
+    store = FakeObjectStore()
+    service = build_service(PostgresArtifactRepository(runtime_pool), store)
+
+    first = await open_attempt(service, operation_id=operation_id, shard_id="candidate-0001")
+    record = await upload(service, store, operation_id=operation_id, attempt_id=first, value=b"ATOM  CA  ALA")
+    assert record.storage_key.startswith(f"scientific/v1/tenants/{TENANT}/operations/{operation_id}/")
+
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=first,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.PREEMPTED,
+            completed_at=NOW + timedelta(minutes=1),
+            admission=ADMISSION,
         )
-    await postgres_artifact_store.migrate()
-    async with postgres_artifact_store.pool.acquire() as connection:
-        assert await connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')") is not None
-        assert await connection.fetchval(
-            "SELECT EXISTS(SELECT 1 FROM fs2_schema_migrations WHERE version=$1)",
-            SCIENTIFIC_ARTIFACT_MIGRATION,
+    )
+    await open_attempt(service, operation_id=operation_id, shard_id="candidate-0001", attempt_number=2)
+    with pytest.raises(StaleArtifactAttemptError):
+        await service.begin_upload(
+            BeginArtifactUpload(
+                upload_id=uuid4(),
+                attempt_id=first,
+                operation_id=operation_id,
+                tenant_id=TENANT,
+                direction=ArtifactDirection.OUTPUT,
+                expected_digest=digest(b"stale"),
+                expected_size_bytes=5,
+                media_type="chemical/x-pdb",
+            )
+        )
+
+    async with runtime_pool.acquire() as connection:
+        # The runtime role has no UPDATE on artifacts at all, so the grant refuses
+        # the write before the immutability trigger is even reached.
+        with pytest.raises(asyncpg.PostgresError) as immutable:
+            await connection.execute("UPDATE fs2_scientific_artifacts SET size_bytes=1 WHERE id=$1", record.artifact_id)
+        assert immutable.value.sqlstate == "42501"
+        # DELETE is granted, so here the retention trigger is what refuses.
+        with pytest.raises(asyncpg.PostgresError) as guarded:
+            await connection.execute("DELETE FROM fs2_scientific_artifacts WHERE id=$1", record.artifact_id)
+        assert guarded.value.sqlstate == "FS202"
+
+
+@pytest.mark.postgres
+async def test_postgres_commits_exactly_one_stage_manifest_under_contention(runtime_pool) -> None:
+    operation_id = uuid4()
+    await insert_operation(runtime_pool, operation_id)
+    store = FakeObjectStore()
+    service = build_service(PostgresArtifactRepository(runtime_pool), store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    record = await upload(service, store, operation_id=operation_id, attempt_id=attempt_id, value=b"ATOM  CA  ALA")
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.SUCCEEDED,
+            completed_at=NOW + timedelta(minutes=5),
+        )
+    )
+    request = CommitStageResult(
+        operation_id=operation_id,
+        tenant_id=TENANT,
+        stage_id="design",
+        attempt_ids=(attempt_id,),
+        entries=(
+            ManifestEntryDraft(name="design-0", semantic_type="protein.structure/v1", artifact_id=record.artifact_id),
+        ),
+        validation_digest="sha256:" + "9" * 64,
+        semantic_valid=True,
+        committed_at=NOW + timedelta(minutes=6),
+        validated_at=NOW + timedelta(minutes=6),
+    )
+    outcomes = await asyncio.gather(*(service.commit_stage(request) for _ in range(6)), return_exceptions=True)
+    committed = [item for item in outcomes if not isinstance(item, BaseException)]
+    assert committed, outcomes
+    assert len({item.manifest_digest for item in committed}) == 1
+
+    async with runtime_pool.acquire() as connection:
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_scientific_stage_commits WHERE operation_id=$1", operation_id
+            )
+            == 1
+        )
+    commit = await service.artifact_commit(operation_id, stage_id="design", tenant_id=TENANT)
+    assert commit is not None
+    assert commit.attempt_ids == (attempt_id,)
+    assert commit.semantic_valid is True
+
+
+@pytest.mark.postgres
+async def test_postgres_terminal_result_fences_writes_and_retention_purges(runtime_pool) -> None:
+    operation_id = uuid4()
+    await insert_operation(runtime_pool, operation_id)
+    store = FakeObjectStore()
+    repository = PostgresArtifactRepository(runtime_pool)
+    service = build_service(repository, store, retention=timedelta(days=1))
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    inputs = await upload(
+        service,
+        store,
+        operation_id=operation_id,
+        attempt_id=attempt_id,
+        value=b'{"sequence":"MKT"}',
+        media_type="application/vnd.fs2.scientific-manifest+json",
+        direction=ArtifactDirection.INPUT,
+    )
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.CANCELLED,
+            completed_at=NOW + timedelta(minutes=1),
+        )
+    )
+    committed = await service.commit_run_result(
+        RunResultDraft(
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            terminal_status="cancelled",
+            submitted_at=NOW,
+            completed_at=NOW + timedelta(minutes=1),
+            execution_identity=execution_identity(),
+            scheduling_snapshot=scheduling_snapshot(),
+            input_manifest_artifact_id=inputs.artifact_id,
+            validator_id="proteina-complexa-validator",
+            validation_status="not-run",
+        )
+    )
+    RESULT_SCHEMA.validate(committed.result.to_document())
+    reloaded = await service.get_run_result(operation_id, tenant_id=TENANT)
+    assert reloaded.result_digest == committed.result_digest
+    assert reloaded.result == committed.result
+
+    with pytest.raises(ResultAlreadyTerminalError):
+        await open_attempt(service, operation_id=operation_id, stage_id="score")
+
+    expired = ScientificArtifactService(
+        repository=repository,
+        object_store=store,
+        allowed_media_types=ALLOWED_MEDIA_TYPES,
+        clock=lambda: NOW + timedelta(days=3),
+    )
+    purges = await expired.purge_expired()
+    assert [purge.operation_id for purge in purges] == [operation_id]
+    assert purges[0].artifact_count == 1
+    assert inputs.storage_key in store.deleted
+    assert await expired.purge_expired() == []
+    async with runtime_pool.acquire() as connection:
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_scientific_artifacts WHERE operation_id=$1", operation_id
+            )
+            == 0
+        )
+        assert (
+            await connection.fetchval(
+                "SELECT artifact_count FROM fs2_scientific_retention_ledger WHERE operation_id=$1",
+                operation_id,
+            )
+            == 1
         )
 
 
-def test_documentation_exists_and_declares_no_integration_or_live_deployment() -> None:
-    documentation = (CONTROL_ROOT / "docs/scientific-artifact-results.md").read_text(encoding="utf-8")
-    assert "No API, MCP, controller, model-adapter" in documentation
-    assert "live-deployment wiring is included" in documentation
-    assert SCIENTIFIC_ARTIFACT_MIGRATION in documentation
-    assert "presigned" in documentation.lower()
+@pytest.mark.postgres
+async def test_postgres_events_are_durable_ordered_and_payload_free(runtime_pool) -> None:
+    operation_id = uuid4()
+    await insert_operation(runtime_pool, operation_id)
+    store = FakeObjectStore()
+    service = build_service(PostgresArtifactRepository(runtime_pool), store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    await upload(service, store, operation_id=operation_id, attempt_id=attempt_id, value=b"ATOM  CA")
+    events = await service.list_events(operation_id, tenant_id=TENANT)
+    assert [event.event_type for event in events] == [
+        ArtifactEventType.ATTEMPT_OPENED,
+        ArtifactEventType.UPLOAD_BEGUN,
+        ArtifactEventType.ARTIFACT_FINALIZED,
+    ]
+    assert [event.event_id for event in events] == sorted(event.event_id for event in events)
+    page = await service.list_events(operation_id, tenant_id=TENANT, after_id=events[0].event_id, limit=1)
+    assert len(page) == 1 and page[0].event_id == events[1].event_id
+    assert await service.list_events(operation_id, tenant_id="tenant-b") == []
+
+
+async def _terminal_operation(service: ScientificArtifactService, repository, store) -> UUID:
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    inputs = await upload(
+        service,
+        store,
+        operation_id=operation_id,
+        attempt_id=attempt_id,
+        value=b'{"sequence":"MKT"}',
+        media_type="application/vnd.fs2.scientific-manifest+json",
+        direction=ArtifactDirection.INPUT,
+    )
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.CANCELLED,
+            completed_at=NOW + timedelta(minutes=1),
+        )
+    )
+    await service.commit_run_result(
+        RunResultDraft(
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            terminal_status="cancelled",
+            submitted_at=NOW,
+            completed_at=NOW + timedelta(minutes=1),
+            execution_identity=execution_identity(),
+            scheduling_snapshot=scheduling_snapshot(),
+            input_manifest_artifact_id=inputs.artifact_id,
+            validator_id="proteina-complexa-validator",
+            validation_status="not-run",
+        )
+    )
+    return operation_id
+
+
+async def test_concurrent_retention_workers_purge_an_operation_exactly_once() -> None:
+    repository = MemoryArtifactRepository()
+    store = FakeObjectStore()
+    service = build_service(repository, store, retention=timedelta(days=1))
+    operation_id = await _terminal_operation(service, repository, store)
+
+    def worker() -> ScientificArtifactService:
+        return ScientificArtifactService(
+            repository=repository,
+            object_store=store,
+            allowed_media_types=ALLOWED_MEDIA_TYPES,
+            clock=lambda: NOW + timedelta(days=2),
+        )
+
+    outcomes = await asyncio.gather(*(worker().purge_expired() for _ in range(4)))
+    purged = [purge for batch in outcomes for purge in batch]
+    assert [purge.operation_id for purge in purged] == [operation_id]
+
+
+async def test_a_zero_byte_artifact_round_trips_without_relaxing_the_ceiling() -> None:
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    record = await upload(service, store, operation_id=operation_id, attempt_id=attempt_id, value=b"")
+    assert record.size_bytes == 0
+    assert record.digest == digest(b"")
+    POINTER_SCHEMA.validate(record.to_public_ref().model_dump(mode="json"))
+
+
+async def test_the_batch_bridge_satisfies_the_repository_commit_signature() -> None:
+    """The bridge must be droppable into ``ScientificBatchRepository`` as-is."""
+
+    import inspect
+
+    from fs2_serve.scientific_artifacts import ScientificArtifactBatchBridge
+    from fs2_serve.scientific_batch.models import BatchClaim
+    from fs2_serve.scientific_batch.protocols import ScientificBatchRepository
+
+    assert inspect.signature(ScientificArtifactBatchBridge.artifact_commit) == inspect.signature(
+        ScientificBatchRepository.artifact_commit
+    )
+
+    repository = MemoryArtifactRepository()
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore()
+    service = build_service(repository, store)
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    record = await upload(service, store, operation_id=operation_id, attempt_id=attempt_id, value=b"ATOM  CA")
+    await service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.SUCCEEDED,
+            completed_at=NOW + timedelta(minutes=5),
+        )
+    )
+    published = await service.commit_stage(
+        CommitStageResult(
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            stage_id="design",
+            attempt_ids=(attempt_id,),
+            entries=(
+                ManifestEntryDraft(
+                    name="design-0", semantic_type="protein.structure/v1", artifact_id=record.artifact_id
+                ),
+            ),
+            validation_digest="sha256:" + "9" * 64,
+            semantic_valid=True,
+            committed_at=NOW,
+            validated_at=NOW,
+        )
+    )
+    bridge = ScientificArtifactBatchBridge(service)
+    claim = BatchClaim(
+        operation_id=operation_id,
+        controller_id="controller-a",
+        fencing_token=1,
+        lease_expires_at=NOW + timedelta(minutes=5),
+    )
+    commit = await bridge.artifact_commit(claim, stage_id="design")
+    assert commit is not None
+    assert commit.manifest_digest == published.manifest_digest
+    assert await bridge.artifact_commit(claim, stage_id="score") is None
