@@ -1,0 +1,72 @@
+{
+  "model_id": "qwen3-8b",
+  "assigned_level": "L3",
+  "level_basis": "Exploratory prepared-node model-start measured at 40.650 s (below L3 60 s ceiling); not qualified because FAST_START_LEVELS requires 20 successful comparable cold activations.",
+  "cluster": {
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "context": "k8s-inference-h100",
+    "namespace": "fs2-models",
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "driver": "580.159.04",
+    "cuda": "13.0",
+    "capacity": "reserved hot H100"
+  },
+  "runtime": {
+    "image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+    "artifact_manifest_digest": "sha256:2cf721c69d9e1b66860274de129f0dd486172ef1dad289483ea891dab5b80806",
+    "pod": "qwen3-8b-b300-hot-h100-reserved-8x-5f79788d4-gn4lz",
+    "pod_start": "2026-09-02T21:49:36Z"
+  },
+  "trials": [
+    {
+      "trial": 1,
+      "http": 200,
+      "total_seconds": 0.30485,
+      "prompt_tokens": 2,
+      "completion_tokens": 4
+    },
+    {
+      "trial": 2,
+      "http": 200,
+      "total_seconds": 0.297319,
+      "prompt_tokens": 2,
+      "completion_tokens": 4
+    },
+    {
+      "trial": 3,
+      "http": 200,
+      "total_seconds": 0.296903,
+      "prompt_tokens": 2,
+      "completion_tokens": 4
+    },
+    {
+      "trial": "prepared-restart-1",
+      "model_start_seconds": 40.65,
+      "capacity_wait_seconds": 71.65,
+      "image_pull": "hit",
+      "artifact": "shared-cache hit",
+      "semantic": "HTTP 200"
+    }
+  ],
+  "summary": {
+    "warm_request_min_seconds": 0.296903,
+    "warm_request_mean_seconds": 0.299691,
+    "warm_request_max_seconds": 0.30485,
+    "completion_tokens_per_request": 4,
+    "warm_throughput_tokens_per_second": 13.347,
+    "fresh_node": null,
+    "prepared_node": null,
+    "image_local": null,
+    "artifact_local": null,
+    "failure_recovery": null,
+    "gpu_utilization": null,
+    "prepared_model_start_seconds": 40.65,
+    "prepared_capacity_wait_seconds": 71.65,
+    "prepared_end_to_end_seconds": 111.65,
+    "qualified_level": null,
+    "failure_recovery_observed": "pod deletion recreated replacement; service returned Ready (exact interval not captured)"
+  },
+  "snapshot": "not tested; normal request/restart is not a GPU snapshot",
+  "next": "Run isolated fresh/prepared/image-local/artifact-local and failure-recovery trials before assigning L1+; L3 remains unavailable on H100 without local NVMe."
+}

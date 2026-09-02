@@ -1,0 +1,1628 @@
+{
+  "schema": "fs2-serve.nebius.ai/cancer-immunotherapy-fast-start-matrix/v1",
+  "campaign_id": "cancer-immunotherapy-h100-fast-start-r20260902",
+  "target": {
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_context": "k8s-inference-h100",
+    "gpu_product": "2 Ready x 8 NVIDIA H100 SXM5 80GB",
+    "capacity_policy": "preserve-shared-tenants",
+    "local_nvme_model_cache_available": false,
+    "same_region_registry": true,
+    "model_cache_pvcs": [
+      "model-cache-0 (128Gi RWX)",
+      "model-cache-1 (128Gi RWX)"
+    ],
+    "h100_mutation_gate": "wait-for-immutable-runtime-assets-merged",
+    "live_inventory_state": "reachable"
+  },
+  "phase_contract": [
+    "queue-wait",
+    "node-provision",
+    "pod-scheduled",
+    "sandbox-create",
+    "image-pull",
+    "container-start",
+    "artifact-transfer",
+    "deserialization",
+    "cpu-to-gpu-load",
+    "snapshot-restore",
+    "graph-kernel-initialization",
+    "workflow-initialization",
+    "pod-ready",
+    "semantic-ready",
+    "first-semantic-result",
+    "active-compute",
+    "grace-drain",
+    "teardown"
+  ],
+  "metric_contract": [
+    "time-to-semantic-ready-seconds",
+    "time-to-first-semantic-result-seconds",
+    "throughput",
+    "gpu-utilization-mean-percent",
+    "gpu-utilization-peak-percent",
+    "gpu-memory-peak-bytes",
+    "bytes-read",
+    "bandwidth-bytes-per-second",
+    "phase-duration-seconds"
+  ],
+  "mechanism_contract": {
+    "regional_oci_image_cache": {
+      "claim": "Same-region OCI layers for the exact runtime image digest; this is not model-artifact or process state.",
+      "resource_state": "available-platform",
+      "required_evidence": [
+        "registry digest and region",
+        "image pull bytes and duration",
+        "controlled image miss/hit"
+      ]
+    },
+    "shared_artifact_cache": {
+      "claim": "Same-region shared storage for exact model/checkpoint manifests; this is not node-local disk.",
+      "resource_state": "available-platform",
+      "required_evidence": [
+        "artifact manifest digest",
+        "storage identity",
+        "bytes and transfer duration",
+        "controlled artifact miss/hit"
+      ]
+    },
+    "node_local_artifact_cache": {
+      "claim": "Host-local model-weight cache; unavailable because retained H100 nodes have no local NVMe.",
+      "resource_state": "unavailable-platform",
+      "required_evidence": [
+        "a future platform change proving local durable storage would be required"
+      ]
+    },
+    "host_ram_standby": {
+      "claim": "Deserialized weights retained in host RAM with no live CUDA context; separately metered.",
+      "resource_state": "gated",
+      "required_evidence": [
+        "exact process/runtime identity",
+        "resident-set and transfer evidence",
+        "no live CUDA context",
+        "post-transfer semantic pass"
+      ]
+    },
+    "hot_gpu_replica": {
+      "claim": "Semantically warmed process and weights resident on H100.",
+      "resource_state": "gated",
+      "required_evidence": [
+        "two semantic warmup requests",
+        "GPU allocation/residency evidence",
+        "warm steady-state repetitions"
+      ]
+    },
+    "cuda_criu_process_snapshot": {
+      "claim": "CUDA state checkpointed by cuda-checkpoint and the quiesced process tree dumped/restored by CRIU; CRIU alone is not support.",
+      "resource_state": "gated",
+      "required_evidence": [
+        "exact donor/target identity tuple",
+        "cuda-checkpoint and CRIU/plugin digests",
+        "same GPU chip type",
+        "post-restore semantic pass",
+        "failure-safe conventional fallback"
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "fresh-node-cold",
+      "repetitions": 3,
+      "required": false,
+      "controlled_change": "fresh H100 node; image, artifact, and process absent",
+      "capacity_state": "fresh-node",
+      "factors": {
+        "image": "miss",
+        "artifact": "miss",
+        "process": "absent",
+        "failure_injection": "none"
+      },
+      "claim_boundary": "Full provisioning-to-semantic-result path; run only when capacity permits after the mutation gate clears."
+    },
+    {
+      "id": "prepared-node-cold",
+      "repetitions": 3,
+      "required": true,
+      "controlled_change": "prepared H100 node; image, artifact, and process absent",
+      "capacity_state": "prepared-node",
+      "factors": {
+        "image": "miss",
+        "artifact": "miss",
+        "process": "absent",
+        "failure_injection": "none"
+      },
+      "claim_boundary": "Clean prepared-node baseline; discard a trial if any controlled miss is not proven."
+    },
+    {
+      "id": "prepared-image-hit",
+      "repetitions": 3,
+      "required": true,
+      "controlled_change": "only the exact OCI image changes from miss to hit",
+      "capacity_state": "prepared-node",
+      "factors": {
+        "image": "hit",
+        "artifact": "miss",
+        "process": "absent",
+        "failure_injection": "none"
+      },
+      "claim_boundary": "Measures regional/container image caching only; makes no artifact or process-residency claim."
+    },
+    {
+      "id": "prepared-artifact-hit",
+      "repetitions": 3,
+      "required": true,
+      "controlled_change": "only the exact immutable artifact changes from miss to hit",
+      "capacity_state": "prepared-node",
+      "factors": {
+        "image": "miss",
+        "artifact": "hit",
+        "process": "absent",
+        "failure_injection": "none"
+      },
+      "claim_boundary": "Measures shared artifact caching only; no local-NVMe claim is allowed."
+    },
+    {
+      "id": "prepared-image-artifact-hit",
+      "repetitions": 3,
+      "required": true,
+      "controlled_change": "exact OCI image and immutable artifact are cache hits; process absent",
+      "capacity_state": "prepared-node",
+      "factors": {
+        "image": "hit",
+        "artifact": "hit",
+        "process": "absent",
+        "failure_injection": "none"
+      },
+      "claim_boundary": "Measures the fastest supported scale-from-zero conventional path."
+    },
+    {
+      "id": "host-ram-standby",
+      "repetitions": 3,
+      "required": true,
+      "controlled_change": "weights are deserialized in host RAM but no CUDA context is retained",
+      "capacity_state": "prepared-node",
+      "factors": {
+        "image": "hit",
+        "artifact": "hit",
+        "process": "host-ram-resident",
+        "failure_injection": "none"
+      },
+      "claim_boundary": "Host-RAM residency is distinct from a process snapshot and from a hot GPU replica."
+    },
+    {
+      "id": "hot-gpu-replica",
+      "repetitions": 3,
+      "required": true,
+      "controlled_change": "semantically warmed exact runtime remains resident on H100",
+      "capacity_state": "warm-steady-state",
+      "factors": {
+        "image": "hit",
+        "artifact": "hit",
+        "process": "gpu-hot",
+        "failure_injection": "none"
+      },
+      "claim_boundary": "Measures a hot replica from request acceptance to validated result."
+    },
+    {
+      "id": "cuda-criu-snapshot-restore",
+      "repetitions": 3,
+      "required": true,
+      "controlled_change": "exact CUDA process state is restored by cuda-checkpoint plus CRIU",
+      "capacity_state": "prepared-node",
+      "factors": {
+        "image": "hit",
+        "artifact": "hit",
+        "process": "snapshot-restored",
+        "failure_injection": "none"
+      },
+      "claim_boundary": "Eligible only after exact donor/target identity and post-restore semantic proof; pod readiness is insufficient."
+    },
+    {
+      "id": "corrupt-snapshot-fallback",
+      "repetitions": 3,
+      "required": true,
+      "controlled_change": "a corrupt snapshot is injected and conventional fallback must pass",
+      "capacity_state": "prepared-node",
+      "factors": {
+        "image": "hit",
+        "artifact": "hit",
+        "process": "snapshot-restored",
+        "failure_injection": "corrupt-snapshot"
+      },
+      "claim_boundary": "Failure evidence must show fail-closed restore and a semantically valid conventional fallback."
+    },
+    {
+      "id": "preemption-recovery",
+      "repetitions": 3,
+      "required": true,
+      "controlled_change": "preemption occurs during load or compute and the attempt is retried",
+      "capacity_state": "prepared-node",
+      "factors": {
+        "image": "hit",
+        "artifact": "hit",
+        "process": "absent",
+        "failure_injection": "preemption"
+      },
+      "claim_boundary": "Measures recovery without pooling evidence across the interrupted and replacement runtimes."
+    }
+  ],
+  "tracks": [
+    {
+      "track_id": "proteina-complexa",
+      "requested_name": "Proteina-Complexa",
+      "lane_kind": "primary",
+      "evidence_classification": {
+        "source_runtime": "source-analysis-only",
+        "h100_startup": "not-measured-current-campaign",
+        "snapshot": "not-tested",
+        "semantic": "fixture-blocked",
+        "basis": [
+          "upstream revision inspected",
+          "no merged immutable runtime or artifacts",
+          "mixed-stage snapshot risk documented"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "proteina-complexa-runtime",
+          "role": "standalone",
+          "identity": {
+            "state": "blocked-awaiting-merge",
+            "source_ref": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+            "source_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+            "runtime_image_digest": null,
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "proteina-complexa-54058860-h100",
+          "framework": "mixed",
+          "process_topology": [
+            "Complexa PyTorch inference",
+            "AlphaFold2 JAX subprocess",
+            "ProteinMPNN/RF3 subprocess stages"
+          ],
+          "access": {
+            "class": "public",
+            "state": "unverified",
+            "one_time_action": "Runtime owner must pin every checkpoint/config dependency, calculate artifact SHA-256 values, and merge the immutable runtime manifest.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "planned",
+            "shared_artifact_cache": "planned",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "gated"
+          },
+          "snapshot": {
+            "state": "gated",
+            "backend": "cuda-checkpoint+criu",
+            "reason": "The mixed JAX/PyTorch, multi-stage workflow has no proven idle single-process CUDA boundary; whole-workflow restore is untested.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "proteina-complexa-pdl1-two-designs",
+          "dominant_risks": [
+            "three model/checkpoint variants",
+            "mixed framework ABI and compile caches",
+            "subprocess state cannot be pooled"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": null,
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "No current-campaign H100 semantic receipts exist and the immutable runtime/artifact mutation gate remains closed."
+      },
+      "fallback": "Conventional same-region OCI plus shared artifacts, then host-RAM or hot replica after semantic qualification."
+    },
+    {
+      "track_id": "boltzgen",
+      "requested_name": "BoltzGen",
+      "lane_kind": "primary",
+      "evidence_classification": {
+        "source_runtime": "source-analysis-only",
+        "h100_startup": "not-measured-current-campaign",
+        "snapshot": "not-tested",
+        "semantic": "fixture-blocked",
+        "basis": [
+          "upstream revision inspected",
+          "floating model references remain",
+          "multi-stage process topology documented"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "boltzgen-runtime",
+          "role": "standalone",
+          "identity": {
+            "state": "blocked-awaiting-merge",
+            "source_ref": "https://github.com/HannesStark/boltzgen",
+            "source_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+            "runtime_image_digest": null,
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "boltzgen-a3149cf1-h100",
+          "framework": "pytorch",
+          "process_topology": [
+            "seven subprocess stages",
+            "DataLoader workers",
+            "optional distributed execution"
+          ],
+          "access": {
+            "class": "public",
+            "state": "unverified",
+            "one_time_action": "Runtime owner must replace floating Hugging Face references with immutable artifact digests and merge the runtime manifest.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "planned",
+            "shared_artifact_cache": "planned",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "gated"
+          },
+          "snapshot": {
+            "state": "gated",
+            "backend": "cuda-checkpoint+criu",
+            "reason": "Seven subprocess stages, loader workers, and optional distributed state have no safe whole-workflow CUDA checkpoint boundary.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "boltzgen-1g13-two-designs",
+          "dominant_risks": [
+            "floating upstream model references",
+            "multi-process stage graph",
+            "shape-dependent compilation"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": null,
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "No current-campaign H100 semantic receipts exist and the immutable runtime/artifact mutation gate remains closed."
+      },
+      "fallback": "Conventional exact stage caches and a hot replica; do not snapshot the seven-stage workflow."
+    },
+    {
+      "track_id": "mosaic",
+      "requested_name": "mosaic",
+      "lane_kind": "primary",
+      "evidence_classification": {
+        "source_runtime": "source-analysis-only",
+        "h100_startup": "not-measured-current-campaign",
+        "snapshot": "not-tested",
+        "semantic": "fixture-blocked",
+        "basis": [
+          "framework revision inspected",
+          "executable backend composition unresolved"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "mosaic-runtime",
+          "role": "standalone",
+          "identity": {
+            "state": "blocked-awaiting-merge",
+            "source_ref": "https://github.com/escalante-bio/mosaic",
+            "source_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+            "runtime_image_digest": null,
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "mosaic-70fec525-backend-unresolved-h100",
+          "framework": "unknown",
+          "process_topology": [
+            "framework-selected backend",
+            "objective/config/shape-specific execution"
+          ],
+          "access": {
+            "class": "ambiguous",
+            "state": "unverified",
+            "one_time_action": "Program owner must select and pin one exact backend, objective, configuration, artifact set, and input-shape envelope.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "planned",
+            "shared_artifact_cache": "planned",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "gated"
+          },
+          "snapshot": {
+            "state": "gated",
+            "backend": "cuda-checkpoint+criu",
+            "reason": "A framework revision is not an executable identity; snapshot eligibility depends on the selected backend and exact worker topology.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "mosaic-backend-specific-two-designs",
+          "dominant_risks": [
+            "requested model identity is a framework composition",
+            "backend-dependent CUDA behavior",
+            "JAX compile-cache identity"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": null,
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "No current-campaign H100 semantic receipts exist and the immutable runtime/artifact mutation gate remains closed."
+      },
+      "fallback": "Resolve one backend composition, then qualify conventional caches before any resident-process experiment."
+    },
+    {
+      "track_id": "rfdiffusion",
+      "requested_name": "RFdiffusion",
+      "lane_kind": "primary",
+      "evidence_classification": {
+        "source_runtime": "candidate-existing-contract",
+        "h100_startup": "historical-handoff-only",
+        "snapshot": "negative-historical",
+        "semantic": "fixture-candidate-unexecuted",
+        "basis": [
+          "exact NIM image digest in catalog",
+          "historical H100 conventional handoff",
+          "historical H100 snapshot rejection"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "rfdiffusion-nim-runtime",
+          "role": "standalone",
+          "identity": {
+            "state": "candidate-existing-contract",
+            "source_ref": "catalog/runtime/models/rfdiffusion.json",
+            "source_revision": "sha256:15e40e466d8ebe9a53f1feea599373720428c9de65da750bf4271c96ec35ceb4",
+            "runtime_image_digest": "sha256:15e40e466d8ebe9a53f1feea599373720428c9de65da750bf4271c96ec35ceb4",
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "rfdiffusion-nim-15e40e46-h100",
+          "framework": "pytorch",
+          "process_topology": [
+            "single NIM service; internal process tree must be captured before trials"
+          ],
+          "access": {
+            "class": "ngc-entitlement",
+            "state": "unverified",
+            "one_time_action": "Platform owner must approve NGC terms/entitlement and provision the existing platform-managed pull credential without copying it into receipts.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "candidate",
+            "shared_artifact_cache": "gated",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "negative-evidence"
+          },
+          "snapshot": {
+            "state": "negative-evidence",
+            "backend": "none",
+            "reason": "Historical H100 handoff rejects the separately published snapshot bundle after substantial restore failures; this exact campaign may use conventional caching only unless new exact-identity proof supersedes it.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "rfdiffusion-pdb-two-distinct",
+          "dominant_risks": [
+            "NGC entitlement unverified",
+            "artifact manifest unresolved",
+            "historical snapshot failures"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": null,
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "No current-campaign H100 semantic receipts exist and the immutable runtime/artifact mutation gate remains closed."
+      },
+      "fallback": "Exact NIM conventional image/artifact caching; hot replica only after new H100 semantic trials."
+    },
+    {
+      "track_id": "esmfold2",
+      "requested_name": "ESMFold2",
+      "lane_kind": "fallback",
+      "evidence_classification": {
+        "source_runtime": "source-analysis-only",
+        "h100_startup": "not-measured-current-campaign",
+        "snapshot": "not-tested",
+        "semantic": "fixture-blocked",
+        "basis": [
+          "ESM source and artifact revisions inspected",
+          "requested identity still ambiguous"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "esmfold2-runtime",
+          "role": "standalone",
+          "identity": {
+            "state": "blocked-awaiting-merge",
+            "source_ref": "https://huggingface.co/facebook/esmfold_v1",
+            "source_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+            "runtime_image_digest": null,
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "esmfold2-8fc3ff47-h100",
+          "framework": "pytorch",
+          "process_topology": [
+            "single persistent inference worker candidate"
+          ],
+          "access": {
+            "class": "public",
+            "state": "missing",
+            "one_time_action": "Runtime owner must confirm the requested ESMFold2 identity (the inspected public artifact is ESMFold v1-named), stage it, and record all file SHA-256 values.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "planned",
+            "shared_artifact_cache": "planned",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "gated"
+          },
+          "snapshot": {
+            "state": "gated",
+            "backend": "cuda-checkpoint+criu",
+            "reason": "A single-worker checkpoint may be testable, but no exact H100 runtime, artifact, process-tree, or post-restore semantic evidence exists.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "esmfold2-two-sequences",
+          "dominant_risks": [
+            "requested ESMFold2 naming does not match inspected ESMFold v1 repository",
+            "large deserialization path",
+            "attention/chunking configuration affects identity"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": null,
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "No current-campaign H100 semantic receipts exist and the immutable runtime/artifact mutation gate remains closed."
+      },
+      "fallback": "Lock the requested identity and use conventional cache/host-RAM lanes."
+    },
+    {
+      "track_id": "esmfold2-fast",
+      "requested_name": "ESMFold2-Fast",
+      "lane_kind": "fallback",
+      "evidence_classification": {
+        "source_runtime": "source-analysis-only",
+        "h100_startup": "not-measured-current-campaign",
+        "snapshot": "not-tested",
+        "semantic": "fixture-blocked",
+        "basis": [
+          "separate artifact revision inspected",
+          "Fast runtime contract unresolved"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "esmfold2-fast-runtime",
+          "role": "standalone",
+          "identity": {
+            "state": "blocked-awaiting-merge",
+            "source_ref": "https://huggingface.co/facebook/esmfold_v1",
+            "source_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+            "runtime_image_digest": null,
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "esmfold2-fast-c6c7958d-h100",
+          "framework": "pytorch",
+          "process_topology": [
+            "single persistent inference worker candidate"
+          ],
+          "access": {
+            "class": "public",
+            "state": "missing",
+            "one_time_action": "Runtime owner must define the Fast variant contract, stage the immutable files, and record all file SHA-256 values.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "planned",
+            "shared_artifact_cache": "planned",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "gated"
+          },
+          "snapshot": {
+            "state": "gated",
+            "backend": "cuda-checkpoint+criu",
+            "reason": "Fast is a separate runtime/configuration identity and has no exact H100 restore evidence.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "esmfold2-fast-two-sequences",
+          "dominant_risks": [
+            "Fast variant contract unresolved",
+            "configuration cannot borrow ESMFold2 evidence",
+            "kernel initialization shape sensitivity"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": null,
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "No current-campaign H100 semantic receipts exist and the immutable runtime/artifact mutation gate remains closed."
+      },
+      "fallback": "Treat Fast as a distinct runtime; use conventional cache or hot-replica evidence only."
+    },
+    {
+      "track_id": "protenix-v2",
+      "requested_name": "Protenix v2",
+      "lane_kind": "fallback",
+      "evidence_classification": {
+        "source_runtime": "gated-licensed-artifact",
+        "h100_startup": "not-measured-current-campaign",
+        "snapshot": "not-tested",
+        "semantic": "fixture-blocked",
+        "basis": [
+          "upstream revision inspected",
+          "official protenix-v2.pt returned HTTP 403 on 2026-09-02"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "protenix-v2-runtime",
+          "role": "standalone",
+          "identity": {
+            "state": "blocked-awaiting-merge",
+            "source_ref": "https://github.com/bytedance/Protenix",
+            "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+            "runtime_image_digest": null,
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "protenix-v2-4c355be4-h100",
+          "framework": "pytorch",
+          "process_topology": [
+            "single-worker candidate; exact data pipeline workers unresolved"
+          ],
+          "access": {
+            "class": "public",
+            "state": "missing",
+            "one_time_action": "Platform owner must obtain the official protenix-v2.pt through an upstream-authorized path after the observed HTTP 403, record provenance and SHA-256, and stage it in restricted same-region storage.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "planned",
+            "shared_artifact_cache": "gated",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "gated"
+          },
+          "snapshot": {
+            "state": "gated",
+            "backend": "cuda-checkpoint+criu",
+            "reason": "No model artifact, immutable runtime image, exact worker topology, or H100 semantic restore evidence is available.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "protenix-v2-two-complexes",
+          "dominant_risks": [
+            "official checkpoint URL returned HTTP 403",
+            "database/artifact footprint unresolved",
+            "data pipeline process topology unresolved"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": null,
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "No current-campaign H100 semantic receipts exist and the immutable runtime/artifact mutation gate remains closed."
+      },
+      "fallback": "Wait for upstream-authorized checkpoint access, then stage shared artifacts and run conventional trials."
+    },
+    {
+      "track_id": "alphafold3-native-academic",
+      "requested_name": "AlphaFold3 native (academic)",
+      "lane_kind": "native-academic",
+      "evidence_classification": {
+        "source_runtime": "gated-licensed-artifact",
+        "h100_startup": "not-measured-current-campaign",
+        "snapshot": "not-tested",
+        "semantic": "h100-no-data-pipeline-pass",
+        "basis": [
+          "official v3.0.4 image digest eaea560c",
+          "real H100 no-data-pipeline loader and minimal inference passed with egress denied",
+          "raw-input reference bundle not staged"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "alphafold3-native-runtime",
+          "role": "standalone",
+          "identity": {
+            "state": "candidate-existing-contract",
+            "source_ref": "https://github.com/google-deepmind/alphafold3",
+            "source_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+            "runtime_image_digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "alphafold3-c0f97eda-academic-h100",
+          "framework": "jax",
+          "process_topology": [
+            "single-GPU non-UVM process candidate",
+            "data pipeline and inference process boundaries must be fixed"
+          ],
+          "access": {
+            "class": "academic-terms",
+            "state": "staged-quarantined",
+            "one_time_action": "Academic authorization complete and official parameters staged; raw-input serving remains ReferenceDataPending until fs2-reference-data and AF3 public DB bundle are mounted; no service-ready claim.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "planned",
+            "shared_artifact_cache": "gated",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "gated",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "gated"
+          },
+          "snapshot": {
+            "state": "gated",
+            "backend": "cuda-checkpoint+criu",
+            "reason": "AlphaFold3 UVM is incompatible with CUDA checkpoint; only a non-UVM, single-H100 exact process may be tested after licensed weights and runtime identity exist.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "alphafold3-academic-two-complexes",
+          "dominant_risks": [
+            "reference bundle absent",
+            "raw-input route blocked",
+            "JAX/XLA compile cache identity-sensitive"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": null,
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "No-data-pipeline H100 proof exists; raw-input serving is ReferenceDataPending and no current-campaign startup qualification exists."
+      },
+      "fallback": "OpenFold3 is the primary operational alternative while AlphaFold3 weights remain gated."
+    },
+    {
+      "track_id": "openfold3-fallback",
+      "requested_name": "OpenFold3",
+      "lane_kind": "fallback",
+      "evidence_classification": {
+        "source_runtime": "candidate-existing-contract",
+        "h100_startup": "historical-handoff-only",
+        "snapshot": "negative-historical",
+        "semantic": "fixture-candidate-unexecuted",
+        "basis": [
+          "exact NIM image digest and validator in catalog",
+          "historical H100 conventional handoff",
+          "historical snapshot underperformance/failure"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "openfold3-nim-runtime",
+          "role": "standalone",
+          "identity": {
+            "state": "candidate-existing-contract",
+            "source_ref": "https://github.com/aqlaboratory/openfold-3",
+            "source_revision": "sha256:c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+            "runtime_image_digest": "sha256:c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "openfold3-nim-6286cc7c-h100",
+          "framework": "pytorch",
+          "process_topology": [
+            "single NIM service; internal process tree must be captured before trials"
+          ],
+          "access": {
+            "class": "ngc-entitlement",
+            "state": "unverified",
+            "one_time_action": "Platform owner must approve NGC entitlement and resolve the NIM artifact manifest; alternatively package upstream e47adbf9 with the public openbind checkpoint and calculated SHA-256 as a new, separate runtime partition.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "candidate",
+            "shared_artifact_cache": "gated",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "negative-evidence"
+          },
+          "snapshot": {
+            "state": "negative-evidence",
+            "backend": "none",
+            "reason": "Historical H100 snapshot attempts were slower than conventional and incomplete/failed; OpenFold3 remains the primary AlphaFold3 alternative through conventional cache/warm lanes.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "openfold3-20aa-two-distinct",
+          "dominant_risks": [
+            "NGC artifact manifest unresolved",
+            "historical snapshot underperformed conventional",
+            "upstream and NIM evidence must stay separate"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": null,
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "No current-campaign H100 semantic receipts exist and the immutable runtime/artifact mutation gate remains closed."
+      },
+      "fallback": "Primary AlphaFold3 alternative: conventional NIM cache or independently packaged upstream runtime; never mix their evidence."
+    },
+    {
+      "track_id": "bindcraft-native-pyrosetta-academic",
+      "requested_name": "BindCraft native with PyRosetta (academic)",
+      "lane_kind": "native-academic",
+      "evidence_classification": {
+        "source_runtime": "gated-licensed-artifact",
+        "h100_startup": "not-measured-current-campaign",
+        "snapshot": "not-tested",
+        "semantic": "pose-score-only",
+        "basis": [
+          "PyRosetta wheel SHA 4383d8d1 installed from group-only mount",
+          "real pose scoring passed",
+          "native BindCraft semantic execution not yet run"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "bindcraft-native-pyrosetta-runtime",
+          "role": "standalone",
+          "identity": {
+            "state": "blocked-awaiting-merge",
+            "source_ref": "https://github.com/martinpacesa/BindCraft",
+            "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+            "runtime_image_digest": null,
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "bindcraft-efb5bfeb-pyrosetta-academic-h100",
+          "framework": "mixed",
+          "process_topology": [
+            "AlphaFold2/JAX design",
+            "ProteinMPNN subprocess",
+            "AlphaFold2 refold",
+            "PyRosetta C++ scoring"
+          ],
+          "access": {
+            "class": "academic-terms",
+            "state": "resolved",
+            "one_time_action": "Exact 2026.29 cp310 wheel SHA 4383d8d1 installed and pose-scored; native BindCraft semantic execution and runtime image remain DeploymentPending.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "planned",
+            "shared_artifact_cache": "gated",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "gated",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "gated"
+          },
+          "snapshot": {
+            "state": "gated",
+            "backend": "cuda-checkpoint+criu",
+            "reason": "Global PyRosetta C++ state plus JAX and subprocess stages provide no proven quiescent whole-workflow CUDA checkpoint boundary.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "bindcraft-native-pdl1-two-binders",
+          "dominant_risks": [
+            "native runtime image absent",
+            "mixed JAX/C++ global state",
+            "workflow process boundaries"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": null,
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "PyRosetta import/pose proof exists; native BindCraft runtime deployment and semantic execution remain pending."
+      },
+      "fallback": "Keep native lane in scope; until the wheel is staged, use only a separately qualified comparison workflow."
+    },
+    {
+      "track_id": "bindcraft-pyrosetta-free",
+      "requested_name": "FreeBindCraft / PyRosetta-free binder lane",
+      "lane_kind": "comparison",
+      "evidence_classification": {
+        "source_runtime": "source-analysis-only",
+        "h100_startup": "not-measured-current-campaign",
+        "snapshot": "not-applicable",
+        "semantic": "fixture-blocked",
+        "basis": [
+          "upstream revision inspected",
+          "OpenMM/OpenCL child makes end-to-end CUDA snapshot inapplicable"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "freebindcraft-runtime",
+          "role": "standalone",
+          "identity": {
+            "state": "blocked-awaiting-merge",
+            "source_ref": "https://github.com/Poko18/FreeBindCraft",
+            "source_revision": "8b8d4c4627da06f084f46b7007450048fe3ca22f",
+            "runtime_image_digest": null,
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "freebindcraft-8b8d4c46-no-pyrosetta-h100",
+          "framework": "mixed",
+          "process_topology": [
+            "JAX design process",
+            "OpenMM child process preferring OpenCL"
+          ],
+          "access": {
+            "class": "public",
+            "state": "unverified",
+            "one_time_action": "Runtime owner must pin all checkpoints and package a deterministic H100-compatible backend while retaining a separate identity from native BindCraft.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "planned",
+            "shared_artifact_cache": "planned",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "gated"
+          },
+          "snapshot": {
+            "state": "gated",
+            "backend": "cuda-checkpoint+criu",
+            "reason": "End-to-end CUDA process snapshot is not applicable while the child stage uses OpenCL; only an isolated idle JAX worker could become a separate future candidate.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "freebindcraft-pdl1-two-binders",
+          "dominant_risks": [
+            "OpenCL child is outside CUDA checkpoint",
+            "not behavior-equivalent to native BindCraft",
+            "stage artifacts must be immutable"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": null,
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "No current-campaign H100 semantic receipts exist and the immutable runtime/artifact mutation gate remains closed."
+      },
+      "fallback": "Conventional per-stage caches and a separately measured JAX resident worker; no end-to-end CUDA snapshot label."
+    },
+    {
+      "track_id": "bindcraft-composite-openfold3",
+      "requested_name": "RFdiffusion + ProteinMPNN + OpenFold3 binder workflow",
+      "lane_kind": "workflow",
+      "evidence_classification": {
+        "source_runtime": "candidate-existing-contract",
+        "h100_startup": "historical-handoff-only",
+        "snapshot": "negative-historical",
+        "semantic": "fixture-candidate-unexecuted",
+        "basis": [
+          "three separate exact-runtime partitions",
+          "NIM validators exist for ProteinMPNN/OpenFold3",
+          "no workflow H100 trial"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "rfdiffusion-openfold3-stage",
+          "role": "workflow-stage",
+          "identity": {
+            "state": "blocked-awaiting-merge",
+            "source_ref": "https://github.com/RosettaCommons/RFdiffusion",
+            "source_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+            "runtime_image_digest": null,
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "bindcraft-openfold3-rfdiffusion-86507b65-h100",
+          "framework": "pytorch",
+          "process_topology": [
+            "one isolated RFdiffusion stage worker"
+          ],
+          "access": {
+            "class": "public",
+            "state": "unverified",
+            "one_time_action": "Runtime owner must merge a source-built immutable H100 runtime and checkpoint manifest.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "planned",
+            "shared_artifact_cache": "planned",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "gated"
+          },
+          "snapshot": {
+            "state": "gated",
+            "backend": "cuda-checkpoint+criu",
+            "reason": "This source-built stage has no exact H100 restore evidence and may not borrow NIM evidence.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "rfdiffusion-pdb-two-distinct",
+          "dominant_risks": [
+            "source-built and NIM evidence differ",
+            "checkpoint digest absent"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        },
+        {
+          "unit_id": "proteinmpnn-openfold3-stage",
+          "role": "workflow-stage",
+          "identity": {
+            "state": "candidate-existing-contract",
+            "source_ref": "https://github.com/dauparas/ProteinMPNN",
+            "source_revision": "sha256:8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+            "runtime_image_digest": "sha256:8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "bindcraft-openfold3-proteinmpnn-b55a0aa6-h100",
+          "framework": "pytorch",
+          "process_topology": [
+            "one isolated ProteinMPNN service stage"
+          ],
+          "access": {
+            "class": "ngc-entitlement",
+            "state": "unverified",
+            "one_time_action": "Platform owner must approve NGC entitlement and resolve the artifact manifest.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "candidate",
+            "shared_artifact_cache": "gated",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "negative-evidence"
+          },
+          "snapshot": {
+            "state": "negative-evidence",
+            "backend": "none",
+            "reason": "Historical exact NIM snapshot evidence is negative; conventional stage caching is the supported candidate.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "proteinmpnn-1ubq-two-distinct",
+          "dominant_risks": [
+            "artifact manifest unresolved",
+            "historical snapshot negative",
+            "workflow handoff schema unresolved"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        },
+        {
+          "unit_id": "openfold3-validation-stage",
+          "role": "workflow-stage",
+          "identity": {
+            "state": "candidate-existing-contract",
+            "source_ref": "https://github.com/aqlaboratory/openfold-3",
+            "source_revision": "sha256:c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+            "runtime_image_digest": "sha256:c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "bindcraft-openfold3-openfold3-6286cc7c-h100",
+          "framework": "pytorch",
+          "process_topology": [
+            "single NIM service; internal process tree must be captured before trials"
+          ],
+          "access": {
+            "class": "ngc-entitlement",
+            "state": "unverified",
+            "one_time_action": "Platform owner must approve NGC entitlement and resolve the NIM artifact manifest; alternatively package upstream e47adbf9 with the public openbind checkpoint and calculated SHA-256 as a new, separate runtime partition.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "candidate",
+            "shared_artifact_cache": "gated",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "negative-evidence"
+          },
+          "snapshot": {
+            "state": "negative-evidence",
+            "backend": "none",
+            "reason": "Historical H100 snapshot attempts were slower than conventional and incomplete/failed; OpenFold3 remains the primary AlphaFold3 alternative through conventional cache/warm lanes.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "openfold3-20aa-two-distinct",
+          "dominant_risks": [
+            "NGC artifact manifest unresolved",
+            "historical snapshot underperformed conventional",
+            "upstream and NIM evidence must stay separate"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": {
+        "stage_order": [
+          "rfdiffusion-openfold3-stage",
+          "proteinmpnn-openfold3-stage",
+          "openfold3-validation-stage"
+        ],
+        "stage_evidence_policy": "separate-exact-runtime-receipts",
+        "workflow_receipt_policy": "references-all-stage-receipts-no-substitution",
+        "semantic_gate": "Both distinct binder requests must complete all three stages; the workflow receipt references, but never replaces, each stage receipt."
+      },
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "No current-campaign H100 semantic receipts exist and the immutable runtime/artifact mutation gate remains closed."
+      },
+      "fallback": "Preferred PyRosetta-free operational comparison: cache each exact stage independently; never pool snapshot/cache evidence."
+    },
+    {
+      "track_id": "bindcraft-composite-boltzgen",
+      "requested_name": "RFdiffusion + ProteinMPNN + BoltzGen binder workflow",
+      "lane_kind": "workflow",
+      "evidence_classification": {
+        "source_runtime": "source-analysis-only",
+        "h100_startup": "not-measured-current-campaign",
+        "snapshot": "not-tested",
+        "semantic": "fixture-blocked",
+        "basis": [
+          "three separate exact-runtime partitions",
+          "BoltzGen immutable artifact graph unresolved",
+          "no workflow H100 trial"
+        ]
+      },
+      "runtime_units": [
+        {
+          "unit_id": "rfdiffusion-boltzgen-stage",
+          "role": "workflow-stage",
+          "identity": {
+            "state": "blocked-awaiting-merge",
+            "source_ref": "https://github.com/RosettaCommons/RFdiffusion",
+            "source_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+            "runtime_image_digest": null,
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "bindcraft-boltzgen-rfdiffusion-86507b65-h100",
+          "framework": "pytorch",
+          "process_topology": [
+            "one isolated RFdiffusion stage worker"
+          ],
+          "access": {
+            "class": "public",
+            "state": "unverified",
+            "one_time_action": "Runtime owner must merge a source-built immutable H100 runtime and checkpoint manifest.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "planned",
+            "shared_artifact_cache": "planned",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "gated"
+          },
+          "snapshot": {
+            "state": "gated",
+            "backend": "cuda-checkpoint+criu",
+            "reason": "This source-built stage has no exact H100 restore evidence and may not borrow NIM evidence.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "rfdiffusion-pdb-two-distinct",
+          "dominant_risks": [
+            "source-built and NIM evidence differ",
+            "checkpoint digest absent"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        },
+        {
+          "unit_id": "proteinmpnn-boltzgen-stage",
+          "role": "workflow-stage",
+          "identity": {
+            "state": "candidate-existing-contract",
+            "source_ref": "https://github.com/dauparas/ProteinMPNN",
+            "source_revision": "sha256:8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+            "runtime_image_digest": "sha256:8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "bindcraft-boltzgen-proteinmpnn-b55a0aa6-h100",
+          "framework": "pytorch",
+          "process_topology": [
+            "one isolated ProteinMPNN service stage"
+          ],
+          "access": {
+            "class": "ngc-entitlement",
+            "state": "unverified",
+            "one_time_action": "Platform owner must approve NGC entitlement and resolve the artifact manifest.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "candidate",
+            "shared_artifact_cache": "gated",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "negative-evidence"
+          },
+          "snapshot": {
+            "state": "negative-evidence",
+            "backend": "none",
+            "reason": "Historical exact NIM snapshot evidence is negative; conventional stage caching is the supported candidate.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "proteinmpnn-1ubq-two-distinct",
+          "dominant_risks": [
+            "artifact manifest unresolved",
+            "historical snapshot negative",
+            "workflow handoff schema unresolved"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        },
+        {
+          "unit_id": "boltzgen-validation-stage",
+          "role": "workflow-stage",
+          "identity": {
+            "state": "blocked-awaiting-merge",
+            "source_ref": "https://github.com/HannesStark/boltzgen",
+            "source_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+            "runtime_image_digest": null,
+            "model_artifact_digest": null
+          },
+          "evidence_partition_key": "bindcraft-boltzgen-boltzgen-a3149cf1-h100",
+          "framework": "pytorch",
+          "process_topology": [
+            "seven subprocess stages",
+            "DataLoader workers",
+            "optional distributed execution"
+          ],
+          "access": {
+            "class": "public",
+            "state": "unverified",
+            "one_time_action": "Runtime owner must replace floating Hugging Face references with immutable artifact digests and merge the runtime manifest.",
+            "credential_material_embedded": false,
+            "licensed_payload_embedded": false
+          },
+          "mechanisms": {
+            "regional_oci_image_cache": "planned",
+            "shared_artifact_cache": "planned",
+            "node_local_artifact_cache": "unavailable-platform",
+            "host_ram_standby": "planned",
+            "hot_gpu_replica": "planned",
+            "cuda_criu_process_snapshot": "gated"
+          },
+          "snapshot": {
+            "state": "gated",
+            "backend": "cuda-checkpoint+criu",
+            "reason": "Seven subprocess stages, loader workers, and optional distributed state have no safe whole-workflow CUDA checkpoint boundary.",
+            "proof_requirements": [
+              "exact source, runtime image, model artifact, driver, CUDA, kernel, CRIU plugin, GPU chip, topology, argv, environment, storage, and compile-cache identity",
+              "cuda-checkpoint lock/checkpoint/restore combined with CRIU process-tree dump; CRIU alone is not CUDA snapshot support",
+              "two distinct semantic requests pass after every restore and after a conventional fallback",
+              "three clean exploratory trials per scenario before any candidate claim and twenty successful zero-failure trials before qualification",
+              "failure injection proves corrupt restore and preemption fail closed"
+            ]
+          },
+          "semantic_fixture_id": "boltzgen-1g13-two-designs",
+          "dominant_risks": [
+            "floating upstream model references",
+            "multi-process stage graph",
+            "shape-dependent compilation"
+          ],
+          "optimization_order": [
+            "lock immutable runtime and artifact identities",
+            "stage same-region OCI image and shared artifact manifests",
+            "measure prepared-node conventional cache cells",
+            "measure host-RAM standby and hot replica independently",
+            "attempt cuda-checkpoint+CRIU only after topology and CUDA eligibility review"
+          ],
+          "ready_for_live_trials": false
+        }
+      ],
+      "workflow": {
+        "stage_order": [
+          "rfdiffusion-boltzgen-stage",
+          "proteinmpnn-boltzgen-stage",
+          "boltzgen-validation-stage"
+        ],
+        "stage_evidence_policy": "separate-exact-runtime-receipts",
+        "workflow_receipt_policy": "references-all-stage-receipts-no-substitution",
+        "semantic_gate": "Both distinct binder requests must complete all three stages; the workflow receipt references, but never replaces, each stage receipt."
+      },
+      "customer_state": {
+        "requested_level": "Fastest supported",
+        "assigned_level": null,
+        "effective_level": "Off",
+        "qualified_level": null,
+        "expected_startup_range_seconds": null,
+        "reason": "No current-campaign H100 semantic receipts exist and the immutable runtime/artifact mutation gate remains closed."
+      },
+      "fallback": "Comparison workflow only after BoltzGen is immutable; use independent conventional stage caches and hot workers."
+    }
+  ],
+  "fast_start_levels": {
+    "L0": "Fresh node: queue, provision, image pull, artifact transfer, load, semantic warmup, first result.",
+    "L1": "Prepared node: image and shared artifacts already present; no model process state assumed.",
+    "L2": "Stable shared artifact/compile cache keyed by exact runtime image digest, model artifact digest, and GPU SM architecture.",
+    "L3": "Host-RAM standby or hot replica with semantic readiness proven; cache remains separately measured.",
+    "L4": "CUDA checkpoint + CRIU process restore only after exact-identity restore and semantic post-restore proof; otherwise unavailable."
+  },
+  "protenix_cache_disclosure": {
+    "image_paths": [
+      "/cache/protenix/triton",
+      "/cache/protenix/cueq-triton"
+    ],
+    "adapter_override": "operation-local sample_root/cache overrides TRITON_CACHE_DIR and XDG caches",
+    "required_env": [
+      "TRITON_CACHE_DIR",
+      "CUEQ_TRITON_CACHE_DIR"
+    ],
+    "key": "image-digest + model-artifact-digest + GPU-SM-architecture",
+    "claim": "Do not claim L2/L3 warm acceleration until persistent cache evidence is measured."
+  }
+}

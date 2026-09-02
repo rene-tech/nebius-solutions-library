@@ -10,33 +10,31 @@
     "mount_root": "/opt/fs2/academic",
     "namespace": "fs2-academic-poc",
     "phase": "Bound",
-    "pvc_uid": "withheld",
+    "pvc_uid": "4d074d97-3391-46b9-9eea-ae57abc85d06",
     "storage_class": "csi-mounted-fs-path-sc",
-    "volume_handle": "withheld",
-    "volume_name": "withheld"
+    "volume_handle": "pvc-4d074d97-3391-46b9-9eea-ae57abc85d06",
+    "volume_name": "pvc-4d074d97-3391-46b9-9eea-ae57abc85d06"
   },
   "environment": {
-    "cluster_context": "withheld",
-    "cluster_id_export": "withheld",
-    "export_note": "Opaque cloud resource IDs are deliberately not exported. They are recorded in the owner-only private state and in stage receipts, which are never committed.",
-    "project_id": "withheld",
+    "cluster_context": "k8s-inference-h100",
+    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "project_id": "project-e00rene",
     "region": "eu-north1",
-    "registry_id": "withheld"
+    "registry_id": "registry-e00akg9ndpx77eaexh"
   },
-  "note": "Generated environment binding for one deployment. The reusable contract deliberately carries no project, region, cluster, volume or registry identity; those are observed per deployment. Opaque cloud IDs stay in the owner-only state so this file is exportable.",
-  "observed_at": "2026-09-03T01:10:00Z",
+  "note": "Generated environment binding for one deployment. The reusable contract deliberately carries no project, region, cluster, volume or registry identity; those are observed here and in stage receipts so the contract stays portable.",
+  "observed_at": "2026-09-02T23:27:00Z",
   "open_items": [
     "Serving deployment and model-level semantic readiness for both models belong to the runtime onboarding work; they are truthfully reported as missing here.",
     "Formal institutional licence acceptance is outstanding and is deliberately not synthesized; it does not block the authorized proof-of-concept path.",
     "Native BindCraft has no published runtime image yet; it consumes the preinstalled tenant-private site-packages tree via PYTHONPATH when that image exists."
   ],
-  "public_export_note": "Deployment identities are withheld from this public export: registry, filesystem, volume, project, cluster and context values identify one live environment and are recorded only in the private Task Deck evidence. Resource kinds, sizes, digests and semantic results are retained because they are the evidence.",
   "retained_quarantine_volume": {
     "claim": "cancer-immunotherapy-academic-assets-rwx-v1",
     "namespace": "fs2-models",
     "phase": "Bound",
     "purpose": "retained archive of the rejected PyRosetta 2025.24 conda package",
-    "pvc_uid": "withheld",
+    "pvc_uid": "0c67bc71-1735-4823-a932-478e5b8f85cb",
     "reconciliation": "Contents were enumerated by digest: it holds one byte-identical duplicate of the AlphaFold 3 object already on the canonical volume, plus the rejected 2025.24 conda archive that the contract says to retain and never activate. Nothing unique to the canonical runtime path lives here.",
     "runtime_mountable": false
   },
@@ -46,7 +44,7 @@
       "digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
       "note": "Built from the official docker/Dockerfile at tag v3.0.4 with the tag object present, so the packaged identity is the exact release rather than a derived dev version.",
       "packaged_distribution_version": "3.0.4",
-      "repository": "withheld",
+      "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3",
       "source_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
       "tag": "v3.0.4"
     },
@@ -74,19 +72,8 @@
     "installed_tree": {
       "atomic_promotion": true,
       "files_installed": 8697,
-      "identity_note": "The installed tree is identified by its own manifest digest and real byte total. The source wheel (4383d8d1..., 1667097173 bytes) is recorded separately; the tree is never labelled with the archive identity.",
       "job": "academic-tree-installer-pyrosetta-bindcraft-4383d8d1",
-      "modes": "8681 regular files at 0440, 796 paths at 0550, all group 65532. The 796 is a mode count, not a directory count: it is 780 directories (779 descendants plus the tree root) and 16 executable regular files.",
-      "directory_count_descendants": 779,
-      "directory_count_including_root": 780,
-      "executable_regular_files_0550": 16,
-      "paths_mode_0550": 796,
-      "regular_files_mode_0440": 8681,
-      "symlink_count": 0,
-      "counting_semantic": "fs2-tree-manifest/v1 identifies files and symlinks; directory_count elsewhere in this platform means descendant directories, excluding the tree root, which is 779.",
-      "tree_manifest_algorithm": "fs2-tree-manifest/v1",
-      "tree_manifest_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
-      "tree_total_bytes": 3287122494,
+      "modes": "8681 files at 0440, 796 directories at 0550, all group 65532",
       "verified_paths": 9477,
       "world_or_group_writable_paths": 0
     },

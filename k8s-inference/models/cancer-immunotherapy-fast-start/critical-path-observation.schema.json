@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/cancer-immunotherapy-critical-path-observation/v1",
+  "title": "Cancer immunotherapy model critical-path observation",
+  "description": "Private-payload-free phase evidence for one exact runtime and one startup scenario. It supplements, but does not replace, the generic fast-start attempt receipt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "campaign_id",
+    "track_id",
+    "runtime_unit_id",
+    "evidence_partition_key",
+    "scenario_id",
+    "attempt_ordinal",
+    "identity",
+    "phases",
+    "semantic",
+    "gpu_metrics",
+    "snapshot_identity",
+    "result",
+    "failure",
+    "sensitive_data"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/cancer-immunotherapy-critical-path-observation/v1"
+    },
+    "campaign_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "track_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "runtime_unit_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "evidence_partition_key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "scenario_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "attempt_ordinal": {"type": "integer", "minimum": 1},
+    "identity": {"$ref": "#/$defs/identity"},
+    "phases": {
+      "type": "array",
+      "minItems": 18,
+      "items": {"$ref": "#/$defs/phase"}
+    },
+    "semantic": {"$ref": "#/$defs/semantic"},
+    "gpu_metrics": {"$ref": "#/$defs/gpuMetrics"},
+    "snapshot_identity": {
+      "oneOf": [{"$ref": "#/$defs/snapshotIdentity"}, {"type": "null"}]
+    },
+    "result": {"enum": ["PASS", "FAIL"]},
+    "failure": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["phase", "code", "message_sha256", "fallback_observed"],
+          "properties": {
+            "phase": {"type": "string", "minLength": 1},
+            "code": {"type": "string", "pattern": "^[A-Z0-9_]+$"},
+            "message_sha256": {"$ref": "#/$defs/digest"},
+            "fallback_observed": {"type": "boolean"}
+          }
+        }
+      ]
+    },
+    "sensitive_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentials_embedded",
+        "licensed_weights_embedded",
+        "request_payload_embedded",
+        "model_output_embedded"
+      ],
+      "properties": {
+        "credentials_embedded": {"const": false},
+        "licensed_weights_embedded": {"const": false},
+        "request_payload_embedded": {"const": false},
+        "model_output_embedded": {"const": false}
+      }
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "shaDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "timestamp": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "nullableTimestamp": {
+      "oneOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]
+    },
+    "nullableNumber": {
+      "oneOf": [{"type": "number", "minimum": 0}, {"type": "null"}]
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_revision",
+        "runtime_image_digest",
+        "model_artifact_digest",
+        "semantic_fixture_digest",
+        "runtime_argv_digest",
+        "runtime_environment_digest",
+        "host_os_digest",
+        "kernel_release",
+        "container_runtime",
+        "gpu_product",
+        "gpu_chip_type",
+        "gpu_compute_capability",
+        "gpu_count",
+        "gpu_topology_digest",
+        "driver_version",
+        "cuda_version",
+        "pool_id",
+        "storage_identity_digest",
+        "compile_cache_abi"
+      ],
+      "properties": {
+        "source_revision": {
+          "oneOf": [
+            {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            {"$ref": "#/$defs/shaDigest"}
+          ]
+        },
+        "runtime_image_digest": {"$ref": "#/$defs/shaDigest"},
+        "model_artifact_digest": {"$ref": "#/$defs/shaDigest"},
+        "semantic_fixture_digest": {"$ref": "#/$defs/digest"},
+        "runtime_argv_digest": {"$ref": "#/$defs/digest"},
+        "runtime_environment_digest": {"$ref": "#/$defs/digest"},
+        "host_os_digest": {"$ref": "#/$defs/digest"},
+        "kernel_release": {"type": "string", "minLength": 1},
+        "container_runtime": {"type": "string", "minLength": 1},
+        "gpu_product": {"const": "NVIDIA H100 80GB HBM3"},
+        "gpu_chip_type": {"type": "string", "minLength": 1},
+        "gpu_compute_capability": {"const": "9.0"},
+        "gpu_count": {"type": "integer", "minimum": 1},
+        "gpu_topology_digest": {"$ref": "#/$defs/digest"},
+        "driver_version": {"type": "string", "minLength": 1},
+        "cuda_version": {"type": "string", "minLength": 1},
+        "pool_id": {"type": "string", "minLength": 1},
+        "storage_identity_digest": {"$ref": "#/$defs/digest"},
+        "compile_cache_abi": {"type": "string", "minLength": 1}
+      }
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "source",
+        "started_at",
+        "ended_at",
+        "started_monotonic_ns",
+        "ended_monotonic_ns",
+        "duration_seconds",
+        "bytes_read",
+        "bandwidth_bytes_per_second",
+        "artifact_digest"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "state": {"enum": ["observed", "not-applicable", "missing"]},
+        "source": {"type": "string", "minLength": 1},
+        "started_at": {"$ref": "#/$defs/nullableTimestamp"},
+        "ended_at": {"$ref": "#/$defs/nullableTimestamp"},
+        "started_monotonic_ns": {"type": ["integer", "null"], "minimum": 0},
+        "ended_monotonic_ns": {"type": ["integer", "null"], "minimum": 0},
+        "duration_seconds": {"$ref": "#/$defs/nullableNumber"},
+        "bytes_read": {"type": ["integer", "null"], "minimum": 0},
+        "bandwidth_bytes_per_second": {"$ref": "#/$defs/nullableNumber"},
+        "artifact_digest": {
+          "oneOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]
+        }
+      }
+    },
+    "semantic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pod_ready_at",
+        "semantic_ready_at",
+        "first_result_at",
+        "validator_digest",
+        "validator_status",
+        "distinct_request_count",
+        "time_to_first_semantic_result_seconds",
+        "throughput_value",
+        "throughput_unit"
+      ],
+      "properties": {
+        "pod_ready_at": {"$ref": "#/$defs/nullableTimestamp"},
+        "semantic_ready_at": {"$ref": "#/$defs/nullableTimestamp"},
+        "first_result_at": {"$ref": "#/$defs/nullableTimestamp"},
+        "validator_digest": {"$ref": "#/$defs/digest"},
+        "validator_status": {"enum": ["PASS", "FAIL", "NOT_RUN"]},
+        "distinct_request_count": {"type": "integer", "minimum": 0},
+        "time_to_first_semantic_result_seconds": {"$ref": "#/$defs/nullableNumber"},
+        "throughput_value": {"$ref": "#/$defs/nullableNumber"},
+        "throughput_unit": {"type": ["string", "null"]}
+      }
+    },
+    "gpuMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source",
+        "cadence_seconds",
+        "artifact_digest",
+        "utilization_mean_percent",
+        "utilization_peak_percent",
+        "memory_peak_bytes"
+      ],
+      "properties": {
+        "state": {"enum": ["observed", "missing"]},
+        "source": {"type": "string", "minLength": 1},
+        "cadence_seconds": {"$ref": "#/$defs/nullableNumber"},
+        "artifact_digest": {
+          "oneOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]
+        },
+        "utilization_mean_percent": {
+          "oneOf": [
+            {"type": "number", "minimum": 0, "maximum": 100},
+            {"type": "null"}
+          ]
+        },
+        "utilization_peak_percent": {
+          "oneOf": [
+            {"type": "number", "minimum": 0, "maximum": 100},
+            {"type": "null"}
+          ]
+        },
+        "memory_peak_bytes": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "snapshotIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "checkpoint_tool_digest",
+        "criu_version",
+        "criu_cuda_plugin_digest",
+        "process_tree_digest",
+        "donor_tuple_digest",
+        "target_tuple_digest",
+        "snapshot_digest",
+        "snapshot_bytes",
+        "same_chip_type",
+        "semantic_post_restore_passed",
+        "conventional_fallback_passed"
+      ],
+      "properties": {
+        "backend": {"const": "cuda-checkpoint+criu"},
+        "checkpoint_tool_digest": {"$ref": "#/$defs/digest"},
+        "criu_version": {"type": "string", "minLength": 1},
+        "criu_cuda_plugin_digest": {"$ref": "#/$defs/digest"},
+        "process_tree_digest": {"$ref": "#/$defs/digest"},
+        "donor_tuple_digest": {"$ref": "#/$defs/digest"},
+        "target_tuple_digest": {"$ref": "#/$defs/digest"},
+        "snapshot_digest": {"$ref": "#/$defs/shaDigest"},
+        "snapshot_bytes": {"type": "integer", "minimum": 1},
+        "same_chip_type": {"const": true},
+        "semantic_post_restore_passed": {"const": true},
+        "conventional_fallback_passed": {"const": true}
+      }
+    }
+  }
+}

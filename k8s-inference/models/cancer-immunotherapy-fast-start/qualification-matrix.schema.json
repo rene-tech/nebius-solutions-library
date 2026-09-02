@@ -1,0 +1,351 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/cancer-immunotherapy-fast-start-matrix/v1",
+  "title": "Cancer immunotherapy fast-start qualification matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "campaign_id",
+    "target",
+    "phase_contract",
+    "metric_contract",
+    "mechanism_contract",
+    "scenarios",
+    "tracks"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/cancer-immunotherapy-fast-start-matrix/v1"
+    },
+    "campaign_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "target": {"$ref": "#/$defs/target"},
+    "phase_contract": {"$ref": "#/$defs/stringSet"},
+    "metric_contract": {"$ref": "#/$defs/stringSet"},
+    "mechanism_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "regional_oci_image_cache",
+        "shared_artifact_cache",
+        "node_local_artifact_cache",
+        "host_ram_standby",
+        "hot_gpu_replica",
+        "cuda_criu_process_snapshot"
+      ],
+      "properties": {
+        "regional_oci_image_cache": {"$ref": "#/$defs/mechanism"},
+        "shared_artifact_cache": {"$ref": "#/$defs/mechanism"},
+        "node_local_artifact_cache": {"$ref": "#/$defs/mechanism"},
+        "host_ram_standby": {"$ref": "#/$defs/mechanism"},
+        "hot_gpu_replica": {"$ref": "#/$defs/mechanism"},
+        "cuda_criu_process_snapshot": {"$ref": "#/$defs/mechanism"}
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 8,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/scenario"}
+    },
+    "tracks": {
+      "type": "array",
+      "minItems": 13,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/track"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "shaDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "nullableShaDigest": {
+      "oneOf": [{"$ref": "#/$defs/shaDigest"}, {"type": "null"}]
+    },
+    "nullableRevision": {
+      "oneOf": [
+        {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        {"$ref": "#/$defs/shaDigest"},
+        {"type": "null"}
+      ]
+    },
+    "stringSet": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "region",
+        "cluster_context",
+        "gpu_product",
+        "capacity_policy",
+        "local_nvme_model_cache_available",
+        "h100_mutation_gate",
+        "live_inventory_state"
+      ],
+      "properties": {
+        "project": {"const": "project-e00rene"},
+        "region": {"const": "us-north1"},
+        "cluster_context": {"const": "fs2-serve-usn1"},
+        "gpu_product": {"const": "NVIDIA H100 80GB HBM3"},
+        "capacity_policy": {"const": "preserve-shared-tenants"},
+        "local_nvme_model_cache_available": {"const": false},
+        "h100_mutation_gate": {"const": "wait-for-immutable-runtime-assets-merged"},
+        "live_inventory_state": {
+          "enum": ["unreachable-dns", "read-only-observed", "not-attempted"]
+        }
+      }
+    },
+    "mechanism": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim", "resource_state", "required_evidence"],
+      "properties": {
+        "claim": {"type": "string", "minLength": 1},
+        "resource_state": {
+          "enum": ["available-platform", "gated", "unavailable-platform"]
+        },
+        "required_evidence": {"$ref": "#/$defs/stringSet"}
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "repetitions",
+        "required",
+        "controlled_change",
+        "capacity_state",
+        "factors",
+        "claim_boundary"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "repetitions": {"type": "integer", "minimum": 3},
+        "required": {"type": "boolean"},
+        "controlled_change": {"type": "string", "minLength": 1},
+        "capacity_state": {
+          "enum": ["fresh-node", "prepared-node", "warm-steady-state"]
+        },
+        "factors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["image", "artifact", "process", "failure_injection"],
+          "properties": {
+            "image": {"enum": ["miss", "hit"]},
+            "artifact": {"enum": ["miss", "hit"]},
+            "process": {
+              "enum": ["absent", "host-ram-resident", "gpu-hot", "snapshot-restored"]
+            },
+            "failure_injection": {
+              "enum": ["none", "corrupt-snapshot", "preemption", "restore-tool-failure"]
+            }
+          }
+        },
+        "claim_boundary": {"type": "string", "minLength": 1}
+      }
+    },
+    "access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "state",
+        "one_time_action",
+        "credential_material_embedded",
+        "licensed_payload_embedded"
+      ],
+      "properties": {
+        "class": {
+          "enum": ["public", "academic-terms", "ngc-entitlement", "ambiguous"]
+        },
+        "state": {
+          "enum": ["missing", "unverified", "candidate-local", "resolved", "staged-quarantined", "rejected-quarantined"]
+        },
+        "one_time_action": {"type": ["string", "null"]},
+        "credential_material_embedded": {"const": false},
+        "licensed_payload_embedded": {"const": false}
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "source_ref",
+        "source_revision",
+        "runtime_image_digest",
+        "model_artifact_digest"
+      ],
+      "properties": {
+        "state": {
+          "enum": ["blocked-awaiting-merge", "candidate-existing-contract", "locked"]
+        },
+        "source_ref": {"type": ["string", "null"]},
+        "source_revision": {"$ref": "#/$defs/nullableRevision"},
+        "runtime_image_digest": {"$ref": "#/$defs/nullableShaDigest"},
+        "model_artifact_digest": {"$ref": "#/$defs/nullableShaDigest"}
+      }
+    },
+    "mechanismStates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "regional_oci_image_cache",
+        "shared_artifact_cache",
+        "node_local_artifact_cache",
+        "host_ram_standby",
+        "hot_gpu_replica",
+        "cuda_criu_process_snapshot"
+      ],
+      "properties": {
+        "regional_oci_image_cache": {"enum": ["planned", "candidate", "gated"]},
+        "shared_artifact_cache": {"enum": ["planned", "candidate", "gated"]},
+        "node_local_artifact_cache": {"const": "unavailable-platform"},
+        "host_ram_standby": {"enum": ["planned", "candidate", "gated", "not-applicable"]},
+        "hot_gpu_replica": {"enum": ["planned", "candidate", "gated"]},
+        "cuda_criu_process_snapshot": {"enum": ["gated", "negative-evidence", "candidate"]}
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "backend", "reason", "proof_requirements"],
+      "properties": {
+        "state": {"enum": ["gated", "negative-evidence", "candidate"]},
+        "backend": {"enum": ["cuda-checkpoint+criu", "none"]},
+        "reason": {"type": "string", "minLength": 1},
+        "proof_requirements": {"$ref": "#/$defs/stringSet"}
+      }
+    },
+    "runtimeUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit_id",
+        "role",
+        "identity",
+        "evidence_partition_key",
+        "framework",
+        "process_topology",
+        "access",
+        "mechanisms",
+        "snapshot",
+        "semantic_fixture_id",
+        "dominant_risks",
+        "optimization_order",
+        "ready_for_live_trials"
+      ],
+      "properties": {
+        "unit_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "role": {"enum": ["standalone", "workflow-stage"]},
+        "identity": {"$ref": "#/$defs/identity"},
+        "evidence_partition_key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "framework": {
+          "enum": ["pytorch", "jax", "pyrosetta", "mixed", "unknown"]
+        },
+        "process_topology": {"$ref": "#/$defs/stringSet"},
+        "access": {"$ref": "#/$defs/access"},
+        "mechanisms": {"$ref": "#/$defs/mechanismStates"},
+        "snapshot": {"$ref": "#/$defs/snapshot"},
+        "semantic_fixture_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "dominant_risks": {"$ref": "#/$defs/stringSet"},
+        "optimization_order": {"$ref": "#/$defs/stringSet"},
+        "ready_for_live_trials": {"type": "boolean"}
+      }
+    },
+    "customerState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requested_level",
+        "assigned_level",
+        "effective_level",
+        "qualified_level",
+        "expected_startup_range_seconds",
+        "reason"
+      ],
+      "properties": {
+        "requested_level": {"type": ["string", "null"]},
+        "assigned_level": {"type": ["string", "null"]},
+        "effective_level": {"const": "Off"},
+        "qualified_level": {"type": "null"},
+        "expected_startup_range_seconds": {"type": "null"},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage_order",
+        "stage_evidence_policy",
+        "workflow_receipt_policy",
+        "semantic_gate"
+      ],
+      "properties": {
+        "stage_order": {"$ref": "#/$defs/stringSet"},
+        "stage_evidence_policy": {"const": "separate-exact-runtime-receipts"},
+        "workflow_receipt_policy": {"const": "references-all-stage-receipts-no-substitution"},
+        "semantic_gate": {"type": "string", "minLength": 1}
+      }
+    },
+    "track": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "track_id",
+        "requested_name",
+        "lane_kind",
+        "evidence_classification",
+        "runtime_units",
+        "workflow",
+        "customer_state",
+        "fallback"
+      ],
+      "properties": {
+        "track_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "requested_name": {"type": "string", "minLength": 1},
+        "lane_kind": {
+          "enum": ["primary", "native-academic", "fallback", "comparison", "workflow"]
+        },
+        "evidence_classification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source_runtime", "h100_startup", "snapshot", "semantic", "basis"],
+          "properties": {
+            "source_runtime": {
+              "enum": ["source-analysis-only", "candidate-existing-contract", "gated-licensed-artifact"]
+            },
+            "h100_startup": {
+              "enum": ["not-measured-current-campaign", "historical-handoff-only"]
+            },
+            "snapshot": {
+              "enum": ["not-tested", "negative-historical", "not-applicable"]
+            },
+            "semantic": {
+              "enum": ["fixture-blocked", "fixture-candidate-unexecuted"]
+            },
+            "basis": {"$ref": "#/$defs/stringSet"}
+          }
+        },
+        "runtime_units": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/runtimeUnit"}
+        },
+        "workflow": {
+          "oneOf": [{"$ref": "#/$defs/workflow"}, {"type": "null"}]
+        },
+        "customer_state": {"$ref": "#/$defs/customerState"},
+        "fallback": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

@@ -1,0 +1,334 @@
+{
+  "schema": "fs2-serve.nebius.ai/cancer-immunotherapy-semantic-fixtures/v1",
+  "fixtures": [
+    {
+      "id": "rfdiffusion-pdb-two-distinct",
+      "state": "candidate-existing-contract",
+      "request_count": 2,
+      "distinct_requests": true,
+      "request_sources": [
+        {
+          "path": "catalog/runtime/packaged-repository/nim-fast-start/faststart-v2/rfdiffusion-native/validate_rfdiffusion.py",
+          "sha256": "691ee7d60aaf22f32cb05bb7c67fa0552b656f0d549015f3297516e1dd7b2317"
+        },
+        {
+          "path": "catalog/runtime/packaged-repository/nim-fast-start/faststart-v2/rfdiffusion-native/fixtures/1UBQ.pdb",
+          "sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161"
+        }
+      ],
+      "request_payloads_embedded": false,
+      "licensed_payloads_embedded": false,
+      "credential_material_embedded": false,
+      "input_provenance": {
+        "kind": "repository fixture derived from PDB 1UBQ",
+        "license": "PDB entry terms plus repository validator provenance",
+        "notes": "Existing validator constructs two distinct backbone-generation requests; it must execute against the exact H100 runtime."
+      },
+      "oracle": [
+        "both responses pass the repository RFdiffusion structural validator",
+        "request and response hashes are distinct and output contains a non-empty protein backbone"
+      ],
+      "work_unit": "one successful validated backbone generation per request",
+      "first_result_boundary": "validated-response-complete",
+      "blockers": [
+        "NGC entitlement and immutable artifact manifest remain unresolved",
+        "no current-campaign H100 execution"
+      ]
+    },
+    {
+      "id": "proteinmpnn-1ubq-two-distinct",
+      "state": "candidate-existing-contract",
+      "request_count": 2,
+      "distinct_requests": true,
+      "request_sources": [
+        {
+          "path": "catalog/runtime/packaged-repository/nim-fast-start/faststart-v2/proteinmpnn-native/validate_proteinmpnn.py",
+          "sha256": "2e3c21af0987f4b9c7da2cef3f3e4d210a7b223049f231c24e871e2a553b48d3"
+        },
+        {
+          "path": "catalog/runtime/packaged-repository/nim-fast-start/faststart-v2/proteinmpnn-native/fixtures/1ubq-request.json",
+          "sha256": "42511546f59eb92479149df1fad8d713ae00176b89316b07a83d04586905938e"
+        }
+      ],
+      "request_payloads_embedded": false,
+      "licensed_payloads_embedded": false,
+      "credential_material_embedded": false,
+      "input_provenance": {
+        "kind": "repository 1UBQ sequence-design request",
+        "license": "repository fixture provenance; underlying PDB terms",
+        "notes": "Existing validator derives two distinct requests and checks non-empty distinct sequences."
+      },
+      "oracle": [
+        "both responses pass the ProteinMPNN sequence validator",
+        "returned amino-acid sequences are non-empty, valid, and distinct"
+      ],
+      "work_unit": "one successful validated sequence design per request",
+      "first_result_boundary": "validated-response-complete",
+      "blockers": [
+        "NGC entitlement and immutable artifact manifest remain unresolved",
+        "no current-campaign H100 execution"
+      ]
+    },
+    {
+      "id": "openfold3-20aa-two-distinct",
+      "state": "candidate-existing-contract",
+      "request_count": 2,
+      "distinct_requests": true,
+      "request_sources": [
+        {
+          "path": "catalog/runtime/packaged-repository/nim-fast-start/faststart-v2/openfold3-native/validate_openfold3.py",
+          "sha256": "679b3e027b18e78b4646569e8c6395fb5f62c4647704bb5089aa2385a20d11f5"
+        },
+        {
+          "path": "catalog/runtime/packaged-repository/nim-fast-start/faststart-v2/openfold3-native/fixtures/request-20aa.json",
+          "sha256": "09b30bf2132e3764f99d4f417b47713cd6350bd332fe3100cceb1be11589f8ae"
+        }
+      ],
+      "request_payloads_embedded": false,
+      "licensed_payloads_embedded": false,
+      "credential_material_embedded": false,
+      "input_provenance": {
+        "kind": "repository synthetic 20-amino-acid requests",
+        "license": "repository fixture provenance",
+        "notes": "OpenFold3 is the primary operational AlphaFold3 alternative; NIM and upstream-package evidence remain separate."
+      },
+      "oracle": [
+        "both responses pass the repository OpenFold3 structure validator",
+        "two distinct requests produce structurally parseable, non-empty results"
+      ],
+      "work_unit": "one successful validated structure prediction per request",
+      "first_result_boundary": "validated-response-complete",
+      "blockers": [
+        "NGC entitlement and NIM artifact manifest remain unresolved",
+        "no current-campaign H100 execution"
+      ]
+    },
+    {
+      "id": "proteina-complexa-pdl1-two-designs",
+      "state": "blocked-runtime-contract",
+      "request_count": 2,
+      "distinct_requests": true,
+      "request_sources": [],
+      "request_payloads_embedded": false,
+      "licensed_payloads_embedded": false,
+      "credential_material_embedded": false,
+      "input_provenance": {
+        "kind": "planned public scientific target fixture",
+        "license": "public PDL1 structure provenance to be recorded at fixture merge",
+        "notes": "Base the pair on the upstream 02_PDL1 example while changing a controlled design seed or allowed design region."
+      },
+      "oracle": [
+        "each request completes the selected Complexa variant and returns a parseable candidate complex",
+        "the two request identities and candidate outputs are distinct and retain the declared PDL1 target chains"
+      ],
+      "work_unit": "one end-to-end candidate complex per request",
+      "first_result_boundary": "validated-workflow-complete",
+      "blockers": [
+        "exact Complexa variant/checkpoint pair not selected",
+        "immutable request files and validator not merged"
+      ]
+    },
+    {
+      "id": "boltzgen-1g13-two-designs",
+      "state": "blocked-runtime-contract",
+      "request_count": 2,
+      "distinct_requests": true,
+      "request_sources": [],
+      "request_payloads_embedded": false,
+      "licensed_payloads_embedded": false,
+      "credential_material_embedded": false,
+      "input_provenance": {
+        "kind": "planned upstream-example-derived fixture",
+        "license": "upstream example and target-structure provenance to be recorded at fixture merge",
+        "notes": "Derive two controlled requests from example/vanilla_protein/1g13prot.yaml without embedding private designs."
+      },
+      "oracle": [
+        "all seven declared workflow stages finish for both requests",
+        "final candidates are structurally parseable, non-empty, and traceable to distinct request hashes"
+      ],
+      "work_unit": "one complete BoltzGen candidate set per request",
+      "first_result_boundary": "validated-workflow-complete",
+      "blockers": [
+        "floating model artifacts not pinned",
+        "immutable request pair and validator not merged"
+      ]
+    },
+    {
+      "id": "mosaic-backend-specific-two-designs",
+      "state": "blocked-runtime-contract",
+      "request_count": 2,
+      "distinct_requests": true,
+      "request_sources": [],
+      "request_payloads_embedded": false,
+      "licensed_payloads_embedded": false,
+      "credential_material_embedded": false,
+      "input_provenance": {
+        "kind": "planned backend-specific public fixture",
+        "license": "depends on selected backend and public target provenance",
+        "notes": "A matrix fixture cannot exist until one exact mosaic backend/objective/configuration/shape contract is selected."
+      },
+      "oracle": [
+        "both exact-backend requests complete the declared objective",
+        "outputs satisfy a backend-specific semantic oracle and differ by controlled request input"
+      ],
+      "work_unit": "one selected mosaic objective completion per request",
+      "first_result_boundary": "validated-workflow-complete",
+      "blockers": [
+        "mosaic executable composition unresolved",
+        "immutable request pair and validator not merged"
+      ]
+    },
+    {
+      "id": "esmfold2-two-sequences",
+      "state": "blocked-runtime-contract",
+      "request_count": 2,
+      "distinct_requests": true,
+      "request_sources": [],
+      "request_payloads_embedded": false,
+      "licensed_payloads_embedded": false,
+      "credential_material_embedded": false,
+      "input_provenance": {
+        "kind": "planned synthetic amino-acid sequences",
+        "license": "synthetic inputs; model artifact terms to be recorded separately",
+        "notes": "Use two short, distinct, deterministic sequences within the qualified length envelope."
+      },
+      "oracle": [
+        "both responses are parseable protein structures with expected residue counts",
+        "confidence fields are finite and the two response hashes differ"
+      ],
+      "work_unit": "one structure prediction per sequence",
+      "first_result_boundary": "validated-response-complete",
+      "blockers": [
+        "ESMFold2 requested identity is not yet resolved against the inspected ESMFold v1 artifact",
+        "validator and request hashes not merged"
+      ]
+    },
+    {
+      "id": "esmfold2-fast-two-sequences",
+      "state": "blocked-runtime-contract",
+      "request_count": 2,
+      "distinct_requests": true,
+      "request_sources": [],
+      "request_payloads_embedded": false,
+      "licensed_payloads_embedded": false,
+      "credential_material_embedded": false,
+      "input_provenance": {
+        "kind": "planned synthetic amino-acid sequences",
+        "license": "synthetic inputs; model artifact terms to be recorded separately",
+        "notes": "Use the same scientific inputs as ESMFold2 only after the Fast runtime/configuration identity is separately fixed."
+      },
+      "oracle": [
+        "both responses are parseable protein structures with expected residue counts",
+        "Fast-specific configuration is present in receipt identity and response hashes differ"
+      ],
+      "work_unit": "one Fast-lane structure prediction per sequence",
+      "first_result_boundary": "validated-response-complete",
+      "blockers": [
+        "Fast runtime/configuration contract unresolved",
+        "validator and immutable request hashes not merged"
+      ]
+    },
+    {
+      "id": "protenix-v2-two-complexes",
+      "state": "blocked-runtime-contract",
+      "request_count": 2,
+      "distinct_requests": true,
+      "request_sources": [],
+      "request_payloads_embedded": false,
+      "licensed_payloads_embedded": false,
+      "credential_material_embedded": false,
+      "input_provenance": {
+        "kind": "planned upstream-example-derived public fixtures",
+        "license": "upstream example provenance plus Protenix model terms to be recorded",
+        "notes": "Select two distinct small official example complexes after the v2 checkpoint is obtained through an authorized path."
+      },
+      "oracle": [
+        "both outputs are parseable structures matching declared entity/residue counts",
+        "confidence metrics are finite and each output is bound to its exact input hash"
+      ],
+      "work_unit": "one Protenix v2 complex prediction per request",
+      "first_result_boundary": "validated-response-complete",
+      "blockers": [
+        "official protenix-v2.pt returned HTTP 403 on 2026-09-02",
+        "checkpoint SHA-256, request pair, and validator absent"
+      ]
+    },
+    {
+      "id": "alphafold3-academic-two-complexes",
+      "state": "blocked-runtime-contract",
+      "request_count": 2,
+      "distinct_requests": true,
+      "request_sources": [],
+      "request_payloads_embedded": false,
+      "licensed_payloads_embedded": false,
+      "credential_material_embedded": false,
+      "input_provenance": {
+        "kind": "planned official-example-derived academic fixture",
+        "license": "AlphaFold3 code/output terms and accepted non-commercial model-parameter terms",
+        "notes": "Use official ubiquitin monomer and KRAS G12C/sotorasib examples only after the authorized academic acceptance and restricted artifact custody are recorded."
+      },
+      "oracle": [
+        "both jobs produce parseable AlphaFold3 output bundles with finite confidence values",
+        "the monomer and protein-ligand results match their distinct input manifests and declared entities"
+      ],
+      "work_unit": "one complete AlphaFold3 prediction per official example",
+      "first_result_boundary": "validated-response-complete",
+      "blockers": [
+        "authorized academic acceptance record absent",
+        "af3.bin.zst not downloaded, hashed, or staged",
+        "runtime and validator not merged"
+      ]
+    },
+    {
+      "id": "bindcraft-native-pdl1-two-binders",
+      "state": "blocked-runtime-contract",
+      "request_count": 2,
+      "distinct_requests": true,
+      "request_sources": [],
+      "request_payloads_embedded": false,
+      "licensed_payloads_embedded": false,
+      "credential_material_embedded": false,
+      "input_provenance": {
+        "kind": "planned public PDL1 target fixture",
+        "license": "public target provenance plus institutional PyRosetta academic acceptance",
+        "notes": "Two deterministic native BindCraft requests differ by seed/design constraint and must include native PyRosetta scoring."
+      },
+      "oracle": [
+        "both requests complete AF2 design, ProteinMPNN, AF2 refold, and PyRosetta scoring",
+        "each candidate passes declared interface/confidence thresholds and is traceable to a distinct request hash"
+      ],
+      "work_unit": "one fully filtered native BindCraft binder per request",
+      "first_result_boundary": "validated-workflow-complete",
+      "blockers": [
+        "exact PyRosetta serialized academic wheel and acceptance record absent",
+        "immutable runtime, request pair, and validator not merged"
+      ]
+    },
+    {
+      "id": "freebindcraft-pdl1-two-binders",
+      "state": "blocked-runtime-contract",
+      "request_count": 2,
+      "distinct_requests": true,
+      "request_sources": [],
+      "request_payloads_embedded": false,
+      "licensed_payloads_embedded": false,
+      "credential_material_embedded": false,
+      "input_provenance": {
+        "kind": "planned public PDL1 target fixture",
+        "license": "public target and FreeBindCraft dependency terms",
+        "notes": "Keep thresholds comparable to the native BindCraft fixture, while reporting semantic differences caused by the PyRosetta-free/OpenMM lane."
+      },
+      "oracle": [
+        "both requests complete every declared PyRosetta-free stage",
+        "each candidate passes lane-specific structure/interface checks and is traceable to a distinct request hash"
+      ],
+      "work_unit": "one fully filtered PyRosetta-free binder per request",
+      "first_result_boundary": "validated-workflow-complete",
+      "blockers": [
+        "immutable dependency/checkpoint graph absent",
+        "OpenMM backend and H100 behavior not fixed",
+        "request pair and validator not merged"
+      ]
+    }
+  ]
+}

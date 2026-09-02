@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/cancer-immunotherapy-semantic-fixtures/v1",
+  "title": "Cancer immunotherapy fast-start semantic fixture registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "fixtures"],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/cancer-immunotherapy-semantic-fixtures/v1"
+    },
+    "fixtures": {
+      "type": "array",
+      "minItems": 10,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/fixture"}
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "request_count",
+        "distinct_requests",
+        "request_sources",
+        "request_payloads_embedded",
+        "licensed_payloads_embedded",
+        "credential_material_embedded",
+        "input_provenance",
+        "oracle",
+        "work_unit",
+        "first_result_boundary",
+        "blockers"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "state": {
+          "enum": ["blocked-runtime-contract", "candidate-existing-contract"]
+        },
+        "request_count": {"const": 2},
+        "distinct_requests": {"const": true},
+        "request_sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/source"}
+        },
+        "request_payloads_embedded": {"const": false},
+        "licensed_payloads_embedded": {"const": false},
+        "credential_material_embedded": {"const": false},
+        "input_provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "license", "notes"],
+          "properties": {
+            "kind": {"type": "string", "minLength": 1},
+            "license": {"type": "string", "minLength": 1},
+            "notes": {"type": "string", "minLength": 1}
+          }
+        },
+        "oracle": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "work_unit": {"type": "string", "minLength": 1},
+        "first_result_boundary": {
+          "enum": ["validated-response-complete", "validated-workflow-complete"]
+        },
+        "blockers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "campaign": "cancer-immunotherapy-h100-prepared-node-20260903",
+  "cluster": {"context":"k8s-inference-h100","project":"project-e00rene","region":"eu-north1","gpu":"NVIDIA H100 SXM5","kubeconfig":"retained deployment kubeconfig"},
+  "policy": "task-owned resources only; no snapshot claims; clean resources after each campaign",
+  "observed": [{"model":"mosaic","image_digest":"sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69","pod":"mosaic-b0e973476007f483-aggregate-hbsdz","status":"Completed","semantic_receipt":"models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-semantic-qualification.json","trial_count":1}],
+  "pending": ["Mosaic prepared-node trials 2-3", "BoltzGen three prepared-node trials", "AlphaFold3 no-data-pipeline three trials; verify exact academic mount"],
+  "truth_boundary": "Pod completion is not startup qualification; queue/image/artifact/load/warmup/TTFR/throughput/utilization/teardown receipts are required for promotion."
+}
