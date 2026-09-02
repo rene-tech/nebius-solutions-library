@@ -233,6 +233,8 @@ def _validate_activation_policy(policy: Any) -> None:
             "embed_licensed_bytes_in_images",
             "world_readable_licensed_bytes",
             "credentials_in_contracts_or_state",
+            "license_gate_scope",
+            "request_time_license_receipt_required",
             "rationale",
         },
         label="activation_policy",
@@ -254,6 +256,13 @@ def _validate_activation_policy(policy: Any) -> None:
     _require_bool(policy["general_shared_cache_allowed"], False, label="general_shared_cache_allowed")
     _require_bool(policy["embed_licensed_bytes_in_images"], False, label="embed_licensed_bytes_in_images")
     _require_bool(policy["world_readable_licensed_bytes"], False, label="world_readable_licensed_bytes")
+    # Licence terms bind ingestion and deployment once. Turning them into a
+    # per-request gate would make an authorized model unusable in practice.
+    if policy["license_gate_scope"] != "one-time-ingestion-and-deployment":
+        raise IngestionError("InvalidInput", "licence gating must be scoped to ingestion and deployment")
+    _require_bool(
+        policy["request_time_license_receipt_required"], False, label="request_time_license_receipt_required"
+    )
     _require_bool(policy["credentials_in_contracts_or_state"], False, label="credentials_in_contracts_or_state")
     for field in (
         "formal_acceptance_blocks_operational_poc",
@@ -434,13 +443,23 @@ def _validate_asset(asset_id: str, asset: dict[str, Any]) -> None:
         raise IngestionError("InvalidInput", f"{asset_id} volume root must not be world-accessible")
 
     consumption = delivery["runtime_consumption"]
-    if not isinstance(consumption, dict) or set(consumption) != {"mode", "pythonpath", "per_request_install", "note"}:
+    if not isinstance(consumption, dict) or set(consumption) != {
+        "mode",
+        "pythonpath",
+        "per_request_install",
+        "request_time_license_receipt_required",
+        "note",
+    }:
         raise IngestionError("InvalidInput", f"{asset_id} runtime_consumption is invalid")
     if consumption["mode"] not in {"preinstalled-site-packages", "direct-parameter-mount"}:
         raise IngestionError("InvalidInput", f"{asset_id} runtime consumption mode is unsupported")
     if consumption["per_request_install"] is not False:
         raise IngestionError(
             "InvalidInput", f"{asset_id} must not install a licensed distribution per request"
+        )
+    if consumption["request_time_license_receipt_required"] is not False:
+        raise IngestionError(
+            "InvalidInput", f"{asset_id} must not demand a licence receipt on every inference request"
         )
     if consumption["mode"] == "preinstalled-site-packages":
         pythonpath = _require_nonempty_string(consumption["pythonpath"], label=f"{asset_id} pythonpath")
@@ -537,6 +556,7 @@ def _validate_asset(asset_id: str, asset: dict[str, Any]) -> None:
         image = runtime.get("runtime_image")
         required_image = {"repository", "tag", "source_tag", "contains_licensed_bytes", "build_context"}
         optional_image = {
+            "digest",
             "packaged_distribution_version",
             "expected_distribution_version",
             "identity_mismatch",
@@ -560,6 +580,8 @@ def _validate_asset(asset_id: str, asset: dict[str, Any]) -> None:
             raise IngestionError("InvalidInput", f"{asset_id} runtime image must not contain licensed bytes")
         if image["source_tag"] != offline["source_tag"]:
             raise IngestionError("InvalidInput", f"{asset_id} runtime image is not built from the pinned tag")
+        if "digest" in image and not OCI_DIGEST_RE.fullmatch(str(image["digest"])):
+            raise IngestionError("InvalidInput", f"{asset_id} runtime image digest is invalid")
     else:
         minimum = offline.get("expect_decompressed_min_bytes")
         if not isinstance(minimum, int) or minimum <= 0:
@@ -1282,6 +1304,12 @@ def validate_stage_receipt(
     if stage == "runtime":
         if not OCI_DIGEST_RE.fullmatch(str(receipt["image_digest"])):
             raise IngestionError("InvalidEvidence", "runtime validation image digest is invalid")
+        declared_image = spec["runtime"].get("runtime_image") or {}
+        declared_digest = declared_image.get("digest")
+        if declared_digest and receipt["image_digest"] != declared_digest:
+            raise IngestionError(
+                "InvalidEvidence", "runtime evidence did not run against the pinned runtime image"
+            )
         if receipt["image_contains_licensed_bytes"] is not False:
             raise IngestionError("InvalidEvidence", "the validating image must not contain licensed bytes")
         if receipt["asset_delivery_mode"] != spec["delivery"]["mode"]:
@@ -1372,10 +1400,12 @@ def asset_readiness(
         "runtime_status": "MissingRuntimeValidation",
         "deployment_status": "MissingDeployment",
         "semantic_status": "MissingSemanticReadiness",
+        "serving_admission": "PendingRuntimeReadiness",
         "delivery_mode": spec["delivery"]["mode"],
         "embed_in_image": spec["delivery"]["embed_in_image"],
         "artifact_sha256": None,
         "runtime_image_digest": None,
+        "runtime_environment_digest": None,
         "authorization_receipt_sha256": None,
         "acceptance_receipt_sha256": None,
     }
@@ -1444,9 +1474,17 @@ def asset_readiness(
             projection["state"] = invalid_state
             return projection
         projection[field] = ready_value
+        if stage == "runtime" and projection["runtime_status"] == "RuntimeReady":
+            pass
         if stage == "runtime":
             image_digest = receipt["image_digest"]
-            projection["runtime_image_digest"] = image_digest
+            # The image that ran the validation is not automatically a published
+            # runtime image. Report it as the validation environment, and only
+            # populate runtime_image_digest when the contract declares a published
+            # image for this asset.
+            projection["runtime_environment_digest"] = image_digest
+            if (spec["runtime"].get("runtime_image") or {}).get("digest"):
+                projection["runtime_image_digest"] = image_digest
             # The runtime proof is real, but a runtime image whose packaged identity
             # disagrees with its pinned tag is not a finished runtime. Report the
             # passing evidence and hold short of RuntimeReady until the rebuilt image
@@ -1457,6 +1495,10 @@ def asset_readiness(
                 projection["state"] = "ImageRebuildPending"
                 return projection
         projection["state"] = next_state
+        if stage == "runtime":
+            # Operationally usable: the authorized asset is mounted and proven, and
+            # no caller-supplied licence receipt is required on an inference request.
+            projection["serving_admission"] = "AdmittedNoPerRequestLicenseReceipt"
     return projection
 
 
@@ -1677,6 +1719,7 @@ def resolve_asset(args: argparse.Namespace, contract: dict[str, Any]) -> dict[st
         "generation": generation,
         "asset_id": args.asset_id,
         "sha256": item["artifact"]["sha256"],
+        "serving_admission": "PendingRuntimeReadiness",
         "delivery_mode": spec["delivery"]["mode"],
         "mount_path": spec["delivery"]["mount_path"],
         "path": str(path),

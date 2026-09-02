@@ -23,7 +23,12 @@
     "registry_id": "registry-e00akg9ndpx77eaexh"
   },
   "note": "Generated environment binding for one deployment. The reusable contract deliberately carries no project, region, cluster, volume or registry identity; those are observed here and in stage receipts so the contract stays portable.",
-  "observed_at": "2026-09-02T23:40:00Z",
+  "observed_at": "2026-09-03T00:20:00Z",
+  "open_items": [
+    "Serving deployment and model-level semantic readiness for both models belong to the runtime onboarding work; they are truthfully reported as missing here.",
+    "Formal institutional licence acceptance is outstanding and is deliberately not synthesized; it does not block the authorized proof-of-concept path.",
+    "Native BindCraft has no published runtime image yet; it consumes the preinstalled tenant-private site-packages tree via PYTHONPATH when that image exists."
+  ],
   "retained_quarantine_volume": {
     "claim": "cancer-immunotherapy-academic-assets-rwx-v1",
     "namespace": "fs2-models",
@@ -33,5 +38,53 @@
     "reconciliation": "Contents were enumerated by digest: it holds one byte-identical duplicate of the AlphaFold 3 object already on the canonical volume, plus the rejected 2025.24 conda archive that the contract says to retain and never activate. Nothing unique to the canonical runtime path lives here.",
     "runtime_mountable": false
   },
-  "schema": "fs2-serve.nebius.ai/academic-assets-acceptance-state/v1"
+  "runtime_images": {
+    "alphafold3": {
+      "contains_licensed_bytes": false,
+      "digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
+      "note": "Built from the official docker/Dockerfile at tag v3.0.4 with the tag object present, so the packaged identity is the exact release rather than a derived dev version.",
+      "packaged_distribution_version": "3.0.4",
+      "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3",
+      "source_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+      "tag": "v3.0.4"
+    },
+    "bindcraft": {
+      "digest": null,
+      "note": "No published runtime image yet. The offline validation ran in docker.io/library/python:3.10-slim, recorded separately as a validation environment and never as a model runtime image.",
+      "repository": null
+    }
+  },
+  "schema": "fs2-serve.nebius.ai/academic-assets-acceptance-state/v1",
+  "semantic_evidence": {
+    "alphafold3": {
+      "egress": "denied by NetworkPolicy, verified in-process",
+      "gpu": "NVIDIA H100 80GB HBM3, compute capability 9.0",
+      "identity": "ran as uid 12345 with supplemental group 65532, not the staging uid",
+      "inference": "5 samples produced, 6 CIF files, checked model has 113 ATOM records",
+      "job": "academic-af3-v304-semantic-v1",
+      "loaded_parameter_arrays": 405,
+      "loaded_parameter_elements": 368384602,
+      "loaded_scopes": 329,
+      "loader": "alphafold3.model.params.get_model_haiku_params via --model_dir=/opt/fs2/academic/alphafold3",
+      "parameter_device": "cuda:0",
+      "timing_class": "prepared-node (image already pulled); not a fresh-node cold start"
+    },
+    "installed_tree": {
+      "atomic_promotion": true,
+      "files_installed": 8697,
+      "job": "academic-tree-installer-pyrosetta-bindcraft-4383d8d1",
+      "modes": "8681 files at 0440, 796 directories at 0550, all group 65532",
+      "verified_paths": 9477,
+      "world_or_group_writable_paths": 0
+    },
+    "pyrosetta-bindcraft": {
+      "egress": "denied by NetworkPolicy, verified in-process",
+      "functional_proof": "10-residue pose scored at 29.967244",
+      "identity": "ran as uid 12345 with supplemental group 65532",
+      "import_origin": "/runtime/pyrosetta-bindcraft/site-packages",
+      "installed_distribution_version": "2026.29+releasequarterly.80a0635615",
+      "job": "academic-pyrosetta-offline-import-v2",
+      "wheel_mode": "0440, not world-readable, not group-writable"
+    }
+  }
 }

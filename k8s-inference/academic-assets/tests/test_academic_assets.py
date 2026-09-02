@@ -314,6 +314,7 @@ class AcademicAssetTestCase(unittest.TestCase):
         installed = (
             offline["expect_version"] if offline["kind"] == "python-import" else spec["artifact"]["version"]
         )
+        declared = (spec["runtime"].get("runtime_image") or {}).get("digest")
         receipt = {
             "schema": "fs2-serve.nebius.ai/academic-runtime-receipt/v3",
             "asset_id": asset_id,
@@ -321,7 +322,9 @@ class AcademicAssetTestCase(unittest.TestCase):
             "observed_at": "2026-09-02T22:15:00Z",
             "tenant_id": TENANT,
             "institution_id": None,
-            "image_digest": "sha256:" + "1" * 64,
+            # Where the contract pins a published runtime image, the validation must
+            # have run against exactly that image.
+            "image_digest": declared or ("sha256:" + "1" * 64),
             "image_contains_licensed_bytes": False,
             "asset_delivery_mode": "tenant-private-volume",
             "offline_validation_kind": offline["kind"],
@@ -349,7 +352,8 @@ class AcademicAssetTestCase(unittest.TestCase):
             "tenant_id": TENANT,
             "institution_id": None,
             "model_id": spec["model_id"],
-            "image_digest": "sha256:" + "1" * 64,
+            "image_digest": (spec["runtime"].get("runtime_image") or {}).get("digest")
+            or ("sha256:" + "1" * 64),
             "deployed": True,
             "resource_uid": "uid-test",
         }
@@ -366,7 +370,8 @@ class AcademicAssetTestCase(unittest.TestCase):
             "tenant_id": TENANT,
             "institution_id": None,
             "model_id": spec["model_id"],
-            "image_digest": "sha256:" + "1" * 64,
+            "image_digest": (spec["runtime"].get("runtime_image") or {}).get("digest")
+            or ("sha256:" + "1" * 64),
             "passed": True,
             "validator_digest": "sha256:" + "2" * 64,
         }
@@ -625,7 +630,12 @@ class ReadinessStateMachineTests(AcademicAssetTestCase):
             self.assertEqual("Ready", item["state"])
             self.assertEqual("TenantCacheReady", item["tenant_cache_status"])
             self.assertEqual("RuntimeReady", item["runtime_status"])
-            self.assertEqual("sha256:" + "1" * 64, item["runtime_image_digest"])
+            declared = (
+                self.contract_document["assets"][item["asset_id"]]["runtime"].get("runtime_image") or {}
+            ).get("digest")
+            # A validation environment is never reported as a published image.
+            self.assertEqual(declared, item["runtime_image_digest"])
+            self.assertIsNotNone(item["runtime_environment_digest"])
 
     def test_runtime_path_is_ready_before_deployment_and_semantic_evidence(self) -> None:
         self.ingest("poc-runtime")
@@ -679,6 +689,70 @@ class ReadinessStateMachineTests(AcademicAssetTestCase):
         with self.assertRaises(aa.IngestionError) as caught:
             aa.load_contract(self.contract_path)
         self.assertIn("revalidation", caught.exception.message)
+
+    def test_validation_environment_is_never_reported_as_a_published_image(self) -> None:
+        """PyRosetta has no published runtime image, so its image digest stays null."""
+
+        self.ingest("poc-digest-separation")
+        for asset_id in ("alphafold3", "pyrosetta-bindcraft"):
+            projection = self.drive_to_ready(asset_id)
+        self.assert_schema_valid(projection)
+        pyrosetta = self.asset(projection, "pyrosetta-bindcraft")
+        alphafold3 = self.asset(projection, "alphafold3")
+        self.assertIsNone(pyrosetta["runtime_image_digest"])
+        self.assertIsNotNone(pyrosetta["runtime_environment_digest"])
+        declared = self.contract_document["assets"]["alphafold3"]["runtime"]["runtime_image"]["digest"]
+        self.assertEqual(declared, alphafold3["runtime_image_digest"])
+
+    def test_runtime_evidence_must_run_against_the_pinned_image(self) -> None:
+        self.ingest("poc-wrong-image")
+        self.record("alphafold3", "cache", self.cache_receipt("alphafold3"))
+        code, error = self.record(
+            "alphafold3", "runtime", self.runtime_receipt("alphafold3", image_digest="sha256:" + "9" * 64)
+        )
+        self.assertEqual(2, code)
+        self.assertIn("pinned runtime image", error["message"])
+
+    def test_licence_terms_are_not_a_per_request_admission_gate(self) -> None:
+        """An authorized, runtime-ready asset must be servable without a caller receipt."""
+
+        self.ingest("poc-admission")
+        for asset_id in ("alphafold3", "pyrosetta-bindcraft"):
+            self.record(asset_id, "cache", self.cache_receipt(asset_id))
+            if self.contract_document["assets"][asset_id]["delivery"]["install_mode"] != "none":
+                self.record(asset_id, "install", self.install_receipt(asset_id))
+            code, projection = self.record(asset_id, "runtime", self.runtime_receipt(asset_id))
+            self.assertEqual(0, code)
+        self.assert_schema_valid(projection)
+        for item in projection["assets"]:
+            with self.subTest(asset=item["asset_id"]):
+                self.assertEqual("AdmittedNoPerRequestLicenseReceipt", item["serving_admission"])
+                # Still truthfully pending on the formal axis, and still admitted.
+                self.assertEqual("FormalAcceptancePending", item["formal_license_status"])
+
+    def test_serving_is_not_admitted_before_the_runtime_is_proven(self) -> None:
+        self.ingest("poc-not-admitted")
+        code, projection = self.record("alphafold3", "cache", self.cache_receipt("alphafold3"))
+        self.assertEqual(0, code)
+        self.assert_schema_valid(projection)
+        for item in projection["assets"]:
+            self.assertEqual("PendingRuntimeReadiness", item["serving_admission"])
+
+    def test_contract_cannot_demand_a_licence_receipt_per_request(self) -> None:
+        document = copy.deepcopy(self.contract_document)
+        document["activation_policy"]["request_time_license_receipt_required"] = True
+        self.write_contract(document)
+        with self.assertRaises(aa.IngestionError):
+            aa.load_contract(self.contract_path)
+
+        document = copy.deepcopy(self.contract_document)
+        document["assets"]["alphafold3"]["delivery"]["runtime_consumption"][
+            "request_time_license_receipt_required"
+        ] = True
+        self.write_contract(document)
+        with self.assertRaises(aa.IngestionError) as caught:
+            aa.load_contract(self.contract_path)
+        self.assertIn("every inference request", caught.exception.message)
 
     def test_stage_order_is_enforced(self) -> None:
         self.ingest("poc-order")

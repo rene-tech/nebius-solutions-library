@@ -51,6 +51,7 @@ class CatalogAcademicAssetAdminAdapter:
             generation=document.get("generation"),
             runtime_path_state=document["runtime_path_state"],
             formal_license_state=document["formal_license_state"],
+            request_time_license_receipt_required=document["request_time_license_receipt_required"],
             delivery=AcademicAssetVolume(
                 namespace=delivery["namespace"],
                 claim=delivery["claim"],
@@ -63,6 +64,7 @@ class CatalogAcademicAssetAdminAdapter:
                     backend_id=model["backend_id"],
                     display_name=model["display_name"],
                     state=model["state"],
+                    serving_admission=model["serving_admission"],
                     use_authorization_status=model["use_authorization_status"],
                     execution_authorization_status=model["execution_authorization_status"],
                     formal_license_status=model["formal_license_status"],
@@ -75,6 +77,7 @@ class CatalogAcademicAssetAdminAdapter:
                     delivery=model["delivery"],
                     artifact_sha256=model["artifact_sha256"],
                     runtime_image_digest=model["runtime_image_digest"],
+                    runtime_environment_digest=model["runtime_environment_digest"],
                     alternative=model["alternative"],
                 )
                 for model in document["models"]

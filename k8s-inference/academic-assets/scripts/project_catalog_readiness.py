@@ -51,6 +51,7 @@ def build_projection(contract: dict[str, Any], readiness: dict[str, Any]) -> dic
                 "display_name": spec["display_name"],
                 "access_profile": "academic",
                 "state": state["state"],
+                "serving_admission": state["serving_admission"],
                 "artifact_status": state["artifact_status"],
                 "tenant_cache_status": state["tenant_cache_status"],
                 "runtime_status": state["runtime_status"],
@@ -62,6 +63,7 @@ def build_projection(contract: dict[str, Any], readiness: dict[str, Any]) -> dic
                 "license_id": spec["license"]["license_id"],
                 "artifact_sha256": state["artifact_sha256"],
                 "runtime_image_digest": state["runtime_image_digest"],
+                "runtime_environment_digest": state["runtime_environment_digest"],
                 "delivery": {
                     "mode": delivery["mode"],
                     "mount_path": delivery["mount_path"],
@@ -99,6 +101,9 @@ def build_projection(contract: dict[str, Any], readiness: dict[str, Any]) -> dic
         "generation": readiness["generation"],
         "runtime_path_state": readiness["runtime_path_state"],
         "formal_license_state": readiness["formal_license_state"],
+        "request_time_license_receipt_required": contract["activation_policy"][
+            "request_time_license_receipt_required"
+        ],
         "delivery": {
             "mode": "tenant-private-volume",
             "namespace": runtime_cache["pvc_namespace"],

@@ -769,6 +769,13 @@ class AcademicFormalLicenseStatus(StrEnum):
     RECORDED = "FormalAcceptanceRecorded"
 
 
+class AcademicServingAdmission(StrEnum):
+    """Licence terms gate ingestion once; they never gate an inference request."""
+
+    PENDING_RUNTIME_READINESS = "PendingRuntimeReadiness"
+    ADMITTED = "AdmittedNoPerRequestLicenseReceipt"
+
+
 class AcademicAssetDelivery(StrictModel):
     """Licensed bytes are mounted, never embedded in an image."""
 
@@ -792,6 +799,7 @@ class AcademicAssetReadiness(StrictModel):
     backend_id: str = Field(min_length=1, max_length=128)
     display_name: str = Field(min_length=1, max_length=256)
     state: AcademicAssetState
+    serving_admission: AcademicServingAdmission
     use_authorization_status: AcademicUseAuthorizationStatus
     execution_authorization_status: AcademicExecutionAuthorizationStatus
     formal_license_status: AcademicFormalLicenseStatus
@@ -803,7 +811,16 @@ class AcademicAssetReadiness(StrictModel):
     license_id: str = Field(min_length=1, max_length=256)
     delivery: AcademicAssetDelivery
     artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    runtime_image_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    runtime_image_digest: str | None = Field(
+        default=None,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+        description="Published runtime image for this model; null until such an image exists.",
+    )
+    runtime_environment_digest: str | None = Field(
+        default=None,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+        description="Image that executed the runtime validation, which is not necessarily a published runtime image.",
+    )
     alternative: AcademicAssetAlternative | None = None
 
 
@@ -821,6 +838,7 @@ class AcademicAssetReadinessList(StrictModel):
     generation: str | None = Field(default=None, max_length=64)
     runtime_path_state: Literal["Blocked", "Ready"]
     formal_license_state: Literal["Pending", "Recorded"]
+    request_time_license_receipt_required: Literal[False] = False
     delivery: AcademicAssetVolume
     items: list[AcademicAssetReadiness] = Field(max_length=64)
 

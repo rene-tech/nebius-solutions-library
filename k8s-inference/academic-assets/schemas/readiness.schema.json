@@ -79,6 +79,7 @@
           "backend_id",
           "display_name",
           "state",
+          "serving_admission",
           "use_authorization_status",
           "execution_authorization_status",
           "formal_license_status",
@@ -92,6 +93,7 @@
           "embed_in_image",
           "artifact_sha256",
           "runtime_image_digest",
+          "runtime_environment_digest",
           "authorization_receipt_sha256",
           "acceptance_receipt_sha256"
         ],
@@ -130,6 +132,13 @@
               "InvalidDeploymentReceipt",
               "InvalidSemanticReceipt"
             ]
+          },
+          "serving_admission": {
+            "enum": [
+              "PendingRuntimeReadiness",
+              "AdmittedNoPerRequestLicenseReceipt"
+            ],
+            "description": "Whether ordinary inference may proceed. Licence terms bind the one-time ingestion and deployment; they are never a per-request admission gate, so an authorized, runtime-ready asset is admitted without a caller-supplied receipt."
           },
           "use_authorization_status": {
             "enum": [
@@ -206,7 +215,12 @@
             "$ref": "#/$defs/sha256"
           },
           "runtime_image_digest": {
-            "$ref": "#/$defs/ociDigest"
+            "$ref": "#/$defs/ociDigest",
+            "description": "Digest of the published runtime image for this model. Null until such an image exists; the image that merely ran a validation is reported as runtime_environment_digest instead."
+          },
+          "runtime_environment_digest": {
+            "$ref": "#/$defs/ociDigest",
+            "description": "Digest of the container image that executed the runtime validation. Not a published model runtime image."
           },
           "authorization_receipt_sha256": {
             "$ref": "#/$defs/sha256"

@@ -21,7 +21,9 @@
     "embed_licensed_bytes_in_images": false,
     "credentials_in_contracts_or_state": false,
     "rationale": "Operational readiness and formal institutional license acceptance are separate axes. The platform owner authorized academic proof-of-concept installation and use, which activates the operational path. That authorization is not a substitute for the institutional acceptance each licensor requires before non-proof-of-concept use, so the formal axis stays truthfully Pending and is never synthesized from placeholder institution metadata.",
-    "world_readable_licensed_bytes": false
+    "world_readable_licensed_bytes": false,
+    "license_gate_scope": "one-time-ingestion-and-deployment",
+    "request_time_license_receipt_required": false
   },
   "quarantine_cache": {
     "pvc_namespace": "fs2-models",
@@ -111,7 +113,8 @@
           "mode": "direct-parameter-mount",
           "pythonpath": null,
           "per_request_install": false,
-          "note": "The runtime reads the pinned parameter object directly from the mounted volume via --model_dir."
+          "note": "The runtime reads the pinned parameter object directly from the mounted volume via --model_dir.",
+          "request_time_license_receipt_required": false
         }
       },
       "runtime": {
@@ -131,15 +134,15 @@
           "description": "Run the official AlphaFold 3 parameter loader inside the published runtime image built from the pinned upstream revision, against the mounted af3.bin.zst, using one explicit --model_dir. A decompress-and-digest check alone is byte-integrity evidence, not a parameter load, and is recorded separately as such."
         },
         "runtime_image": {
-          "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3",
-          "tag": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+          "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3",
+          "tag": "v3.0.4",
           "source_tag": "v3.0.4",
           "contains_licensed_bytes": false,
-          "build_context": "published fs2 runtime image built from the official docker/Dockerfile at upstream revision 85c4d205 (tag v3.0.4); the packaged distribution reports 3.0.3.dev1+g85c4d2050 because the build checkout did not carry the v3.0.4 tag object, so the commit is authoritative",
-          "packaged_distribution_version": "3.0.3.dev1+g85c4d2050",
+          "build_context": "built from the official docker/Dockerfile at upstream tag v3.0.4 (commit 85c4d205) with the tag object present, so setuptools-scm derives the exact release version; contains AlphaFold 3's own Apache-2.0 code wheel and no licensed parameters",
+          "packaged_distribution_version": "3.0.4",
           "expected_distribution_version": "3.0.4",
-          "identity_mismatch": "The published image's packaged distribution version does not equal the v3.0.4 tag because the build checkout lacked the tag object, so setuptools-scm derived a dev version from the previous tag. The commit 85c4d205 is authoritative and matches v3.0.4 exactly. This validation must be repeated once the image is rebuilt with the tag present.",
-          "revalidation_required": true
+          "revalidation_required": false,
+          "digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887"
         }
       }
     },
@@ -222,7 +225,8 @@
           "mode": "preinstalled-site-packages",
           "pythonpath": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
           "per_request_install": false,
-          "note": "BindCraft consumes a tenant-private site-packages tree that is installed once and mounted read-only. The 1.67 GB wheel is never installed per request; a runtime only sets PYTHONPATH and joins the asset group."
+          "note": "BindCraft consumes a tenant-private site-packages tree that is installed once and mounted read-only. The 1.67 GB wheel is never installed per request; a runtime only sets PYTHONPATH and joins the asset group.",
+          "request_time_license_receipt_required": false
         }
       },
       "runtime": {

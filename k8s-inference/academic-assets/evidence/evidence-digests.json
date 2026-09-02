@@ -4,6 +4,10 @@
       "bytes": 14443,
       "sha256": "9e47c8935ca5658200f48506501c6832786895f7dd39f9d3b63e5fd59bd89ee0"
     },
+    "jobs/academic-af3-v304-semantic-v1.json": {
+      "bytes": 13926,
+      "sha256": "74ca9c4cb865b95ab64cab229ec81f3a093d9d9e10859e3c9e5f01d28a4bd1a2"
+    },
     "jobs/academic-assets-normalize-modes-v1.json": {
       "bytes": 8667,
       "sha256": "cb41f5c3f49bdcc7b2a0f64c86b4dbd5ef0fe8be3c79cedc2e51b1af81320c4a"
@@ -24,6 +28,10 @@
       "bytes": 9916,
       "sha256": "802a680d915e57c5dec5b068290e26d64896917f889dca21f153fd9a03ed3003"
     },
+    "jobs/academic-tree-installer-pyrosetta-bindcraft-4383d8d1.json": {
+      "bytes": 10034,
+      "sha256": "66e53c05090b3d0a024182242ce1cffb03da208269e98bf8e1e9eb84ab537abb"
+    },
     "logs/academic-af3-official-loader-v2.log": {
       "bytes": 13350,
       "sha256": "bab72d06acbc88381ff3637eff2285d43d477fdcad37aa6a12fdee9563194991"
@@ -36,6 +44,10 @@
       "bytes": 428,
       "sha256": "84ebaea0642878b45ff83d668a23b9ed8f5d0028ca5e93f4b879bca6b36bac65"
     },
+    "logs/academic-af3-v304-semantic-v1.log": {
+      "bytes": 1318,
+      "sha256": "429f254268e63a81d341602eac207bf62e6135e8dd55d5751cc9390a3214407a"
+    },
     "logs/academic-assets-normalize-modes-v1.log": {
       "bytes": 60,
       "sha256": "9fa3289992c33124731db7a0b6208d6e6b8b9912ed8e46f006cde7ebfdb52643"
@@ -43,6 +55,10 @@
     "logs/academic-assets-stage-v1.log": {
       "bytes": 273,
       "sha256": "dd59690ecb248a72bf8b6e531a96f75c9a5884feafd6169a530c3fd337986bea"
+    },
+    "logs/academic-final-mode-check.log": {
+      "bytes": 252,
+      "sha256": "213ab8fea2aeaf0bf46671b127928075a9b7c4a56a0ecdc1c92f7498a282471a"
     },
     "logs/academic-h100-runtime-smoke-v1.log": {
       "bytes": 1865,
@@ -63,6 +79,10 @@
     "logs/academic-pyrosetta-offline-import-v2.log": {
       "bytes": 1672,
       "sha256": "b2a1d3e09fcb387cc4a6ccd4a22935df4f217bad1edf0a372d0f7bda3b7fb4c0"
+    },
+    "logs/academic-tree-installer-pyrosetta-bindcraft-4383d8d1.log": {
+      "bytes": 430,
+      "sha256": "63fabea52c82f14f166bd619ef29e930c5968e544c2eea5e1bc7dc0515879789"
     }
   },
   "note": "SHA-256 of every retained job spec and job log, so the recorded evidence is tamper-evident.",

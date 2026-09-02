@@ -486,3 +486,130 @@ class StagingScriptExecutionTests(AcademicAssetTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AdoptionBackendTests(unittest.TestCase):
+    """Adoption must bind to one exact state before it reads or writes it.
+
+    Reading state before `init` can inspect a stale or empty local state and reach
+    the wrong conclusion, and `-backend-config` is only valid on `init`. Both are
+    verified by recording every terraform invocation the script makes.
+    """
+
+    ADOPT = ASSET_ROOT / "scripts" / "adopt-live-resources.sh"
+
+    def setUp(self) -> None:
+        self.workspace = Path(tempfile.mkdtemp(prefix="academic-adopt-test-"))
+        self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
+        self.calls = self.workspace / "terraform-calls.log"
+        self.bin_dir = self.workspace / "bin"
+        self.bin_dir.mkdir()
+        self.data_dir = self.workspace / "tfdata"
+        self.state = self.workspace / "isolated.tfstate"
+        self.state.write_text(json.dumps({"version": 4, "resources": []}))
+        self._write_stub("terraform", exit_for_state_show=1)
+        self._write_stub("kubectl", exit_for_state_show=0)
+
+    def _write_stub(self, name: str, *, exit_for_state_show: int) -> None:
+        stub = self.bin_dir / name
+        stub.write_text(
+            "#!/usr/bin/env python3\n"
+            "import os, pathlib, sys\n"
+            f"log = pathlib.Path({str(self.calls)!r})\n"
+            f"if {name!r} == 'terraform':\n"
+            "    with log.open('a') as handle:\n"
+            "        handle.write('|'.join(sys.argv[1:]) + ' TF_DATA_DIR=' + os.environ.get('TF_DATA_DIR','') + '\\n')\n"
+            "    if 'state' in sys.argv:\n"
+            f"        sys.exit({exit_for_state_show})\n"
+            "    sys.exit(0)\n"
+            "sys.exit(0)\n"
+        )
+        stub.chmod(0o755)
+
+    def run_adopt(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        environment = dict(os.environ)
+        environment["PATH"] = f"{self.bin_dir}:{environment['PATH']}"
+        environment.pop("TF_DATA_DIR", None)
+        return subprocess.run(
+            ["bash", str(self.ADOPT), "--chdir", str(self.workspace), *extra],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def recorded(self) -> list[str]:
+        return self.calls.read_text().splitlines() if self.calls.exists() else []
+
+    def test_backend_is_initialised_before_any_state_read(self) -> None:
+        result = self.run_adopt(
+            "--data-dir", str(self.data_dir),
+            "--backend-config", f"path={self.state}",
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = self.recorded()
+        self.assertTrue(calls, "the script made no terraform calls")
+        # Match argv tokens, not substrings: a backend path can contain "tfstate".
+        self.assertIn("init", calls[0].split("|"))
+        state_calls = [index for index, call in enumerate(calls) if "state" in call.split("|")]
+        self.assertTrue(state_calls, "no state inspection happened")
+        self.assertLess(0, min(state_calls), "state was read before init")
+
+    def test_backend_config_reaches_init_only(self) -> None:
+        self.run_adopt(
+            "--data-dir", str(self.data_dir),
+            "--backend-config", f"path={self.state}",
+            "--var-file", "example.tfvars",
+        )
+        for call in self.recorded():
+            tokens = call.split("|")
+            if "init" in tokens:
+                self.assertTrue(any(t.startswith("-backend-config=") for t in tokens))
+            else:
+                # backend-config is not a valid argument to state or import.
+                self.assertFalse(any(t.startswith("-backend-config=") for t in tokens))
+
+    def test_var_file_reaches_import_but_never_state_show(self) -> None:
+        """`terraform state show` rejects -var-file, so it must never receive it."""
+
+        self._write_stub("terraform", exit_for_state_show=1)
+        self.run_adopt(
+            "--data-dir", str(self.data_dir),
+            "--var-file", "example.tfvars",
+            "--state", str(self.state),
+            "--apply",
+        )
+        state_calls = [c for c in self.recorded() if "state" in c.split("|")]
+        import_calls = [c for c in self.recorded() if "import" in c.split("|")]
+        self.assertTrue(state_calls, "no state inspection happened")
+        self.assertTrue(import_calls, "no import happened")
+        for call in state_calls:
+            tokens = call.split("|")
+            self.assertFalse(any(t.startswith("-var-file=") for t in tokens), call)
+            self.assertTrue(any(t.startswith("-state=") for t in tokens), call)
+        for call in import_calls:
+            tokens = call.split("|")
+            self.assertTrue(any(t.startswith("-var-file=") for t in tokens), call)
+            self.assertTrue(any(t.startswith("-state=") for t in tokens), call)
+
+    def test_every_call_is_bound_to_the_requested_data_directory(self) -> None:
+        self.run_adopt("--data-dir", str(self.data_dir))
+        calls = self.recorded()
+        self.assertTrue(calls)
+        for call in calls:
+            self.assertIn(f"TF_DATA_DIR={self.data_dir}", call)
+
+    def test_backend_config_without_an_explicit_data_dir_is_refused(self) -> None:
+        result = self.run_adopt("--backend-config", f"path={self.state}")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("explicit --data-dir", result.stderr)
+        self.assertEqual([], self.recorded(), "nothing may run before the binding is settled")
+
+    def test_adoption_is_idempotent_when_state_already_manages_the_address(self) -> None:
+        # A state that already knows every address must import nothing.
+        self._write_stub("terraform", exit_for_state_show=0)
+        result = self.run_adopt("--data-dir", str(self.data_dir), "--apply")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("4 already managed", result.stdout)
+        self.assertNotIn("importing", result.stdout)
+        self.assertEqual([], [call for call in self.recorded() if "import" in call.split("|")])

@@ -5,9 +5,13 @@
 # the tenant-private claim and the offline-validation policy directly from tfvars.
 #
 # Adoption exists only for the case where a claim already holds verified licensed
-# bytes: recreating it would provision an empty volume and discard them. The script
-# is idempotent, so re-running it is safe: an address already in state is skipped,
-# and an object that does not exist live is left for Terraform to create.
+# bytes, because recreating it would provision an empty volume and discard them.
+#
+# Backend correctness matters here: inspecting or importing into the wrong state
+# is worse than doing nothing. The script therefore binds to an explicit
+# TF_DATA_DIR and initialises the backend BEFORE reading state, and it passes
+# backend configuration only to `init`, never to `state`/`import`, where it is not
+# a valid argument.
 #
 # It never creates, mutates or deletes a Kubernetes object, and never handles
 # licensed bytes.
@@ -19,9 +23,11 @@ Usage: adopt-live-resources.sh [options]
 
   --apply                 perform the imports (default: print the plan)
   --chdir DIR             Terraform working directory (default: the workloads stage)
-  --var-file FILE         Terraform var file, repeatable
-  --backend-config VALUE  backend configuration, repeatable
-  --state FILE            explicit state file
+  --data-dir DIR          exact TF_DATA_DIR for this run (recommended; isolates state)
+  --var-file FILE         Terraform var file, repeatable (passed to import only)
+  --backend-config VALUE  backend configuration, repeatable (passed to init only)
+  --state FILE            explicit state file (passed to state and import)
+  --no-init               skip terraform init (only when the caller already ran it)
   --kubeconfig FILE       kubeconfig used for the liveness probe
   --context NAME          kube context used for the liveness probe
 
@@ -34,25 +40,54 @@ USAGE
 }
 
 apply=false
+run_init=true
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 chdir="${here}/stages/workloads"
+data_dir="${TF_DATA_DIR:-}"
 kubeconfig="${FS2_ACADEMIC_KUBECONFIG:-}"
 context="${FS2_ACADEMIC_KUBE_CONTEXT:-}"
-terraform_args=()
+# Each Terraform subcommand accepts a different set of flags. Keeping them apart
+# is what stops an invalid argument from aborting adoption midway:
+#   init   -backend-config
+#   state  -state
+#   import -state and -var-file
+backend_args=()
+state_args=()
+import_args=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply) apply=true; shift ;;
     --chdir) chdir="$2"; shift 2 ;;
-    --var-file) terraform_args+=("-var-file=$2"); shift 2 ;;
-    --backend-config) terraform_args+=("-backend-config=$2"); shift 2 ;;
-    --state) terraform_args+=("-state=$2"); shift 2 ;;
+    --data-dir) data_dir="$2"; shift 2 ;;
+    --var-file) import_args+=("-var-file=$2"); shift 2 ;;
+    --backend-config) backend_args+=("-backend-config=$2"); shift 2 ;;
+    --state) state_args+=("-state=$2"); import_args+=("-state=$2"); shift 2 ;;
+    --no-init) run_init=false; shift ;;
     --kubeconfig) kubeconfig="$2"; shift 2 ;;
     --context) context="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+if [ -n "${data_dir}" ]; then
+  export TF_DATA_DIR="${data_dir}"
+  echo "bound to TF_DATA_DIR=${TF_DATA_DIR}"
+elif [ ${#backend_args[@]} -gt 0 ]; then
+  echo "refusing to use backend configuration without an explicit --data-dir" >&2
+  echo "an ambiguous data directory can select the wrong state" >&2
+  exit 2
+fi
+
+# Initialise the backend before any state read. Reading state first can silently
+# inspect a stale or empty local state and conclude the wrong thing.
+if [ "${run_init}" = true ]; then
+  terraform -chdir="${chdir}" init -input=false "${backend_args[@]+"${backend_args[@]}"}" >/dev/null
+  echo "backend initialised"
+else
+  echo "skipping init at caller's request"
+fi
 
 namespace="${ACADEMIC_NAMESPACE:-fs2-academic-poc}"
 runtime_pvc="${ACADEMIC_RUNTIME_PVC:-academic-assets-runtime-rwx}"
@@ -78,7 +113,8 @@ importable=0
 for entry in "${targets[@]}"; do
   IFS='|' read -r address kind live_namespace live_name identifier <<<"${entry}"
 
-  if terraform -chdir="${chdir}" state show "${address}" >/dev/null 2>&1; then
+  if terraform -chdir="${chdir}" state show \
+    "${state_args[@]+"${state_args[@]}"}" "${address}" >/dev/null 2>&1; then
     echo "skip (already in state): ${address}"
     already=$((already + 1))
     continue
@@ -96,11 +132,11 @@ for entry in "${targets[@]}"; do
   importable=$((importable + 1))
   if [ "${apply}" = true ]; then
     echo "importing ${address} <- ${identifier}"
-    terraform -chdir="${chdir}" import "${terraform_args[@]+"${terraform_args[@]}"}" \
-      "${address}" "${identifier}"
+    terraform -chdir="${chdir}" import -input=false \
+      "${import_args[@]+"${import_args[@]}"}" "${address}" "${identifier}"
   else
-    printf 'terraform -chdir=%s import %s %q %q\n' \
-      "${chdir}" "${terraform_args[*]+"${terraform_args[*]}"}" "${address}" "${identifier}"
+    printf 'terraform -chdir=%s import -input=false %s %q %q\n' \
+      "${chdir}" "${import_args[*]+"${import_args[*]}"}" "${address}" "${identifier}"
   fi
 done
 

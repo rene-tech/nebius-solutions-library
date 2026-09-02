@@ -12,7 +12,8 @@
     "runtime_path_state",
     "formal_license_state",
     "delivery",
-    "models"
+    "models",
+    "request_time_license_receipt_required"
   ],
   "$defs": {
     "modelId": {
@@ -123,7 +124,9 @@
           "runtime_image_digest",
           "delivery",
           "runtime_invocation",
-          "alternative"
+          "alternative",
+          "serving_admission",
+          "runtime_environment_digest"
         ],
         "properties": {
           "asset_id": {
@@ -338,9 +341,23 @@
                 "maxLength": 512
               }
             }
+          },
+          "serving_admission": {
+            "enum": [
+              "PendingRuntimeReadiness",
+              "AdmittedNoPerRequestLicenseReceipt"
+            ]
+          },
+          "runtime_environment_digest": {
+            "$ref": "#/$defs/ociDigest",
+            "description": "Digest of the image that executed the runtime validation, which is not necessarily a published model runtime image."
           }
         }
       }
+    },
+    "request_time_license_receipt_required": {
+      "const": false,
+      "description": "Licence terms bind the one-time ingestion and deployment only; ordinary inference never requires a caller-supplied receipt."
     }
   }
 }

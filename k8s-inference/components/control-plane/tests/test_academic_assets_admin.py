@@ -90,6 +90,7 @@ def test_committed_catalog_projection_parses_into_the_operator_contract() -> Non
         generation=document["generation"],
         runtime_path_state=document["runtime_path_state"],
         formal_license_state=document["formal_license_state"],
+        request_time_license_receipt_required=document["request_time_license_receipt_required"],
         delivery=AcademicAssetVolume(
             namespace=document["delivery"]["namespace"],
             claim=document["delivery"]["claim"],
@@ -102,6 +103,7 @@ def test_committed_catalog_projection_parses_into_the_operator_contract() -> Non
                 backend_id=model["backend_id"],
                 display_name=model["display_name"],
                 state=model["state"],
+                serving_admission=model["serving_admission"],
                 use_authorization_status=model["use_authorization_status"],
                 execution_authorization_status=model["execution_authorization_status"],
                 formal_license_status=model["formal_license_status"],
@@ -114,6 +116,7 @@ def test_committed_catalog_projection_parses_into_the_operator_contract() -> Non
                 delivery=model["delivery"],
                 artifact_sha256=model["artifact_sha256"],
                 runtime_image_digest=model["runtime_image_digest"],
+                runtime_environment_digest=model["runtime_environment_digest"],
                 alternative=model["alternative"],
             )
             for model in document["models"]
@@ -123,13 +126,32 @@ def test_committed_catalog_projection_parses_into_the_operator_contract() -> Non
     for item in payload.items:
         assert item.delivery.embed_in_image is False
         assert item.delivery.mount_path.startswith("/opt/fs2/academic/")
-        # Operational progress must never be reported as licence acceptance.
+        # Operational progress must never be reported as licence acceptance...
         assert item.formal_license_status.value == "FormalAcceptancePending"
+        # ...and pending paperwork must never block an authorized, ready model.
+        assert item.serving_admission.value == "AdmittedNoPerRequestLicenseReceipt"
         assert item.alternative is not None
         assert item.alternative.model_id != item.model_id
 
     snapshot = AcademicAssetSnapshot(observed_at=datetime.now(UTC), data=payload)
     assert snapshot.data.formal_license_state == "Pending"
+    assert snapshot.data.request_time_license_receipt_required is False
+
+
+def test_a_validation_image_is_never_reported_as_a_published_runtime_image() -> None:
+    document = json.loads(CATALOG_PROJECTION.read_text())
+    by_id = {model["model_id"]: model for model in document["models"]}
+    bindcraft = by_id["bindcraft"]
+    assert bindcraft["runtime_image_digest"] is None
+    assert bindcraft["runtime_environment_digest"] is not None
+
+
+def test_licence_terms_never_gate_an_inference_request() -> None:
+    document = json.loads(CATALOG_PROJECTION.read_text())
+    assert document["request_time_license_receipt_required"] is False
+    for model in document["models"]:
+        if model["runtime_status"] == "RuntimeReady":
+            assert model["serving_admission"] == "AdmittedNoPerRequestLicenseReceipt"
 
 
 def test_operational_readiness_does_not_imply_formal_acceptance() -> None:
@@ -154,6 +176,7 @@ def test_catalog_backed_adapter_reads_the_generated_projection(tmp_path: Path) -
     snapshot = asyncio.run(adapter.snapshot())
     assert snapshot.data.items
     assert snapshot.data.formal_license_state == "Pending"
+    assert snapshot.data.request_time_license_receipt_required is False
     assert all(item.delivery.embed_in_image is False for item in snapshot.data.items)
 
 
