@@ -35,7 +35,8 @@ from .store import ConflictError
 
 LOGGER = logging.getLogger(__name__)
 OBSERVATION_NAMESPACE = UUID("4f90028d-d5a6-4cae-a94c-8a095fe3c819")
-_CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
+_CAMEL_WORD_BOUNDARY = re.compile(r"(.)([A-Z][a-z]+)")
+_CAMEL_INITIALISM_BOUNDARY = re.compile(r"([a-z0-9])([A-Z])")
 
 
 class KubernetesModelDeploymentSource(Protocol):
@@ -43,7 +44,8 @@ class KubernetesModelDeploymentSource(Protocol):
 
 
 def _snake_case(value: str) -> str:
-    return _CAMEL_BOUNDARY.sub("_", value).lower()
+    words = _CAMEL_WORD_BOUNDARY.sub(r"\1_\2", value)
+    return _CAMEL_INITIALISM_BOUNDARY.sub(r"\1_\2", words).lower()
 
 
 def _normalize_keys(value: object) -> object:

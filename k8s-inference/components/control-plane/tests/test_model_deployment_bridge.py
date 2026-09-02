@@ -10,7 +10,7 @@ from test_model_deployment_admin import append_request
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.model_deployment_admin import StoreModelDeploymentRepository
-from fs2_serve.model_deployment_bridge import ModelDeploymentRuntimeBridge
+from fs2_serve.model_deployment_bridge import ModelDeploymentRuntimeBridge, _normalize_keys
 from fs2_serve.model_deployment_mutation import DesiredWriteError, DesiredWriteReceipt
 from fs2_serve.model_deployment_records import ModelDeploymentAppendRequest
 from fs2_serve.registry import Registry
@@ -88,6 +88,24 @@ def _ready_cr(revision: object) -> dict[str, object]:
                 }
             ],
         },
+    }
+
+
+def test_kubernetes_camel_case_normalization_preserves_initialisms() -> None:
+    assert _normalize_keys(
+        {
+            "publication": {
+                "openAI": True,
+                "openAIAliases": ["qwen"],
+                "mcpToolName": "qwen_chat",
+            }
+        }
+    ) == {
+        "publication": {
+            "open_ai": True,
+            "open_ai_aliases": ["qwen"],
+            "mcp_tool_name": "qwen_chat",
+        }
     }
 
 

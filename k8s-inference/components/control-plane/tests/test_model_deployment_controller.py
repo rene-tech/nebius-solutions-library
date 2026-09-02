@@ -270,6 +270,19 @@ def hpa_snapshot(scaler: ResourceSnapshot) -> ResourceSnapshot:
     )
 
 
+def idle_zero_hpa_snapshot(scaler: ResourceSnapshot) -> ResourceSnapshot:
+    item = hpa_snapshot(scaler)
+    item.raw["metadata"].pop("generation")
+    item.raw["status"] = {
+        "desiredReplicas": 0,
+        "conditions": [
+            {"type": "AbleToScale", "status": "True", "reason": "SucceededGetScale"},
+            {"type": "ScalingActive", "status": "False", "reason": "ScalingDisabled"},
+        ],
+    }
+    return item.model_copy(update={"generation": 0, "observed_generation": None})
+
+
 class FakeApi(ModelControllerApi):
     def __init__(self, model: dict[str, Any], *, writes_enabled: bool = True) -> None:
         self.model = copy.deepcopy(model)
@@ -801,6 +814,78 @@ async def test_controller_waits_for_generated_hpa_before_relinquishing_zero_boot
     assert handoff.action == "autoscaler-handoff"
     deployment = next(item for item in api.resources.values() if item.observed.kind == "Deployment")
     assert FIELD_MANAGER not in deployment.replica_field_managers
+
+
+@pytest.mark.asyncio
+async def test_controller_accepts_keda_idle_scale_to_zero_handoff() -> None:
+    api = FakeApi(model_object())
+    api.auto_create_hpa = False
+    subject = controller(api)
+    key = ModelKey(namespace="fs2-models", name="qwen-live")
+
+    await subject.reconcile(key, fence())
+    assert (await subject.reconcile(key, fence())).action == "autoscaler-bootstrap"
+    scaler = next(item for item in api.resources.values() if item.observed.kind == "ScaledObject")
+    scaler.raw["status"] = {
+        "hpaName": f"keda-hpa-{scaler.observed.name}",
+        "conditions": [
+            {"type": "Ready", "status": "True", "reason": "ScaledObjectReady"},
+            {"type": "HPAActive", "status": "True", "reason": "ScalingDisabled"},
+        ],
+    }
+    idle_hpa = idle_zero_hpa_snapshot(scaler)
+    api.resources[idle_hpa.observed.identity] = idle_hpa
+
+    handoff = await subject.reconcile(key, fence())
+
+    assert handoff.action == "autoscaler-handoff"
+    deployment = next(item for item in api.resources.values() if item.observed.kind == "Deployment")
+    assert FIELD_MANAGER not in deployment.replica_field_managers
+    deployment.raw["spec"]["replicas"] = 0
+    deployment.raw["status"] = {
+        "observedGeneration": deployment.generation,
+        "replicas": 0,
+        "updatedReplicas": 0,
+        "readyReplicas": 0,
+        "availableReplicas": 0,
+        "unavailableReplicas": 0,
+    }
+    api.resources[deployment.observed.identity] = deployment.model_copy(
+        update={
+            "desired_replicas": 0,
+            "replicas": 0,
+            "updated_replicas": 0,
+            "ready_replicas": 0,
+            "available_replicas": 0,
+            "unavailable_replicas": 0,
+        }
+    )
+
+    await subject.reconcile(key, fence())
+
+    assert api.status_writes[-1]["phase"] == "Cold"
+
+
+@pytest.mark.asyncio
+async def test_controller_accepts_active_keda_hpa_with_omitted_zero_generation() -> None:
+    api = FakeApi(model_object())
+    api.auto_create_hpa = False
+    subject = controller(api)
+    key = ModelKey(namespace="fs2-models", name="qwen-live")
+
+    await subject.reconcile(key, fence())
+    assert (await subject.reconcile(key, fence())).action == "autoscaler-bootstrap"
+    scaler = next(item for item in api.resources.values() if item.observed.kind == "ScaledObject")
+    generated = hpa_snapshot(scaler)
+    generated.raw["metadata"].pop("generation")
+    generated.raw["status"].pop("observedGeneration")
+    api.resources[generated.observed.identity] = generated.model_copy(
+        update={"generation": 0, "observed_generation": None}
+    )
+
+    handoff = await subject.reconcile(key, fence())
+
+    assert handoff.action == "autoscaler-handoff"
 
 
 @pytest.mark.asyncio

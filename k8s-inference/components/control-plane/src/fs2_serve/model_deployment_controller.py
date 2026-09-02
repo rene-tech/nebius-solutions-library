@@ -1079,6 +1079,15 @@ def _autoscaler_installed(
     discovery: Discovery,
     owner_uid: str,
 ) -> bool:
+    live_target = _resource_snapshot(
+        discovery,
+        target.api_version,
+        target.kind,
+        target.namespace,
+        target.name,
+    )
+    if live_target is None:
+        return False
     live_scaler = _resource_snapshot(discovery, scaler.api_version, scaler.kind, scaler.namespace, scaler.name)
     if (
         live_scaler is None
@@ -1107,28 +1116,49 @@ def _autoscaler_installed(
         scaler.namespace,
         expected_hpa_name,
     )
-    if (
-        hpa is None
-        or hpa.observed.deleting
-        or hpa.observed.controller_owner_uid != live_scaler.observed.uid
-        or hpa.observed_generation != hpa.generation
-    ):
+    if hpa is None or hpa.observed.deleting or hpa.observed.controller_owner_uid != live_scaler.observed.uid:
         return False
     hpa_status = _mapping(hpa.raw.get("status"))
     hpa_conditions = hpa_status.get("conditions")
-    healthy_hpa_conditions = isinstance(hpa_conditions, list) and all(
-        any(
+    hpa_conditions = hpa_conditions if isinstance(hpa_conditions, list) else []
+    able_to_scale = any(
+        isinstance(condition, Mapping) and condition.get("type") == "AbleToScale" and condition.get("status") == "True"
+        for condition in hpa_conditions
+    )
+    scaling_active = any(
+        isinstance(condition, Mapping)
+        and condition.get("type") == "ScalingActive"
+        and condition.get("status") == "True"
+        for condition in hpa_conditions
+    )
+    keda_zero_idle = (
+        live_target.desired_replicas == 0
+        and live_target.replicas == 0
+        and hpa_status.get("desiredReplicas") == 0
+        and any(
             isinstance(condition, Mapping)
-            and condition.get("type") == condition_type
-            and condition.get("status") == "True"
+            and condition.get("type") == "ScalingActive"
+            and condition.get("status") == "False"
+            and condition.get("reason") == "ScalingDisabled"
             for condition in hpa_conditions
         )
-        for condition_type in ("AbleToScale", "ScalingActive")
+        and any(
+            isinstance(condition, Mapping)
+            and condition.get("type") == "HPAActive"
+            and condition.get("status") == "True"
+            and condition.get("reason") == "ScalingDisabled"
+            for condition in scaler_conditions
+        )
     )
     target_ref = _mapping(_mapping(hpa.raw.get("spec")).get("scaleTargetRef"))
+    generation_observed = hpa_status.get("observedGeneration")
+    generation_converged = generation_observed == hpa.generation or (
+        generation_observed is None and hpa.observed_generation is None and hpa.generation == 0
+    )
     return (
-        healthy_hpa_conditions
-        and hpa_status.get("observedGeneration") == hpa.generation
+        able_to_scale
+        and (scaling_active or keda_zero_idle)
+        and generation_converged
         and target_ref.get("apiVersion") == target.api_version
         and target_ref.get("kind") == target.kind
         and target_ref.get("name") == target.name
