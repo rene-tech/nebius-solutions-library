@@ -219,14 +219,37 @@ model cache. It does not have host-local NVMe, so the usual node-local snapshot
 path is unavailable on that pool. No CUDA/GPU snapshot, host-RAM swap path,
 GMS, or ModelExpress path is production-qualified there today.
 
-The retained shared-cache elasticity receipt recorded activation-to-Ready of
-134.26 seconds for Qwen3-8B and 91.169 seconds for Cosmos 3 Nano. Those values
-are useful functional and exploratory evidence, but the receipt predates the
-20-attempt performance-level cohort and therefore must not be presented as a
-qualified `L1`/`L2` claim under this contract. Qwen is shown as `Hot` while its
-minimum replica is Ready; Cosmos can return to a zero floor. A fresh
-preemptible-node acquisition may make end-to-end activation much longer while
-leaving the separately measured model-start class unchanged.
+Fresh exact-tuple campaigns on 2026-09-02 produced the following retained
+exploratory results:
+
+| Model and path | Successful attempts | Model-start p50 / p95 | Observed class | Qualified class |
+| --- | ---: | ---: | --- | --- |
+| Qwen3-8B, prepared reserved H100, process-cold shared-cache restart | 3/3 | 113.444 / 124.422 s | `L1` | `Off` |
+| Cosmos 3 Nano, prepared preemptible H100, zero-Pod shared-cache start | 3/3 | 67.821 / 68.929 s | `L2` | `Off` |
+
+Both tuples are complete and failure-free, but three attempts are not the
+20 successful attempts required for qualification. The controller therefore
+publishes their observed p50/p95 and `InsufficientBenchmarkSamples` while
+leaving `qualifiedLevel`, `assignedLevel`, and the non-hot effective level at
+`Off`. Qwen is independently shown as `Hot` while its minimum replica is Ready;
+Cosmos returns to a zero floor.
+
+The Cosmos samples include a strict native MP4/envelope semantic check. Their
+queued request-to-valid-video p50/p95 was 82.771/84.561 seconds and generation
+goodput p50/p95 was 1.672/1.688 frames/s. A separate same-backend warm call took
+12.551 seconds for the checked-in 25-frame request, or 1.992 contract-derived
+frames/s. Qwen's separate 90-request direct-runtime steady benchmark measured
+62.937-62.940 output tokens/s, 13.742-15.545 ms median TTFT, and
+15.685-16.907 ms p95 TTFT across three repetitions.
+
+Negative evidence remains retained rather than pooled into a new campaign. A
+fresh-node Cosmos attempt measured 158.041 seconds of capacity wait and
+282.700 seconds of model start, including a 162-second 9.19 GB image pull, but
+failed the then-current runtime-attribution collector before semantic output.
+A later campaign exposed a Kubernetes Pod/EndpointSlice read-skew race. The
+collector fixes started new compatibility tuples and campaign identities; they
+did not rewrite, renumber, or discard those failures. Fresh-node, prepared-node,
+and process-cold cohorts remain separate.
 
 See [Live acceptance](LIVE_ACCEPTANCE.md) for the exact retained topology and
 receipts, and [Dynamic model configuration](DYNAMIC_MODEL_CONFIGURATION.md) for

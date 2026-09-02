@@ -38,7 +38,7 @@ node measured 444.020 seconds end to end, dominated by preemptible node
 provisioning and a fresh 9.19 GB runtime image pull. The same model revision
 activating on the already-running reserved pool, where the image is cached and
 weights are on the shared filesystem, reached Ready in 91.169 seconds in the
-[shared-cache elasticity qualification](#h100-shared-cache-elasticity-qualification-2026-09-02).
+[historical shared-cache elasticity receipt](#historical-h100-shared-cache-elasticity-receipt-2026-09-02).
 Narrowing a model's `poolRefs` to `h100-reserved-8x` through the admin console
 (live model policy, no Terraform) trades the preemptible cost saving for that
 faster warm-node activation; widening it again restores cheap preemptible burst.
@@ -88,12 +88,13 @@ deployment = {
   }
 
   dynamic_models = {
-    enabled             = true
-    writes_enabled      = true
-    workload_owner      = "controller"
-    bootstrap_model_ids = ["cosmos3-nano", "qwen3-8b"]
-    fresh_install       = false
-    handoff_receipt     = "sha256:33e3e2a0431e72abec993066b8d49530ad29a553d047846d4bd897bc07c58620"
+    enabled                  = true
+    writes_enabled           = true
+    workload_owner           = "controller"
+    bootstrap_model_ids      = ["cosmos3-nano", "qwen3-8b"]
+    fresh_install            = false
+    handoff_receipt          = "sha256:33e3e2a0431e72abec993066b8d49530ad29a553d047846d4bd897bc07c58620"
+    fast_start_evidence_file = "/private/run/fast-start-evidence.json"
   }
 }
 ```
@@ -186,7 +187,7 @@ public document.
   and matching payload SHA-256 values. MCP exposes the qualified runtime as
   `cosmos3_nano_generate_media_native`.
 
-### H100 shared-cache elasticity qualification (2026-09-02)
+### Historical H100 shared-cache elasticity receipt (2026-09-02)
 
 The retained qualification receipt is
 [`h100-qwen-cosmos-elasticity-qualification-20260902.json`](catalog/profiles/evidence/h100-qwen-cosmos-elasticity-qualification-20260902.json),
@@ -202,10 +203,70 @@ transitions, cache outcome, semantic results, and restored zero floor.
 | `qwen3-8b` | cache hit, 0.009 s | 134.26 s | 0.749 s | 39.191 s |
 
 Both runs started and ended with zero replicas and endpoints and completed two
-distinct semantic calls. They qualify the shared-cache scale-to-zero path for
-this exact tuple. They do not claim a CUDA/GPU snapshot restore result, and
-they do not transfer unchanged to another accelerator, runtime image, model
-revision, cache tier, or pool.
+distinct semantic calls. The artifact retains `qualification` in its historical
+filename, but these single attempts are functional evidence rather than a
+qualified customer fast-start level under the current 20-success contract.
+They do not claim a CUDA/GPU snapshot restore result, and they do not transfer
+unchanged to another accelerator, runtime image, model revision, cache tier, or
+pool.
+
+### H100 fast-start exploratory campaigns (2026-09-02)
+
+The current evidence collector binds the converged `ModelDeployment` revision,
+owned Deployment/Service/ScaledObject identities and generations, immutable
+runtime and artifact digests, exact H100/driver/CUDA tuple, capacity state,
+request contract, and semantic validator. Kubernetes observations are polled,
+so the reported boundary is conservative to the observation cadence rather
+than a sub-second profiler trace.
+
+| Model | Capacity state and pool | Result | Model-start p50 / p95 | First-request semantic p50 / p95 | Observed / qualified |
+| --- | --- | ---: | ---: | ---: | --- |
+| `qwen3-8b` | prepared-node process-cold, `h100-reserved-8x` | 3/3 PASS | 113.444 / 124.422 s | 114.263 / 125.437 s | `L1` / `Off` |
+| `cosmos3-nano` | prepared-node zero-Pod, `h100-1x` | 3/3 PASS | 67.821 / 68.929 s | 82.771 / 84.561 s | `L2` / `Off` |
+
+The Qwen aggregate SHA-256 is
+`4f6616afd09b012e9c903be8883d55a06e4d25bea479df0f83019f0317f75ef9`;
+its internal receipt digest is
+`10682c8ff68ed5f4f3df3547cdfea2f98b29436e7cd40123962ac85c72b9645e`.
+The Cosmos aggregate SHA-256 is
+`c49a226982720159d375813d6abeef153ae16dd9d314e506d2c3306ffb96bf4f`;
+its internal receipt digest is
+`7e6ea1f17345449246abd1cd0b23e1cb331af3a7426b9aa1e0d710afd8f71957`.
+Both are complete and failure-free exact tuples, but each has only three
+successful attempts. The live controller therefore exposes the percentiles as
+exploratory evidence with `InsufficientBenchmarkSamples` and retains
+`qualifiedLevel=Off`.
+
+The strict Cosmos probe decoded and validated the native MP4 envelope on every
+cold attempt. Generation goodput p50/p95 was 1.672/1.688 frames/s. A separate
+two-call acceptance retained the same Ready backend for its second call: the
+warm request completed in 12.551 seconds for the checked-in 25-frame contract,
+or 1.992 contract-derived frames/s. That legacy warm harness validates a
+non-empty native result; the cold campaign supplies the stronger MP4 oracle.
+Qwen's independent 90-request direct-runtime streaming baseline measured
+62.937-62.940 output tokens/s and 15.685-16.907 ms p95 TTFT across three
+repetitions.
+
+Failures were not removed. Earlier campaigns retain the original Cosmos 403,
+Qwen operation-identity mismatch, the fresh-node Cosmos attribution failure
+after 158.041 seconds of capacity wait and 282.700 seconds of model start, and
+a Pod/EndpointSlice read-skew failure. The last two led to collector-only fixes
+at `7ab796d4` and `2948e204`, followed by wholly new campaign identities. The
+fresh-node attempt also recorded a 162-second pull for the 9.19 GB runtime
+image, demonstrating that a GPU snapshot cannot by itself satisfy a level when
+the runtime image is absent.
+
+The compact evidence projection SHA-256 is
+`2be316631b89f63bd5a1eff2e3c803ebfcd6a8c93def0c8d14300b415a33f1c3`.
+Terraform revision 23 mounted it through an immutable model-controller envelope
+without changing nodes, model specifications, storage, routes, or credentials;
+a subsequent plan was empty. The admin workflow then changed only Cosmos
+`fastStart` from Fixed `L2` to Automatic `Off` through `L4` with
+`AllowLowerLevel`. Generation 5 reconciled without changing artifact, runtime,
+placement, scaling, cache, queue, exposure, or lifecycle fields. With no
+20-sample qualified path, the policy correctly assigned `Off` and reported
+`MissingDataMinimum`; Cosmos stayed Cold at floor 0. Final live floors remained
+Qwen 1, Cosmos 0.
 
 ### Historical B300 / GLM-5.2-FP8 exercise (2026-08-31)
 
