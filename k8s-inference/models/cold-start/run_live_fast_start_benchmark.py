@@ -32,16 +32,16 @@ from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
-
 SCHEMA = "fs2-serve.nebius.ai/fast-start-benchmark-attempt/v1"
 LEVELS = ("Off", "L1", "L2", "L3", "L4")
-TERMINAL_OPERATION_STATES = frozenset(
-    {"succeeded", "failed", "cancelled", "preempted", "expired"}
-)
+TERMINAL_OPERATION_STATES = frozenset({"succeeded", "failed", "cancelled", "preempted", "expired"})
 SAFE_NAME = re.compile(r"[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?")
 SHA256 = re.compile(r"(?:sha256:)?[a-f0-9]{64}")
 MAX_JSON_BYTES = 96 * 1024 * 1024
 MAX_TOKEN_BYTES = 4096
+SOLUTION_ROOT = Path(__file__).resolve().parents[2]
+COSMOS_VALIDATOR_PATH = SOLUTION_ROOT / "catalog/runtime/validators/validate_cosmos3_nano.py"
+COSMOS_CONTRACT_PATH = SOLUTION_ROOT / "catalog/runtime/validators/assets/cosmos3-nano.json"
 
 
 class BenchmarkError(RuntimeError):
@@ -59,9 +59,7 @@ def utc_now() -> str:
 
 
 def canonical_json(value: object) -> bytes:
-    return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-    ).encode("utf-8")
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
 
 
 def sha256_bytes(value: bytes) -> str:
@@ -72,9 +70,7 @@ def sha256_json(value: object) -> str:
     return sha256_bytes(canonical_json(value))
 
 
-def _read_regular_file(
-    path: Path, *, maximum: int, exact_mode: int | None = None
-) -> bytes:
+def _read_regular_file(path: Path, *, maximum: int, exact_mode: int | None = None) -> bytes:
     if not path.is_absolute():
         raise BenchmarkError("input_path_not_absolute")
     flags = os.O_RDONLY | os.O_CLOEXEC
@@ -119,9 +115,7 @@ def read_token(path: Path) -> str:
     raw = _read_regular_file(path, maximum=MAX_TOKEN_BYTES, exact_mode=0o600)
     if raw.endswith(b"\n"):
         raw = raw[:-1]
-    if not 32 <= len(raw) <= MAX_TOKEN_BYTES or any(
-        byte < 33 or byte > 126 for byte in raw
-    ):
+    if not 32 <= len(raw) <= MAX_TOKEN_BYTES or any(byte < 33 or byte > 126 for byte in raw):
         raise BenchmarkError("token_file_invalid")
     try:
         return raw.decode("ascii")
@@ -234,9 +228,7 @@ def http_json(
         headers=request_headers,
         method=method,
     )
-    opener = urllib.request.build_opener(
-        RejectRedirects(), urllib.request.HTTPSHandler(context=context)
-    )
+    opener = urllib.request.build_opener(RejectRedirects(), urllib.request.HTTPSHandler(context=context))
     try:
         with opener.open(request, timeout=timeout) as response:
             first = response.read(1)
@@ -381,6 +373,28 @@ class Kubectl:
         values = [value.strip() for value in first.split(",")]
         if len(values) != 4:
             return {}
+        version = subprocess.run(
+            [
+                *self.prefix,
+                "exec",
+                pod,
+                "--namespace",
+                namespace,
+                "--container",
+                container,
+                "--",
+                "nvidia-smi",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        cuda_match = (
+            re.search(r"CUDA Version:\s*([0-9]+\.[0-9]+)", version.stdout)
+            if version.returncode == 0 and len(version.stdout) <= 1024 * 1024
+            else None
+        )
         try:
             memory_bytes = int(float(values[1]) * 1024 * 1024)
         except ValueError:
@@ -389,9 +403,8 @@ class Kubectl:
             "product": values[0] or None,
             "memory_bytes": memory_bytes,
             "driver_version": values[2] or None,
-            "compute_capability": values[3]
-            if re.fullmatch(r"[0-9]+\.[0-9]+", values[3])
-            else None,
+            "compute_capability": values[3] if re.fullmatch(r"[0-9]+\.[0-9]+", values[3]) else None,
+            "cuda_version": cuda_match.group(1) if cuda_match is not None else None,
         }
 
     def delete_pod(self, namespace: str, pod: str, uid: str) -> None:
@@ -428,9 +441,7 @@ class Kubectl:
 
 def _condition_true(value: dict[str, Any], kind: str) -> bool:
     return any(
-        isinstance(item, dict)
-        and item.get("type") == kind
-        and item.get("status") == "True"
+        isinstance(item, dict) and item.get("type") == kind and item.get("status") == "True"
         for item in value.get("status", {}).get("conditions", [])
     )
 
@@ -451,17 +462,9 @@ def _resource_gpu_count(spec: dict[str, Any]) -> int:
             raise BenchmarkError("gpu_resource_quantity_invalid")
         return value
 
-    regular = sum(
-        container_count(item)
-        for item in spec.get("containers", []) or []
-        if isinstance(item, dict)
-    )
+    regular = sum(container_count(item) for item in spec.get("containers", []) or [] if isinstance(item, dict))
     initial = max(
-        (
-            container_count(item)
-            for item in spec.get("initContainers", []) or []
-            if isinstance(item, dict)
-        ),
+        (container_count(item) for item in spec.get("initContainers", []) or [] if isinstance(item, dict)),
         default=0,
     )
     return max(regular, initial)
@@ -472,9 +475,7 @@ def _pod_is_live(pod: dict[str, Any]) -> bool:
 
 
 def _node_tolerated(pod_spec: dict[str, Any], node: dict[str, Any]) -> bool:
-    tolerations = [
-        item for item in pod_spec.get("tolerations", []) or [] if isinstance(item, dict)
-    ]
+    tolerations = [item for item in pod_spec.get("tolerations", []) or [] if isinstance(item, dict)]
     for taint in node.get("spec", {}).get("taints", []) or []:
         if not isinstance(taint, dict) or taint.get("effect") not in {
             "NoSchedule",
@@ -488,10 +489,7 @@ def _node_tolerated(pod_spec: dict[str, Any], node: dict[str, Any]) -> bool:
             and tolerance.get("effect") in {None, "", taint.get("effect")}
             and (
                 tolerance.get("operator", "Equal") == "Exists"
-                or (
-                    tolerance.get("operator", "Equal") == "Equal"
-                    and tolerance.get("value", "") == value
-                )
+                or (tolerance.get("operator", "Equal") == "Equal" and tolerance.get("value", "") == value)
             )
             for tolerance in tolerations
         )
@@ -521,6 +519,9 @@ class ClusterObservation:
     scaled_terminating_pods: int = 0
     scaler_targets_primary: bool = True
     ready_endpoint_pod_uids: tuple[str, ...] = ()
+    scaled_deployment: dict[str, Any] | None = None
+    service: dict[str, Any] | None = None
+    scaled_object: dict[str, Any] | None = None
 
 
 def observe_cluster(
@@ -575,12 +576,8 @@ def observe_cluster(
     selector_labels = deployment.get("spec", {}).get("selector", {}).get("matchLabels")
     if not isinstance(selector_labels, dict) or not selector_labels:
         raise BenchmarkError("deployment_selector_invalid")
-    selector = ",".join(
-        f"{key}={value}" for key, value in sorted(selector_labels.items())
-    )
-    template_labels = (
-        deployment.get("spec", {}).get("template", {}).get("metadata", {}).get("labels")
-    )
+    selector = ",".join(f"{key}={value}" for key, value in sorted(selector_labels.items()))
+    template_labels = deployment.get("spec", {}).get("template", {}).get("metadata", {}).get("labels")
     if not isinstance(template_labels, dict) or not all(
         template_labels.get(key) == value for key, value in selector_labels.items()
     ):
@@ -591,20 +588,14 @@ def observe_cluster(
     if (
         not isinstance(service_selector, dict)
         or not service_selector
-        or not all(
-            template_labels.get(key) == value for key, value in service_selector.items()
-        )
+        or not all(template_labels.get(key) == value for key, value in service_selector.items())
     ):
         raise BenchmarkError("service_selector_mismatch")
     pods = kubectl.get("pods", namespace=namespace, selector=selector)
-    scaled_selector_labels = (
-        scaled_deployment.get("spec", {}).get("selector", {}).get("matchLabels")
-    )
+    scaled_selector_labels = scaled_deployment.get("spec", {}).get("selector", {}).get("matchLabels")
     if not isinstance(scaled_selector_labels, dict) or not scaled_selector_labels:
         raise BenchmarkError("scaled_deployment_selector_invalid")
-    scaled_selector = ",".join(
-        f"{key}={value}" for key, value in sorted(scaled_selector_labels.items())
-    )
+    scaled_selector = ",".join(f"{key}={value}" for key, value in sorted(scaled_selector_labels.items()))
     scaled_pods = (
         pods
         if scaled_deployment_name == deployment_name
@@ -617,9 +608,7 @@ def observe_cluster(
     )
     assert pods is not None and scaled_pods is not None and slices is not None
     pod_items = [item for item in pods.get("items", []) if isinstance(item, dict)]
-    scaled_pod_items = [
-        item for item in scaled_pods.get("items", []) if isinstance(item, dict)
-    ]
+    scaled_pod_items = [item for item in scaled_pods.get("items", []) if isinstance(item, dict)]
 
     # Bind ReplicaSets back to the exact Deployment UID. Label selectors alone
     # are insufficient when an old or malicious controller overlaps labels.
@@ -637,32 +626,22 @@ def observe_cluster(
         replica_set_uid = replica_set.get("metadata", {}).get("uid")
         owner_uids = {
             owner.get("uid")
-            for owner in replica_set.get("metadata", {}).get("ownerReferences", [])
-            or []
-            if isinstance(owner, dict)
-            and owner.get("controller") is True
-            and owner.get("kind") == "Deployment"
+            for owner in replica_set.get("metadata", {}).get("ownerReferences", []) or []
+            if isinstance(owner, dict) and owner.get("controller") is True and owner.get("kind") == "Deployment"
         }
         matched = owner_uids.intersection(deployments_by_uid)
         if isinstance(replica_set_uid, str) and len(matched) == 1:
             replica_set_owners[replica_set_uid] = next(iter(matched))
 
-    def validate_pod_ownership(
-        items: list[dict[str, Any]], expected_deployment: dict[str, Any]
-    ) -> None:
+    def validate_pod_ownership(items: list[dict[str, Any]], expected_deployment: dict[str, Any]) -> None:
         expected_uid = expected_deployment.get("metadata", {}).get("uid")
         for item in items:
             controller_uids = {
                 owner.get("uid")
                 for owner in item.get("metadata", {}).get("ownerReferences", []) or []
-                if isinstance(owner, dict)
-                and owner.get("controller") is True
-                and owner.get("kind") == "ReplicaSet"
+                if isinstance(owner, dict) and owner.get("controller") is True and owner.get("kind") == "ReplicaSet"
             }
-            if not any(
-                replica_set_owners.get(owner_uid) == expected_uid
-                for owner_uid in controller_uids
-            ):
+            if not any(replica_set_owners.get(owner_uid) == expected_uid for owner_uid in controller_uids):
                 raise BenchmarkError("pod_controller_ownership_mismatch")
 
     validate_pod_ownership(pod_items, deployment)
@@ -679,10 +658,7 @@ def observe_cluster(
         if not isinstance(item, dict):
             continue
         for endpoint in item.get("endpoints", []) or []:
-            if (
-                not isinstance(endpoint, dict)
-                or endpoint.get("conditions", {}).get("ready") is not True
-            ):
+            if not isinstance(endpoint, dict) or endpoint.get("conditions", {}).get("ready") is not True:
                 continue
             target = endpoint.get("targetRef")
             uid = target.get("uid") if isinstance(target, dict) else None
@@ -709,8 +685,7 @@ def observe_cluster(
             (
                 item
                 for item in pod_items
-                if item.get("metadata", {}).get("deletionTimestamp") is None
-                and item.get("spec", {}).get("nodeName")
+                if item.get("metadata", {}).get("deletionTimestamp") is None and item.get("spec", {}).get("nodeName")
             ),
             pod_items[0] if pod_items else None,
         ),
@@ -737,11 +712,7 @@ def observe_cluster(
         ):
             return False
         try:
-            allocatable = int(
-                candidate.get("status", {})
-                .get("allocatable", {})
-                .get("nvidia.com/gpu", "0")
-            )
+            allocatable = int(candidate.get("status", {}).get("allocatable", {}).get("nvidia.com/gpu", "0"))
         except (TypeError, ValueError):
             return False
         if assigned:
@@ -787,12 +758,7 @@ def observe_cluster(
     desired = int((hpa or {}).get("status", {}).get("desiredReplicas") or 0)
     active = _condition_true(scaled_object, "Active")
     capacity_requested = (
-        replicas > 0
-        or scaled_replicas > 0
-        or desired > 0
-        or bool(pod_items)
-        or bool(scaled_pod_items)
-        or active
+        replicas > 0 or scaled_replicas > 0 or desired > 0 or bool(pod_items) or bool(scaled_pod_items) or active
     )
     return ClusterObservation(
         observed_at=utc_now(),
@@ -805,29 +771,24 @@ def observe_cluster(
         node=selected_node,
         deployment=deployment,
         pod_count=len(pod_items),
-        terminating_pods=sum(
-            item.get("metadata", {}).get("deletionTimestamp") is not None
-            for item in pod_items
-        ),
+        terminating_pods=sum(item.get("metadata", {}).get("deletionTimestamp") is not None for item in pod_items),
         hpa_desired_replicas=desired,
         scaled_object_active=active,
         scaled_replicas=scaled_replicas,
-        scaled_ready_replicas=int(
-            scaled_deployment.get("status", {}).get("readyReplicas") or 0
-        ),
+        scaled_ready_replicas=int(scaled_deployment.get("status", {}).get("readyReplicas") or 0),
         scaled_pod_count=len(scaled_pod_items),
         scaled_terminating_pods=sum(
-            item.get("metadata", {}).get("deletionTimestamp") is not None
-            for item in scaled_pod_items
+            item.get("metadata", {}).get("deletionTimestamp") is not None for item in scaled_pod_items
         ),
         scaler_targets_primary=scaled_deployment_name == deployment_name,
         ready_endpoint_pod_uids=tuple(sorted(ready_endpoint_uids)),
+        scaled_deployment=scaled_deployment,
+        service=service,
+        scaled_object=scaled_object,
     )
 
 
-def _wire_request(
-    model_id: str, request_document: dict[str, Any]
-) -> tuple[str, dict[str, Any], str, str]:
+def _wire_request(model_id: str, request_document: dict[str, Any]) -> tuple[str, dict[str, Any], str, str]:
     protocol = request_document.get("protocol")
     operation = request_document.get("operation")
     payload = request_document.get("payload")
@@ -849,11 +810,83 @@ def _wire_request(
     raise BenchmarkError("request_protocol_unsupported")
 
 
+def _load_cosmos_validator() -> tuple[Any, dict[str, Any]]:
+    spec = importlib.util.spec_from_file_location(
+        "_fs2_cosmos3_nano_live_benchmark_validator",
+        COSMOS_VALIDATOR_PATH,
+    )
+    if spec is None or spec.loader is None:
+        raise BenchmarkError("semantic_validator_unavailable")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+        contract = module.load_contract(COSMOS_CONTRACT_PATH)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError, RecursionError):
+        raise BenchmarkError("semantic_validator_unavailable") from None
+    if not isinstance(contract, dict):
+        raise BenchmarkError("semantic_validator_unavailable")
+    return module, contract
+
+
+def _validate_cosmos_result(result: dict[str, Any], request_payload: dict[str, Any] | None) -> tuple[bool, bytes]:
+    if request_payload is None:
+        return False, b""
+    module, contract = _load_cosmos_validator()
+    requests = contract.get("requests")
+    if not isinstance(requests, list):
+        raise BenchmarkError("semantic_validator_unavailable")
+    matches = [item for item in requests if isinstance(item, dict) and item.get("request") == request_payload]
+    if len(matches) != 1 or not isinstance(matches[0].get("id"), str):
+        return False, b""
+    try:
+        module.validate_response(result, matches[0], matches[0]["id"])
+        decoded = base64.b64decode(result["data_base64"], validate=True)
+    except (KeyError, TypeError, ValueError, base64.binascii.Error):
+        return False, b""
+    return True, decoded
+
+
+def _semantic_validator_digest(
+    *,
+    model_id: str,
+    modality: str,
+    expected_text: str | None,
+    request_payload: dict[str, Any],
+) -> str:
+    if model_id == "cosmos3-nano":
+        try:
+            source_digest = sha256_bytes(COSMOS_VALIDATOR_PATH.read_bytes())
+            contract_digest = sha256_bytes(COSMOS_CONTRACT_PATH.read_bytes())
+        except OSError:
+            raise BenchmarkError("semantic_validator_unavailable") from None
+        return sha256_json(
+            {
+                "implementation": "catalog/runtime/validators/validate_cosmos3_nano.py",
+                "source_sha256": source_digest,
+                "contract_sha256": contract_digest,
+                "request_sha256": sha256_json(request_payload),
+            }
+        )
+    return sha256_json(
+        {
+            "implementation": "run_live_fast_start_benchmark.py:_validate_result/v2",
+            "model_id": model_id,
+            "modality": modality,
+            "expected_text_sha256": (
+                sha256_bytes(expected_text.encode("utf-8")) if expected_text is not None else None
+            ),
+        }
+    )
+
+
 def _validate_result(
     result: dict[str, Any],
     modality: str,
     expected_text: str | None,
     elapsed_seconds: float,
+    *,
+    model_id: str | None = None,
+    request_payload: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str]:
     if modality == "text":
         choices = result.get("choices")
@@ -901,43 +934,17 @@ def _validate_result(
             },
             sha256_bytes(semantic) if semantic else "",
         )
-    encoded = result.get("data_base64")
     expected_bytes = result.get("bytes")
-    expected_digest = result.get("sha256")
     frames = result.get("frames")
-    valid = (
-        isinstance(encoded, str)
-        and isinstance(expected_bytes, int)
-        and expected_bytes > 0
-    )
-    decoded = b""
-    if valid:
-        try:
-            decoded = base64.b64decode(encoded, validate=True)
-        except (ValueError, base64.binascii.Error):
-            valid = False
-        valid = (
-            valid
-            and len(decoded) == expected_bytes
-            and isinstance(expected_digest, str)
-            and sha256_bytes(decoded) == expected_digest.removeprefix("sha256:")
-        )
+    valid, decoded = _validate_cosmos_result(result, request_payload) if model_id == "cosmos3-nano" else (False, b"")
     output_units = (
         {"unit": "frames", "count": frames}
         if isinstance(frames, int) and frames > 0
-        else (
-            {"unit": "bytes", "count": expected_bytes}
-            if isinstance(expected_bytes, int)
-            else None
-        )
+        else ({"unit": "bytes", "count": expected_bytes} if isinstance(expected_bytes, int) else None)
     )
     throughput = (
         {
-            "unit": (
-                "frames-per-second"
-                if output_units["unit"] == "frames"
-                else "bytes-per-second"
-            ),
+            "unit": ("frames-per-second" if output_units["unit"] == "frames" else "bytes-per-second"),
             "value": output_units["count"] / elapsed_seconds,
         }
         if output_units is not None and elapsed_seconds > 0
@@ -970,11 +977,7 @@ def _safe_env_digest(containers: list[dict[str, Any]]) -> str:
                 {
                     "container": container.get("name"),
                     "name": item["name"],
-                    "value_sha256": (
-                        sha256_bytes(str(item["value"]).encode())
-                        if "value" in item
-                        else None
-                    ),
+                    "value_sha256": (sha256_bytes(str(item["value"]).encode()) if "value" in item else None),
                     "value_from": item.get("valueFrom"),
                 }
             )
@@ -985,6 +988,154 @@ def _sha_digest(value: Any) -> str | None:
     if not isinstance(value, str) or SHA256.fullmatch(value) is None:
         return None
     return value if value.startswith("sha256:") else "sha256:" + value
+
+
+def _model_deployment_resource_binding(
+    model_deployment: dict[str, Any],
+    observation: ClusterObservation,
+    *,
+    namespace: str,
+    model_id: str,
+) -> str:
+    """Bind observed runtime resources to one converged ModelDeployment revision."""
+
+    api_version = model_deployment.get("apiVersion")
+    kind = model_deployment.get("kind")
+    metadata = model_deployment.get("metadata")
+    status = model_deployment.get("status")
+    if not isinstance(metadata, dict) or not isinstance(status, dict):
+        raise BenchmarkError("model_deployment_identity_mismatch")
+    generation = metadata.get("generation")
+    owner_uid = metadata.get("uid")
+    if (
+        api_version != "inference.fs2.nebius.ai/v1alpha1"
+        or kind != "ModelDeployment"
+        or metadata.get("name") != model_id
+        or metadata.get("namespace") != namespace
+        or not isinstance(owner_uid, str)
+        or not owner_uid
+        or metadata.get("deletionTimestamp") is not None
+        or isinstance(generation, bool)
+        or not isinstance(generation, int)
+        or generation < 1
+    ):
+        raise BenchmarkError("model_deployment_identity_mismatch")
+    if status.get("observedGeneration") != generation:
+        raise BenchmarkError("model_deployment_status_stale")
+    spec_digest = _sha_digest(status.get("specDigest"))
+    if spec_digest is None:
+        raise BenchmarkError("model_deployment_spec_digest_missing")
+
+    resource_statuses = status.get("resources")
+    if not isinstance(resource_statuses, list) or not resource_statuses:
+        raise BenchmarkError("model_deployment_resources_missing")
+    status_by_identity: dict[str, dict[str, Any]] = {}
+    for item in resource_statuses:
+        if not isinstance(item, dict):
+            raise BenchmarkError("model_deployment_resource_status_invalid")
+        identity = item.get("identity")
+        item_generation = item.get("generation")
+        identity_fields = tuple(item.get(field) for field in ("apiVersion", "kind", "namespace", "name"))
+        expected_identity = "/".join(value if isinstance(value, str) else "" for value in identity_fields)
+        if (
+            not isinstance(identity, str)
+            or identity != expected_identity
+            or identity in status_by_identity
+            or any(not isinstance(value, str) or not value for value in identity_fields)
+            or not isinstance(item.get("uid"), str)
+            or not item["uid"]
+            or isinstance(item_generation, bool)
+            or not isinstance(item_generation, int)
+            or item_generation < 0
+            or _sha_digest(item.get("digest")) is None
+        ):
+            raise BenchmarkError("model_deployment_resource_status_invalid")
+        status_by_identity[identity] = item
+
+    resources = [
+        observation.deployment,
+        observation.scaled_deployment,
+        observation.service,
+        observation.scaled_object,
+    ]
+    if any(not isinstance(resource, dict) for resource in resources):
+        raise BenchmarkError("model_deployment_observation_incomplete")
+
+    bound: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
+    for resource in resources:
+        assert isinstance(resource, dict)
+        resource_metadata = resource.get("metadata")
+        if not isinstance(resource_metadata, dict):
+            raise BenchmarkError("model_deployment_resource_identity_mismatch")
+        resource_generation = resource_metadata.get("generation", 0)
+        resource_identity = "/".join(
+            str(value)
+            for value in (
+                resource.get("apiVersion", ""),
+                resource.get("kind", ""),
+                resource_metadata.get("namespace", ""),
+                resource_metadata.get("name", ""),
+            )
+        )
+        item = status_by_identity.get(resource_identity)
+        if (
+            item is None
+            or resource_metadata.get("uid") != item.get("uid")
+            or isinstance(resource_generation, bool)
+            or not isinstance(resource_generation, int)
+            or resource_generation != item.get("generation")
+            or resource_metadata.get("deletionTimestamp") is not None
+        ):
+            raise BenchmarkError("model_deployment_resource_identity_mismatch")
+        controllers = [
+            owner
+            for owner in resource_metadata.get("ownerReferences", []) or []
+            if isinstance(owner, dict) and owner.get("controller") is True
+        ]
+        if len(controllers) != 1 or any(
+            controllers[0].get(field) != value
+            for field, value in (
+                ("apiVersion", api_version),
+                ("kind", kind),
+                ("name", model_id),
+                ("uid", owner_uid),
+            )
+        ):
+            raise BenchmarkError("model_deployment_resource_ownership_mismatch")
+        annotations = resource_metadata.get("annotations", {})
+        if not isinstance(annotations, dict) or annotations.get("fs2-serve.nebius.ai/spec-digest") != spec_digest:
+            raise BenchmarkError("model_deployment_resource_revision_mismatch")
+        bound[resource_identity] = (resource, item)
+
+    endpoint = status.get("endpoint")
+    service = observation.service
+    assert isinstance(service, dict)
+    service_metadata = service.get("metadata")
+    if not isinstance(service_metadata, dict):
+        raise BenchmarkError("model_deployment_endpoint_identity_mismatch")
+    service_identity = "/".join(
+        (
+            str(service.get("apiVersion", "")),
+            str(service.get("kind", "")),
+            str(service_metadata.get("namespace", "")),
+            str(service_metadata.get("name", "")),
+        )
+    )
+    service_status = bound.get(service_identity)
+    service_spec = service.get("spec")
+    service_ports = service_spec.get("ports", []) if isinstance(service_spec, dict) else []
+    if (
+        not isinstance(endpoint, dict)
+        or service_status is None
+        or endpoint.get("namespace") != namespace
+        or endpoint.get("serviceName") != service_metadata.get("name")
+        or endpoint.get("uid") != service_metadata.get("uid")
+        or endpoint.get("digest") != service_status[1].get("digest")
+        or not isinstance(service_ports, list)
+        or not any(isinstance(port, dict) and port.get("port") == endpoint.get("servicePort") for port in service_ports)
+    ):
+        raise BenchmarkError("model_deployment_endpoint_identity_mismatch")
+    return spec_digest
 
 
 def build_compatibility_tuple(
@@ -1013,9 +1164,7 @@ def build_compatibility_tuple(
     template = deployment.get("spec", {}).get("template", {})
     pod_annotations = template.get("metadata", {}).get("annotations", {})
     pod_spec = template.get("spec", {})
-    containers = [
-        item for item in pod_spec.get("containers", []) if isinstance(item, dict)
-    ]
+    containers = [item for item in pod_spec.get("containers", []) if isinstance(item, dict)]
     if not containers:
         raise BenchmarkError("runtime_container_missing")
     runtime = containers[0]
@@ -1027,41 +1176,36 @@ def build_compatibility_tuple(
     node_labels = node.get("metadata", {}).get("labels", {})
     selector = pod_spec.get("nodeSelector", {})
     cache = model_deployment.get("spec", {}).get("cache", {})
-    snapshot = (
-        cache.get("snapshotRef") if isinstance(cache.get("snapshotRef"), dict) else {}
-    )
+    snapshot = cache.get("snapshotRef") if isinstance(cache.get("snapshotRef"), dict) else {}
     volume_claim = next(
         (
             volume.get("persistentVolumeClaim", {}).get("claimName")
             for volume in pod_spec.get("volumes", []) or []
-            if isinstance(volume, dict)
-            and isinstance(volume.get("persistentVolumeClaim"), dict)
+            if isinstance(volume, dict) and isinstance(volume.get("persistentVolumeClaim"), dict)
         ),
         None,
     )
     cluster = bundle.get("cluster") if isinstance(bundle.get("cluster"), dict) else {}
-    model_revision = pod_annotations.get("fs2.nebius/model-revision") or (
-        deployment.get("metadata", {})
-        .get("labels", {})
-        .get("app.kubernetes.io/version")
+    spec_digest = _model_deployment_resource_binding(
+        model_deployment,
+        observation,
+        namespace=namespace,
+        model_id=model_id,
     )
+    # Dynamic routes intentionally bind durable operations to the complete
+    # desired-state revision, not to the currently active artifact revision.
+    # Freeze that route identity before recycling or activating any Pod.
+    model_revision = f"dynamic:{spec_digest}"
     model_content = _sha_digest(
-        annotations.get("fs2.nebius/model-content-digest")
-        or pod_annotations.get("fs2.nebius/model-content-digest")
+        annotations.get("fs2.nebius/model-content-digest") or pod_annotations.get("fs2.nebius/model-content-digest")
     )
     desired = model_deployment.get("spec", {})
     artifact_manifest = _sha_digest(desired.get("artifact", {}).get("manifestDigest"))
-    runtime_template_digest = _sha_digest(
-        desired.get("runtime", {}).get("templateRef", {}).get("digest")
-    )
+    runtime_template_digest = _sha_digest(desired.get("runtime", {}).get("templateRef", {}).get("digest"))
     argv = {"command": runtime.get("command") or [], "args": runtime.get("args") or []}
-    requested_gpus = (
-        runtime.get("resources", {}).get("limits", {}).get("nvidia.com/gpu", 1)
-    )
-    try:
-        accelerator_count = int(requested_gpus)
-    except (TypeError, ValueError):
-        accelerator_count = 1
+    accelerator_count = _resource_gpu_count(pod_spec)
+    if accelerator_count < 1:
+        raise BenchmarkError("gpu_request_missing")
     return {
         "source_commit": source_commit,
         "project_id": cluster.get("project_id"),
@@ -1079,25 +1223,21 @@ def build_compatibility_tuple(
         "runtime_environment_digest": _safe_env_digest(containers),
         "accelerator_class": selector.get("accelerator.fs2.nebius/class")
         or node_labels.get("accelerator.fs2.nebius/class"),
-        "gpu_product": gpu_identity.get("product")
-        or node_labels.get("nvidia.com/gpu.product"),
+        "gpu_product": gpu_identity.get("product") or node_labels.get("nvidia.com/gpu.product"),
         "gpu_compute_capability": gpu_identity.get("compute_capability"),
         "gpu_memory_bytes": gpu_identity.get("memory_bytes"),
         "gpu_count": accelerator_count,
-        "driver_version": gpu_identity.get("driver_version")
-        or node_labels.get("nebius.com/nvidia_driver_version"),
-        "cuda_version": node_labels.get("nebius.com/cuda_version"),
+        "driver_version": gpu_identity.get("driver_version") or node_labels.get("nebius.com/nvidia_driver_version"),
+        "cuda_version": gpu_identity.get("cuda_version") or node_labels.get("nebius.com/cuda_version"),
         "pool_id": selector.get("accelerator.fs2.nebius/pool-id")
         or annotations.get("fs2-serve.nebius.ai/workload-pool-ref"),
-        "capacity_type": selector.get("capacity.fs2.nebius/type")
-        or node_labels.get("capacity.fs2.nebius/type"),
+        "capacity_type": selector.get("capacity.fs2.nebius/type") or node_labels.get("capacity.fs2.nebius/type"),
         "capacity_state": capacity_state,
         "cache_tier": cache.get("tier", "Disabled"),
         "mechanism": mechanism,
         "snapshot_digest": _sha_digest(snapshot.get("digest")),
         "storage_class": storage_class,
-        "storage_mode": storage_mode
-        or ("persistent-volume-claim" if volume_claim else "ephemeral"),
+        "storage_mode": storage_mode or ("persistent-volume-claim" if volume_claim else "ephemeral"),
         "payload_digest": payload_digest,
         "client_placement": client_placement,
         "interface_protocol": interface_protocol,
@@ -1464,11 +1604,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         args.token_file,
         args.request_file,
     )
-    output_paths = tuple(
-        item
-        for item in (args.output, args.raw_output, args.runtime_log_output)
-        if item is not None
-    )
+    output_paths = tuple(item for item in (args.output, args.raw_output, args.runtime_log_output) if item is not None)
     resolved_inputs = {item.resolve(strict=False) for item in input_paths}
     resolved_outputs = [item.resolve(strict=False) for item in output_paths]
     if (
@@ -1477,21 +1613,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         or any(item.exists() for item in output_paths)
         or not 1 <= args.ordinal <= 10000
     ):
-        parser.error(
-            "output paths must be new/distinct from inputs and ordinal must be 1..10000"
-        )
-    if (
-        not 30 <= args.timeout_seconds <= 14400
-        or not 5 <= args.cooldown_seconds <= 7200
-    ):
+        parser.error("output paths must be new/distinct from inputs and ordinal must be 1..10000")
+    if not 30 <= args.timeout_seconds <= 14400 or not 5 <= args.cooldown_seconds <= 7200:
         parser.error("timeout or cooldown is outside the bounded range")
-    if args.recycle_ready_pod and (
-        args.expected_floor != 1 or args.capacity_state != "prepared-node-zero-pod"
-    ):
-        parser.error(
-            "--recycle-ready-pod requires --expected-floor 1 and "
-            "--capacity-state prepared-node-zero-pod"
-        )
+    if args.recycle_ready_pod and (args.expected_floor != 1 or args.capacity_state != "prepared-node-zero-pod"):
+        parser.error("--recycle-ready-pod requires --expected-floor 1 and --capacity-state prepared-node-zero-pod")
     if args.expected_floor == 1 and not args.recycle_ready_pod:
         parser.error("--expected-floor 1 requires --recycle-ready-pod")
     return args
@@ -1500,18 +1626,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def _storage_metadata(
     kubectl: Kubectl, namespace: str, observation: ClusterObservation
 ) -> tuple[str | None, str | None]:
-    pod_spec = (
-        observation.deployment.get("spec", {}).get("template", {}).get("spec", {})
-    )
+    pod_spec = observation.deployment.get("spec", {}).get("template", {}).get("spec", {})
     claim_name = next(
         (
             volume.get("persistentVolumeClaim", {}).get("claimName")
             for volume in pod_spec.get("volumes", []) or []
             if isinstance(volume, dict)
             and isinstance(volume.get("persistentVolumeClaim"), dict)
-            and isinstance(
-                volume.get("persistentVolumeClaim", {}).get("claimName"), str
-            )
+            and isinstance(volume.get("persistentVolumeClaim", {}).get("claimName"), str)
         ),
         None,
     )
@@ -1530,28 +1652,84 @@ def _storage_metadata(
     return storage_class, storage_mode
 
 
-def _runtime_identity(
-    kubectl: Kubectl, namespace: str, observation: ClusterObservation
-) -> dict[str, Any]:
+def _runtime_identity(kubectl: Kubectl, namespace: str, observation: ClusterObservation) -> dict[str, Any]:
     if observation.pod is None:
         return {}
     pod_name = observation.pod.get("metadata", {}).get("name")
     containers = observation.pod.get("spec", {}).get("containers", [])
-    container_name = (
-        containers[0].get("name")
-        if containers and isinstance(containers[0], dict)
-        else None
-    )
+    container_name = containers[0].get("name") if containers and isinstance(containers[0], dict) else None
     if not isinstance(pod_name, str) or not isinstance(container_name, str):
         return {}
     return kubectl.gpu_identity(namespace, pod_name, container_name)
 
 
+def _finalize_runtime_compatibility(
+    compatibility: dict[str, Any],
+    observation: ClusterObservation,
+    gpu_identity: dict[str, Any],
+) -> dict[str, Any]:
+    """Freeze GPU facts only after the measured runtime has a ready endpoint."""
+
+    if observation.pod is None or observation.node is None:
+        raise BenchmarkError("gpu_identity_unavailable")
+    pod_spec = observation.pod.get("spec", {})
+    expected_gpu_count = compatibility.get("gpu_count")
+    if (
+        isinstance(expected_gpu_count, bool)
+        or not isinstance(expected_gpu_count, int)
+        or expected_gpu_count < 1
+        or _resource_gpu_count(pod_spec) != expected_gpu_count
+    ):
+        raise BenchmarkError("gpu_identity_count_mismatch")
+
+    node_labels = observation.node.get("metadata", {}).get("labels", {})
+    if not isinstance(node_labels, dict):
+        raise BenchmarkError("gpu_identity_incomplete")
+    for field, label in (
+        ("accelerator_class", "accelerator.fs2.nebius/class"),
+        ("pool_id", "accelerator.fs2.nebius/pool-id"),
+        ("capacity_type", "capacity.fs2.nebius/type"),
+    ):
+        observed = node_labels.get(label)
+        if observed is not None and observed != compatibility.get(field):
+            raise BenchmarkError("gpu_identity_node_mismatch")
+
+    product = gpu_identity.get("product") or node_labels.get("nvidia.com/gpu.product")
+    compute_capability = gpu_identity.get("compute_capability")
+    memory_bytes = gpu_identity.get("memory_bytes")
+    driver_version = gpu_identity.get("driver_version") or node_labels.get("nebius.com/nvidia_driver_version")
+    cuda_version = gpu_identity.get("cuda_version") or node_labels.get("nebius.com/cuda_version")
+    if (
+        not isinstance(product, str)
+        or not product
+        or not isinstance(compute_capability, str)
+        or re.fullmatch(r"[0-9]+\.[0-9]+", compute_capability) is None
+        or isinstance(memory_bytes, bool)
+        or not isinstance(memory_bytes, int)
+        or memory_bytes < 1
+        or not isinstance(driver_version, str)
+        or not driver_version
+        or not isinstance(cuda_version, str)
+        or not cuda_version
+    ):
+        raise BenchmarkError("gpu_identity_incomplete")
+
+    finalized = dict(compatibility)
+    finalized.update(
+        {
+            "gpu_product": product,
+            "gpu_compute_capability": compute_capability,
+            "gpu_memory_bytes": memory_bytes,
+            "driver_version": driver_version,
+            "cuda_version": cuda_version,
+        }
+    )
+    return finalized
+
+
 def _validate_attempt(attempt: dict[str, Any]) -> None:
     path = Path(__file__).with_name("aggregate_fast_start_benchmark.py")
-    spec = importlib.util.spec_from_file_location(
-        "_fs2_fast_start_aggregate_validation", path
-    )
+    spec = importlib.util.spec_from_file_location("_fs2_fast_start_aggregate_validation", path)
     if spec is None or spec.loader is None:
         raise BenchmarkError("attempt_validator_unavailable")
     module = importlib.util.module_from_spec(spec)
@@ -1565,27 +1743,17 @@ def _validate_attempt(attempt: dict[str, Any]) -> None:
         raise BenchmarkError("attempt_validation_failed") from None
 
 
-def _attempt_durations(
-    clocks: dict[str, int | None], activation_ns: int
-) -> dict[str, float | None]:
+def _attempt_durations(clocks: dict[str, int | None], activation_ns: int) -> dict[str, float | None]:
     return {
         # The contract defines capacity wait from accepted activation, not
         # from the first asynchronously observed scheduler demand signal.
         "capacity_wait": _duration(activation_ns, clocks["capacity_available"]),
-        "gpu_capacity_available_to_ready": _duration(
-            clocks["capacity_available"], clocks["endpoint_ready"]
-        ),
+        "gpu_capacity_available_to_ready": _duration(clocks["capacity_available"], clocks["endpoint_ready"]),
         "activation_to_ready": _duration(activation_ns, clocks["endpoint_ready"]),
-        "request_to_first_byte": _duration(
-            clocks["request_started"], clocks["first_byte"]
-        ),
-        "request_to_first_semantic_output": _duration(
-            clocks["request_started"], clocks["first_semantic"]
-        ),
+        "request_to_first_byte": _duration(clocks["request_started"], clocks["first_byte"]),
+        "request_to_first_semantic_output": _duration(clocks["request_started"], clocks["first_semantic"]),
         "request_completion": _duration(clocks["request_started"], clocks["completed"]),
-        "activation_to_first_semantic_output": _duration(
-            activation_ns, clocks["first_semantic"]
-        ),
+        "activation_to_first_semantic_output": _duration(activation_ns, clocks["first_semantic"]),
     }
 
 
@@ -1658,6 +1826,7 @@ def _write_attempt(
     observations: list[dict[str, Any]],
     operation_id: str | None,
     cleanup: dict[str, Any],
+    runtime_attribution: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     raw_trace = {
         "schema": "fs2-serve.nebius.ai/fast-start-benchmark-raw-trace/v1",
@@ -1666,11 +1835,10 @@ def _write_attempt(
         "failure_code": failure_code,
         "timestamps": timestamps,
         "observations": observations,
-        "operation_id_sha256": (
-            sha256_bytes(operation_id.encode()) if operation_id else None
-        ),
+        "operation_id_sha256": (sha256_bytes(operation_id.encode()) if operation_id else None),
         "semantic_output_sha256": semantic_digest,
         "compatibility_tuple": compatibility,
+        "runtime_attribution": runtime_attribution,
         "cleanup": cleanup,
     }
     raw_bytes = canonical_json(raw_trace) + b"\n"
@@ -1728,63 +1896,121 @@ def _canonical_operation_id(value: object) -> str:
 
 
 def _assert_runtime_attribution(
-    operation: dict[str, Any], observation: ClusterObservation, gpu_count: int
-) -> None:
+    operation: dict[str, Any],
+    observation: ClusterObservation,
+    gpu_count: int,
+    expected_pod_uid: str,
+    *,
+    model_deployment: dict[str, Any],
+    namespace: str,
+    model_id: str,
+    expected_model_revision: str,
+) -> str:
+    bound_digest = _model_deployment_resource_binding(
+        model_deployment,
+        observation,
+        namespace=namespace,
+        model_id=model_id,
+    )
+    if expected_model_revision != f"dynamic:{bound_digest}":
+        raise BenchmarkError("model_deployment_revision_changed")
     runtime = operation.get("runtime")
-    pod_uid = (
-        observation.pod.get("metadata", {}).get("uid")
-        if observation.pod is not None
-        else None
+    pod_uid = observation.pod.get("metadata", {}).get("uid") if observation.pod is not None else None
+    node_uid = observation.node.get("metadata", {}).get("uid") if observation.node is not None else None
+    pod_node_name = observation.pod.get("spec", {}).get("nodeName") if observation.pod is not None else None
+    node_name = observation.node.get("metadata", {}).get("name") if observation.node is not None else None
+    pod_spec = observation.pod.get("spec", {}) if observation.pod is not None else {}
+    exact_kubernetes_proof = (
+        isinstance(runtime, dict)
+        and isinstance(pod_uid, str)
+        and pod_uid == expected_pod_uid
+        and isinstance(node_uid, str)
+        and isinstance(pod_node_name, str)
+        and pod_node_name == node_name
+        and observation.pod_count == 1
+        and observation.terminating_pods == 0
+        and observation.ready_replicas == 1
+        and observation.endpoints == 1
+        and observation.ready_endpoint_pod_uids == (pod_uid,)
+        and (
+            observation.scaler_targets_primary
+            or (observation.scaled_pod_count == 0 and observation.scaled_terminating_pods == 0)
+        )
+        and observation.pod.get("metadata", {}).get("deletionTimestamp") is None
+        and _condition_true(observation.pod, "Ready")
+        and _condition_true(observation.node, "Ready")
+        and _resource_gpu_count(pod_spec) == gpu_count
+        and gpu_count > 0
     )
-    node_uid = (
-        observation.node.get("metadata", {}).get("uid")
-        if observation.node is not None
-        else None
-    )
-    if (
-        not isinstance(runtime, dict)
-        or not isinstance(pod_uid, str)
-        or not isinstance(node_uid, str)
-        or runtime.get("pod_uid") != pod_uid
-        or runtime.get("node_uid") != node_uid
-        or runtime.get("gpu_count") != gpu_count
-    ):
+    if not exact_kubernetes_proof:
         raise BenchmarkError("operation_runtime_identity_mismatch")
+
+    if (
+        runtime.get("pod_uid") == pod_uid
+        and runtime.get("node_uid") == node_uid
+        and runtime.get("gpu_count") == gpu_count
+        and isinstance(runtime.get("gpu_uuids"), list)
+        and len(runtime["gpu_uuids"]) == gpu_count
+    ):
+        return "operation-runtime-and-kubernetes-single-pod-proof"
+    if runtime == {
+        "pod_uid": None,
+        "node_uid": None,
+        "gpu_uuids": [],
+        "gpu_count": 0,
+        "preemptible": None,
+    }:
+        return "kubernetes-single-pod-proof-null-operation-runtime"
+    raise BenchmarkError("operation_runtime_identity_mismatch")
+
+
+def _runtime_attribution_observation(operation: dict[str, Any]) -> dict[str, Any]:
+    runtime = operation.get("runtime")
+    if not isinstance(runtime, dict):
+        return {"authority": "rejected", "operation_runtime": None}
+    pod_uid = runtime.get("pod_uid")
+    node_uid = runtime.get("node_uid")
+    gpu_uuids = runtime.get("gpu_uuids")
+    return {
+        "authority": "rejected",
+        "operation_runtime": {
+            "pod_uid_sha256": (sha256_bytes(pod_uid.encode()) if isinstance(pod_uid, str) else None),
+            "node_uid_sha256": (sha256_bytes(node_uid.encode()) if isinstance(node_uid, str) else None),
+            "gpu_uuid_sha256": (
+                [sha256_bytes(value.encode()) for value in gpu_uuids if isinstance(value, str)]
+                if isinstance(gpu_uuids, list)
+                else None
+            ),
+            "gpu_count": runtime.get("gpu_count"),
+            "preemptible": runtime.get("preemptible"),
+        },
+    }
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     token = read_token(args.token_file)
     bundle = read_json(args.access_bundle, owner_only=True)
     request_document = read_json(args.request_file)
-    endpoints = (
-        bundle.get("endpoints") if isinstance(bundle.get("endpoints"), dict) else {}
-    )
+    endpoints = bundle.get("endpoints") if isinstance(bundle.get("endpoints"), dict) else {}
     endpoint = endpoints.get("inference_base_url")
     if not isinstance(endpoint, str):
         raise BenchmarkError("access_bundle_invalid")
     origin, context = validate_origin(endpoint, args.tls_mode)
-    path, wire_payload, request_modality, interface_protocol = _wire_request(
-        args.model_id, request_document
-    )
+    path, wire_payload, request_modality, interface_protocol = _wire_request(args.model_id, request_document)
     if request_modality == "text" and args.modality != "text":
         raise BenchmarkError("request_modality_mismatch")
     if request_modality == "native" and args.modality != "video":
         raise BenchmarkError("request_modality_mismatch")
     request_operation = request_document.get("operation")
-    if not isinstance(request_operation, str):
+    request_payload = request_document.get("payload")
+    if not isinstance(request_operation, str) or not isinstance(request_payload, dict):
         raise BenchmarkError("request_contract_invalid")
     payload_digest = sha256_json(wire_payload)
-    semantic_validator_digest = sha256_json(
-        {
-            "implementation": "run_live_fast_start_benchmark.py:_validate_result/v2",
-            "model_id": args.model_id,
-            "modality": args.modality,
-            "expected_text_sha256": (
-                sha256_bytes(args.expected_text.encode("utf-8"))
-                if args.expected_text is not None
-                else None
-            ),
-        }
+    semantic_validator_digest = _semantic_validator_digest(
+        model_id=args.model_id,
+        modality=args.modality,
+        expected_text=args.expected_text,
+        request_payload=request_payload,
     )
     benchmark_client_digest = sha256_bytes(Path(__file__).resolve().read_bytes())
     kubectl = Kubectl(args.kubeconfig, args.context)
@@ -1806,10 +2032,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
     if not _floor_restored(initial, args.expected_floor):
         raise BenchmarkError("initial_floor_mismatch")
-    if (
-        args.capacity_state == "prepared-node-zero-pod"
-        and not initial.capacity_available
-    ):
+    if args.capacity_state == "prepared-node-zero-pod" and not initial.capacity_available:
         raise BenchmarkError("prepared_capacity_not_observed")
     if args.capacity_state == "fresh-node-zero-pod" and initial.capacity_available:
         raise BenchmarkError("fresh_capacity_state_not_observed")
@@ -1845,12 +2068,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     probe_ns = time.monotonic_ns()
     probe_timestamps: dict[str, str | None] = {
         "activation_accepted": probe_wall,
-        "gpu_capacity_requested": (
-            None if args.capacity_state == "prepared-node-zero-pod" else probe_wall
-        ),
-        "gpu_capacity_available": (
-            probe_wall if args.capacity_state == "prepared-node-zero-pod" else None
-        ),
+        "gpu_capacity_requested": (None if args.capacity_state == "prepared-node-zero-pod" else probe_wall),
+        "gpu_capacity_available": (probe_wall if args.capacity_state == "prepared-node-zero-pod" else None),
         "endpoint_ready": None,
         "request_started": None,
         "first_response_byte": None,
@@ -1860,9 +2079,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     }
     probe_clocks = {
         "request_started": None,
-        "capacity_available": (
-            probe_ns if args.capacity_state == "prepared-node-zero-pod" else None
-        ),
+        "capacity_available": (probe_ns if args.capacity_state == "prepared-node-zero-pod" else None),
         "endpoint_ready": None,
         "first_byte": None,
         "first_semantic": None,
@@ -1916,6 +2133,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     selected_observation = initial
     runtime_log = b""
     semantic_digest: str | None = None
+    runtime_attribution: dict[str, Any] | None = None
+    expected_runtime_pod_uid: str | None = None
     try:
         if args.recycle_ready_pod:
             if initial.pod is None:
@@ -1948,6 +2167,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     and selected_observation.capacity_available
                 )
                 if replacement_ready:
+                    expected_runtime_pod_uid = replacement_uid
                     clocks["endpoint_ready"] = time.monotonic_ns()
                     timestamps["endpoint_ready"] = selected_observation.observed_at
                     break
@@ -2003,10 +2223,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             )
             now_ns = time.monotonic_ns()
             observations.append(_observation_trace(selected_observation))
-            if (
-                selected_observation.capacity_available
-                and clocks["capacity_available"] is None
-            ):
+            if selected_observation.capacity_available and clocks["capacity_available"] is None:
                 clocks["capacity_available"] = now_ns
                 timestamps["gpu_capacity_available"] = selected_observation.observed_at
             if (
@@ -2018,6 +2235,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             ):
                 clocks["endpoint_ready"] = now_ns
                 timestamps["endpoint_ready"] = selected_observation.observed_at
+                endpoint_pod_uid = selected_observation.pod.get("metadata", {}).get("uid")
+                if not isinstance(endpoint_pod_uid, str):
+                    raise BenchmarkError("endpoint_pod_identity_mismatch")
+                expected_runtime_pod_uid = endpoint_pod_uid
             current = decode_json(
                 http_json(
                     origin,
@@ -2050,8 +2271,29 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             raise BenchmarkError("operation_failed")
         if clocks["capacity_available"] is None or clocks["endpoint_ready"] is None:
             raise BenchmarkError("runtime_readiness_not_observed")
-        _assert_runtime_attribution(
-            final_operation, selected_observation, compatibility["gpu_count"]
+        if not isinstance(expected_runtime_pod_uid, str):
+            raise BenchmarkError("endpoint_pod_identity_mismatch")
+        runtime_model_deployment = kubectl.get(
+            "modeldeployment.inference.fs2.nebius.ai",
+            name=args.model_id,
+            namespace=args.namespace,
+        )
+        assert runtime_model_deployment is not None
+        runtime_attribution = _runtime_attribution_observation(final_operation)
+        runtime_attribution["authority"] = _assert_runtime_attribution(
+            final_operation,
+            selected_observation,
+            compatibility["gpu_count"],
+            expected_runtime_pod_uid,
+            model_deployment=runtime_model_deployment,
+            namespace=args.namespace,
+            model_id=args.model_id,
+            expected_model_revision=model_revision,
+        )
+        compatibility = _finalize_runtime_compatibility(
+            compatibility,
+            selected_observation,
+            _runtime_identity(kubectl, args.namespace, selected_observation),
         )
         if result_value is None:
             result_http = http_json(
@@ -2068,14 +2310,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         clocks["completed"] = result_http.completed_monotonic_ns
         timestamps["first_response_byte"] = result_http.first_byte_at
         timestamps["request_completed"] = result_http.completed_at
-        generation_seconds = (
-            _duration(clocks["endpoint_ready"], clocks["completed"]) or 0.0
-        )
+        generation_seconds = _duration(clocks["endpoint_ready"], clocks["completed"]) or 0.0
         inference, semantic_digest = _validate_result(
             result_value,
             args.modality,
             args.expected_text,
             generation_seconds,
+            model_id=args.model_id,
+            request_payload=request_payload,
         )
         if not inference["valid_output"]:
             raise BenchmarkError("semantic_output_invalid")
@@ -2085,11 +2327,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         if selected_observation.pod is not None:
             pod_name = selected_observation.pod.get("metadata", {}).get("name")
             containers = selected_observation.pod.get("spec", {}).get("containers", [])
-            container_name = (
-                containers[0].get("name")
-                if containers and isinstance(containers[0], dict)
-                else None
-            )
+            container_name = containers[0].get("name") if containers and isinstance(containers[0], dict) else None
             if isinstance(pod_name, str) and isinstance(container_name, str):
                 runtime_log = kubectl.logs(args.namespace, pod_name, container_name)
 
@@ -2132,13 +2370,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             observations=observations,
             operation_id=operation_id,
             cleanup={"status": "complete", "failure_code": None},
+            runtime_attribution=runtime_attribution,
         )
     except BaseException as original_error:
-        failure_code = (
-            original_error.code
-            if isinstance(original_error, BenchmarkError)
-            else "unexpected_failure"
-        )
+        failure_code = original_error.code if isinstance(original_error, BenchmarkError) else "unexpected_failure"
         cleanup = {"status": "complete", "failure_code": None}
         try:
             restore_floor_after_failure(
@@ -2158,9 +2393,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             cleanup = {
                 "status": "failed",
                 "failure_code": (
-                    cleanup_error.code
-                    if isinstance(cleanup_error, BenchmarkError)
-                    else "unexpected_cleanup_failure"
+                    cleanup_error.code if isinstance(cleanup_error, BenchmarkError) else "unexpected_cleanup_failure"
                 ),
             }
         return _write_attempt(
@@ -2179,6 +2412,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             observations=observations,
             operation_id=operation_id,
             cleanup=cleanup,
+            runtime_attribution=runtime_attribution,
         )
 
 
@@ -2187,16 +2421,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         attempt = run(args)
     except BenchmarkError as error:
-        print(
-            json.dumps({"result": "FAIL", "failure_code": error.code}, sort_keys=True)
-        )
+        print(json.dumps({"result": "FAIL", "failure_code": error.code}, sort_keys=True))
         return 1
     except BaseException:
-        print(
-            json.dumps(
-                {"result": "FAIL", "failure_code": "unexpected_failure"}, sort_keys=True
-            )
-        )
+        print(json.dumps({"result": "FAIL", "failure_code": "unexpected_failure"}, sort_keys=True))
         return 1
     print(
         json.dumps(

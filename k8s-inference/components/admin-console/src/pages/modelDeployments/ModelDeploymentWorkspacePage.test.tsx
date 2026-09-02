@@ -249,6 +249,10 @@ describe("ModelDeployment workspace", () => {
     expect(screen.getByRole("heading", { name: "Ready" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Fast start" })).toBeInTheDocument();
     expect(screen.getAllByText("Hot · already serving").length).toBeGreaterThan(0);
+    expect(screen.getByText("Fixed · L3 · Ready within 60 seconds")).toBeInTheDocument();
+    expect(screen.getByText("Assigned target")).toBeInTheDocument();
+    expect(screen.getByText("Observed p50")).toBeInTheDocument();
+    expect(screen.getByText("Observed p95")).toBeInTheDocument();
     expect(screen.getByText("91.2 s")).toBeInTheDocument();
     expect(screen.getByText("112.7 s")).toBeInTheDocument();
     expect(screen.getByText(/requested L3 path is not qualified/)).toBeInTheDocument();
@@ -257,6 +261,89 @@ describe("ModelDeployment workspace", () => {
       expect(within(track).getByText(phase)).toBeInTheDocument();
     }
     expect(screen.getByRole("heading", { name: "Revision history" })).toBeInTheDocument();
+  });
+
+  it("labels a short benchmark cohort exploratory and exposes its attempt, failure and path reason", async () => {
+    mockReadSurface();
+    const exploratory = structuredClone(modelDeploymentStatusFixture);
+    exploratory.observation!.status.fastStart = {
+      requestedLevel: "L2",
+      assignedLevel: "Off",
+      effectiveLevel: "Off",
+      qualifiedLevel: "Off",
+      qualification: {
+        state: "Fallback",
+        reason: "RequestedLevelUnqualified",
+        message: "Requested L2 is not qualified; Off is assigned.",
+      },
+      modelStart: {
+        sampleCount: 3,
+        failedCount: 0,
+        latestSeconds: 92.1,
+        latestObservedAt: "2026-09-02T07:31:00Z",
+        p50Seconds: 90.4,
+        p95Seconds: 92.1,
+      },
+      pools: [{
+        poolRef: "preemptible-h100",
+        acceleratorClass: "nvidia-h100-sxm5-80gb",
+        qualifiedLevel: "Off",
+        reason: "InsufficientBenchmarkSamples",
+        mechanisms: ["shared-cache"],
+        selectedMechanism: "shared-cache",
+        selectedCompatibilityTupleDigest: `sha256:${"a".repeat(64)}`,
+        modelStart: {
+          sampleCount: 3,
+          failedCount: 0,
+          latestSeconds: 92.1,
+          latestObservedAt: "2026-09-02T07:31:00Z",
+          p50Seconds: 90.4,
+          p95Seconds: 92.1,
+        },
+        paths: [{
+          mechanism: "shared-cache",
+          compatibilityTupleDigest: `sha256:${"a".repeat(64)}`,
+          qualifiedLevel: "Off",
+          reason: "InsufficientBenchmarkSamples",
+          modelStart: {
+            sampleCount: 3,
+            failedCount: 0,
+            latestSeconds: 92.1,
+            latestObservedAt: "2026-09-02T07:31:00Z",
+            p50Seconds: 90.4,
+            p95Seconds: 92.1,
+          },
+        }, {
+          mechanism: "local-snapshot",
+          compatibilityTupleDigest: `sha256:${"b".repeat(64)}`,
+          qualifiedLevel: "Off",
+          reason: "BenchmarkFailuresPresent",
+          modelStart: {
+            sampleCount: 3,
+            failedCount: 1,
+            latestSeconds: 58.3,
+            latestObservedAt: "2026-09-02T07:31:00Z",
+            p50Seconds: 57.1,
+            p95Seconds: 58.3,
+          },
+        }],
+      }],
+    };
+    vi.mocked(adminApi.modelDeploymentStatus).mockResolvedValue(testEnvelope(exploratory));
+    renderPage();
+
+    const fastStart = await screen.findByRole("region", { name: "Fast start" });
+    expect(within(fastStart).getByText("Observed p50")).toBeInTheDocument();
+    expect(within(fastStart).getByText("Observed p95")).toBeInTheDocument();
+    expect(within(fastStart).queryByText("Qualified p95")).not.toBeInTheDocument();
+    expect(within(fastStart).getByText("Evidence attempts").parentElement).toHaveTextContent("3");
+    expect(within(fastStart).getByText("Failed attempts").parentElement).toHaveTextContent("0");
+    const poolEvidence = screen.getByLabelText("Per-pool fast-start evidence");
+    expect(poolEvidence).toHaveTextContent("Evidence Exploratory");
+    expect(poolEvidence).toHaveTextContent("Path shared-cache · evidence Exploratory");
+    expect(poolEvidence).toHaveTextContent("Path local-snapshot · evidence Measured · failures present");
+    expect(within(poolEvidence).getAllByText("InsufficientBenchmarkSamples")).toHaveLength(2);
+    expect(within(poolEvidence).getByText("BenchmarkFailuresPresent")).toBeInTheDocument();
   });
 
   it("shows unavailable observations explicitly and never turns absent replica values into zero", async () => {

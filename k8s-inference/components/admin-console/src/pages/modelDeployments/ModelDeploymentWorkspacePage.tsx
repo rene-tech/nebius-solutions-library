@@ -4,6 +4,8 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { adminApi, AdminApiError } from "../../api/client";
 import type {
   ModelDeploymentActionCapability,
+  ModelDeploymentFastStartLevel,
+  ModelDeploymentFastStartStatistics,
   ModelDeploymentMutationResult,
   ModelDeploymentRenderPreview,
   ModelDeploymentRevision,
@@ -143,12 +145,40 @@ function mechanismValue(value: unknown): string {
   try { return JSON.stringify(value); } catch { return "Unavailable"; }
 }
 
+function statisticValue(
+  statistics: ModelDeploymentFastStartStatistics | null | undefined,
+  field: "sample" | "failed" | "p50" | "p95",
+): string {
+  if (!statistics) return "Unavailable";
+  if (field === "sample") return String(statistics.sampleCount ?? statistics.sample_count ?? "Unavailable");
+  if (field === "failed") return String(statistics.failedCount ?? statistics.failed_count ?? "Unavailable");
+  if (field === "p50") return fastStartSeconds(statistics.p50Seconds ?? statistics.p50_seconds);
+  return fastStartSeconds(statistics.p95Seconds ?? statistics.p95_seconds);
+}
+
+function evidenceClass(
+  reason: string | null | undefined,
+  level: ModelDeploymentFastStartLevel,
+  statistics: ModelDeploymentFastStartStatistics | null | undefined,
+): string {
+  if (!statistics) return "Unavailable";
+  if (reason === "InsufficientBenchmarkSamples") return "Exploratory";
+  if (reason === "IncompleteCompatibilityTuple") return "Unusable · incomplete tuple";
+  if (["BenchmarkFailuresPresent", "BenchmarkFailuresExceedPercentile"].includes(reason ?? "")) {
+    return "Measured · failures present";
+  }
+  if (reason === "BenchmarkP95WithinTarget" && level !== "Off") return "Qualified";
+  return "Measured · no level qualified";
+}
+
 function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spec: ModelDeploymentSpec }) {
   const observed = normalizedFastStartStatus(view);
   const effective = effectiveFastStartLevel(view);
-  const requested = observed?.requestedLevel
-    ? fastStartLevelLabel(observed.requestedLevel)
-    : fastStartPolicySummary(spec.fastStart);
+  const requested = spec.fastStart
+    ? fastStartPolicySummary(spec.fastStart)
+    : observed?.requestedLevel
+      ? fastStartLevelLabel(observed.requestedLevel)
+      : "Not configured";
   const assigned = observed?.assignedLevel ? fastStartLevelLabel(observed.assignedLevel) : "Unavailable";
   const qualified = observed?.qualifiedLevel ? fastStartLevelLabel(observed.qualifiedLevel) : "Unavailable";
   const target = observed?.targetSeconds === null || observed?.targetSeconds === undefined
@@ -168,10 +198,12 @@ function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spe
         <div><span>Qualified</span><strong>{qualified}</strong></div>
       </div>
       <div className="fast-start-observation">
-        <span>Target <strong>{target}</strong></span>
+        <span>Assigned target <strong>{target}</strong></span>
         <span>Model ready <strong>{fastStartSeconds(observed?.lastObservedSeconds)}</strong></span>
-        <span>Qualified p50 <strong>{fastStartSeconds(observed?.qualifiedP50Seconds)}</strong></span>
-        <span>Qualified p95 <strong>{fastStartSeconds(observed?.qualifiedP95Seconds)}</strong></span>
+        <span>Observed p50 <strong>{fastStartSeconds(observed?.observedP50Seconds)}</strong></span>
+        <span>Observed p95 <strong>{fastStartSeconds(observed?.observedP95Seconds)}</strong></span>
+        <span>Evidence attempts <strong>{observed?.sampleCount ?? "Unavailable"}</strong></span>
+        <span>Failed attempts <strong>{observed?.failedCount ?? "Unavailable"}</strong></span>
         <span>Capacity wait <strong>{fastStartSeconds(observed?.capacityWaitSeconds)}</strong></span>
         <span>Request to ready <strong>{fastStartSeconds(observed?.endToEndSeconds)}</strong></span>
       </div>
@@ -183,6 +215,7 @@ function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spe
           <div><dt>Snapshot preference</dt><dd>{spec.cache.snapshotPreference}</dd></div>
           <div><dt>Snapshot identity</dt><dd>{spec.cache.snapshotRef ? `${spec.cache.snapshotRef.name} · ${spec.cache.snapshotRef.strategy}` : "Not configured"}</dd></div>
           <div><dt>Evidence observed</dt><dd>{observed?.observedAt ? formatTimestamp(observed.observedAt) : "Unavailable"}</dd></div>
+          <div><dt>Qualification reason</dt><dd>{observed?.qualificationReason ? <code>{observed.qualificationReason}</code> : "Unavailable"}</dd></div>
           {observed?.automatic ? <>
             <div><dt>Automatic decision</dt><dd>{observed.automatic.reason ?? "Unavailable"}</dd></div>
             <div><dt>Automatic evaluated</dt><dd>{(observed.automatic.evaluatedAt ?? observed.automatic.evaluated_at) ? formatTimestamp(observed.automatic.evaluatedAt ?? observed.automatic.evaluated_at ?? "") : "Unavailable"}</dd></div>
@@ -195,8 +228,33 @@ function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spe
             <div><dt>Idle-gap episodes · 1h / 7d</dt><dd>{observed.automatic.shortWindowIdleGapEpisodes ?? observed.automatic.short_window_idle_gap_episodes ?? "Unavailable"} / {observed.automatic.longWindowIdleGapEpisodes ?? observed.automatic.long_window_idle_gap_episodes ?? "Unavailable"}</dd></div>
           </> : null}
           {mechanisms.map(([name, value]) => <div key={name}><dt>{name.replaceAll("_", " ")}</dt><dd>{mechanismValue(value)}</dd></div>)}
-          {!mechanisms.length ? <div><dt>Controller mechanisms</dt><dd>Unavailable</dd></div> : null}
+          {!mechanisms.length && !observed?.pools.length ? <div><dt>Controller mechanisms</dt><dd>Unavailable</dd></div> : null}
         </dl>
+        {observed?.pools.length ? <div className="condition-list" aria-label="Per-pool fast-start evidence">
+          {observed.pools.map((pool, poolIndex) => {
+            const poolRef = pool.poolRef ?? pool.pool_ref ?? `pool-${poolIndex + 1}`;
+            const poolLevel = pool.qualifiedLevel ?? pool.qualified_level ?? "Off";
+            const poolModelStart = pool.modelStart ?? pool.model_start;
+            const selectedMechanism = pool.selectedMechanism ?? pool.selected_mechanism;
+            const selectedTuple = pool.selectedCompatibilityTupleDigest ?? pool.selected_compatibility_tuple_digest;
+            return <div key={poolRef}>
+              <span className="mini-chip">{poolRef} · {pool.acceleratorClass ?? pool.accelerator_class ?? "accelerator unavailable"}</span>
+              <strong>Qualified {poolLevel}</strong>
+              <span>Evidence {evidenceClass(pool.reason, poolLevel, poolModelStart)}</span>
+              <span>Reason <code>{pool.reason ?? "Unavailable"}</code></span>
+              <span>Selected mechanism {selectedMechanism ?? "Unavailable"}</span>
+              <span>Observed attempts {statisticValue(poolModelStart, "sample")} · failures {statisticValue(poolModelStart, "failed")} · p50 {statisticValue(poolModelStart, "p50")} · p95 {statisticValue(poolModelStart, "p95")}</span>
+              {selectedTuple ? <span>Compatibility tuple <code>{selectedTuple}</code></span> : null}
+              {(pool.paths ?? []).map((path, pathIndex) => {
+                const pathModelStart = path.modelStart ?? path.model_start;
+                const pathLevel = path.qualifiedLevel ?? path.qualified_level ?? "Off";
+                return <span key={`${path.mechanism ?? "path"}-${path.compatibilityTupleDigest ?? path.compatibility_tuple_digest ?? pathIndex}`}>
+                  Path {path.mechanism ?? "Unavailable"} · evidence {evidenceClass(path.reason, pathLevel, pathModelStart)} · qualified {pathLevel} · reason <code>{path.reason ?? "Unavailable"}</code> · attempts {statisticValue(pathModelStart, "sample")} · failures {statisticValue(pathModelStart, "failed")} · p95 {statisticValue(pathModelStart, "p95")}
+                </span>;
+              })}
+            </div>;
+          })}
+        </div> : null}
       </details>
       <p className="empty-copy">Model-ready time starts when compatible accelerator capacity is available. Capacity wait and request-to-ready time remain separate.</p>
     </section>
@@ -619,7 +677,7 @@ export function ModelDeploymentWorkspacePage({ create = false }: { create?: bool
 
       {!create ? (
         <>
-          <DataBoundary data={statusQuery.data} error={statusQuery.error} pending={statusQuery.isPending}>{({ data }) => <RuntimeStatus expectedRevision={desiredRevision?.revision ?? data.revision} spec={draft} view={data} />}</DataBoundary>
+          <DataBoundary data={statusQuery.data} error={statusQuery.error} pending={statusQuery.isPending}>{({ data }) => <RuntimeStatus expectedRevision={desiredRevision?.revision ?? data.revision} spec={desiredRevision?.spec ?? draft} view={data} />}</DataBoundary>
           <DataBoundary data={historyQuery.data} error={historyQuery.error} pending={historyQuery.isPending}>{({ data }) => <History rows={data.items} />}</DataBoundary>
         </>
       ) : mutationResult ? <div className="state-panel"><strong>The first durable revision was created</strong><span>Open the deployment from the list to follow controller status and revision history.</span></div> : <div className="state-panel"><strong>No observed state or history yet</strong><span>These views become available only after a durable revision exists and the controller publishes an independent observation.</span></div>}

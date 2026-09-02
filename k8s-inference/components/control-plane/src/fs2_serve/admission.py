@@ -33,6 +33,19 @@ from .telemetry import Metrics
 LOGGER = logging.getLogger(__name__)
 
 
+def _publication_surface(*, protocol: str, required_scope: str) -> str:
+    """Map an admission transport to the configured publication surface.
+
+    ModelDeployment exposes OpenAI and MCP independently; it has no separate
+    native publication bit. Native HTTP routes are the transport for models
+    published through the MCP/model-tool surface, such as Cosmos.
+    """
+
+    if required_scope == "mcp.invoke" or protocol == "native":
+        return "mcp"
+    return "openai"
+
+
 class AdmissionService:
     def __init__(
         self,
@@ -160,7 +173,10 @@ class AdmissionService:
             model,
             principal,
             requested_model_id=admission.model_id,
-            surface="mcp" if required_scope == "mcp.invoke" else "openai",
+            surface=_publication_surface(
+                protocol=admission.protocol,
+                required_scope=required_scope,
+            ),
         )
         self.registry.authorize(model, principal.scopes)
         if admission.operation not in model.gateway.policy_operations:
@@ -183,9 +199,7 @@ class AdmissionService:
                 ).encode("utf-8")
             except (TypeError, ValueError):
                 raise ValueError("OpenAI request payload is not canonical JSON") from None
-        canonical_admission = admission.model_copy(
-            update={"model_id": model.id, "request_body": request_body}
-        )
+        canonical_admission = admission.model_copy(update={"model_id": model.id, "request_body": request_body})
         dynamic_policy = model.dynamic_policy
         if dynamic_policy is not None:
             queue_deadline = datetime.now(UTC) + timedelta(seconds=dynamic_policy.max_queue_seconds)

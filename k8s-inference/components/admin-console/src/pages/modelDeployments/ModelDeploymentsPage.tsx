@@ -68,7 +68,8 @@ function ObservedFastStart({ deployment }: { deployment: ModelDeploymentRevision
   const effective = effectiveFastStartLevel(view);
   return (
     <span className="dense-stack">
-      <strong>{effective ? fastStartLevelLabel(effective) : requested}</strong>
+      <strong>{effective ? fastStartLevelLabel(effective) : "Effective unavailable"}</strong>
+      <span>Requested {requested}</span>
       <span>{observed?.assignedLevel ? `Assigned ${observed.assignedLevel} · ${fastStartTarget(observed.assignedLevel)}` : "Assignment unavailable"}</span>
       <span>{observed?.qualifiedLevel ? `Qualified ${observed.qualifiedLevel}` : "Qualification unavailable"}</span>
     </span>

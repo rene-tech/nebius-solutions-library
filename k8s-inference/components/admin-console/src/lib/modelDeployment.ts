@@ -4,6 +4,7 @@ import type {
   ModelDeploymentFastStartFallbackPolicy,
   ModelDeploymentFastStartLevel,
   ModelDeploymentFastStartMode,
+  ModelDeploymentFastStartPoolStatus,
   ModelDeploymentFastStartPolicy,
   ModelDeploymentFastStartStatus,
   ModelDeploymentRuntimePhase,
@@ -50,14 +51,18 @@ export interface NormalizedFastStartStatus {
   qualifiedLevel: ModelDeploymentFastStartLevel | null;
   state: string | null;
   reason: string | null;
+  qualificationReason: string | null;
   targetSeconds: number | null;
   lastObservedSeconds: number | null;
-  qualifiedP50Seconds: number | null;
-  qualifiedP95Seconds: number | null;
+  observedP50Seconds: number | null;
+  observedP95Seconds: number | null;
+  sampleCount: number | null;
+  failedCount: number | null;
   capacityWaitSeconds: number | null;
   endToEndSeconds: number | null;
   observedAt: string | null;
   mechanisms: Record<string, unknown> | null;
+  pools: ModelDeploymentFastStartPoolStatus[];
   automatic: ModelDeploymentFastStartStatus["automatic"];
 }
 
@@ -97,7 +102,7 @@ export function fastStartPolicySummary(policy: ModelDeploymentFastStartPolicy | 
   if (!policy) return "Not configured";
   const normalized = normalizeFastStartPolicy(policy);
   if (normalized.mode === "Automatic") return `Automatic · ${normalized.minimumLevel}–${normalized.maximumLevel}`;
-  return fastStartLevelLabel(normalized.level);
+  return `Fixed · ${fastStartLevelLabel(normalized.level)}`;
 }
 
 export function fastStartStatus(view: ModelDeploymentStatusView): ModelDeploymentFastStartStatus | null {
@@ -112,19 +117,6 @@ export function normalizedFastStartStatus(view: ModelDeploymentStatusView): Norm
   const capacityWait = status.capacityWait ?? status.capacity_wait ?? null;
   const endToEnd = status.endToEnd ?? status.end_to_end ?? null;
   const pools = status.pools ?? [];
-  const mechanismDetails = Object.fromEntries(pools.map((pool, index) => {
-    const poolRef = pool.poolRef ?? pool.pool_ref ?? `pool-${index + 1}`;
-    return [poolRef, {
-      acceleratorClass: pool.acceleratorClass ?? pool.accelerator_class ?? null,
-      qualifiedLevel: pool.qualifiedLevel ?? pool.qualified_level ?? null,
-      reason: pool.reason ?? null,
-      selectedMechanism: pool.selectedMechanism ?? pool.selected_mechanism ?? null,
-      selectedCompatibilityTupleDigest: pool.selectedCompatibilityTupleDigest ?? pool.selected_compatibility_tuple_digest ?? null,
-      mechanisms: pool.mechanisms ?? [],
-      receiptDigests: pool.receiptDigests ?? pool.receipt_digests ?? [],
-      paths: pool.paths ?? [],
-    }];
-  }));
   return {
     requestedLevel: status.requestedLevel ?? status.requested_level ?? null,
     assignedLevel: status.assignedLevel ?? status.assigned_level ?? null,
@@ -132,20 +124,24 @@ export function normalizedFastStartStatus(view: ModelDeploymentStatusView): Norm
     qualifiedLevel: status.qualifiedLevel ?? status.qualified_level ?? null,
     state: status.qualification?.state ?? status.state ?? null,
     reason: status.qualification?.message ?? status.qualification?.reason ?? status.reason ?? null,
+    qualificationReason: status.qualification?.reason ?? null,
     targetSeconds: status.targetSeconds ?? status.target_seconds ?? null,
     lastObservedSeconds: status.lastObservedSeconds ?? status.last_observed_seconds
       ?? modelStart?.latestSeconds ?? modelStart?.latest_seconds ?? null,
-    qualifiedP50Seconds: status.qualifiedP50Seconds ?? status.qualified_p50_seconds
+    observedP50Seconds: status.qualifiedP50Seconds ?? status.qualified_p50_seconds
       ?? modelStart?.p50Seconds ?? modelStart?.p50_seconds ?? null,
-    qualifiedP95Seconds: status.qualifiedP95Seconds ?? status.qualified_p95_seconds
+    observedP95Seconds: status.qualifiedP95Seconds ?? status.qualified_p95_seconds
       ?? modelStart?.p95Seconds ?? modelStart?.p95_seconds ?? null,
+    sampleCount: modelStart?.sampleCount ?? modelStart?.sample_count ?? null,
+    failedCount: modelStart?.failedCount ?? modelStart?.failed_count ?? null,
     capacityWaitSeconds: status.capacityWaitSeconds ?? status.capacity_wait_seconds
       ?? capacityWait?.latestSeconds ?? capacityWait?.latest_seconds ?? null,
     endToEndSeconds: status.endToEndSeconds ?? status.end_to_end_seconds
       ?? endToEnd?.latestSeconds ?? endToEnd?.latest_seconds ?? null,
     observedAt: status.observedAt ?? status.observed_at
       ?? modelStart?.latestObservedAt ?? modelStart?.latest_observed_at ?? null,
-    mechanisms: status.mechanisms ?? (pools.length ? mechanismDetails : null),
+    mechanisms: status.mechanisms ?? null,
+    pools,
     automatic: status.automatic ?? null,
   };
 }

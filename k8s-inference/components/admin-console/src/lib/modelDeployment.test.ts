@@ -146,6 +146,7 @@ describe("ModelDeployment draft helpers", () => {
   it("keeps customer targets separate from observed qualification and derives Hot only from a ready replica", () => {
     expect(fastStartTarget("L1")).toBe("≤300 seconds");
     expect(fastStartTarget("Off")).toBe("No start-time target");
+    expect(fastStartPolicySummary({ mode: "Fixed", level: "L2" })).toBe("Fixed · L2 · Ready within 2 minutes");
     expect(fastStartPolicySummary({ mode: "Automatic", minimumLevel: "L1", maximumLevel: "L4" })).toBe("Automatic · L1–L4");
     expect(fastStartPolicySummary(undefined)).toBe("Not configured");
     expect(effectiveFastStartLevel(modelDeploymentStatusFixture)).toBe("Hot");
@@ -181,7 +182,7 @@ describe("ModelDeployment draft helpers", () => {
       assignedLevel: "L2",
       qualifiedLevel: "L2",
       targetSeconds: 120,
-      qualifiedP95Seconds: 118.4,
+      observedP95Seconds: 118.4,
     });
   });
 
@@ -234,18 +235,21 @@ describe("ModelDeployment draft helpers", () => {
     expect(normalizedFastStartStatus(view)).toMatchObject({
       state: "Fallback",
       reason: "Requested L3 is not qualified; L2 is assigned.",
+      qualificationReason: "RequestedLevelUnqualified",
       lastObservedSeconds: 91.2,
-      qualifiedP50Seconds: 88.4,
-      qualifiedP95Seconds: 112.7,
+      observedP50Seconds: 88.4,
+      observedP95Seconds: 112.7,
+      sampleCount: 20,
+      failedCount: 0,
       capacityWaitSeconds: 42.5,
       endToEndSeconds: 133.7,
       observedAt: "2026-09-02T07:31:00Z",
-      mechanisms: {
-        "reserved-h100": {
-          qualifiedLevel: "L2",
-          mechanisms: ["shared-cache"],
-        },
-      },
+      mechanisms: null,
+      pools: [{
+        poolRef: "reserved-h100",
+        qualifiedLevel: "L2",
+        mechanisms: ["shared-cache"],
+      }],
       automatic: {
         reason: "Promoted",
         shortWindowRequests: 12,

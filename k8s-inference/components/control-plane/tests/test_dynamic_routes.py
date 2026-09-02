@@ -10,7 +10,7 @@ import pytest
 from test_model_deployment import model_spec
 from test_model_deployment_publication import status_view
 
-from fs2_serve.admission import AdmissionService
+from fs2_serve.admission import AdmissionService, _publication_surface
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.model_deployment import DesiredState, LifecycleSpec, TenantPolicySpec, Visibility, spec_digest
@@ -25,6 +25,19 @@ from fs2_serve.registry import Registry
 from fs2_serve.runtime import StubRuntimeClient
 from fs2_serve.store import ConflictError
 from fs2_serve.telemetry import Metrics
+
+
+@pytest.mark.parametrize(
+    ("protocol", "required_scope", "expected"),
+    [
+        ("native", "inference.invoke", "mcp"),
+        ("native", "mcp.invoke", "mcp"),
+        ("openai-chat", "mcp.invoke", "mcp"),
+        ("openai-chat", "inference.invoke", "openai"),
+    ],
+)
+def test_publication_surface_mapping_is_explicit(protocol: str, required_scope: str, expected: str) -> None:
+    assert _publication_surface(protocol=protocol, required_scope=required_scope) == expected
 
 
 def _revision(
@@ -68,6 +81,58 @@ def _revision(
     return ModelDeploymentRevision(
         namespace="fs2-models",
         name=name,
+        tenant_id=spec.tenant_id,
+        revision=1,
+        etag=spec_digest(spec),
+        spec=spec,
+        action=ModelDeploymentRevisionAction.CREATE,
+        created_at=datetime.now(UTC),
+        created_by="operator@example.test",
+    )
+
+
+def _cosmos_revision(
+    registry: Registry,
+    *,
+    mcp: bool = True,
+    open_ai: bool = False,
+) -> ModelDeploymentRevision:
+    base = registry.get("cosmos3-nano", require_enabled=False)
+    assert base.gateway.model_revision is not None
+    assert base.gateway.runtime_image_digest is not None
+    spec = model_spec().model_copy(
+        update={
+            "model_ref": "cosmos3-nano",
+            "artifact": model_spec().artifact.model_copy(
+                update={
+                    "revision": base.gateway.model_revision,
+                    "manifest_digest": f"sha256:{'d' * 64}",
+                }
+            ),
+            "runtime": model_spec().runtime.model_copy(
+                update={
+                    "profile": "vllm-omni",
+                    "image": f"registry.example/fs2/cosmos@{base.gateway.runtime_image_digest}",
+                }
+            ),
+            "exposure": model_spec().exposure.model_copy(
+                update={
+                    "open_ai": open_ai,
+                    "open_ai_aliases": ["cosmos-openai-only"] if open_ai else [],
+                    "mcp": mcp,
+                    "mcp_tool_name": "cosmos3_nano_generate_media" if mcp else None,
+                }
+            ),
+            "policy": TenantPolicySpec(
+                visibility=Visibility.TENANT,
+                policy_ref="tenant-default.v1",
+                allowed_principal_ids=[],
+            ),
+        }
+    )
+    return ModelDeploymentRevision(
+        namespace="fs2-models",
+        name="cosmos3-nano-event",
         tenant_id=spec.tenant_id,
         revision=1,
         etag=spec_digest(spec),
@@ -173,6 +238,115 @@ def test_protocol_exposure_is_enforced_per_authenticated_surface(registry: Regis
             principal,
             requested_model_id="qwen3-8b",
             surface="openai",
+        )
+
+
+@pytest.mark.asyncio
+async def test_native_cosmos_admission_uses_its_mcp_publication(registry: Registry) -> None:
+    revision = _cosmos_revision(registry)
+    snapshot = project_dynamic_publications(
+        [revision],
+        {(revision.namespace, revision.name): status_view(revision)},
+    )
+    assert snapshot.publications[0].open_ai is False
+    assert snapshot.publications[0].mcp is True
+    assert registry.set_dynamic_publications(snapshot, valid_until=datetime.now(UTC) + timedelta(minutes=1))
+
+    store = MemoryStore(
+        PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+        KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+    )
+    service = AdmissionService(
+        registry=registry,
+        store=store,
+        runtime=StubRuntimeClient(),
+        metrics=Metrics(registry.list()),
+        worker_concurrency=1,
+        poll_seconds=0.01,
+        lease_seconds=30,
+        maintenance_interval_seconds=1,
+        shutdown_grace_seconds=1,
+    )
+    principal = _principal()
+    await store.model_deployment_append_revision(
+        ModelDeploymentAppendRequest(
+            namespace=revision.namespace,
+            name=revision.name,
+            expected_etag=None,
+            spec=revision.spec,
+            action=ModelDeploymentRevisionAction.CREATE,
+            actor_id=uuid4(),
+            actor="operator@example.test",
+            idempotency_key="cosmos-model-create-0001",
+        )
+    )
+    await store.issue_token(
+        token_id=principal.token_id,
+        prefix=principal.token_prefix,
+        pepper_key_id="pepper-v1",
+        digest="cosmos-test-digest",
+        request=TokenCreate(
+            principal_id=principal.principal_id,
+            tenant_id=principal.tenant_id,
+            scopes={Scope.CATALOG_READ, Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE, Scope.USE_NONCLINICAL},
+            models={"*"},
+            max_concurrency=principal.max_concurrency,
+        ),
+        created_by="test",
+    )
+
+    operation = await service.admit(
+        principal,
+        AdmissionRequest(
+            model_id="cosmos3-nano",
+            operation="generate-media",
+            protocol="native",
+            idempotency_key="cosmos-native-admission-0001",
+            request_body=b"{}",
+        ),
+    )
+
+    assert operation.model_id == "cosmos3-nano"
+    assert operation.model_revision == f"dynamic:{revision.etag}"
+    assert operation.status.value == "queued"
+
+
+@pytest.mark.asyncio
+async def test_native_cosmos_admission_is_denied_without_publication(registry: Registry) -> None:
+    revision = _cosmos_revision(registry, mcp=False, open_ai=True)
+    snapshot = project_dynamic_publications(
+        [revision],
+        {(revision.namespace, revision.name): status_view(revision)},
+    )
+    assert len(snapshot.publications) == 1
+    assert snapshot.publications[0].open_ai is True
+    assert snapshot.publications[0].mcp is False
+    assert registry.set_dynamic_publications(snapshot, valid_until=datetime.now(UTC) + timedelta(minutes=1))
+    service = AdmissionService(
+        registry=registry,
+        store=MemoryStore(
+            PayloadCipher(active_key_id="payload", keys={"payload": b"p" * 32}),
+            KeyedHasher(active_key_id="ledger", keys={"ledger": b"h" * 32}),
+        ),
+        runtime=StubRuntimeClient(),
+        metrics=Metrics(registry.list()),
+        worker_concurrency=1,
+        poll_seconds=0.01,
+        lease_seconds=30,
+        maintenance_interval_seconds=1,
+        shutdown_grace_seconds=1,
+    )
+
+    with pytest.raises(RuntimeError, match="not routable"):
+        await service.admit(
+            _principal(),
+            AdmissionRequest(
+                model_id="cosmos3-nano",
+                operation="generate-media",
+                protocol="native",
+                idempotency_key="cosmos-native-denied-0001",
+                request_body=b"{}",
+            ),
         )
 
 

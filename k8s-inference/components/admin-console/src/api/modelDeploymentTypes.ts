@@ -208,8 +208,15 @@ export interface ModelDeploymentFastStartPoolStatus {
 }
 
 export interface ModelDeploymentFastStartStatus {
+  mode?: ModelDeploymentFastStartMode | null;
+  fallbackPolicy?: ModelDeploymentFastStartFallbackPolicy | null;
+  fallback_policy?: ModelDeploymentFastStartFallbackPolicy | null;
   requestedLevel?: ModelDeploymentFastStartLevel | null;
   requested_level?: ModelDeploymentFastStartLevel | null;
+  minimumLevel?: ModelDeploymentFastStartLevel | null;
+  minimum_level?: ModelDeploymentFastStartLevel | null;
+  maximumLevel?: ModelDeploymentFastStartLevel | null;
+  maximum_level?: ModelDeploymentFastStartLevel | null;
   assignedLevel?: ModelDeploymentFastStartLevel | null;
   assigned_level?: ModelDeploymentFastStartLevel | null;
   effectiveLevel?: ModelDeploymentEffectiveFastStartLevel | null;
@@ -225,6 +232,8 @@ export interface ModelDeploymentFastStartStatus {
   } | null;
   targetSeconds?: number | null;
   target_seconds?: number | null;
+  requestedTargetSeconds?: number | null;
+  requested_target_seconds?: number | null;
   lastObservedSeconds?: number | null;
   last_observed_seconds?: number | null;
   qualifiedP50Seconds?: number | null;
