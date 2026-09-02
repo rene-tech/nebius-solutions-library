@@ -30,6 +30,8 @@ from fs2_serve.model_deployment import (
     LegacyTemplateBundle,
     LifecycleSpec,
     ModelDeploymentSpec,
+    ModelExpressPoolTransport,
+    ModelExpressQualification,
     ModelQualification,
     NamedDigest,
     ObservedResource,
@@ -69,6 +71,7 @@ CONTROL_ROOT = Path(__file__).resolve().parents[1]
 SOLUTION_ROOT = CONTROL_ROOT.parents[1]
 CRD = SOLUTION_ROOT / "charts/control-plane/fs2-serve-control-plane/crds/modeldeployments.inference.fs2.nebius.ai.yaml"
 WORKLOADS = SOLUTION_ROOT / "stages/workloads"
+QWEN_MANIFEST = SOLUTION_ROOT / "models/general-media/k8s/qwen3-8b.yaml"
 
 
 def digest(character: str) -> str:
@@ -265,6 +268,28 @@ def render_context(*, preview: bool = False, generation: int = 1) -> RenderConte
     )
 
 
+def modelexpress_qualification(
+    *pool_refs: str,
+    pool_transports: dict[str, ModelExpressPoolTransport] | None = None,
+) -> ModelExpressQualification:
+    selected_pools = list(pool_refs or ("pool-a",))
+    return ModelExpressQualification(
+        config_digest=digest("9"),
+        endpoint="fs2-modelexpress.fs2-modelexpress.svc.cluster.local:8001",
+        deployment_mode="managed",
+        metadata_backend="kubernetes",
+        runtime_adapter="vllm",
+        client_package_version="0.5.1",
+        coordinator_network_type="pod-selector",
+        coordinator_namespace="fs2-modelexpress",
+        coordinator_pod_labels={"fs2-serve.nebius.ai/component": "modelexpress-server"},
+        coordinator_cidrs=[],
+        pool_refs=selected_pools,
+        pool_transports=pool_transports
+        or {pool_ref: ModelExpressPoolTransport() for pool_ref in selected_pools},
+    )
+
+
 def observed_from_render(spec: ModelDeploymentSpec) -> list[ObservedResource]:
     plan = renderer().render(spec, render_context())
     return [
@@ -377,6 +402,12 @@ def test_crd_is_structural_versioned_and_has_explicit_terraform_upgrade_owner() 
         "reason",
         "receiptDigests",
     }
+    modelexpress = fast_start_status["properties"]["mechanisms"]["properties"]["modelexpress"]
+    assert modelexpress["properties"]["coordinatorNetworkType"]["enum"] == ["pod-selector", "ip-blocks"]
+    pool_transport = modelexpress["properties"]["poolTransports"]["additionalProperties"]
+    assert pool_transport["properties"]["mode"]["enum"] == ["fallback", "nixl-rdma"]
+    assert pool_transport["properties"]["rdmaResourceQuantity"]["maximum"] == 64
+    assert "rdmaResourceName" not in pool_transport["required"]
     assert "FastStartQualified" in condition["properties"]["type"]["enum"]
     assert [column["name"] for column in version["additionalPrinterColumns"] if column["name"] == "FastStart"]
 
@@ -601,6 +632,385 @@ def test_renderer_uses_selected_pool_resource_and_safe_derived_metadata() -> Non
     assert not any("publication" in item.name for item in disabled_render.resources)
     disabled_deployment = next(item.manifest for item in disabled_render.resources if item.kind == "Deployment")
     assert disabled_deployment["spec"]["replicas"] == 0
+
+
+def test_renderer_injects_exact_modelexpress_vllm_client_without_claiming_a_level() -> None:
+    spec = model_spec().model_copy(
+        update={"placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-a"]})}
+    )
+    configured = modelexpress_qualification("pool-a")
+    context = RenderContext(
+        name="qwen-live",
+        namespace="fs2-models",
+        uid="cr-uid-1",
+        generation=1,
+        pool=envelope().pools["pool-a"],
+        eligible_pools=[envelope().pools["pool-a"]],
+        prometheus_server_address="http://prometheus.fs2-observability.svc:9090",
+        model_express=configured,
+    )
+    baseline = renderer().render(spec, context.model_copy(update={"model_express": None}))
+    plan = renderer().render(spec, context)
+    deployment = next(item.manifest for item in plan.resources if item.kind == "Deployment")
+    pod = deployment["spec"]["template"]
+    container = pod["spec"]["containers"][0]
+    assert container["args"][-2:] == ["--load-format", "modelexpress"]
+    environment = {item["name"]: item["value"] for item in container["env"] if "value" in item}
+    downward_environment = {
+        item["name"]: item["valueFrom"]["fieldRef"]["fieldPath"]
+        for item in container["env"]
+        if "valueFrom" in item
+    }
+    assert environment["MX_SERVER_ADDRESS"] == configured.endpoint
+    assert environment["MODEL_EXPRESS_URL"] == configured.endpoint
+    assert environment["VLLM_PLUGINS"] == "modelexpress"
+    assert environment["MX_NIXL_BACKEND"] == "UCX"
+    assert environment["MX_METADATA_PORT"] == "5555"
+    assert environment["MX_WORKER_GRPC_PORT"] == "6555"
+    assert environment["MX_P2P_METADATA"] == "1"
+    assert environment["MX_MODEL_REVISION"].startswith("fs2:sha256:")
+    assert downward_environment == {
+        "POD_IP": "status.podIP",
+        "NODE_NAME": "spec.nodeName",
+        "POD_NAMESPACE": "metadata.namespace",
+        "POD_NAME": "metadata.name",
+        "POD_UID": "metadata.uid",
+    }
+    assert "MX_RDMA_NIC_PIN" not in environment
+    assert "rdma/ib" not in container["resources"]["requests"]
+    assert not any(item["name"].startswith("MX_METRICS") for item in container["env"])
+    assert not any(port.get("name") == "mx-metrics" for port in container.get("ports", []))
+    assert pod["metadata"]["labels"]["fs2-serve.nebius.ai/modelexpress"] == "enabled"
+    assert pod["metadata"]["annotations"]["fs2-serve.nebius.ai/modelexpress-config-digest"] == digest("9")
+    transfer_group = pod["metadata"]["labels"]["fs2-serve.nebius.ai/modelexpress-transfer-group"]
+    policy = next(item.manifest for item in plan.resources if item.kind == "NetworkPolicy")
+    assert policy["metadata"]["ownerReferences"][0]["uid"] == "cr-uid-1"
+    policy_selector = policy["spec"]["podSelector"]["matchLabels"]
+    assert policy_selector["fs2-serve.nebius.ai/modelexpress-transfer-group"] == transfer_group
+    assert policy["spec"]["ingress"][0] == {
+        "from": [
+            {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}}
+        ],
+        "ports": [{"protocol": "TCP", "port": 8000}],
+    }
+    assert policy["spec"]["ingress"][1]["from"][0]["podSelector"]["matchLabels"] == {
+        "fs2-serve.nebius.ai/modelexpress-transfer-group": transfer_group
+    }
+    assert policy["spec"]["ingress"][1]["ports"] == [
+        {"protocol": "TCP", "port": 5555},
+        {"protocol": "TCP", "port": 6555},
+    ]
+    assert policy["spec"]["egress"][0]["ports"] == [
+        {"protocol": "UDP", "port": 53},
+        {"protocol": "TCP", "port": 53},
+    ]
+    assert policy["spec"]["egress"][2] == {
+        "to": [{"ipBlock": {"cidr": "0.0.0.0/0"}}],
+        "ports": [{"protocol": "TCP", "port": 443}],
+    }
+    assert policy["spec"]["egress"][3]["to"][0] == {
+        "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-modelexpress"}},
+        "podSelector": {"matchLabels": {"fs2-serve.nebius.ai/component": "modelexpress-server"}},
+    }
+    assert policy["spec"]["egress"][3]["ports"] == [{"protocol": "TCP", "port": 8001}]
+    assert not any(item.kind == "NetworkPolicy" for item in baseline.resources)
+    baseline_deployment = next(item.manifest for item in baseline.resources if item.kind == "Deployment")
+    baseline_pod_labels = baseline_deployment["spec"]["template"]["metadata"]["labels"]
+    assert baseline_pod_labels == {
+        "app": "qwen",
+        "app.kubernetes.io/managed-by": "fs2-model-controller",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/model-deployment": "qwen-live",
+        "fs2-serve.nebius.ai/model-id": "qwen.3-8b",
+    }
+    assert "fs2-serve.nebius.ai/workload-role" not in baseline_pod_labels
+
+    assert validate_model_deployment(spec, envelope()).fast_start.assigned_level.value == "Off"
+
+    partial = modelexpress_qualification("pool-a")
+    qualification = envelope().qualifications["qwen.3-8b"].model_copy(update={"model_express": partial})
+    infrastructure = envelope().model_copy(update={"qualifications": {"qwen.3-8b": qualification}})
+    rejected = validate_model_deployment(model_spec(), infrastructure)
+    assert any(issue.code == "modelexpress_pool_unqualified" for issue in rejected.issues)
+
+
+def test_renderer_requests_only_the_explicit_modelexpress_rdma_resource() -> None:
+    transport = ModelExpressPoolTransport(
+        mode="nixl-rdma",
+        rdma_resource_name="example.com/rdma_shared_device_a",
+        rdma_resource_quantity=4,
+        nixl_backend="UCX",
+        rdma_nic_pin="auto",
+    )
+    configured = modelexpress_qualification("pool-a", pool_transports={"pool-a": transport})
+    spec = model_spec().model_copy(
+        update={
+            "placement": model_spec().placement.model_copy(
+                update={"pool_refs": ["pool-a"], "accelerators_per_replica": 4}
+            )
+        }
+    )
+    context = RenderContext(
+        name="qwen-live",
+        namespace="fs2-models",
+        uid="cr-uid-1",
+        generation=1,
+        pool=envelope().pools["pool-a"],
+        eligible_pools=[envelope().pools["pool-a"]],
+        prometheus_server_address="http://prometheus.fs2-observability.svc:9090",
+        model_express=configured,
+    )
+    plan = renderer().render(spec, context)
+    deployment = next(item.manifest for item in plan.resources if item.kind == "Deployment")
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    environment = {item["name"]: item["value"] for item in container["env"] if "value" in item}
+
+    assert container["resources"]["requests"]["example.com/rdma_shared_device_a"] == 4
+    assert container["resources"]["limits"]["example.com/rdma_shared_device_a"] == 4
+    assert container["securityContext"]["capabilities"]["add"] == ["IPC_LOCK"]
+    assert environment["MX_RDMA_NIC_PIN"] == "auto"
+    assert environment["UCX_RNDV_SCHEME"] == "get_zcopy"
+    assert environment["UCX_RNDV_THRESH"] == "0"
+    policy = next(item.manifest for item in plan.resources if item.kind == "NetworkPolicy")
+    assert policy["spec"]["ingress"][1]["ports"] == [
+        {"protocol": "TCP", "port": 5555, "endPort": 5558},
+        {"protocol": "TCP", "port": 6555, "endPort": 6558},
+    ]
+
+    with pytest.raises(ValidationError, match="requires one qualified extended resource"):
+        ModelExpressPoolTransport(mode="nixl-rdma", rdma_resource_name=None)
+
+
+def test_modelexpress_same_accelerator_hot_and_burst_share_only_compatible_transfer_groups() -> None:
+    infrastructure = reserved_and_preemptible_envelope()
+    spec = model_spec().model_copy(
+        update={
+            "placement": PlacementSpec(
+                pool_refs=["reserved-h100", "preemptible-h100"],
+                accelerators_per_replica=1,
+                topology_policy=TopologyPolicy.SINGLE_NODE,
+            ),
+            "availability": model_spec().availability.model_copy(update={"min_replicas": 1, "max_replicas": 4}),
+        }
+    )
+    compatible = modelexpress_qualification(
+        "reserved-h100",
+        "preemptible-h100",
+        pool_transports={
+            "reserved-h100": ModelExpressPoolTransport(
+                mode="nixl-rdma",
+                rdma_resource_name="example.com/rdma_shared_device_a",
+            ),
+            "preemptible-h100": ModelExpressPoolTransport(mode="fallback"),
+        },
+    )
+    context = RenderContext(
+        name="qwen-elastic",
+        namespace="fs2-models",
+        uid="cr-uid-elastic",
+        generation=1,
+        pool=infrastructure.pools["reserved-h100"],
+        eligible_pools=[infrastructure.pools[pool_ref] for pool_ref in spec.placement.pool_refs],
+        prometheus_server_address="http://prometheus:9090",
+        model_express=compatible,
+    )
+    plan = renderer().render(spec, context)
+    deployments = [item.manifest for item in plan.resources if item.kind == "Deployment"]
+    transfer_groups = {
+        item["spec"]["template"]["metadata"]["labels"][
+            "fs2-serve.nebius.ai/modelexpress-transfer-group"
+        ]
+        for item in deployments
+    }
+    assert len(transfer_groups) == 1
+    assert len([item for item in plan.resources if item.kind == "NetworkPolicy"]) == len(deployments)
+
+    incompatible_backend = compatible.model_copy(
+        update={
+            "pool_transports": {
+                **compatible.pool_transports,
+                "preemptible-h100": ModelExpressPoolTransport(mode="fallback", nixl_backend="LIBFABRIC"),
+            }
+        }
+    )
+    separated = renderer().render(spec, context.model_copy(update={"model_express": incompatible_backend}))
+    separated_groups = {
+        item.manifest["spec"]["template"]["metadata"]["labels"][
+            "fs2-serve.nebius.ai/modelexpress-transfer-group"
+        ]
+        for item in separated.resources
+        if item.kind == "Deployment"
+    }
+    assert len(separated_groups) == 2
+
+
+def test_modelexpress_two_pool_binding_allows_a_one_pool_placement_subset() -> None:
+    infrastructure = reserved_and_preemptible_envelope()
+    configured = modelexpress_qualification("reserved-h100", "preemptible-h100")
+    spec = model_spec().model_copy(
+        update={
+            "placement": model_spec().placement.model_copy(update={"pool_refs": ["reserved-h100"]}),
+            "availability": model_spec().availability.model_copy(update={"min_replicas": 1, "max_replicas": 1}),
+        }
+    )
+    context = RenderContext(
+        name="qwen-one-pool",
+        namespace="fs2-models",
+        uid="cr-uid-1",
+        generation=1,
+        pool=infrastructure.pools["reserved-h100"],
+        eligible_pools=[infrastructure.pools["reserved-h100"]],
+        prometheus_server_address="http://prometheus.fs2-observability.svc:9090",
+        model_express=configured,
+    )
+
+    plan = renderer().render(spec, context)
+
+    deployment = next(item.manifest for item in plan.resources if item.kind == "Deployment")
+    assert deployment["spec"]["template"]["spec"]["nodeSelector"] == {
+        "accelerator.fs2.nebius/pool-id": "reserved-h100"
+    }
+    assert any(item.kind == "NetworkPolicy" for item in plan.resources)
+
+
+def test_actual_qwen_two_pool_render_preserves_inference_dns_https_and_modelexpress_flows() -> None:
+    source_documents = [item for item in yaml.safe_load_all(QWEN_MANIFEST.read_text()) if item]
+    source_policy = next(item for item in source_documents if item["kind"] == "NetworkPolicy")
+    bundle_resources = [
+        item
+        for item in source_documents
+        if (item["apiVersion"], item["kind"])
+        in {
+            ("v1", "ConfigMap"),
+            ("v1", "Service"),
+            ("v1", "ServiceAccount"),
+            ("apps/v1", "Deployment"),
+        }
+    ]
+    qwen_renderer = LegacyManifestRenderer(
+        {
+            ("qwen3-8b", digest("c")): LegacyTemplateBundle(
+                model_ref="qwen3-8b",
+                runtime_profile="vllm",
+                template_digest=digest("c"),
+                primary_workload_name="qwen3-8b-b300",
+                runtime_container_name="vllm",
+                primary_service_name="qwen3-8b-b300",
+                primary_service_port=8000,
+                resources=bundle_resources,
+            )
+        }
+    )
+    infrastructure = reserved_and_preemptible_envelope()
+    spec = model_spec().model_copy(
+        update={
+            "model_ref": "qwen3-8b",
+            "runtime": model_spec().runtime.model_copy(
+                update={"template_ref": NamedDigest(name="qwen3-8b.v1", digest=digest("c"))}
+            ),
+            "placement": PlacementSpec(
+                pool_refs=["reserved-h100", "preemptible-h100"],
+                accelerators_per_replica=1,
+                topology_policy=TopologyPolicy.SINGLE_NODE,
+            ),
+            "availability": model_spec().availability.model_copy(update={"min_replicas": 1, "max_replicas": 3}),
+        }
+    )
+    configured = modelexpress_qualification("reserved-h100", "preemptible-h100")
+    context = RenderContext(
+        name="qwen3-8b-live",
+        namespace="fs2-models",
+        uid="qwen-uid",
+        generation=1,
+        pool=infrastructure.pools["reserved-h100"],
+        eligible_pools=[infrastructure.pools[pool_ref] for pool_ref in spec.placement.pool_refs],
+        prometheus_server_address="http://prometheus:9090",
+        model_express=configured,
+    )
+    plan = qwen_renderer.render(spec, context)
+    service = next(item.manifest for item in plan.resources if item.kind == "Service")
+    assert service["spec"]["selector"] == {"fs2-serve.nebius.ai/model-deployment": "qwen3-8b-live"}
+    deployments = [item.manifest for item in plan.resources if item.kind == "Deployment"]
+    policies = [item.manifest for item in plan.resources if item.kind == "NetworkPolicy"]
+    assert len(deployments) == 2 and len(policies) == 2
+    assert all(
+        "app.kubernetes.io/instance" not in item["spec"]["template"]["metadata"]["labels"]
+        for item in deployments
+    )
+    for policy in policies:
+        assert policy["spec"]["ingress"][0]["ports"] == [{"protocol": "TCP", "port": 8000}]
+        assert policy["spec"]["egress"][0]["ports"] == [
+            {"protocol": "UDP", "port": 53},
+            {"protocol": "TCP", "port": 53},
+        ]
+        assert policy["spec"]["egress"][2] == {
+            "to": [{"ipBlock": {"cidr": "0.0.0.0/0"}}],
+            "ports": [{"protocol": "TCP", "port": 443}],
+        }
+        assert policy["spec"]["egress"][3]["ports"] == [{"protocol": "TCP", "port": 8001}]
+
+    # The source NetworkPolicy remains Terraform-owned and byte-equivalent;
+    # only the controller-generated additive policies target derived segments.
+    assert source_policy == next(
+        item for item in yaml.safe_load_all(QWEN_MANIFEST.read_text()) if item and item["kind"] == "NetworkPolicy"
+    )
+    without_modelexpress = qwen_renderer.render(spec, context.model_copy(update={"model_express": None}))
+    assert not any(item.kind == "NetworkPolicy" for item in without_modelexpress.resources)
+
+
+def test_modelexpress_rejects_mixed_accelerators_and_non_vllm_runtime() -> None:
+    mixed = modelexpress_qualification("pool-a", "pool-b")
+    qualification_payload = envelope().qualifications["qwen.3-8b"].model_dump(mode="json", by_alias=True)
+    qualification_payload["modelExpress"] = mixed.model_dump(mode="json", by_alias=True)
+    envelope_payload = envelope().model_dump(mode="json", by_alias=True)
+    envelope_payload["qualifications"] = {"qwen.3-8b": qualification_payload}
+    with pytest.raises(ValidationError, match="one accelerator class"):
+        InfrastructureEnvelope.model_validate(envelope_payload)
+
+    qualification_payload["runtimeProfile"] = "nim"
+    qualification_payload["modelExpress"] = modelexpress_qualification("pool-a").model_dump(
+        mode="json", by_alias=True
+    )
+    with pytest.raises(ValidationError, match="explicit vLLM runtime profile"):
+        ModelQualification.model_validate(qualification_payload)
+
+
+def test_modelexpress_external_coordinator_requires_and_renders_an_explicit_cidr_route() -> None:
+    configured = modelexpress_qualification("pool-a").model_copy(
+        update={
+            "deployment_mode": "external",
+            "endpoint": "modelexpress.example.test:8443",
+            "coordinator_network_type": "ip-blocks",
+            "coordinator_namespace": None,
+            "coordinator_pod_labels": {},
+            "coordinator_cidrs": ["192.0.2.0/24"],
+        }
+    )
+    spec = model_spec().model_copy(
+        update={"placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-a"]})}
+    )
+    context = RenderContext(
+        name="qwen-live",
+        namespace="fs2-models",
+        uid="cr-uid-1",
+        generation=1,
+        pool=envelope().pools["pool-a"],
+        eligible_pools=[envelope().pools["pool-a"]],
+        prometheus_server_address="http://prometheus:9090",
+        model_express=configured,
+    )
+    policy = next(
+        item.manifest for item in renderer().render(spec, context).resources if item.kind == "NetworkPolicy"
+    )
+    assert policy["spec"]["egress"][3] == {
+        "to": [{"ipBlock": {"cidr": "192.0.2.0/24"}}],
+        "ports": [{"protocol": "TCP", "port": 8443}],
+    }
+
+    invalid = configured.model_dump(mode="json", by_alias=True)
+    invalid["coordinatorCidrs"] = []
+    with pytest.raises(ValidationError, match="IP-block coordinator route is incomplete"):
+        ModelExpressQualification.model_validate(invalid)
 
 
 def test_reserved_hot_and_preemptible_burst_are_disjoint_bounded_segments() -> None:
@@ -943,6 +1353,51 @@ def test_reconcile_rejects_foreign_collision_and_cleans_only_proven_owned_stale_
     assert repair.action is ReconcileAction.APPLY
     assert repair.delete_resource_identities == [stale_owned.identity]
     assert repair.target_generation == 1
+
+
+def test_reconcile_prunes_owned_modelexpress_policy_when_integration_is_disabled() -> None:
+    spec = model_spec().model_copy(
+        update={"placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-a"]})}
+    )
+    plain_context = RenderContext(
+        name="qwen-live",
+        namespace="fs2-models",
+        uid="cr-uid-1",
+        generation=1,
+        pool=envelope().pools["pool-a"],
+        eligible_pools=[envelope().pools["pool-a"]],
+        prometheus_server_address="http://prometheus:9090",
+    )
+    accelerated_context = plain_context.model_copy(
+        update={"model_express": modelexpress_qualification("pool-a")}
+    )
+    accelerated = renderer().render(spec, accelerated_context)
+    observed = [
+        ObservedResource(
+            api_version=item.api_version,
+            kind=item.kind,
+            namespace=item.namespace,
+            name=item.name,
+            uid=f"uid-{index}",
+            digest=item.digest,
+            controller_owner_uid="cr-uid-1",
+            field_managers=[FIELD_MANAGER],
+        )
+        for index, item in enumerate(accelerated.resources)
+    ]
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=envelope(),
+        renderer=renderer(),
+        render_context=plain_context,
+        observed=observed,
+        discovery_complete=True,
+    )
+    stale_policies = [item.identity for item in observed if item.kind == "NetworkPolicy"]
+    assert plan.action is ReconcileAction.APPLY
+    assert stale_policies and set(stale_policies).issubset(plan.delete_resource_identities)
 
 
 def test_delete_is_a_drain_backstop_and_finalizer_requires_complete_empty_discovery() -> None:

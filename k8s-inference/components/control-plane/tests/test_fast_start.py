@@ -27,6 +27,8 @@ from fs2_serve.model_deployment import (
     FastStartSample,
     InfrastructureEnvelope,
     ModelDeploymentSpec,
+    ModelExpressPoolTransport,
+    ModelExpressQualification,
     PoolEnvelope,
     ValidationDisposition,
     canonical_digest,
@@ -81,6 +83,7 @@ def evidence(
         canonical_digest(
             {
                 "mechanism": values["mechanism"],
+                "mechanismConfigDigest": values.get("mechanism_config_digest"),
                 "acceleratorClass": values["accelerator_class"],
                 "poolRef": values["pool_ref"],
                 "acceleratorsPerReplica": values["accelerators_per_replica"],
@@ -489,6 +492,52 @@ def test_capacity_wait_and_end_to_end_are_measured_separately_from_model_start()
         FastStartSample(observed_at=NOW, model_start_seconds=50.0, end_to_end_seconds=40.0)
     with pytest.raises(ValueError, match="end-to-end"):
         FastStartSample(observed_at=NOW, capacity_wait_seconds=50.0, end_to_end_seconds=40.0)
+
+
+def test_modelexpress_evidence_requires_the_active_exact_mechanism_binding() -> None:
+    base = model_spec()
+    single = with_fast_start(
+        base.model_copy(update={"placement": base.placement.model_copy(update={"pool_refs": ["pool-a"]})}),
+        level="L4",
+    )
+    config = ModelExpressQualification(
+        config_digest=digest("9"),
+        endpoint="modelexpress.fs2-modelexpress.svc.cluster.local:8001",
+        deployment_mode="managed",
+        metadata_backend="kubernetes",
+        runtime_adapter="vllm",
+        client_package_version="0.5.1",
+        coordinator_network_type="pod-selector",
+        coordinator_namespace="fs2-modelexpress",
+        coordinator_pod_labels={"fs2-serve.nebius.ai/component": "modelexpress-server"},
+        coordinator_cidrs=[],
+        pool_refs=["pool-a"],
+        pool_transports={"pool-a": ModelExpressPoolTransport()},
+    )
+    proof = evidence(
+        single,
+        envelope().pools["pool-a"],
+        seconds=[20.0] * MINIMUM_QUALIFYING_SAMPLES,
+        mechanism="modelexpress",
+        mechanism_config_digest=config.config_digest,
+    )
+    qualification = envelope().qualifications["qwen.3-8b"].model_copy(
+        update={"model_express": config, "fast_start_evidence": [proof]}
+    )
+    installed = envelope().model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    assert evaluate_fast_start(single, installed, evaluation_time=NOW).assigned_level is FastStartLevel.L4
+
+    stale = proof.model_copy(update={"mechanism_config_digest": digest("8")})
+    qualification = qualification.model_copy(update={"fast_start_evidence": [stale]})
+    installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    assessment = evaluate_fast_start(single, installed, evaluation_time=NOW)
+    assert assessment.assigned_level is FastStartLevel.OFF
+    assert assessment.pools[0].reason == "NoCompatibleBenchmarkEvidence"
+
+    unbound = proof.model_copy(update={"mechanism_config_digest": None})
+    qualification = qualification.model_copy(update={"fast_start_evidence": [unbound]})
+    installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    assert evaluate_fast_start(single, installed, evaluation_time=NOW).assigned_level is FastStartLevel.OFF
 
 
 def test_status_projection_round_trips_through_kubernetes_camel_case_records() -> None:

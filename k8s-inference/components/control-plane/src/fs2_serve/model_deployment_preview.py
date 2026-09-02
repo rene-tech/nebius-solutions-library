@@ -257,6 +257,7 @@ class ModelDeploymentPreviewService:
         if decision.disposition is ValidationDisposition.ACCEPTED:
             assert decision.admitted_pool_ref is not None
             pool = self.envelope.pools[decision.admitted_pool_ref]
+            qualification = self.envelope.qualifications[proposal.spec.model_ref]
             try:
                 render = self.renderer.render(
                     proposal.spec,
@@ -270,6 +271,7 @@ class ModelDeploymentPreviewService:
                             self.envelope.pools[pool_ref] for pool_ref in proposal.spec.placement.pool_refs
                         ],
                         prometheus_server_address=self.prometheus_server_address,
+                        model_express=qualification.model_express,
                         preview=True,
                     ),
                 )

@@ -614,6 +614,129 @@ spec:
                       minimum: 1
                     hot:
                       type: boolean
+                    mechanisms:
+                      type: object
+                      maxProperties: 16
+                      properties:
+                        modelexpress:
+                          type: object
+                          required:
+                            - state
+                            - configDigest
+                            - deploymentMode
+                            - endpoint
+                            - metadataBackend
+                            - runtimeAdapter
+                            - clientPackageVersion
+                            - coordinatorNetworkType
+                            - coordinatorPodLabels
+                            - coordinatorCidrs
+                            - poolRefs
+                            - poolTransports
+                            - configurationObserved
+                            - telemetryState
+                          properties:
+                            state:
+                              type: string
+                              enum: [Pending, Configured]
+                            configDigest:
+                              type: string
+                              pattern: ^sha256:[a-f0-9]{64}$
+                            deploymentMode:
+                              type: string
+                              enum: [managed, external]
+                            endpoint:
+                              type: string
+                              minLength: 3
+                              maxLength: 2048
+                            metadataBackend:
+                              type: string
+                              enum: [kubernetes, redis]
+                            runtimeAdapter:
+                              type: string
+                              enum: [vllm]
+                            clientPackageVersion:
+                              type: string
+                              enum: ["0.5.1"]
+                            coordinatorNetworkType:
+                              type: string
+                              enum: [pod-selector, ip-blocks]
+                            coordinatorNamespace:
+                              type: string
+                              minLength: 1
+                              maxLength: 63
+                            coordinatorPodLabels:
+                              type: object
+                              maxProperties: 16
+                              additionalProperties:
+                                type: string
+                                maxLength: 63
+                            coordinatorCidrs:
+                              type: array
+                              maxItems: 32
+                              x-kubernetes-list-type: set
+                              items:
+                                type: string
+                                maxLength: 64
+                            poolRefs:
+                              type: array
+                              minItems: 1
+                              maxItems: 32
+                              x-kubernetes-list-type: set
+                              items:
+                                type: string
+                                minLength: 1
+                                maxLength: 128
+                            poolTransports:
+                              type: object
+                              minProperties: 1
+                              maxProperties: 32
+                              additionalProperties:
+                                type: object
+                                required:
+                                  - mode
+                                  - rdmaResourceQuantity
+                                  - nixlBackend
+                                  - rdmaNicPin
+                                properties:
+                                  mode:
+                                    type: string
+                                    enum: [fallback, nixl-rdma]
+                                  rdmaResourceName:
+                                    type: string
+                                    minLength: 3
+                                    maxLength: 317
+                                    pattern: ^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$
+                                  rdmaResourceQuantity:
+                                    type: integer
+                                    format: int32
+                                    minimum: 1
+                                    maximum: 64
+                                  nixlBackend:
+                                    type: string
+                                    enum: [UCX, LIBFABRIC]
+                                  rdmaNicPin:
+                                    type: string
+                                    minLength: 1
+                                    maxLength: 256
+                            configurationObserved:
+                              type: boolean
+                            telemetryState:
+                              type: string
+                              enum: [Unavailable]
+                            selectedPath:
+                              type: string
+                              maxLength: 128
+                            transferredBytes:
+                              type: integer
+                              format: int64
+                              minimum: 0
+                            transferSeconds:
+                              type: number
+                              minimum: 0
+                            fallbackReason:
+                              type: string
+                              maxLength: 240
                     automatic:
                       type: object
                       required:

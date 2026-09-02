@@ -363,6 +363,204 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertNotIn("infrastructure_envelope_json", dynamic)
         self.assertNotIn("renderer_bundles_json", dynamic)
 
+    def test_modelexpress_tfvars_resolve_managed_service_and_exact_model_clients(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-modelexpress-test",
+            "target": self.catalog_target(),
+            "profiles": {"models": "full_catalog"},
+            "models": {
+                "selection": "explicit",
+                "enabled": ["qwen3-8b"],
+                "scaling": {"mode": "keda", "hot": ["qwen3-8b"]},
+            },
+            "dynamic_models": {
+                "enabled": True,
+                "writes_enabled": True,
+                "workload_owner": "controller",
+                "bootstrap_model_ids": ["qwen3-8b"],
+                "fresh_install": True,
+            },
+            "acceleration": {
+                "model_express": {
+                    "enabled": True,
+                    "deployment_mode": "managed",
+                    "server_image": {
+                        "repository": "nvcr.io/nvidia/ai-dynamo/modelexpress-server",
+                        "digest": f"sha256:{'9' * 64}",
+                    },
+                    "cache": {"enabled": True, "size_gib": 200},
+                    "models": {
+                        "qwen3-8b": {
+                            "runtime_adapter": "vllm",
+                            "transport": {
+                                "mode": "nixl-rdma",
+                                "rdma_resource_name": "example.com/rdma_shared_device_a",
+                                "rdma_resource_quantity": 8,
+                                "nixl_backend": "UCX",
+                                "nic_pin": "auto",
+                            },
+                        }
+                    },
+                }
+            },
+        }
+        outputs = self._planned_outputs(
+            self._write_configuration("modelexpress", deployment),
+            "modelexpress",
+        )
+        configured = outputs["deployment_contract"]["stages"]["workloads"][
+            "model_express"
+        ]
+        self.assertEqual(
+            configured["endpoint"],
+            "fs2-modelexpress.fs2-modelexpress.svc.cluster.local:8001",
+        )
+        self.assertEqual(configured["server_image"]["digest"], f"sha256:{'9' * 64}")
+        self.assertTrue(outputs["deployment_contract"]["secret_requirements"]["nvcr_dockerconfig"])
+        self.assertTrue(
+            outputs["effective_configuration"]["model_express"][
+                "managed_nvcr_server_requires_pull_secret"
+            ]
+        )
+        self.assertEqual(
+            configured["models"],
+            {
+                "qwen3-8b": {
+                    "runtime_adapter": "vllm",
+                    "client_package_version": "0.5.1",
+                    "transport": {
+                        "mode": "nixl-rdma",
+                        "rdma_resource_name": "example.com/rdma_shared_device_a",
+                        "rdma_resource_quantity": 8,
+                        "nixl_backend": "UCX",
+                        "nic_pin": "auto",
+                    },
+                    "pool_transports": {},
+                }
+            },
+        )
+        self.assertEqual(outputs["effective_configuration"]["model_express"]["model_ids"], ["qwen3-8b"])
+        self.assertEqual(
+            outputs["effective_configuration"]["model_express"]["models"]["qwen3-8b"]["transport_default"]["mode"],
+            "nixl-rdma",
+        )
+
+    def test_modelexpress_rejects_a_runtime_kind_that_only_claims_the_vllm_adapter(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-modelexpress-runtime-kind-test",
+            "target": self.catalog_target(),
+            "profiles": {"models": "full_catalog"},
+            "models": {
+                "selection": "explicit",
+                "enabled": ["cosmos3-nano"],
+                "scaling": {"mode": "keda"},
+            },
+            "dynamic_models": {
+                "enabled": True,
+                "writes_enabled": True,
+                "workload_owner": "controller",
+                "bootstrap_model_ids": ["cosmos3-nano"],
+                "fresh_install": True,
+            },
+            "acceleration": {
+                "model_express": {
+                    "enabled": True,
+                    "deployment_mode": "managed",
+                    "server_image": {
+                        "repository": "registry.example.test/modelexpress-server",
+                        "digest": f"sha256:{'9' * 64}",
+                    },
+                    "models": {
+                        # A tfvars assertion cannot turn vLLM-Omni into the
+                        # explicitly supported text-vLLM integration.
+                        "cosmos3-nano": {"runtime_adapter": "vllm"}
+                    },
+                }
+            },
+        }
+        variable_file = self._write_configuration("modelexpress-runtime-kind", deployment)
+        result, _ = self._plan_file(variable_file, "modelexpress-runtime-kind")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "select explicit vLLM catalog models",
+            f"{result.stdout}\n{result.stderr}",
+        )
+
+    def test_modelexpress_external_endpoint_and_network_route_fail_closed(self) -> None:
+        base = {
+            "schema_version": 1,
+            "name": "fs2-modelexpress-external-test",
+            "target": self.catalog_target(),
+            "profiles": {"models": "full_catalog"},
+            "models": {
+                "selection": "explicit",
+                "enabled": ["qwen3-8b"],
+                "scaling": {"mode": "keda"},
+            },
+            "dynamic_models": {
+                "enabled": True,
+                "writes_enabled": True,
+                "workload_owner": "controller",
+                "bootstrap_model_ids": ["qwen3-8b"],
+                "fresh_install": True,
+            },
+        }
+        invalid_configs = (
+            {
+                "endpoint": "modelexpress.example.test:99999",
+                "external_network": {"coordinator_cidrs": ["192.0.2.10/32"]},
+            },
+            {"endpoint": "modelexpress.example.test:8001"},
+            {
+                "endpoint": "modelexpress.example.test:8001",
+                "external_network": {"coordinator_cidrs": ["192.0.2.1/24"]},
+            },
+            {
+                "endpoint": "modelexpress.example.test:8001",
+                "external_network": {
+                    "coordinator_namespace": "Invalid_Namespace",
+                    "coordinator_pod_labels": {"app": "modelexpress"},
+                },
+            },
+            {
+                "endpoint": "modelexpress.example.test:8001",
+                "external_network": {"coordinator_cidrs": ["192.0.2.10/32"]},
+                "models": {
+                    "qwen3-8b": {
+                        "runtime_adapter": "vllm",
+                        "transport": {"nic_pin": "invalid pin"},
+                    }
+                },
+            },
+        )
+        for index, config in enumerate(invalid_configs):
+            with self.subTest(config=config):
+                deployment = json.loads(json.dumps(base))
+                deployment["acceleration"] = {
+                    "model_express": {
+                        "enabled": True,
+                        "deployment_mode": "external",
+                        "metadata_backend": "redis",
+                        "models": {"qwen3-8b": {"runtime_adapter": "vllm"}},
+                        **config,
+                    }
+                }
+                variable_file = self._write_configuration(
+                    f"modelexpress-external-invalid-{index}", deployment
+                )
+                result, _ = self._plan_file(
+                    variable_file, f"modelexpress-external-invalid-{index}"
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    "Kubernetes namespace/Pod selector or CIDR route",
+                    f"{result.stdout}\n{result.stderr}",
+                )
+
     def test_fast_start_inputs_propagate_to_the_workload_stage(self) -> None:
         evidence_file = self.run_root / "fast-start-evidence.json"
         evidence_file.write_text("{}\n", encoding="utf-8")

@@ -177,6 +177,11 @@ def validate_attempt(attempt: dict[str, Any]) -> None:
         "@" + compatibility_tuple["runtime_image_digest"]
     ):
         raise FastStartEvidenceError("runtime image reference and digest differ")
+    mechanism_digest = compatibility_tuple.get("mechanism_config_digest")
+    if (compatibility_tuple["mechanism"] == "modelexpress") != (mechanism_digest is not None):
+        raise FastStartEvidenceError(
+            "modelexpress requires one mechanism_config_digest and other mechanisms must omit it"
+        )
 
     timestamps = attempt["timestamps"]
     durations = attempt["durations_seconds"]

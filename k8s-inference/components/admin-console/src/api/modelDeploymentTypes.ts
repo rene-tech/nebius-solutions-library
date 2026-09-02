@@ -207,6 +207,57 @@ export interface ModelDeploymentFastStartPoolStatus {
   paths?: ModelDeploymentFastStartPathStatus[] | null;
 }
 
+export interface ModelExpressPoolTransportStatus {
+  mode?: "fallback" | "nixl-rdma" | null;
+  rdmaResourceName?: string | null;
+  rdma_resource_name?: string | null;
+  rdmaResourceQuantity?: number | null;
+  rdma_resource_quantity?: number | null;
+  nixlBackend?: "UCX" | "LIBFABRIC" | null;
+  nixl_backend?: "UCX" | "LIBFABRIC" | null;
+  rdmaNicPin?: string | null;
+  rdma_nic_pin?: string | null;
+}
+
+export interface ModelExpressMechanismStatus {
+  state?: "Pending" | "Configured" | null;
+  configDigest?: string | null;
+  config_digest?: string | null;
+  deploymentMode?: "managed" | "external" | null;
+  deployment_mode?: "managed" | "external" | null;
+  endpoint?: string | null;
+  metadataBackend?: "kubernetes" | "redis" | null;
+  metadata_backend?: "kubernetes" | "redis" | null;
+  runtimeAdapter?: "vllm" | null;
+  runtime_adapter?: "vllm" | null;
+  clientPackageVersion?: "0.5.1" | null;
+  client_package_version?: "0.5.1" | null;
+  coordinatorNetworkType?: "pod-selector" | "ip-blocks" | null;
+  coordinator_network_type?: "pod-selector" | "ip-blocks" | null;
+  coordinatorNamespace?: string | null;
+  coordinator_namespace?: string | null;
+  coordinatorPodLabels?: Record<string, string> | null;
+  coordinator_pod_labels?: Record<string, string> | null;
+  coordinatorCidrs?: string[] | null;
+  coordinator_cidrs?: string[] | null;
+  poolRefs?: string[] | null;
+  pool_refs?: string[] | null;
+  poolTransports?: Record<string, ModelExpressPoolTransportStatus> | null;
+  pool_transports?: Record<string, ModelExpressPoolTransportStatus> | null;
+  configurationObserved?: boolean | null;
+  configuration_observed?: boolean | null;
+  telemetryState?: "Unavailable" | null;
+  telemetry_state?: "Unavailable" | null;
+  selectedPath?: string | null;
+  selected_path?: string | null;
+  transferredBytes?: number | null;
+  transferred_bytes?: number | null;
+  transferSeconds?: number | null;
+  transfer_seconds?: number | null;
+  fallbackReason?: string | null;
+  fallback_reason?: string | null;
+}
+
 export interface ModelDeploymentFastStartStatus {
   mode?: ModelDeploymentFastStartMode | null;
   fallbackPolicy?: ModelDeploymentFastStartFallbackPolicy | null;
@@ -246,7 +297,7 @@ export interface ModelDeploymentFastStartStatus {
   end_to_end_seconds?: number | null;
   observedAt?: string | null;
   observed_at?: string | null;
-  mechanisms?: Record<string, unknown> | null;
+  mechanisms?: ({ modelexpress?: ModelExpressMechanismStatus | null } & Record<string, unknown>) | null;
   hot?: boolean | null;
   modelStart?: ModelDeploymentFastStartStatistics | null;
   model_start?: ModelDeploymentFastStartStatistics | null;

@@ -5,6 +5,7 @@ import { adminApi, AdminApiError } from "../../api/client";
 import type {
   ModelDeploymentActionCapability,
   ModelDeploymentFastStartLevel,
+  ModelExpressMechanismStatus,
   ModelDeploymentFastStartStatistics,
   ModelDeploymentMutationResult,
   ModelDeploymentRenderPreview,
@@ -145,6 +146,40 @@ function mechanismValue(value: unknown): string {
   try { return JSON.stringify(value); } catch { return "Unavailable"; }
 }
 
+function modelExpressStatus(value: unknown): ModelExpressMechanismStatus | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as ModelExpressMechanismStatus
+    : null;
+}
+
+function modelExpressTransportSummary(status: ModelExpressMechanismStatus): string {
+  const transports = status.poolTransports ?? status.pool_transports ?? {};
+  const entries = Object.entries(transports).sort(([left], [right]) => left.localeCompare(right));
+  if (!entries.length) return "Unavailable";
+  return entries.map(([pool, transport]) => {
+    const mode = transport.mode ?? "Unavailable";
+    const backend = transport.nixlBackend ?? transport.nixl_backend ?? "backend unavailable";
+    const resource = transport.rdmaResourceName ?? transport.rdma_resource_name;
+    const quantity = transport.rdmaResourceQuantity ?? transport.rdma_resource_quantity ?? "unknown";
+    const nic = transport.rdmaNicPin ?? transport.rdma_nic_pin ?? "not pinned";
+    return `${pool}: ${mode} · ${backend} · ${resource ? `${resource} × ${quantity}` : "no RDMA resource"} · NIC ${nic}`;
+  }).join(" | ");
+}
+
+function modelExpressCoordinatorSummary(status: ModelExpressMechanismStatus): string {
+  const routeType = status.coordinatorNetworkType ?? status.coordinator_network_type ?? "Unavailable";
+  const namespace = status.coordinatorNamespace ?? status.coordinator_namespace;
+  const labels = status.coordinatorPodLabels ?? status.coordinator_pod_labels ?? {};
+  const cidrs = status.coordinatorCidrs ?? status.coordinator_cidrs ?? [];
+  if (routeType === "pod-selector") {
+    const selector = Object.entries(labels).sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => `${key}=${value}`).join(", ");
+    return `${namespace ?? "namespace unavailable"} · ${selector || "selector unavailable"}`;
+  }
+  if (routeType === "ip-blocks") return cidrs.join(", ") || "CIDR unavailable";
+  return "Unavailable";
+}
+
 function statisticValue(
   statistics: ModelDeploymentFastStartStatistics | null | undefined,
   field: "sample" | "failed" | "p50" | "p95",
@@ -184,7 +219,10 @@ function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spe
   const target = observed?.targetSeconds === null || observed?.targetSeconds === undefined
     ? fastStartTarget(observed?.assignedLevel)
     : `≤${observed.targetSeconds} seconds`;
-  const mechanisms = observed?.mechanisms ? Object.entries(observed.mechanisms) : [];
+  const modelExpress = modelExpressStatus(observed?.mechanisms?.modelexpress);
+  const mechanisms = observed?.mechanisms
+    ? Object.entries(observed.mechanisms).filter(([name]) => name !== "modelexpress")
+    : [];
   return (
     <section className="subpanel section-stack" aria-labelledby="fast-start-runtime-title">
       <div className="section-heading">
@@ -226,6 +264,18 @@ function FastStartRuntime({ view, spec }: { view: ModelDeploymentStatusView; spe
             <div><dt>Requests · 1h / 7d</dt><dd>{observed.automatic.shortWindowRequests ?? observed.automatic.short_window_requests ?? "Unavailable"} / {observed.automatic.longWindowRequests ?? observed.automatic.long_window_requests ?? "Unavailable"}</dd></div>
             <div><dt>Exact cold activations · 1h / 7d</dt><dd>{observed.automatic.shortWindowColdActivations ?? observed.automatic.short_window_cold_activations ?? "Unavailable"} / {observed.automatic.longWindowColdActivations ?? observed.automatic.long_window_cold_activations ?? "Unavailable"}</dd></div>
             <div><dt>Idle-gap episodes · 1h / 7d</dt><dd>{observed.automatic.shortWindowIdleGapEpisodes ?? observed.automatic.short_window_idle_gap_episodes ?? "Unavailable"} / {observed.automatic.longWindowIdleGapEpisodes ?? observed.automatic.long_window_idle_gap_episodes ?? "Unavailable"}</dd></div>
+          </> : null}
+          {modelExpress ? <>
+            <div><dt>ModelExpress</dt><dd>{modelExpress.state ?? "Unavailable"} · configuration {modelExpress.configurationObserved ?? modelExpress.configuration_observed ? "observed" : "pending"}</dd></div>
+            <div><dt>ModelExpress service</dt><dd>{modelExpress.deploymentMode ?? modelExpress.deployment_mode ?? "Unavailable"} · {modelExpress.metadataBackend ?? modelExpress.metadata_backend ?? "Unavailable"} · <code>{modelExpress.endpoint ?? "Unavailable"}</code></dd></div>
+            <div><dt>ModelExpress client</dt><dd>{modelExpress.runtimeAdapter ?? modelExpress.runtime_adapter ?? "Unavailable"} · {modelExpress.clientPackageVersion ?? modelExpress.client_package_version ?? "version unavailable"}</dd></div>
+            <div><dt>ModelExpress pool transports</dt><dd>{modelExpressTransportSummary(modelExpress)}</dd></div>
+            <div><dt>Coordinator network scope</dt><dd>{modelExpressCoordinatorSummary(modelExpress)}</dd></div>
+            <div><dt>ModelExpress pools</dt><dd>{(modelExpress.poolRefs ?? modelExpress.pool_refs ?? []).join(", ") || "Unavailable"}</dd></div>
+            <div><dt>ModelExpress config</dt><dd><code>{modelExpress.configDigest ?? modelExpress.config_digest ?? "Unavailable"}</code></dd></div>
+            <div><dt>Observed transfer path</dt><dd>{modelExpress.selectedPath ?? modelExpress.selected_path ?? "Unavailable"}</dd></div>
+            <div><dt>Observed transfer</dt><dd>{(modelExpress.transferredBytes ?? modelExpress.transferred_bytes) === null || (modelExpress.transferredBytes ?? modelExpress.transferred_bytes) === undefined ? "Unavailable" : `${modelExpress.transferredBytes ?? modelExpress.transferred_bytes} bytes`} · {(modelExpress.transferSeconds ?? modelExpress.transfer_seconds) === null || (modelExpress.transferSeconds ?? modelExpress.transfer_seconds) === undefined ? "duration unavailable" : `${modelExpress.transferSeconds ?? modelExpress.transfer_seconds}s`}</dd></div>
+            <div><dt>Transfer telemetry</dt><dd>{modelExpress.telemetryState ?? modelExpress.telemetry_state ?? "Unavailable"}{(modelExpress.fallbackReason ?? modelExpress.fallback_reason) ? ` · ${modelExpress.fallbackReason ?? modelExpress.fallback_reason}` : " · no per-deployment upstream path record"}</dd></div>
           </> : null}
           {mechanisms.map(([name, value]) => <div key={name}><dt>{name.replaceAll("_", " ")}</dt><dd>{mechanismValue(value)}</dd></div>)}
           {!mechanisms.length && !observed?.pools.length ? <div><dt>Controller mechanisms</dt><dd>Unavailable</dd></div> : null}

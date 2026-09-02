@@ -267,6 +267,12 @@
           "pattern": "^[a-z][a-z0-9-]*$",
           "maxLength": 63
         },
+        "mechanism_config_digest": {
+          "anyOf": [
+            {"$ref": "#/$defs/shaDigest"},
+            {"type": "null"}
+          ]
+        },
         "snapshot_digest": {
           "anyOf": [
             {"$ref": "#/$defs/shaDigest"},

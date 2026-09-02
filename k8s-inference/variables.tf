@@ -130,6 +130,48 @@ variable "deployment" {
       })
     }), {})
 
+    acceleration = optional(object({
+      model_express = optional(object({
+        enabled          = optional(bool, false)
+        deployment_mode  = optional(string, "managed")
+        endpoint         = optional(string)
+        metadata_backend = optional(string, "kubernetes")
+        namespace        = optional(string, "fs2-modelexpress")
+        server_image = optional(object({
+          repository = string
+          digest     = string
+        }))
+        cache = optional(object({
+          enabled       = optional(bool, true)
+          size_gib      = optional(number, 100)
+          storage_class = optional(string)
+        }), {})
+        external_network = optional(object({
+          coordinator_namespace  = optional(string)
+          coordinator_pod_labels = optional(map(string), {})
+          coordinator_cidrs      = optional(set(string), [])
+        }), {})
+        models = optional(map(object({
+          runtime_adapter        = string
+          client_package_version = optional(string, "0.5.1")
+          transport = optional(object({
+            mode                   = optional(string, "fallback")
+            rdma_resource_name     = optional(string)
+            rdma_resource_quantity = optional(number, 1)
+            nixl_backend           = optional(string, "UCX")
+            nic_pin                = optional(string, "auto")
+          }), {})
+          pool_transports = optional(map(object({
+            mode                   = optional(string, "fallback")
+            rdma_resource_name     = optional(string)
+            rdma_resource_quantity = optional(number, 1)
+            nixl_backend           = optional(string, "UCX")
+            nic_pin                = optional(string, "auto")
+          })), {})
+        })), {})
+      }), {})
+    }), {})
+
     storage = optional(object({
       shared_cache = optional(object({
         size_gib         = optional(number)
@@ -207,6 +249,119 @@ variable "deployment" {
   validation {
     condition     = var.deployment.schema_version == 1
     error_message = "deployment.schema_version must be 1."
+  }
+
+  validation {
+    condition = try(
+      contains(["managed", "external"], var.deployment.acceleration.model_express.deployment_mode) &&
+      contains(["kubernetes", "redis"], var.deployment.acceleration.model_express.metadata_backend) &&
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.deployment.acceleration.model_express.namespace)) &&
+      (
+        !var.deployment.acceleration.model_express.enabled ||
+        (
+          length(var.deployment.acceleration.model_express.models) > 0 &&
+          var.deployment.dynamic_models.enabled &&
+          var.deployment.dynamic_models.writes_enabled &&
+          var.deployment.dynamic_models.workload_owner == "controller"
+        )
+      ) &&
+      (
+        !var.deployment.acceleration.model_express.enabled ||
+        (
+          var.deployment.acceleration.model_express.deployment_mode == "managed" ? (
+            var.deployment.acceleration.model_express.endpoint == null &&
+            var.deployment.acceleration.model_express.metadata_backend == "kubernetes" &&
+            var.deployment.acceleration.model_express.server_image != null &&
+            can(regex("^[a-zA-Z0-9._:/-]+$", var.deployment.acceleration.model_express.server_image.repository)) &&
+            can(regex("^sha256:[0-9a-f]{64}$", var.deployment.acceleration.model_express.server_image.digest))
+            ) : (
+            var.deployment.acceleration.model_express.endpoint != null &&
+            can(regex("^[A-Za-z0-9.-]+:[0-9]{1,5}$", var.deployment.acceleration.model_express.endpoint)) &&
+            try(tonumber(element(split(":", var.deployment.acceleration.model_express.endpoint), 1)) >= 1, false) &&
+            try(tonumber(element(split(":", var.deployment.acceleration.model_express.endpoint), 1)) <= 65535, false)
+          )
+        )
+      ) &&
+      floor(var.deployment.acceleration.model_express.cache.size_gib) == var.deployment.acceleration.model_express.cache.size_gib &&
+      var.deployment.acceleration.model_express.cache.size_gib >= 1 &&
+      var.deployment.acceleration.model_express.cache.size_gib <= 65536 &&
+      (
+        var.deployment.acceleration.model_express.deployment_mode == "managed" ? (
+          var.deployment.acceleration.model_express.external_network.coordinator_namespace == null &&
+          length(var.deployment.acceleration.model_express.external_network.coordinator_pod_labels) == 0 &&
+          length(var.deployment.acceleration.model_express.external_network.coordinator_cidrs) == 0
+          ) : (
+          (
+            var.deployment.acceleration.model_express.external_network.coordinator_namespace != null &&
+            length(var.deployment.acceleration.model_express.external_network.coordinator_pod_labels) > 0 &&
+            length(var.deployment.acceleration.model_express.external_network.coordinator_cidrs) == 0
+            ) || (
+            var.deployment.acceleration.model_express.external_network.coordinator_namespace == null &&
+            length(var.deployment.acceleration.model_express.external_network.coordinator_pod_labels) == 0 &&
+            length(var.deployment.acceleration.model_express.external_network.coordinator_cidrs) > 0
+          )
+        )
+      ) &&
+      alltrue([
+        for cidr in var.deployment.acceleration.model_express.external_network.coordinator_cidrs :
+        try("${cidrhost(cidr, 0)}/${element(split("/", cidr), 1)}" == cidr, false)
+      ]) &&
+      (
+        var.deployment.acceleration.model_express.external_network.coordinator_namespace == null ||
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.deployment.acceleration.model_express.external_network.coordinator_namespace))
+      ) &&
+      alltrue([
+        for key, value in var.deployment.acceleration.model_express.external_network.coordinator_pod_labels :
+        length(key) >= 1 && length(key) <= 253 && length(value) <= 63
+      ]) &&
+      length(setsubtract(
+        toset(keys(var.deployment.acceleration.model_express.models)),
+        toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).profiles[var.deployment.profiles.models].canonical_routes),
+      )) == 0 &&
+      alltrue([
+        for model_id, config in var.deployment.acceleration.model_express.models :
+        config.runtime_adapter == "vllm" &&
+        config.client_package_version == "0.5.1" &&
+        try(jsondecode(file("${path.module}/catalog/runtime/models/${model_id}.json")).runtime.kind, null) == "vllm" &&
+        contains(["fallback", "nixl-rdma"], config.transport.mode) &&
+        contains(["UCX", "LIBFABRIC"], config.transport.nixl_backend) &&
+        can(regex("^[A-Za-z0-9][A-Za-z0-9_.:,-]*$", config.transport.nic_pin)) &&
+        length(config.transport.nic_pin) <= 256 &&
+        floor(config.transport.rdma_resource_quantity) == config.transport.rdma_resource_quantity &&
+        config.transport.rdma_resource_quantity >= 1 &&
+        config.transport.rdma_resource_quantity <= 64 &&
+        (
+          config.transport.mode == "nixl-rdma" ? (
+            config.transport.rdma_resource_name != null &&
+            can(regex("^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", config.transport.rdma_resource_name))
+            ) : (
+            config.transport.rdma_resource_name == null
+          )
+        ) &&
+        alltrue([
+          for pool_id, transport in config.pool_transports :
+          can(regex("^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$", pool_id)) &&
+          length(pool_id) <= 128 &&
+          contains(["fallback", "nixl-rdma"], transport.mode) &&
+          contains(["UCX", "LIBFABRIC"], transport.nixl_backend) &&
+          can(regex("^[A-Za-z0-9][A-Za-z0-9_.:,-]*$", transport.nic_pin)) &&
+          length(transport.nic_pin) <= 256 &&
+          floor(transport.rdma_resource_quantity) == transport.rdma_resource_quantity &&
+          transport.rdma_resource_quantity >= 1 &&
+          transport.rdma_resource_quantity <= 64 &&
+          (
+            transport.mode == "nixl-rdma" ? (
+              transport.rdma_resource_name != null &&
+              can(regex("^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", transport.rdma_resource_name))
+              ) : (
+              transport.rdma_resource_name == null
+            )
+          )
+        ])
+      ]),
+      false,
+    )
+    error_message = "acceleration.model_express must use controller-owned dynamic models, be an opt-in managed Kubernetes-backend or explicit external service with one Kubernetes namespace/Pod selector or CIDR route, use a digest-pinned managed image, select explicit vLLM catalog models with the supported 0.5.1 client adapter, configure a bounded cache, and declare a portable fallback or explicit qualified RDMA extended resource."
   }
 
   validation {

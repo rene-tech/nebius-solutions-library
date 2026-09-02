@@ -179,6 +179,11 @@ locals {
   }
 
   grafana_external_enabled = var.deployment.observability.grafana.publish_external
+  modelexpress_managed_nvcr_server_required = (
+    var.deployment.acceleration.model_express.enabled &&
+    var.deployment.acceleration.model_express.deployment_mode == "managed" &&
+    startswith(try(var.deployment.acceleration.model_express.server_image.repository, ""), "nvcr.io/")
+  )
 
   infrastructure_variables = {
     project_id                          = var.deployment.target.project_id
@@ -225,9 +230,24 @@ locals {
     keda_cooldown_period_seconds    = var.deployment.models.scaling.cooldown_period_seconds
     enable_cold_start_keepers       = var.deployment.models.cold_start_keepers
     enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
-    acme_email                      = var.deployment.edge.acme_email
-    acme_environment                = var.deployment.edge.acme_environment
-    run_acceptance_job              = var.deployment.acceptance.create_probe_job
+    model_express = {
+      enabled         = var.deployment.acceleration.model_express.enabled
+      deployment_mode = var.deployment.acceleration.model_express.deployment_mode
+      endpoint = (
+        var.deployment.acceleration.model_express.deployment_mode == "managed" ?
+        "fs2-modelexpress.${var.deployment.acceleration.model_express.namespace}.svc.cluster.local:8001" :
+        var.deployment.acceleration.model_express.endpoint
+      )
+      metadata_backend = var.deployment.acceleration.model_express.metadata_backend
+      namespace        = var.deployment.acceleration.model_express.namespace
+      server_image     = var.deployment.acceleration.model_express.server_image
+      cache            = var.deployment.acceleration.model_express.cache
+      external_network = var.deployment.acceleration.model_express.external_network
+      models           = var.deployment.acceleration.model_express.models
+    }
+    acme_email         = var.deployment.edge.acme_email
+    acme_environment   = var.deployment.edge.acme_environment
+    run_acceptance_job = var.deployment.acceptance.create_probe_job
     control_plane_image = {
       repository = var.deployment.applications.control_plane.repository
       digest     = var.deployment.applications.control_plane.digest
@@ -318,7 +338,11 @@ locals {
     secret_requirements = {
       grafana_bootstrap = true
       ngc_api_key       = contains(local.selected_model_required_secrets, "ngc_api_key")
-      nvcr_dockerconfig = local.model_profile == "full_catalog" || contains(local.selected_model_required_secrets, "nvcr_dockerconfigjson")
+      nvcr_dockerconfig = (
+        local.model_profile == "full_catalog" ||
+        contains(local.selected_model_required_secrets, "nvcr_dockerconfigjson") ||
+        local.modelexpress_managed_nvcr_server_required
+      )
     }
   }
   deployment_contract = merge(local.deployment_contract_payload, {

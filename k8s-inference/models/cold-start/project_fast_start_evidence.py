@@ -45,6 +45,7 @@ def project_receipt(receipt: dict[str, Any], *, valid_for_days: int) -> tuple[st
     evidence = {
         "receiptDigest": f"sha256:{receipt['receipt_digest']}",
         "mechanism": compatibility["mechanism"],
+        "mechanismConfigDigest": compatibility.get("mechanism_config_digest"),
         "compatibilityTupleDigest": f"sha256:{receipt['compatibility_tuple_digest']}",
         "compatibilityTupleComplete": receipt["qualification"]["compatibility_tuple_complete"],
         "measurementBasis": "CapacityAvailableToSemanticReady",

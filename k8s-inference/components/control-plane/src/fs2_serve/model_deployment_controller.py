@@ -34,6 +34,8 @@ from .fast_start import (
     FastStartAssessment,
     FastStartAutomaticStatus,
     FastStartLevel,
+    FastStartMechanismPoolTransport,
+    FastStartMechanismStatus,
     FastStartMode,
     FastStartPathAssessment,
     FastStartQualification,
@@ -274,6 +276,9 @@ RESOURCE_ENDPOINTS = {
     ("v1", "ServiceAccount"): ResourceEndpoint("v1", "ServiceAccount", "serviceaccounts"),
     ("apps/v1", "Deployment"): ResourceEndpoint("apps/v1", "Deployment", "deployments"),
     ("keda.sh/v1alpha1", "ScaledObject"): ResourceEndpoint("keda.sh/v1alpha1", "ScaledObject", "scaledobjects"),
+    ("networking.k8s.io/v1", "NetworkPolicy"): ResourceEndpoint(
+        "networking.k8s.io/v1", "NetworkPolicy", "networkpolicies"
+    ),
 }
 HPA_ENDPOINT = ResourceEndpoint("autoscaling/v2", "HorizontalPodAutoscaler", "horizontalpodautoscalers")
 POD_ENDPOINT = ResourceEndpoint("v1", "Pod", "pods")
@@ -954,6 +959,12 @@ class ControllerMetrics:
             registry=self.registry,
             buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30),
         )
+        self.modelexpress_configured = Gauge(
+            "fs2_model_controller_modelexpress_configured",
+            "Whether an exact ModelExpress client binding is configured for a model and pool",
+            ("model", "pool", "deployment_mode", "runtime_adapter", "transport_mode"),
+            registry=self.registry,
+        )
 
     def render(self) -> bytes:
         return generate_latest(self.registry)
@@ -1590,11 +1601,45 @@ def _fast_start_status(
         carried = previous.get("effectiveLevel")
         if isinstance(carried, str) and carried in {level.value for level in FastStartLevel}:
             effective = FastStartLevel(carried)
+    mechanisms: dict[str, FastStartMechanismStatus] = {}
+    qualification = envelope.qualifications.get(spec.model_ref) if envelope is not None else None
+    if qualification is not None and qualification.model_express is not None:
+        configured = qualification.model_express
+        mechanisms["modelexpress"] = FastStartMechanismStatus(
+            state="Configured" if converged else "Pending",
+            config_digest=configured.config_digest,
+            deployment_mode=configured.deployment_mode,
+            endpoint=configured.endpoint,
+            metadata_backend=configured.metadata_backend,
+            runtime_adapter=configured.runtime_adapter,
+            client_package_version=configured.client_package_version,
+            coordinator_network_type=configured.coordinator_network_type,
+            coordinator_namespace=configured.coordinator_namespace,
+            coordinator_pod_labels=configured.coordinator_pod_labels,
+            coordinator_cidrs=configured.coordinator_cidrs,
+            pool_refs=configured.pool_refs,
+            pool_transports={
+                pool_ref: FastStartMechanismPoolTransport(
+                    mode=transport.mode,
+                    rdma_resource_name=transport.rdma_resource_name,
+                    rdma_resource_quantity=transport.rdma_resource_quantity,
+                    nixl_backend=transport.nixl_backend,
+                    rdma_nic_pin=transport.rdma_nic_pin,
+                )
+                for pool_ref, transport in configured.pool_transports.items()
+            },
+            configuration_observed=converged,
+            # Upstream 0.5.1 does not expose a qualified per-ModelDeployment
+            # transfer-path record. Keep these values unavailable rather than
+            # inferring them from readiness.
+            telemetry_state="Unavailable",
+        )
     return FastStartStatus(
         **assessment.model_dump(),
         effective_level=effective,
         hot=None if ready_replicas is None else ready_replicas > 0,
         automatic=automatic,
+        mechanisms=mechanisms,
     )
 
 
@@ -2068,6 +2113,17 @@ class ModelDeploymentController:
         self.poll_seconds = poll_seconds
         self.queue = BoundedKeyQueue(queue_capacity)
         self.metrics = ControllerMetrics()
+        for model_ref, qualification in envelope.qualifications.items():
+            if qualification.model_express is None:
+                continue
+            for pool_ref in qualification.model_express.pool_refs:
+                self.metrics.modelexpress_configured.labels(
+                    model_ref,
+                    pool_ref,
+                    qualification.model_express.deployment_mode,
+                    qualification.model_express.runtime_adapter,
+                    qualification.model_express.pool_transports[pool_ref].mode,
+                ).set(1)
         self.health = ControllerHealth()
         self._fence: LeaseFence | None = None
         self._stop = asyncio.Event()
@@ -2118,6 +2174,7 @@ class ModelDeploymentController:
         validation = validate_model_deployment(spec, self.envelope)
         if validation.disposition is ValidationDisposition.ACCEPTED:
             assert validation.admitted_pool_ref is not None
+            qualification = self.envelope.qualifications[spec.model_ref]
             context = RenderContext(
                 name=key.name,
                 namespace=key.namespace,
@@ -2126,6 +2183,7 @@ class ModelDeploymentController:
                 pool=self.envelope.pools[validation.admitted_pool_ref],
                 eligible_pools=[self.envelope.pools[pool_ref] for pool_ref in spec.placement.pool_refs],
                 prometheus_server_address=self.prometheus_server_address,
+                model_express=qualification.model_express,
             )
             render = self.renderer.render(spec, context)
             discovery = await self.api.discover(key=key, owner_uid=uid, render=render)

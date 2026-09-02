@@ -314,6 +314,161 @@ variable "model_controller" {
   }
 }
 
+variable "model_express" {
+  description = "Optional NVIDIA ModelExpress service and exact per-model runtime client declarations. Disabled leaves workloads and infrastructure unchanged."
+  type = object({
+    enabled          = bool
+    deployment_mode  = string
+    endpoint         = optional(string)
+    metadata_backend = string
+    namespace        = string
+    server_image = optional(object({
+      repository = string
+      digest     = string
+    }))
+    cache = object({
+      enabled       = bool
+      size_gib      = number
+      storage_class = optional(string)
+    })
+    external_network = optional(object({
+      coordinator_namespace  = optional(string)
+      coordinator_pod_labels = optional(map(string), {})
+      coordinator_cidrs      = optional(set(string), [])
+    }), {})
+    models = map(object({
+      runtime_adapter        = string
+      client_package_version = string
+      transport = optional(object({
+        mode                   = optional(string, "fallback")
+        rdma_resource_name     = optional(string)
+        rdma_resource_quantity = optional(number, 1)
+        nixl_backend           = optional(string, "UCX")
+        nic_pin                = optional(string, "auto")
+      }), {})
+      pool_transports = optional(map(object({
+        mode                   = optional(string, "fallback")
+        rdma_resource_name     = optional(string)
+        rdma_resource_quantity = optional(number, 1)
+        nixl_backend           = optional(string, "UCX")
+        nic_pin                = optional(string, "auto")
+      })), {})
+    }))
+  })
+  default = {
+    enabled          = false
+    deployment_mode  = "managed"
+    endpoint         = null
+    metadata_backend = "kubernetes"
+    namespace        = "fs2-modelexpress"
+    server_image     = null
+    cache = {
+      enabled       = true
+      size_gib      = 100
+      storage_class = null
+    }
+    external_network = {
+      coordinator_namespace  = null
+      coordinator_pod_labels = {}
+      coordinator_cidrs      = []
+    }
+    models = {}
+  }
+
+  validation {
+    condition = try(
+      !var.model_express.enabled || (
+        length(var.model_express.models) > 0 &&
+        var.model_controller.enabled &&
+        var.model_controller.writes_enabled &&
+        var.model_controller.workload_owner == "controller" &&
+        var.model_express.endpoint != null &&
+        can(regex("^[A-Za-z0-9.-]+:[0-9]{1,5}$", var.model_express.endpoint)) &&
+        try(tonumber(element(split(":", var.model_express.endpoint), 1)) >= 1, false) &&
+        try(tonumber(element(split(":", var.model_express.endpoint), 1)) <= 65535, false) &&
+        (
+          var.model_express.deployment_mode == "managed" ? (
+            var.model_express.external_network.coordinator_namespace == null &&
+            length(var.model_express.external_network.coordinator_pod_labels) == 0 &&
+            length(var.model_express.external_network.coordinator_cidrs) == 0
+            ) : (
+            (
+              var.model_express.external_network.coordinator_namespace != null &&
+              length(var.model_express.external_network.coordinator_pod_labels) > 0 &&
+              length(var.model_express.external_network.coordinator_cidrs) == 0
+              ) || (
+              var.model_express.external_network.coordinator_namespace == null &&
+              length(var.model_express.external_network.coordinator_pod_labels) == 0 &&
+              length(var.model_express.external_network.coordinator_cidrs) > 0
+            )
+          )
+        ) &&
+        alltrue([
+          for cidr in var.model_express.external_network.coordinator_cidrs :
+          try("${cidrhost(cidr, 0)}/${element(split("/", cidr), 1)}" == cidr, false)
+        ]) &&
+        (
+          var.model_express.external_network.coordinator_namespace == null ||
+          can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.model_express.external_network.coordinator_namespace))
+        ) &&
+        alltrue([
+          for key, value in var.model_express.external_network.coordinator_pod_labels :
+          length(key) >= 1 && length(key) <= 253 && length(value) <= 63
+        ]) &&
+        length(setsubtract(
+          toset(keys(var.model_express.models)),
+          var.enabled_model_ids == null ?
+          toset(try(jsondecode(file("${path.module}/../../catalog/profiles/model-profiles.json")).profiles[var.deployment_profile].canonical_routes, [])) :
+          var.enabled_model_ids,
+        )) == 0 &&
+        alltrue([
+          for model_id, config in var.model_express.models :
+          config.runtime_adapter == "vllm" &&
+          config.client_package_version == "0.5.1" &&
+          try(jsondecode(file("${path.module}/../../catalog/runtime/models/${model_id}.json")).runtime.kind, null) == "vllm" &&
+          contains(["fallback", "nixl-rdma"], config.transport.mode) &&
+          contains(["UCX", "LIBFABRIC"], config.transport.nixl_backend) &&
+          can(regex("^[A-Za-z0-9][A-Za-z0-9_.:,-]*$", config.transport.nic_pin)) &&
+          length(config.transport.nic_pin) <= 256 &&
+          floor(config.transport.rdma_resource_quantity) == config.transport.rdma_resource_quantity &&
+          config.transport.rdma_resource_quantity >= 1 &&
+          config.transport.rdma_resource_quantity <= 64 &&
+          (
+            config.transport.mode == "nixl-rdma" ? (
+              config.transport.rdma_resource_name != null &&
+              can(regex("^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", config.transport.rdma_resource_name))
+              ) : (
+              config.transport.rdma_resource_name == null
+            )
+          ) &&
+          alltrue([
+            for pool_id, transport in config.pool_transports :
+            can(regex("^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$", pool_id)) &&
+            length(pool_id) <= 128 &&
+            contains(["fallback", "nixl-rdma"], transport.mode) &&
+            contains(["UCX", "LIBFABRIC"], transport.nixl_backend) &&
+            can(regex("^[A-Za-z0-9][A-Za-z0-9_.:,-]*$", transport.nic_pin)) &&
+            length(transport.nic_pin) <= 256 &&
+            floor(transport.rdma_resource_quantity) == transport.rdma_resource_quantity &&
+            transport.rdma_resource_quantity >= 1 &&
+            transport.rdma_resource_quantity <= 64 &&
+            (
+              transport.mode == "nixl-rdma" ? (
+                transport.rdma_resource_name != null &&
+                can(regex("^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", transport.rdma_resource_name))
+                ) : (
+                transport.rdma_resource_name == null
+              )
+            )
+          ])
+        ])
+      ),
+      false,
+    )
+    error_message = "enabled ModelExpress models require controller ownership, must be selected explicit vLLM runtimes using client 0.5.1, resolve one endpoint and a scoped external coordinator route, and declare fallback or an explicit qualified RDMA extended resource."
+  }
+}
+
 variable "model_image_overrides" {
   description = "Canonical model ID to deployable OCI image reference. It replaces only placeholder runtime images in that model's manifests."
   type        = map(string)

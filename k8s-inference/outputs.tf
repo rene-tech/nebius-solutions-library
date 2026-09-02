@@ -30,6 +30,26 @@ output "effective_configuration" {
       fast_start_mechanism_hourly_costs = var.deployment.dynamic_models.fast_start_mechanism_hourly_costs
       priority_classes                  = var.deployment.dynamic_models.priority_classes
     }
+    model_express = {
+      enabled         = var.deployment.acceleration.model_express.enabled
+      deployment_mode = var.deployment.acceleration.model_express.deployment_mode
+      endpoint = (
+        var.deployment.acceleration.model_express.enabled ?
+        local.workloads_variables.model_express.endpoint : null
+      )
+      metadata_backend                         = var.deployment.acceleration.model_express.metadata_backend
+      namespace                                = var.deployment.acceleration.model_express.namespace
+      managed_nvcr_server_requires_pull_secret = local.modelexpress_managed_nvcr_server_required
+      model_ids                                = sort(keys(var.deployment.acceleration.model_express.models))
+      models = {
+        for model_id, config in var.deployment.acceleration.model_express.models : model_id => {
+          runtime_adapter        = config.runtime_adapter
+          client_package_version = config.client_package_version
+          transport_default      = config.transport
+          pool_transports        = config.pool_transports
+        }
+      }
+    }
     registry_policy = local.deployment_contract.artifact_delivery
   }
 }

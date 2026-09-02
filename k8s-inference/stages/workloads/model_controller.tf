@@ -12,9 +12,10 @@ locals {
     length(evidence) <= 256 &&
     alltrue([
       for item in evidence :
-      length(keys(item)) == 15 && length(setsubtract(toset(keys(item)), toset([
+      contains([15, 16], length(keys(item))) && length(setsubtract(toset(keys(item)), toset([
         "receiptDigest",
         "mechanism",
+        "mechanismConfigDigest",
         "compatibilityTupleDigest",
         "compatibilityTupleComplete",
         "measurementBasis",
@@ -31,6 +32,11 @@ locals {
       ]))) == 0 &&
       can(regex("^sha256:[a-f0-9]{64}$", item.receiptDigest)) &&
       can(regex("^[a-z][a-z0-9-]{0,63}$", item.mechanism)) &&
+      (
+        item.mechanism == "modelexpress" ?
+        can(regex("^sha256:[a-f0-9]{64}$", try(item.mechanismConfigDigest, ""))) :
+        try(item.mechanismConfigDigest, null) == null
+      ) &&
       can(regex("^sha256:[a-f0-9]{64}$", item.compatibilityTupleDigest)) &&
       (item.compatibilityTupleComplete == true || item.compatibilityTupleComplete == false) &&
       item.measurementBasis == "CapacityAvailableToSemanticReady" &&
@@ -67,7 +73,7 @@ locals {
         (
           sample.endToEndSeconds == null ||
           sample.endToEndSeconds >= 0 && sample.endToEndSeconds <= 604800
-        ) && (
+          ) && (
           sample.endToEndSeconds == null ||
           (sample.modelStartSeconds == null || sample.modelStartSeconds <= sample.endToEndSeconds) &&
           (sample.capacityWaitSeconds == null || sample.capacityWaitSeconds <= sample.endToEndSeconds)
@@ -277,6 +283,93 @@ locals {
     for model_id in local.model_controller_dynamic_model_ids :
     model_id => "sha256:${local.catalog_models[model_id].cache.artifact.manifest_digest}"
   }
+  model_controller_modelexpress_pool_transports = {
+    for model_id, config in var.model_express.models : model_id => {
+      for pool_id in local.model_controller_qualified_pool_ids[model_id] : pool_id => lookup(
+        config.pool_transports,
+        pool_id,
+        config.transport,
+      )
+    }
+    if var.model_express.enabled && contains(local.model_controller_dynamic_model_ids, model_id)
+  }
+  model_controller_modelexpress_coordinator_network = (
+    var.model_express.deployment_mode == "managed" ? {
+      type      = "pod-selector"
+      namespace = var.model_express.namespace
+      podLabels = { "fs2-serve.nebius.ai/component" = "modelexpress-server" }
+      cidrs     = []
+      } : length(var.model_express.external_network.coordinator_cidrs) > 0 ? {
+      type      = "ip-blocks"
+      namespace = null
+      podLabels = {}
+      cidrs     = sort(tolist(var.model_express.external_network.coordinator_cidrs))
+      } : {
+      type      = "pod-selector"
+      namespace = var.model_express.external_network.coordinator_namespace
+      podLabels = var.model_express.external_network.coordinator_pod_labels
+      cidrs     = []
+    }
+  )
+  model_controller_modelexpress_payloads = {
+    for model_id, config in var.model_express.models : model_id => {
+      schema          = "fs2-serve.nebius.ai/modelexpress-client-binding/v1"
+      upstreamVersion = "0.5.1"
+      deploymentMode  = var.model_express.deployment_mode
+      endpoint        = var.model_express.endpoint
+      coordinatorImage = var.model_express.deployment_mode == "managed" ? format(
+        "%s@%s",
+        var.model_express.server_image.repository,
+        var.model_express.server_image.digest,
+      ) : null
+      metadataBackend        = var.model_express.metadata_backend
+      coordinatorNetworkType = local.model_controller_modelexpress_coordinator_network.type
+      coordinatorNamespace   = local.model_controller_modelexpress_coordinator_network.namespace
+      coordinatorPodLabels   = local.model_controller_modelexpress_coordinator_network.podLabels
+      coordinatorCidrs       = local.model_controller_modelexpress_coordinator_network.cidrs
+      runtimeAdapter         = config.runtime_adapter
+      clientPackageVersion   = config.client_package_version
+      artifactRevision       = local.catalog_models[model_id].model.source.revision
+      artifactDigest         = local.model_controller_artifact_manifest_digests[model_id]
+      runtimeImage           = var.model_image_overrides[model_id]
+      templateDigest         = local.model_controller_template_digests[model_id]
+      acceleratorCount       = local.profile_contract.model_autoscaling_targets[model_id].gpu_count
+      pools = [
+        for pool_id in local.model_controller_qualified_pool_ids[model_id] : {
+          poolRef          = pool_id
+          acceleratorClass = local.selected_queue_pools[pool_id].accelerator_class
+          resourceName     = local.selected_queue_pools[pool_id].resource_api.resource_name
+          transport = {
+            mode                 = local.model_controller_modelexpress_pool_transports[model_id][pool_id].mode
+            rdmaResourceName     = local.model_controller_modelexpress_pool_transports[model_id][pool_id].rdma_resource_name
+            rdmaResourceQuantity = local.model_controller_modelexpress_pool_transports[model_id][pool_id].rdma_resource_quantity
+            nixlBackend          = local.model_controller_modelexpress_pool_transports[model_id][pool_id].nixl_backend
+            rdmaNicPin           = local.model_controller_modelexpress_pool_transports[model_id][pool_id].nic_pin
+          }
+        }
+      ]
+      strategyOrder = ["p2p-nixl", "modelstreamer", "gds", "native"]
+    }
+    if var.model_express.enabled && contains(local.model_controller_dynamic_model_ids, model_id)
+  }
+  model_controller_modelexpress_bindings = {
+    for model_id, payload in local.model_controller_modelexpress_payloads : model_id => {
+      configDigest           = "sha256:${sha256(jsonencode(payload))}"
+      endpoint               = payload.endpoint
+      deploymentMode         = payload.deploymentMode
+      metadataBackend        = payload.metadataBackend
+      coordinatorNetworkType = payload.coordinatorNetworkType
+      coordinatorNamespace   = payload.coordinatorNamespace
+      coordinatorPodLabels   = payload.coordinatorPodLabels
+      coordinatorCidrs       = payload.coordinatorCidrs
+      runtimeAdapter         = payload.runtimeAdapter
+      clientPackageVersion   = payload.clientPackageVersion
+      poolRefs               = [for pool in payload.pools : pool.poolRef]
+      poolTransports = {
+        for pool in payload.pools : pool.poolRef => pool.transport
+      }
+    }
+  }
   model_controller_bundles = [
     for model_id in local.model_controller_dynamic_model_ids : {
       modelRef             = model_id
@@ -290,7 +383,7 @@ locals {
     }
   ]
   model_controller_qualifications = {
-    for model_id in local.model_controller_dynamic_model_ids : model_id => {
+    for model_id in local.model_controller_dynamic_model_ids : model_id => merge({
       modelRef                = model_id
       runtimeProfile          = local.catalog_models[model_id].runtime.kind
       artifactManifestDigests = [local.model_controller_artifact_manifest_digests[model_id]]
@@ -327,7 +420,9 @@ locals {
       # and projected here, every level above Off stays unqualified and the
       # controller reports that truthfully.
       fastStartEvidence = try(local.model_controller_fast_start_evidence[model_id], [])
-    }
+      }, contains(keys(local.model_controller_modelexpress_bindings), model_id) ? {
+      modelExpress = local.model_controller_modelexpress_bindings[model_id]
+    } : {})
   }
   model_controller_pool_envelope = {
     for pool_id, pool in local.selected_queue_pools : pool_id => {
@@ -499,6 +594,7 @@ resource "terraform_data" "model_controller_contract" {
     renderer_bundles_sha256  = sha256(local.model_controller_bundles_json)
     bootstrap_model_ids      = sort(tolist(var.model_controller.bootstrap_model_ids))
     expected_handoff_receipt = local.model_controller_expected_handoff_receipt
+    modelexpress_resources   = local.modelexpress_resource_counts
   }
 
   lifecycle {

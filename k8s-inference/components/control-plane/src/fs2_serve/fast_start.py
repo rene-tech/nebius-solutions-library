@@ -22,7 +22,7 @@ import math
 from collections.abc import Sequence
 from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import AwareDatetime, Field, model_validator
 
@@ -282,6 +282,40 @@ class FastStartAutomaticStatus(KubernetesModel):
     long_window_idle_gap_episodes: int = Field(ge=0)
 
 
+class FastStartMechanismPoolTransport(KubernetesModel):
+    """Rendered transport detail for one pool; not observed transfer proof."""
+
+    mode: Literal["fallback", "nixl-rdma"]
+    rdma_resource_name: str | None = None
+    rdma_resource_quantity: int = Field(ge=1, le=64)
+    nixl_backend: Literal["UCX", "LIBFABRIC"]
+    rdma_nic_pin: str = Field(min_length=1, max_length=256)
+
+
+class FastStartMechanismStatus(KubernetesModel):
+    """Operator detail for a configured mechanism, never qualification proof."""
+
+    state: Literal["Pending", "Configured"]
+    config_digest: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+    deployment_mode: Literal["managed", "external"]
+    endpoint: str = Field(min_length=3, max_length=2048)
+    metadata_backend: Literal["kubernetes", "redis"]
+    runtime_adapter: Literal["vllm"]
+    client_package_version: Literal["0.5.1"]
+    coordinator_network_type: Literal["pod-selector", "ip-blocks"]
+    coordinator_namespace: str | None = Field(default=None, min_length=1, max_length=63)
+    coordinator_pod_labels: dict[str, str] = Field(default_factory=dict, max_length=16)
+    coordinator_cidrs: list[str] = Field(default_factory=list, max_length=32)
+    pool_refs: list[str] = Field(min_length=1, max_length=32)
+    pool_transports: dict[str, FastStartMechanismPoolTransport] = Field(min_length=1, max_length=32)
+    configuration_observed: bool
+    telemetry_state: Literal["Unavailable"] = "Unavailable"
+    selected_path: str | None = None
+    transferred_bytes: int | None = Field(default=None, ge=0)
+    transfer_seconds: float | None = Field(default=None, ge=0)
+    fallback_reason: str | None = Field(default=None, max_length=240)
+
+
 class FastStartStatus(FastStartAssessment):
     """Controller-observed projection; adds what only runtime can tell.
 
@@ -294,6 +328,7 @@ class FastStartStatus(FastStartAssessment):
     effective_level: FastStartLevel | None = None
     hot: bool | None = None
     automatic: FastStartAutomaticStatus | None = None
+    mechanisms: dict[str, FastStartMechanismStatus] = Field(default_factory=dict, max_length=16)
 
 
 def nearest_rank(values: Sequence[float | None], fraction: float) -> float | None:
@@ -339,6 +374,7 @@ def _compatible(
     spec: ModelDeploymentSpec,
     pool: PoolEnvelope,
     evaluation_time: datetime,
+    model_express_config_digest: str | None,
 ) -> bool:
     snapshot_digest = spec.cache.snapshot_ref.digest if spec.cache.snapshot_ref is not None else None
     return (
@@ -351,6 +387,17 @@ def _compatible(
         and evidence.template_digest == spec.runtime.template_ref.digest
         and evidence.cache_tier is spec.cache.tier
         and evidence.snapshot_digest == snapshot_digest
+        and (
+            (
+                evidence.mechanism == "modelexpress"
+                and model_express_config_digest is not None
+                and evidence.mechanism_config_digest == model_express_config_digest
+            )
+            or (
+                evidence.mechanism != "modelexpress"
+                and evidence.mechanism_config_digest is None
+            )
+        )
         and (evidence.valid_until is None or evaluation_time < evidence.valid_until)
     )
 
@@ -425,8 +472,13 @@ def _assess_pool(
     pool: PoolEnvelope,
     evidence: Sequence[FastStartEvidence],
     evaluation_time: datetime,
+    model_express_config_digest: str | None,
 ) -> FastStartPoolAssessment:
-    compatible = [item for item in evidence if _compatible(item, spec, pool, evaluation_time)]
+    compatible = [
+        item
+        for item in evidence
+        if _compatible(item, spec, pool, evaluation_time, model_express_config_digest)
+    ]
     if not compatible:
         return FastStartPoolAssessment(
             pool_ref=pool.pool_id,
@@ -497,6 +549,7 @@ def evaluate_fast_start(
     policy = spec.fast_start
     qualification = envelope.qualifications.get(spec.model_ref)
     evidence = qualification.fast_start_evidence if qualification is not None else []
+    model_express = qualification.model_express if qualification is not None else None
     pools: list[FastStartPoolAssessment] = []
     for pool_ref in sorted(spec.placement.pool_refs):
         pool = envelope.pools.get(pool_ref)
@@ -509,7 +562,12 @@ def evaluate_fast_start(
                 )
             )
             continue
-        pools.append(_assess_pool(spec, pool, evidence, evaluation_time))
+        model_express_config_digest = (
+            model_express.config_digest
+            if model_express is not None and pool_ref in model_express.pool_refs
+            else None
+        )
+        pools.append(_assess_pool(spec, pool, evidence, evaluation_time, model_express_config_digest))
     binding = _binding_pool(pools)
     qualified = binding.qualified_level if binding is not None else FastStartLevel.OFF
 

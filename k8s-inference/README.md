@@ -23,6 +23,8 @@ and its capacity, storage, registry, operator, and policy envelopes. See
 ownership boundary, current renderer, and optional extension points. See
 [Model fast-start levels](FAST_START_LEVELS.md) for the customer timing classes,
 clock boundaries, automatic policy, and evidence requirements.
+[NVIDIA ModelExpress](docs/MODELEXPRESS.md) documents the optional P2P loader,
+its exact runtime qualification, Terraform switch, metrics, and rollback.
 
 ## Accelerator and qualification boundary
 

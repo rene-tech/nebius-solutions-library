@@ -61,6 +61,7 @@ def compatibility_tuple(**overrides: Any) -> dict[str, Any]:
         "capacity_state": "prepared-node-zero-pod",
         "cache_tier": "SharedFilesystem",
         "mechanism": "shared-artifact-cache",
+        "mechanism_config_digest": None,
         "snapshot_digest": None,
         "storage_class": "fs2-shared-cache",
         "storage_mode": "ReadWriteMany",
@@ -320,6 +321,34 @@ class FastStartBenchmarkTests(unittest.TestCase):
             BENCHMARK.FastStartEvidenceError, "derived aggregates"
         ):
             BENCHMARK.validate_receipt(receipt)
+
+    def test_modelexpress_requires_exact_config_digest_without_invalidating_legacy_tuples(self) -> None:
+        legacy = attempt(1)
+        del legacy["compatibility_tuple"]["mechanism_config_digest"]
+        legacy["compatibility_tuple_digest"] = BENCHMARK.canonical_digest(
+            legacy["compatibility_tuple"]
+        )
+        BENCHMARK.validate_attempt(legacy)
+
+        modelexpress = attempt(
+            1,
+            tuple_overrides={
+                "mechanism": "modelexpress",
+                "mechanism_config_digest": "sha256:" + digest("modelexpress-config"),
+            },
+        )
+        BENCHMARK.validate_attempt(modelexpress)
+
+        missing = attempt(1, tuple_overrides={"mechanism": "modelexpress"})
+        with self.assertRaisesRegex(BENCHMARK.FastStartEvidenceError, "mechanism_config_digest"):
+            BENCHMARK.validate_attempt(missing)
+
+        unexpected = attempt(
+            1,
+            tuple_overrides={"mechanism_config_digest": "sha256:" + digest("other-config")},
+        )
+        with self.assertRaisesRegex(BENCHMARK.FastStartEvidenceError, "mechanism_config_digest"):
+            BENCHMARK.validate_attempt(unexpected)
 
     def test_cli_aggregates_and_validates_new_private_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -1160,6 +1160,7 @@ def build_compatibility_tuple(
     gpu_identity: dict[str, Any],
     storage_class: str | None,
     storage_mode: str | None,
+    mechanism_config_digest: str | None = None,
 ) -> dict[str, Any]:
     deployment = observation.deployment
     annotations = deployment.get("metadata", {}).get("annotations", {})
@@ -1208,7 +1209,7 @@ def build_compatibility_tuple(
     accelerator_count = _resource_gpu_count(pod_spec)
     if accelerator_count < 1:
         raise BenchmarkError("gpu_request_missing")
-    return {
+    compatibility_tuple = {
         "source_commit": source_commit,
         "project_id": cluster.get("project_id"),
         "region": cluster.get("region"),
@@ -1248,6 +1249,9 @@ def build_compatibility_tuple(
         "semantic_validator_digest": semantic_validator_digest,
         "benchmark_client_digest": benchmark_client_digest,
     }
+    if mechanism_config_digest is not None:
+        compatibility_tuple["mechanism_config_digest"] = mechanism_config_digest
+    return compatibility_tuple
 
 
 def _source_commit() -> str:
@@ -1524,8 +1528,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "shared-cache",
             "local-snapshot",
             "ram-resident",
+            "modelexpress",
         ),
         required=True,
+    )
+    parser.add_argument(
+        "--mechanism-config-digest",
+        help="Required sha256: digest of the active exact binding for --mechanism modelexpress; forbidden otherwise.",
     )
     parser.add_argument(
         "--modality",
@@ -2056,6 +2065,12 @@ def _wait_for_runtime_attribution(
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    mechanism_config_digest = args.mechanism_config_digest
+    if (args.mechanism == "modelexpress") != (
+        isinstance(mechanism_config_digest, str)
+        and re.fullmatch(r"sha256:[0-9a-f]{64}", mechanism_config_digest) is not None
+    ):
+        raise BenchmarkError("mechanism_config_digest_invalid")
     token = read_token(args.token_file)
     bundle = read_json(args.access_bundle, owner_only=True)
     request_document = read_json(args.request_file)
@@ -2116,6 +2131,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         observation=initial,
         capacity_state=args.capacity_state,
         mechanism=args.mechanism,
+        mechanism_config_digest=args.mechanism_config_digest,
         payload_digest=payload_digest,
         client_placement=args.client_placement,
         interface_protocol=interface_protocol,

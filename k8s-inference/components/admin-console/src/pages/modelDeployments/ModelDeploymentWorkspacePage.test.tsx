@@ -346,6 +346,62 @@ describe("ModelDeployment workspace", () => {
     expect(within(poolEvidence).getByText("BenchmarkFailuresPresent")).toBeInTheDocument();
   });
 
+  it("shows ModelExpress binding separately from customer qualification and keeps transfer evidence unavailable", async () => {
+    mockReadSurface();
+    const configured = structuredClone(modelDeploymentStatusFixture);
+    configured.observation!.status.fastStart!.mechanisms = {
+      modelexpress: {
+        state: "Configured",
+        configDigest: `sha256:${"9".repeat(64)}`,
+        deploymentMode: "managed",
+        endpoint: "fs2-modelexpress.fs2-modelexpress.svc.cluster.local:8001",
+        metadataBackend: "kubernetes",
+        runtimeAdapter: "vllm",
+        clientPackageVersion: "0.5.1",
+        coordinatorNetworkType: "pod-selector",
+        coordinatorNamespace: "fs2-modelexpress",
+        coordinatorPodLabels: { "fs2-serve.nebius.ai/component": "modelexpress-server" },
+        coordinatorCidrs: [],
+        poolRefs: ["reserved-h100", "preemptible-h100"],
+        poolTransports: {
+          "reserved-h100": {
+            mode: "nixl-rdma",
+            rdmaResourceName: "example.com/rdma_shared_device_a",
+            rdmaResourceQuantity: 8,
+            nixlBackend: "UCX",
+            rdmaNicPin: "auto",
+          },
+          "preemptible-h100": {
+            mode: "fallback",
+            rdmaResourceName: null,
+            rdmaResourceQuantity: 1,
+            nixlBackend: "UCX",
+            rdmaNicPin: "auto",
+          },
+        },
+        configurationObserved: true,
+        telemetryState: "Unavailable",
+        selectedPath: null,
+        transferredBytes: null,
+        transferSeconds: null,
+        fallbackReason: null,
+      },
+    };
+    vi.mocked(adminApi.modelDeploymentStatus).mockResolvedValue(testEnvelope(configured));
+    renderPage();
+
+    const fastStart = (await screen.findByRole("heading", { name: "Fast start" })).closest("section")!;
+    fireEvent.click(within(fastStart).getByText("Operator mechanism details"));
+    expect(screen.getByText("Configured · configuration observed")).toBeInTheDocument();
+    expect(screen.getByText(/managed · kubernetes/)).toBeInTheDocument();
+    expect(screen.getByText("vllm · 0.5.1")).toBeInTheDocument();
+    expect(screen.getByText(/reserved-h100: nixl-rdma · UCX · example.com\/rdma_shared_device_a × 8/)).toBeInTheDocument();
+    expect(screen.getByText(/preemptible-h100: fallback · UCX · no RDMA resource/)).toBeInTheDocument();
+    expect(screen.getByText(/fs2-modelexpress · fs2-serve.nebius.ai\/component=modelexpress-server/)).toBeInTheDocument();
+    expect(screen.getByText("Unavailable · no per-deployment upstream path record")).toBeInTheDocument();
+    expect(screen.getAllByText("L2 · Ready within 2 minutes").length).toBeGreaterThan(0);
+  });
+
   it("shows unavailable observations explicitly and never turns absent replica values into zero", async () => {
     mockReadSurface();
     vi.spyOn(adminApi, "modelDeploymentStatus").mockResolvedValue(testEnvelope({

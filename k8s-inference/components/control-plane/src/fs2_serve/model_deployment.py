@@ -8,6 +8,7 @@ to apply a plan only when its disposition is ``accepted``.
 
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
@@ -17,6 +18,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from ipaddress import ip_network
 from typing import Annotated, Any, Literal, Protocol
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -46,6 +48,9 @@ WORKLOAD_POOL_ANNOTATION = "fs2-serve.nebius.ai/workload-pool-ref"
 WORKLOAD_ROLE_ANNOTATION = "fs2-serve.nebius.ai/workload-role"
 WORKLOAD_SEGMENT_CAPACITY_ANNOTATION = "fs2-serve.nebius.ai/workload-segment-capacity"
 WORKLOAD_SEGMENT_OFFSET_ANNOTATION = "fs2-serve.nebius.ai/workload-segment-offset"
+MODEL_EXPRESS_LABEL = "fs2-serve.nebius.ai/modelexpress"
+MODEL_EXPRESS_CONFIG_ANNOTATION = "fs2-serve.nebius.ai/modelexpress-config-digest"
+MODEL_EXPRESS_TRANSFER_GROUP_LABEL = "fs2-serve.nebius.ai/modelexpress-transfer-group"
 WORKLOAD_ROLE_LABEL = "fs2-serve.nebius.ai/workload-role"
 POOL_ID_NODE_LABEL = "accelerator.fs2.nebius/pool-id"
 
@@ -58,6 +63,10 @@ DNS_SUBDOMAIN_PATTERN = (
 MODEL_REF_PATTERN = r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$"
 SUPPORTED_DYNAMIC_POLICY_REF = "tenant-default.v1"
 IMAGE_DIGEST_PATTERN = r"^[^\s@]+@sha256:[a-f0-9]{64}$"
+EXTENDED_RESOURCE_PATTERN = (
+    r"^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?/"
+    r"[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$"
+)
 
 PoolRef = Annotated[str, StringConstraints(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)]
 OpenAIAlias = Annotated[
@@ -258,6 +267,7 @@ class FastStartEvidence(KubernetesModel):
 
     receipt_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
     mechanism: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9-]*$")
+    mechanism_config_digest: str | None = Field(default=None, pattern=SHA256_DIGEST_PATTERN)
     compatibility_tuple_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
     compatibility_tuple_complete: bool
     measurement_basis: Literal["CapacityAvailableToSemanticReady"]
@@ -447,6 +457,75 @@ class PoolEnvelope(KubernetesModel):
         return self
 
 
+class ModelExpressPoolTransport(KubernetesModel):
+    """Exact transport resources for one accelerator pool."""
+
+    mode: Literal["fallback", "nixl-rdma"] = "fallback"
+    rdma_resource_name: str | None = Field(default=None, min_length=3, max_length=317)
+    rdma_resource_quantity: int = Field(default=1, ge=1, le=64)
+    nixl_backend: Literal["UCX", "LIBFABRIC"] = "UCX"
+    rdma_nic_pin: str = Field(default="auto", min_length=1, max_length=256)
+
+    @model_validator(mode="after")
+    def exact_resource(self) -> ModelExpressPoolTransport:
+        if self.mode == "nixl-rdma":
+            if self.rdma_resource_name is None or re.fullmatch(
+                EXTENDED_RESOURCE_PATTERN, self.rdma_resource_name
+            ) is None:
+                raise ValueError("ModelExpress RDMA transport requires one qualified extended resource name")
+        elif self.rdma_resource_name is not None:
+            raise ValueError("ModelExpress fallback transport must not claim an RDMA resource")
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:,-]*", self.rdma_nic_pin) is None:
+            raise ValueError("ModelExpress RDMA NIC pin contains unsupported characters")
+        return self
+
+
+class ModelExpressQualification(KubernetesModel):
+    """Immutable declaration that the selected runtime embeds an MX client.
+
+    This is configuration compatibility, not benchmark evidence. It permits
+    the renderer to enable the loader; a fast-start level still requires a
+    receipt bound to ``configDigest`` and the complete runtime tuple.
+    """
+
+    config_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
+    endpoint: str = Field(min_length=3, max_length=2048)
+    deployment_mode: Literal["managed", "external"]
+    metadata_backend: Literal["kubernetes", "redis"]
+    runtime_adapter: Literal["vllm"]
+    client_package_version: Literal["0.5.1"]
+    coordinator_network_type: Literal["pod-selector", "ip-blocks"]
+    coordinator_namespace: str | None = Field(default=None, min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
+    coordinator_pod_labels: dict[str, str] = Field(default_factory=dict, max_length=16)
+    coordinator_cidrs: list[str] = Field(default_factory=list, max_length=32)
+    pool_refs: list[PoolRef] = Field(min_length=1, max_length=32)
+    pool_transports: dict[PoolRef, ModelExpressPoolTransport] = Field(min_length=1, max_length=32)
+
+    @model_validator(mode="after")
+    def exact_pools(self) -> ModelExpressQualification:
+        host, separator, port = self.endpoint.rpartition(":")
+        if not separator or not host or not port.isdigit() or not 1 <= int(port) <= 65535:
+            raise ValueError("ModelExpress endpoint must be one explicit host:port")
+        if len(set(self.pool_refs)) != len(self.pool_refs):
+            raise ValueError("ModelExpress pool references must be unique")
+        if set(self.pool_refs) != set(self.pool_transports):
+            raise ValueError("ModelExpress pool transports must exactly match pool references")
+        if any(not key or len(key) > 253 or len(value) > 63 for key, value in self.coordinator_pod_labels.items()):
+            raise ValueError("ModelExpress coordinator Pod labels are outside Kubernetes bounds")
+        if self.coordinator_network_type == "pod-selector":
+            if self.coordinator_namespace is None or not self.coordinator_pod_labels or self.coordinator_cidrs:
+                raise ValueError("ModelExpress Pod-selector coordinator route is incomplete")
+        elif self.coordinator_namespace is not None or self.coordinator_pod_labels or not self.coordinator_cidrs:
+            raise ValueError("ModelExpress IP-block coordinator route is incomplete")
+        try:
+            normalized_cidrs = [str(ip_network(cidr, strict=True)) for cidr in self.coordinator_cidrs]
+        except ValueError:
+            raise ValueError("ModelExpress coordinator CIDR must be a canonical network") from None
+        if len(normalized_cidrs) != len(set(normalized_cidrs)):
+            raise ValueError("ModelExpress coordinator CIDRs must be unique")
+        return self
+
+
 class ModelQualification(KubernetesModel):
     model_ref: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
     runtime_profile: str = Field(min_length=1, max_length=128, pattern=MODEL_REF_PATTERN)
@@ -468,6 +547,7 @@ class ModelQualification(KubernetesModel):
     snapshot_digests: list[str] = Field(default_factory=list, max_length=64)
     scale_to_zero_qualified: bool
     fast_start_evidence: list[FastStartEvidence] = Field(default_factory=list, max_length=256)
+    model_express: ModelExpressQualification | None = None
 
     @model_validator(mode="after")
     def exact_artifacts(self) -> ModelQualification:
@@ -494,6 +574,8 @@ class ModelQualification(KubernetesModel):
             re.fullmatch(SHA256_DIGEST_PATTERN, digest) is None for digest in self.snapshot_digests
         ):
             raise ValueError("qualification snapshot digests must be unique SHA-256 identities")
+        if self.model_express is not None and self.runtime_profile != "vllm":
+            raise ValueError("ModelExpress is qualified only for the explicit vLLM runtime profile")
         return self
 
 
@@ -514,6 +596,18 @@ class InfrastructureEnvelope(KubernetesModel):
             raise ValueError("pool map key must match poolId")
         if any(key != item.model_ref for key, item in self.qualifications.items()):
             raise ValueError("qualification map key must match modelRef")
+        if any(
+            item.model_express is not None
+            and not set(item.model_express.pool_refs).issubset(self.pools)
+            for item in self.qualifications.values()
+        ):
+            raise ValueError("ModelExpress qualification references a pool outside the envelope")
+        if any(
+            item.model_express is not None
+            and len({self.pools[pool_ref].accelerator_class for pool_ref in item.model_express.pool_refs}) != 1
+            for item in self.qualifications.values()
+        ):
+            raise ValueError("ModelExpress v0.5.1 requires one accelerator class per model binding")
         if any(
             re.fullmatch(r"^[a-z][a-z0-9-]{0,63}$", name) is None or not math.isfinite(cost) or cost < 0
             for name, cost in self.fast_start_mechanism_hourly_costs.items()
@@ -786,6 +880,19 @@ def validate_model_deployment(
                     owner="live-control-plane",
                 )
             )
+        if (
+            qualification is not None
+            and qualification.model_express is not None
+            and pool_ref not in qualification.model_express.pool_refs
+        ):
+            issues.append(
+                _issue(
+                    "modelexpress_pool_unqualified",
+                    f"$.spec.placement.poolRefs[{index}]",
+                    "ModelExpress client binding does not include this pool",
+                    owner="live-control-plane",
+                )
+            )
 
     pool_replica_capacity = {
         pool.pool_id: (pool.accelerators_per_node // spec.placement.accelerators_per_replica) * pool.max_nodes
@@ -915,6 +1022,7 @@ class RenderContext(KubernetesModel):
     evaluation_time: AwareDatetime = Field(default_factory=lambda: datetime.now(UTC))
     minimum_total_replicas_override: int | None = Field(default=None, ge=0, le=10000)
     hot_floor_override: int | None = Field(default=None, ge=0, le=10000)
+    model_express: ModelExpressQualification | None = None
     preview: bool = False
 
     @model_validator(mode="after")
@@ -926,6 +1034,12 @@ class RenderContext(KubernetesModel):
             raise ValueError("render context eligible pools must be unique")
         if self.pool.pool_id not in {item.pool_id for item in pools}:
             raise ValueError("render context primary pool must be eligible")
+        if self.model_express is not None:
+            selected_pool_ids = {item.pool_id for item in pools}
+            if not selected_pool_ids.issubset(self.model_express.pool_refs):
+                raise ValueError("ModelExpress render context contains an unqualified pool")
+            if len({item.accelerator_class for item in pools}) != 1:
+                raise ValueError("ModelExpress v0.5.1 render requires one accelerator class")
         return self
 
 
@@ -1025,6 +1139,45 @@ def bounded_label_value(value: str) -> str:
     suffix = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
     stem = value[:50].rstrip("-_.")
     return f"{stem}-{suffix}"
+
+
+def _modelexpress_transfer_identity(
+    config_digest: str,
+    accelerator_class: str,
+    nixl_backend: str,
+) -> tuple[str, str]:
+    """Return the upstream revision and lossless Kubernetes label identity.
+
+    ModelExpress v0.5.1 does not put the concrete CUDA architecture in its
+    source identity.  FS2 therefore binds the supported upstream revision
+    discriminator to the complete client binding plus the admitted accelerator
+    class.  Base32 keeps all 256 digest bits in a Kubernetes label value.
+    """
+
+    digest_bytes = hashlib.sha256(
+        canonical_json(
+            {
+                "configDigest": config_digest,
+                "acceleratorClass": accelerator_class,
+                "nixlBackend": nixl_backend,
+            }
+        )
+    ).digest()
+    digest_hex = digest_bytes.hex()
+    label = "mx-" + base64.b32encode(digest_bytes).decode("ascii").rstrip("=").lower()
+    return f"fs2:sha256:{digest_hex}", label
+
+
+def _modelexpress_peer_ports(accelerators_per_replica: int) -> list[dict[str, Any]]:
+    """Pin and allow the bounded upstream v0.5.1 per-device listener ranges."""
+
+    ports: list[dict[str, Any]] = []
+    for base_port in (5555, 6555):
+        item: dict[str, Any] = {"protocol": "TCP", "port": base_port}
+        if accelerators_per_replica > 1:
+            item["endPort"] = base_port + accelerators_per_replica - 1
+        ports.append(item)
+    return ports
 
 
 def _metric_name(model_ref: str) -> str:
@@ -1257,6 +1410,213 @@ def _segmented_operation_demand_promql(
     return f"clamp_max(clamp_min(({base}) - {lower}, 0), {upper})"
 
 
+def _configure_modelexpress_container(
+    container: dict[str, Any],
+    qualification: ModelExpressQualification,
+    pool: PoolEnvelope,
+) -> str:
+    """Enable the exact upstream vLLM client contract without changing other args."""
+
+    if qualification.runtime_adapter != "vllm":
+        raise ValueError("unsupported ModelExpress runtime adapter")
+    args = container.get("args", [])
+    if not isinstance(args, list) or any(not isinstance(item, str) for item in args):
+        raise ValueError("ModelExpress vLLM runtime args must be a string list")
+    retained: list[str] = []
+    skip_next = False
+    for item in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if item == "--load-format":
+            skip_next = True
+            continue
+        if item.startswith("--load-format="):
+            continue
+        retained.append(item)
+    if skip_next:
+        raise ValueError("ModelExpress found a load-format argument without a value")
+    container["args"] = [*retained, "--load-format", "modelexpress"]
+
+    transport = qualification.pool_transports[pool.pool_id]
+    model_revision, transfer_group = _modelexpress_transfer_identity(
+        qualification.config_digest,
+        pool.accelerator_class,
+        transport.nixl_backend,
+    )
+    desired_env = {
+        "MODEL_EXPRESS_URL": qualification.endpoint,
+        "MX_SERVER_ADDRESS": qualification.endpoint,
+        "MX_METADATA_BACKEND": qualification.metadata_backend,
+        "VLLM_PLUGINS": "modelexpress",
+        "MX_NIXL_BACKEND": transport.nixl_backend,
+        "MX_METADATA_PORT": "5555",
+        "MX_WORKER_GRPC_PORT": "6555",
+        "MX_P2P_METADATA": "1",
+        # Upstream v0.5.1 uses revision in SourceIdentity. Partition it with
+        # the complete FS2 binding, accelerator class, and NIXL backend so
+        # incompatible CUDA/transport peers never discover one another.
+        "MX_MODEL_REVISION": model_revision,
+    }
+    if transport.mode == "nixl-rdma":
+        desired_env["MX_RDMA_NIC_PIN"] = transport.rdma_nic_pin
+        if transport.nixl_backend == "UCX":
+            desired_env["UCX_RNDV_SCHEME"] = "get_zcopy"
+            desired_env["UCX_RNDV_THRESH"] = "0"
+    desired_value_from_env = {
+        "POD_IP": {"fieldRef": {"fieldPath": "status.podIP"}},
+        "NODE_NAME": {"fieldRef": {"fieldPath": "spec.nodeName"}},
+        "POD_NAMESPACE": {"fieldRef": {"fieldPath": "metadata.namespace"}},
+        "POD_NAME": {"fieldRef": {"fieldPath": "metadata.name"}},
+        "POD_UID": {"fieldRef": {"fieldPath": "metadata.uid"}},
+    }
+    existing = container.get("env", [])
+    if not isinstance(existing, list):
+        raise ValueError("ModelExpress runtime env must be a list")
+    managed_env_names = set(desired_env) | set(desired_value_from_env)
+    filtered = [item for item in existing if isinstance(item, dict) and item.get("name") not in managed_env_names]
+    container["env"] = [
+        *filtered,
+        *({"name": name, "value": value} for name, value in desired_env.items()),
+        *({"name": name, "valueFrom": value_from} for name, value_from in desired_value_from_env.items()),
+    ]
+    if transport.mode == "nixl-rdma":
+        assert transport.rdma_resource_name is not None
+        resources = container.setdefault("resources", {})
+        if not isinstance(resources, dict):
+            raise ValueError("ModelExpress runtime resources must be an object")
+        for key in ("requests", "limits"):
+            quantities = resources.setdefault(key, {})
+            if not isinstance(quantities, dict):
+                raise ValueError(f"ModelExpress runtime resource {key} must be an object")
+            quantities[transport.rdma_resource_name] = transport.rdma_resource_quantity
+
+        security_context = container.setdefault("securityContext", {})
+        if not isinstance(security_context, dict):
+            raise ValueError("ModelExpress runtime securityContext must be an object")
+        capabilities = security_context.setdefault("capabilities", {})
+        if not isinstance(capabilities, dict):
+            raise ValueError("ModelExpress runtime capabilities must be an object")
+        added_capabilities = capabilities.setdefault("add", [])
+        if not isinstance(added_capabilities, list) or any(
+            not isinstance(capability, str) for capability in added_capabilities
+        ):
+            raise ValueError("ModelExpress runtime added capabilities must be a string list")
+        if "IPC_LOCK" not in added_capabilities:
+            added_capabilities.append("IPC_LOCK")
+    return transfer_group
+
+
+def _modelexpress_network_policy(
+    *,
+    context: RenderContext,
+    qualification: ModelExpressQualification,
+    segment_identity: str,
+    workload_name: str,
+    transfer_group: str,
+    accelerators_per_replica: int,
+    service_port: int,
+    labels: Mapping[str, str],
+    annotations: Mapping[str, str],
+    owner_references: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Permit only this exact transfer group to reach its peer listeners.
+
+    The policy is additive to the Terraform-owned runtime policy.  The exact
+    transfer-group selector prevents old revisions or another model from
+    becoming a source, while the coordinator rule is limited to the configured
+    namespace and Pod labels.
+    """
+
+    runtime_selector = {
+        MODEL_DEPLOYMENT_LABEL: bounded_label_value(context.name),
+        WORKLOAD_ROLE_LABEL: segment_identity,
+        MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group,
+    }
+    peer_selector = {
+        MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group,
+    }
+    coordinator_port = int(qualification.endpoint.rsplit(":", 1)[1])
+    coordinator_peers: list[dict[str, Any]]
+    if qualification.coordinator_network_type == "pod-selector":
+        assert qualification.coordinator_namespace is not None
+        coordinator_peers = [
+            {
+                "namespaceSelector": {
+                    "matchLabels": {
+                        "kubernetes.io/metadata.name": qualification.coordinator_namespace,
+                    }
+                },
+                "podSelector": {
+                    "matchLabels": dict(qualification.coordinator_pod_labels),
+                },
+            }
+        ]
+    else:
+        coordinator_peers = [{"ipBlock": {"cidr": cidr}} for cidr in qualification.coordinator_cidrs]
+
+    manifest: dict[str, Any] = {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "NetworkPolicy",
+        "metadata": {
+            "name": _derived_name("fs2-modelexpress-", workload_name),
+            "namespace": context.namespace,
+            "labels": {**labels, WORKLOAD_ROLE_LABEL: segment_identity},
+            "annotations": dict(annotations),
+        },
+        "spec": {
+            "podSelector": {"matchLabels": runtime_selector},
+            "policyTypes": ["Ingress", "Egress"],
+            "ingress": [
+                {
+                    "from": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}
+                            }
+                        }
+                    ],
+                    "ports": [{"protocol": "TCP", "port": service_port}],
+                },
+                {
+                    "from": [{"podSelector": {"matchLabels": peer_selector}}],
+                    "ports": _modelexpress_peer_ports(accelerators_per_replica),
+                }
+            ],
+            "egress": [
+                {
+                    "to": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {"kubernetes.io/metadata.name": "kube-system"}
+                            }
+                        }
+                    ],
+                    "ports": [
+                        {"protocol": "UDP", "port": 53},
+                        {"protocol": "TCP", "port": 53},
+                    ],
+                },
+                {
+                    "to": [{"podSelector": {"matchLabels": peer_selector}}],
+                    "ports": _modelexpress_peer_ports(accelerators_per_replica),
+                },
+                {
+                    "to": [{"ipBlock": {"cidr": "0.0.0.0/0"}}],
+                    "ports": [{"protocol": "TCP", "port": 443}],
+                },
+                {
+                    "to": coordinator_peers,
+                    "ports": [{"protocol": "TCP", "port": coordinator_port}],
+                },
+            ],
+        },
+    }
+    if owner_references:
+        manifest["metadata"]["ownerReferences"] = [dict(item) for item in owner_references]
+    return manifest
+
+
 class LegacyManifestRenderer:
     """Deterministically adapt a qualified existing manifest bundle.
 
@@ -1299,6 +1659,9 @@ class LegacyManifestRenderer:
             SPEC_DIGEST_ANNOTATION: spec_digest(spec),
             EFFECTIVE_HOT_FLOOR_ANNOTATION: str(hot_floor),
         }
+        if context.model_express is not None:
+            labels[MODEL_EXPRESS_LABEL] = "enabled"
+            annotations[MODEL_EXPRESS_CONFIG_ANNOTATION] = context.model_express.config_digest
         segments = _workload_segments(spec, context, hot_floor=hot_floor)
         multi_pool_layout = len(context.eligible_pools or [context.pool]) > 1
         owner_references: list[dict[str, Any]] = []
@@ -1468,6 +1831,11 @@ class LegacyManifestRenderer:
                     **labels,
                     WORKLOAD_ROLE_LABEL: segment_identity,
                 }
+            elif context.model_express is not None:
+                pod_metadata["labels"] = {
+                    **pod_metadata.get("labels", {}),
+                    WORKLOAD_ROLE_LABEL: segment_identity,
+                }
             pod_metadata["annotations"] = {
                 **pod_metadata.get("annotations", {}),
                 WORKLOAD_POOL_ANNOTATION: segment.pool.pool_id,
@@ -1491,6 +1859,15 @@ class LegacyManifestRenderer:
             ]
             container = runtime_containers[0]
             container["image"] = spec.runtime.image
+            transfer_group: str | None = None
+            if context.model_express is not None:
+                if segment.pool.pool_id not in context.model_express.pool_refs:
+                    raise ValueError("ModelExpress configuration is not qualified for the selected pool")
+                transfer_group = _configure_modelexpress_container(container, context.model_express, segment.pool)
+                pod_metadata["labels"] = {
+                    **pod_metadata.get("labels", {}),
+                    MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group,
+                }
             resources = container.setdefault("resources", {})
             for field in ("requests", "limits"):
                 values = resources.setdefault(field, {})
@@ -1511,6 +1888,22 @@ class LegacyManifestRenderer:
             else:
                 deployment_spec["replicas"] = segment.fixed_replicas
             rendered.append(workload)
+
+            if context.model_express is not None and transfer_group is not None:
+                rendered.append(
+                    _modelexpress_network_policy(
+                        context=context,
+                        qualification=context.model_express,
+                        segment_identity=segment_identity,
+                        workload_name=workload_name,
+                        transfer_group=transfer_group,
+                        accelerators_per_replica=spec.placement.accelerators_per_replica,
+                        service_port=bundle.primary_service_port,
+                        labels=labels,
+                        annotations=annotations,
+                        owner_references=owner_references,
+                    )
+                )
 
             if not segment.autoscaled:
                 continue

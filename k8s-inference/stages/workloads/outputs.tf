@@ -217,6 +217,25 @@ output "model_autoscaling_contract" {
   }
 }
 
+output "model_express_contract" {
+  description = "Non-secret ModelExpress deployment and exact client-binding summary. Configuration never implies a qualified fast-start level."
+  value = {
+    enabled          = var.model_express.enabled
+    deployment_mode  = var.model_express.deployment_mode
+    endpoint         = var.model_express.enabled ? var.model_express.endpoint : null
+    metadata_backend = var.model_express.enabled ? var.model_express.metadata_backend : null
+    namespace        = var.model_express.enabled ? var.model_express.namespace : null
+    upstream_version = var.model_express.enabled ? "0.5.1" : null
+    model_ids        = local.modelexpress_model_ids
+    config_digests = {
+      for model_id, binding in local.model_controller_modelexpress_bindings : model_id => binding.configDigest
+    }
+    pool_transports = {
+      for model_id, binding in local.model_controller_modelexpress_bindings : model_id => binding.poolTransports
+    }
+  }
+}
+
 output "dcgm_attribution_contract" {
   description = "Non-secret Terraform-owned DCGM collection/scrape provenance for nominal attempt-bound Prometheus proxy evidence."
   value = {
@@ -250,6 +269,9 @@ output "managed_resource_count" {
     (data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled ? 2 : 0) +
     (var.run_acceptance_job ? 4 : 0) +
     (var.run_acceptance_job && var.deployment_profile == "full_catalog" ? 1 : 0)
+    + (var.model_express.enabled ? 1 : 0)
+    + (local.modelexpress_managed ? 2 : 0)
+    + (local.modelexpress_nvcr_required ? 1 : 0)
   )
 }
 

@@ -46,6 +46,36 @@ hot_model_ids      = []
 #   handoff_receipt     = null
 # }
 
+# Generated from deployment.acceleration.model_express by the root workflow.
+# Keep disabled unless each selected runtime image embeds the exact 0.5.1
+# client. External mode supplies an existing gRPC host:port; managed mode
+# deploys the vendored digest-pinned 0.5.1 server and Kubernetes metadata CRDs.
+# model_express = {
+#   enabled          = true
+#   deployment_mode  = "managed"
+#   endpoint         = "fs2-modelexpress.fs2-modelexpress.svc.cluster.local:8001"
+#   metadata_backend = "kubernetes"
+#   namespace        = "fs2-modelexpress"
+#   server_image = {
+#     repository = "nvcr.io/nvidia/ai-dynamo/modelexpress-server"
+#     digest     = "sha256:REPLACE_WITH_VERIFIED_64_HEX_DIGEST"
+#   }
+#   cache = { enabled = true, size_gib = 100, storage_class = null }
+#   models = {
+#     qwen3-8b = {
+#       runtime_adapter        = "vllm"
+#       client_package_version = "0.5.1"
+#       transport = {
+#         mode                   = "nixl-rdma"
+#         rdma_resource_name     = "nvidia.com/rdma_shared_device_a"
+#         rdma_resource_quantity = 8
+#         nixl_backend           = "UCX"
+#         nic_pin                = "auto"
+#       }
+#     }
+#   }
+# }
+
 # Terraform discovers the canonical in-cluster API endpoint from
 # default/kubernetes.spec.clusterIP and renders its exact /32 or /128. This
 # optional value is only a fail-closed equality assertion; never derive it from
