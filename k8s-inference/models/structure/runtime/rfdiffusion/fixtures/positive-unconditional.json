@@ -1,0 +1,46 @@
+{
+  "request": {
+    "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "operation": "design-backbone",
+    "service_class": "bulk-backfill",
+    "input_manifest": {
+      "artifact_id": "manifest.rfdiffusion.unconditional.01",
+      "sha256": "344f926180f7b220f521b5a7957cac94100241a2eac05cae31cb47ebb8ff47f8",
+      "size_bytes": 427,
+      "media_type": "application/vnd.fs2.scientific-manifest+json",
+      "compression": "none"
+    },
+    "parameters": {
+      "schema": "fs2-serve.nebius.ai/rfdiffusion-upstream-base-parameters/v1",
+      "shard_count": 2,
+      "base_seed": 8100,
+      "contigs": [{"kind": "generated", "minimum_length": 76, "maximum_length": 76}],
+      "hotspots": [],
+      "diffusion_steps": 50,
+      "motif_rmsd_max_a": 1.0
+    },
+    "client_context": {"batch_id": "batch.rfdiffusion.01", "display_name": "unconditional backbones"}
+  },
+  "input_manifest": {
+    "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+    "manifest_id": "manifest.rfdiffusion.unconditional.01",
+    "entries": [{
+      "name": "design_context",
+      "semantic_type": "rfdiffusion-design-context-json/v1",
+      "artifact": {
+        "artifact_id": "artifact.rfdiffusion.context.unconditional",
+        "sha256": "75ab553201b498c2eb3e429af1c43558478a8a94e3a15ee41c3ffc1e263cbaf8",
+        "size_bytes": 25,
+        "media_type": "application/json",
+        "compression": "none"
+      }
+    }]
+  },
+  "admission": {
+    "runtime_image": "registry.invalid/fs2/rfdiffusion@sha256:e653448154ff6322e93f3b74607bb6e5d42c18b11b38feae30cf4541b275d155",
+    "operation_id": "operation.rfdiffusion.01",
+    "workload_id": "rfdiffusion-workload-01",
+    "attempt_id": "rfdiffusion-attempt-01",
+    "tenant_id": "cancer-research"
+  }
+}

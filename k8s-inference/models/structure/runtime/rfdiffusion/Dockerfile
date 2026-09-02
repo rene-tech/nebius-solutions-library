@@ -22,6 +22,8 @@ RUN set -eux; \
     chmod -R a-w /opt/fs2/rfdiffusion /opt/fs2/models
 
 COPY --chown=10001:10001 server.py run_upstream.py /opt/fs2/runtime/
+COPY --chown=10001:10001 bin/rfdiffusion-batch /opt/fs2/bin/rfdiffusion-batch
+RUN chmod 0555 /opt/fs2/bin/rfdiffusion-batch
 
 LABEL org.opencontainers.image.source="https://github.com/RosettaCommons/RFdiffusion" \
       org.opencontainers.image.revision="86507b6538f51fce57b5a72477165f03999ed7ae" \

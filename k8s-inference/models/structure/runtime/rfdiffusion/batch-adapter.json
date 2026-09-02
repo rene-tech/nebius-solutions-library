@@ -1,0 +1,13 @@
+{
+  "schema": "fs2-serve.nebius.ai/rfdiffusion-batch-adapter/v1",
+  "model_id": "rfdiffusion-upstream",
+  "adapter_id": "rfdiffusion-upstream-v1-1-0-base",
+  "backend_id": "rfdiffusion-upstream-v1-1-0-base",
+  "execution_mode": "scientific-batch",
+  "contracts": {"request": "../../../../catalog/runtime/schema/scientific-run-request.schema.json", "parameters": "parameters.schema.json", "artifacts": "../../../../catalog/runtime/schema/scientific-artifact-manifest.schema.json", "result": "../../../../catalog/runtime/schema/scientific-run-result.schema.json", "workload": "workload.json"},
+  "source": {"repository": "https://github.com/RosettaCommons/RFdiffusion", "revision": "9273ef67335acaf91df0150473a274759229cdf6", "tag": "v1.1.0", "observed_head_revision": "86507b6538f51fce57b5a72477165f03999ed7ae", "license": "BSD-3-Clause", "license_state": "verified"},
+  "runtime_image": {"repository": "cr.eu-north1.nebius.cloud/project-e00rene/k8s-inference/scientific/rfdiffusion-upstream-base", "state": "wrapper-input-pinned-pending-publish", "digest": null},
+  "access": {"profile": "standard", "receipt_required": false},
+  "resource_profile": {"id": "single-gpu-80gb", "gpu_count": 1, "gpu_memory_min_bytes": 85899345920, "cpu_request": "8", "cpu_limit": "16", "memory_request": "48Gi", "memory_limit": "64Gi", "shard_parallelism": "deterministic-seed-shards"},
+  "qualification": {"h100": "pending-published-digest", "existing_b300_http_runtime_is_not_qualification": true, "route_exposed": false}
+}

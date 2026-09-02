@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""Versioned RFdiffusion wrapper delegating to the pinned upstream runner."""
+import runpy, sys
+if len(sys.argv) < 2 or sys.argv[1] not in {"generate", "aggregate"}:
+    raise SystemExit("usage: rfdiffusion-batch {generate|aggregate} ...")
+runpy.run_path("/opt/fs2/runtime/run_upstream.py", run_name="__main__")
