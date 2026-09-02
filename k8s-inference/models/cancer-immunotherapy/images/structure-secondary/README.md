@@ -24,7 +24,8 @@ preserved in the lock and evidence.
 
 Protenix CPU prep and prediction both fail unless the single mounted artifact
 manifest identifies the exact code, checkpoint, and common-data revisions,
-binds downloader SHA-256 `27da2585…dd89`, and enumerates the checkpoint plus
+binds the official `common.tar.gz` at 475,085,654 bytes and SHA-256
+`08ea594f…4dbd`, and enumerates the checkpoint plus
 all four required common files with byte counts and SHA-256 identities:
 
 - `common/components.cif`
@@ -32,12 +33,13 @@ all four required common files with byte counts and SHA-256 identities:
 - `common/clusters-by-entity-40.txt`
 - `common/obsolete_release_date.csv`
 
-The GPU stage consumes the enriched prep output and weights from the same
+The GPU stage consumes the relocatable prep output and weights from the same
 artifact root. It sets `PROTENIX_ROOT_DIR=/models/protenix-v2`; an explicit
-`none` handoff disables MSA/template/RNA-MSA consumption, while `precomputed`
-enables only MSA data already bound into the enriched input. No mode can invoke
-an online MSA server, and the wrapper cannot accept pass-through arguments that
-change input, output, model, or online behavior. Cache localization hashes all
+`none` handoff disables MSA/template/RNA-MSA consumption. Precomputed MSA is
+unsupported until every chain field and referenced file has a validated
+relocation contract. No supported mode can invoke an online MSA server, and the
+wrapper cannot accept pass-through arguments that change input, output, model,
+or online behavior. Cache localization hashes all
 five payload files once, writes their path-independent identities to
 `manifest.json`, then atomically promotes the tree with one
 `.fs2-manifest-sha256` ready marker. Both stages validate that one marker and
@@ -51,8 +53,7 @@ The exact scripts copied into the images are:
 /opt/fs2/run_esmfold2.py prepare-input|fold
 /opt/fs2/run_protenix.py prep|pred
 /opt/fs2/run_alphafold3.py data|inference
-/opt/fs2/prepare_openfold3.py
-/opt/fs2/run_openfold3.py
+/opt/fs2/run_openfold3.py prepare|predict
 ```
 
 Equivalent `/usr/local/bin/fs2-run-*` commands are the image runtime entry
@@ -63,14 +64,14 @@ machine-readable adapter boundary. The stable command forms are:
 fs2-run-esmfold2 prepare-input --input-manifest RAW --output REQUEST [--sequence AA] --mode MODE --seed N
 fs2-run-esmfold2 fold --input REQUEST --output-dir OUT --variant esmfold2|esmfold2-fast --seed N [--smoke]
 
-fs2-run-protenix prep --input RAW --output-dir PREP --processed-json ENRICHED --msa-mode none|precomputed
-fs2-run-protenix pred --input ENRICHED --output-dir OUT --msa-mode none|precomputed --seeds CSV
+fs2-run-protenix prep --input RAW --output-dir PREP --processed-json PREP/processed.json --provenance-marker PREP/provenance.json --handoff-tar HANDOFF.tar.zst --output-artifact-id ID --msa-mode none --reference-root /models/protenix-v2 --reference-manifest /models/protenix-v2/manifest.json
+fs2-run-protenix pred --input INPUT/processed.json --input-marker INPUT/provenance.json --input-artifact-id ID --output-dir OUT --checkpoint /models/protenix-v2/checkpoint/protenix-v2.pt --common-dir /models/protenix-v2/common --msa-mode none --seed N --sample-count N --disable-templates --disable-rna-msa
 
-fs2-run-alphafold3 data --input-json RAW --output-dir DATA --processed-json-output PROCESSED --seeds CSV
-fs2-run-alphafold3 inference --processed-json PROCESSED --output-dir OUT --seeds CSV [--num-diffusion-samples N]
+fs2-run-alphafold3 data --input-json RAW --output-dir DATA --processed-json DATA/processed.json --provenance-marker DATA/provenance.json --handoff-tar HANDOFF.tar.zst --output-artifact-id ID --db-dir /databases --db-manifest /databases/manifest.json --db-ready-marker /databases/.fs2-manifest-sha256 --reference-artifact-id alphafold3-public-databases-v3.0 --raw-input-sha256 SHA256 --model-seeds CSV
+fs2-run-alphafold3 inference --processed-json INPUT/processed.json --provenance-marker INPUT/provenance.json --input-artifact-id ID --expected-reference-artifact-id alphafold3-public-databases-v3.0 --expected-model-seeds CSV [--expected-raw-input-sha256 SHA256] --output-dir OUT --model-dir /models --num-diffusion-samples N --model-seeds CSV
 
-prepare_openfold3.py --input RAW --output-dir PREP --msa-mode none|precomputed --seeds CSV --offline
-fs2-run-openfold3 --query-json PREP/query.json --output-dir OUT --runner-yaml PREP/runner.yaml --prepared-marker PREP/prepared-query.fs2.json --seeds CSV
+fs2-run-openfold3 prepare --input-manifest RAW --query-json PREP/query.json --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --runner-yaml PREP/runner.yaml --provenance-marker PREP/provenance.json --handoff-tar HANDOFF.tar.zst --output-artifact-id ID --raw-input-sha256 SHA256 --msa-mode none --model-seeds CSV --offline
+fs2-run-openfold3 predict --query-json INPUT/query.json --provenance-marker INPUT/provenance.json --input-artifact-id ID --expected-raw-input-sha256 SHA256 --output-dir OUT --checkpoint /models/openfold3/of3-ob-2025-06-30-174k.pt --ccd-path /databases/openfold3/components.bcif --runner-yaml WORK/runner.yaml --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --num-diffusion-samples 1 --num-model-seeds SEED_COUNT --model-seeds CSV --msa-mode none --use-templates false
 ```
 
 ESM production defaults are 20 trunk loops and 200 diffusion steps;
@@ -81,30 +82,36 @@ construction. The full and Fast identities mount their distinct trunks at
 `/models/esmfold2` and `/models/esmfold2-fast`, respectively, and share exact
 `/models/esmc-6b` plus `/databases/esmfold2/ccd.pkl`. A successful fold writes
 the structure and sibling `confidence.json`. The envelope contains bounded
-mean pLDDT, pTM, and ipTM summaries plus the exact relative structure filename,
+mean pLDDT in its native normalized `[0,1]` scale, pTM, and ipTM summaries plus the exact relative structure filename,
 SHA-256, and byte size; it never serializes unbounded per-token pLDDT.
 
-AlphaFold3 does not expose an unrestricted upstream remainder. `data` accepts a
-raw input JSON and runs only the CPU data pipeline; `inference` accepts the
-processed JSON and its deterministic `.fs2.json` handoff marker, then runs only
-GPU inference. The raw input is rewritten with the exact requested `modelSeeds`
-before CPU processing, and inference rejects any processed JSON/marker whose
-seeds, digest, or database root differs. Both commands use the exact native
-command `/opt/alphafold3-venv/bin/python /opt/alphafold3/run_alphafold.py` with
-explicit `--model_dir=/models` and `--db_dir=/databases`; protected upstream
-arguments cannot be overridden.
+AlphaFold3 does not expose an unrestricted upstream remainder. `data` accepts no
+model path and permits only the canonical `/databases` root plus its composite
+manifest/ready marker; it runs only the CPU pipeline and emits a deterministic
+zstd tar containing exactly
+`processed.json` and `provenance.json`. The path-independent provenance envelope
+binds the logical stage artifact ID and processed bytes. `inference` consumes
+those two extracted names, verifies the artifact ID/digest and exact ordered
+`modelSeeds`, binds `/models/af3.bin.zst`, and runs only GPU inference. The exact
+native command is `/opt/alphafold3-venv/bin/python
+/opt/alphafold3/run_alphafold.py`; protected upstream arguments cannot be
+overridden.
 
-OpenFold preparation validates the pinned external CCD and emits an immutable
-query marker and a `runner.yaml` containing the exact ordered seed list.
-Prediction validates that list, always supplies an explicit checkpoint, omits
-the upstream random `--num-model-seeds` override, forces the MSA server off,
-defaults templates off, and calls the public
+OpenFold’s single wrapper surface emits a relocatable zstd handoff containing
+exactly `query.json` and a path-independent provenance marker. The image-owned
+base runner configuration is regenerated with the exact ordered seed list in
+both stages. Prediction verifies `num_model_seeds == len(model_seeds)`, uses one
+diffusion sample per seed, but deliberately does not forward
+`--num-model-seeds` upstream because v0.5.0 would replace the exact configured
+seed list with generated values. It always supplies the exact checkpoint, forces the MSA
+server and templates off, and calls the public
 `biotite.structure.info.ccd.set_ccd_path()` API so all CCD-dependent caches are
 cleared before the packaged `run_openfold predict` API runs. Protenix,
 AlphaFold3, and OpenFold3 return from their upstream runner and then write the
 same `fs2.nebius.ai/structure-confidence/v1` envelope. Every upstream summary
 is paired one-to-one with its structure, all accepted metrics are finite and
-bounded, and result count is capped at 16 seeds by 16 samples. The shared
+bounded, and the result set must exactly cover every requested seed/sample pair
+(never merely a nonempty subset). The shared
 machine-readable contract is installed at `/opt/fs2/confidence.schema.json`.
 
 ## H100 readiness versus Blackwell portability
@@ -163,7 +170,9 @@ successful push—the registry digest.
 `fs2-image-smoke --build-only` is the intentionally weight-free package/API
 check used during image construction. The default smoke mode fails without a
 semantic request, exact mounted artifacts, an output directory, and an H100; it
-loads the model offline and requires a non-empty PDB/mmCIF result. Run it in a
+loads the model offline and requires an exact canonical confidence envelope.
+Every bound PDB/mmCIF must match its recorded hash/byte count and contain at
+least three atom records. Run it in a
 network-disabled task-owned H100 Job, for example:
 
 ```bash
@@ -173,9 +182,10 @@ network-disabled task-owned H100 Job, for example:
   --seeds 101
 ```
 
-OpenFold3 additionally requires `--runner-yaml` and `--prepared-marker` from
-its preparation stage; Protenix additionally requires the matching
-`--msa-mode` and the single `protenix-v2` composite artifact. These semantic runs
+OpenFold3 additionally requires materialized `query.json` and `runner.yaml` from
+its preparation stage. Protenix and AlphaFold3 require the matching extracted
+`provenance.json` plus logical artifact ID; Protenix also requires the single
+`protenix-v2` composite artifact. These semantic runs
 are valid only on the `k8s-inference-h100` H100 target with the exact mounts.
 
 No model endpoint or shared service is deployed by this image task.
@@ -184,6 +194,6 @@ No model endpoint or shared service is deployed by this image task.
 
 Four pre-review tags were pushed before the independent findings arrived. Their
 digests and reasons are retained under `superseded_publications`; all have
-`deployable: false`. No OpenFold3 manifest was published. Corrected `-h100-r2`
-tags must not be published until the build, no-JIT, artifact-closure, generated
+`deployable: false`. No OpenFold3 manifest was published. Corrected `-h100-r3`
+tags must not be published until the build, no-runtime-nvcc, artifact-closure, generated
 argv, offline semantic-smoke, and layer-history gates pass.

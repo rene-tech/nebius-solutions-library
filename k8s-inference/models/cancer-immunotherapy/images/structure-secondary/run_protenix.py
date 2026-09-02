@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed Protenix v2 CPU-prep and H100 inference boundaries."""
+"""Fail-closed Protenix v2 relocatable CPU-prep and H100 prediction boundary."""
 
 from __future__ import annotations
 
@@ -12,7 +12,9 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 
+from handoff_contract import validate_handoff, write_handoff
 from result_contract import load_bounded_metrics, write_confidence_envelope
 
 
@@ -26,14 +28,17 @@ ARTIFACT_REVISION = (
 ARTIFACT_MANIFEST = PROTENIX_ROOT / "manifest.json"
 ARTIFACT_READY = PROTENIX_ROOT / ".fs2-manifest-sha256"
 CHECKPOINT = PROTENIX_ROOT / "checkpoint/protenix-v2.pt"
+COMMON_DIR = PROTENIX_ROOT / "common"
 CHECKPOINT_BYTES = 1_859_785_497
 CHECKPOINT_SHA256 = "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
 CHECKPOINT_MD5 = "49016ebf4775bf6b629bc4dc77b6673e"
 CHECKPOINT_PARAMETER_COUNT = 464_442_431
 CHECKPOINT_REVISION = "TMF001/protenix-v2-weights@653edab28103133512575365130916e3fd23ecc3"
 CODE_REVISION = "2475421477ab414b571149ad4a875c390ff8a35d"
-COMMON_DATA_REVISION = "protenix-v2-inference-data-2026-01-29"
-COMMON_DATA_SOURCE_SHA256 = "27da2585d0ea1d820f4693099653aab1fdff7d4e18c21e6d90a0dc18f718dd89"
+COMMON_DATA_REVISION = "tos-common-2026-01-29"
+COMMON_DATA_ARCHIVE_URL = "https://protenix.tos-cn-beijing.volces.com/common.tar.gz"
+COMMON_DATA_ARCHIVE_BYTES = 475_085_654
+COMMON_DATA_ARCHIVE_SHA256 = "08ea594f429df35494c062e3dfcacaf48fa761e4ea4a8bcb6d5107d211e64dbd"
 COMMON_REQUIRED_PATHS = (
     Path("common/components.cif"),
     Path("common/components.cif.rdkit_mol.pkl"),
@@ -42,8 +47,6 @@ COMMON_REQUIRED_PATHS = (
 )
 ARTIFACT_REQUIRED_PATHS = (Path("checkpoint/protenix-v2.pt"), *COMMON_REQUIRED_PATHS)
 PROTENIX_CLI = "/opt/protenix-venv/bin/protenix"
-TRITON_CACHE = Path("/cache/protenix/triton")
-CUEQ_TRITON_CACHE = Path("/cache/protenix/cueq-triton")
 
 
 def _file(path: str | Path, label: str) -> Path:
@@ -60,6 +63,13 @@ def _directory(path: str | Path, label: str) -> Path:
     return candidate
 
 
+def _output(path: str | Path, label: str) -> Path:
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        raise SystemExit(f"{label} must be an absolute path: {candidate}")
+    return candidate
+
+
 def _load_object(path: Path, label: str) -> dict[str, object]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -70,33 +80,11 @@ def _load_object(path: Path, label: str) -> dict[str, object]:
     return value
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _canonical_json_sha256(value: object) -> str:
     encoded = json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-    ).encode("utf-8")
+    ).encode("utf-8") + b"\n"
     return hashlib.sha256(encoded).hexdigest()
-
-
-def _canonical_seeds(value: str) -> str:
-    try:
-        seeds = [int(item) for item in value.split(",")]
-    except ValueError as exc:
-        raise SystemExit("seeds must be comma-separated integers") from exc
-    if (
-        not 1 <= len(seeds) <= 16
-        or len(set(seeds)) != len(seeds)
-        or any(seed < 0 or seed > 2**31 - 1 for seed in seeds)
-    ):
-        raise SystemExit("seeds must contain 1..16 unique integers in [0, 2^31-1]")
-    return ",".join(str(seed) for seed in seeds)
 
 
 def _validate_installed_runtime() -> None:
@@ -128,7 +116,9 @@ def _validate_artifact() -> str:
         },
         "common": {
             "revision": COMMON_DATA_REVISION,
-            "source_sha256": COMMON_DATA_SOURCE_SHA256,
+            "archive_url": COMMON_DATA_ARCHIVE_URL,
+            "archive_bytes": COMMON_DATA_ARCHIVE_BYTES,
+            "archive_sha256": COMMON_DATA_ARCHIVE_SHA256,
         },
     }
     if (
@@ -138,7 +128,6 @@ def _validate_artifact() -> str:
         or manifest.get("sources") != expected_sources
     ):
         raise SystemExit("composite manifest does not identify the exact Protenix v2 artifact")
-
     raw_files = manifest.get("files")
     if not isinstance(raw_files, list):
         raise SystemExit("Protenix v2 composite manifest files must be a list")
@@ -165,7 +154,7 @@ def _validate_artifact() -> str:
     expected_paths = {path.as_posix() for path in ARTIFACT_REQUIRED_PATHS}
     if set(files) != expected_paths:
         raise SystemExit("Protenix v2 composite manifest does not bind the complete artifact tree")
-    checkpoint_entry = files[ARTIFACT_REQUIRED_PATHS[0].as_posix()]
+    checkpoint_entry = files["checkpoint/protenix-v2.pt"]
     if (
         checkpoint_entry["bytes"] != CHECKPOINT_BYTES
         or checkpoint_entry["sha256"] != CHECKPOINT_SHA256
@@ -175,10 +164,6 @@ def _validate_artifact() -> str:
         localized = _file(PROTENIX_ROOT / relative, f"localized Protenix v2 file {relative}")
         if localized.stat().st_size != entry["bytes"]:
             raise SystemExit(f"localized Protenix v2 file size changed after promotion: {relative}")
-
-    # The localizer hashes every file and writes this marker only after an
-    # atomic immutable promotion. Runtime admission checks that one manifest
-    # digest and cheap file sizes; it never rehashes the 1.86 GB checkpoint.
     manifest_sha256 = _canonical_json_sha256(manifest)
     ready = _file(ARTIFACT_READY, "Protenix v2 composite ready marker")
     if ready.read_text(encoding="utf-8").strip() != manifest_sha256:
@@ -186,31 +171,15 @@ def _validate_artifact() -> str:
     return manifest_sha256
 
 
-def _validate_preprocessed_input(
-    input_path: Path, marker_path: Path, artifact_manifest_sha256: str
-) -> dict[str, object]:
-    marker = _load_object(
-        _file(marker_path, "preprocessing marker"), "preprocessing marker"
-    )
-    expected_keys = {
-        "schema",
-        "processed_json_sha256",
-        "artifact_id",
-        "artifact_manifest_sha256",
-        "msa_mode",
-    }
-    if set(marker) != expected_keys:
-        raise SystemExit("preprocessing marker has an unexpected shape")
-    if (
-        marker.get("schema")
-        != "fs2.nebius.ai/protenix-preprocess-result/v1"
-        or marker.get("processed_json_sha256") != _sha256(input_path)
-        or marker.get("artifact_id") != ARTIFACT_ID
-        or marker.get("artifact_manifest_sha256") != artifact_manifest_sha256
-        or marker.get("msa_mode") not in {"none", "precomputed"}
-    ):
-        raise SystemExit("preprocessing marker does not bind the enriched Protenix input")
-    return marker
+def _require_canonical_artifact_args(args: argparse.Namespace) -> None:
+    if hasattr(args, "reference_root") and Path(args.reference_root) != PROTENIX_ROOT:
+        raise SystemExit("reference-root must be the canonical /models/protenix-v2 tree")
+    if hasattr(args, "reference_manifest") and Path(args.reference_manifest) != ARTIFACT_MANIFEST:
+        raise SystemExit("reference-manifest must be the canonical composite manifest")
+    if hasattr(args, "checkpoint") and Path(args.checkpoint) != CHECKPOINT:
+        raise SystemExit("checkpoint must be /models/protenix-v2/checkpoint/protenix-v2.pt")
+    if hasattr(args, "common_dir") and Path(args.common_dir) != COMMON_DIR:
+        raise SystemExit("common-dir must be /models/protenix-v2/common")
 
 
 def build_prep_command(input_path: Path, output_dir: Path) -> list[str]:
@@ -230,13 +199,9 @@ def build_pred_command(
     input_path: Path,
     output_dir: Path,
     *,
-    seeds: str,
-    cycle: int,
-    step: int,
-    sample: int,
-    msa_mode: str,
+    seed: int,
+    sample_count: int,
 ) -> list[str]:
-    use_precomputed = str(msa_mode == "precomputed").lower()
     return [
         PROTENIX_CLI,
         "pred",
@@ -245,19 +210,19 @@ def build_pred_command(
         "--out_dir",
         str(output_dir),
         "--seeds",
-        seeds,
+        str(seed),
         "--cycle",
-        str(cycle),
+        "10",
         "--step",
-        str(step),
+        "200",
         "--sample",
-        str(sample),
+        str(sample_count),
         "--model_name",
         "protenix-v2",
         "--use_default_params",
         "true",
         "--use_msa",
-        use_precomputed,
+        "false",
         "--use_template",
         "false",
         "--use_rna_msa",
@@ -269,27 +234,27 @@ def _write_confidence(
     output_dir: Path, *, seeds: list[int], samples_per_seed: int
 ) -> dict[str, object]:
     candidates = sorted(
-        output_dir.rglob("*_seed_*_summary_confidence_sample_*.json"),
+        output_dir.rglob("*_summary_confidence_sample_*.json"),
         key=lambda path: path.relative_to(output_dir).as_posix(),
     )
-    if not candidates:
-        raise SystemExit("Protenix produced no summary confidence artifacts")
     results: list[dict[str, object]] = []
-    pattern = re.compile(
-        r"^(?P<prefix>.+)_seed_(?P<seed>[0-9]+)_summary_confidence_"
-        r"sample_(?P<sample>[0-9]+)\.json$"
+    seed_pattern = re.compile(r"^seed_(?P<seed>[0-9]+)$")
+    file_pattern = re.compile(
+        r"^(?P<prefix>.+)_summary_confidence_sample_(?P<sample>[0-9]+)\.json$"
     )
-    for path in candidates:
-        matched = pattern.fullmatch(path.name)
-        if matched is None:
-            raise SystemExit(f"Protenix confidence filename is not canonical: {path}")
-        seed = int(matched.group("seed"))
+    for summary in candidates:
+        matched = file_pattern.fullmatch(summary.name)
+        seed_parent = summary.parent.parent
+        seed_match = seed_pattern.fullmatch(seed_parent.name)
+        if summary.parent.name != "predictions" or matched is None or seed_match is None:
+            raise SystemExit(f"Protenix confidence path is not canonical: {summary}")
+        seed = int(seed_match.group("seed"))
         sample_index = int(matched.group("sample"))
-        structure = path.with_name(
-            f"{matched.group('prefix')}_seed_{seed}_sample_{sample_index}.cif"
+        structure = summary.with_name(
+            f"{matched.group('prefix')}_sample_{sample_index}.cif"
         )
         metrics = load_bounded_metrics(
-            path,
+            summary,
             {
                 "plddt": (0.0, 100.0),
                 "ptm": (0.0, 1.0),
@@ -303,11 +268,11 @@ def _write_confidence(
                 "seed": seed,
                 "sample_index": sample_index,
                 "structure": structure,
-                "summary": path,
+                "summary": summary,
                 "metrics": metrics,
             }
         )
-    confidence = write_confidence_envelope(
+    return write_confidence_envelope(
         output_dir,
         runtime_id="protenix-v2",
         model_revision=CHECKPOINT_REVISION,
@@ -315,34 +280,24 @@ def _write_confidence(
         samples_per_seed=samples_per_seed,
         results=results,
     )
-    return confidence
 
 
 def _prep(args: argparse.Namespace) -> None:
+    _require_canonical_artifact_args(args)
+    _validate_artifact()
     input_path = _file(args.input, "input")
-    output_dir = Path(args.output_dir)
-    processed_json = Path(args.processed_json)
-    if not output_dir.is_absolute() or not processed_json.is_absolute():
-        raise SystemExit("output-dir and processed-json must be absolute")
-    if processed_json.parent != output_dir and output_dir not in processed_json.parents:
-        raise SystemExit("processed-json must be located below output-dir")
+    output_dir = _output(args.output_dir, "output-dir")
+    processed_json = _output(args.processed_json, "processed-json")
+    provenance_marker = _output(args.provenance_marker, "provenance-marker")
+    handoff_tar = _output(args.handoff_tar, "handoff-tar")
     output_dir.mkdir(parents=True, exist_ok=True)
-    processed_json.parent.mkdir(parents=True, exist_ok=True)
-    manifest_sha256 = _validate_artifact()
     command = build_prep_command(input_path, output_dir)
-    if args.print_command:
-        print(
-            json.dumps(
-                {"argv": command, "network_policy": "offline-private-reference-data"},
-                sort_keys=True,
-            )
-        )
-        return
     environment = dict(os.environ)
     environment.update(
         {
             "PROTENIX_ROOT_DIR": str(PROTENIX_ROOT),
-            "FS2_MSA_MODE": args.msa_mode,
+            "FS2_MSA_MODE": "none",
+            "FS2_NETWORK_MODE": "offline",
             "HF_HUB_OFFLINE": "1",
             "TRANSFORMERS_OFFLINE": "1",
         }
@@ -351,9 +306,7 @@ def _prep(args: argparse.Namespace) -> None:
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
     candidates = sorted(
-        path
-        for path in output_dir.rglob("*.json")
-        if not path.name.endswith(".fs2.json") and path != processed_json
+        path for path in output_dir.rglob("*.json") if path != processed_json
     )
     preferred = [
         path
@@ -365,95 +318,78 @@ def _prep(args: argparse.Namespace) -> None:
         source_json = preferred[0]
     elif len(candidates) == 1:
         source_json = candidates[0]
-    elif not candidates and args.msa_mode in {"none", "precomputed"}:
+    elif not candidates:
         source_json = input_path
     else:
         raise SystemExit(
             f"Protenix prep produced an ambiguous JSON handoff: {[str(path) for path in candidates]}"
         )
-    if source_json != processed_json:
+    processed_json.parent.mkdir(parents=True, exist_ok=True)
+    if source_json.resolve() != processed_json.resolve():
         shutil.copyfile(source_json, processed_json)
-    _file(processed_json, "processed-json produced by Protenix prep")
-    marker = {
-        "schema": "fs2.nebius.ai/protenix-preprocess-result/v1",
-        "processed_json_sha256": _sha256(processed_json),
-        "artifact_id": ARTIFACT_ID,
-        "artifact_manifest_sha256": manifest_sha256,
-        "msa_mode": args.msa_mode,
-    }
-    Path(f"{processed_json}.fs2.json").write_text(
-        json.dumps(marker, sort_keys=True, separators=(",", ":")) + "\n",
-        encoding="utf-8",
+    marker = write_handoff(
+        processed_json,
+        processed_json,
+        provenance_marker,
+        handoff_tar,
+        args.output_artifact_id,
     )
+    print(json.dumps(marker, sort_keys=True, separators=(",", ":")))
 
 
 def _pred(args: argparse.Namespace) -> None:
+    _require_canonical_artifact_args(args)
+    _validate_artifact()
     input_path = _file(args.input, "enriched input")
-    marker_path = Path(args.input_marker or f"{input_path}.fs2.json")
-    output_dir = Path(args.output_dir)
-    if not output_dir.is_absolute():
-        raise SystemExit("output-dir must be absolute")
+    input_marker = _file(args.input_marker, "input-marker")
+    validate_handoff(input_path, input_marker, args.input_artifact_id)
+    output_dir = _output(args.output_dir, "output-dir")
     output_dir.mkdir(parents=True, exist_ok=True)
-    manifest_sha256 = _validate_artifact()
-    marker = _validate_preprocessed_input(input_path, marker_path, manifest_sha256)
-    if marker.get("msa_mode") != args.msa_mode:
-        raise SystemExit("requested msa-mode does not match the immutable preprocessing handoff")
+    if not 0 <= args.seed <= 2**31 - 1:
+        raise SystemExit("seed must be in [0, 2^31-1]")
+    if not 1 <= args.sample_count <= 16:
+        raise SystemExit("sample-count must be in [1, 16]")
     _validate_installed_runtime()
-    canonical_seeds = _canonical_seeds(args.seeds)
-    if not 1 <= args.sample <= 16:
-        raise SystemExit("sample must be in [1, 16]")
     command = build_pred_command(
         input_path,
         output_dir,
-        seeds=canonical_seeds,
-        cycle=args.cycle,
-        step=args.step,
-        sample=args.sample,
-        msa_mode=args.msa_mode,
+        seed=args.seed,
+        sample_count=args.sample_count,
     )
-    if args.print_command:
-        print(
-            json.dumps(
-                {"argv": command, "checkpoint_sha256": CHECKPOINT_SHA256},
-                sort_keys=True,
-            )
-        )
-        return
     import torch
 
-    if not torch.cuda.is_available() or tuple(torch.cuda.get_device_capability(0)) != (
-        9,
-        0,
-    ):
-        raise SystemExit(
-            "the qualified Protenix v2 semantic boundary requires an H100 (SM90)"
-        )
-    for cache in (TRITON_CACHE, CUEQ_TRITON_CACHE):
-        if not cache.is_dir() or not os.access(cache, os.W_OK):
+    if not torch.cuda.is_available() or tuple(torch.cuda.get_device_capability(0)) != (9, 0):
+        raise SystemExit("the qualified Protenix v2 semantic boundary requires an H100 (SM90)")
+    cache_paths = {
+        "TRITON_CACHE_DIR": Path(os.environ.get("TRITON_CACHE_DIR", "")),
+        "CUEQ_TRITON_CACHE_DIR": Path(os.environ.get("CUEQ_TRITON_CACHE_DIR", "")),
+    }
+    for name, cache in cache_paths.items():
+        if not cache.is_absolute():
+            raise SystemExit(f"{name} must be an absolute persistent cache path")
+        cache.mkdir(parents=True, exist_ok=True)
+        if not os.access(cache, os.W_OK):
             raise SystemExit(f"required writable Protenix Triton cache is unavailable: {cache}")
     environment = dict(os.environ)
     environment.update(
         {
-            "PROTENIX_ROOT_DIR": "/models/protenix-v2",
-            "FS2_MSA_MODE": args.msa_mode,
+            "PROTENIX_ROOT_DIR": str(PROTENIX_ROOT),
+            "FS2_MSA_MODE": "none",
+            "FS2_NETWORK_MODE": "offline",
             "HF_HUB_OFFLINE": "1",
             "TRANSFORMERS_OFFLINE": "1",
-            "TRITON_CACHE_DIR": str(TRITON_CACHE),
-            "CUEQ_TRITON_CACHE_DIR": str(CUEQ_TRITON_CACHE),
         }
     )
     completed = subprocess.run(command, check=False, env=environment)
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
     confidence = _write_confidence(
-        output_dir,
-        seeds=[int(seed) for seed in canonical_seeds.split(",")],
-        samples_per_seed=args.sample,
+        output_dir, seeds=[args.seed], samples_per_seed=args.sample_count
     )
     print(json.dumps(confidence, sort_keys=True, separators=(",", ":")))
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -461,25 +397,31 @@ def main() -> None:
     prep.add_argument("--input", required=True)
     prep.add_argument("--output-dir", required=True)
     prep.add_argument("--processed-json", required=True)
-    prep.add_argument("--msa-mode", choices=("none", "precomputed"), required=True)
-    prep.add_argument("--print-command", action="store_true")
+    prep.add_argument("--provenance-marker", required=True)
+    prep.add_argument("--handoff-tar", required=True)
+    prep.add_argument("--output-artifact-id", required=True)
+    prep.add_argument("--msa-mode", choices=("none",), required=True)
+    prep.add_argument("--reference-root", required=True)
+    prep.add_argument("--reference-manifest", required=True)
     prep.set_defaults(handler=_prep)
 
     pred = subparsers.add_parser("pred")
     pred.add_argument("--input", required=True)
-    pred.add_argument("--input-marker")
+    pred.add_argument("--input-marker", required=True)
+    pred.add_argument("--input-artifact-id", required=True)
     pred.add_argument("--output-dir", required=True)
-    pred.add_argument("--msa-mode", choices=("none", "precomputed"), required=True)
-    pred.add_argument("--seeds", default="101")
-    pred.add_argument("--cycle", type=int, default=10)
-    pred.add_argument("--step", type=int, default=200)
-    pred.add_argument("--sample", type=int, default=5)
-    pred.add_argument("--print-command", action="store_true")
+    pred.add_argument("--checkpoint", required=True)
+    pred.add_argument("--common-dir", required=True)
+    pred.add_argument("--msa-mode", choices=("none",), required=True)
+    pred.add_argument("--seed", type=int, required=True)
+    pred.add_argument("--sample-count", type=int, required=True)
+    pred.add_argument("--disable-templates", action="store_true", required=True)
+    pred.add_argument("--disable-rna-msa", action="store_true", required=True)
     pred.set_defaults(handler=_pred)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     args.handler(args)
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

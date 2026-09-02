@@ -52,7 +52,7 @@
             "maxProperties": 16,
             "properties": {
               "plddt": {"type": "number", "minimum": 0, "maximum": 100},
-              "plddt_mean": {"type": "number", "minimum": 0, "maximum": 100},
+              "plddt_mean": {"type": "number", "minimum": 0, "maximum": 1},
               "avg_plddt": {"type": "number", "minimum": 0, "maximum": 100},
               "gpde": {"type": "number", "minimum": 0, "maximum": 64},
               "ptm": {"type": "number", "minimum": 0, "maximum": 1},

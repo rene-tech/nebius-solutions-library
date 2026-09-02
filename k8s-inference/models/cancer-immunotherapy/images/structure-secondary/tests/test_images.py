@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import hashlib
 import importlib.util
 import io
@@ -9,12 +9,14 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tarfile
 import tempfile
 import types
 import unittest
 from unittest import mock
 
 import jsonschema
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,7 +40,7 @@ def load_module(name: str):
 def canonical_sha256(value: object) -> str:
     encoded = json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-    ).encode("utf-8")
+    ).encode("utf-8") + b"\n"
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -77,7 +79,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             with self.subTest(image=image["id"]):
                 revision = expected[image["id"]]
                 self.assertEqual(image["source"]["revision"], revision)
-                self.assertEqual(image["tag"], f"{revision}-h100-r2")
+                self.assertEqual(image["tag"], f"{revision}-h100-r3")
                 self.assertRegex(image["source"]["tag"], r"^v[0-9]")
                 for base in image["base_images"]:
                     self.assertRegex(base, r"@sha256:[0-9a-f]{64}$")
@@ -126,6 +128,16 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         self.assertEqual(
             artifact["ready_marker"],
             "/models/protenix-v2/.fs2-manifest-sha256",
+        )
+        self.assertEqual(
+            artifact["common"],
+            {
+                "artifact_id": "protenix-v2-inference-data-2026-01-29",
+                "revision": "tos-common-2026-01-29",
+                "archive_url": "https://protenix.tos-cn-beijing.volces.com/common.tar.gz",
+                "archive_bytes": 475_085_654,
+                "archive_sha256": "08ea594f429df35494c062e3dfcacaf48fa761e4ea4a8bcb6d5107d211e64dbd",
+            },
         )
         self.assertEqual(
             artifact["expected_paths"],
@@ -188,7 +200,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                     },
                     "common": {
                         "revision": module.COMMON_DATA_REVISION,
-                        "source_sha256": module.COMMON_DATA_SOURCE_SHA256,
+                        "archive_url": module.COMMON_DATA_ARCHIVE_URL,
+                        "archive_bytes": module.COMMON_DATA_ARCHIVE_BYTES,
+                        "archive_sha256": module.COMMON_DATA_ARCHIVE_SHA256,
                     },
                 },
                 "files": files,
@@ -202,7 +216,6 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 mock.patch.object(module, "CHECKPOINT", checkpoint),
                 mock.patch.object(module, "ARTIFACT_MANIFEST", manifest_path),
                 mock.patch.object(module, "ARTIFACT_READY", ready_path),
-                mock.patch.object(module, "_sha256", side_effect=AssertionError("large rehash")),
             ):
                 self.assertEqual(module._validate_artifact(), canonical_sha256(manifest))
                 (root / module.COMMON_REQUIRED_PATHS[-1]).unlink()
@@ -214,31 +227,15 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         argv = module.build_pred_command(
             Path("/work/enriched.json"),
             Path("/work/results"),
-            seeds="101",
-            cycle=10,
-            step=200,
-            sample=5,
-            msa_mode="none",
+            seed=101,
+            sample_count=5,
         )
         self.assertEqual(argv[:2], ["/opt/protenix-venv/bin/protenix", "pred"])
         joined = " ".join(argv)
         self.assertIn("--model_name protenix-v2", joined)
         self.assertIn("--use_msa false", joined)
         self.assertIn("--use_template false", joined)
-        precomputed = " ".join(
-            module.build_pred_command(
-                Path("/work/enriched.json"),
-                Path("/work/results"),
-                seeds="101",
-                cycle=10,
-                step=200,
-                sample=5,
-                msa_mode="precomputed",
-            )
-        )
-        self.assertIn("--use_msa true", precomputed)
-        self.assertIn("--use_template false", precomputed)
-        self.assertIn("--use_rna_msa false", precomputed)
+        self.assertIn("--use_rna_msa false", joined)
         self.assertNotIn("--checkpoint", joined)
         source = (ROOT / "run_protenix.py").read_text(encoding="utf-8")
         self.assertNotIn("argparse.REMAINDER", source)
@@ -246,7 +243,8 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         self.assertNotIn("os.execve", source)
         self.assertNotIn("REFERENCE_BUNDLE_ID", source)
         self.assertNotIn("reference_manifest_sha256", source)
-        self.assertNotIn("--reference-manifest", source)
+        self.assertIn("--reference-manifest", source)
+        self.assertIn('choices=("none",)', source)
         self.assertIn("write_confidence_envelope", source)
 
     def test_protenix_confidence_is_deterministic_and_path_relative(self) -> None:
@@ -255,9 +253,9 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             output = Path(temporary)
             for seed in (101, 202):
                 for sample in (0, 1):
-                    directory = output / f"seed_{seed}"
+                    directory = output / "dataset" / "fixture" / f"seed_{seed}" / "predictions"
                     directory.mkdir(parents=True, exist_ok=True)
-                    prefix = f"x_seed_{seed}"
+                    prefix = "fixture"
                     (directory / f"{prefix}_sample_{sample}.cif").write_text(
                         f"data_seed_{seed}_sample_{sample}\n", encoding="utf-8"
                     )
@@ -280,10 +278,10 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             self.assertEqual(
                 [result["structure"]["filename"] for result in confidence["results"]],
                 [
-                    "seed_101/x_seed_101_sample_0.cif",
-                    "seed_101/x_seed_101_sample_1.cif",
-                    "seed_202/x_seed_202_sample_0.cif",
-                    "seed_202/x_seed_202_sample_1.cif",
+                    "dataset/fixture/seed_101/predictions/fixture_sample_0.cif",
+                    "dataset/fixture/seed_101/predictions/fixture_sample_1.cif",
+                    "dataset/fixture/seed_202/predictions/fixture_sample_0.cif",
+                    "dataset/fixture/seed_202/predictions/fixture_sample_1.cif",
                 ],
             )
             encoded = (output / "confidence.json").read_text(encoding="utf-8")
@@ -296,7 +294,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 self.assertEqual(
                     result["structure"]["sha256"], hashlib.sha256(structure.read_bytes()).hexdigest()
                 )
-            bad = output / "seed_101" / "x_seed_101_summary_confidence_sample_0.json"
+            bad = output / "dataset/fixture/seed_101/predictions/fixture_summary_confidence_sample_0.json"
             bad.write_text(
                 json.dumps({"plddt": float("nan"), "ptm": 0.8, "iptm": 0.7, "ranking_score": 0.75}),
                 encoding="utf-8",
@@ -326,10 +324,10 @@ out = Path(sys.argv[sys.argv.index('--out_dir') + 1])
 seeds = [int(value) for value in sys.argv[sys.argv.index('--seeds') + 1].split(',')]
 samples = int(sys.argv[sys.argv.index('--sample') + 1])
 for seed in seeds:
-    directory = out / f'seed_{seed}'
+    directory = out / 'dataset' / 'fixture' / f'seed_{seed}' / 'predictions'
     directory.mkdir(parents=True, exist_ok=True)
     for sample in range(samples):
-        prefix = f'fixture_seed_{seed}'
+        prefix = 'fixture'
         (directory / f'{prefix}_sample_{sample}.cif').write_text('data_fixture\\n')
         (directory / f'{prefix}_summary_confidence_sample_{sample}.json').write_text(
             json.dumps({'plddt': 91.0, 'ptm': 0.8, 'iptm': 0.7, 'ranking_score': 0.75}),
@@ -344,16 +342,30 @@ for seed in seeds:
             cueq_cache = root / "cache" / "cueq-triton"
             triton_cache.mkdir(parents=True)
             cueq_cache.mkdir(parents=True)
+            marker_path = root / "provenance.json"
+            marker_path.write_text(
+                json.dumps(
+                    {
+                        "schema": "fs2-serve.nebius.ai/relocatable-stage-handoff/v1",
+                        "artifact_id": "prepared-1",
+                        "member": "processed.json",
+                        "sha256": hashlib.sha256(input_path.read_bytes()).hexdigest(),
+                    }
+                ),
+                encoding="utf-8",
+            )
             args = types.SimpleNamespace(
                 input=str(input_path),
-                input_marker=None,
+                input_marker=str(marker_path),
+                input_artifact_id="prepared-1",
                 output_dir=str(output),
                 msa_mode="none",
-                seeds="101,202",
-                cycle=10,
-                step=200,
-                sample=2,
-                print_command=False,
+                seed=101,
+                sample_count=2,
+                checkpoint=str(module.CHECKPOINT),
+                common_dir=str(module.COMMON_DIR),
+                disable_templates=True,
+                disable_rna_msa=True,
             )
             fake_torch = types.SimpleNamespace(
                 cuda=types.SimpleNamespace(
@@ -363,16 +375,17 @@ for seed in seeds:
             )
             with (
                 mock.patch.object(module, "PROTENIX_CLI", str(fake_cli)),
-                mock.patch.object(module, "TRITON_CACHE", triton_cache),
-                mock.patch.object(module, "CUEQ_TRITON_CACHE", cueq_cache),
                 mock.patch.object(module, "_validate_artifact", return_value="a" * 64),
-                mock.patch.object(
-                    module,
-                    "_validate_preprocessed_input",
-                    return_value={"msa_mode": "none"},
-                ),
                 mock.patch.object(module, "_validate_installed_runtime"),
                 mock.patch.dict(sys.modules, {"torch": fake_torch}),
+                mock.patch.dict(
+                    "os.environ",
+                    {
+                        "TRITON_CACHE_DIR": str(triton_cache),
+                        "CUEQ_TRITON_CACHE_DIR": str(cueq_cache),
+                    },
+                    clear=False,
+                ),
             ):
                 with redirect_stdout(io.StringIO()):
                     module._pred(args)
@@ -386,19 +399,20 @@ for seed in seeds:
             self.assertEqual(cache_env, {"triton": str(triton_cache), "cueq": str(cueq_cache)})
             envelope = json.loads((output / "confidence.json").read_text())
             jsonschema.Draft202012Validator(CONFIDENCE_SCHEMA).validate(envelope)
-            self.assertEqual(envelope["seeds"], [101, 202])
-            self.assertEqual(len(envelope["results"]), 4)
+            self.assertEqual(envelope["seeds"], [101])
+            self.assertEqual(len(envelope["results"]), 2)
 
     def test_generated_alphafold3_argv_separates_cpu_and_gpu_stages(self) -> None:
         wrapper = ROOT / "run_alphafold3.py"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            model_dir, db_dir, output = root / "models", root / "databases", root / "out"
-            model_dir.mkdir()
-            db_dir.mkdir()
+            model_dir, output = Path("/models"), root / "out"
             request = root / "input.json"
             request.write_text('{"name":"fixture","modelSeeds":[999]}', encoding="utf-8")
-            processed = root / "handoff" / "processed.json"
+            handoff = root / "handoff"
+            processed = handoff / "processed.json"
+            provenance = handoff / "provenance.json"
+            archive = root / "handoff.tar.zst"
             data = subprocess.run(
                 [
                     sys.executable,
@@ -408,14 +422,26 @@ for seed in seeds:
                     str(request),
                     "--output-dir",
                     str(output),
-                    "--processed-json-output",
+                    "--processed-json",
                     str(processed),
-                    "--seeds",
-                    "101,202",
-                    "--model-dir",
-                    str(model_dir),
+                    "--provenance-marker",
+                    str(provenance),
+                    "--handoff-tar",
+                    str(archive),
+                    "--output-artifact-id",
+                    "af3-prepared-1",
                     "--db-dir",
-                    str(db_dir),
+                    "/databases",
+                    "--db-manifest",
+                    "/databases/manifest.json",
+                    "--db-ready-marker",
+                    "/databases/.fs2-manifest-sha256",
+                    "--reference-artifact-id",
+                    "alphafold3-public-databases-v3.0",
+                    "--raw-input-sha256",
+                    hashlib.sha256(request.read_bytes()).hexdigest(),
+                    "--model-seeds",
+                    "101,202",
                     "--print-command",
                 ],
                 check=True,
@@ -426,6 +452,8 @@ for seed in seeds:
             self.assertIn("--run_data_pipeline", data_argv)
             self.assertIn("--norun_inference", data_argv)
             self.assertIn("--force_output_dir", data_argv)
+            self.assertNotIn(f"--model_dir={model_dir}", data_argv)
+            self.assertIn("--db_dir=/databases", data_argv)
             staged_input = Path(
                 next(value.split("=", 1)[1] for value in data_argv if value.startswith("--json_path="))
             )
@@ -433,21 +461,17 @@ for seed in seeds:
                 json.loads(staged_input.read_text(encoding="utf-8"))["modelSeeds"],
                 [101, 202],
             )
-            with (model_dir / "af3.bin.zst").open("wb") as stream:
-                stream.truncate(1_020_545_840)
             processed.parent.mkdir(parents=True, exist_ok=True)
             processed.write_text(
                 '{"name":"fixture","modelSeeds":[101,202]}', encoding="utf-8"
             )
             marker = {
-                "schema": "fs2.nebius.ai/alphafold3-processed-input/v1",
-                "input_json_sha256": "0" * 64,
-                "processed_json_sha256": hashlib.sha256(processed.read_bytes()).hexdigest(),
-                "model_seeds": [101, 202],
-                "database_artifact_id": "alphafold3-public-databases-v3.0",
-                "database_revision": "fetch_databases.sh@231efc9bb9c13b45cc59e43f7107869084ee9624",
+                "schema": "fs2-serve.nebius.ai/relocatable-stage-handoff/v1",
+                "artifact_id": "af3-prepared-1",
+                "member": "processed.json",
+                "sha256": hashlib.sha256(processed.read_bytes()).hexdigest(),
             }
-            Path(f"{processed}.fs2.json").write_text(json.dumps(marker), encoding="utf-8")
+            provenance.write_text(json.dumps(marker), encoding="utf-8")
             inference = subprocess.run(
                 [
                     sys.executable,
@@ -455,14 +479,22 @@ for seed in seeds:
                     "inference",
                     "--processed-json",
                     str(processed),
+                    "--provenance-marker",
+                    str(provenance),
+                    "--input-artifact-id",
+                    "af3-prepared-1",
+                    "--expected-reference-artifact-id",
+                    "alphafold3-public-databases-v3.0",
+                    "--expected-model-seeds",
+                    "101,202",
+                    "--expected-raw-input-sha256",
+                    hashlib.sha256(request.read_bytes()).hexdigest(),
                     "--output-dir",
                     str(output),
-                    "--seeds",
+                    "--model-seeds",
                     "101,202",
                     "--model-dir",
                     str(model_dir),
-                    "--db-dir",
-                    str(db_dir),
                     "--print-command",
                 ],
                 check=True,
@@ -474,9 +506,9 @@ for seed in seeds:
             self.assertIn("--run_inference", inference_argv)
             self.assertIn("--num_diffusion_samples=5", inference_argv)
             self.assertIn(f"--model_dir={model_dir}", inference_argv)
-            self.assertIn(f"--db_dir={db_dir}", inference_argv)
+            self.assertFalse(any(value.startswith("--db_dir=") for value in inference_argv))
             rejected = subprocess.run(
-                [sys.executable, str(wrapper), "data", "--json_path=/tmp/override"],
+                [sys.executable, str(wrapper), "data", "--model-dir=/tmp/override"],
                 check=False,
                 text=True,
                 stderr=subprocess.PIPE,
@@ -484,6 +516,224 @@ for seed in seeds:
             self.assertNotEqual(rejected.returncode, 0)
         self.assertNotIn("argparse.REMAINDER", wrapper.read_text(encoding="utf-8"))
         self.assertNotIn("os.execve", wrapper.read_text(encoding="utf-8"))
+
+    def test_exact_staged_runtime_argv_tuples_execute_through_parsers(self) -> None:
+        af3 = load_module("run_alphafold3")
+        af3_data = [
+            "data", "--input-json", "/work/data/input.json", "--output-dir", "/work/data/outputs",
+            "--processed-json", "/work/data/processed.json", "--provenance-marker", "/work/data/provenance.json",
+            "--handoff-tar", "/work/data/handoff.tar.zst", "--output-artifact-id", "af3-stage-1",
+            "--db-dir", "/databases", "--db-manifest", "/databases/manifest.json",
+            "--db-ready-marker", "/databases/.fs2-manifest-sha256",
+            "--reference-artifact-id", "alphafold3-public-databases-v3.0",
+            "--raw-input-sha256", "a" * 64,
+            "--model-seeds", "11,29",
+        ]
+        af3_inference = [
+            "inference", "--processed-json", "/work/inference/input/processed.json",
+            "--provenance-marker", "/work/inference/input/provenance.json",
+            "--input-artifact-id", "af3-stage-1", "--output-dir", "/work/inference/outputs",
+            "--expected-reference-artifact-id", "alphafold3-public-databases-v3.0",
+            "--expected-model-seeds", "11,29", "--expected-raw-input-sha256", "a" * 64,
+            "--model-dir", "/models", "--num-diffusion-samples", "2", "--model-seeds", "11,29",
+        ]
+        with mock.patch.object(af3, "_data") as handler:
+            af3.main(af3_data)
+            self.assertEqual(handler.call_args.args[0].output_artifact_id, "af3-stage-1")
+        with mock.patch.object(af3, "_inference") as handler:
+            af3.main(af3_inference)
+            self.assertEqual(handler.call_args.args[0].model_seeds, "11,29")
+
+        protenix = load_module("run_protenix")
+        prep = [
+            "prep", "--input", "/work/prep/input.json", "--output-dir", "/work/prep/prepared",
+            "--processed-json", "/work/prep/prepared/processed.json",
+            "--provenance-marker", "/work/prep/prepared/provenance.json",
+            "--handoff-tar", "/work/prep/prepared.tar.zst", "--output-artifact-id", "protenix-stage-1",
+            "--msa-mode", "none", "--reference-root", "/models/protenix-v2",
+            "--reference-manifest", "/models/protenix-v2/manifest.json",
+        ]
+        pred = [
+            "pred", "--input", "/work/pred/input/processed.json", "--input-marker", "/work/pred/input/provenance.json",
+            "--input-artifact-id", "protenix-stage-1", "--output-dir", "/work/pred/outputs",
+            "--checkpoint", "/models/protenix-v2/checkpoint/protenix-v2.pt",
+            "--common-dir", "/models/protenix-v2/common", "--msa-mode", "none", "--seed", "101",
+            "--sample-count", "2", "--disable-templates", "--disable-rna-msa",
+        ]
+        with mock.patch.object(protenix, "_prep") as handler:
+            protenix.main(prep)
+            self.assertEqual(handler.call_args.args[0].msa_mode, "none")
+        with mock.patch.object(protenix, "_pred") as handler:
+            protenix.main(pred)
+            parsed = handler.call_args.args[0]
+            self.assertEqual((parsed.seed, parsed.sample_count), (101, 2))
+            self.assertTrue(parsed.disable_templates and parsed.disable_rna_msa)
+
+    def test_relocatable_handoff_archive_has_only_canonical_members(self) -> None:
+        handoff = load_module("handoff_contract")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "producer" / "absolute" / "result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text('{"modelSeeds":[11,29]}\n', encoding="utf-8")
+            processed = root / "export" / "processed.json"
+            marker = root / "export" / "provenance.json"
+            archive = root / "handoff.tar.zst"
+            envelope = handoff.write_handoff(source, processed, marker, archive, "stage-1")
+            self.assertEqual(
+                envelope,
+                {
+                    "schema": "fs2-serve.nebius.ai/relocatable-stage-handoff/v1",
+                    "artifact_id": "stage-1",
+                    "member": "processed.json",
+                    "sha256": hashlib.sha256(processed.read_bytes()).hexdigest(),
+                },
+            )
+            raw_tar = root / "handoff.tar"
+            subprocess.run(["zstd", "-q", "-d", "-o", str(raw_tar), str(archive)], check=True)
+            with tarfile.open(raw_tar) as bundle:
+                self.assertEqual(bundle.getnames(), ["processed.json", "provenance.json"])
+                self.assertNotIn(str(root), " ".join(bundle.getnames()))
+            relocated = root / "relocated"
+            relocated.mkdir()
+            with tarfile.open(raw_tar) as bundle:
+                bundle.extractall(relocated, filter="data")
+            self.assertEqual(
+                handoff.validate_handoff(
+                    relocated / "processed.json", relocated / "provenance.json", "stage-1"
+                ),
+                envelope,
+            )
+
+    def test_openfold_prepare_emits_exact_materialized_query_handoff(self) -> None:
+        module = load_module("run_openfold3")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            raw = root / "input.json"
+            raw.write_text(
+                json.dumps({
+                    "queries": {"fixture": {"chains": [{
+                        "molecule_type": "protein", "chain_ids": "A", "sequence": "ACDE"
+                    }]}}
+                }),
+                encoding="utf-8",
+            )
+            base = root / "runner-base.yaml"
+            base.write_text(
+                "experiment_settings:\n"
+                "  mode: predict\n"
+                "  seeds: [42]\n"
+                "  use_msa_server: false\n"
+                "  use_templates: false\n",
+                encoding="utf-8",
+            )
+            prepared = root / "prepared"
+            archive = root / "prepared.tar.zst"
+            args = types.SimpleNamespace(
+                input_manifest=str(raw),
+                query_json=str(prepared / "query.json"),
+                base_runner_yaml=str(base),
+                runner_yaml=str(prepared / "runner.yaml"),
+                provenance_marker=str(prepared / "provenance.json"),
+                handoff_tar=str(archive),
+                output_artifact_id="openfold-stage-1",
+                raw_input_sha256=hashlib.sha256(raw.read_bytes()).hexdigest(),
+                msa_mode="none",
+                database_dir=None,
+                model_seeds="7,9",
+                offline=True,
+            )
+            with redirect_stdout(io.StringIO()):
+                module._prepare(args)
+            marker = json.loads((prepared / "provenance.json").read_text())
+            self.assertEqual(marker["member"], "query.json")
+            self.assertEqual(marker["model_seeds"], [7, 9])
+            self.assertEqual(marker["raw_input_sha256"], hashlib.sha256(raw.read_bytes()).hexdigest())
+            query = json.loads((prepared / "query.json").read_text())
+            chain = query["queries"]["fixture"]["chains"][0]
+            self.assertFalse(chain["use_msas"])
+            self.assertEqual(
+                yaml.safe_load((prepared / "runner.yaml").read_text())["experiment_settings"]["seeds"],
+                [7, 9],
+            )
+            raw_tar = root / "prepared.tar"
+            subprocess.run(["zstd", "-q", "-d", "-o", str(raw_tar), str(archive)], check=True)
+            with tarfile.open(raw_tar) as bundle:
+                self.assertEqual(bundle.getnames(), ["query.json", "provenance.json"])
+
+    def test_af3_data_emits_exact_relocatable_processed_handoff(self) -> None:
+        module = load_module("run_alphafold3")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            raw = root / "input.json"
+            raw.write_text('{"name":"fixture","modelSeeds":[999]}', encoding="utf-8")
+            output = root / "outputs"
+            processed = root / "processed.json"
+            marker = root / "provenance.json"
+            archive = root / "handoff.tar.zst"
+            args = types.SimpleNamespace(
+                input_json=str(raw), output_dir=str(output), processed_json=str(processed),
+                provenance_marker=str(marker), handoff_tar=str(archive),
+                output_artifact_id="af3-stage-1", db_dir="/databases",
+                db_manifest="/databases/manifest.json",
+                db_ready_marker="/databases/.fs2-manifest-sha256",
+                reference_artifact_id="alphafold3-public-databases-v3.0",
+                raw_input_sha256=hashlib.sha256(raw.read_bytes()).hexdigest(),
+                model_seeds="11,29", print_command=False,
+            )
+
+            def fake_run(_command, *, h100):
+                self.assertFalse(h100)
+                (output / "fixture_data.json").write_text(
+                    '{"name":"fixture","modelSeeds":[11,29]}', encoding="utf-8"
+                )
+
+            with (
+                mock.patch.object(module, "_validate_database_contract"),
+                mock.patch.object(module, "_run_upstream", side_effect=fake_run),
+                redirect_stdout(io.StringIO()),
+            ):
+                module._data(args)
+            self.assertEqual(
+                json.loads(marker.read_text()),
+                {
+                    "schema": "fs2-serve.nebius.ai/relocatable-stage-handoff/v1",
+                    "artifact_id": "af3-stage-1",
+                    "member": "processed.json",
+                    "sha256": hashlib.sha256(processed.read_bytes()).hexdigest(),
+                },
+            )
+            raw_tar = root / "handoff.tar"
+            subprocess.run(["zstd", "-q", "-d", "-o", str(raw_tar), str(archive)], check=True)
+            with tarfile.open(raw_tar) as bundle:
+                self.assertEqual(bundle.getnames(), ["processed.json", "provenance.json"])
+
+    def test_af3_data_validates_exact_reference_manifest_ready_marker(self) -> None:
+        module = load_module("run_alphafold3")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = root / "manifest.json"
+            ready = root / ".fs2-manifest-sha256"
+            document = {
+                "schema": "fs2-serve.nebius.ai/reference-data-manifest/v1",
+                "bundle_id": module.DATABASE_ARTIFACT_ID,
+                "content": {"files": []},
+            }
+            manifest.write_text(json.dumps(document), encoding="utf-8")
+            ready.write_text(module._canonical_json_sha256(document) + "\n", encoding="utf-8")
+            args = types.SimpleNamespace(
+                db_dir=str(root), db_manifest=str(manifest), db_ready_marker=str(ready),
+                reference_artifact_id=module.DATABASE_ARTIFACT_ID,
+            )
+            with (
+                mock.patch.object(module, "CANONICAL_DATABASE_DIR", root),
+                mock.patch.object(module, "DATABASE_MANIFEST", manifest),
+                mock.patch.object(module, "DATABASE_READY", ready),
+            ):
+                module._validate_database_contract(args)
+                ready.write_text("0" * 64 + "\n", encoding="utf-8")
+                with self.assertRaisesRegex(SystemExit, "identity does not match"):
+                    module._validate_database_contract(args)
 
     def test_af3_two_seed_two_sample_confidence_binds_structures_and_bounds(self) -> None:
         module = load_module("run_alphafold3")
@@ -496,7 +746,7 @@ for seed in seeds:
                     (directory / "result_model.cif").write_text(
                         f"data_af3_{seed}_{sample}\n", encoding="utf-8"
                     )
-                    (directory / "summary_confidences.json").write_text(
+                    (directory / f"job_seed-{seed}_sample-{sample}_summary_confidences.json").write_text(
                         json.dumps(
                             {
                                 "ptm": 0.8,
@@ -508,6 +758,9 @@ for seed in seeds:
                         ),
                         encoding="utf-8",
                     )
+            (output / "job_summary_confidences.json").write_text(
+                '{"ptm":0.8,"ranking_score":0.75}', encoding="utf-8"
+            )
             envelope = module._write_confidence(
                 output, seeds=[101, 202], samples_per_seed=2
             )
@@ -518,6 +771,9 @@ for seed in seeds:
                 "chain_pair_iptm",
                 (output / "confidence.json").read_text(encoding="utf-8"),
             )
+            self.assertTrue(
+                all("job_summary_confidences.json" != result["upstream_summary"] for result in envelope["results"])
+            )
             for result in envelope["results"]:
                 structure = output / result["structure"]["filename"]
                 self.assertEqual(result["structure"]["bytes"], structure.stat().st_size)
@@ -525,89 +781,76 @@ for seed in seeds:
             overflow = output / "job" / "seed-101_sample-2"
             overflow.mkdir()
             (overflow / "result_model.cif").write_text("data_overflow\n", encoding="utf-8")
-            (overflow / "summary_confidences.json").write_text(
+            (overflow / "job_seed-101_sample-2_summary_confidences.json").write_text(
                 '{"ptm":0.8,"ranking_score":0.75}', encoding="utf-8"
             )
-            with self.assertRaisesRegex(SystemExit, "(bounded seed/sample product|valid bounded structure sample)"):
+            with self.assertRaisesRegex(SystemExit, "exact seed/sample product"):
+                module._write_confidence(output, seeds=[101, 202], samples_per_seed=2)
+            overflow.joinpath("job_seed-101_sample-2_summary_confidences.json").unlink()
+            missing = output / "job" / "seed-202_sample-1" / "job_seed-202_sample-1_summary_confidences.json"
+            missing.unlink()
+            with self.assertRaisesRegex(SystemExit, "exact seed/sample product"):
                 module._write_confidence(output, seeds=[101, 202], samples_per_seed=2)
 
     def test_generated_openfold_argv_is_offline_and_public_ccd_api_is_used(self) -> None:
         wrapper = ROOT / "run_openfold3.py"
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            query = root / "query.json"
-            query.write_text('{"queries":{"q":{"chains":[]}}}', encoding="utf-8")
-            checkpoint = root / "of3.pt"
-            with checkpoint.open("wb") as stream:
-                stream.truncate(2_287_872_989)
-            ccd = root / "components.bcif"
-            with ccd.open("wb") as stream:
-                stream.truncate(63_393_643)
-            runner_yaml = root / "runner.yaml"
-            runner_yaml.write_text(
-                json.dumps({"experiment_settings": {"seeds": [101, 202]}}),
-                encoding="utf-8",
-            )
-            prepared_marker = root / "prepared-query.fs2.json"
-            prepared_marker.write_text(
-                json.dumps(
-                    {
-                        "schema": "fs2.nebius.ai/openfold3-prepared-query/v1",
-                        "query_sha256": hashlib.sha256(query.read_bytes()).hexdigest(),
-                        "msa_mode": "none",
-                        "model_seeds": [101, 202],
-                        "runner_yaml_sha256": hashlib.sha256(runner_yaml.read_bytes()).hexdigest(),
-                        "ccd_sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c",
-                        "network_policy": "offline",
-                    }
-                ),
-                encoding="utf-8",
-            )
-            output = root / "out"
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(wrapper),
-                    "--query-json",
-                    str(query),
-                    "--output-dir",
-                    str(output),
-                    "--checkpoint",
-                    str(checkpoint),
-                    "--ccd-path",
-                    str(ccd),
-                    "--runner-yaml",
-                    str(runner_yaml),
-                    "--prepared-marker",
-                    str(prepared_marker),
-                    "--seeds",
-                    "101,202",
-                    "--print-command",
-                ],
-                check=True,
-                text=True,
-                stdout=subprocess.PIPE,
-            )
-            argv = json.loads(completed.stdout)["argv"]
-            self.assertEqual(argv[:2], ["run_openfold", "predict"])
-            self.assertIn("--inference-ckpt-path", argv)
-            self.assertEqual(argv[argv.index("--use-msa-server") + 1], "false")
-            self.assertEqual(argv[argv.index("--use-templates") + 1], "false")
-            self.assertEqual(argv[argv.index("--runner-yaml") + 1], str(runner_yaml))
-            self.assertNotIn("--num-model-seeds", argv)
+        module = load_module("run_openfold3")
+        prepare_argv = [
+            "prepare", "--input-manifest", "/work/input.json",
+            "--query-json", "/work/prepared/query.json",
+            "--base-runner-yaml", "/opt/fs2/runtime/openfold3/runner-base.yaml",
+            "--runner-yaml", "/work/prepared/runner.yaml", "--msa-mode", "none",
+            "--provenance-marker", "/work/prepared/provenance.json",
+            "--handoff-tar", "/work/prepared.tar.zst", "--output-artifact-id", "openfold-stage-1",
+            "--raw-input-sha256", "a" * 64,
+            "--model-seeds", "101,202", "--offline",
+        ]
+        predict_argv = [
+            "predict", "--query-json", "/work/input/query.json",
+            "--provenance-marker", "/work/input/provenance.json", "--input-artifact-id", "openfold-stage-1",
+            "--expected-raw-input-sha256", "a" * 64, "--output-dir", "/work/outputs",
+            "--checkpoint", "/models/openfold3/of3-ob-2025-06-30-174k.pt",
+            "--ccd-path", "/databases/openfold3/components.bcif",
+            "--runner-yaml", "/work/runner.yaml", "--base-runner-yaml", "/opt/fs2/runtime/openfold3/runner-base.yaml",
+            "--num-diffusion-samples", "1",
+            "--num-model-seeds", "2", "--model-seeds", "101,202",
+            "--msa-mode", "none", "--use-templates", "false",
+        ]
+        with mock.patch.object(module, "_prepare") as prepare_handler:
+            module.main(prepare_argv)
+            parsed = prepare_handler.call_args.args[0]
+            self.assertEqual(parsed.model_seeds, "101,202")
+            self.assertTrue(parsed.offline)
+            self.assertEqual(parsed.output_artifact_id, "openfold-stage-1")
+        with mock.patch.object(module, "_predict") as predict_handler:
+            module.main(predict_argv)
+            parsed = predict_handler.call_args.args[0]
+            self.assertEqual(parsed.num_model_seeds, 2)
+            self.assertEqual(parsed.num_diffusion_samples, 1)
+            self.assertEqual(parsed.use_templates, "false")
+        argv = module.build_command(
+            query=Path("/work/query.json"), output=Path("/work/outputs"),
+            checkpoint=Path("/models/openfold3/of3-ob-2025-06-30-174k.pt"),
+            runner_yaml=Path("/work/runner.yaml"), num_diffusion_samples=1,
+        )
+        self.assertEqual(argv[:2], ["run_openfold", "predict"])
+        self.assertIn("--inference-ckpt-path", argv)
+        self.assertEqual(argv[argv.index("--use-msa-server") + 1], "false")
+        self.assertEqual(argv[argv.index("--use-templates") + 1], "false")
+        self.assertNotIn("--num-model-seeds", argv)
         source = wrapper.read_text(encoding="utf-8")
         self.assertIn("ccd.set_ccd_path(ccd_path)", source)
         self.assertNotIn("._CCD_FILE", source)
         self.assertIn("standalone_mode=False", source)
 
-    def test_openfold_two_seed_two_sample_confidence_binds_structures_and_bounds(self) -> None:
+    def test_openfold_two_seed_one_sample_confidence_binds_structures_and_bounds(self) -> None:
         module = load_module("run_openfold3")
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary)
             for seed in (101, 202):
                 directory = output / "query" / f"seed_{seed}"
                 directory.mkdir(parents=True)
-                for sample in (1, 2):
+                for sample in (1,):
                     prefix = f"query_seed_{seed}_sample_{sample}"
                     (directory / f"{prefix}_model.cif").write_text(
                         f"data_of3_{seed}_{sample}\n", encoding="utf-8"
@@ -626,11 +869,12 @@ for seed in seeds:
                         encoding="utf-8",
                     )
             envelope = module._write_confidence(
-                output, seeds=[101, 202], samples_per_seed=2
+                output, seeds=[101, 202], samples_per_seed=1
             )
             jsonschema.Draft202012Validator(CONFIDENCE_SCHEMA).validate(envelope)
             self.assertEqual(envelope["schema"], "fs2.nebius.ai/structure-confidence/v1")
-            self.assertEqual(len(envelope["results"]), 4)
+            self.assertEqual(len(envelope["results"]), 2)
+            self.assertEqual([result["sample_index"] for result in envelope["results"]], [0, 0])
             encoded = (output / "confidence.json").read_text(encoding="utf-8")
             self.assertNotIn("per_atom", encoded)
             self.assertNotIn(str(output), encoded)
@@ -640,7 +884,96 @@ for seed in seeds:
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(SystemExit, "finite scalar"):
-                module._write_confidence(output, seeds=[101, 202], samples_per_seed=2)
+                module._write_confidence(output, seeds=[101, 202], samples_per_seed=1)
+
+    def test_openfold_multisample_cardinality_and_one_based_normalization(self) -> None:
+        module = load_module("run_openfold3")
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            for seed in (7, 9):
+                directory = output / "query" / f"seed_{seed}"
+                directory.mkdir(parents=True)
+                for one_based in (1, 2):
+                    prefix = f"query_seed_{seed}_sample_{one_based}"
+                    (directory / f"{prefix}_model.cif").write_text(
+                        "ATOM 1 A 0 0 0\nATOM 2 A 1 0 0\nATOM 3 A 2 0 0\n",
+                        encoding="utf-8",
+                    )
+                    (directory / f"{prefix}_confidences_aggregated.json").write_text(
+                        '{"avg_plddt":88.0,"gpde":4.0}', encoding="utf-8"
+                    )
+            envelope = module._write_confidence(output, seeds=[7, 9], samples_per_seed=2)
+            self.assertEqual(
+                [(item["seed"], item["sample_index"]) for item in envelope["results"]],
+                [(7, 0), (7, 1), (9, 0), (9, 1)],
+            )
+            duplicate = output / "query/seed_7/query_seed_7_sample_01_confidences_aggregated.json"
+            duplicate.write_text('{"avg_plddt":88.0,"gpde":4.0}', encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "(canonical|exact seed/sample|one-to-one)"):
+                module._write_confidence(output, seeds=[7, 9], samples_per_seed=2)
+
+    def test_semantic_smoke_validates_exact_envelope_atoms_metrics_and_cardinality(self) -> None:
+        contract = load_module("result_contract")
+        smoke = load_module("image_smoke")
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            structure = output / "result.cif"
+            structure.write_text(
+                "ATOM 1 A 0 0 0\nATOM 2 A 1 0 0\nATOM 3 A 2 0 0\n",
+                encoding="utf-8",
+            )
+            envelope = contract.write_confidence_envelope(
+                output,
+                runtime_id="esmfold2",
+                model_revision="fixture",
+                seeds=[5],
+                samples_per_seed=1,
+                results=[{
+                    "seed": 5, "sample_index": 0, "structure": structure,
+                    "summary": None, "metrics": {"plddt_mean": 1.0},
+                }],
+            )
+            confidence_path, validated, structures = smoke._validate_semantic_output(
+                output, runtime_id="esmfold2", seeds=[5], samples_per_seed=1
+            )
+            self.assertEqual(confidence_path, output / "confidence.json")
+            self.assertEqual(validated, envelope)
+            self.assertEqual(structures, [structure])
+
+            bad = json.loads((output / "confidence.json").read_text())
+            bad["results"][0]["metrics"]["plddt_mean"] = 1.0001
+            (output / "confidence.json").write_text(json.dumps(bad), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "finite scalar"):
+                smoke._validate_semantic_output(
+                    output, runtime_id="esmfold2", seeds=[5], samples_per_seed=1
+                )
+
+            (output / "confidence.json").write_text(json.dumps(envelope), encoding="utf-8")
+            structure.write_text("JUNK\n", encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "bind its structure bytes"):
+                smoke._validate_semantic_output(
+                    output, runtime_id="esmfold2", seeds=[5], samples_per_seed=1
+                )
+            envelope["results"][0]["structure"]["bytes"] = structure.stat().st_size
+            envelope["results"][0]["structure"]["sha256"] = hashlib.sha256(structure.read_bytes()).hexdigest()
+            (output / "confidence.json").write_text(json.dumps(envelope), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "fewer than 3 atom"):
+                smoke._validate_semantic_output(
+                    output, runtime_id="esmfold2", seeds=[5], samples_per_seed=1
+                )
+
+            with self.assertRaisesRegex(SystemExit, "exact seed/sample product"):
+                contract.write_confidence_envelope(
+                    output,
+                    runtime_id="esmfold2",
+                    model_revision="fixture",
+                    seeds=[5, 6],
+                    samples_per_seed=1,
+                    results=[{
+                        "seed": 5, "sample_index": 0, "structure": structure,
+                        "summary": None, "metrics": {"plddt_mean": 0.5},
+                    }],
+                )
 
     def test_esm_production_defaults_and_non_hopper_flash_disable(self) -> None:
         source = (ROOT / "run_esmfold2.py").read_text(encoding="utf-8")
@@ -651,8 +984,12 @@ for seed in seeds:
         self.assertIn('attention = "flash_attention_2" if args.hardware_mode == "h100" else "sdpa"', source)
         self.assertIn('confidence_path = output.parent / "confidence.json"', source)
         self.assertIn('"plddt_mean"', source)
+        self.assertRegex(source, r'"plddt_mean",\s*float\(.+?\),\s*0\.0,\s*1\.0,',)
         self.assertIn("write_confidence_envelope", source)
         self.assertNotIn(".cpu().tolist()", source)
+        metric_schema = CONFIDENCE_SCHEMA["properties"]["results"]["items"]
+        metric_schema = metric_schema["properties"]["metrics"]["properties"]["plddt_mean"]
+        self.assertEqual(metric_schema, {"type": "number", "minimum": 0, "maximum": 1})
 
     def test_dockerfiles_are_exact_external_and_do_not_duplicate_large_chmod_layers(self) -> None:
         for image in LOCK["images"]:
@@ -684,7 +1021,10 @@ for seed in seeds:
         self.assertIn("FS2_DATABASE_DIR=/databases", af3)
         self.assertNotIn("/opt/fs2/academic/alphafold3", af3)
         of3 = (ROOT / "Dockerfile.openfold3").read_text(encoding="utf-8")
-        self.assertIn("prepare_openfold3.py /opt/fs2/prepare_openfold3.py", of3)
+        self.assertNotIn("prepare_openfold3.py", of3)
+        self.assertIn("run_openfold3.py /usr/local/bin/fs2-run-openfold3", of3)
+        self.assertIn("openfold3-runner-base.yaml /opt/fs2/runtime/openfold3/runner-base.yaml", of3)
+        self.assertIn("libaio-dev zstd", of3)
 
     def test_protenix_fast_layernorm_is_prebuilt_but_triton_jit_is_truthful(self) -> None:
         compiler = (ROOT / "protenix-torch-ext-compile.py").read_text(encoding="utf-8")
@@ -706,10 +1046,6 @@ for seed in seeds:
         self.assertEqual(af3._parse_seeds("101,202"), [101, 202])
         with self.assertRaisesRegex(SystemExit, "unique"):
             af3._parse_seeds("101,101")
-        protenix = load_module("run_protenix")
-        self.assertEqual(protenix._canonical_seeds("001,202"), "1,202")
-        with self.assertRaisesRegex(SystemExit, "unique"):
-            protenix._canonical_seeds("101,101")
         patch_source = (ROOT / "patch_protenix_source.py").read_text(encoding="utf-8")
         self.assertIn('os.environ.get("FS2_MSA_MODE")', patch_source)
         self.assertIn("use_msa=False", patch_source)
@@ -718,7 +1054,7 @@ for seed in seeds:
         self.assertNotIn("FS2_PUBLIC_MSA_OPT_IN", patch_source)
 
     def test_openfold_preparation_binds_offline_msa_mode(self) -> None:
-        module = load_module("prepare_openfold3")
+        module = load_module("run_openfold3")
         document = {
             "queries": {
                 "fixture": {
@@ -752,6 +1088,16 @@ for seed in seeds:
                 },
                 "precomputed",
             )
+        with mock.patch.object(module, "_prepare") as handler:
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                module.main([
+                    "prepare", "--input-manifest", "/i", "--query-json", "/q",
+                    "--base-runner-yaml", "/b", "--runner-yaml", "/r",
+                    "--provenance-marker", "/p", "--handoff-tar", "/t",
+                    "--output-artifact-id", "id", "--raw-input-sha256", "a" * 64,
+                    "--msa-mode", "precomputed", "--model-seeds", "1", "--offline",
+                ])
+            handler.assert_not_called()
 
     def test_smoke_defaults_to_semantic_and_build_mode_is_explicit(self) -> None:
         source = (ROOT / "image_smoke.py").read_text(encoding="utf-8")

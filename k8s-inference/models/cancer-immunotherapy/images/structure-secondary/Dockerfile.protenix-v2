@@ -74,7 +74,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # PostgreSQL client support only the explicit external preprocessing contract.
 # hadolint ignore=DL3008
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates postgresql-client hmmer kalign \
+    && apt-get install --yes --no-install-recommends ca-certificates postgresql-client hmmer kalign zstd \
     && rm -rf /var/lib/apt/lists/* \
     && ! command -v nvcc \
     && groupadd --gid 10001 fs2 \
@@ -88,6 +88,8 @@ COPY --chmod=0555 entrypoint.sh /usr/local/bin/fs2-entrypoint
 COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
 COPY --chmod=0555 run_protenix.py /usr/local/bin/fs2-run-protenix
 COPY --chmod=0555 run_protenix.py /opt/fs2/run_protenix.py
+COPY --chmod=0444 handoff_contract.py /usr/local/bin/handoff_contract.py
+COPY --chmod=0444 handoff_contract.py /opt/fs2/handoff_contract.py
 COPY --chmod=0444 result_contract.py /usr/local/bin/result_contract.py
 COPY --chmod=0444 result_contract.py /opt/fs2/result_contract.py
 COPY --chmod=0444 confidence.schema.json /opt/fs2/confidence.schema.json

@@ -101,10 +101,13 @@
         "common": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["revision", "source_sha256"],
+          "required": ["artifact_id", "revision", "archive_url", "archive_bytes", "archive_sha256"],
           "properties": {
+            "artifact_id": {"const": "protenix-v2-inference-data-2026-01-29"},
             "revision": {"type": "string", "minLength": 1},
-            "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+            "archive_url": {"type": "string", "pattern": "^https://"},
+            "archive_bytes": {"type": "integer", "minimum": 1},
+            "archive_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
           }
         },
         "expected_paths": {

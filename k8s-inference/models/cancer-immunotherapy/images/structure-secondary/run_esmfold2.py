@@ -151,7 +151,7 @@ def _fold(args: argparse.Namespace) -> None:
             "plddt_mean",
             float(result.plddt.detach().float().mean().cpu()),
             0.0,
-            100.0,
+            1.0,
         )
     }
     if result.ptm is not None:

@@ -14,11 +14,12 @@ import subprocess
 import sys
 from typing import Any
 
-from result_contract import sha256_file
+from result_contract import sha256_file, validate_confidence_envelope
 
 
 SOURCE_REVISION_FILE = Path("/opt/fs2/source-revision")
 EXTERNAL_ROOTS = (Path("/models"), Path("/databases"))
+MIN_ATOM_RECORDS = 3
 
 
 def _run_cli(
@@ -118,6 +119,7 @@ def _build_smoke(runtime_id: str) -> dict[str, Any]:
             if not cache.is_absolute() or not cache.is_dir() or not os.access(cache, os.W_OK):
                 raise RuntimeError(f"Protenix runtime cache is not writable: {cache}")
         _run_cli(["/opt/protenix-venv/bin/protenix", "--help"], "pred")
+        _run_cli(["/usr/local/bin/fs2-run-protenix", "--help"], "prep")
         result = _torch_build_smoke()
         result["package_version"] = importlib.metadata.version("protenix")
         result["cli"] = "protenix prep|pred"
@@ -168,9 +170,9 @@ def _build_smoke(runtime_id: str) -> dict[str, Any]:
             raise RuntimeError(
                 f"OpenFold3 package identity is not v0.5.0: {result['package_version']}"
             )
-        _run_cli(["/usr/local/bin/fs2-run-openfold3", "--help"], "checkpoint")
-        _run_cli([sys.executable, "/opt/fs2/prepare_openfold3.py", "--help"], "msa-mode")
-        result["cli"] = "/opt/fs2/prepare_openfold3.py then run_openfold predict"
+        _run_cli(["/usr/local/bin/fs2-run-openfold3", "--help"], "prepare")
+        _run_cli(["/usr/local/bin/fs2-run-openfold3", "predict", "--help"], "checkpoint")
+        result["cli"] = "fs2-run-openfold3 prepare|predict"
         result["ccd_api"] = "biotite.structure.info.ccd.set_ccd_path"
         return result
 
@@ -201,6 +203,45 @@ def _assert_h100(runtime_id: str) -> dict[str, object]:
     }
 
 
+def _validate_semantic_output(
+    output_dir: Path,
+    *,
+    runtime_id: str,
+    seeds: list[int],
+    samples_per_seed: int,
+) -> tuple[Path, dict[str, object], list[Path]]:
+    confidence_path = output_dir / "confidence.json"
+    try:
+        confidence = json.loads(confidence_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"semantic wrapper produced no valid confidence.json: {exc}") from exc
+    try:
+        validated = validate_confidence_envelope(
+            output_dir,
+            confidence,
+            expected_runtime_id=runtime_id,
+            expected_seeds=seeds,
+            expected_samples_per_seed=samples_per_seed,
+        )
+    except SystemExit as exc:
+        raise RuntimeError(str(exc)) from exc
+    structures: list[Path] = []
+    for result in validated["results"]:
+        structure = result["structure"]
+        path = output_dir / structure["filename"]
+        atom_count = sum(
+            1
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
+            if line.lstrip().startswith(("ATOM ", "HETATM "))
+        )
+        if atom_count < MIN_ATOM_RECORDS:
+            raise RuntimeError(
+                f"semantic structure has fewer than {MIN_ATOM_RECORDS} atom records: {path}"
+            )
+        structures.append(path)
+    return confidence_path, validated, structures
+
+
 def _semantic_smoke(
     runtime_id: str,
     request: Path,
@@ -209,8 +250,15 @@ def _semantic_smoke(
     seeds: str,
     msa_mode: str,
     runner_yaml: Path | None,
-    prepared_marker: Path | None,
+    provenance_marker: Path | None,
+    input_artifact_id: str | None,
+    samples_per_seed: int,
 ) -> dict[str, object]:
+    parsed_seeds = [int(value) for value in seeds.split(",")]
+    if not 1 <= len(parsed_seeds) <= 16 or len(set(parsed_seeds)) != len(parsed_seeds):
+        raise RuntimeError("semantic smoke seeds must be 1..16 unique integers")
+    if not 1 <= samples_per_seed <= 16:
+        raise RuntimeError("semantic smoke samples-per-seed must be in [1, 16]")
     commands = {
         "esmfold2": [
             "/usr/local/bin/fs2-run-esmfold2",
@@ -222,6 +270,8 @@ def _semantic_smoke(
             "--variant",
             "esmfold2",
             "--smoke",
+            "--seed",
+            str(parsed_seeds[0]),
         ],
         "esmfold2-fast": [
             "/usr/local/bin/fs2-run-esmfold2",
@@ -233,6 +283,8 @@ def _semantic_smoke(
             "--variant",
             "esmfold2-fast",
             "--smoke",
+            "--seed",
+            str(parsed_seeds[0]),
         ],
         "protenix-v2": [
             "/usr/local/bin/fs2-run-protenix",
@@ -242,9 +294,21 @@ def _semantic_smoke(
             "--output-dir",
             str(output_dir),
             "--msa-mode",
-            msa_mode,
-            "--seeds",
-            seeds,
+            "none",
+            "--input-marker",
+            str(provenance_marker) if provenance_marker is not None else "",
+            "--input-artifact-id",
+            input_artifact_id or "",
+            "--checkpoint",
+            "/models/protenix-v2/checkpoint/protenix-v2.pt",
+            "--common-dir",
+            "/models/protenix-v2/common",
+            "--seed",
+            str(parsed_seeds[0]),
+            "--sample-count",
+            str(samples_per_seed),
+            "--disable-templates",
+            "--disable-rna-msa",
         ],
         "alphafold3": [
             "/usr/local/bin/fs2-run-alphafold3",
@@ -253,24 +317,59 @@ def _semantic_smoke(
             str(request),
             "--output-dir",
             str(output_dir),
-            "--seeds",
+            "--provenance-marker",
+            str(provenance_marker) if provenance_marker is not None else "",
+            "--input-artifact-id",
+            input_artifact_id or "",
+            "--expected-reference-artifact-id",
+            "alphafold3-public-databases-v3.0",
+            "--expected-model-seeds",
             seeds,
+            "--model-seeds",
+            seeds,
+            "--num-diffusion-samples",
+            str(samples_per_seed),
         ],
         "openfold3": [
             "/usr/local/bin/fs2-run-openfold3",
+            "predict",
             "--query-json",
             str(request),
+            "--provenance-marker",
+            str(provenance_marker) if provenance_marker is not None else "",
+            "--input-artifact-id",
+            input_artifact_id or "",
+            "--expected-raw-input-sha256",
+            (
+                str(json.loads(provenance_marker.read_text(encoding="utf-8")).get("raw_input_sha256", ""))
+                if provenance_marker is not None
+                else ""
+            ),
             "--output-dir",
             str(output_dir),
             "--runner-yaml",
             str(runner_yaml) if runner_yaml is not None else "",
-            "--prepared-marker",
-            str(prepared_marker) if prepared_marker is not None else "",
-            "--seeds",
+            "--base-runner-yaml",
+            "/opt/fs2/runtime/openfold3/runner-base.yaml",
+            "--checkpoint",
+            "/models/openfold3/of3-ob-2025-06-30-174k.pt",
+            "--ccd-path",
+            "/databases/openfold3/components.bcif",
+            "--num-diffusion-samples",
+            "1",
+            "--num-model-seeds",
+            str(len(parsed_seeds)),
+            "--model-seeds",
             seeds,
+            "--msa-mode",
+            "none",
+            "--use-templates",
+            "false",
         ],
     }
     command = commands[runtime_id]
+    if runtime_id in {"esmfold2", "esmfold2-fast", "protenix-v2"} and len(parsed_seeds) != 1:
+        raise RuntimeError(f"{runtime_id} semantic smoke accepts exactly one seed")
     environment = dict(os.environ)
     environment.update(
         {
@@ -291,49 +390,24 @@ def _semantic_smoke(
         raise RuntimeError(
             f"semantic wrapper failed with {completed.returncode}: {completed.stdout[-4000:]}"
         )
-    structures = sorted(
-        path
-        for path in output_dir.rglob("*")
-        if path.is_file() and path.suffix.lower() in {".cif", ".mmcif", ".pdb"}
+    expected_samples = 1 if runtime_id in {"esmfold2", "esmfold2-fast", "openfold3"} else samples_per_seed
+    expected_seeds = parsed_seeds
+    if runtime_id in {"esmfold2", "esmfold2-fast", "protenix-v2"}:
+        expected_seeds = parsed_seeds[:1]
+    confidence_path, validated, nonempty = _validate_semantic_output(
+        output_dir,
+        runtime_id=runtime_id,
+        seeds=expected_seeds,
+        samples_per_seed=expected_samples,
     )
-    nonempty = [path for path in structures if path.stat().st_size > 0]
-    if not nonempty:
-        raise RuntimeError("semantic wrapper produced no non-empty structure artifact")
-    confidence_path = output_dir / "confidence.json"
-    try:
-        confidence = json.loads(confidence_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"semantic wrapper produced no valid confidence.json: {exc}") from exc
-    if not isinstance(confidence, dict):
-        raise RuntimeError("semantic confidence envelope must be a JSON object")
-    results = confidence.get("results")
-    if (
-        confidence.get("schema") != "fs2.nebius.ai/structure-confidence/v1"
-        or confidence.get("runtime_id") != runtime_id
-        or not isinstance(results, list)
-        or not 1 <= len(results) <= 256
-    ):
-        raise RuntimeError("semantic confidence envelope is missing or unbounded")
-    for result in results:
-        structure = result.get("structure") if isinstance(result, dict) else None
-        filename = structure.get("filename") if isinstance(structure, dict) else None
-        if not isinstance(filename, str):
-            raise RuntimeError("semantic confidence result lacks a relative structure filename")
-        path = output_dir / filename
-        if (
-            Path(filename).is_absolute()
-            or ".." in Path(filename).parts
-            or not path.is_file()
-            or structure.get("bytes") != path.stat().st_size
-            or structure.get("sha256") != sha256_file(path)
-        ):
-            raise RuntimeError("semantic confidence result does not bind its structure bytes")
+    results = validated["results"]
     return {
         "argv": command,
         "output_file_count": len(nonempty),
         "output_bytes": sum(path.stat().st_size for path in nonempty),
         "confidence_sha256": sha256_file(confidence_path),
         "confidence_result_count": len(results),
+        "minimum_atom_records": MIN_ATOM_RECORDS,
         "stdout_tail": completed.stdout[-2000:],
     }
 
@@ -350,7 +424,7 @@ def main() -> None:
     parser.add_argument("--seeds", default="101")
     parser.add_argument(
         "--msa-mode",
-        choices=("none", "precomputed"),
+        choices=("none",),
         default="none",
         help="Protenix handoff mode; ignored by other runtimes",
     )
@@ -358,10 +432,9 @@ def main() -> None:
         "--runner-yaml",
         help="OpenFold3 prepared runner YAML containing the exact model seeds",
     )
-    parser.add_argument(
-        "--prepared-marker",
-        help="OpenFold3 immutable handoff marker emitted by prepare_openfold3.py",
-    )
+    parser.add_argument("--provenance-marker")
+    parser.add_argument("--input-artifact-id")
+    parser.add_argument("--samples-per-seed", type=int, default=1)
     args = parser.parse_args()
 
     runtime_id = os.environ.get("FS2_RUNTIME_ID", "")
@@ -404,24 +477,28 @@ def main() -> None:
         if not output_dir.is_absolute():
             raise SystemExit("output-dir must be absolute")
         runner_yaml = Path(args.runner_yaml) if args.runner_yaml else None
-        prepared_marker = Path(args.prepared_marker) if args.prepared_marker else None
+        provenance_marker = Path(args.provenance_marker) if args.provenance_marker else None
         if runtime_id == "openfold3" and (
-            runner_yaml is None
-            or not runner_yaml.is_absolute()
-            or not runner_yaml.is_file()
-            or prepared_marker is None
-            or not prepared_marker.is_absolute()
-            or not prepared_marker.is_file()
+            runner_yaml is None or not runner_yaml.is_absolute()
         ):
             raise SystemExit(
-                "OpenFold3 semantic smoke requires existing absolute --runner-yaml and --prepared-marker"
+                "OpenFold3 semantic smoke requires an absolute --runner-yaml output path"
             )
-        if runtime_id != "openfold3" and (
-            runner_yaml is not None or prepared_marker is not None
+        if runtime_id != "openfold3" and runner_yaml is not None:
+            raise SystemExit("--runner-yaml is valid only for OpenFold3")
+        if runtime_id in {"protenix-v2", "alphafold3", "openfold3"} and (
+            provenance_marker is None
+            or not provenance_marker.is_absolute()
+            or not provenance_marker.is_file()
+            or not args.input_artifact_id
         ):
             raise SystemExit(
-                "--runner-yaml and --prepared-marker are valid only for OpenFold3"
+                "staged semantic smoke requires --provenance-marker and --input-artifact-id"
             )
+        if runtime_id not in {"protenix-v2", "alphafold3", "openfold3"} and (
+            provenance_marker is not None or args.input_artifact_id is not None
+        ):
+            raise SystemExit("handoff provenance arguments are valid only for staged runtimes")
         output_dir.mkdir(parents=True, exist_ok=True)
         result.update(
             {
@@ -434,7 +511,9 @@ def main() -> None:
                     seeds=args.seeds,
                     msa_mode=args.msa_mode,
                     runner_yaml=runner_yaml,
-                    prepared_marker=prepared_marker,
+                    provenance_marker=provenance_marker,
+                    input_artifact_id=args.input_artifact_id,
+                    samples_per_seed=args.samples_per_seed,
                 ),
                 "status": "passed",
             }

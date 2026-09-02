@@ -39,7 +39,7 @@
       "id": "esmfold2",
       "dockerfile": "Dockerfile.esmfold2",
       "repository": "esmfold2",
-      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r2",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r3",
       "source": {
         "repository": "https://github.com/Biohub/esm.git",
         "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
@@ -103,7 +103,7 @@
       "id": "esmfold2-fast",
       "dockerfile": "Dockerfile.esmfold2",
       "repository": "esmfold2-fast",
-      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r2",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r3",
       "source": {
         "repository": "https://github.com/Biohub/esm.git",
         "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
@@ -167,7 +167,7 @@
       "id": "protenix-v2",
       "dockerfile": "Dockerfile.protenix-v2",
       "repository": "protenix-v2",
-      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r2",
+      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r3",
       "source": {
         "repository": "https://github.com/bytedance/Protenix.git",
         "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
@@ -196,8 +196,11 @@
             "parameter_count": 464442431
           },
           "common": {
-            "revision": "protenix-v2-inference-data-2026-01-29",
-            "source_sha256": "27da2585d0ea1d820f4693099653aab1fdff7d4e18c21e6d90a0dc18f718dd89"
+            "artifact_id": "protenix-v2-inference-data-2026-01-29",
+            "revision": "tos-common-2026-01-29",
+            "archive_url": "https://protenix.tos-cn-beijing.volces.com/common.tar.gz",
+            "archive_bytes": 475085654,
+            "archive_sha256": "08ea594f429df35494c062e3dfcacaf48fa761e4ea4a8bcb6d5107d211e64dbd"
           },
           "expected_paths": [
             "checkpoint/protenix-v2.pt",
@@ -219,8 +222,8 @@
         "writable_cache_mounts": ["/cache/protenix"],
         "runtime_compilation": "prebuilt-fast-layernorm; cuequivariance-ops-torch-0.8.0-triton-jit-with-persistable-cache",
         "commands": [
-          "/usr/local/bin/fs2-run-protenix prep --input <raw.json> --output-dir <dir> --processed-json <enriched.json> --msa-mode <none|precomputed>",
-          "/usr/local/bin/fs2-run-protenix pred --input <enriched.json> --output-dir <dir> --msa-mode <none|precomputed> --seeds <csv>"
+          "/usr/local/bin/fs2-run-protenix prep --input <raw.json> --output-dir <dir> --processed-json <processed.json> --provenance-marker <provenance.json> --handoff-tar <handoff.tar.zst> --output-artifact-id <id> --msa-mode none --reference-root /models/protenix-v2 --reference-manifest /models/protenix-v2/manifest.json",
+          "/usr/local/bin/fs2-run-protenix pred --input <input/processed.json> --input-marker <input/provenance.json> --input-artifact-id <id> --output-dir <dir> --checkpoint /models/protenix-v2/checkpoint/protenix-v2.pt --common-dir /models/protenix-v2/common --msa-mode none --seed <int> --sample-count <1..16> --disable-templates --disable-rna-msa"
         ]
       },
       "accelerator_support": {
@@ -234,7 +237,7 @@
       "id": "alphafold3",
       "dockerfile": "Dockerfile.alphafold3",
       "repository": "alphafold3",
-      "tag": "85c4d20505fd5cef05eac22b534d4e793971ae69-h100-r2",
+      "tag": "85c4d20505fd5cef05eac22b534d4e793971ae69-h100-r3",
       "source": {
         "repository": "https://github.com/google-deepmind/alphafold3.git",
         "revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
@@ -270,8 +273,8 @@
         "network_policy": "official-parameters-and-databases-explicit",
         "required_mounts": ["/models/af3.bin.zst", "/databases"],
         "commands": [
-          "/usr/local/bin/fs2-run-alphafold3 data --input-json <raw.json> --output-dir <dir> --processed-json-output <processed.json> --seeds <csv>",
-          "/usr/local/bin/fs2-run-alphafold3 inference --processed-json <processed.json> --output-dir <dir> --seeds <csv> [--num-diffusion-samples <int>]"
+          "/usr/local/bin/fs2-run-alphafold3 data --input-json <raw.json> --output-dir <dir> --processed-json <processed.json> --provenance-marker <provenance.json> --handoff-tar <handoff.tar.zst> --output-artifact-id <id> --db-dir /databases --db-manifest /databases/manifest.json --db-ready-marker /databases/.fs2-manifest-sha256 --reference-artifact-id alphafold3-public-databases-v3.0 --raw-input-sha256 <sha256> --model-seeds <csv>",
+          "/usr/local/bin/fs2-run-alphafold3 inference --processed-json <input/processed.json> --provenance-marker <input/provenance.json> --input-artifact-id <id> --expected-reference-artifact-id alphafold3-public-databases-v3.0 --expected-model-seeds <csv> [--expected-raw-input-sha256 <sha256>] --output-dir <dir> --model-dir /models --num-diffusion-samples <1..16> --model-seeds <csv>"
         ]
       },
       "accelerator_support": {
@@ -285,7 +288,7 @@
       "id": "openfold3",
       "dockerfile": "Dockerfile.openfold3",
       "repository": "openfold3",
-      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r2",
+      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r3",
       "source": {
         "repository": "https://github.com/aqlaboratory/openfold-3.git",
         "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
@@ -319,13 +322,12 @@
       ],
       "runtime_contract": {
         "entrypoint": "/usr/local/bin/fs2-run-openfold3",
-        "preprocess_entrypoint": "/opt/fs2/prepare_openfold3.py",
-        "subcommands": ["predict"],
+        "subcommands": ["prepare", "predict"],
         "network_policy": "msa-server-forced-offline-explicit-checkpoint-and-ccd",
         "required_mounts": ["/models/openfold3/of3-ob-2025-06-30-174k.pt", "/databases/openfold3/components.bcif"],
         "commands": [
-          "/opt/fs2/prepare_openfold3.py --input <raw.json> --output-dir <dir> --msa-mode <none|precomputed> --seeds <csv> --offline",
-          "/usr/local/bin/fs2-run-openfold3 --query-json <query.json> --output-dir <dir> --runner-yaml <runner.yaml> --prepared-marker <prepared-query.fs2.json> --seeds <csv>"
+          "/usr/local/bin/fs2-run-openfold3 prepare --input-manifest <input.json> --query-json <prepared/query.json> --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --runner-yaml <prepared/runner.yaml> --provenance-marker <prepared/provenance.json> --handoff-tar <prepared.tar.zst> --output-artifact-id <id> --raw-input-sha256 <sha256> --msa-mode none --model-seeds <csv> --offline [--database-dir /databases/openfold3]",
+          "/usr/local/bin/fs2-run-openfold3 predict --query-json <input/query.json> --provenance-marker <input/provenance.json> --input-artifact-id <id> --expected-raw-input-sha256 <sha256> --output-dir <dir> --checkpoint /models/openfold3/of3-ob-2025-06-30-174k.pt --ccd-path /databases/openfold3/components.bcif --runner-yaml <runner.yaml> --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --num-diffusion-samples 1 --num-model-seeds <seed-count> --model-seeds <csv> --msa-mode none --use-templates false"
         ]
       },
       "accelerator_support": {
