@@ -11,7 +11,8 @@ import unittest
 from pathlib import Path
 
 VERIFIER_PATH = Path(__file__).with_name("verify_plan.py")
-SYNTHETIC_TARGETS = Path(__file__).with_name("fixtures") / "public-synthetic-targets.json"
+FIXTURES = Path(__file__).with_name("fixtures")
+SYNTHETIC_TARGETS = FIXTURES / "public-synthetic-targets.json"
 os.environ["K8S_INFERENCE_TARGET_CONTRACT_PATH"] = str(SYNTHETIC_TARGETS)
 SPEC = importlib.util.spec_from_file_location("fs2_infra_verify_plan", VERIFIER_PATH)
 assert SPEC and SPEC.loader
@@ -388,7 +389,8 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                 os.chmod(root, 0o700)
                 result = self.invoke(*self.fixture(root, mode=mode), mode=mode)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("exactly 16 disposable managed resources", result.stdout)
+                self.assertIn("exactly 16 managed resources", result.stdout)
+                self.assertIn("0 reference-data resources (disabled)", result.stdout)
                 self.assertIn("full_catalog/zero", result.stdout)
 
     def test_internal_only_exact_fourteen_address_contract_passes_all_modes(self) -> None:
@@ -401,7 +403,7 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                     *fixture, mode=mode, public_edge_mode="internal-only"
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("exactly 14 disposable managed resources", result.stdout)
+                self.assertIn("exactly 14 managed resources", result.stdout)
                 self.assertIn("edge=internal-only", result.stdout)
 
     def test_enabled_reference_data_has_exact_optional_types_and_count(self) -> None:
@@ -420,7 +422,75 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                     reference_data_mode=reference_data_mode,
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("exactly 23 disposable managed resources", result.stdout)
+                self.assertIn("exactly 23 managed resources", result.stdout)
+                self.assertIn(
+                    f"7 reference-data resources ({reference_data_mode})",
+                    result.stdout,
+                )
+
+    def test_enabled_reference_provider_plan_fixtures_match_exact_inventory(
+        self,
+    ) -> None:
+        for reference_data_mode in ("retain", "disposable"):
+            with self.subTest(mode=reference_data_mode):
+                document = json.loads(
+                    (
+                        FIXTURES
+                        / f"reference-data-{reference_data_mode}.provider-plan.json"
+                    ).read_text(encoding="utf-8")
+                )
+                expected = VERIFY.REFERENCE_DATA_RESOURCE_TYPES[reference_data_mode]
+                self.assertEqual(
+                    VERIFY.REFERENCE_DATA_RESOURCE_COUNTS[reference_data_mode], 7
+                )
+                self.assertEqual(
+                    VERIFY.validate_managed_resource_changes(
+                        document["resource_changes"], expected, ["create"]
+                    ),
+                    [],
+                )
+                self.assertEqual(
+                    {
+                        address
+                        for address in expected
+                        if address.startswith("nebius_storage_v1_bucket.")
+                    },
+                    {
+                        "nebius_storage_v1_bucket.reference_data[0]"
+                        if reference_data_mode == "retain"
+                        else "nebius_storage_v1_bucket.reference_data_disposable[0]"
+                    },
+                )
+
+    def test_enabled_reference_provider_plan_fixture_rejects_count_and_type_drift(
+        self,
+    ) -> None:
+        document = json.loads(
+            (
+                FIXTURES / "reference-data-retain.provider-plan.json"
+            ).read_text(encoding="utf-8")
+        )
+        expected = VERIFY.REFERENCE_DATA_RESOURCE_TYPES["retain"]
+        duplicate = copy.deepcopy(document["resource_changes"][0])
+        document["resource_changes"].append(duplicate)
+        document["resource_changes"][1]["type"] = "nebius_storage_v1_bucket"
+        errors = VERIFY.validate_managed_resource_changes(
+            document["resource_changes"], expected, ["create"]
+        )
+        self.assertTrue(any("count differs" in error for error in errors))
+        self.assertTrue(
+            any("duplicate managed plan addresses" in error for error in errors)
+        )
+        self.assertTrue(any("resource type" in error for error in errors))
+
+    def test_full_catalog_capacity_gate_is_23_gpus_and_7_single_gpu_nodes(
+        self,
+    ) -> None:
+        capacity = VERIFY.CAPACITY_CONTRACT["capacity_profiles"]["full_catalog"]
+        release_mode = VERIFY.ACCEPTANCE_MODES[VERIFY.DEFAULT_ACCEPTANCE_MODE]
+        self.assertEqual(capacity["gpu_1x_max_nodes"], 7)
+        self.assertEqual(capacity["maximum_gpus"], 23)
+        self.assertEqual(release_mode["maximum_gpus"], 23)
 
     def test_retained_reference_data_rejects_full_destroy_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

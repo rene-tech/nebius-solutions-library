@@ -250,6 +250,10 @@ run "enabled_reference_data_retained_provider_fixture" {
     target = [
       nebius_compute_v1_filesystem.reference_data,
       nebius_compute_v1_filesystem.reference_data_disposable,
+      nebius_iam_v1_service_account.reference_data,
+      nebius_iam_v1_group.reference_data_writers,
+      nebius_iam_v1_group_membership.reference_data_writer,
+      nebius_iam_v2_access_key.reference_data,
       nebius_storage_v1_bucket.reference_data,
       nebius_storage_v1_bucket.reference_data_disposable,
       nebius_mk8s_v1_node_group.reference_data,
@@ -282,6 +286,10 @@ run "enabled_reference_data_retained_provider_fixture" {
     condition = (
       length(nebius_compute_v1_filesystem.reference_data) == 1 &&
       length(nebius_compute_v1_filesystem.reference_data_disposable) == 0 &&
+      length(nebius_iam_v1_service_account.reference_data) == 1 &&
+      length(nebius_iam_v1_group.reference_data_writers) == 1 &&
+      length(nebius_iam_v1_group_membership.reference_data_writer) == 1 &&
+      length(nebius_iam_v2_access_key.reference_data) == 1 &&
       length(nebius_storage_v1_bucket.reference_data) == 1 &&
       length(nebius_storage_v1_bucket.reference_data_disposable) == 0 &&
       length(nebius_mk8s_v1_node_group.reference_data) == 1
@@ -297,6 +305,10 @@ run "fresh_empty_reference_storage_apply_acceptance" {
     target = [
       nebius_compute_v1_filesystem.reference_data_disposable,
       nebius_compute_v1_filesystem.reference_data,
+      nebius_iam_v1_service_account.reference_data,
+      nebius_iam_v1_group.reference_data_writers,
+      nebius_iam_v1_group_membership.reference_data_writer,
+      nebius_iam_v2_access_key.reference_data,
       nebius_storage_v1_bucket.reference_data_disposable,
       nebius_storage_v1_bucket.reference_data,
       nebius_mk8s_v1_node_group.reference_data,
@@ -329,6 +341,10 @@ run "fresh_empty_reference_storage_apply_acceptance" {
     condition = (
       length(nebius_compute_v1_filesystem.reference_data) == 0 &&
       length(nebius_compute_v1_filesystem.reference_data_disposable) == 1 &&
+      length(nebius_iam_v1_service_account.reference_data) == 1 &&
+      length(nebius_iam_v1_group.reference_data_writers) == 1 &&
+      length(nebius_iam_v1_group_membership.reference_data_writer) == 1 &&
+      length(nebius_iam_v2_access_key.reference_data) == 1 &&
       length(nebius_storage_v1_bucket.reference_data) == 0 &&
       length(nebius_storage_v1_bucket.reference_data_disposable) == 1 &&
       length(nebius_mk8s_v1_node_group.reference_data) == 1

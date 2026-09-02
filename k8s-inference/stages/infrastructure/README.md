@@ -16,7 +16,11 @@ run-owned resources:
 - the node-pull service account and narrowly scoped, project-local
   registry-reader groups;
 - a cluster-regional runtime artifact mirror, shared model-cache filesystem, and worker security
-  group; and
+  group;
+- when enabled, exactly seven reference-data resources: one lifecycle-selected
+  filesystem, one lifecycle-selected versioned bucket, a writer service account,
+  writer group and membership, a MysteryBox-backed access key, and a dedicated
+  tainted regular-CPU node group; and
 - an optional public IPv4 allocation when public edge mode is selected.
 
 It does not raise quotas, change service limits, or adopt resources from
@@ -96,6 +100,16 @@ cloud resources. Use a new, protected run root for each deployment and keep it
 for the entire `plan`/`apply`/`status`/`destroy` lifecycle. Terraform state can
 contain provider and resource data even when output values are marked
 sensitive.
+
+The acceptance verifiers fail closed on the exact managed-resource address,
+Terraform type, action, and count for disabled, retained, and disposable
+reference-data modes. `tests/verify_state.py` accepts either `terraform state
+list` text or provider state JSON from `terraform show -json`; JSON is preferred
+because it verifies the provider-reported resource types rather than inferring
+them from addresses. Sanitized enabled-mode plan/state inventories live in
+`tests/fixtures/reference-data-*.provider-{plan,state}.json`, and
+`tests/gpu_contract.tftest.hcl` exercises the same seven-resource graph through
+the mocked Nebius provider, including an empty disposable apply/teardown.
 
 ## Lifecycle
 

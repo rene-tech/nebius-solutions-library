@@ -13,13 +13,19 @@ from verify_plan import (  # noqa: E402
 )
 from verify_state import (  # noqa: E402
     ALLOWED_DATA_ADDRESSES,
+    ALLOWED_DATA_RESOURCE_TYPES,
     BASE_REQUIRED_MANAGED_ADDRESSES,
     PUBLIC_EDGE_MANAGED_ADDRESSES,
     REFERENCE_DATA_MANAGED_ADDRESSES,
+    REFERENCE_DATA_MANAGED_RESOURCE_COUNTS,
     REFERENCE_DATA_MANAGED_RESOURCE_TYPES,
     REQUIRED_MANAGED_ADDRESSES,
+    load_state_resources,
     validate_addresses,
+    validate_resources,
 )
+
+FIXTURES = TESTS / "fixtures"
 
 
 class TerraformStateContractTests(unittest.TestCase):
@@ -47,7 +53,7 @@ class TerraformStateContractTests(unittest.TestCase):
         addresses.add("nebius_mk8s_v1_node_group.unreviewed")
         errors = validate_addresses(sorted(addresses), "create")
         self.assertTrue(
-            any("managed state address set differs" in error for error in errors)
+            any("state address set differs" in error for error in errors)
         )
 
     def test_destroy_accepts_empty_state(self) -> None:
@@ -56,18 +62,13 @@ class TerraformStateContractTests(unittest.TestCase):
     def test_destroy_rejects_data_or_managed_state(self) -> None:
         data_errors = validate_addresses(sorted(ALLOWED_DATA_ADDRESSES), "destroy")
         self.assertTrue(
-            any(
-                "data-source state address set differs" in error
-                for error in data_errors
-            )
+            any("state address set differs" in error for error in data_errors)
         )
 
         addresses = {"nebius_mk8s_v1_cluster.validation"}
         managed_errors = validate_addresses(sorted(addresses), "destroy")
         self.assertTrue(
-            any(
-                "managed state address set differs" in error for error in managed_errors
-            )
+            any("state address set differs" in error for error in managed_errors)
         )
 
     def test_duplicate_address_is_rejected(self) -> None:
@@ -96,6 +97,62 @@ class TerraformStateContractTests(unittest.TestCase):
                 [],
             )
             self.assertEqual(len(addresses), 26)
+            self.assertEqual(
+                REFERENCE_DATA_MANAGED_RESOURCE_COUNTS[reference_data_mode], 7
+            )
+
+    def test_enabled_reference_provider_state_fixtures_match_exact_types(
+        self,
+    ) -> None:
+        baseline = [
+            {
+                "address": address,
+                "mode": "managed",
+                "type": address.split(".", maxsplit=1)[0],
+            }
+            for address in sorted(REQUIRED_MANAGED_ADDRESSES)
+        ] + [
+            {"address": address, "mode": "data", "type": resource_type}
+            for address, resource_type in sorted(ALLOWED_DATA_RESOURCE_TYPES.items())
+        ]
+        for reference_data_mode in ("retain", "disposable"):
+            with self.subTest(mode=reference_data_mode):
+                provider_resources = load_state_resources(
+                    FIXTURES
+                    / f"reference-data-{reference_data_mode}.provider-state.json"
+                )
+                self.assertEqual(len(provider_resources), 7)
+                self.assertEqual(
+                    {
+                        resource["address"]: resource["type"]
+                        for resource in provider_resources
+                    },
+                    REFERENCE_DATA_MANAGED_RESOURCE_TYPES[reference_data_mode],
+                )
+                self.assertEqual(
+                    validate_resources(
+                        baseline + provider_resources,
+                        "create",
+                        reference_data_mode=reference_data_mode,
+                    ),
+                    [],
+                )
+
+    def test_provider_state_fixture_rejects_type_and_count_drift(self) -> None:
+        resources = load_state_resources(
+            FIXTURES / "reference-data-disposable.provider-state.json"
+        )
+        resources[0]["type"] = "nebius_storage_v1_bucket"
+        resources.append(dict(resources[1]))
+        errors = validate_resources(
+            resources,
+            "create",
+            edge_mode="internal-only",
+            reference_data_mode="disposable",
+        )
+        self.assertTrue(any("count differs" in error for error in errors))
+        self.assertTrue(any("duplicate state addresses" in error for error in errors))
+        self.assertTrue(any("resource type" in error for error in errors))
 
     def test_retained_production_state_is_truthful_and_not_destroyed(self) -> None:
         addresses = sorted(

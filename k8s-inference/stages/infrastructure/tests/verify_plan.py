@@ -9,6 +9,7 @@ import json
 import os
 import re
 import stat
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -101,6 +102,10 @@ REFERENCE_DATA_RESOURCE_TYPES = {
         "nebius_compute_v1_filesystem.reference_data_disposable[0]": "nebius_compute_v1_filesystem",
         "nebius_storage_v1_bucket.reference_data_disposable[0]": "nebius_storage_v1_bucket",
     },
+}
+REFERENCE_DATA_RESOURCE_COUNTS = {
+    mode: len(resource_types)
+    for mode, resource_types in REFERENCE_DATA_RESOURCE_TYPES.items()
 }
 REQUIRED_ADDRESSES = BASE_REQUIRED_ADDRESSES | PUBLIC_EDGE_ADDRESSES
 EDGE_MODES = {
@@ -330,6 +335,76 @@ def nested(value: dict[str, Any], *path: str) -> Any:
             return None
         current = current[key]
     return current
+
+
+def expected_managed_resource_types(
+    acceptance_mode: str,
+    public_edge_mode: str,
+    reference_data_mode: str,
+) -> dict[str, str]:
+    """Return the exact managed-resource address/type contract for one plan."""
+    return {
+        **{
+            address: BASE_RESOURCE_TYPES[address]
+            for address in ACCEPTANCE_MODES[acceptance_mode]["required_addresses"]
+        },
+        **(
+            PUBLIC_EDGE_RESOURCE_TYPES
+            if public_edge_mode == "public"
+            else {}
+        ),
+        **REFERENCE_DATA_RESOURCE_TYPES[reference_data_mode],
+    }
+
+
+def validate_managed_resource_changes(
+    resource_changes: list[dict[str, Any]],
+    expected_resource_types: dict[str, str],
+    expected_actions: list[str],
+) -> list[str]:
+    """Validate exact address, type, count, and action for provider plan records."""
+    managed = [
+        change
+        for change in resource_changes
+        if change.get("mode", "managed") == "managed"
+    ]
+    addresses = [change.get("address", "<unknown>") for change in managed]
+    counts = Counter(addresses)
+    actual_addresses = set(addresses)
+    expected_addresses = set(expected_resource_types)
+    errors: list[str] = []
+
+    if len(managed) != len(expected_resource_types):
+        errors.append(
+            "managed resource count differs from contract: "
+            f"actual={len(managed)} expected={len(expected_resource_types)}"
+        )
+    duplicates = sorted(address for address, count in counts.items() if count > 1)
+    if duplicates:
+        errors.append(f"duplicate managed plan addresses: {duplicates}")
+    if actual_addresses != expected_addresses:
+        errors.append(
+            "managed address set differs from contract: "
+            f"missing={sorted(expected_addresses - actual_addresses)} "
+            f"extra={sorted(actual_addresses - expected_addresses)}"
+        )
+
+    for change in managed:
+        address = change.get("address", "<unknown>")
+        resource_type = change.get("type")
+        actions = change.get("change", {}).get("actions", [])
+        if resource_type not in ALLOWED_TYPES:
+            errors.append(f"{address}: resource type {resource_type!r} is not allowed")
+        if expected_resource_types.get(address) != resource_type:
+            errors.append(
+                f"{address}: resource type {resource_type!r}, expected "
+                f"{expected_resource_types.get(address)!r}"
+            )
+        if actions != expected_actions:
+            errors.append(
+                f"{address}: actions {actions!r}, expected {expected_actions!r}"
+            )
+    return errors
 
 
 def validate_plan_variables(
@@ -741,6 +816,16 @@ def main() -> int:
         if change.get("mode", "managed") == "managed"
     ]
     managed_by_address = {change.get("address", ""): change for change in managed}
+    expected_resource_types = expected_managed_resource_types(
+        args.acceptance_mode,
+        args.public_edge_mode,
+        args.reference_data_mode,
+    )
+    errors += validate_managed_resource_changes(
+        document.get("resource_changes", []),
+        expected_resource_types,
+        expected_actions,
+    )
     if args.mode == "destroy" and args.reference_data_mode == "retain":
         errors.append(
             "retained reference data has no full-destroy plan; export IDs and explicitly adopt or migrate state"
@@ -767,17 +852,6 @@ def main() -> int:
     for forbidden_id in DENYLISTED_IDS | set(args.forbidden_id):
         if forbidden_id and any(forbidden_id in value for value in strings(document)):
             errors.append("plan document references a denylisted resource ID")
-
-    required_addresses = set(ACCEPTANCE_MODES[args.acceptance_mode]["required_addresses"])
-    required_addresses.update(EDGE_MODES[args.public_edge_mode])
-    required_addresses.update(REFERENCE_DATA_RESOURCE_TYPES[args.reference_data_mode])
-    addresses = set(managed_by_address)
-    if addresses != required_addresses:
-        errors.append(
-            "managed address set differs from disposable contract: "
-            f"missing={sorted(required_addresses - addresses)} "
-            f"extra={sorted(addresses - required_addresses)}"
-        )
 
     side = "after" if args.mode in {"create", "noop"} else "before"
     if contract is not None:
@@ -814,28 +888,6 @@ def main() -> int:
     for change in managed:
         address = change.get("address", "<unknown>")
         resource_type = change.get("type")
-        expected_resource_types = {
-            **BASE_RESOURCE_TYPES,
-            **(
-                PUBLIC_EDGE_RESOURCE_TYPES
-                if args.public_edge_mode == "public"
-                else {}
-            ),
-            **REFERENCE_DATA_RESOURCE_TYPES[args.reference_data_mode],
-        }
-        actions = change.get("change", {}).get("actions", [])
-        if resource_type not in ALLOWED_TYPES:
-            errors.append(f"{address}: resource type {resource_type!r} is not allowed")
-        if expected_resource_types.get(address) != resource_type:
-            errors.append(
-                f"{address}: resource type {resource_type!r}, expected "
-                f"{expected_resource_types.get(address)!r}"
-            )
-        if actions != expected_actions:
-            errors.append(
-                f"{address}: actions {actions!r}, expected {expected_actions!r}"
-            )
-
         values = change.get("change", {}).get(side) or {}
         if resource_type == "terraform_data":
             continue
@@ -878,8 +930,9 @@ def main() -> int:
             print(f"ERROR: {error}")
         return 1
     print(
-        f"PASS: {args.mode} plan contains exactly {len(managed)} disposable "
-        "managed resources and the exact "
+        f"PASS: {args.mode} plan contains exactly {len(managed)} managed "
+        f"resources, including {REFERENCE_DATA_RESOURCE_COUNTS[args.reference_data_mode]} "
+        f"reference-data resources ({args.reference_data_mode}), and the exact "
         f"{ACCEPTANCE_MODES[args.acceptance_mode]['capacity_profile']}/"
         f"{ACCEPTANCE_MODES[args.acceptance_mode]['gpu_floor_profile']} "
         f"infrastructure contract ({args.acceptance_mode}); edge={args.public_edge_mode}"
