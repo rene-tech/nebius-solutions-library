@@ -117,9 +117,11 @@ an immutable tree.
 The default dedicated filesystem and object-store cap are both 2 TiB. Terraform
 rejects less than 1,611 GiB: the official 630,000,000,000-byte AlphaFold3
 expanded estimate plus 1 TiB of headroom, rounded up to GiB. Both sizes remain
-tfvars parameters. The filesystem defaults to deletion protection; the bucket
-uses versioning, forced STANDARD storage and a policy that limits the staging
-identity to `reference-data/`, `inputs/` and `preprocessing/`.
+tfvars parameters. The portable lifecycle defaults to `disposable` with
+filesystem deletion protection disabled; retained storage requires an explicit
+matched `retain` plus `forbid_deletion=true` opt-in. The bucket uses versioning,
+forced STANDARD storage and a policy that limits the staging identity to
+`reference-data/`, `inputs/` and `preprocessing/`.
 
 ## Operator workflow
 
