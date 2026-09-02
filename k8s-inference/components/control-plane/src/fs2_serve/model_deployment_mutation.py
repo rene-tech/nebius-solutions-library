@@ -80,7 +80,7 @@ class ModelDeploymentDesiredWriter(Protocol):
 
 
 class HttpKubernetesDesiredWriter:
-    """Narrow SSA client for the ModelDeployment spec and identity only."""
+    """Narrow Kubernetes client for the ModelDeployment desired state only."""
 
     def __init__(
         self,
@@ -231,13 +231,20 @@ class HttpKubernetesDesiredWriter:
                 raise DesiredWriteError("Kubernetes already contains a newer desired revision")
             if current_revision == revision.revision:
                 return self._receipt(current, revision)
-            body["metadata"]["resourceVersion"] = self._metadata(current, "resourceVersion")
+            patch = {
+                "metadata": {
+                    "resourceVersion": self._metadata(current, "resourceVersion"),
+                    "labels": body["metadata"]["labels"],
+                    "annotations": body["metadata"]["annotations"],
+                },
+                "spec": body["spec"],
+            }
             await self._request(
                 "PATCH",
                 path,
-                params={"fieldManager": DESIRED_FIELD_MANAGER, "force": "false", "fieldValidation": "Strict"},
-                content_type="application/apply-patch+yaml",
-                content=json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+                params={"fieldManager": DESIRED_FIELD_MANAGER, "fieldValidation": "Strict"},
+                content_type="application/merge-patch+json",
+                content=json.dumps(patch, sort_keys=True, separators=(",", ":")).encode("utf-8"),
             )
 
         # A separate read closes the create/update race.  If another replica

@@ -490,7 +490,7 @@ async def test_runtime_material_change_requires_observed_cold_drained_revision()
 
 
 @pytest.mark.asyncio
-async def test_kubernetes_writer_uses_force_false_ssa_and_verifies_response(tmp_path: Path) -> None:
+async def test_kubernetes_writer_updates_post_owned_fields_with_merge_patch(tmp_path: Path) -> None:
     token_file = tmp_path / "token"
     token_file.write_text("t" * 32, encoding="utf-8")
     observed: list[dict[str, object]] = []
@@ -514,26 +514,41 @@ async def test_kubernetes_writer_uses_force_false_ssa_and_verifies_response(tmp_
                     **body,
                     "metadata": {
                         **body["metadata"],
+                        "labels": {
+                            **body["metadata"]["labels"],
+                            "example.test/preserved": "label",
+                        },
+                        "annotations": {
+                            **body["metadata"]["annotations"],
+                            "example.test/preserved": "annotation",
+                        },
                         "uid": "uid-1",
                         "resourceVersion": "7",
                         "generation": 1,
+                        "managedFields": [
+                            {
+                                "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+                                "fieldsType": "FieldsV1",
+                                "manager": "fs2-admin-model-desired",
+                                "operation": "Update",
+                            }
+                        ],
                     },
                 }
             )
             return httpx.Response(201, json=live)
         assert request.method == "PATCH"
+        if request.headers.get("content-type") == "application/apply-patch+yaml":
+            return httpx.Response(409, json={"message": "apply conflicts with fields created by Update"})
+        assert request.headers.get("content-type") == "application/merge-patch+json"
+        assert set(body) == {"metadata", "spec"}
+        assert set(body["metadata"]) == {"annotations", "labels", "resourceVersion"}
         assert body["metadata"]["resourceVersion"] == live["metadata"]["resourceVersion"]
-        live.update(
-            {
-                **body,
-                "metadata": {
-                    **body["metadata"],
-                    "uid": "uid-1",
-                    "resourceVersion": "8",
-                    "generation": 2,
-                },
-            }
-        )
+        live["spec"] = body["spec"]
+        live["metadata"]["labels"].update(body["metadata"]["labels"])
+        live["metadata"]["annotations"].update(body["metadata"]["annotations"])
+        live["metadata"]["resourceVersion"] = "8"
+        live["metadata"]["generation"] = 2
         return httpx.Response(200, json=live)
 
     client = httpx.AsyncClient(base_url="https://kubernetes.test", transport=httpx.MockTransport(handler))
@@ -582,7 +597,11 @@ async def test_kubernetes_writer_uses_force_false_ssa_and_verifies_response(tmp_
     assert create["content_type"] == "application/json"
     update = observed[4]
     assert "fieldManager=fs2-admin-model-desired" in str(update["url"])
-    assert "force=false" in str(update["url"])
-    assert update["content_type"] == "application/apply-patch+yaml"
+    assert "fieldValidation=Strict" in str(update["url"])
+    assert "force=" not in str(update["url"])
+    assert update["content_type"] == "application/merge-patch+json"
     assert update["body"]["metadata"]["resourceVersion"] == "7"
     assert live["metadata"]["annotations"]["inference.fs2.nebius.ai/desired-revision"] == "2"
+    assert live["metadata"]["labels"]["example.test/preserved"] == "label"
+    assert live["metadata"]["annotations"]["example.test/preserved"] == "annotation"
+    assert live["metadata"]["managedFields"][0]["operation"] == "Update"
