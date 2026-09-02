@@ -25,3 +25,10 @@ staging and public MSA egress are separate explicit opt-ins; enabling one does
 not enable the other. When the optional status service is enabled, ingress is
 limited to `status_ingress_namespaces` (by default `fs2-observability` and
 `fs2-system`); it has no public ingress.
+
+The status Deployment deliberately waits for normal Kubernetes rollout, but
+its pod readiness probe uses `/healthz`, which means “the HTTP status service
+can answer.” It never waits for the multi-hour dataset download. Dataset state
+is independently reported by `/readyz`, `/v1/status` and the
+`fs2_reference_data_dataset_ready` metric; on a fresh empty filesystem those
+surfaces truthfully report not ready while the Deployment rollout succeeds.

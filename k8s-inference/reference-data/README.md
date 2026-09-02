@@ -236,13 +236,17 @@ marker uploads last; the target bucket must remain versioned.
 
 The optional status service has these read-only endpoints:
 
+- `/healthz` — the HTTP service is running; Kubernetes readiness and liveness
+  use only this endpoint, including on a fresh empty filesystem.
 - `/readyz` — at least one published reference-data revision is ready.
-- `/v1/status` — revision, manifest/tree digests, bytes and file count.
+- `/v1/status` — aggregate dataset readiness/counts plus revision,
+  manifest/tree digests, bytes and file count. An empty filesystem is a healthy
+  service with `ready: false` and an empty `items` list.
 - `/v1/preprocessing` — content-free tenant/workload observations with backend,
   privacy mode, success/error, cache hit and latency.
-- `/metrics` — bounded bundle readiness/staging gauges and preprocessing
-  observation, duration and cache-hit aggregates. Raw sequence content is never
-  stored or labeled.
+- `/metrics` — an always-present aggregate dataset-readiness gauge, bounded
+  per-bundle readiness/staging gauges and preprocessing observation, duration
+  and cache-hit aggregates. Raw sequence content is never stored or labeled.
 
 Status JSON and metrics expose exact revision readiness, staging duration/bytes,
 content-free preprocessing latency/errors and cache hits. The official Job

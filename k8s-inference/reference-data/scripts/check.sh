@@ -27,6 +27,9 @@ python3 reference-data/render_job.py preprocess \
 terraform fmt -check -recursive reference-data/terraform
 mkdir -p "${check_directory}/reference-data/terraform"
 cp reference-data/terraform/*.tf "${check_directory}/reference-data/terraform/"
+mkdir -p "${check_directory}/reference-data/terraform/tests"
+cp reference-data/terraform/tests/*.tftest.hcl \
+  "${check_directory}/reference-data/terraform/tests/"
 cp reference-data/reference_data.py reference-data/source-catalog.json \
   reference-data/model-requirements.json "${check_directory}/reference-data/"
 TF_DATA_DIR="${check_directory}/terraform-data" terraform \
@@ -34,3 +37,6 @@ TF_DATA_DIR="${check_directory}/terraform-data" terraform \
   -backend=false -input=false >/dev/null
 TF_DATA_DIR="${check_directory}/terraform-data" terraform \
   -chdir="${check_directory}/reference-data/terraform" validate
+TF_DATA_DIR="${check_directory}/terraform-data" terraform \
+  -chdir="${check_directory}/reference-data/terraform" test \
+  -test-directory=tests

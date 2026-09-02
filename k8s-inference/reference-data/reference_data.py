@@ -1244,6 +1244,53 @@ def _preprocess_metrics(root: Path) -> bytes:
     return ("\n".join(lines) + "\n").encode()
 
 
+def _dataset_status(root: Path) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    invalid_items = 0
+    scan_errors = 0
+    try:
+        paths = sorted((root / "status").glob("*.json"))
+    except OSError:
+        paths = []
+        scan_errors = 1
+    for path in paths:
+        try:
+            document = load_json(path)
+        except (OSError, json.JSONDecodeError):
+            invalid_items += 1
+            continue
+        if not isinstance(document, dict):
+            invalid_items += 1
+            continue
+        items.append(document)
+    ready_items = sum(item.get("ready") is True for item in items)
+    return {
+        "ready": ready_items > 0 and scan_errors == 0,
+        "ready_items": ready_items,
+        "not_ready_items": len(items) - ready_items,
+        "invalid_items": invalid_items,
+        "scan_errors": scan_errors,
+        "items": items,
+    }
+
+
+def _dataset_status_metrics(status: Mapping[str, Any]) -> bytes:
+    lines = [
+        "# HELP fs2_reference_data_dataset_ready Whether at least one immutable dataset revision is ready.",
+        "# TYPE fs2_reference_data_dataset_ready gauge",
+        f"fs2_reference_data_dataset_ready {int(status['ready'])}",
+        "# HELP fs2_reference_data_dataset_status_items Dataset status documents by validation state.",
+        "# TYPE fs2_reference_data_dataset_status_items gauge",
+        f'fs2_reference_data_dataset_status_items{{state="ready"}} {status["ready_items"]}',
+        f'fs2_reference_data_dataset_status_items{{state="not_ready"}} {status["not_ready_items"]}',
+        f'fs2_reference_data_dataset_status_items{{state="invalid"}} {status["invalid_items"]}',
+        "# HELP fs2_reference_data_dataset_scan_errors Errors while scanning the dataset status directory.",
+        "# TYPE fs2_reference_data_dataset_scan_errors gauge",
+        f"fs2_reference_data_dataset_scan_errors {status['scan_errors']}",
+    ]
+    return ("\n".join(lines) + "\n").encode()
+
+
 class StatusHandler(http.server.BaseHTTPRequestHandler):
     root: Path
 
@@ -1252,19 +1299,20 @@ class StatusHandler(http.server.BaseHTTPRequestHandler):
             self._send(200, b"ok\n", "text/plain; charset=utf-8")
             return
         if self.path == "/readyz":
-            ready = any((self.root / "status").glob("*.json"))
+            ready = _dataset_status(self.root)["ready"]
             self._send(200 if ready else 503, b"ready\n" if ready else b"not ready\n", "text/plain; charset=utf-8")
             return
         if self.path == "/metrics":
             metrics = b"".join(path.read_bytes() for path in sorted((self.root / "telemetry").glob("*.prom")))
             metrics += _preprocess_metrics(self.root)
+            metrics += _dataset_status_metrics(_dataset_status(self.root))
             self._send(200, metrics, "text/plain; version=0.0.4; charset=utf-8")
             return
         if self.path == "/v1/status":
-            statuses = [load_json(path) for path in sorted((self.root / "status").glob("*.json"))]
+            status = _dataset_status(self.root)
             body = {
                 "schema": "fs2-serve.nebius.ai/reference-data-status-list/v1",
-                "items": statuses,
+                **status,
             }
             self._send(
                 200,

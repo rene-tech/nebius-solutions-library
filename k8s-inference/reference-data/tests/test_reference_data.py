@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import http.client
+import http.server
 import io
 import json
 import os
@@ -10,6 +12,7 @@ from pathlib import Path
 import sys
 import tarfile
 import tempfile
+import threading
 import unittest
 import zipfile
 
@@ -151,6 +154,79 @@ class ReferenceDataContractTests(unittest.TestCase):
             reference_data.load_json(REFERENCE_DATA / "published-manifest.schema.json"),
             format_checker=FormatChecker(),
         ).validate(verified)
+
+    def test_fresh_empty_volume_status_service_is_ready_before_dataset(self) -> None:
+        root = self.work / "empty-reference-volume"
+        root.mkdir()
+        handler = type(
+            "EmptyVolumeStatusHandler",
+            (reference_data.StatusHandler,),
+            {"root": root},
+        )
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        def get(path: str) -> tuple[int, bytes]:
+            connection = http.client.HTTPConnection(*server.server_address, timeout=5)
+            try:
+                connection.request("GET", path)
+                response = connection.getresponse()
+                return response.status, response.read()
+            finally:
+                connection.close()
+
+        try:
+            self.assertEqual((200, b"ok\n"), get("/healthz"))
+            self.assertEqual((503, b"not ready\n"), get("/readyz"))
+            status_code, body = get("/v1/status")
+            self.assertEqual(200, status_code)
+            status = json.loads(body)
+            self.assertEqual(
+                {
+                    "ready": False,
+                    "ready_items": 0,
+                    "not_ready_items": 0,
+                    "invalid_items": 0,
+                    "scan_errors": 0,
+                    "items": [],
+                },
+                {
+                    key: status[key]
+                    for key in (
+                        "ready",
+                        "ready_items",
+                        "not_ready_items",
+                        "invalid_items",
+                        "scan_errors",
+                        "items",
+                    )
+                },
+            )
+            metrics_status, metrics = get("/metrics")
+            self.assertEqual(200, metrics_status)
+            self.assertIn(b"fs2_reference_data_dataset_ready 0\n", metrics)
+            self.assertIn(
+                b'fs2_reference_data_dataset_status_items{state="ready"} 0\n',
+                metrics,
+            )
+
+            (root / "status").mkdir()
+            reference_data.atomic_json(
+                root / "status" / "fixture.json",
+                {"bundle_id": "fixture", "revision": "v1", "ready": True},
+            )
+            self.assertEqual((200, b"ready\n"), get("/readyz"))
+            _metrics_status, metrics = get("/metrics")
+            self.assertIn(b"fs2_reference_data_dataset_ready 1\n", metrics)
+            self.assertIn(
+                b'fs2_reference_data_dataset_status_items{state="ready"} 1\n',
+                metrics,
+            )
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
 
     def test_checksum_failure_never_publishes_a_dataset(self) -> None:
         source = self.work / "source.txt"

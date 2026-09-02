@@ -575,6 +575,10 @@ resource "kubernetes_network_policy_v1" "public_msa_opt_in" {
 
 resource "kubernetes_deployment_v1" "status" {
   count = var.status.enabled ? 1 : 0
+  # The provider may wait for rollout, so pod readiness must mean that the
+  # status HTTP service can answer requests. Dataset publication remains a
+  # separate /readyz, /v1/status and Prometheus contract.
+  wait_for_rollout = true
   metadata {
     name      = "fs2-reference-data-status"
     namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
