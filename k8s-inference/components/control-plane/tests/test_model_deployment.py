@@ -60,6 +60,10 @@ from fs2_serve.model_deployment_preview import (
     ModelDeploymentPreviewProposal,
     ModelDeploymentPreviewService,
 )
+from fs2_serve.model_deployment_records import (
+    ModelDeploymentObservedStatus,
+    ModelDeploymentRuntimePhase,
+)
 
 CONTROL_ROOT = Path(__file__).resolve().parents[1]
 SOLUTION_ROOT = CONTROL_ROOT.parents[1]
@@ -320,6 +324,10 @@ def test_crd_is_structural_versioned_and_has_explicit_terraform_upgrade_owner() 
     assert "an enabled model must permit at least one replica" in rules
     status_properties = schema["properties"]["status"]["properties"]
     assert status_properties["eligiblePoolRefs"]["maxItems"] == 32
+    # Kubernetes rejects uniqueItems on CRD arrays because validating it has
+    # quadratic runtime cost.  The controller's bounded Pydantic models retain
+    # the uniqueness invariant instead.
+    assert "uniqueItems" not in status_properties["eligiblePoolRefs"]
     assert status_properties["placements"]["x-kubernetes-list-map-keys"] == ["deploymentName"]
 
     terraform = (WORKLOADS / "model_deployment_api.tf").read_text()
@@ -327,6 +335,24 @@ def test_crd_is_structural_versioned_and_has_explicit_terraform_upgrade_owner() 
     assert 'resource "kubernetes_manifest" "model_deployment_crd"' in terraform
     assert 'type   = "Established"' in terraform
     assert "kubernetes_manifest.model_deployment_crd" in control_plane
+
+
+def test_pool_reference_uniqueness_is_enforced_outside_the_crd_schema() -> None:
+    with pytest.raises(ValidationError, match="placement poolRefs must be unique"):
+        PlacementSpec(
+            pool_refs=["reserved-h100", "reserved-h100"],
+            accelerators_per_replica=1,
+            topology_policy=TopologyPolicy.SINGLE_NODE,
+        )
+
+    with pytest.raises(ValidationError, match="eligible pool references must be unique"):
+        ModelDeploymentObservedStatus(
+            observed_generation=1,
+            phase=ModelDeploymentRuntimePhase.COLD,
+            spec_digest=digest("a"),
+            eligible_pool_refs=["reserved-h100", "reserved-h100"],
+            last_reconcile_time=datetime.now(UTC),
+        )
 
 
 def test_spec_digest_normalizes_kubernetes_set_and_map_list_semantics() -> None:
