@@ -34,16 +34,27 @@ PUBLIC_EDGE_MANAGED_ADDRESSES = frozenset(
 
 # Opt-in durable result storage. Its bucket deliberately survives a teardown of
 # the disposable cluster, so it is verified as its own selectable address set.
-SCIENTIFIC_ARTIFACT_MANAGED_ADDRESSES = frozenset(
+SCIENTIFIC_ARTIFACT_SHARED_ADDRESSES = frozenset(
     {
         "terraform_data.scientific_artifacts_contract[0]",
-        "nebius_storage_v1_bucket.scientific_artifacts[0]",
         "nebius_iam_v1_service_account.scientific_artifacts_writer[0]",
         "nebius_iam_v1_group.scientific_artifacts_writers[0]",
         "nebius_iam_v1_group_membership.scientific_artifacts_writer[0]",
         "nebius_iam_v1_access_permit.scientific_artifacts_writer[0]",
         "nebius_iam_v2_access_key.scientific_artifacts[0]",
     }
+)
+
+# Exactly one bucket resource exists, chosen by the retention flag, because
+# Terraform's prevent_destroy cannot be driven by an expression.
+SCIENTIFIC_ARTIFACT_BUCKETS = {
+    "retained": frozenset({"nebius_storage_v1_bucket.scientific_artifacts_retained[0]"}),
+    "disposable": frozenset({"nebius_storage_v1_bucket.scientific_artifacts_disposable[0]"}),
+    "bound": frozenset(),
+}
+
+SCIENTIFIC_ARTIFACT_MANAGED_ADDRESSES = (
+    SCIENTIFIC_ARTIFACT_SHARED_ADDRESSES | SCIENTIFIC_ARTIFACT_BUCKETS["retained"]
 )
 
 REQUIRED_MANAGED_ADDRESSES = (
@@ -60,14 +71,20 @@ ALLOWED_DATA_ADDRESSES = frozenset(
 
 
 def selected_managed_addresses(
-    edge_mode: str, scientific_artifacts: bool = False
+    edge_mode: str, scientific_artifacts: str = "none"
 ) -> frozenset[str]:
     """Return the exact managed address set the selected options require."""
 
+    artifacts = frozenset()
+    if scientific_artifacts != "none":
+        artifacts = (
+            SCIENTIFIC_ARTIFACT_SHARED_ADDRESSES
+            | SCIENTIFIC_ARTIFACT_BUCKETS[scientific_artifacts]
+        )
     return (
         BASE_REQUIRED_MANAGED_ADDRESSES
         | (PUBLIC_EDGE_MANAGED_ADDRESSES if edge_mode == "public" else frozenset())
-        | (SCIENTIFIC_ARTIFACT_MANAGED_ADDRESSES if scientific_artifacts else frozenset())
+        | artifacts
     )
 
 
@@ -75,7 +92,7 @@ def validate_addresses(
     lines: list[str],
     mode: str,
     edge_mode: str = "public",
-    scientific_artifacts: bool = False,
+    scientific_artifacts: str = "none",
 ) -> list[str]:
     addresses = [line.strip() for line in lines if line.strip()]
     counts = Counter(addresses)
@@ -116,8 +133,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--scientific-artifacts",
-        action="store_true",
-        help="expect the opt-in durable scientific result storage addresses",
+        choices=("none", "retained", "disposable", "bound"),
+        default="none",
+        help="expect the opt-in scientific result storage addresses for this retention mode",
     )
     return parser.parse_args()
 

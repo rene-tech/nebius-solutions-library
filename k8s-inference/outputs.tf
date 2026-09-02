@@ -66,9 +66,15 @@ output "effective_configuration" {
       endpoint = local.scientific_artifacts_workloads.endpoint
       # A configured store is not a reachable one: without an egress allowlist
       # the control plane can presign handles but cannot verify stored objects.
-      egress_configured  = length(local.scientific_artifacts_workloads.egress_cidrs) > 0
-      ready              = local.scientific_artifacts_workloads.enabled && length(local.scientific_artifacts_workloads.egress_cidrs) > 0
-      creates_bucket     = local.scientific_artifacts_infrastructure.create_bucket
+      egress_configured = length(local.scientific_artifacts_workloads.egress_cidrs) > 0
+      ready             = local.scientific_artifacts_workloads.enabled && length(local.scientific_artifacts_workloads.egress_cidrs) > 0
+      creates_bucket    = local.scientific_artifacts_infrastructure.create_bucket
+      # Terraform refuses to destroy a retained bucket; it is not a provider
+      # guarantee, and a bucket removed outside Terraform is still gone.
+      bucket_lifecycle = (
+        !local.scientific_artifacts_infrastructure.create_bucket ? "bound" :
+        local.scientific_artifacts_infrastructure.forbid_deletion ? "retained" : "disposable"
+      )
       retention_days     = local.scientific_artifacts_workloads.retention_seconds / 86400
       handle_ttl_seconds = local.scientific_artifacts_workloads.handle_ttl_seconds
     }

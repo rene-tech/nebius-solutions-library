@@ -73,7 +73,16 @@ class DisposableTerraformContractTests(unittest.TestCase):
             'forbid_deletion  = local.effective_shared_cache.forbid_deletion',
             self.terraform,
         )
-        self.assertNotIn("prevent_destroy", self.terraform)
+        # The cache and the cluster stay deletable. The one exception is the
+        # opt-in retained results bucket, which exists precisely so a teardown
+        # cannot silently delete tenant results; it is asserted separately in
+        # ScientificArtifactStoreContractTests.
+        deletable = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted(ROOT.glob("*.tf"))
+            if path.name != "scientific_artifacts.tf"
+        )
+        self.assertNotIn("prevent_destroy", deletable)
 
     def test_current_gpu_resources_derive_from_typed_b300_pool_profile(self) -> None:
         cluster = (ROOT / "cluster.tf").read_text(encoding="utf-8")
@@ -598,7 +607,42 @@ class ScientificArtifactStoreContractTests(unittest.TestCase):
         # The model cache is explicitly deletable; results must not inherit that.
         self.assertIn("forbid_deletion      = optional(bool, true)", self.terraform)
         self.assertIn('versioning_policy    = optional(string, "ENABLED")', self.terraform)
-        self.assertIn("ignore_changes = [name]", self.terraform)
+
+    def test_the_retention_flag_reaches_the_bucket_lifecycle(self) -> None:
+        """The flag must change the resource, not only a receipt or a document.
+
+        The object-storage provider exposes no deletion-protection field and
+        prevent_destroy takes a literal, so the two semantics are two mutually
+        exclusive resources.
+        """
+
+        artifacts = (ROOT / "scientific_artifacts.tf").read_text(encoding="utf-8")
+        retained = artifacts.index('resource "nebius_storage_v1_bucket" "scientific_artifacts_retained"')
+        disposable = artifacts.index('resource "nebius_storage_v1_bucket" "scientific_artifacts_disposable"')
+        self.assertLess(retained, disposable)
+
+        protected = artifacts[retained:disposable]
+        self.assertIn("count = local.scientific_artifacts_retained ? 1 : 0", protected)
+        self.assertIn("prevent_destroy = true", protected)
+        self.assertIn("ignore_changes = [name]", protected)
+
+        ephemeral = artifacts[disposable:]
+        self.assertIn("count = local.scientific_artifacts_disposable ? 1 : 0", ephemeral)
+        self.assertNotIn("prevent_destroy", ephemeral)
+
+        # The two counts are complementary, so exactly one bucket ever exists.
+        self.assertIn(
+            "scientific_artifacts_retained   = local.scientific_artifacts_created "
+            "&& var.scientific_artifacts.forbid_deletion",
+            artifacts,
+        )
+        self.assertIn(
+            "scientific_artifacts_disposable = local.scientific_artifacts_created "
+            "&& !var.scientific_artifacts.forbid_deletion",
+            artifacts,
+        )
+        # ignore_changes alone protects nothing; it must not be the only guard.
+        self.assertEqual(artifacts.count("prevent_destroy = true"), 1)
 
     def test_the_writer_identity_is_separate_and_bucket_scoped(self) -> None:
         self.assertIn(

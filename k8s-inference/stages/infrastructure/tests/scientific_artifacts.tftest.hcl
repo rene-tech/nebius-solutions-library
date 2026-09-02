@@ -84,8 +84,11 @@ run "enabled_records_one_regional_versioned_store" {
   }
 
   assert {
-    condition     = terraform_data.scientific_artifacts_contract[0].input.forbid_deletion == true
-    error_message = "Results outlive the disposable cluster, so the bucket must default to undeletable."
+    condition = (
+      terraform_data.scientific_artifacts_contract[0].input.forbid_deletion == true &&
+      terraform_data.scientific_artifacts_contract[0].input.bucket_lifecycle == "retained"
+    )
+    error_message = "Results outlive the disposable cluster, so the bucket must default to retained."
   }
 
   assert {
@@ -119,9 +122,77 @@ run "binding_an_existing_shared_plane_creates_no_second_bucket" {
     condition = (
       length(terraform_data.scientific_artifacts_contract) == 1 &&
       terraform_data.scientific_artifacts_contract[0].input.create_bucket == false &&
-      terraform_data.scientific_artifacts_contract[0].input.bind_existing_bucket == true
+      terraform_data.scientific_artifacts_contract[0].input.bind_existing_bucket == true &&
+      terraform_data.scientific_artifacts_contract[0].input.bucket_lifecycle == "bound"
     )
     error_message = "Binding a shared artifact plane must reuse its bucket rather than provisioning a duplicate."
+  }
+}
+
+# The bucket resources cannot be planned here because the stage's exact-target
+# precondition reads network data sources that Terraform's mock engine cannot
+# express. These runs therefore assert the selection locals that drive each
+# bucket's count; test_contract.py pins which resource each local guards and
+# that only the retained one carries prevent_destroy.
+run "a_retained_bucket_is_protected_from_destroy" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.scientific_artifacts_contract]
+  }
+
+  variables {
+    scientific_artifacts = {
+      enabled         = true
+      bucket_name     = "fs2-scientific-artifacts-synthetic"
+      create_bucket   = true
+      forbid_deletion = true
+      region          = "us-north1"
+    }
+  }
+
+  assert {
+    condition = (
+      local.scientific_artifacts_retained == true &&
+      local.scientific_artifacts_disposable == false
+    )
+    error_message = "forbid_deletion must select the protected bucket resource, not merely a receipt field."
+  }
+
+  assert {
+    condition     = terraform_data.scientific_artifacts_contract[0].input.bucket_lifecycle == "retained"
+    error_message = "The receipt must record the retained lifecycle it was planned with."
+  }
+}
+
+run "a_disposable_bucket_is_destroyed_with_the_run" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.scientific_artifacts_contract]
+  }
+
+  variables {
+    scientific_artifacts = {
+      enabled         = true
+      bucket_name     = "fs2-scientific-artifacts-synthetic"
+      create_bucket   = true
+      forbid_deletion = false
+      region          = "us-north1"
+    }
+  }
+
+  assert {
+    condition = (
+      local.scientific_artifacts_retained == false &&
+      local.scientific_artifacts_disposable == true
+    )
+    error_message = "forbid_deletion = false must select the deletable bucket resource."
+  }
+
+  assert {
+    condition     = terraform_data.scientific_artifacts_contract[0].input.bucket_lifecycle == "disposable"
+    error_message = "The receipt must record the deletable lifecycle it was planned with."
   }
 }
 

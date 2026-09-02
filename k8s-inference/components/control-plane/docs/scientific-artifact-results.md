@@ -140,7 +140,10 @@ gateway, because presigning is local but digest verification is not.
 The bucket is deliberately separate from the reference-data model cache. That
 cache is rebuildable from upstream and is labelled disposable with the run;
 these are tenant results under a retention contract, so the result bucket is
-versioned and undeletable and survives a cluster teardown.
+versioned and, by default, carries `prevent_destroy`. A cluster teardown
+therefore fails on that bucket rather than deleting results. That is a
+Terraform guarantee only: the object-storage API has no deletion-protection
+field, so a bucket removed outside Terraform is still gone.
 
 ## Authorization
 

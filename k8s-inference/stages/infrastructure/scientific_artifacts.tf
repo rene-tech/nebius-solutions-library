@@ -12,10 +12,19 @@ locals {
   scientific_artifacts_created = local.scientific_artifacts_enabled && var.scientific_artifacts.create_bucket
   scientific_artifacts_bound   = local.scientific_artifacts_enabled && !var.scientific_artifacts.create_bucket
 
-  scientific_artifacts_bucket_id = local.scientific_artifacts_created ? one(
-    nebius_storage_v1_bucket.scientific_artifacts[*].id
-    ) : (
-    local.scientific_artifacts_bound ? one(data.nebius_storage_v1_bucket.scientific_artifacts[*].id) : null
+  # The object-storage provider exposes no deletion-protection field, and
+  # Terraform's prevent_destroy takes a literal rather than an expression, so
+  # the two retention semantics are two mutually exclusive resources. Exactly
+  # one of them ever exists, and flipping the flag on a retained bucket is
+  # refused rather than silently converted.
+  scientific_artifacts_retained   = local.scientific_artifacts_created && var.scientific_artifacts.forbid_deletion
+  scientific_artifacts_disposable = local.scientific_artifacts_created && !var.scientific_artifacts.forbid_deletion
+
+  scientific_artifacts_bucket_id = coalesce(
+    one(nebius_storage_v1_bucket.scientific_artifacts_retained[*].id),
+    one(nebius_storage_v1_bucket.scientific_artifacts_disposable[*].id),
+    one(data.nebius_storage_v1_bucket.scientific_artifacts[*].id),
+    "absent",
   )
 
   scientific_artifacts_bucket_name = local.scientific_artifacts_enabled ? var.scientific_artifacts.bucket_name : null
@@ -29,6 +38,10 @@ resource "terraform_data" "scientific_artifacts_contract" {
     bucket_name          = var.scientific_artifacts.bucket_name
     create_bucket        = local.scientific_artifacts_created
     bind_existing_bucket = local.scientific_artifacts_bound
+    bucket_lifecycle = (
+      local.scientific_artifacts_retained ? "retained" :
+      local.scientific_artifacts_disposable ? "disposable" : "bound"
+    )
     forbid_deletion      = var.scientific_artifacts.forbid_deletion
     versioning_policy    = var.scientific_artifacts.versioning_policy
     max_size_bytes       = var.scientific_artifacts.max_size_bytes
@@ -50,19 +63,51 @@ resource "terraform_data" "scientific_artifacts_contract" {
   }
 }
 
-resource "nebius_storage_v1_bucket" "scientific_artifacts" {
-  count = local.scientific_artifacts_created ? 1 : 0
+# forbid_deletion = true. Terraform refuses to destroy this bucket, so tearing
+# down the disposable cluster fails loudly rather than deleting tenant results.
+# Releasing it is deliberate: set forbid_deletion = false and apply, or remove
+# it from state, before the stage can be destroyed.
+resource "nebius_storage_v1_bucket" "scientific_artifacts_retained" {
+  count = local.scientific_artifacts_retained ? 1 : 0
 
   parent_id         = var.project_id
   name              = var.scientific_artifacts.bucket_name
   versioning_policy = var.scientific_artifacts.versioning_policy
   max_size_bytes    = var.scientific_artifacts.max_size_bytes
-  labels            = merge(local.common_labels, { purpose = "scientific-artifact-results" })
+  labels = merge(local.common_labels, {
+    purpose   = "scientific-artifact-results"
+    retention = "retained"
+  })
 
   lifecycle {
-    # Results outlive the disposable cluster that produced them. Renaming the
-    # bucket would orphan every committed content address, so a name change
+    prevent_destroy = true
+
+    # Renaming would orphan every committed content address, so a name change
     # must be a reviewed migration rather than a silent replacement.
+    ignore_changes = [name]
+  }
+
+  depends_on = [
+    terraform_data.target_contract,
+    terraform_data.scientific_artifacts_contract,
+  ]
+}
+
+# forbid_deletion = false. The bucket is owned by the run and is destroyed with
+# it, which is only appropriate where results are reproducible scratch.
+resource "nebius_storage_v1_bucket" "scientific_artifacts_disposable" {
+  count = local.scientific_artifacts_disposable ? 1 : 0
+
+  parent_id         = var.project_id
+  name              = var.scientific_artifacts.bucket_name
+  versioning_policy = var.scientific_artifacts.versioning_policy
+  max_size_bytes    = var.scientific_artifacts.max_size_bytes
+  labels = merge(local.common_labels, {
+    purpose   = "scientific-artifact-results"
+    retention = "ephemeral"
+  })
+
+  lifecycle {
     ignore_changes = [name]
   }
 

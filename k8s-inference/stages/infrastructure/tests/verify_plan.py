@@ -77,9 +77,8 @@ PUBLIC_EDGE_ADDRESSES = {
 
 # Durable scientific result storage is opt-in and outlives the disposable
 # cluster, so it forms its own address set rather than joining the base one.
-SCIENTIFIC_ARTIFACT_ADDRESSES = {
+SCIENTIFIC_ARTIFACT_SHARED_ADDRESSES = {
     "terraform_data.scientific_artifacts_contract[0]",
-    "nebius_storage_v1_bucket.scientific_artifacts[0]",
     "nebius_iam_v1_service_account.scientific_artifacts_writer[0]",
     "nebius_iam_v1_group.scientific_artifacts_writers[0]",
     "nebius_iam_v1_group_membership.scientific_artifacts_writer[0]",
@@ -92,9 +91,12 @@ EDGE_MODES = {
     "public": frozenset(PUBLIC_EDGE_ADDRESSES),
     "internal-only": frozenset(),
 }
+# Exactly one bucket resource exists, chosen by the retention flag.
 SCIENTIFIC_ARTIFACT_MODES = {
-    "enabled": frozenset(SCIENTIFIC_ARTIFACT_ADDRESSES),
-    "disabled": frozenset(),
+    "none": frozenset(),
+    "retained": frozenset(SCIENTIFIC_ARTIFACT_SHARED_ADDRESSES | {"nebius_storage_v1_bucket.scientific_artifacts_retained[0]"}),
+    "disposable": frozenset(SCIENTIFIC_ARTIFACT_SHARED_ADDRESSES | {"nebius_storage_v1_bucket.scientific_artifacts_disposable[0]"}),
+    "bound": frozenset(SCIENTIFIC_ARTIFACT_SHARED_ADDRESSES),
 }
 
 # The modes intentionally carry independent address and capacity contracts.

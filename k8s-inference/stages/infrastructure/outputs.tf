@@ -183,10 +183,14 @@ output "scientific_artifact_store_contract" {
     schema               = "fs2-serve.nebius.ai/scientific-artifact-store/v1"
     enabled              = local.scientific_artifacts_enabled
     bucket_name          = local.scientific_artifacts_bucket_name
-    bucket_id            = local.scientific_artifacts_bucket_id
+    bucket_id            = local.scientific_artifacts_enabled ? local.scientific_artifacts_bucket_id : null
     region               = local.scientific_artifacts_enabled ? var.scientific_artifacts.region : null
     endpoint             = local.scientific_artifacts_endpoint
     created_by_terraform = local.scientific_artifacts_created
+    bucket_lifecycle = local.scientific_artifacts_enabled ? (
+      local.scientific_artifacts_retained ? "retained" :
+      local.scientific_artifacts_disposable ? "disposable" : "bound"
+    ) : null
     access_key_id = local.scientific_artifacts_enabled ? try(
       nebius_iam_v2_access_key.scientific_artifacts[0].status.aws_access_key_id, null
     ) : null

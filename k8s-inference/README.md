@@ -533,9 +533,18 @@ object's digest is a call to object storage, and the chart's egress policy is
 default-deny. `terraform output effective_configuration` reports
 `scientific_artifacts.ready` as false until that allowlist is set.
 
-Teardown follows the ordinary reverse order. Because the bucket defaults to
-`forbid_deletion = true`, destroying the cluster leaves committed results in
-place; removing them is a separate, deliberate act.
+`forbid_deletion` selects the bucket's lifecycle, and it changes the resource
+rather than only a label. It defaults to true, which marks the bucket
+`prevent_destroy`, so `./inference-stack destroy` **fails** on that bucket
+instead of deleting tenant results. Releasing it is deliberate: set
+`forbid_deletion = false` and apply, or remove the bucket from state, and only
+then destroy. Setting it to false up front gives a run-owned bucket that is
+destroyed with the cluster, which suits reproducible scratch only.
+
+The protection is a Terraform lifecycle guarantee, not a provider one: the
+object-storage API exposes no deletion-protection field, so a bucket deleted
+outside Terraform is still gone. For results that must outlive any single run
+entirely, pre-provision the bucket and bind it with `create_bucket = false`.
 
 ## Destroy
 

@@ -1761,6 +1761,33 @@ class DeploymentContractTests(unittest.TestCase):
             json.dumps(infrastructure["shared_cache"]),
         )
 
+    def test_the_retention_flag_selects_the_bucket_lifecycle(self) -> None:
+        """The flag must reach the resource, not only a document or a receipt."""
+
+        cases = (
+            ({}, True, "retained"),
+            ({"forbid_deletion": False}, False, "disposable"),
+            ({"create_bucket": False}, True, "bound"),
+        )
+        for index, (override, expected_flag, expected_lifecycle) in enumerate(cases):
+            with self.subTest(lifecycle=expected_lifecycle):
+                deployment = {
+                    "schema_version": 1,
+                    "name": "fs2-artifact-retention-test",
+                    "target": self.catalog_target(),
+                    "storage": self.scientific_storage(**override),
+                }
+                outputs = self._planned_outputs(
+                    self._write_configuration(f"artifact-retention-{index}", deployment),
+                    f"artifact-retention-{index}",
+                )
+                infrastructure = outputs["deployment_contract"]["stages"]["infrastructure"][
+                    "scientific_artifacts"
+                ]
+                summary = outputs["effective_configuration"]["scientific_artifacts"]
+                self.assertEqual(infrastructure["forbid_deletion"], expected_flag)
+                self.assertEqual(summary["bucket_lifecycle"], expected_lifecycle)
+
     def test_an_invalid_scientific_store_is_rejected_before_any_cloud_plan(self) -> None:
         cases = (
             ("missing-bucket", {"enabled": True}, "bucket_name"),
