@@ -39,6 +39,8 @@ SAFE_NAME = re.compile(r"[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?")
 SHA256 = re.compile(r"(?:sha256:)?[a-f0-9]{64}")
 MAX_JSON_BYTES = 96 * 1024 * 1024
 MAX_TOKEN_BYTES = 4096
+RUNTIME_ATTRIBUTION_CONVERGENCE_SECONDS = 30.0
+RUNTIME_ATTRIBUTION_POLL_SECONDS = 1.0
 SOLUTION_ROOT = Path(__file__).resolve().parents[2]
 COSMOS_VALIDATOR_PATH = SOLUTION_ROOT / "catalog/runtime/validators/validate_cosmos3_nano.py"
 COSMOS_CONTRACT_PATH = SOLUTION_ROOT / "catalog/runtime/validators/assets/cosmos3-nano.json"
@@ -1986,6 +1988,73 @@ def _runtime_attribution_observation(operation: dict[str, Any]) -> dict[str, Any
     }
 
 
+def _wait_for_runtime_attribution(
+    kubectl: Kubectl,
+    *,
+    operation: dict[str, Any],
+    initial_observation: ClusterObservation,
+    expected_pod_uid: str,
+    gpu_count: int,
+    expected_model_revision: str,
+    namespace: str,
+    model_id: str,
+    deployment: str,
+    service: str,
+    scaled_object: str,
+    scaled_deployment: str,
+    observations: list[dict[str, Any]],
+    deadline: float,
+    poll_seconds: float = RUNTIME_ATTRIBUTION_POLL_SECONDS,
+) -> tuple[str, ClusterObservation]:
+    """Converge cross-resource reads without changing the attributed Pod."""
+
+    selected = initial_observation
+    transient_codes = {
+        "operation_runtime_identity_mismatch",
+        "model_deployment_status_stale",
+        "model_deployment_resource_identity_mismatch",
+        "model_deployment_endpoint_identity_mismatch",
+    }
+    while True:
+        selected_uid = selected.pod.get("metadata", {}).get("uid") if selected.pod is not None else None
+        if isinstance(selected_uid, str) and selected_uid != expected_pod_uid:
+            raise BenchmarkError("operation_runtime_pod_changed")
+        model_deployment = kubectl.get(
+            "modeldeployment.inference.fs2.nebius.ai",
+            name=model_id,
+            namespace=namespace,
+        )
+        assert model_deployment is not None
+        try:
+            authority = _assert_runtime_attribution(
+                operation,
+                selected,
+                gpu_count,
+                expected_pod_uid,
+                model_deployment=model_deployment,
+                namespace=namespace,
+                model_id=model_id,
+                expected_model_revision=expected_model_revision,
+            )
+            return authority, selected
+        except BenchmarkError as error:
+            if error.code not in transient_codes:
+                raise
+        now = time.monotonic()
+        if now >= deadline:
+            raise BenchmarkError("operation_runtime_identity_convergence_timeout")
+        time.sleep(min(poll_seconds, max(0.0, deadline - now)))
+        selected = observe_cluster(
+            kubectl,
+            namespace,
+            deployment,
+            service,
+            scaled_object,
+            scaled_deployment,
+        )
+        observations.append(_observation_trace(selected))
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     token = read_token(args.token_file)
     bundle = read_json(args.access_bundle, owner_only=True)
@@ -2272,23 +2341,28 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             raise BenchmarkError("runtime_readiness_not_observed")
         if not isinstance(expected_runtime_pod_uid, str):
             raise BenchmarkError("endpoint_pod_identity_mismatch")
-        runtime_model_deployment = kubectl.get(
-            "modeldeployment.inference.fs2.nebius.ai",
-            name=args.model_id,
-            namespace=args.namespace,
-        )
-        assert runtime_model_deployment is not None
         runtime_attribution = _runtime_attribution_observation(final_operation)
-        runtime_attribution["authority"] = _assert_runtime_attribution(
-            final_operation,
-            selected_observation,
-            compatibility["gpu_count"],
-            expected_runtime_pod_uid,
-            model_deployment=runtime_model_deployment,
+        attribution_deadline = min(
+            deadline,
+            time.monotonic() + RUNTIME_ATTRIBUTION_CONVERGENCE_SECONDS,
+        )
+        authority, selected_observation = _wait_for_runtime_attribution(
+            kubectl,
+            operation=final_operation,
+            initial_observation=selected_observation,
+            expected_pod_uid=expected_runtime_pod_uid,
+            gpu_count=compatibility["gpu_count"],
+            expected_model_revision=model_revision,
             namespace=args.namespace,
             model_id=args.model_id,
-            expected_model_revision=model_revision,
+            deployment=args.deployment,
+            service=args.service,
+            scaled_object=args.scaled_object,
+            scaled_deployment=args.scaled_deployment,
+            observations=observations,
+            deadline=attribution_deadline,
         )
+        runtime_attribution["authority"] = authority
         compatibility = _finalize_runtime_compatibility(
             compatibility,
             selected_observation,

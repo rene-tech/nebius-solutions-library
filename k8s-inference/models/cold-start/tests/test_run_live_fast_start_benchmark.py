@@ -551,8 +551,8 @@ def test_null_runtime_accepts_exact_ready_endpoint_while_deployment_status_lags(
     assert authority == "kubernetes-single-pod-proof-null-operation-runtime"
 
 
-def test_null_runtime_rejects_unbound_model_resource_or_revision() -> None:
-    operation = {
+def _null_operation_runtime() -> dict[str, object]:
+    return {
         "runtime": {
             "pod_uid": None,
             "node_uid": None,
@@ -561,6 +561,135 @@ def test_null_runtime_rejects_unbound_model_resource_or_revision() -> None:
             "preemptible": None,
         }
     }
+
+
+def test_runtime_attribution_converges_same_pod_after_status_skew(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_deployment, _bound_observation = _model_deployment_binding_fixture()
+    initial = _runtime_observation()
+    initial.pod["status"]["conditions"][0]["status"] = "False"
+    converged = _runtime_observation()
+    traces: list[dict[str, object]] = []
+
+    monkeypatch.setattr(MODULE, "observe_cluster", lambda *args, **kwargs: converged)
+    monkeypatch.setattr(MODULE.time, "sleep", lambda _seconds: None)
+
+    authority, selected = MODULE._wait_for_runtime_attribution(
+        SimpleNamespace(get=lambda *args, **kwargs: model_deployment),
+        operation=_null_operation_runtime(),
+        initial_observation=initial,
+        expected_pod_uid=initial.pod["metadata"]["uid"],
+        gpu_count=1,
+        expected_model_revision="dynamic:sha256:" + "7" * 64,
+        namespace="fs2-models",
+        model_id="qwen3-8b",
+        deployment="qwen3-8b-burst-h100-1x",
+        service="qwen3-8b",
+        scaled_object="fs2-model-qwen3-8b-burst-h100-1x",
+        scaled_deployment="qwen3-8b-burst-h100-1x",
+        observations=traces,
+        deadline=MODULE.time.monotonic() + 1,
+        poll_seconds=0,
+    )
+
+    assert authority == "kubernetes-single-pod-proof-null-operation-runtime"
+    assert selected is converged
+    assert selected.pod["metadata"]["uid"] == initial.pod["metadata"]["uid"]
+    assert initial.observed_at == "2026-09-02T00:00:00.000Z"
+    assert len(traces) == 1
+
+
+def test_runtime_attribution_convergence_times_out_without_exact_ready_pod() -> None:
+    model_deployment, _bound_observation = _model_deployment_binding_fixture()
+    initial = _runtime_observation()
+    initial.pod["status"]["conditions"][0]["status"] = "False"
+
+    with pytest.raises(
+        MODULE.BenchmarkError,
+        match="operation_runtime_identity_convergence_timeout",
+    ):
+        MODULE._wait_for_runtime_attribution(
+            SimpleNamespace(get=lambda *args, **kwargs: model_deployment),
+            operation=_null_operation_runtime(),
+            initial_observation=initial,
+            expected_pod_uid=initial.pod["metadata"]["uid"],
+            gpu_count=1,
+            expected_model_revision="dynamic:sha256:" + "7" * 64,
+            namespace="fs2-models",
+            model_id="qwen3-8b",
+            deployment="qwen3-8b-burst-h100-1x",
+            service="qwen3-8b",
+            scaled_object="fs2-model-qwen3-8b-burst-h100-1x",
+            scaled_deployment="qwen3-8b-burst-h100-1x",
+            observations=[],
+            deadline=MODULE.time.monotonic(),
+            poll_seconds=0,
+        )
+
+
+def test_runtime_attribution_convergence_rejects_replacement_pod(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model_deployment, _bound_observation = _model_deployment_binding_fixture()
+    initial = _runtime_observation()
+    initial.pod["status"]["conditions"][0]["status"] = "False"
+    replacement = _runtime_observation()
+    replacement_uid = "33333333-3333-4333-8333-333333333333"
+    replacement.pod["metadata"]["uid"] = replacement_uid
+
+    monkeypatch.setattr(MODULE, "observe_cluster", lambda *args, **kwargs: replacement)
+    monkeypatch.setattr(MODULE.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(MODULE.BenchmarkError, match="operation_runtime_pod_changed"):
+        MODULE._wait_for_runtime_attribution(
+            SimpleNamespace(get=lambda *args, **kwargs: model_deployment),
+            operation=_null_operation_runtime(),
+            initial_observation=initial,
+            expected_pod_uid=initial.pod["metadata"]["uid"],
+            gpu_count=1,
+            expected_model_revision="dynamic:sha256:" + "7" * 64,
+            namespace="fs2-models",
+            model_id="qwen3-8b",
+            deployment="qwen3-8b-burst-h100-1x",
+            service="qwen3-8b",
+            scaled_object="fs2-model-qwen3-8b-burst-h100-1x",
+            scaled_deployment="qwen3-8b-burst-h100-1x",
+            observations=[],
+            deadline=MODULE.time.monotonic() + 1,
+            poll_seconds=0,
+        )
+
+
+def test_runtime_attribution_convergence_rejects_ambiguous_pods() -> None:
+    model_deployment, _bound_observation = _model_deployment_binding_fixture()
+    ambiguous = _runtime_observation(pod_count=2)
+
+    with pytest.raises(
+        MODULE.BenchmarkError,
+        match="operation_runtime_identity_convergence_timeout",
+    ):
+        MODULE._wait_for_runtime_attribution(
+            SimpleNamespace(get=lambda *args, **kwargs: model_deployment),
+            operation=_null_operation_runtime(),
+            initial_observation=ambiguous,
+            expected_pod_uid=ambiguous.pod["metadata"]["uid"],
+            gpu_count=1,
+            expected_model_revision="dynamic:sha256:" + "7" * 64,
+            namespace="fs2-models",
+            model_id="qwen3-8b",
+            deployment="qwen3-8b-burst-h100-1x",
+            service="qwen3-8b",
+            scaled_object="fs2-model-qwen3-8b-burst-h100-1x",
+            scaled_deployment="qwen3-8b-burst-h100-1x",
+            observations=[],
+            deadline=MODULE.time.monotonic(),
+            poll_seconds=0,
+        )
+
+
+def test_null_runtime_rejects_unbound_model_resource_or_revision() -> None:
+    operation = _null_operation_runtime()
     observation = _runtime_observation()
     observation.service["metadata"]["ownerReferences"][0]["uid"] = "foreign-owner"
     with pytest.raises(MODULE.BenchmarkError, match="model_deployment_resource_ownership_mismatch"):
