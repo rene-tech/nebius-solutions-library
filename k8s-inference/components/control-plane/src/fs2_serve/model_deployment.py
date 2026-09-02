@@ -32,6 +32,13 @@ from .fast_start import (
     FastStartSpec,
     evaluate_fast_start,
 )
+from .fast_start_identity import (
+    EvidenceIdentityState,
+    FastStartEnvironmentBinding,
+    FastStartRuntimeContract,
+    RuntimeEvidenceIdentity,
+    StartupScenario,
+)
 from .models import KubernetesModel
 
 API_VERSION = "inference.fs2.nebius.ai/v1alpha1"
@@ -266,6 +273,9 @@ class FastStartEvidence(KubernetesModel):
     """
 
     receipt_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
+    identity_state: EvidenceIdentityState = EvidenceIdentityState.LEGACY_UNBOUND
+    identity_digest: str | None = Field(default=None, pattern=SHA256_DIGEST_PATTERN)
+    identity: RuntimeEvidenceIdentity | None = None
     mechanism: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9-]*$")
     mechanism_config_digest: str | None = Field(default=None, pattern=SHA256_DIGEST_PATTERN)
     compatibility_tuple_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
@@ -273,6 +283,7 @@ class FastStartEvidence(KubernetesModel):
     measurement_basis: Literal["CapacityAvailableToSemanticReady"]
     accelerator_class: str = Field(min_length=1, max_length=128)
     pool_ref: PoolRef | None = None
+    capacity_type: Literal["regular", "preemptible"] | None = None
     accelerators_per_replica: int = Field(ge=1, le=64)
     artifact_manifest_digest: str = Field(pattern=SHA256_DIGEST_PATTERN)
     runtime_image: str = Field(min_length=73, max_length=768, pattern=IMAGE_DIGEST_PATTERN)
@@ -281,6 +292,39 @@ class FastStartEvidence(KubernetesModel):
     snapshot_digest: str | None = Field(default=None, pattern=SHA256_DIGEST_PATTERN)
     samples: list[FastStartSample] = Field(min_length=1, max_length=256)
     valid_until: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def exact_identity_binding(self) -> FastStartEvidence:
+        if self.identity_state is EvidenceIdentityState.LEGACY_UNBOUND:
+            if self.identity is not None or self.identity_digest is not None:
+                raise ValueError("LegacyUnbound evidence cannot claim a runtime evidence identity")
+            return self
+        if self.identity is None or self.identity_digest is None:
+            raise ValueError("Bound evidence requires identity and identityDigest")
+        if self.identity_digest != self.identity.digest:
+            raise ValueError("identityDigest does not match the canonical runtime evidence identity")
+        if self.pool_ref is None or self.capacity_type is None:
+            raise ValueError("Bound evidence requires exact observed pool and capacity identities")
+        duplicate_values = (
+            (self.mechanism, self.identity.cache.mechanism, "mechanism"),
+            (self.mechanism_config_digest, self.identity.cache.mechanism_config_digest, "mechanismConfigDigest"),
+            (self.measurement_basis, self.identity.measurement.basis, "measurementBasis"),
+            (self.accelerator_class, self.identity.placement.accelerator_class, "acceleratorClass"),
+            (
+                self.accelerators_per_replica,
+                self.identity.placement.accelerators_per_replica,
+                "acceleratorsPerReplica",
+            ),
+            (self.artifact_manifest_digest, self.identity.runtime.artifact_manifest_digest, "artifactManifestDigest"),
+            (self.runtime_image, self.identity.runtime.runtime_image, "runtimeImage"),
+            (self.template_digest, self.identity.runtime.template_digest, "templateDigest"),
+            (self.cache_tier.value, self.identity.cache.tier, "cacheTier"),
+            (self.snapshot_digest, self.identity.cache.snapshot_digest, "snapshotDigest"),
+        )
+        mismatched = [name for observed, bound, name in duplicate_values if observed != bound]
+        if mismatched:
+            raise ValueError(f"Bound evidence duplicates disagree with identity: {', '.join(mismatched)}")
+        return self
 
 
 class QueueSpec(KubernetesModel):
@@ -447,6 +491,8 @@ class PoolEnvelope(KubernetesModel):
     max_nodes: int = Field(ge=0, le=10000)
     node_selector: dict[str, str] = Field(min_length=1, max_length=32)
     tolerations: list[dict[str, str | int]] = Field(default_factory=list, max_length=32)
+    startup_scenario: StartupScenario | None = None
+    fast_start_environment_bindings: list[FastStartEnvironmentBinding] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")
     def valid_capacity(self) -> PoolEnvelope:
@@ -454,6 +500,16 @@ class PoolEnvelope(KubernetesModel):
             raise ValueError("pool maxNodes must be greater than or equal to minNodes")
         if self.node_selector.get(POOL_ID_NODE_LABEL) != self.pool_id:
             raise ValueError("pool nodeSelector must contain its exact accelerator pool identity")
+        if any(
+            not binding.includes(pool_ref=self.pool_id, capacity_type=self.capacity_type)
+            for binding in self.fast_start_environment_bindings
+        ):
+            raise ValueError("every pool environment binding must explicitly include that pool and capacity type")
+        identities = {
+            (binding.cache_tier, binding.startup_scenario) for binding in self.fast_start_environment_bindings
+        }
+        if len(identities) != len(self.fast_start_environment_bindings):
+            raise ValueError("pool environment bindings must be unique")
         return self
 
 
@@ -469,9 +525,10 @@ class ModelExpressPoolTransport(KubernetesModel):
     @model_validator(mode="after")
     def exact_resource(self) -> ModelExpressPoolTransport:
         if self.mode == "nixl-rdma":
-            if self.rdma_resource_name is None or re.fullmatch(
-                EXTENDED_RESOURCE_PATTERN, self.rdma_resource_name
-            ) is None:
+            if (
+                self.rdma_resource_name is None
+                or re.fullmatch(EXTENDED_RESOURCE_PATTERN, self.rdma_resource_name) is None
+            ):
                 raise ValueError("ModelExpress RDMA transport requires one qualified extended resource name")
         elif self.rdma_resource_name is not None:
             raise ValueError("ModelExpress fallback transport must not claim an RDMA resource")
@@ -547,6 +604,7 @@ class ModelQualification(KubernetesModel):
     snapshot_digests: list[str] = Field(default_factory=list, max_length=64)
     scale_to_zero_qualified: bool
     fast_start_evidence: list[FastStartEvidence] = Field(default_factory=list, max_length=256)
+    fast_start_runtime_contracts: list[FastStartRuntimeContract] = Field(default_factory=list, max_length=64)
     model_express: ModelExpressQualification | None = None
 
     @model_validator(mode="after")
@@ -576,6 +634,19 @@ class ModelQualification(KubernetesModel):
             raise ValueError("qualification snapshot digests must be unique SHA-256 identities")
         if self.model_express is not None and self.runtime_profile != "vllm":
             raise ValueError("ModelExpress is qualified only for the explicit vLLM runtime profile")
+        runtime_contract_keys = {
+            (
+                item.runtime.source_revision,
+                item.runtime.artifact_manifest_digest,
+                item.runtime.runtime_image,
+                item.runtime.template_digest,
+            )
+            for item in self.fast_start_runtime_contracts
+        }
+        if len(runtime_contract_keys) != len(self.fast_start_runtime_contracts):
+            raise ValueError("fast-start runtime contracts must have unique exact runtime tuple keys")
+        if any(item.runtime.model_ref != self.model_ref for item in self.fast_start_runtime_contracts):
+            raise ValueError("fast-start runtime contracts must match the qualification modelRef")
         return self
 
 
@@ -597,8 +668,7 @@ class InfrastructureEnvelope(KubernetesModel):
         if any(key != item.model_ref for key, item in self.qualifications.items()):
             raise ValueError("qualification map key must match modelRef")
         if any(
-            item.model_express is not None
-            and not set(item.model_express.pool_refs).issubset(self.pools)
+            item.model_express is not None and not set(item.model_express.pool_refs).issubset(self.pools)
             for item in self.qualifications.values()
         ):
             raise ValueError("ModelExpress qualification references a pool outside the envelope")
@@ -1569,29 +1639,17 @@ def _modelexpress_network_policy(
             "policyTypes": ["Ingress", "Egress"],
             "ingress": [
                 {
-                    "from": [
-                        {
-                            "namespaceSelector": {
-                                "matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}
-                            }
-                        }
-                    ],
+                    "from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}}],
                     "ports": [{"protocol": "TCP", "port": service_port}],
                 },
                 {
                     "from": [{"podSelector": {"matchLabels": peer_selector}}],
                     "ports": _modelexpress_peer_ports(accelerators_per_replica),
-                }
+                },
             ],
             "egress": [
                 {
-                    "to": [
-                        {
-                            "namespaceSelector": {
-                                "matchLabels": {"kubernetes.io/metadata.name": "kube-system"}
-                            }
-                        }
-                    ],
+                    "to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}}}],
                     "ports": [
                         {"protocol": "UDP", "port": 53},
                         {"protocol": "TCP", "port": 53},

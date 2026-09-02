@@ -1474,6 +1474,7 @@ def _automatic_fast_start_assessment(
     selected_statistics = assessment.model_start
     selected_capacity_wait = assessment.capacity_wait
     selected_end_to_end = assessment.end_to_end
+    selected_identity_digest = assessment.selected_identity_digest
     if chosen_mechanism is not None:
         selected_pool_paths: list[FastStartPathAssessment] = []
         for pool in assessment.pools:
@@ -1508,6 +1509,7 @@ def _automatic_fast_start_assessment(
             selected_statistics = binding_path.model_start
             selected_capacity_wait = binding_path.capacity_wait
             selected_end_to_end = binding_path.end_to_end
+            selected_identity_digest = binding_path.identity_digest
     selected = decision.assigned_level if decision.satisfied else decision.fallback_level
     if selected is None:
         qualification = FastStartQualification(
@@ -1542,6 +1544,7 @@ def _automatic_fast_start_assessment(
             "model_start": selected_statistics,
             "capacity_wait": selected_capacity_wait,
             "end_to_end": selected_end_to_end,
+            "selected_identity_digest": selected_identity_digest,
         }
     )
     automatic = FastStartAutomaticStatus(
@@ -1595,12 +1598,21 @@ def _fast_start_status(
         now=now,
     )
     effective: FastStartLevel | None = None
+    effective_identity_digest: str | None = None
     if converged and assessment.assigned_level is not None:
         effective = assessment.assigned_level
+        effective_identity_digest = assessment.selected_identity_digest
     else:
         carried = previous.get("effectiveLevel")
-        if isinstance(carried, str) and carried in {level.value for level in FastStartLevel}:
+        carried_identity = previous.get("effectiveIdentityDigest")
+        if (
+            isinstance(carried, str)
+            and carried in {level.value for level in FastStartLevel}
+            and isinstance(carried_identity, str)
+            and carried_identity == assessment.selected_identity_digest
+        ):
             effective = FastStartLevel(carried)
+            effective_identity_digest = carried_identity
     mechanisms: dict[str, FastStartMechanismStatus] = {}
     qualification = envelope.qualifications.get(spec.model_ref) if envelope is not None else None
     if qualification is not None and qualification.model_express is not None:
@@ -1637,6 +1649,7 @@ def _fast_start_status(
     return FastStartStatus(
         **assessment.model_dump(),
         effective_level=effective,
+        effective_identity_digest=effective_identity_digest,
         hot=None if ready_replicas is None else ready_replicas > 0,
         automatic=automatic,
         mechanisms=mechanisms,

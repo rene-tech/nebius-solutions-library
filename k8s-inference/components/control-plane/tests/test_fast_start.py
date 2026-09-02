@@ -21,6 +21,22 @@ from fs2_serve.fast_start import (
     evaluate_fast_start,
     nearest_rank,
 )
+from fs2_serve.fast_start_identity import (
+    ENVIRONMENT_QUALIFICATION_SCHEMA,
+    MEASUREMENT_CONTRACT_SCHEMA,
+    RUNTIME_CONTRACT_SCHEMA,
+    EnvironmentMember,
+    EvidenceIdentityState,
+    FastStartEnvironmentBinding,
+    FastStartRuntimeContract,
+    RuntimeCacheIdentity,
+    RuntimeContractIdentity,
+    RuntimeEnvironmentIdentity,
+    RuntimeEvidenceIdentity,
+    RuntimeMeasurementIdentity,
+    RuntimePlacementIdentity,
+    mechanism_config_digest,
+)
 from fs2_serve.model_deployment import (
     CacheTier,
     FastStartEvidence,
@@ -38,6 +54,83 @@ from fs2_serve.model_deployment import (
 from fs2_serve.model_deployment_bridge import _normalize_keys
 
 NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
+STORAGE_CONTRACT_DIGEST = digest("5")
+
+
+def runtime_contract(spec: ModelDeploymentSpec) -> FastStartRuntimeContract:
+    runtime_payload = {
+        "schema": RUNTIME_CONTRACT_SCHEMA,
+        "modelRef": spec.model_ref,
+        "sourceRevision": spec.artifact.revision,
+        "modelContentDigest": spec.artifact.manifest_digest,
+        "artifactManifestDigest": spec.artifact.manifest_digest,
+        "runtimeProfile": spec.runtime.profile,
+        "runtimeImage": spec.runtime.image,
+        "templateDigest": spec.runtime.template_ref.digest,
+        "renderContractDigest": digest("1"),
+        "argvDigest": digest("2"),
+        "environmentDigest": digest("3"),
+    }
+    runtime = RuntimeContractIdentity.model_validate(
+        {**runtime_payload, "runtimeContractDigest": canonical_digest(runtime_payload)}
+    )
+    measurement_payload = {
+        "schema": MEASUREMENT_CONTRACT_SCHEMA,
+        "basis": "CapacityAvailableToSemanticReady",
+        "payloadDigest": digest("4"),
+        "protocol": "OpenAIChatCompletions",
+        "endpointPath": "/v1/chat/completions",
+        "streaming": True,
+        "semanticValidatorDigest": digest("6"),
+        "benchmarkClientDigest": digest("7"),
+        "clientPlacement": "in-cluster",
+    }
+    measurement = RuntimeMeasurementIdentity.model_validate(
+        {**measurement_payload, "contractDigest": canonical_digest(measurement_payload)}
+    )
+    return FastStartRuntimeContract(
+        runtime=runtime,
+        storage_contract_digest=STORAGE_CONTRACT_DIGEST,
+        measurement=measurement,
+    )
+
+
+def environment_identity(pool: PoolEnvelope) -> RuntimeEnvironmentIdentity:
+    payload = {
+        "schema": ENVIRONMENT_QUALIFICATION_SCHEMA,
+        "scopeDigest": canonical_digest({"pool": pool.pool_id, "capacityType": pool.capacity_type}),
+        "acceleratorDigest": canonical_digest({"acceleratorClass": pool.accelerator_class}),
+        "driverCudaDigest": digest("8"),
+        "hostRuntimeDigest": digest("9"),
+        "storageRuntimeDigest": digest("0"),
+    }
+    return RuntimeEnvironmentIdentity.model_validate({**payload, "qualificationDigest": canonical_digest(payload)})
+
+
+def qualify_for_fast_start(installed: InfrastructureEnvelope) -> InfrastructureEnvelope:
+    base_spec = model_spec()
+    pools = {
+        key: pool.model_copy(
+            update={
+                "startup_scenario": "fresh-node-zero-pod" if pool.min_nodes == 0 else "prepared-node-zero-pod",
+                "fast_start_environment_bindings": [
+                    FastStartEnvironmentBinding(
+                        environment=environment_identity(pool),
+                        members=[EnvironmentMember(pool_ref=pool.pool_id, capacity_type=pool.capacity_type)],
+                        cache_tier=base_spec.cache.tier.value,
+                        startup_scenario=("fresh-node-zero-pod" if pool.min_nodes == 0 else "prepared-node-zero-pod"),
+                        valid_until=NOW + timedelta(days=30),
+                    )
+                ],
+            }
+        )
+        for key, pool in installed.pools.items()
+    }
+    qualifications = {
+        key: item.model_copy(update={"fast_start_runtime_contracts": [runtime_contract(base_spec)]})
+        for key, item in installed.qualifications.items()
+    }
+    return installed.model_copy(update={"pools": pools, "qualifications": qualifications})
 
 
 def samples(
@@ -70,6 +163,7 @@ def evidence(
         "measurement_basis": "CapacityAvailableToSemanticReady",
         "accelerator_class": pool.accelerator_class,
         "pool_ref": pool.pool_id,
+        "capacity_type": pool.capacity_type,
         "accelerators_per_replica": spec.placement.accelerators_per_replica,
         "artifact_manifest_digest": spec.artifact.manifest_digest,
         "runtime_image": spec.runtime.image,
@@ -95,10 +189,62 @@ def evidence(
             }
         ),
     )
+    identity_state = EvidenceIdentityState(values.get("identity_state", EvidenceIdentityState.BOUND))
+    if identity_state is not EvidenceIdentityState.LEGACY_UNBOUND:
+        contract = runtime_contract(spec)
+        runtime_payload = contract.runtime.model_dump(
+            mode="json",
+            by_alias=True,
+            exclude={"runtime_contract_digest"},
+        )
+        runtime_payload.update(
+            {
+                "modelContentDigest": values["artifact_manifest_digest"],
+                "artifactManifestDigest": values["artifact_manifest_digest"],
+                "runtimeImage": values["runtime_image"],
+                "templateDigest": values["template_digest"],
+            }
+        )
+        observed_runtime = RuntimeContractIdentity.model_validate(
+            {**runtime_payload, "runtimeContractDigest": canonical_digest(runtime_payload)}
+        )
+        tier = values["cache_tier"]
+        tier_value = tier.value if isinstance(tier, CacheTier) else tier
+        config_digest = values.get("mechanism_config_digest") or mechanism_config_digest(
+            mechanism=values["mechanism"],
+            storage_contract_digest=STORAGE_CONTRACT_DIGEST,
+        )
+        identity = RuntimeEvidenceIdentity(
+            runtime=observed_runtime,
+            environment=environment_identity(pool),
+            placement=RuntimePlacementIdentity(
+                accelerator_class=values["accelerator_class"],
+                accelerators_per_replica=values["accelerators_per_replica"],
+                topology_policy=spec.placement.topology_policy.value,
+                startup_scenario="fresh-node-zero-pod" if pool.min_nodes == 0 else "prepared-node-zero-pod",
+            ),
+            cache=RuntimeCacheIdentity(
+                tier=tier_value,
+                mechanism=values["mechanism"],
+                mechanism_config_digest=config_digest,
+                snapshot_digest=values.get("snapshot_digest"),
+                storage_contract_digest=STORAGE_CONTRACT_DIGEST,
+            ),
+            measurement=contract.measurement,
+        )
+        values.update(
+            {
+                "identity_state": EvidenceIdentityState.BOUND,
+                "identity_digest": identity.digest,
+                "identity": identity,
+                "mechanism_config_digest": config_digest,
+            }
+        )
     return FastStartEvidence(**values)
 
 
 def with_evidence(installed: InfrastructureEnvelope, *items: FastStartEvidence) -> InfrastructureEnvelope:
+    installed = qualify_for_fast_start(installed)
     qualification = installed.qualifications["qwen.3-8b"].model_copy(update={"fast_start_evidence": list(items)})
     return installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
 
@@ -199,6 +345,55 @@ def test_nearest_rank_percentiles_rank_failures_after_every_duration() -> None:
     assert nearest_rank(twenty, 0.95) == 19.0
 
 
+def test_v2_identity_is_bound_and_mutable_policy_does_not_change_it() -> None:
+    base = model_spec()
+    pool = envelope().pools["pool-a"]
+    proof = evidence(base, pool, seconds=[90.0] * MINIMUM_QUALIFYING_SAMPLES)
+
+    assert proof.identity_state is EvidenceIdentityState.BOUND
+    assert proof.identity is not None and proof.identity_digest == proof.identity.digest
+    assert proof.identity.runtime.runtime_contract_digest == runtime_contract(base).runtime.runtime_contract_digest
+    changed_policy = with_fast_start(
+        base.model_copy(
+            update={
+                "availability": base.availability.model_copy(
+                    update={"min_replicas": 1, "max_replicas": 8, "target_queue_depth": 4}
+                )
+            }
+        ),
+        mode="Automatic",
+        minimum_level="L1",
+        maximum_level="L4",
+    )
+    assert (
+        runtime_contract(changed_policy).runtime.runtime_contract_digest
+        == proof.identity.runtime.runtime_contract_digest
+    )
+
+
+def test_v1_unbound_evidence_is_retained_but_cannot_qualify() -> None:
+    base = model_spec()
+    spec = with_fast_start(
+        base.model_copy(update={"placement": base.placement.model_copy(update={"pool_refs": ["pool-a"]})}),
+        level="L2",
+    )
+    legacy = evidence(
+        base,
+        envelope().pools["pool-a"],
+        seconds=[1.0] * MINIMUM_QUALIFYING_SAMPLES,
+        identity_state=EvidenceIdentityState.LEGACY_UNBOUND,
+    )
+
+    assessment = evaluate_fast_start(spec, with_evidence(envelope(), legacy), evaluation_time=NOW)
+
+    assert assessment.qualified_level is FastStartLevel.OFF
+    assert assessment.pools[0].paths == []
+    retained = assessment.pools[0].retained_paths[0]
+    assert retained.identity_state is EvidenceIdentityState.LEGACY_UNBOUND
+    assert retained.reason == "LegacyIdentityUnbound"
+    assert [(item.code, item.field) for item in retained.mismatches] == [("LegacyUnbound", "$.identity")]
+
+
 def test_absent_evidence_is_unavailable_and_unqualified_never_zero() -> None:
     spec = with_fast_start(model_spec(), mode="Fixed", level="L2")
     assessment = evaluate_fast_start(spec, envelope(), evaluation_time=NOW)
@@ -209,8 +404,8 @@ def test_absent_evidence_is_unavailable_and_unqualified_never_zero() -> None:
     assert assessment.qualification.reason == "RequestedLevelUnqualified"
     assert assessment.model_start is None and assessment.capacity_wait is None and assessment.end_to_end is None
     assert {pool.pool_ref: pool.reason for pool in assessment.pools} == {
-        "pool-a": "NoCompatibleBenchmarkEvidence",
-        "pool-b": "NoCompatibleBenchmarkEvidence",
+        "pool-a": "NoCurrentRuntimeEvidence",
+        "pool-b": "NoCurrentRuntimeEvidence",
     }
     projected = FastStartStatus(**assessment.model_dump()).model_dump(mode="json", by_alias=True, exclude_none=True)
     assert projected["assignedLevel"] == "Off"
@@ -248,7 +443,7 @@ def test_mechanism_names_and_incompatible_tuples_never_qualify() -> None:
     assessment = evaluate_fast_start(spec, with_evidence(envelope(), *incompatible), evaluation_time=NOW)
     by_pool = {pool.pool_ref: pool for pool in assessment.pools}
     assert by_pool["pool-a"].qualified_level is FastStartLevel.OFF
-    assert by_pool["pool-a"].reason == "NoCompatibleBenchmarkEvidence"
+    assert by_pool["pool-a"].reason == "NoCurrentRuntimeEvidence"
     assert by_pool["pool-a"].mechanisms == [] and by_pool["pool-a"].model_start is None
     assert by_pool["pool-b"].qualified_level is FastStartLevel.L4
     # A heterogeneous placement is bound by its slowest pool, so nothing is claimed.
@@ -521,20 +716,38 @@ def test_modelexpress_evidence_requires_the_active_exact_mechanism_binding() -> 
         mechanism="modelexpress",
         mechanism_config_digest=config.config_digest,
     )
-    qualification = envelope().qualifications["qwen.3-8b"].model_copy(
+    installed = qualify_for_fast_start(envelope())
+    qualification = installed.qualifications["qwen.3-8b"].model_copy(
         update={"model_express": config, "fast_start_evidence": [proof]}
     )
-    installed = envelope().model_copy(update={"qualifications": {qualification.model_ref: qualification}})
+    installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
     assert evaluate_fast_start(single, installed, evaluation_time=NOW).assigned_level is FastStartLevel.L4
 
-    stale = proof.model_copy(update={"mechanism_config_digest": digest("8")})
+    assert proof.identity is not None
+    stale_identity = proof.identity.model_copy(
+        update={"cache": proof.identity.cache.model_copy(update={"mechanism_config_digest": digest("8")})}
+    )
+    stale = proof.model_copy(
+        update={
+            "mechanism_config_digest": digest("8"),
+            "identity": stale_identity,
+            "identity_digest": stale_identity.digest,
+        }
+    )
     qualification = qualification.model_copy(update={"fast_start_evidence": [stale]})
     installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
     assessment = evaluate_fast_start(single, installed, evaluation_time=NOW)
     assert assessment.assigned_level is FastStartLevel.OFF
-    assert assessment.pools[0].reason == "NoCompatibleBenchmarkEvidence"
+    assert assessment.pools[0].reason == "NoCurrentRuntimeEvidence"
 
-    unbound = proof.model_copy(update={"mechanism_config_digest": None})
+    unbound = proof.model_copy(
+        update={
+            "identity_state": EvidenceIdentityState.LEGACY_UNBOUND,
+            "identity": None,
+            "identity_digest": None,
+            "mechanism_config_digest": None,
+        }
+    )
     qualification = qualification.model_copy(update={"fast_start_evidence": [unbound]})
     installed = installed.model_copy(update={"qualifications": {qualification.model_ref: qualification}})
     assert evaluate_fast_start(single, installed, evaluation_time=NOW).assigned_level is FastStartLevel.OFF

@@ -831,13 +831,21 @@ def test_status_keeps_fast_start_levels_apart_and_claims_effective_only_when_con
         observed=[],
         discovery_complete=True,
     )
+    assert plan.validation.fast_start is not None
+    current_identity = plan.validation.fast_start.selected_identity_digest
+    assert current_identity is not None
     pending = build_status(
         spec=spec,
         owner_uid="cr-uid-1",
         generation=1,
         plan=plan,
         discovery=Discovery(resources=[], complete=True),
-        previous_status={"fastStart": {"effectiveLevel": "L1"}},
+        previous_status={
+            "fastStart": {
+                "effectiveLevel": "L1",
+                "effectiveIdentityDigest": current_identity,
+            }
+        },
         drain=None,
     )
     fast_start = pending["fastStart"]
@@ -847,6 +855,7 @@ def test_status_keeps_fast_start_levels_apart_and_claims_effective_only_when_con
     assert fast_start["qualification"]["state"] == "Fallback"
     # Not converged: the previously effective level is carried, the new one is not claimed.
     assert fast_start["effectiveLevel"] == "L1"
+    assert fast_start["effectiveIdentityDigest"] == current_identity
     assert fast_start["hot"] is False
     assert fast_start["modelStart"]["p95Seconds"] == 110 and fast_start["modelStart"]["sampleCount"] == 20
     assert "capacityWait" not in fast_start and "endToEnd" not in fast_start
@@ -867,6 +876,7 @@ def test_status_keeps_fast_start_levels_apart_and_claims_effective_only_when_con
         drain=None,
     )
     assert converged["fastStart"]["effectiveLevel"] == "L2"
+    assert converged["fastStart"]["effectiveIdentityDigest"] == current_identity
     assert converged["fastStart"]["hot"] is True
     assert converged["specDigest"] == plan.spec_digest
 

@@ -26,10 +26,25 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import AwareDatetime, Field, model_validator
 
+from .fast_start_identity import (
+    EvidenceIdentityState,
+    FastStartIdentityMismatch,
+    RuntimeCacheIdentity,
+    RuntimeEvidenceIdentity,
+    RuntimePlacementIdentity,
+    identity_mismatches,
+    mechanism_config_digest,
+)
 from .models import KubernetesModel
 
 if TYPE_CHECKING:
-    from .model_deployment import FastStartEvidence, InfrastructureEnvelope, ModelDeploymentSpec, PoolEnvelope
+    from .model_deployment import (
+        FastStartEvidence,
+        InfrastructureEnvelope,
+        ModelDeploymentSpec,
+        ModelQualification,
+        PoolEnvelope,
+    )
 
 
 class FastStartLevel(StrEnum):
@@ -162,12 +177,30 @@ class FastStartStatistics(KubernetesModel):
 
 
 class FastStartPathAssessment(KubernetesModel):
-    """One mechanism and exact benchmark-tuple cohort within a pool."""
+    """One currently compatible exact runtime-identity cohort within a pool."""
 
     mechanism: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9-]*$")
+    identity_digest: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
     compatibility_tuple_digest: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
     qualified_level: FastStartLevel
     reason: str = Field(min_length=1, max_length=64, pattern=REASON_PATTERN)
+    receipt_digests: list[str] = Field(default_factory=list, max_length=256)
+    model_start: FastStartStatistics | None = None
+    capacity_wait: FastStartStatistics | None = None
+    end_to_end: FastStartStatistics | None = None
+
+
+class FastStartRetainedPathAssessment(KubernetesModel):
+    """Historical evidence that is visible but cannot qualify this pool."""
+
+    mechanism: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9-]*$")
+    identity_state: EvidenceIdentityState
+    identity_digest: str | None = Field(default=None, pattern=r"^sha256:[a-f0-9]{64}$")
+    compatibility_tuple_digest: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+    observed_pool_ref: str | None = Field(default=None, min_length=1, max_length=128)
+    observed_capacity_type: Literal["regular", "preemptible"] | None = None
+    reason: str = Field(min_length=1, max_length=64, pattern=REASON_PATTERN)
+    mismatches: list[FastStartIdentityMismatch] = Field(min_length=1, max_length=64)
     receipt_digests: list[str] = Field(default_factory=list, max_length=256)
     model_start: FastStartStatistics | None = None
     capacity_wait: FastStartStatistics | None = None
@@ -192,20 +225,31 @@ class FastStartPoolAssessment(KubernetesModel):
         default=None,
         pattern=r"^sha256:[a-f0-9]{64}$",
     )
+    selected_identity_digest: str | None = Field(default=None, pattern=r"^sha256:[a-f0-9]{64}$")
     receipt_digests: list[str] = Field(default_factory=list, max_length=256)
     model_start: FastStartStatistics | None = None
     capacity_wait: FastStartStatistics | None = None
     end_to_end: FastStartStatistics | None = None
     paths: list[FastStartPathAssessment] = Field(default_factory=list, max_length=256)
+    retained_paths: list[FastStartRetainedPathAssessment] = Field(default_factory=list, max_length=256)
 
     @model_validator(mode="after")
     def consistent_selected_path(self) -> FastStartPoolAssessment:
-        identities = {(item.mechanism, item.compatibility_tuple_digest) for item in self.paths}
+        identities = {(item.mechanism, item.identity_digest, item.compatibility_tuple_digest) for item in self.paths}
         if len(identities) != len(self.paths):
-            raise ValueError("fast-start mechanism and compatibility-tuple paths must be unique")
-        selected = (self.selected_mechanism, self.selected_compatibility_tuple_digest)
-        if (selected[0] is None) != (selected[1] is None):
-            raise ValueError("fast-start selected mechanism and compatibility tuple must be set together")
+            raise ValueError("fast-start mechanism, runtime identity and compatibility-tuple paths must be unique")
+        selected = (
+            self.selected_mechanism,
+            self.selected_identity_digest,
+            self.selected_compatibility_tuple_digest,
+        )
+        selected_parts = (
+            self.selected_mechanism,
+            self.selected_identity_digest,
+            self.selected_compatibility_tuple_digest,
+        )
+        if any(item is None for item in selected_parts) and not all(item is None for item in selected_parts):
+            raise ValueError("fast-start selected mechanism, identity and compatibility tuple must be set together")
         if not self.paths:
             if selected[0] is not None:
                 raise ValueError("fast-start cannot select a path when no paths are available")
@@ -239,6 +283,7 @@ class FastStartAssessment(KubernetesModel):
     model_start: FastStartStatistics | None = None
     capacity_wait: FastStartStatistics | None = None
     end_to_end: FastStartStatistics | None = None
+    selected_identity_digest: str | None = Field(default=None, pattern=r"^sha256:[a-f0-9]{64}$")
     pools: list[FastStartPoolAssessment] = Field(default_factory=list, max_length=32)
 
     @model_validator(mode="after")
@@ -326,6 +371,7 @@ class FastStartStatus(FastStartAssessment):
     """
 
     effective_level: FastStartLevel | None = None
+    effective_identity_digest: str | None = Field(default=None, pattern=r"^sha256:[a-f0-9]{64}$")
     hot: bool | None = None
     automatic: FastStartAutomaticStatus | None = None
     mechanisms: dict[str, FastStartMechanismStatus] = Field(default_factory=dict, max_length=16)
@@ -369,37 +415,91 @@ def _statistics(
     )
 
 
-def _compatible(
+def _identity_compatibility(
     evidence: FastStartEvidence,
     spec: ModelDeploymentSpec,
     pool: PoolEnvelope,
     evaluation_time: datetime,
-    model_express_config_digest: str | None,
-) -> bool:
-    snapshot_digest = spec.cache.snapshot_ref.digest if spec.cache.snapshot_ref is not None else None
-    return (
-        evidence.measurement_basis == MEASUREMENT_BASIS
-        and evidence.accelerator_class == pool.accelerator_class
-        and (evidence.pool_ref is None or evidence.pool_ref == pool.pool_id)
-        and evidence.accelerators_per_replica == spec.placement.accelerators_per_replica
-        and evidence.artifact_manifest_digest == spec.artifact.manifest_digest
-        and evidence.runtime_image == spec.runtime.image
-        and evidence.template_digest == spec.runtime.template_ref.digest
-        and evidence.cache_tier is spec.cache.tier
-        and evidence.snapshot_digest == snapshot_digest
-        and (
-            (
-                evidence.mechanism == "modelexpress"
-                and model_express_config_digest is not None
-                and evidence.mechanism_config_digest == model_express_config_digest
-            )
-            or (
-                evidence.mechanism != "modelexpress"
-                and evidence.mechanism_config_digest is None
-            )
+    qualification: ModelQualification | None,
+) -> list[FastStartIdentityMismatch]:
+    """Return why evidence is not current for this exact runtime and pool."""
+
+    if evidence.identity_state is EvidenceIdentityState.LEGACY_UNBOUND:
+        return [FastStartIdentityMismatch(code="LegacyUnbound", field="$.identity")]
+    if evidence.identity is None or evidence.identity_digest is None:
+        return [FastStartIdentityMismatch(code="MissingExpectedValue", field="$.identity")]
+    if qualification is None:
+        return [FastStartIdentityMismatch(code="MissingExpectedValue", field="$.runtime")]
+
+    contracts = [
+        item
+        for item in qualification.fast_start_runtime_contracts
+        if item.runtime.model_ref == spec.model_ref
+        and item.runtime.source_revision == spec.artifact.revision
+        and item.runtime.artifact_manifest_digest == spec.artifact.manifest_digest
+        and item.runtime.runtime_profile == spec.runtime.profile
+        and item.runtime.runtime_image == spec.runtime.image
+        and item.runtime.template_digest == spec.runtime.template_ref.digest
+    ]
+    if len(contracts) != 1:
+        return [FastStartIdentityMismatch(code="MissingExpectedValue", field="$.runtime.runtimeContractDigest")]
+    contract = contracts[0]
+    if pool.startup_scenario is None:
+        return [FastStartIdentityMismatch(code="MissingExpectedValue", field="$.placement.startupScenario")]
+    bindings = [
+        item
+        for item in pool.fast_start_environment_bindings
+        if item.cache_tier == spec.cache.tier.value and item.startup_scenario == pool.startup_scenario
+    ]
+    if len(bindings) != 1:
+        return [FastStartIdentityMismatch(code="MissingExpectedValue", field="$.environment.qualificationDigest")]
+    binding = bindings[0]
+    if not binding.current_at(evaluation_time):
+        return [FastStartIdentityMismatch(code="Expired", field="$.environment.validUntil")]
+    if (
+        evidence.pool_ref is None
+        or evidence.capacity_type is None
+        or not binding.includes(
+            pool_ref=evidence.pool_ref,
+            capacity_type=evidence.capacity_type,
         )
-        and (evidence.valid_until is None or evaluation_time < evidence.valid_until)
+    ):
+        return [FastStartIdentityMismatch(code="ValueMismatch", field="$.environment.members")]
+
+    if evidence.mechanism == "modelexpress":
+        model_express = qualification.model_express
+        if model_express is None or pool.pool_id not in model_express.pool_refs:
+            return [FastStartIdentityMismatch(code="MissingExpectedValue", field="$.cache.mechanismConfigDigest")]
+        expected_mechanism_digest = model_express.config_digest
+    else:
+        expected_mechanism_digest = mechanism_config_digest(
+            mechanism=evidence.mechanism,
+            storage_contract_digest=contract.storage_contract_digest,
+        )
+
+    snapshot_digest = spec.cache.snapshot_ref.digest if spec.cache.snapshot_ref is not None else None
+    expected = RuntimeEvidenceIdentity(
+        runtime=contract.runtime,
+        environment=binding.environment,
+        placement=RuntimePlacementIdentity(
+            accelerator_class=pool.accelerator_class,
+            accelerators_per_replica=spec.placement.accelerators_per_replica,
+            topology_policy=spec.placement.topology_policy.value,
+            startup_scenario=pool.startup_scenario,
+        ),
+        cache=RuntimeCacheIdentity(
+            tier=spec.cache.tier.value,
+            mechanism=evidence.mechanism,
+            mechanism_config_digest=expected_mechanism_digest,
+            snapshot_digest=snapshot_digest,
+            storage_contract_digest=contract.storage_contract_digest,
+        ),
+        measurement=contract.measurement,
     )
+    mismatches = identity_mismatches(expected, evidence.identity)
+    if evidence.valid_until is not None and evaluation_time >= evidence.valid_until:
+        mismatches.append(FastStartIdentityMismatch(code="Expired", field="$.validUntil"))
+    return mismatches
 
 
 def _highest_level_within(p95_seconds: float) -> FastStartLevel:
@@ -412,6 +512,7 @@ def _highest_level_within(p95_seconds: float) -> FastStartLevel:
 
 def _assess_path(
     mechanism: str,
+    identity_digest: str,
     compatibility_tuple_digest: str,
     evidence: Sequence[FastStartEvidence],
 ) -> FastStartPathAssessment:
@@ -446,6 +547,7 @@ def _assess_path(
         reason = "BenchmarkP95WithinTarget" if qualified is not FastStartLevel.OFF else "BenchmarkP95ExceedsEveryTarget"
     return FastStartPathAssessment(
         mechanism=mechanism,
+        identity_digest=identity_digest,
         compatibility_tuple_digest=compatibility_tuple_digest,
         qualified_level=qualified,
         reason=reason,
@@ -463,7 +565,47 @@ def _path_order(item: FastStartPathAssessment) -> tuple[int, float, int, str, st
         math.inf if model_start is None or model_start.p95_seconds is None else model_start.p95_seconds,
         0 if model_start is None else -model_start.sample_count,
         item.mechanism,
-        item.compatibility_tuple_digest,
+        item.identity_digest,
+    )
+
+
+def _retained_reason(mismatches: Sequence[FastStartIdentityMismatch]) -> str:
+    if any(item.code == "LegacyUnbound" for item in mismatches):
+        return "LegacyIdentityUnbound"
+    if any(item.code == "Expired" for item in mismatches):
+        return "EvidenceIdentityExpired"
+    if any(item.code == "MissingExpectedValue" for item in mismatches):
+        return "ExpectedIdentityUnavailable"
+    return "RuntimeIdentityMismatch"
+
+
+def _assess_retained_path(
+    evidence: Sequence[FastStartEvidence],
+    mismatches: Sequence[FastStartIdentityMismatch],
+) -> FastStartRetainedPathAssessment:
+    first = evidence[0]
+    return FastStartRetainedPathAssessment(
+        mechanism=first.mechanism,
+        identity_state=first.identity_state,
+        identity_digest=first.identity_digest,
+        compatibility_tuple_digest=first.compatibility_tuple_digest,
+        observed_pool_ref=first.pool_ref,
+        observed_capacity_type=first.capacity_type,
+        reason=_retained_reason(mismatches),
+        mismatches=list(mismatches),
+        receipt_digests=sorted({item.receipt_digest for item in evidence}),
+        model_start=_statistics(
+            [(sample.observed_at, sample.model_start_seconds) for item in evidence for sample in item.samples],
+            failures_rank_last=True,
+        ),
+        capacity_wait=_statistics(
+            [(sample.observed_at, sample.capacity_wait_seconds) for item in evidence for sample in item.samples],
+            failures_rank_last=False,
+        ),
+        end_to_end=_statistics(
+            [(sample.observed_at, sample.end_to_end_seconds) for item in evidence for sample in item.samples],
+            failures_rank_last=False,
+        ),
     )
 
 
@@ -472,29 +614,42 @@ def _assess_pool(
     pool: PoolEnvelope,
     evidence: Sequence[FastStartEvidence],
     evaluation_time: datetime,
-    model_express_config_digest: str | None,
+    qualification: ModelQualification | None,
 ) -> FastStartPoolAssessment:
-    compatible = [
-        item
-        for item in evidence
-        if _compatible(item, spec, pool, evaluation_time, model_express_config_digest)
-    ]
+    assessed = [(item, _identity_compatibility(item, spec, pool, evaluation_time, qualification)) for item in evidence]
+    compatible = [item for item, mismatches in assessed if not mismatches]
+    retained_groups: dict[tuple[str, str, tuple[tuple[str, str], ...]], list[FastStartEvidence]] = {}
+    retained_mismatches: dict[tuple[str, str, tuple[tuple[str, str], ...]], list[FastStartIdentityMismatch]] = {}
+    for item, mismatches in assessed:
+        if not mismatches:
+            continue
+        identity = item.identity_digest or item.compatibility_tuple_digest
+        mismatch_key = tuple((mismatch.code, mismatch.field) for mismatch in mismatches)
+        key = (item.mechanism, identity, mismatch_key)
+        retained_groups.setdefault(key, []).append(item)
+        retained_mismatches[key] = mismatches
+    retained_paths = sorted(
+        (_assess_retained_path(cohort, retained_mismatches[key]) for key, cohort in retained_groups.items()),
+        key=lambda item: (item.mechanism, item.identity_digest or item.compatibility_tuple_digest),
+    )
     if not compatible:
         return FastStartPoolAssessment(
             pool_ref=pool.pool_id,
             accelerator_class=pool.accelerator_class,
             qualified_level=FastStartLevel.OFF,
-            reason="NoCompatibleBenchmarkEvidence",
+            reason="NoCurrentRuntimeEvidence",
+            retained_paths=retained_paths,
         )
-    grouped: dict[tuple[str, str], list[FastStartEvidence]] = {}
+    grouped: dict[tuple[str, str, str], list[FastStartEvidence]] = {}
     for item in compatible:
-        grouped.setdefault((item.mechanism, item.compatibility_tuple_digest), []).append(item)
+        assert item.identity_digest is not None
+        grouped.setdefault((item.mechanism, item.identity_digest, item.compatibility_tuple_digest), []).append(item)
     paths = sorted(
         (
-            _assess_path(mechanism, compatibility_tuple_digest, cohort)
-            for (mechanism, compatibility_tuple_digest), cohort in grouped.items()
+            _assess_path(mechanism, identity_digest, compatibility_tuple_digest, cohort)
+            for (mechanism, identity_digest, compatibility_tuple_digest), cohort in grouped.items()
         ),
-        key=lambda item: (item.mechanism, item.compatibility_tuple_digest),
+        key=lambda item: (item.mechanism, item.identity_digest),
     )
     selected = min(paths, key=_path_order)
     return FastStartPoolAssessment(
@@ -504,12 +659,14 @@ def _assess_pool(
         reason=selected.reason,
         mechanisms=sorted({item.mechanism for item in paths}),
         selected_mechanism=selected.mechanism,
+        selected_identity_digest=selected.identity_digest,
         selected_compatibility_tuple_digest=selected.compatibility_tuple_digest,
         receipt_digests=sorted({digest for item in paths for digest in item.receipt_digests}),
         model_start=selected.model_start,
         capacity_wait=selected.capacity_wait,
         end_to_end=selected.end_to_end,
         paths=paths,
+        retained_paths=retained_paths,
     )
 
 
@@ -549,7 +706,6 @@ def evaluate_fast_start(
     policy = spec.fast_start
     qualification = envelope.qualifications.get(spec.model_ref)
     evidence = qualification.fast_start_evidence if qualification is not None else []
-    model_express = qualification.model_express if qualification is not None else None
     pools: list[FastStartPoolAssessment] = []
     for pool_ref in sorted(spec.placement.pool_refs):
         pool = envelope.pools.get(pool_ref)
@@ -562,12 +718,7 @@ def evaluate_fast_start(
                 )
             )
             continue
-        model_express_config_digest = (
-            model_express.config_digest
-            if model_express is not None and pool_ref in model_express.pool_refs
-            else None
-        )
-        pools.append(_assess_pool(spec, pool, evidence, evaluation_time, model_express_config_digest))
+        pools.append(_assess_pool(spec, pool, evidence, evaluation_time, qualification))
     binding = _binding_pool(pools)
     qualified = binding.qualified_level if binding is not None else FastStartLevel.OFF
 
@@ -635,5 +786,6 @@ def evaluate_fast_start(
         model_start=binding.model_start if binding is not None else None,
         capacity_wait=binding.capacity_wait if binding is not None else None,
         end_to_end=binding.end_to_end if binding is not None else None,
+        selected_identity_digest=binding.selected_identity_digest if binding is not None else None,
         pools=pools,
     )
