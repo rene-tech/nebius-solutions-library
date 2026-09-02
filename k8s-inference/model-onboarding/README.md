@@ -76,6 +76,14 @@ credential before a separately reviewed BatchRun controller exists. A `hybrid`
 declaration produces the HTTP files and this separate candidate batch profile.
 The existing serving-binding consumer still accepts only HTTP backends, so this
 change does not extend its schema with a batch shape that no runtime can honor.
+Scientific candidate declarations may use a provider-neutral
+`runtime.image.logical_repository` while the image is still `build-required`.
+The deployment owner resolves that logical suffix against its configured
+registry only after an immutable image digest has passed promotion; catalog
+profiles never publish a regional registry hostname or accept one from a run
+request. The cancer-immunotherapy declaration set is rendered with
+`sync_scientific_profiles.py`; `--check` fails when either the canonical profile
+set or source-qualified receipt set has drifted from those ModelDefinitions.
 
 The model record is deliberately `unqualified`, non-invocable, conventional
 startup only, with an unresolved weight artifact and blocked semantic

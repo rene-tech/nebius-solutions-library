@@ -1,0 +1,204 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "scientific-batch",
+  "model": {
+    "id": "mosaic",
+    "variant_id": "escalante-20260801",
+    "display_name": "Escalante Bio mosaic",
+    "family": "scientific-protein",
+    "source": {
+      "kind": "git",
+      "repository": "escalante-bio/mosaic",
+      "revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+      "review": {
+        "url": "https://github.com/escalante-bio/mosaic/tree/70fec525423f5f87156a1a957b4a4048f9f8e676",
+        "revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+        "summary": "Provisional requested identity pinned to the qualified Escalante Bio source revision."
+      },
+      "license": {
+        "id": "MIT-component-dependent",
+        "state": "unverified",
+        "notes": "mosaic code is MIT; every selected objective component needs an independent artifact and license closure."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The framework source is public; component artifacts remain unresolved."
+      }
+    },
+    "artifacts": [
+      {
+        "artifact_id": "mosaic-component-closure",
+        "kind": "runtime-dependency",
+        "source": {
+          "kind": "operator-staged",
+          "repository": null,
+          "revision": null,
+          "release_id": "objective-specific-component-set"
+        },
+        "required_files": [],
+        "supply_state": "unresolved",
+        "handling": "standard"
+      }
+    ],
+    "default_variant": true
+  },
+  "runtime": {
+    "template": "scientific-batch",
+    "kind": "custom",
+    "version": "2026-08-01-candidate",
+    "image": {
+      "logical_repository": "cancer-immunotherapy/mosaic",
+      "digest": null,
+      "state": "build-required"
+    },
+    "command": [
+      "python3",
+      "/opt/mosaic/run.py"
+    ],
+    "args": [
+      "--config={PARAMETERS_PATH}",
+      "--output={OUTPUT_PATH}"
+    ],
+    "environment": {
+      "JAX_PLATFORMS": "cuda"
+    }
+  },
+  "resources": {
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "32Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "8",
+      "memory": "64Gi",
+      "ephemeral_storage": "16Gi"
+    },
+    "limits": {
+      "cpu": "32",
+      "memory": "160Gi",
+      "ephemeral_storage": "64Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_resource_name": "nvidia.com/gpu",
+    "compatible_pool_ids": [
+      "h100-reserved-8x",
+      "h100-1x"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    }
+  },
+  "serving": null,
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": {
+      "id": "fs2-serve.nebius.ai/mosaic-escalante-20260801-parameters/v1",
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "objective_profile_id",
+          "iterations",
+          "seed"
+        ],
+        "properties": {
+          "objective_profile_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+            "maxLength": 63
+          },
+          "iterations": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        }
+      }
+    },
+    "operations": [
+      "optimize-sequence"
+    ],
+    "service_classes": [
+      "customer-batch",
+      "bulk-backfill"
+    ],
+    "access_profile": "standard",
+    "access_state": "not-required",
+    "stages": [
+      {
+        "id": "optimize",
+        "needs": [],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "160Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 64,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      }
+    ],
+    "storage": [],
+    "retry": {
+      "max_attempts": 3,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 60
+    },
+    "semantic_validation": {
+      "validator_id": "mosaic-escalante-20260801",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_mosaic",
+      "description": "Submit a typed mosaic sequence-optimization run."
+    }
+  },
+  "policy": {
+    "commercial_use": "license-dependent",
+    "non_clinical": true,
+    "limitations": [
+      "The mosaic identity remains provisional and is a framework, not a standalone trained model.",
+      "Only operator-reviewed objective profiles may select component models; callers cannot supply code or arbitrary component repositories."
+    ],
+    "fast_start": {
+      "requested_level": "Off",
+      "state": "candidate-unqualified",
+      "cache_strategy": "shared-pvc"
+    }
+  }
+}

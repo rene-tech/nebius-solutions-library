@@ -1,0 +1,20 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design-binders",
+  "service_class": "bulk-backfill",
+  "input_manifest": {
+    "artifact_id": "target.ligand.bundle.02",
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "size_bytes": 8192,
+    "media_type": "application/x-tar",
+    "compression": "zstd"
+  },
+  "parameters": {
+    "variant": "ligand-target",
+    "target_id": "39_7V11_LIGAND",
+    "run_name": "ligand-accept",
+    "seed": 7,
+    "num_samples": 3,
+    "diffusion_steps": 30
+  }
+}

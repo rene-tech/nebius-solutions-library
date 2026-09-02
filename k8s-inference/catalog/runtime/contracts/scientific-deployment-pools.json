@@ -1,0 +1,21 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-deployment-pools/v1",
+  "deployment": "k8s-inference-h100",
+  "evidence": "LIVE_ACCEPTANCE.md#current-retained-h100-topology-2026-09-02",
+  "pools": [
+    {
+      "pool_id": "h100-1x",
+      "accelerator_class": "nvidia-h100-sxm5-80gb",
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "gpus_per_node": 1,
+      "capacity_type": "preemptible"
+    },
+    {
+      "pool_id": "h100-reserved-8x",
+      "accelerator_class": "nvidia-h100-sxm5-80gb",
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "gpus_per_node": 8,
+      "capacity_type": "regular"
+    }
+  ]
+}

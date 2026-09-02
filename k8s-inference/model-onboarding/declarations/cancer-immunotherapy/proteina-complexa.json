@@ -1,0 +1,465 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "scientific-batch",
+  "model": {
+    "id": "proteina-complexa",
+    "variant_id": "upstream-dev-20260827",
+    "display_name": "Proteina-Complexa",
+    "family": "scientific-protein",
+    "source": {
+      "kind": "git",
+      "repository": "NVIDIA-BioNeMo/Proteina-Complexa",
+      "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+      "review": {
+        "url": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa/tree/54058860d43444c7289873f77d3e50b5b02348cd",
+        "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+        "summary": "Qualified canonical Proteina-Complexa repository revision; no tag or runtime qualification exists."
+      },
+      "license": {
+        "id": "Apache-2.0-code-and-NVIDIA-Open-Model-License",
+        "state": "verified",
+        "notes": "Code and each weight repository retain their distinct qualified license instruments."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The three exact NVIDIA Hugging Face variants are public and ungated."
+      }
+    },
+    "artifacts": [
+      {
+        "artifact_id": "complexa-protein",
+        "kind": "weights",
+        "source": {
+          "kind": "huggingface",
+          "repository": "nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1",
+          "revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+          "release_id": null
+        },
+        "required_files": [
+          "complexa.ckpt",
+          "complexa_ae.ckpt"
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard",
+        "content_digest_sha256": "dae819c6e8c6c09f7ee2f8b5ee4b3ab51acb674da193cac53170f615cd52a28d",
+        "total_size_bytes": 7034391160,
+        "file_manifest": [
+          {
+            "path": "complexa.ckpt",
+            "size_bytes": 2934289381,
+            "sha256": "589db1741f29838c7961386f6b873087238c72682e56189b89e0ae02610c19e9"
+          },
+          {
+            "path": "complexa_ae.ckpt",
+            "size_bytes": 4100101779,
+            "sha256": "35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816"
+          }
+        ]
+      },
+      {
+        "artifact_id": "complexa-ligand",
+        "kind": "weights",
+        "source": {
+          "kind": "huggingface",
+          "repository": "nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1",
+          "revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+          "release_id": null
+        },
+        "required_files": [
+          "complexa_ligand.ckpt",
+          "complexa_ligand_ae.ckpt"
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard",
+        "content_digest_sha256": "543e963c407db556d3204da62e3c321c10428ebf1ae174df2370297ce62366c7",
+        "total_size_bytes": 5890739041,
+        "file_manifest": [
+          {
+            "path": "complexa_ligand.ckpt",
+            "size_bytes": 1790554392,
+            "sha256": "8175213eac5ec6433fed1756d055ce3f867129bfdb033040e1a0560ca558bfe5"
+          },
+          {
+            "path": "complexa_ligand_ae.ckpt",
+            "size_bytes": 4100184649,
+            "sha256": "898da17022cdeaaaea7caace41c8b6fe7bfcb78be4876b0113127eb9bb1527e6"
+          }
+        ]
+      },
+      {
+        "artifact_id": "complexa-ame",
+        "kind": "weights",
+        "source": {
+          "kind": "huggingface",
+          "repository": "nvidia/NV-Proteina-Complexa-AME-160M-v1",
+          "revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+          "release_id": null
+        },
+        "required_files": [
+          "complexa_ame.ckpt",
+          "complexa_ame_ae.ckpt"
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard",
+        "content_digest_sha256": "bb5d47194561eeaf219b420c731abd858058c3602d581c34babdbcd10c3c72ae",
+        "total_size_bytes": 5892211805,
+        "file_manifest": [
+          {
+            "path": "complexa_ame.ckpt",
+            "size_bytes": 1792013880,
+            "sha256": "d11319693d024d0427abc356a86350a694a1cb7dceb8db642c8041e5a20a9f7b"
+          },
+          {
+            "path": "complexa_ame_ae.ckpt",
+            "size_bytes": 4100197925,
+            "sha256": "63b1358c5459e968628094fdc9a2a6a95ac003606fcf7b1a3a21174458a69734"
+          }
+        ]
+      },
+      {
+        "artifact_id": "alphafold2-params",
+        "kind": "runtime-dependency",
+        "source": {
+          "kind": "operator-staged",
+          "repository": null,
+          "revision": null,
+          "release_id": "alphafold2-released-parameters"
+        },
+        "required_files": [
+          "alphafold_params_2022-12-06.tar"
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard",
+        "content_digest_sha256": "b2fec032b5b9dab74dbeb7489d425b4fb4124742a3b368272bfa1555fe06650a",
+        "total_size_bytes": 5587968000,
+        "file_manifest": [
+          {
+            "path": "alphafold_params_2022-12-06.tar",
+            "size_bytes": 5587968000,
+            "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3"
+          }
+        ]
+      },
+      {
+        "artifact_id": "rosettafold3-checkpoint",
+        "kind": "runtime-dependency",
+        "source": {
+          "kind": "operator-staged",
+          "repository": null,
+          "revision": null,
+          "release_id": "rosettafold3-checkpoint"
+        },
+        "required_files": [
+          "rf3_foundry_01_24_latest_remapped.ckpt"
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard",
+        "content_digest_sha256": "08c0f4d6d58d81ebf7effa5cf2461856bdc8dc8fb49cbfa6f4b51a480aaece3e",
+        "total_size_bytes": 3038876446,
+        "file_manifest": [
+          {
+            "path": "rf3_foundry_01_24_latest_remapped.ckpt",
+            "size_bytes": 3038876446,
+            "sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0"
+          }
+        ]
+      },
+      {
+        "artifact_id": "esm2-650m",
+        "kind": "runtime-dependency",
+        "source": {
+          "kind": "huggingface",
+          "repository": "facebook/esm2_t33_650M_UR50D",
+          "revision": "08e4846e537177426273712802403f7ba8261b6c",
+          "release_id": null
+        },
+        "required_files": [
+          "config.json",
+          "model.safetensors",
+          "special_tokens_map.json",
+          "tokenizer_config.json",
+          "vocab.txt"
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard",
+        "content_digest_sha256": "fea2e288de3e2dc1e46e4f1cf7150c8f06a28e0e008538d39c3bf899512b66f2",
+        "total_size_bytes": 2609507429,
+        "file_manifest": [
+          {"path": "config.json", "size_bytes": 724, "sha256": "539095c22efc52a09d6147074ba4ca119f76a890df5901213b2b55f7d2f96b2b"},
+          {"path": "model.safetensors", "size_bytes": 2609506392, "sha256": "a08adabb949fa67ad3c14b509d04fd60368b35007b0095e3358f81200c4f4db0"},
+          {"path": "special_tokens_map.json", "size_bytes": 125, "sha256": "3aedcd4211c0d43aec4e607ff60a63255f3174ead795e997350f09a5f8cd9ee1"},
+          {"path": "tokenizer_config.json", "size_bytes": 95, "sha256": "7e9161ecdb548ec45a41cbc6b24aa4476fdd418461f491c4207baa99419a29ad"},
+          {"path": "vocab.txt", "size_bytes": 93, "sha256": "0b82cc0a7c7cf9e567b1e5892d793285b9fbae822c964ca48696f7db44598e03"}
+        ]
+      }
+    ],
+    "default_variant": true
+  },
+  "runtime": {
+    "template": "scientific-batch",
+    "kind": "custom",
+    "version": "upstream-dev-candidate",
+    "image": {
+      "logical_repository": "cancer-immunotherapy/proteina-complexa",
+      "digest": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+      "state": "digest-pinned"
+    },
+    "command": [
+      "complexa"
+    ],
+    "args": [
+      "generate",
+      "/opt/fs2/source/configs/protein_target.yaml",
+      "--output_dir={OUTPUT_PATH}"
+    ],
+    "environment": {}
+  },
+  "resources": {
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "32Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "8",
+      "memory": "64Gi",
+      "ephemeral_storage": "16Gi"
+    },
+    "limits": {
+      "cpu": "32",
+      "memory": "192Gi",
+      "ephemeral_storage": "64Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_resource_name": "nvidia.com/gpu",
+    "compatible_pool_ids": [
+      "h100-reserved-8x",
+      "h100-1x"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    }
+  },
+  "serving": null,
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": {
+      "id": "fs2-serve.nebius.ai/proteina-complexa-parameters/v1",
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://fs2-serve.nebius.ai/schema/proteina-complexa-parameters/v1",
+        "title": "Proteina-Complexa scientific run parameters",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "variant",
+          "target_id",
+          "run_name",
+          "seed",
+          "num_samples",
+          "diffusion_steps"
+        ],
+        "properties": {
+          "variant": {
+            "enum": [
+              "protein-target",
+              "ligand-target",
+              "ame"
+            ]
+          },
+          "target_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          },
+          "run_name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+            "maxLength": 63
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "num_samples": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1024
+          },
+          "diffusion_steps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000
+          }
+        }
+      }
+    },
+    "operations": [
+      "design-binders"
+    ],
+    "service_classes": [
+      "customer-batch",
+      "bulk-backfill"
+    ],
+    "access_profile": "standard",
+    "access_state": "not-required",
+    "stages": [
+      {
+        "id": "generate",
+        "needs": [],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "24",
+            "memory": "128Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "id": "filter",
+        "needs": [
+          "generate"
+        ],
+        "resource_class": "cpu",
+        "resources": {
+          "gpu_count": 0,
+          "requests": {
+            "cpu": "4",
+            "memory": "16Gi",
+            "ephemeral_storage": "8Gi"
+          },
+          "limits": {
+            "cpu": "16",
+            "memory": "64Gi",
+            "ephemeral_storage": "32Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "none",
+        "preemption_mode": "non_preemptible"
+      },
+      {
+        "id": "evaluate",
+        "needs": [
+          "filter"
+        ],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "24",
+            "memory": "160Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "id": "analyze",
+        "needs": [
+          "evaluate"
+        ],
+        "resource_class": "cpu",
+        "resources": {
+          "gpu_count": 0,
+          "requests": {
+            "cpu": "4",
+            "memory": "16Gi",
+            "ephemeral_storage": "8Gi"
+          },
+          "limits": {
+            "cpu": "16",
+            "memory": "64Gi",
+            "ephemeral_storage": "32Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "none",
+        "preemption_mode": "non_preemptible"
+      }
+    ],
+    "storage": [
+      {
+        "id": "proteina-complexa-run-artifacts",
+        "purpose": "run-artifacts",
+        "minimum_bytes": 107374182400,
+        "access_mode": "ReadWriteMany",
+        "read_only": false,
+        "stages": [
+          "generate",
+          "filter",
+          "evaluate",
+          "analyze"
+        ]
+      }
+    ],
+    "retry": {
+      "max_attempts": 3,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 60
+    },
+    "semantic_validation": {
+      "validator_id": "proteina-complexa-upstream-dev-20260827",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_proteina_complexa",
+      "description": "Submit a typed Proteina-Complexa binder-design campaign."
+    }
+  },
+  "policy": {
+    "commercial_use": "license-dependent",
+    "non_clinical": true,
+    "limitations": [
+      "All three exact NVIDIA variants are retained; no generic Proteina artifact is substituted.",
+      "The exact AlphaFold2 archive has no reviewed expanded runtime layout yet; deployment registry resolution, H100 compatibility, and semantic behavior remain unqualified."
+    ],
+    "fast_start": {
+      "requested_level": "Off",
+      "state": "candidate-unqualified",
+      "cache_strategy": "shared-pvc"
+    }
+  }
+}

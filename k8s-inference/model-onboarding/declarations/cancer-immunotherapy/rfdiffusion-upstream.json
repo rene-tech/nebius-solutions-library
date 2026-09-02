@@ -1,0 +1,289 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "scientific-batch",
+  "model": {
+    "id": "rfdiffusion",
+    "variant_id": "upstream-v1-1-0",
+    "display_name": "RFdiffusion upstream 1.1.0",
+    "family": "scientific-protein",
+    "source": {
+      "kind": "git",
+      "repository": "RosettaCommons/RFdiffusion",
+      "revision": "9273ef67335acaf91df0150473a274759229cdf6",
+      "review": {
+        "url": "https://github.com/RosettaCommons/RFdiffusion/tree/9273ef67335acaf91df0150473a274759229cdf6",
+        "revision": "9273ef67335acaf91df0150473a274759229cdf6",
+        "summary": "Qualified v1.1.0 release source for an explicit upstream variant; the canonical NIM record remains unchanged."
+      },
+      "license": {
+        "id": "BSD",
+        "state": "verified",
+        "notes": "The repository license covers code and referenced model weights."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The upstream code and checkpoint publication do not require NGC entitlement."
+      }
+    },
+    "artifacts": [
+      {
+        "artifact_id": "rfdiffusion-v1-1-0-checkpoints",
+        "kind": "weights",
+        "source": {
+          "kind": "operator-staged",
+          "repository": null,
+          "revision": null,
+          "release_id": "rfdiffusion-v1.1.0-checkpoint-set"
+        },
+        "required_files": [
+          "ActiveSite_ckpt.pt",
+          "Base_ckpt.pt",
+          "Base_epoch8_ckpt.pt",
+          "Complex_Fold_base_ckpt.pt",
+          "Complex_base_ckpt.pt",
+          "Complex_beta_ckpt.pt",
+          "InpaintSeq_Fold_ckpt.pt",
+          "InpaintSeq_ckpt.pt"
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard",
+        "content_digest_sha256": "a6f25ea4df457270825f01fd0477bf2b9dcc17f817b59ab06ad9d640de8e1540",
+        "total_size_bytes": 3868721590,
+        "file_manifest": [
+          {
+            "path": "ActiveSite_ckpt.pt",
+            "size_bytes": 483616107,
+            "sha256": "beca1f672049161df0bc6a2d2523828f19fd9c8a2b449988e246dde42e7ea986"
+          },
+          {
+            "path": "Base_ckpt.pt",
+            "size_bytes": 483616107,
+            "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca"
+          },
+          {
+            "path": "Base_epoch8_ckpt.pt",
+            "size_bytes": 483616427,
+            "sha256": "b8e5d57f0b8a8f8cb30779c106b75210b46a914a4d19fb180676ae647f5ae23d"
+          },
+          {
+            "path": "Complex_Fold_base_ckpt.pt",
+            "size_bytes": 483626923,
+            "sha256": "0ac3b4024aea811078cec41482528291d6d7d7084bf8190ec118f54642fb81a1"
+          },
+          {
+            "path": "Complex_base_ckpt.pt",
+            "size_bytes": 483619179,
+            "sha256": "76e4e260aefee3b582bd76b77ab95d2592e64f00c51bf344968ab9239f3250bc"
+          },
+          {
+            "path": "Complex_beta_ckpt.pt",
+            "size_bytes": 483380617,
+            "sha256": "5a0b1cafc23c60b1aabcec1e49391986ac4fd02cc1b6b4cc41714ca9fe882e9e"
+          },
+          {
+            "path": "InpaintSeq_Fold_ckpt.pt",
+            "size_bytes": 483626987,
+            "sha256": "51849c9fe64c16a38fe41c75db76abe044e4d3493926f6cfd29a5bde0331b7cc"
+          },
+          {
+            "path": "InpaintSeq_ckpt.pt",
+            "size_bytes": 483619243,
+            "sha256": "3b71b2b954e87d46b75a88ba64e0420fbf27f592604b10b6c3561b8c8ab70ab6"
+          }
+        ]
+      }
+    ],
+    "default_variant": false
+  },
+  "runtime": {
+    "template": "scientific-batch",
+    "kind": "custom",
+    "version": "1.1.0-cuda12-rebuild-required",
+    "image": {
+      "logical_repository": "cancer-immunotherapy/rfdiffusion-upstream",
+      "digest": null,
+      "state": "build-required"
+    },
+    "command": [
+      "python3",
+      "/opt/rfdiffusion/scripts/run_inference.py"
+    ],
+    "args": [
+      "inference.ckpt_override_path={MODEL_PATH}/Base_ckpt.pt",
+      "inference.output_prefix={OUTPUT_PATH}"
+    ],
+    "environment": {}
+  },
+  "resources": {
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "16Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "4",
+      "memory": "16Gi",
+      "ephemeral_storage": "16Gi"
+    },
+    "limits": {
+      "cpu": "16",
+      "memory": "64Gi",
+      "ephemeral_storage": "64Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_resource_name": "nvidia.com/gpu",
+    "compatible_pool_ids": [
+      "h100-reserved-8x",
+      "h100-1x"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    }
+  },
+  "serving": null,
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": {
+      "id": "fs2-serve.nebius.ai/rfdiffusion-upstream-v1-1-0-parameters/v1",
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contigs",
+          "design_count",
+          "seed"
+        ],
+        "properties": {
+          "contigs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "chain",
+                "start",
+                "end"
+              ],
+              "properties": {
+                "chain": {
+                  "type": "string",
+                  "pattern": "^[A-Z]$"
+                },
+                "start": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9999
+                },
+                "end": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9999
+                }
+              }
+            }
+          },
+          "design_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "hotspot_residues": {
+            "type": "array",
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z][1-9][0-9]{0,3}$"
+            }
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        }
+      }
+    },
+    "operations": [
+      "generate-backbone"
+    ],
+    "service_classes": [
+      "customer-batch",
+      "bulk-backfill"
+    ],
+    "access_profile": "standard",
+    "access_state": "not-required",
+    "stages": [
+      {
+        "id": "design",
+        "needs": [],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "4",
+            "memory": "16Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "16",
+            "memory": "64Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 256,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      }
+    ],
+    "storage": [],
+    "retry": {
+      "max_attempts": 3,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 30
+    },
+    "semantic_validation": {
+      "validator_id": "rfdiffusion-upstream-v1-1-0",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_rfdiffusion_upstream",
+      "description": "Submit an explicit upstream RFdiffusion design campaign."
+    }
+  },
+  "policy": {
+    "commercial_use": "allowed",
+    "non_clinical": true,
+    "limitations": [
+      "The canonical rfdiffusion NIM model record is retained; this is a distinct upstream runtime variant.",
+      "The upstream CUDA 11 environment is not H100-ready and must be rebuilt and qualified before invocation."
+    ],
+    "fast_start": {
+      "requested_level": "Off",
+      "state": "candidate-unqualified",
+      "cache_strategy": "shared-pvc"
+    }
+  }
+}

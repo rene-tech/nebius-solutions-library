@@ -1,0 +1,278 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "scientific-batch",
+  "model": {
+    "id": "openfold3",
+    "variant_id": "upstream-openbind-v0-5-0",
+    "display_name": "OpenFold3 OpenBind-0",
+    "family": "scientific-protein",
+    "source": {
+      "kind": "git",
+      "repository": "aqlaboratory/openfold-3",
+      "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+      "review": {
+        "url": "https://github.com/aqlaboratory/openfold-3/tree/c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+        "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+        "summary": "Qualified v0.5.0 source for the distinct open OpenBind-0 runtime variant."
+      },
+      "license": {
+        "id": "Apache-2.0",
+        "state": "verified",
+        "notes": "Code and OpenBind-0 weights are Apache-2.0."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The qualified upstream checkpoint path is public; runtime supply remains unresolved."
+      }
+    },
+    "artifacts": [
+      {
+        "artifact_id": "openfold3-openbind-0",
+        "kind": "weights",
+        "source": {
+          "kind": "operator-staged",
+          "repository": null,
+          "revision": null,
+          "release_id": "of3-ob-2025-06-30-174k"
+        },
+        "required_files": [
+          "of3-ob-2025-06-30-174k.pt"
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard",
+        "content_digest_sha256": "f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+        "total_size_bytes": 2287872989,
+        "file_manifest": [
+          {
+            "path": "of3-ob-2025-06-30-174k.pt",
+            "size_bytes": 2287872989,
+            "sha256": "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8e29e4"
+          }
+        ]
+      },
+      {
+        "artifact_id": "openfold3-components-bcif",
+        "kind": "reference-data",
+        "source": {
+          "kind": "operator-staged",
+          "repository": null,
+          "revision": null,
+          "release_id": "openfold3-components-bcif"
+        },
+        "required_files": [
+          "components.bcif"
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard",
+        "content_digest_sha256": "ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+        "total_size_bytes": 63393643,
+        "file_manifest": [
+          {
+            "path": "components.bcif",
+            "size_bytes": 63393643,
+            "sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c"
+          }
+        ]
+      }
+    ],
+    "default_variant": false
+  },
+  "runtime": {
+    "template": "scientific-batch",
+    "kind": "custom",
+    "version": "0.5.0-candidate",
+    "image": {
+      "logical_repository": "cancer-immunotherapy/openfold3-upstream",
+      "digest": null,
+      "state": "build-required"
+    },
+    "command": [
+      "/usr/local/bin/fs2-run-openfold3"
+    ],
+    "args": [
+      "predict",
+      "--query-json={REQUEST_PATH}",
+      "--checkpoint=/models/openfold3/of3-ob-2025-06-30-174k.pt",
+      "--ccd-path=/databases/openfold3/components.bcif",
+      "--runner-yaml={REQUEST_LOCAL_RUNNER_CONFIG_PATH}",
+      "--output-dir={OUTPUT_PATH}"
+    ],
+    "environment": {}
+  },
+  "resources": {
+    "host_ram_min_bytes": 68719476736,
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "32Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "8",
+      "memory": "64Gi",
+      "ephemeral_storage": "16Gi"
+    },
+    "limits": {
+      "cpu": "32",
+      "memory": "192Gi",
+      "ephemeral_storage": "64Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_resource_name": "nvidia.com/gpu",
+    "compatible_pool_ids": [
+      "h100-reserved-8x",
+      "h100-1x"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    }
+  },
+  "serving": null,
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": {
+      "id": "fs2-serve.nebius.ai/openfold3-upstream-openbind-v0-5-0-parameters/v1",
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_seeds",
+          "msa_mode"
+        ],
+        "properties": {
+          "model_seeds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "msa_mode": {
+            "const": "none"
+          }
+        }
+      }
+    },
+    "operations": [
+      "predict-complex-structure"
+    ],
+    "service_classes": [
+      "customer-batch"
+    ],
+    "access_profile": "standard",
+    "access_state": "not-required",
+    "stages": [
+      {
+        "id": "data-pipeline",
+        "needs": [],
+        "resource_class": "cpu",
+        "resources": {
+          "gpu_count": 0,
+          "requests": {
+            "cpu": "16",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "64",
+            "memory": "256Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "none",
+        "preemption_mode": "non_preemptible"
+      },
+      {
+        "id": "inference",
+        "needs": [
+          "data-pipeline"
+        ],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "192Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      }
+    ],
+    "storage": [
+      {
+        "id": "openfold3-run-artifacts",
+        "purpose": "run-artifacts",
+        "minimum_bytes": 107374182400,
+        "access_mode": "ReadWriteMany",
+        "read_only": false,
+        "stages": [
+          "data-pipeline",
+          "inference"
+        ]
+      }
+    ],
+    "retry": {
+      "max_attempts": 2,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 60
+    },
+    "semantic_validation": {
+      "validator_id": "openfold3-upstream-openbind-v0-5-0",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_openfold3_upstream",
+      "description": "Submit an OpenFold3 OpenBind-0 scientific run."
+    }
+  },
+  "policy": {
+    "commercial_use": "allowed",
+    "non_clinical": true,
+    "limitations": [
+      "This upstream OpenBind-0 candidate is an explicit variant of canonical model ID openfold3; it does not replace the retained NIM record.",
+      "Covalent bonds and glycans must be rejected, not dropped or translated.",
+      "Precomputed MSA bundles remain unsupported until bounded relocation rewrites and validates every upstream file and directory path.",
+      "A future local-MSA lane will require at least one TiB of shared ReadWriteMany reference storage; the current msa_mode=none prepare stage mounts no database or checkpoint artifact.",
+      "The non-secret offline v0.5.0 base runner configuration must be reviewed and baked into the final wrapper image; that image entrypoint remains unqualified and the published smoke entrypoint is not treated as runnable."
+    ],
+    "fast_start": {
+      "requested_level": "Off",
+      "state": "candidate-unqualified",
+      "cache_strategy": "shared-pvc"
+    }
+  }
+}

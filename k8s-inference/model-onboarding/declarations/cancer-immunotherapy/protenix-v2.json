@@ -1,0 +1,257 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "scientific-batch",
+  "model": {
+    "id": "protenix-v2",
+    "variant_id": "upstream-v2-0-0",
+    "display_name": "Protenix v2",
+    "family": "scientific-protein",
+    "source": {
+      "kind": "git",
+      "repository": "bytedance/Protenix",
+      "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+      "review": {
+        "url": "https://github.com/bytedance/Protenix/tree/2475421477ab414b571149ad4a875c390ff8a35d",
+        "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+        "summary": "Qualified v2.0.0 code source; the publisher checkpoint remains unavailable, while an exact third-party mirror is verified and the final composite checkpoint/common-data bundle remains unresolved."
+      },
+      "license": {
+        "id": "Apache-2.0",
+        "state": "verified",
+        "notes": "Code is Apache-2.0; the exact third-party v2 mirror is identified, but the immutable composite runtime bundle is not yet qualified."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "There is no credential or form for the unavailable publisher checkpoint."
+      }
+    },
+    "artifacts": [
+      {
+        "artifact_id": "protenix-v2",
+        "kind": "weights",
+        "source": {
+          "kind": "third-party-mirror",
+          "repository": "TMF001/protenix-v2-weights",
+          "revision": "653edab28103133512575365130916e3fd23ecc3",
+          "release_id": "protenix-v2.pt"
+        },
+        "required_files": [
+          "checkpoint/protenix-v2.pt",
+          "manifest.json",
+          ".fs2-manifest-sha256",
+          "common/components.cif",
+          "common/components.cif.rdkit_mol.pkl",
+          "common/clusters-by-entity-40.txt",
+          "common/obsolete_release_date.csv"
+        ],
+        "supply_state": "unresolved",
+        "handling": "standard",
+        "file_manifest": [
+          {
+            "path": "checkpoint/protenix-v2.pt",
+            "size_bytes": 1859785497,
+            "sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+            "md5": "49016ebf4775bf6b629bc4dc77b6673e"
+          }
+        ]
+      }
+    ],
+    "default_variant": true
+  },
+  "runtime": {
+    "template": "scientific-batch",
+    "kind": "custom",
+    "version": "2.0.0-blocked",
+    "image": {
+      "logical_repository": "cancer-immunotherapy/protenix-v2",
+      "digest": null,
+      "state": "build-required"
+    },
+    "command": [
+      "/usr/local/bin/fs2-run-protenix"
+    ],
+    "args": [
+      "pred",
+      "--input={REQUEST_PATH}",
+      "--output-dir={OUTPUT_PATH}",
+      "--checkpoint=/models/protenix-v2/checkpoint/protenix-v2.pt",
+      "--common-dir=/models/protenix-v2/common",
+      "--disable-templates",
+      "--disable-rna-msa"
+    ],
+    "working_directory": "/",
+    "environment": {
+      "PROTENIX_ROOT_DIR": "/models/protenix-v2"
+    }
+  },
+  "resources": {
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "16Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "8",
+      "memory": "64Gi",
+      "ephemeral_storage": "16Gi"
+    },
+    "limits": {
+      "cpu": "32",
+      "memory": "160Gi",
+      "ephemeral_storage": "64Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_resource_name": "nvidia.com/gpu",
+    "compatible_pool_ids": [
+      "h100-reserved-8x",
+      "h100-1x"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    }
+  },
+  "serving": null,
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": {
+      "id": "fs2-serve.nebius.ai/protenix-v2-upstream-v2-0-0-parameters/v1",
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "checkpoint",
+          "msa_mode",
+          "sample_count",
+          "seed"
+        ],
+        "properties": {
+          "checkpoint": {
+            "const": "protenix-v2"
+          },
+          "msa_mode": {
+            "enum": [
+              "none"
+            ]
+          },
+          "sample_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        }
+      }
+    },
+    "operations": [
+      "predict-complex-structure"
+    ],
+    "service_classes": [
+      "customer-batch"
+    ],
+    "access_profile": "standard",
+    "access_state": "not-required",
+    "stages": [
+      {
+        "id": "prepare-data",
+        "needs": [],
+        "resource_class": "cpu",
+        "resources": {
+          "gpu_count": 0,
+          "requests": {
+            "cpu": "4",
+            "memory": "16Gi",
+            "ephemeral_storage": "8Gi"
+          },
+          "limits": {
+            "cpu": "8",
+            "memory": "32Gi",
+            "ephemeral_storage": "32Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 64,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "id": "sample-structure",
+        "needs": [
+          "prepare-data"
+        ],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "160Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      }
+    ],
+    "storage": [],
+    "retry": {
+      "max_attempts": 2,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 60
+    },
+    "semantic_validation": {
+      "validator_id": "protenix-v2-upstream-v2-0-0",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_protenix_v2",
+      "description": "Submit a typed Protenix v2 prediction after artifact admission."
+    }
+  },
+  "policy": {
+    "commercial_use": "allowed",
+    "non_clinical": true,
+    "limitations": [
+      "The lane remains non-invocable even if an image build becomes available.",
+      "The exact v2 checkpoint is mirror-verified, but the canonical checkpoint/common-data tree and its localization receipt are not yet published as an immutable artifact bundle.",
+      "The custom fast-layernorm is prebuilt, but cuequivariance retains live Triton JIT for longer sequences; first-run and warm-cache H100 timings remain pending and runtime JIT is not represented as disabled.",
+      "The shared writable JIT cache must be deployment-bound by the final immutable image digest and SM90; cache contents must not be reused across image or accelerator identities.",
+      "Only msa_mode=none is admitted; precomputed MSA remains unavailable until every contained file path is bounded, relocated, rewritten, and validated without network fallback.",
+      "The typed offline preprocessing wrapper and deterministic handoff are not published in an immutable image; route remains unqualified until H100 evidence."
+    ],
+    "fast_start": {
+      "requested_level": "Off",
+      "state": "candidate-unqualified",
+      "cache_strategy": "shared-pvc"
+    }
+  }
+}

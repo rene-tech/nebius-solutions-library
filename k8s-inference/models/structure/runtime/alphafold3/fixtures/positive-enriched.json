@@ -1,0 +1,17 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-complex-structure",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "manifest.alphafold3.enriched",
+    "sha256": "9f7f0e4ead11dd926643564a2c81fec04dcf4045b0eb891b36dd1de8db545bc6",
+    "size_bytes": 1024,
+    "media_type": "application/vnd.fs2.scientific-stage+tar",
+    "compression": "zstd"
+  },
+  "parameters": {
+    "input_mode": "enriched",
+    "model_seeds": [17],
+    "num_diffusion_samples": 1
+  }
+}

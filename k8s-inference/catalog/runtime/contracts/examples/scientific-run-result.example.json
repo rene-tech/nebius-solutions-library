@@ -8,6 +8,7 @@
   "completed_at": "2026-09-02T00:05:00Z",
   "execution_identity": {
     "model_id": "example-protein-design",
+    "variant_id": "upstream-example-v1",
     "model_revision": "2222222222222222222222222222222222222222",
     "runtime_image_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "runtime_recipe_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",

@@ -2,10 +2,11 @@
 set -euo pipefail
 
 catalog_root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+control_plane_src="$catalog_root/../../components/control-plane/src"
 
 uv lock --check --project "$catalog_root"
 
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$catalog_root" \
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$catalog_root:$control_plane_src" \
   python3 -m unittest discover -v "$catalog_root/tests"
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$catalog_root" \
   python3 -m fs2_serve_catalog.cli validate --catalog-root "$catalog_root"

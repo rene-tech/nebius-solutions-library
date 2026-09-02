@@ -1,0 +1,222 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "scientific-batch",
+  "model": {
+    "id": "freebindcraft",
+    "variant_id": "upstream-v1-0-5",
+    "display_name": "FreeBindCraft 1.0.5",
+    "family": "scientific-protein",
+    "source": {
+      "kind": "git",
+      "repository": "cytokineking/FreeBindCraft",
+      "revision": "28c43fc48942eebd7918f504e9812c5c17bb3411",
+      "review": {
+        "url": "https://github.com/cytokineking/FreeBindCraft/tree/28c43fc48942eebd7918f504e9812c5c17bb3411",
+        "revision": "28c43fc48942eebd7918f504e9812c5c17bb3411",
+        "summary": "Qualified v1.0.5 release source for the explicit PyRosetta-free alternative."
+      },
+      "license": {
+        "id": "MIT",
+        "state": "verified",
+        "notes": "The fork retains the BindCraft MIT license; FASPR commercial terms remain a separate limitation."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The no-PyRosetta installation path requires no academic package credential."
+      }
+    },
+    "artifacts": [
+      {
+        "artifact_id": "freebindcraft-alphafold2-params",
+        "kind": "weights",
+        "source": {
+          "kind": "operator-staged",
+          "repository": null,
+          "revision": null,
+          "release_id": "alphafold2-released-parameters"
+        },
+        "required_files": [],
+        "supply_state": "unresolved",
+        "handling": "standard"
+      }
+    ],
+    "default_variant": true
+  },
+  "runtime": {
+    "template": "scientific-batch",
+    "kind": "custom",
+    "version": "1.0.5-candidate",
+    "image": {
+      "logical_repository": "cancer-immunotherapy/freebindcraft",
+      "digest": null,
+      "state": "build-required"
+    },
+    "command": [
+      "python3",
+      "/opt/freebindcraft/bindcraft.py"
+    ],
+    "args": [
+      "--settings={PARAMETERS_PATH}",
+      "--no-pyrosetta"
+    ],
+    "environment": {}
+  },
+  "resources": {
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "32Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "8",
+      "memory": "32Gi",
+      "ephemeral_storage": "16Gi"
+    },
+    "limits": {
+      "cpu": "32",
+      "memory": "128Gi",
+      "ephemeral_storage": "64Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_resource_name": "nvidia.com/gpu",
+    "compatible_pool_ids": [
+      "h100-reserved-8x",
+      "h100-1x"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    }
+  },
+  "serving": null,
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": {
+      "id": "fs2-serve.nebius.ai/freebindcraft-upstream-v1-0-5-parameters/v1",
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "binder_length",
+          "scoring_mode",
+          "target_chains",
+          "trajectories"
+        ],
+        "properties": {
+          "binder_length": {
+            "type": "integer",
+            "minimum": 20,
+            "maximum": 500
+          },
+          "scoring_mode": {
+            "const": "open-source-bypass"
+          },
+          "target_chains": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 26,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z]$"
+            }
+          },
+          "trajectories": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      }
+    },
+    "operations": [
+      "design-binders"
+    ],
+    "service_classes": [
+      "customer-batch",
+      "bulk-backfill"
+    ],
+    "access_profile": "standard",
+    "access_state": "not-required",
+    "stages": [
+      {
+        "id": "design-score",
+        "needs": [],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "32Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "128Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 64,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      }
+    ],
+    "storage": [
+      {
+        "id": "freebindcraft-run-artifacts",
+        "purpose": "run-artifacts",
+        "minimum_bytes": 107374182400,
+        "access_mode": "ReadWriteMany",
+        "read_only": false,
+        "stages": [
+          "design-score"
+        ]
+      }
+    ],
+    "retry": {
+      "max_attempts": 3,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 60
+    },
+    "semantic_validation": {
+      "validator_id": "freebindcraft-upstream-v1-0-5",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_freebindcraft",
+      "description": "Submit an explicit PyRosetta-free binder-design campaign."
+    }
+  },
+  "policy": {
+    "commercial_use": "license-dependent",
+    "non_clinical": true,
+    "limitations": [
+      "This is an explicit non-equivalent alternative, not native BindCraft.",
+      "Hard-coded placeholder interface metrics cannot be used for ranking or acceptance."
+    ],
+    "fast_start": {
+      "requested_level": "Off",
+      "state": "candidate-unqualified",
+      "cache_strategy": "shared-pvc"
+    }
+  }
+}
