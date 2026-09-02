@@ -375,6 +375,97 @@ def test_context_overview_models_and_model_detail_are_typed_and_explicit(
     )
 
 
+def test_runtime_views_include_only_configured_models_and_use_unambiguous_pool_gpu(
+    registry: Registry,
+    cipher: Any,
+    hasher: Any,
+) -> None:
+    from test_admin_configuration import qualified_configuration
+
+    configuration, _ = qualified_configuration()
+    pool_id = next(iter(configuration.pools))
+    model = configuration.models["qwen3-8b"]
+    configuration = configuration.model_copy(
+        update={
+            "pools": {
+                pool_id: configuration.pools[pool_id].model_copy(
+                    update={"accelerator_class": "nvidia-h100-sxm"}
+                )
+            },
+            "models": {
+                "qwen3-8b": model.model_copy(
+                    update={"placement": model.placement.model_copy(update={"accelerators": 2})}
+                )
+            },
+        }
+    )
+    assert len(registry.list()) > len(configuration.models)
+    runtime = _runtime(registry, cipher, hasher)
+    asyncio.run(runtime.store.configuration_ensure_initial(configuration, actor="terraform-bootstrap"))
+
+    with _client(runtime) as client:
+        models = client.get("/admin/api/v1/models", headers=ADMIN_AUTH)
+        overview = client.get("/admin/api/v1/overview", headers=ADMIN_AUTH)
+        detail = client.get("/admin/api/v1/models/qwen3-8b", headers=ADMIN_AUTH)
+
+    assert models.status_code == overview.status_code == detail.status_code == 200
+    assert models.json()["data"]["total"] == 1
+    identity = models.json()["data"]["items"][0]["identity"]
+    assert identity["id"] == "qwen3-8b"
+    assert identity["gpu_class"] == "nvidia-h100-sxm"
+    assert identity["gpu_count"] == 2
+    assert detail.json()["data"]["model"]["identity"]["gpu_class"] == "nvidia-h100-sxm"
+    states = {item["state"]: item["models"] for item in overview.json()["data"]["model_states"]}
+    assert states["hot"] == 1
+    assert states["unknown"] == 0
+    assert states["unsupported"] == 0
+
+
+def test_configured_model_remains_visible_when_its_runtime_route_is_disabled(
+    registry: Registry,
+    cipher: Any,
+    hasher: Any,
+) -> None:
+    from test_admin_configuration import qualified_configuration
+
+    configuration, _ = qualified_configuration()
+    source = registry.get("qwen3-8b")
+    disabled = replace(source, gateway=replace(source.gateway, routable=False))
+    runtime = _runtime(Registry(registry.catalog, {disabled.id: disabled}), cipher, hasher)
+    asyncio.run(runtime.store.configuration_ensure_initial(configuration, actor="terraform-bootstrap"))
+
+    with _client(runtime) as client:
+        models = client.get("/admin/api/v1/models", headers=ADMIN_AUTH)
+
+    assert models.status_code == 200
+    assert models.json()["data"]["total"] == 1
+    assert models.json()["data"]["items"][0]["identity"]["id"] == "qwen3-8b"
+    assert models.json()["data"]["items"][0]["identity"]["enabled"] is False
+
+
+def test_configuration_read_failure_falls_back_to_routable_models(
+    registry: Registry,
+    cipher: Any,
+    hasher: Any,
+) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+
+    async def fail_configuration() -> Any:
+        raise RuntimeError("CONFIGURATION_DATABASE_UNAVAILABLE")
+
+    runtime.store.configuration_current = fail_configuration  # type: ignore[method-assign]
+    with _client(runtime) as client:
+        models = client.get("/admin/api/v1/models", headers=ADMIN_AUTH)
+        overview = client.get("/admin/api/v1/overview", headers=ADMIN_AUTH)
+
+    assert models.status_code == overview.status_code == 200
+    assert models.json()["data"]["total"] == len(registry.list(enabled_only=True))
+    assert {item["identity"]["id"] for item in models.json()["data"]["items"]} == {
+        model.id for model in registry.list(enabled_only=True)
+    }
+    assert "CONFIGURATION_DATABASE_UNAVAILABLE" not in models.text + overview.text
+
+
 def test_admin_bff_enforces_auth_and_same_origin_transport(registry: Any, cipher: Any, hasher: Any) -> None:
     runtime = _runtime(registry, cipher, hasher)
     with _client(runtime, authenticated=False) as client:

@@ -67,6 +67,7 @@ from .admin_models import (
     AdminValueState,
     AdminWarning,
 )
+from .configuration_models import ModelConfiguration, PlatformConfiguration
 from .models import OperationStatus
 from .registry import OperationalModel, Registry
 from .store import NotFoundError, Store
@@ -476,6 +477,30 @@ class AdminReadService:
         self.source_max_age_seconds = source_max_age_seconds
         self.adapter_timeout_seconds = adapter_timeout_seconds
 
+    async def _runtime_models(self) -> tuple[list[OperationalModel], PlatformConfiguration | None]:
+        """Return configured deployments, not every canonical catalog candidate."""
+
+        try:
+            current = await asyncio.wait_for(
+                self.store.configuration_current(),
+                timeout=self.adapter_timeout_seconds,
+            )
+        except Exception:
+            current = None
+        if current is None:
+            return list(self.registry.list(enabled_only=True)), None
+        configuration = current.desired
+        models: list[OperationalModel] = []
+        for model_id in configuration.models:
+            try:
+                models.append(self.registry.get(model_id, require_enabled=False))
+            except KeyError:
+                # Configuration validation normally makes this impossible. A
+                # transient catalog/configuration mismatch must not make other
+                # configured deployments disappear from the operator view.
+                continue
+        return models, configuration
+
     def resolve_context(
         self,
         *,
@@ -641,7 +666,11 @@ class AdminReadService:
         return database, kubernetes, prometheus, sources, warnings
 
     @staticmethod
-    def _identity(model: OperationalModel) -> AdminModelIdentity:
+    def _identity(
+        model: OperationalModel,
+        configured: ModelConfiguration | None = None,
+        configuration: PlatformConfiguration | None = None,
+    ) -> AdminModelIdentity:
         gateway = model.gateway
         binding = gateway.binding
         endpoints = dict(gateway.endpoints) if binding is not None else {}
@@ -659,6 +688,15 @@ class AdminReadService:
                 }
             )
         )
+        gpu_class = gateway.gpu_class
+        gpu_count = gateway.gpu_allocation_count
+        if configured is not None and configuration is not None:
+            configured_classes = {
+                configuration.pools[pool_id].accelerator_class for pool_id in configured.placement.pool_ids
+            }
+            if len(configured_classes) == 1:
+                gpu_class = next(iter(configured_classes))
+                gpu_count = configured.placement.accelerators
         return AdminModelIdentity(
             id=model.id,
             display_name=gateway.display_name,
@@ -668,8 +706,8 @@ class AdminReadService:
             model_revision=gateway.model_revision,
             runtime_kind=gateway.runtime_kind,
             runtime_image_digest=gateway.runtime_image_digest,
-            gpu_class=gateway.gpu_class,
-            gpu_count=gateway.gpu_allocation_count,
+            gpu_class=gpu_class,
+            gpu_count=gpu_count,
             execution_mode=gateway.execution_mode,
             protocols=sorted(gateway.protocols),
             public_endpoints=dict(sorted(endpoints.items())),
@@ -753,6 +791,8 @@ class AdminReadService:
         self,
         model: OperationalModel,
         *,
+        configured: ModelConfiguration | None,
+        configuration: PlatformConfiguration | None,
         database: _DatabaseSnapshot | None,
         kubernetes: AdminKubernetesSnapshot | None,
         prometheus: AdminPrometheusSnapshot | None,
@@ -791,7 +831,7 @@ class AdminReadService:
         errors = usage.error_operations if usage is not None else 0
         error_rate = (errors / operations) if operations else 0.0
         return AdminModelSummary(
-            identity=self._identity(model),
+            identity=self._identity(model, configured, configuration),
             runtime=AdminModelRuntime(
                 state=state,
                 reason=reason,
@@ -861,11 +901,13 @@ class AdminReadService:
         state: AdminModelState | None = None,
         limit: int = 200,
     ) -> AdminEnvelope[AdminModelList]:
-        models = list(self.registry.list())
+        models, configuration = await self._runtime_models()
         database, kubernetes, prometheus, sources, warnings = await self._source_snapshots(models, context)
         items = [
             self._model_summary(
                 model,
+                configured=configuration.models.get(model.id) if configuration is not None else None,
+                configuration=configuration,
                 database=database,
                 kubernetes=kubernetes,
                 prometheus=prometheus,
@@ -895,9 +937,12 @@ class AdminReadService:
             model = self.registry.get(model_id, require_enabled=False)
         except KeyError:
             raise AdminProblemError(404, "model_not_found", "model was not found") from None
+        _, configuration = await self._runtime_models()
         database, kubernetes, prometheus, sources, warnings = await self._source_snapshots([model], context)
         summary = self._model_summary(
             model,
+            configured=configuration.models.get(model.id) if configuration is not None else None,
+            configuration=configuration,
             database=database,
             kubernetes=kubernetes,
             prometheus=prometheus,
@@ -921,12 +966,14 @@ class AdminReadService:
         )
 
     async def overview(self, context: AdminContext) -> AdminEnvelope[AdminOverview]:
-        models = list(self.registry.list())
+        models, configuration = await self._runtime_models()
         database, kubernetes, prometheus, sources, warnings = await self._source_snapshots(models, context)
         source_states = {source.id: source.state for source in sources}
         items = [
             self._model_summary(
                 model,
+                configured=configuration.models.get(model.id) if configuration is not None else None,
+                configuration=configuration,
                 database=database,
                 kubernetes=kubernetes,
                 prometheus=prometheus,
