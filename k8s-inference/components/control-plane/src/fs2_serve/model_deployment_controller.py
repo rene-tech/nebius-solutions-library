@@ -656,11 +656,20 @@ class HttpKubernetesModelClient:
             for body in raw:
                 if not isinstance(body, dict):
                     raise ControllerError("owned-resource list item is invalid")
-                metadata = _metadata(body)
+                normalized = dict(body)
+                for field, expected in (
+                    ("apiVersion", endpoint.api_version),
+                    ("kind", endpoint.kind),
+                ):
+                    actual = body.get(field)
+                    if actual in (None, ""):
+                        normalized[field] = expected
+                metadata = _metadata(normalized)
                 identity = (
-                    f"{body.get('apiVersion')}/{body.get('kind')}/{metadata.get('namespace')}/{metadata.get('name')}"
+                    f"{normalized['apiVersion']}/{normalized['kind']}/"
+                    f"{metadata.get('namespace')}/{metadata.get('name')}"
                 )
-                bodies[identity] = body
+                bodies[identity] = normalized
         # Exact GETs detect a foreign collision even when it deliberately lacks
         # the controller's discovery label.
         for identity, item in desired.items():

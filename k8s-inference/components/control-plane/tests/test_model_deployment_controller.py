@@ -1226,6 +1226,57 @@ async def test_http_discovery_exactly_gets_the_generated_hpa_descendant(tmp_path
 
 
 @pytest.mark.asyncio
+async def test_http_discovery_restores_typemeta_omitted_from_built_in_list_items(tmp_path: Path) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    render = renderer().render(
+        model_spec(),
+        RenderContext(
+            name="qwen-live",
+            namespace="fs2-models",
+            uid="cr-uid-1",
+            generation=1,
+            pool=envelope().pools["pool-b"],
+            eligible_pools=[envelope().pools[pool_ref] for pool_ref in model_spec().placement.pool_refs],
+            prometheus_server_address="http://prometheus:9090",
+        ),
+    )
+    service = next(item for item in render.resources if item.kind == "Service")
+    listed_service = copy.deepcopy(service.manifest)
+    listed_service.pop("apiVersion")
+    listed_service.pop("kind")
+    listed_service["metadata"].update({"uid": "service-uid", "resourceVersion": "11"})
+    requested_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_paths.append(request.url.path)
+        if request.url.path.endswith("/services"):
+            return httpx.Response(200, json={"items": [listed_service]})
+        if "labelSelector" in request.url.params:
+            return httpx.Response(200, json={"items": []})
+        return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    discovery = await client.discover(
+        key=ModelKey(namespace="fs2-models", name="qwen-live"),
+        owner_uid="cr-uid-1",
+        render=render,
+    )
+    assert len(discovery.resources) == 1
+    assert discovery.resources[0].observed.api_version == "v1"
+    assert discovery.resources[0].observed.kind == "Service"
+    assert not any(path.endswith(f"/services/{service.name}") for path in requested_paths)
+    await http.aclose()
+
+
+@pytest.mark.asyncio
 async def test_http_delete_carries_exact_uid_and_resource_version_preconditions(tmp_path: Path) -> None:
     token = tmp_path / "token"
     token.write_text("projected-service-account-token")
