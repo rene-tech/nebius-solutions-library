@@ -1,4 +1,4 @@
-# Model onboarding compiler (first slice)
+# Model onboarding compiler
 
 Adding a model currently requires coordinated edits across the runtime catalog,
 profile catalog, Kubernetes manifests, live-service inventory, semantic
@@ -6,7 +6,8 @@ qualification, cold-start evidence, and several derived contract indexes. This
 prototype removes the first layer of repetition without pretending that a model
 is qualified before it has evidence.
 
-The input is one review-owned `ModelDefinition` JSON document. The compiler
+The input is one review-owned `ModelDefinition` JSON document with
+`execution_mode` set to `http`, `scientific-batch`, or `hybrid`. The compiler
 validates it and produces deterministic files in a separate staging directory;
 it never edits the solution tree, Terraform inputs or state, and never talks to
 a cluster or cloud API.
@@ -34,6 +35,16 @@ python3 model-onboarding/compile_model.py check \
   --output-dir /tmp/example-7b-onboarding
 ```
 
+The two additional contract examples are deliberately non-deployable:
+
+```bash
+python3 model-onboarding/compile_model.py validate \
+  model-onboarding/examples/scientific-batch-git.json
+
+python3 model-onboarding/compile_model.py validate \
+  model-onboarding/examples/hybrid-huggingface.json
+```
+
 `dry-run` prints paths, targets, sizes, and SHA-256 digests and performs no
 writes. `check` returns exit status `1` for a missing, unexpected, or changed
 file and performs no writes. `generate` refuses to overwrite an output tree
@@ -47,7 +58,7 @@ provides it.
 
 ## Outputs
 
-One declaration currently produces:
+An HTTP declaration produces:
 
 | Staged file | Intended integration target |
 | --- | --- |
@@ -57,6 +68,14 @@ One declaration currently produces:
 | `projections/live-service-route.json` | `all-models-live-services.json` merge input |
 | `projections/catalog-index.json` | `catalog/runtime/catalog.json` sorted-set input |
 | `onboarding-bundle.json` | Content-digest index and remaining promotion gates |
+
+A `scientific-batch` declaration produces only
+`projections/scientific-workload-profile.json` plus the bundle index. This is
+intentional: a declaration must not synthesize a Kueue Job, serving route, or
+credential before a separately reviewed BatchRun controller exists. A `hybrid`
+declaration produces the HTTP files and this separate candidate batch profile.
+The existing serving-binding consumer still accepts only HTTP backends, so this
+change does not extend its schema with a batch shape that no runtime can honor.
 
 The model record is deliberately `unqualified`, non-invocable, conventional
 startup only, with an unresolved weight artifact and blocked semantic
@@ -99,7 +118,10 @@ ModelDefinition
 ```
 
 Runtime systems should be adapters, not competing canonical schemas. The
-current adapter is a bounded Hugging Face HTTP Deployment. Follow-up adapters
+HTTP adapter is a bounded Hugging Face Deployment. The scientific adapter
+captures an operator-owned stage DAG, retry/cancellation behavior, access
+profile, request/result schema IDs, service classes, and MCP metadata while
+remaining explicitly `candidate-unqualified`. Follow-up runtime adapters
 can render KServe `LLMInferenceService`, llm-d, NVIDIA NIM Operator
 `NIMService`, or NVIDIA Dynamo resources from the same identity, policy,
 resource, protocol, and placement fields. Adapter-only options belong under a
@@ -115,12 +137,14 @@ evidence.
 
 ## Before this can replace the manual flow
 
-This is intentionally a first slice, not a promotion tool:
+This remains an onboarding compiler, not a promotion tool:
 
-- It supports exact-revision Hugging Face models rendered as ordinary
-  Deployments with a provider-block PVC. NIMService, KServe/llm-d, Dynamo,
-  batch, bespoke media adapters, gated repositories, and local-NVMe
-  localization need separate adapters.
+- It renders exact-revision Hugging Face HTTP models as ordinary Deployments
+  with a provider-block PVC. Git sources and academic/gated access may be
+  declared for scientific-batch candidates, but the compiler never embeds a
+  credential or renders a Job. NIMService, KServe/llm-d, Dynamo, the BatchRun
+  controller, bespoke media adapters, and local-NVMe localization remain
+  separate implementation work.
 - The generated init container expects `huggingface_hub` in the declared
   runtime image. A dedicated, promoted localization image should replace that
   assumption.
@@ -143,4 +167,5 @@ Run the prototype tests with:
 
 ```bash
 python3 -m unittest discover -s model-onboarding/tests -p 'test_*.py' -v
+python3 -m unittest tests.test_scientific_workload_contracts -v
 ```

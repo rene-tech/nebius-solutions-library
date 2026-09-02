@@ -1,0 +1,23 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "manifest.input.01",
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "size_bytes": 1024,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "parameters": {
+    "number_of_designs": 100,
+    "target_chains": [
+      "A"
+    ]
+  },
+  "client_context": {
+    "batch_id": "batch.cancer-immunotherapy.01",
+    "correlation_id": "poc.request.01",
+    "display_name": "binder screen 01"
+  }
+}

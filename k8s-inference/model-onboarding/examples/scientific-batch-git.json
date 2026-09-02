@@ -1,0 +1,145 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "scientific-batch",
+  "model": {
+    "id": "example-protein-design",
+    "display_name": "Example Protein Design",
+    "family": "scientific-protein",
+    "source": {
+      "kind": "git",
+      "repository": "example-org/example-protein-design",
+      "revision": "2222222222222222222222222222222222222222",
+      "review": {
+        "url": "https://github.com/example-org/example-protein-design/tree/2222222222222222222222222222222222222222",
+        "revision": "2222222222222222222222222222222222222222",
+        "summary": "Illustrative immutable source observation; it is not qualification evidence."
+      },
+      "license": {
+        "id": "unknown",
+        "state": "unverified",
+        "notes": "Illustrative declaration only; exact source and dependency terms require review."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "Illustrative public-source declaration only."
+      }
+    }
+  },
+  "runtime": {
+    "template": "scientific-batch",
+    "kind": "custom",
+    "version": "candidate-example",
+    "image": "registry.example.invalid/k8s-inference/scientific/example-protein-design@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "command": [
+      "python3",
+      "-m",
+      "example_protein_design"
+    ],
+    "args": [
+      "--model-path",
+      "{MODEL_PATH}"
+    ],
+    "environment": {
+      "DISABLE_TELEMETRY": "1"
+    }
+  },
+  "resources": {
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "64Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "8",
+      "memory": "64Gi",
+      "ephemeral_storage": "8Gi"
+    },
+    "limits": {
+      "cpu": "24",
+      "memory": "128Gi",
+      "ephemeral_storage": "64Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "compatible_pool_ids": [
+      "gpu-preemptible"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-gpu"
+    }
+  },
+  "serving": null,
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": "fs2-serve.nebius.ai/example-protein-design-parameters/v1",
+    "operations": [
+      "design"
+    ],
+    "service_classes": [
+      "customer-batch",
+      "bulk-backfill"
+    ],
+    "access_profile": "standard",
+    "access_state": "not-required",
+    "stages": [
+      {
+        "id": "generate",
+        "needs": [],
+        "resource_class": "gpu",
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 64,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "id": "score",
+        "needs": [
+          "generate"
+        ],
+        "resource_class": "gpu",
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 64,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      }
+    ],
+    "retry": {
+      "max_attempts": 3,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 30
+    },
+    "semantic_validation": {
+      "validator_id": "example-protein-design-v1",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_example_protein_design",
+      "description": "Submit an authorized asynchronous protein-design operation."
+    }
+  },
+  "policy": {
+    "commercial_use": "license-dependent",
+    "non_clinical": true,
+    "limitations": [
+      "Illustrative source and image identities are not deployable.",
+      "No controller, artifact, semantic, access, hardware, or performance qualification exists."
+    ]
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/scientific-workload/v1",
+  "title": "Scientific workload DAG",
+  "description": "Operator-owned stage, retry, cancellation, and progress-checkpoint semantics for a scientific batch adapter. The ordered stage list must be topological; the onboarding compiler enforces cross-item references.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "stages",
+    "retry",
+    "cancellation"
+  ],
+  "properties": {
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/stage"
+      }
+    },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_attempts",
+        "retryable_exit_codes"
+      ],
+      "properties": {
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "retryable_exit_codes": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 255
+          }
+        }
+      }
+    },
+    "cancellation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "grace_seconds"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "terminate-attempt",
+            "checkpoint-then-terminate"
+          ]
+        },
+        "grace_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "needs",
+        "resource_class",
+        "admission_mode",
+        "min_parallelism",
+        "max_parallelism",
+        "checkpoint_mode",
+        "preemption_mode"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/stage_id"
+        },
+        "needs": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/stage_id"
+          }
+        },
+        "resource_class": {
+          "enum": [
+            "cpu",
+            "gpu"
+          ]
+        },
+        "admission_mode": {
+          "enum": [
+            "independent-jobs",
+            "gang-jobset"
+          ]
+        },
+        "min_parallelism": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "max_parallelism": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "checkpoint_mode": {
+          "enum": [
+            "none",
+            "restart",
+            "resume"
+          ]
+        },
+        "preemption_mode": {
+          "enum": [
+            "non_preemptible",
+            "restartable",
+            "checkpointable"
+          ]
+        }
+      }
+    },
+    "stage_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "maxLength": 63
+    }
+  }
+}

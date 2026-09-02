@@ -28,7 +28,7 @@ except ImportError as error:
     ) from error
 
 
-COMPILER_SCHEMA = "fs2-serve.nebius.ai/model-onboarding-bundle/v1"
+COMPILER_SCHEMA = "fs2-serve.nebius.ai/model-onboarding-bundle/v2"
 DECLARATION_SCHEMA = Path(__file__).with_name("model-declaration.schema.json")
 DEFAULT_SOLUTION_ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH_TOKEN = "{MODEL_PATH}"
@@ -91,6 +91,14 @@ class Artifact:
     @property
     def sha256(self) -> str:
         return hashlib.sha256(self.payload).hexdigest()
+
+
+def _has_http(declaration: Mapping[str, Any]) -> bool:
+    return declaration["execution_mode"] in {"http", "hybrid"}
+
+
+def _has_scientific_batch(declaration: Mapping[str, Any]) -> bool:
+    return declaration["execution_mode"] in {"scientific-batch", "hybrid"}
 
 
 def _pairs_without_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -156,6 +164,8 @@ def _validate_schema(
 
 def _service_name(declaration: Mapping[str, Any]) -> str:
     serving = declaration["serving"]
+    if serving is None:
+        raise OnboardingError("a scientific-batch-only declaration has no Service")
     return serving.get("service_name", declaration["model"]["id"])
 
 
@@ -277,7 +287,7 @@ def _custom_validate(declaration: Mapping[str, Any]) -> None:
     runtime = declaration["runtime"]
     resources = declaration["resources"]
     serving = declaration["serving"]
-    service_name = _service_name(declaration)
+    batch = declaration["batch"]
 
     if not _valid_image_reference(runtime["image"]):
         raise OnboardingError(
@@ -295,23 +305,34 @@ def _custom_validate(declaration: Mapping[str, Any]) -> None:
         )
     ):
         raise OnboardingError(
-            "model.source.repository must be a canonical Hugging Face namespace/repository ID"
+            "model.source.repository must be a canonical namespace/repository ID"
         )
     if source["revision"] != review["revision"]:
         raise OnboardingError(
             "model.source.revision must equal model.source.review.revision"
         )
-    expected_review_url = (
-        f"https://huggingface.co/{repository}/tree/{source['revision']}"
+    source_root = (
+        "https://huggingface.co"
+        if source["kind"] == "huggingface"
+        else "https://github.com"
     )
+    expected_review_url = f"{source_root}/{repository}/tree/{source['revision']}"
     if review["url"] != expected_review_url:
         raise OnboardingError(
-            "model.source.review.url must equal the canonical exact-revision Hugging Face tree URL"
+            "model.source.review.url must equal the canonical exact-revision source tree URL"
         )
-    if service_name != model["id"] and not service_name.startswith(f"{model['id']}-"):
-        raise OnboardingError(
-            "serving.service_name must be the model ID or an owned ID prefix"
-        )
+    if _has_http(declaration):
+        if source["kind"] != "huggingface":
+            raise OnboardingError(
+                "the HTTP Deployment adapter currently requires a Hugging Face source"
+            )
+        service_name = _service_name(declaration)
+        if service_name != model["id"] and not service_name.startswith(
+            f"{model['id']}-"
+        ):
+            raise OnboardingError(
+                "serving.service_name must be the model ID or an owned ID prefix"
+            )
     if resources["gpu_count"] == 1 and resources["gpu_topology"] != "single-gpu":
         raise OnboardingError("one GPU requires gpu_topology=single-gpu")
     if (
@@ -341,6 +362,9 @@ def _custom_validate(declaration: Mapping[str, Any]) -> None:
             f"runtime command and args must contain exactly one {MODEL_PATH_TOKEN} token"
         )
     if runtime["kind"] == "vllm":
+        if not _has_http(declaration):
+            raise OnboardingError("vLLM requires execution_mode=http or hybrid")
+        assert serving is not None
         if (
             source["repository"] in argv
             or "--revision" in argv
@@ -365,28 +389,56 @@ def _custom_validate(declaration: Mapping[str, Any]) -> None:
                 "vLLM --tensor-parallel-size must equal resources.gpu_count"
             )
 
-    _canonical_manifest_path(_manifest_path(declaration), "profile.manifest_path")
-    for index, keeper_path in enumerate(
-        declaration.get("profile", {}).get("keeper_paths", [])
-    ):
-        _canonical_manifest_path(keeper_path, f"profile.keeper_paths[{index}]")
+    if _has_http(declaration):
+        assert serving is not None
+        _canonical_manifest_path(_manifest_path(declaration), "profile.manifest_path")
+        for index, keeper_path in enumerate(
+            declaration.get("profile", {}).get("keeper_paths", [])
+        ):
+            _canonical_manifest_path(keeper_path, f"profile.keeper_paths[{index}]")
 
-    for protocol, path in serving["protocols"].items():
-        expected = _CANONICAL_PROTOCOL_PATHS.get(protocol)
-        if expected is not None and path != expected:
-            raise OnboardingError(f"{protocol} must use its canonical path {expected}")
-    if serving["operations"] != sorted(serving["operations"]):
-        raise OnboardingError(
-            "serving.operations must be sorted for deterministic review"
-        )
-    description = serving["mcp"]["description"].lower()
-    if any(
-        marker in description
-        for marker in ("http://", "https://", "token", "secret", "credential")
-    ):
-        raise OnboardingError(
-            "serving.mcp.description contains private routing material"
-        )
+        for protocol, path in serving["protocols"].items():
+            expected = _CANONICAL_PROTOCOL_PATHS.get(protocol)
+            if expected is not None and path != expected:
+                raise OnboardingError(
+                    f"{protocol} must use its canonical path {expected}"
+                )
+        if serving["operations"] != sorted(serving["operations"]):
+            raise OnboardingError(
+                "serving.operations must be sorted for deterministic review"
+            )
+        _validate_public_description(serving["mcp"]["description"], "serving")
+
+    if _has_scientific_batch(declaration):
+        assert batch is not None
+        if batch["operations"] != sorted(batch["operations"]):
+            raise OnboardingError(
+                "batch.operations must be sorted for deterministic review"
+            )
+        _validate_public_description(batch["mcp"]["description"], "batch")
+        stage_ids: set[str] = set()
+        for stage in batch["stages"]:
+            stage_id = stage["id"]
+            if stage_id in stage_ids:
+                raise OnboardingError(f"duplicate scientific stage ID: {stage_id}")
+            unknown = sorted(set(stage["needs"]) - stage_ids)
+            if unknown:
+                raise OnboardingError(
+                    f"scientific stage {stage_id} needs unknown or later stages: "
+                    + ", ".join(unknown)
+                )
+            if stage["min_parallelism"] > stage["max_parallelism"]:
+                raise OnboardingError(
+                    f"scientific stage {stage_id} min_parallelism exceeds max_parallelism"
+                )
+            if (
+                stage["admission_mode"] == "gang-jobset"
+                and stage["min_parallelism"] < 2
+            ):
+                raise OnboardingError(
+                    f"scientific stage {stage_id} gang-jobset requires min_parallelism >= 2"
+                )
+            stage_ids.add(stage_id)
 
     environment = runtime.get("environment", {})
     reserved = sorted(set(environment).intersection(_RESERVED_ENV))
@@ -409,13 +461,41 @@ def _custom_validate(declaration: Mapping[str, Any]) -> None:
                 "entitlement.required must be false only for state=not-required"
             )
         if entitlement["required"]:
-            raise OnboardingError(
-                "the v1 Deployment adapter does not materialize gated-source credentials"
-            )
+            if _has_http(declaration):
+                raise OnboardingError(
+                    "the HTTP Deployment adapter does not materialize gated-source credentials"
+                )
+            assert batch is not None
+            if batch["access_profile"] != "academic":
+                raise OnboardingError(
+                    "a gated scientific workload requires access_profile=academic"
+                )
+            if batch["access_state"] != entitlement["state"]:
+                raise OnboardingError(
+                    "batch.access_state must equal the gated source entitlement state"
+                )
+        elif _has_scientific_batch(declaration):
+            assert batch is not None
+            if batch["access_state"] != "not-required":
+                raise OnboardingError(
+                    "an ungated scientific workload requires access_state=not-required"
+                )
         if entitlement["credential_contract"] is not None:
-            raise OnboardingError(
-                "a not-required entitlement cannot declare a credential contract"
-            )
+            if not entitlement["required"]:
+                raise OnboardingError(
+                    "a not-required entitlement cannot declare a credential contract"
+                )
+
+
+def _validate_public_description(description: str, label: str) -> None:
+    lowered = description.lower()
+    if any(
+        marker in lowered
+        for marker in ("http://", "https://", "token", "secret", "credential")
+    ):
+        raise OnboardingError(
+            f"{label}.mcp.description contains private routing material"
+        )
 
 
 def _validate_declaration_value(declaration: Mapping[str, Any]) -> None:
@@ -438,6 +518,7 @@ def _catalog_record(declaration: Mapping[str, Any]) -> dict[str, Any]:
     runtime = declaration["runtime"]
     resources = declaration["resources"]
     serving = declaration["serving"]
+    assert serving is not None
     policy = declaration["policy"]
     derived_resources = _resource_projection(resources)
     image_match = _IMAGE.fullmatch(runtime["image"])
@@ -455,6 +536,11 @@ def _catalog_record(declaration: Mapping[str, Any]) -> dict[str, Any]:
             ]
         )
     )
+    if declaration["execution_mode"] == "hybrid":
+        limitations.append(
+            "The scientific-batch interface is a separate candidate profile "
+            "and is not exposed by the HTTP serving binding."
+        )
     return {
         "schema": "fs2-serve.nebius.ai/model/v1",
         "model": {
@@ -660,6 +746,122 @@ def _route_projection(declaration: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _scientific_workload_projection(
+    declaration: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Render a candidate batch contract; this does not create a Job or route."""
+
+    model = declaration["model"]
+    source = model["source"]
+    runtime = declaration["runtime"]
+    resources = declaration["resources"]
+    placement = declaration["placement"]
+    batch = declaration["batch"]
+    policy = declaration["policy"]
+    assert batch is not None
+    image_match = _IMAGE.fullmatch(runtime["image"])
+    assert image_match is not None
+    image_digest = image_match.group(1)
+    runtime_recipe = {
+        "template": runtime["template"],
+        "kind": runtime["kind"],
+        "version": runtime["version"],
+        "image": runtime["image"],
+        "command": runtime["command"],
+        "args": runtime["args"],
+        "environment": dict(sorted(runtime.get("environment", {}).items())),
+    }
+    workload_recipe = {
+        "parameter_schema": batch["parameter_schema"],
+        "operations": batch["operations"],
+        "stages": batch["stages"],
+    }
+    limitations = sorted(
+        set(
+            [
+                "Candidate contract only: no BatchRun controller, Kueue Job, "
+                "route, or credential is generated.",
+                "A source revision observation is not workload, hardware, "
+                "semantic, or license qualification.",
+                *policy["limitations"],
+            ]
+        )
+    )
+    profile = {
+        "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+        "model_id": model["id"],
+        "display_name": model["display_name"],
+        "execution_mode": declaration["execution_mode"],
+        "state": "candidate-unqualified",
+        "route_exposed": False,
+        "source": {
+            "kind": source["kind"],
+            "repository": source["repository"],
+            "revision": source["revision"],
+            "review_url": source["review"]["url"],
+            "classification": "candidate-input",
+        },
+        "execution_identity": {
+            "model_revision": source["revision"],
+            "runtime_image_digest": image_digest,
+            "runtime_recipe_sha256": hashlib.sha256(
+                _canonical_bytes(runtime_recipe)
+            ).hexdigest(),
+            "workload_recipe_sha256": hashlib.sha256(
+                _canonical_bytes(workload_recipe)
+            ).hexdigest(),
+            "artifact_manifest_digest": None,
+            "execution_identity_sha256": None,
+        },
+        "interface": {
+            "protocol": batch["protocol"],
+            "submit_endpoint": f"/v1/models/{model['id']}:submit",
+            "request_schema": batch["request_schema"],
+            "result_schema": batch["result_schema"],
+            "parameter_schema": batch["parameter_schema"],
+            "operations": batch["operations"],
+            "service_classes": batch["service_classes"],
+            "mcp": {
+                "discoverable": True,
+                "invocable": False,
+                "tool_name": batch["mcp"]["tool_name"],
+                "description": batch["mcp"]["description"],
+            },
+        },
+        "access": {
+            "profile": batch["access_profile"],
+            "state": batch["access_state"],
+            "receipt_digest": None,
+            "credentials_embedded": False,
+        },
+        "resources": {
+            "gpu_count": resources["gpu_count"],
+            "gpu_topology": resources["gpu_topology"],
+            "host_architectures": sorted(placement["host_architectures"]),
+            "compatible_pool_ids": sorted(placement["compatible_pool_ids"]),
+            "required_node_labels": dict(
+                sorted(placement["required_node_labels"].items())
+            ),
+        },
+        "workload": {
+            "stages": batch["stages"],
+            "retry": batch["retry"],
+            "cancellation": batch["cancellation"],
+        },
+        "semantic_validation": batch["semantic_validation"],
+        "policy": {
+            "commercial_use": policy["commercial_use"],
+            "non_clinical": policy["non_clinical"],
+            "limitations": limitations,
+        },
+    }
+    return {
+        "schema": "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1",
+        "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
+        "profile": profile,
+    }
+
+
 def _catalog_index_projection(declaration: Mapping[str, Any]) -> dict[str, Any]:
     model_id = declaration["model"]["id"]
     return {
@@ -681,17 +883,19 @@ def _validate_collisions(declaration: Mapping[str, Any], solution_root: Path) ->
     """Reject a new-model declaration that would replace an owned solution entry."""
 
     model_id = declaration["model"]["id"]
-    service_name = _service_name(declaration)
-    tool_name = declaration["serving"]["mcp"]["tool_name"]
-    manifest_path = _manifest_path(declaration)
     collisions: set[str] = set()
 
     model_path = solution_root / f"catalog/runtime/models/{model_id}.json"
     if model_path.exists() or model_path.is_symlink():
         collisions.add(f"catalog model {model_id}")
-    manifest = solution_root / manifest_path
-    if manifest.exists() or manifest.is_symlink():
-        collisions.add(f"manifest {manifest_path}")
+    if _has_http(declaration):
+        service_name = _service_name(declaration)
+        assert declaration["serving"] is not None
+        tool_name = declaration["serving"]["mcp"]["tool_name"]
+        manifest_path = _manifest_path(declaration)
+        manifest = solution_root / manifest_path
+        if manifest.exists() or manifest.is_symlink():
+            collisions.add(f"manifest {manifest_path}")
 
     catalog_path = solution_root / "catalog/runtime/catalog.json"
     if catalog_path.is_file():
@@ -702,7 +906,7 @@ def _validate_collisions(declaration: Mapping[str, Any], solution_root: Path) ->
             collisions.add(f"catalog index model {model_id}")
 
     profile_path = solution_root / "catalog/profiles/model-profiles.json"
-    if profile_path.is_file():
+    if _has_http(declaration) and profile_path.is_file():
         profiles = _load_json(profile_path)
         if model_id in profiles.get("model_artifacts", {}):
             collisions.add(f"model profile {model_id}")
@@ -723,7 +927,7 @@ def _validate_collisions(declaration: Mapping[str, Any], solution_root: Path) ->
         solution_root
         / "components/control-plane/contracts/all-models-live-services.json"
     )
-    if inventory_path.is_file():
+    if _has_http(declaration) and inventory_path.is_file():
         inventory = _load_json(inventory_path)
         for existing_model_id, route in inventory.get("routes", {}).items():
             if existing_model_id == model_id:
@@ -734,6 +938,27 @@ def _validate_collisions(declaration: Mapping[str, Any], solution_root: Path) ->
                 )
             if route.get("mcp", {}).get("tool_name") == tool_name:
                 collisions.add(f"MCP tool {tool_name} (model={existing_model_id})")
+
+    scientific_profiles_path = (
+        solution_root
+        / "catalog/runtime/contracts/scientific-workload-profiles.json"
+    )
+    if scientific_profiles_path.is_file():
+        profiles = _load_json(scientific_profiles_path)
+        for profile in profiles.get("profiles", []):
+            if profile.get("model_id") == model_id:
+                collisions.add(f"scientific workload profile {model_id}")
+            if _has_scientific_batch(declaration):
+                assert declaration["batch"] is not None
+                batch_tool = declaration["batch"]["mcp"]["tool_name"]
+                existing_tool = (
+                    profile.get("interface", {}).get("mcp", {}).get("tool_name")
+                )
+                if existing_tool == batch_tool:
+                    collisions.add(
+                        f"scientific MCP tool {batch_tool} "
+                        f"(model={profile.get('model_id', 'unknown')})"
+                    )
 
     if collisions:
         raise OnboardingError(
@@ -1012,51 +1237,79 @@ def compile_artifacts(
     _validate_declaration_value(declaration)
     _validate_collisions(declaration, solution_root)
     model_id = declaration["model"]["id"]
-    model_record = _catalog_record(declaration)
-    model_schema_path = solution_root / "catalog/runtime/schema/model.schema.json"
-    if not model_schema_path.is_file():
-        raise OnboardingError(f"solution root does not contain {model_schema_path}")
-    _validate_schema(
-        model_record, _load_json(model_schema_path), "catalog model projection"
-    )
-
-    manifest_path = _manifest_path(declaration)
-    base = [
-        Artifact(
-            path=f"catalog/runtime/models/{model_id}.json",
-            target=f"catalog/runtime/models/{model_id}.json",
-            payload=_json_bytes(model_record),
-            kind="catalog-model",
-        ),
-        Artifact(
-            path=manifest_path,
-            target=manifest_path,
-            payload=_manifest(declaration),
-            kind="kubernetes-manifest",
-        ),
-        Artifact(
-            path="projections/model-profile.json",
-            target="catalog/profiles/model-profiles.json",
-            payload=_json_bytes(_profile_projection(declaration)),
-            kind="merge-projection",
-        ),
-        Artifact(
-            path="projections/live-service-route.json",
-            target="components/control-plane/contracts/all-models-live-services.json",
-            payload=_json_bytes(_route_projection(declaration)),
-            kind="merge-projection",
-        ),
-        Artifact(
-            path="projections/catalog-index.json",
-            target="catalog/runtime/catalog.json",
-            payload=_json_bytes(_catalog_index_projection(declaration)),
-            kind="merge-projection",
-        ),
-    ]
+    base: list[Artifact] = []
+    if _has_http(declaration):
+        model_record = _catalog_record(declaration)
+        model_schema_path = solution_root / "catalog/runtime/schema/model.schema.json"
+        if not model_schema_path.is_file():
+            raise OnboardingError(
+                f"solution root does not contain {model_schema_path}"
+            )
+        _validate_schema(
+            model_record, _load_json(model_schema_path), "catalog model projection"
+        )
+        manifest_path = _manifest_path(declaration)
+        base.extend(
+            [
+                Artifact(
+                    path=f"catalog/runtime/models/{model_id}.json",
+                    target=f"catalog/runtime/models/{model_id}.json",
+                    payload=_json_bytes(model_record),
+                    kind="catalog-model",
+                ),
+                Artifact(
+                    path=manifest_path,
+                    target=manifest_path,
+                    payload=_manifest(declaration),
+                    kind="kubernetes-manifest",
+                ),
+                Artifact(
+                    path="projections/model-profile.json",
+                    target="catalog/profiles/model-profiles.json",
+                    payload=_json_bytes(_profile_projection(declaration)),
+                    kind="merge-projection",
+                ),
+                Artifact(
+                    path="projections/live-service-route.json",
+                    target="components/control-plane/contracts/all-models-live-services.json",
+                    payload=_json_bytes(_route_projection(declaration)),
+                    kind="merge-projection",
+                ),
+                Artifact(
+                    path="projections/catalog-index.json",
+                    target="catalog/runtime/catalog.json",
+                    payload=_json_bytes(_catalog_index_projection(declaration)),
+                    kind="merge-projection",
+                ),
+            ]
+        )
+    if _has_scientific_batch(declaration):
+        projection = _scientific_workload_projection(declaration)
+        profile_schema_path = (
+            solution_root
+            / "catalog/runtime/schema/scientific-workload-profile.schema.json"
+        )
+        if not profile_schema_path.is_file():
+            raise OnboardingError(
+                f"solution root does not contain {profile_schema_path}"
+            )
+        _validate_schema(
+            projection["profile"],
+            _load_json(profile_schema_path),
+            "scientific workload profile projection",
+        )
+        base.append(
+            Artifact(
+                path="projections/scientific-workload-profile.json",
+                target=projection["merge_target"],
+                payload=_json_bytes(projection),
+                kind="merge-projection",
+            )
+        )
     declaration_digest = hashlib.sha256(_canonical_bytes(declaration)).hexdigest()
     bundle = {
         "schema": COMPILER_SCHEMA,
-        "compiler_version": 1,
+        "compiler_version": 2,
         "model_id": model_id,
         "declaration_sha256": declaration_digest,
         "promotion_ready": False,

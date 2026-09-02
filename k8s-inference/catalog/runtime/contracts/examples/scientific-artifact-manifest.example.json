@@ -1,0 +1,17 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+  "manifest_id": "manifest.input.01",
+  "entries": [
+    {
+      "name": "target_structure",
+      "semantic_type": "protein-structure-pdb/v1",
+      "artifact": {
+        "artifact_id": "artifact.target.01",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size_bytes": 4096,
+        "media_type": "chemical/x-pdb",
+        "compression": "none"
+      }
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/scientific-artifact-pointer/v1",
+  "title": "Public scientific artifact pointer",
+  "description": "A durable content-addressed artifact identity. Storage locations and presigned URLs are resolved at access time and are deliberately not part of this contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifact_id",
+    "sha256",
+    "size_bytes",
+    "media_type"
+  ],
+  "properties": {
+    "artifact_id": {
+      "$ref": "#/$defs/opaque_id"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "media_type": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.+-]*/[A-Za-z0-9][A-Za-z0-9.+_-]*$",
+      "maxLength": 128
+    },
+    "compression": {
+      "enum": [
+        "gzip",
+        "zstd",
+        "none"
+      ]
+    }
+  },
+  "$defs": {
+    "opaque_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    }
+  }
+}

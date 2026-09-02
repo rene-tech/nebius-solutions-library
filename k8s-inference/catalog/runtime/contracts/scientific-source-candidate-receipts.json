@@ -1,0 +1,159 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-source-candidate-receipts/v1",
+  "observed_on": "2026-09-02",
+  "receipts": [
+    {
+      "model_id": "alphafold3",
+      "upstream_name": "AlphaFold 3",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "git-ls-remote-head",
+      "source": {
+        "kind": "git",
+        "repository": "google-deepmind/alphafold3",
+        "revision": "c0f97eda2f1f482fd94d3a38bece18c7069b4a5c",
+        "review_url": "https://github.com/google-deepmind/alphafold3/tree/c0f97eda2f1f482fd94d3a38bece18c7069b4a5c"
+      },
+      "access_profile": "academic",
+      "access_state": "unverified",
+      "notes": "Native AlphaFold 3 candidate. Code, model parameters, databases, and their terms must be admitted independently; an OpenFold-family backend would use a distinct model ID."
+    },
+    {
+      "model_id": "bindcraft",
+      "upstream_name": "BindCraft",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "git-ls-remote-head",
+      "source": {
+        "kind": "git",
+        "repository": "martinpacesa/BindCraft",
+        "revision": "efb5bfeb8b4b1a5944256f979c34e0c8e6a82d9d",
+        "review_url": "https://github.com/martinpacesa/BindCraft/tree/efb5bfeb8b4b1a5944256f979c34e0c8e6a82d9d"
+      },
+      "access_profile": "academic",
+      "access_state": "unverified",
+      "notes": "Native BindCraft candidate. Academic PyRosetta access is a separate fail-closed admission prerequisite; an open binder backend would use a distinct model ID."
+    },
+    {
+      "model_id": "boltzgen",
+      "upstream_name": "BoltzGen",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "git-ls-remote-head",
+      "source": {
+        "kind": "git",
+        "repository": "HannesStark/boltzgen",
+        "revision": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
+        "review_url": "https://github.com/HannesStark/boltzgen/tree/a3149cf18eeb58648d1abbb27539bd73f746cdda"
+      },
+      "access_profile": "standard",
+      "access_state": "unverified",
+      "notes": "Candidate upstream revision only; dependencies, artifacts, licenses, semantics, hardware, and scale behavior remain unqualified."
+    },
+    {
+      "model_id": "esmfold2",
+      "upstream_name": "ESMFold2",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "git-ls-remote-head",
+      "source": {
+        "kind": "git",
+        "repository": "Biohub/esm",
+        "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "review_url": "https://github.com/Biohub/esm/tree/827ec128e4cdaf80f7d6f95fb367a08980b34918"
+      },
+      "access_profile": "standard",
+      "access_state": "unverified",
+      "notes": "Candidate source family for the separately identified ESMFold2 backend; no runnable entrypoint or model artifact is qualified by this receipt."
+    },
+    {
+      "model_id": "esmfold2-fast",
+      "upstream_name": "ESMFold2 Fast",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "git-ls-remote-head",
+      "source": {
+        "kind": "git",
+        "repository": "Biohub/esm",
+        "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "review_url": "https://github.com/Biohub/esm/tree/827ec128e4cdaf80f7d6f95fb367a08980b34918"
+      },
+      "access_profile": "standard",
+      "access_state": "unverified",
+      "notes": "Distinct fast backend candidate sharing a source observation with ESMFold2; it requires its own runtime, artifact, semantic, and performance qualification."
+    },
+    {
+      "model_id": "mosaic",
+      "upstream_name": "mosaic",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "git-ls-remote-head",
+      "source": {
+        "kind": "git",
+        "repository": "escalante-bio/mosaic",
+        "revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+        "review_url": "https://github.com/escalante-bio/mosaic/tree/70fec525423f5f87156a1a957b4a4048f9f8e676"
+      },
+      "access_profile": "standard",
+      "access_state": "unverified",
+      "notes": "Provisional escalante-bio/mosaic identity requested by the workload owner; confirm semantic fit before any build or route promotion."
+    },
+    {
+      "model_id": "proteina-complexa",
+      "upstream_name": "Proteina-Complexa",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "git-ls-remote-head",
+      "source": {
+        "kind": "git",
+        "repository": "NVIDIA-BioNeMo/Proteina-Complexa",
+        "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+        "review_url": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa/tree/54058860d43444c7289873f77d3e50b5b02348cd"
+      },
+      "access_profile": "standard",
+      "access_state": "unverified",
+      "notes": "Candidate upstream revision only; dependencies, artifacts, licenses, semantics, hardware, and scale behavior remain unqualified."
+    },
+    {
+      "model_id": "protenix-v2",
+      "upstream_name": "Protenix v2",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "git-ls-remote-head",
+      "source": {
+        "kind": "git",
+        "repository": "bytedance/Protenix",
+        "revision": "4c355be4553512f72453ecbfb65e69f4c35d1413",
+        "review_url": "https://github.com/bytedance/Protenix/tree/4c355be4553512f72453ecbfb65e69f4c35d1413"
+      },
+      "access_profile": "standard",
+      "access_state": "unverified",
+      "notes": "Candidate source family for the requested Protenix v2 identity; exact v2 artifact and entrypoint remain to be bound and qualified."
+    },
+    {
+      "model_id": "rfdiffusion-upstream",
+      "upstream_name": "RFdiffusion",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "git-ls-remote-head",
+      "source": {
+        "kind": "git",
+        "repository": "RosettaCommons/RFdiffusion",
+        "revision": "86507b6538f51fce57b5a72477165f03999ed7ae",
+        "review_url": "https://github.com/RosettaCommons/RFdiffusion/tree/86507b6538f51fce57b5a72477165f03999ed7ae"
+      },
+      "access_profile": "standard",
+      "access_state": "unverified",
+      "notes": "Native RFdiffusion batch candidate; any bounded HTTP adapter is a separate qualified interface over the same exact backend identity."
+    }
+  ]
+}

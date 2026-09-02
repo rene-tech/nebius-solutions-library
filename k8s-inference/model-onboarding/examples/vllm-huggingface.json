@@ -1,6 +1,7 @@
 {
   "$schema": "../model-declaration.schema.json",
-  "schema_version": 1,
+  "schema_version": 2,
+  "execution_mode": "http",
   "model": {
     "id": "example-7b",
     "display_name": "Example 7B",
@@ -97,6 +98,7 @@
       "description": "Run an authorized Example 7B chat completion."
     }
   },
+  "batch": null,
   "policy": {
     "commercial_use": "allowed",
     "non_clinical": false,

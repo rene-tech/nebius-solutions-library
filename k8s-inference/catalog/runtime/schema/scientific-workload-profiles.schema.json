@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/scientific-workload-profiles/v1",
+  "title": "Scientific workload profile set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "profiles"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/scientific-workload-profiles/v1"
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "schema",
+          "model_id",
+          "state",
+          "route_exposed"
+        ],
+        "properties": {
+          "schema": {
+            "const": "fs2-serve.nebius.ai/scientific-workload-profile/v1"
+          },
+          "model_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+            "maxLength": 63
+          },
+          "state": {
+            "const": "candidate-unqualified"
+          },
+          "route_exposed": {
+            "const": false
+          }
+        }
+      }
+    }
+  }
+}

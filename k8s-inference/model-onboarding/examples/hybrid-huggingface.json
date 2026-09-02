@@ -1,0 +1,151 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "hybrid",
+  "model": {
+    "id": "example-hybrid-7b",
+    "display_name": "Example Hybrid 7B",
+    "family": "llm",
+    "source": {
+      "kind": "huggingface",
+      "repository": "example-org/example-hybrid-7b",
+      "revision": "3333333333333333333333333333333333333333",
+      "review": {
+        "url": "https://huggingface.co/example-org/example-hybrid-7b/tree/3333333333333333333333333333333333333333",
+        "revision": "3333333333333333333333333333333333333333",
+        "summary": "Illustrative exact-revision hybrid review input; it is not qualification evidence."
+      },
+      "license": {
+        "id": "apache-2.0",
+        "state": "verified",
+        "notes": "Illustrative declaration only; verify the exact upstream license before promotion."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The illustrative repository is declared public and ungated."
+      }
+    }
+  },
+  "runtime": {
+    "template": "hybrid",
+    "kind": "custom",
+    "version": "hybrid-example",
+    "image": "registry.example.invalid/k8s-inference/models/hybrid@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "command": [
+      "python3",
+      "-m",
+      "example_hybrid"
+    ],
+    "args": [
+      "--model-path",
+      "{MODEL_PATH}",
+      "--port",
+      "8000"
+    ],
+    "environment": {
+      "DISABLE_TELEMETRY": "1"
+    }
+  },
+  "resources": {
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "64Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "8",
+      "memory": "64Gi",
+      "ephemeral_storage": "8Gi"
+    },
+    "limits": {
+      "cpu": "24",
+      "memory": "128Gi",
+      "ephemeral_storage": "64Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "compatible_pool_ids": [
+      "gpu-preemptible"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-gpu"
+    }
+  },
+  "serving": {
+    "port": 8000,
+    "protocols": {
+      "native": "/v1/predict"
+    },
+    "operations": [
+      "predict"
+    ],
+    "readiness_path": "/health",
+    "liveness_path": "/health",
+    "startup_timeout_seconds": 1800,
+    "storage_mode": "provider-block-pvc",
+    "mcp": {
+      "tool_name": "example_hybrid_predict",
+      "description": "Run an authorized bounded prediction."
+    }
+  },
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": "fs2-serve.nebius.ai/example-hybrid-parameters/v1",
+    "operations": [
+      "predict-batch"
+    ],
+    "service_classes": [
+      "interactive",
+      "customer-batch"
+    ],
+    "access_profile": "standard",
+    "access_state": "not-required",
+    "stages": [
+      {
+        "id": "predict",
+        "needs": [],
+        "resource_class": "gpu",
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      }
+    ],
+    "retry": {
+      "max_attempts": 3,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 30
+    },
+    "semantic_validation": {
+      "validator_id": "example-hybrid-v1",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_example_hybrid_batch",
+      "description": "Submit an authorized asynchronous prediction batch."
+    }
+  },
+  "policy": {
+    "commercial_use": "allowed",
+    "non_clinical": true,
+    "limitations": [
+      "Illustrative source and image identities are not deployable.",
+      "HTTP and scientific-batch interfaces require independent retained qualification."
+    ]
+  }
+}

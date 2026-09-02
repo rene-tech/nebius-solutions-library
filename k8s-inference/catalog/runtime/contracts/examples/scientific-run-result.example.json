@@ -1,0 +1,85 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+  "operation_id": "operation.01",
+  "batch_id": "batch.cancer-immunotherapy.01",
+  "workload_id": "workload.design.01",
+  "terminal_status": "succeeded",
+  "submitted_at": "2026-09-02T00:00:00Z",
+  "completed_at": "2026-09-02T00:05:00Z",
+  "execution_identity": {
+    "model_id": "example-protein-design",
+    "model_revision": "2222222222222222222222222222222222222222",
+    "runtime_image_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "runtime_recipe_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "workload_recipe_sha256": "abababababababababababababababababababababababababababababababab",
+    "model_artifact_manifest_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "execution_identity_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "access_admission": {
+    "profile": "standard",
+    "state": "not-required",
+    "receipt_digest": null
+  },
+  "scheduling_snapshot": {
+    "policy_revision": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "service_class": "customer-batch",
+    "tenant_queue": "tenant-academic",
+    "model_lane": "example-protein-design",
+    "resolved_cluster_queue": "scientific-gpu",
+    "resolved_local_queue": "example-protein-design",
+    "workload_priority_class": "customer-batch",
+    "workload_priority_value": 500,
+    "resolved_pool_preference": [
+      "gpu-preemptible"
+    ],
+    "admitted_resource_flavor": "gpu-preemptible",
+    "accelerator_resource_name": "nvidia.com/gpu",
+    "accelerator_count": 1,
+    "max_queue_seconds": 3600,
+    "max_execution_seconds": 21600,
+    "checkpoint_mode": "restart",
+    "preemption_mode": "restartable"
+  },
+  "input_manifest": {
+    "artifact_id": "manifest.input.01",
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "size_bytes": 1024,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "output_manifest": {
+    "artifact_id": "manifest.output.01",
+    "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "size_bytes": 2048,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "attempts": [
+    {
+      "attempt_id": "attempt.01",
+      "stage_id": "design",
+      "status": "succeeded",
+      "started_at": "2026-09-02T00:01:00Z",
+      "completed_at": "2026-09-02T00:05:00Z",
+      "kueue_workload_uid": "00000000-0000-0000-0000-000000000001",
+      "k8s_job_uid": "00000000-0000-0000-0000-000000000002",
+      "pod_uids": [
+        "00000000-0000-0000-0000-000000000003"
+      ],
+      "node_uids": [
+        "00000000-0000-0000-0000-000000000004"
+      ],
+      "gpu_uuids": [
+        "GPU-00000000-0000-0000-0000-000000000005"
+      ],
+      "checkpoint_input": null,
+      "checkpoint_output": null
+    }
+  ],
+  "semantic_validation": {
+    "validator_id": "example-protein-design-v1",
+    "status": "passed",
+    "receipt_digest": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "error": null
+}

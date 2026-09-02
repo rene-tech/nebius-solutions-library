@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[2]
 ONBOARDING_ROOT = ROOT / "model-onboarding"
 SCRIPT = ONBOARDING_ROOT / "compile_model.py"
 EXAMPLE = ONBOARDING_ROOT / "examples/vllm-huggingface.json"
+BATCH_EXAMPLE = ONBOARDING_ROOT / "examples/scientific-batch-git.json"
+HYBRID_EXAMPLE = ONBOARDING_ROOT / "examples/hybrid-huggingface.json"
 
 SPEC = importlib.util.spec_from_file_location("fs2_model_onboarding", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
@@ -30,6 +32,9 @@ class ModelOnboardingCompilerTests(unittest.TestCase):
     def compile(self, declaration: dict | None = None):
         value = self.declaration() if declaration is None else declaration
         return COMPILER.compile_artifacts(value, ROOT)
+
+    def fixture(self, path: Path) -> dict:
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def test_example_compiles_deterministically(self) -> None:
         declaration = COMPILER.load_declaration(EXAMPLE)
@@ -53,6 +58,78 @@ class ModelOnboardingCompilerTests(unittest.TestCase):
         self.assertEqual(bundle["model_id"], "example-7b")
         self.assertEqual(len(bundle["artifacts"]), 5)
         self.assertGreaterEqual(len(bundle["remaining_promotion_work"]), 6)
+
+    def test_scientific_batch_is_candidate_contract_not_a_runtime(self) -> None:
+        declaration = COMPILER.load_declaration(BATCH_EXAMPLE)
+        artifacts = COMPILER.compile_artifacts(declaration, ROOT)
+        self.assertEqual(
+            [item.path for item in artifacts],
+            ["onboarding-bundle.json", "projections/scientific-workload-profile.json"],
+        )
+        projection = json.loads(artifacts[1].payload)
+        profile = projection["profile"]
+        self.assertEqual(profile["state"], "candidate-unqualified")
+        self.assertFalse(profile["route_exposed"])
+        self.assertFalse(profile["interface"]["mcp"]["invocable"])
+        self.assertIsNone(profile["execution_identity"]["artifact_manifest_digest"])
+        self.assertNotIn("command", profile)
+        self.assertEqual(
+            projection["merge_target"],
+            "catalog/runtime/contracts/scientific-workload-profiles.json",
+        )
+
+    def test_hybrid_emits_http_and_separate_batch_candidate(self) -> None:
+        declaration = COMPILER.load_declaration(HYBRID_EXAMPLE)
+        artifacts = COMPILER.compile_artifacts(declaration, ROOT)
+        paths = {item.path for item in artifacts}
+        self.assertEqual(len(artifacts), 7)
+        self.assertIn("models/generated/example-hybrid-7b.yaml", paths)
+        self.assertIn("projections/live-service-route.json", paths)
+        self.assertIn("projections/scientific-workload-profile.json", paths)
+
+    def test_batch_dag_must_be_topological_and_bounded(self) -> None:
+        declaration = self.fixture(BATCH_EXAMPLE)
+        declaration["batch"]["stages"][0]["needs"] = ["score"]
+        with self.assertRaisesRegex(
+            COMPILER.OnboardingError, "unknown or later stages: score"
+        ):
+            COMPILER._custom_validate(declaration)
+
+        declaration = self.fixture(BATCH_EXAMPLE)
+        declaration["batch"]["stages"][0]["min_parallelism"] = 65
+        declaration["batch"]["stages"][0]["max_parallelism"] = 64
+        with self.assertRaisesRegex(
+            COMPILER.OnboardingError, "min_parallelism exceeds max_parallelism"
+        ):
+            COMPILER._custom_validate(declaration)
+
+    def test_academic_batch_can_declare_but_not_materialize_entitlement(self) -> None:
+        declaration = self.fixture(BATCH_EXAMPLE)
+        entitlement = declaration["model"]["source"]["entitlement"]
+        entitlement.update(
+            {
+                "required": True,
+                "state": "unverified",
+                "credential_contract": "academic-pyrosetta/v1",
+            }
+        )
+        declaration["batch"]["access_profile"] = "academic"
+        declaration["batch"]["access_state"] = "unverified"
+        COMPILER._custom_validate(declaration)
+
+        http = self.declaration()
+        http_entitlement = http["model"]["source"]["entitlement"]
+        http_entitlement.update(
+            {
+                "required": True,
+                "state": "unverified",
+                "credential_contract": "gated-model/v1",
+            }
+        )
+        with self.assertRaisesRegex(
+            COMPILER.OnboardingError, "does not materialize gated-source"
+        ):
+            COMPILER._custom_validate(http)
 
     def test_generate_then_check_detects_content_and_set_drift(self) -> None:
         artifacts = self.compile()
@@ -161,7 +238,7 @@ class ModelOnboardingCompilerTests(unittest.TestCase):
             "https://huggingface.co/example-org/example-7b"
         )
         with self.assertRaisesRegex(
-            COMPILER.OnboardingError, "canonical Hugging Face namespace/repository ID"
+            COMPILER.OnboardingError, "canonical namespace/repository ID"
         ):
             COMPILER._custom_validate(declaration)
 
@@ -169,7 +246,7 @@ class ModelOnboardingCompilerTests(unittest.TestCase):
         declaration = self.declaration()
         declaration["model"]["source"]["repository"] = "different-org/example-7b"
         with self.assertRaisesRegex(
-            COMPILER.OnboardingError, "canonical exact-revision Hugging Face tree URL"
+            COMPILER.OnboardingError, "canonical exact-revision source tree URL"
         ):
             COMPILER._custom_validate(declaration)
 
