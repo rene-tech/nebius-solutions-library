@@ -127,7 +127,7 @@ locals {
     length(evidence) <= 256 &&
     alltrue([
       for item in evidence :
-      contains([17, 20], length(keys(item))) && length(setsubtract(toset(keys(item)), toset([
+      contains([15, 16, 17, 20], length(keys(item))) && length(setsubtract(toset(keys(item)), toset([
         "receiptDigest",
         "identityState",
         "identityDigest",
@@ -150,10 +150,10 @@ locals {
         "validUntil",
       ]))) == 0 &&
       can(regex("^sha256:[a-f0-9]{64}$", item.receiptDigest)) &&
-      contains(["LegacyUnbound", "Bound"], item.identityState) &&
+      contains(["LegacyUnbound", "Bound"], try(item.identityState, "LegacyUnbound")) &&
       can(regex("^[a-z][a-z0-9-]{0,63}$", item.mechanism)) &&
       (
-        item.identityState == "Bound" ?
+        try(item.identityState, "LegacyUnbound") == "Bound" ?
         length(keys(item)) == 20 &&
         item.poolRef != null &&
         contains(["regular", "preemptible"], try(item.capacityType, "")) &&
@@ -170,7 +170,11 @@ locals {
         try(item.identity.cache.mechanism, "") == item.mechanism &&
         try(item.identity.cache.mechanismConfigDigest, "") == item.mechanismConfigDigest &&
         can(regex("^sha256:[a-f0-9]{64}$", item.mechanismConfigDigest)) :
-        length(keys(item)) == 17 &&
+        (
+          contains(keys(item), "identityState") ?
+          length(keys(item)) == 17 && item.identityState == "LegacyUnbound" :
+          contains([15, 16], length(keys(item)))
+        ) &&
         (
           item.mechanism == "modelexpress" ?
           can(regex("^sha256:[a-f0-9]{64}$", try(item.mechanismConfigDigest, ""))) :

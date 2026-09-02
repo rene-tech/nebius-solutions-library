@@ -323,6 +323,36 @@ run "managed_server_digest_changes_client_binding" {
   }
 }
 
+run "legacy_fast_start_projection_remains_historical" {
+  command = plan
+
+  variables {
+    model_controller = {
+      enabled                  = true
+      writes_enabled           = true
+      workload_owner           = "controller"
+      bootstrap_model_ids      = ["qwen3-8b"]
+      fresh_install            = true
+      handoff_receipt          = null
+      fast_start_evidence_file = abspath("tests/fixtures/legacy-fast-start-evidence.json")
+      priority_classes         = { interactive = 100, standard = 0, batch = -100 }
+    }
+  }
+
+  plan_options {
+    target = [terraform_data.model_controller_contract]
+  }
+
+  assert {
+    condition = (
+      local.model_controller_fast_start_evidence_valid &&
+      try(local.model_controller_fast_start_evidence["qwen3-8b"][0].identityState, "LegacyUnbound") == "LegacyUnbound" &&
+      length(local.model_controller_qualifications["qwen3-8b"].fastStartRuntimeContracts) == 0
+    )
+    error_message = "A pre-v2 projection must remain visible as LegacyUnbound while missing exact current contracts keep qualification Off."
+  }
+}
+
 run "globally_disabled_creates_no_modelexpress_resources" {
   command = plan
 

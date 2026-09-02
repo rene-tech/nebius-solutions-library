@@ -1,0 +1,28 @@
+{
+  "qwen3-8b": [
+    {
+      "receiptDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "mechanism": "shared-cache",
+      "compatibilityTupleDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "compatibilityTupleComplete": true,
+      "measurementBasis": "CapacityAvailableToSemanticReady",
+      "acceleratorClass": "nvidia-b300-sxm6-288gb",
+      "poolRef": "nebius-b300-preemptible-1x",
+      "acceleratorsPerReplica": 1,
+      "artifactManifestDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "runtimeImage": "registry.example.test/fs2/qwen3-8b@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "templateDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "cacheTier": "SharedFilesystem",
+      "snapshotDigest": null,
+      "samples": [
+        {
+          "observedAt": "2026-09-02T13:00:00Z",
+          "modelStartSeconds": 90,
+          "capacityWaitSeconds": 0,
+          "endToEndSeconds": 90
+        }
+      ],
+      "validUntil": "2026-10-02T13:00:00Z"
+    }
+  ]
+}
