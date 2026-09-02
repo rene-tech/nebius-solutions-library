@@ -323,8 +323,16 @@
         "tenant_id",
         "institution_id",
         "namespace",
-        "pvc_name",
-        "storage_gib",
+        "runtime_pvc_name",
+        "runtime_storage_gib",
+        "runtime_claim_lifecycle",
+        "storage_class",
+        "access_mode",
+        "mount_root",
+        "asset_gid",
+        "deny_egress_during_offline_validation",
+        "legacy_quarantine",
+        "assets",
         "readiness_manifest_sha256"
       ],
       "forbidden_inputs": [

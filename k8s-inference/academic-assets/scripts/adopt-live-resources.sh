@@ -185,7 +185,8 @@ Now confirm adoption did not schedule a destroy of licensed storage:
   terraform -chdir=<dir> plan
 
 The plan must show no destroy or replace for either persistent volume claim.
-Both claims carry prevent_destroy, so a replacement plan fails closed instead of
-silently discarding verified licensed bytes.
+Claims selected with the retained lifecycle carry prevent_destroy, so their
+replacement fails closed instead of silently discarding verified licensed bytes.
+Disposable acceptance claims intentionally have no destroy guard.
 NEXT
 fi
