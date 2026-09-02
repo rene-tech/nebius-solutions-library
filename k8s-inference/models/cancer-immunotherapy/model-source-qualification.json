@@ -1,0 +1,1430 @@
+{
+  "schema": "fs2-serve.nebius.ai/cancer-immunotherapy-model-source-qualification/v1",
+  "retrieved_at": "2026-09-02",
+  "workload": "cancer-immunotherapy",
+  "use_class": "academic-non-commercial",
+  "evidence_policy": "Read-only primary-source research. Every revision, license and gate below was retrieved from the cited upstream source on retrieved_at. Nothing in this manifest asserts that any model was deployed, benchmarked or qualified on hardware; H100 fit states distinguish documented upstream support from untested expectation.",
+  "discovery": {
+    "method": "Read-only inspection on 2026-09-02 using the task kubeconfig at /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig, context k8s-inference-h100. Only get and list verbs were used. No object was created, patched or deleted, and no secret value was read; secrets were enumerated by name and type only.",
+    "cluster": {
+      "reachable": true,
+      "context": "k8s-inference-h100",
+      "kubeconfig": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+      "project": "project-e00rene",
+      "region": "eu-north1",
+      "accelerator_class": "nvidia-h100-sxm5-80gb",
+      "gpu_nodes": 2,
+      "gpus_per_node": 8,
+      "gpu_pool_id": "h100-reserved-8x",
+      "capacity_source": "capacity-block",
+      "nvidia_driver_version": "580.159.04",
+      "observations": [
+        "Two GPU nodes are Ready, each advertising eight allocatable GPUs of class nvidia-h100-sxm5-80gb in pool h100-reserved-8x, labelled capacity source capacity-block and capacity type regular. One general-purpose CPU node is also present.",
+        "Sixteen H100s are present in total and exactly one is currently consumed, by a single running Qwen inference pod in the fs2-models namespace. Fifteen GPUs are therefore free for this workload, subject to the shared-cluster policy of preserving other tenants.",
+        "The installed NVIDIA driver is 580.159.04. This satisfies the RFdiffusion microservice minimum of 580, so that lane is driver-ready. It does not satisfy the Boltz-2 microservice, which documents a minimum of 590.44.01 with CUDA 13.1, so any Boltz-2 microservice lane would require a driver upgrade to the shared cluster and must not be assumed available.",
+        "Two 128Gi ReadWriteMany model cache volumes already exist in the fs2-models namespace, for the Cosmos and Qwen lanes, on the shared filesystem storage class csi-mounted-fs-path-sc. The shared-cache pattern is therefore already established and this workload should extend it rather than invent a new one.",
+        "GPU nodes expose roughly 277 GiB of allocatable ephemeral storage, which is the node root disk. There is no large local NVMe scratch device on these nodes.",
+        "The three existing model deployments pull digest-pinned images from the in-project registry at cr.eu-north1.nebius.cloud and declare no image pull secrets, so in-project images are pulled without an explicit credential. Mirroring third-party images into that registry is the established pattern here.",
+        "The fs2-models namespace currently contains no secrets at all, so no NVIDIA registry pull secret exists on the cluster today."
+      ]
+    },
+    "build_host": {
+      "observations": [
+        "The local model cache on this build host holds only unrelated media and language models. No weights for any model on this request list are cached locally. This says nothing about cluster volumes, which are separate and were inspected separately.",
+        "A model hub credential file is present on this build host, which covers the ungated artifacts; most artifacts on this list need no credential at all.",
+        "A read-only inspection of nvcr.io/nim/mit/boltz2 from this build host, using the docker credential stored in the host's docker config, returned HTTP 403 on the registry ping. This is a build-host credential result only. It was not worked around, and no alternative account, profile or region was tried."
+      ]
+    },
+    "unverified": [
+      "Whether the NVIDIA registry 403 reflects an expired or unentitled credential, a missing per-organisation terms acceptance, or an entitlement scope limit was not determined, because diagnosing it further would have meant trying other credentials.",
+      "Live pull of any NVIDIA microservice from inside the cluster is unverified and is a separate question from the build-host probe. It requires creating a pull secret in the target namespace, which is a mutation this read-only task did not perform.",
+      "Free capacity was read from current GPU requests at a single point in time. It is not a reservation and says nothing about what other tenants will schedule next.",
+      "Whether the shared filesystem backing the existing cache volumes has headroom for the multi-hundred-gigabyte alignment databases was not measured; only the two existing 128Gi claims were observed."
+    ]
+  },
+  "models": {
+    "proteina-complexa": {
+      "requested_name": "Proteina-Complexa",
+      "role": "primary",
+      "resolution": {
+        "state": "resolved",
+        "rationale": "The requested name matches exactly one upstream artifact: NVIDIA's Proteina-Complexa binder design model. The repository description, the ICLR 2026 paper and three published NVIDIA weight repositories all carry the exact name.",
+        "rejected_candidates": [
+          {
+            "candidate": "Proteina (arXiv 2503.00710)",
+            "reason": "Proteina is the earlier backbone-only generative model. Proteina-Complexa is a distinct later model built on La-Proteina for binder design against protein and small-molecule targets."
+          }
+        ]
+      },
+      "identity": {
+        "canonical_name": "Proteina-Complexa",
+        "upstream_owner": "NVIDIA (NVIDIA-BioNeMo org; clone URLs also resolve via NVIDIA-Digital-Bio)",
+        "what_it_is": "A generative protein binder design model that combines a pretrained flow-based model built on La-Proteina with inference-time search optimization, shipped as a multi-stage pipeline rather than a single request-response endpoint.",
+        "artifact_class": "generative-design-model",
+        "paper": "ICLR 2026 oral; https://openreview.net/forum?id=qmCpJtFZra ; arXiv 2603.27950"
+      },
+      "code": {
+        "repository": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+        "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+        "revision_kind": "commit",
+        "revision_label": "dev branch head, 2026-08-27; repository publishes no git tags",
+        "package": null,
+        "license": "Apache-2.0 for code (licenses/license_code.txt); separate licenses apply to weights, datasets and third-party components",
+        "commercial_use": "permitted"
+      },
+      "weights": [
+        {
+          "artifact_id": "proteina-complexa-protein-target-160m-v1",
+          "host": "huggingface",
+          "locator": "nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1",
+          "revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+          "files": [
+            "complexa.ckpt",
+            "complexa_ae.ckpt"
+          ],
+          "size_note": "160M parameter flow model plus its autoencoder",
+          "license": "NVIDIA Open Model License Agreement (June 2024)",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        },
+        {
+          "artifact_id": "proteina-complexa-ligand-target-160m-v1",
+          "host": "huggingface",
+          "locator": "nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1",
+          "revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+          "files": [
+            "complexa_ligand.ckpt",
+            "complexa_ligand_ae.ckpt"
+          ],
+          "size_note": "small-molecule target binder variant",
+          "license": "NVIDIA Open Model License Agreement (June 2024)",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        },
+        {
+          "artifact_id": "proteina-complexa-ame-160m-v1",
+          "host": "huggingface",
+          "locator": "nvidia/NV-Proteina-Complexa-AME-160M-v1",
+          "revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+          "files": [
+            "complexa_ame.ckpt",
+            "complexa_ame_ae.ckpt"
+          ],
+          "size_note": "motif-scaffolding-with-ligand-context variant",
+          "license": "NVIDIA Open Model License Agreement (June 2024)",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        }
+      ],
+      "runtime_recommendation": {
+        "choice": "custom-workflow-container",
+        "rationale": "No NIM exists for this model. Upstream ships a Dockerfile and a four-stage pipeline (generate, filter, evaluate, analyze) that shells out to AlphaFold2, RoseTTAFold3, ProteinMPNN, Foldseek, MMseqs2, DSSP and a shape-complementarity binary. That dependency graph must be baked into an image; it cannot be expressed as a stateless HTTP model server.",
+        "nim_available": false,
+        "base_image_hint": "upstream env/docker/Dockerfile; requires Ubuntu 22.04 or newer because 20.04 raises GLIBC errors",
+        "serving_shape": "batch-job"
+      },
+      "h100_fit": {
+        "state": "expected-compatible-untested",
+        "gpu_count": 1,
+        "vram_note": "No VRAM figure is published by NVIDIA for this model; a 160M-parameter flow model is small, but the co-located AlphaFold2 and RoseTTAFold3 reward models dominate memory and must be sized empirically.",
+        "multi_gpu": "data-parallel-independent-jobs",
+        "cpu_or_host_dependency": "Foldseek, MMseqs2, DSSP and the CCP4 shape-complementarity binary run on CPU; AF2 evaluation caching added in 1.1.0 gives roughly a 5x end-to-end evaluation speedup.",
+        "evidence": "All three NVIDIA model cards list Supported Hardware Microarchitecture Compatibility as NVIDIA Ampere only and Test Hardware as A100. Hopper and H100 are not named. Nothing states H100 is unsupported, so this is an untested expectation and must be proven by a real run before the model is called qualified."
+      },
+      "semantic_validator": {
+        "fixture": "Upstream design task 02_PDL1 from configs/design_tasks, run through configs/search_binder_local_pipeline.yaml. PD-L1 is directly on-target for cancer immunotherapy and ships as a repository asset, so the fixture needs no external data.",
+        "invocation": "complexa design configs/search_binder_local_pipeline.yaml ++run_name=pdl1_accept ++generation.task_name=02_PDL1",
+        "success_criteria": [
+          "The pipeline completes all four stages and writes per-sample PDB files plus the aggregate result CSV.",
+          "Generated binder PDBs contain full atomic coordinates and a sequence, not backbone-only or zero-filled atoms.",
+          "At least one design passes the pipeline's own success filter, proving the reward models and filters actually executed rather than being skipped.",
+          "Refolded binder structures show self-consistency against the generated backbone, which is the pipeline's built-in designability check."
+        ],
+        "expected_runtime_note": "Scale down with a small num-designs setting first; the published workflow is throughput-oriented and a full campaign is a long batch job, not a smoke test."
+      },
+      "access_gates": [
+        {
+          "gate_id": "proteina-complexa-weights",
+          "action": "No gate on HuggingFace: the three NVIDIA weight repositories report gated=false and download without credentials. The alternative NGC path under nvidia/clara requires an NGC account.",
+          "grantor": "NVIDIA",
+          "blocking": false,
+          "credential_handling": "None needed for the HuggingFace path."
+        },
+        {
+          "gate_id": "proteina-complexa-reward-models",
+          "action": "The evaluation stage needs AlphaFold2 parameters and a RoseTTAFold3 checkpoint supplied through AF2_DIR and RF3_CKPT_PATH. These are separate downloads under their own terms and are not bundled with the NVIDIA weights.",
+          "grantor": "DeepMind (AF2 params) and RosettaCommons (RF3)",
+          "blocking": true,
+          "credential_handling": "Stage into the shared model cache volume; never commit weights to git."
+        }
+      ],
+      "blockers": [
+        "H100 support is undocumented upstream; an Ampere-only compatibility statement must be disproven by a real Hopper run before onboarding claims support.",
+        "AlphaFold2 and RoseTTAFold3 reward-model artifacts must be staged before the evaluate and filter stages can run at all."
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+          "established": "Canonical repository, dev default branch, pipeline commands, Docker path, 1.1.0 AF2 evaluation cache, and the external tool dependency list."
+        },
+        {
+          "url": "https://huggingface.co/nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1",
+          "established": "Protein-target weights, NVIDIA Open Model License, commercial-use statement, 160M parameter count, Ampere-only hardware compatibility and A100 test hardware."
+        },
+        {
+          "url": "https://huggingface.co/nvidia/NV-Proteina-Complexa-AME-160M-v1",
+          "established": "AME variant weights and the identical Ampere-only hardware compatibility statement."
+        },
+        {
+          "url": "https://developer.nvidia.com/blog/designing-protein-binders-using-the-generative-model-proteina-complexa/",
+          "established": "Model purpose and positioning as a binder design model for protein and small-molecule targets."
+        }
+      ]
+    },
+    "boltzgen": {
+      "requested_name": "BoltzGen",
+      "role": "primary",
+      "resolution": {
+        "state": "resolved",
+        "rationale": "BoltzGen is a released model with one canonical repository, one PyPI package, one weights repository and a bioRxiv preprint under the exact requested name.",
+        "rejected_candidates": [
+          {
+            "candidate": "escalante-bio/joltzgen",
+            "reason": "A third-party JAX translation of BoltzGen, not the upstream model."
+          },
+          {
+            "candidate": "KnairdA/boltzgen",
+            "reason": "Unrelated project generating lattice Boltzmann kernels; name collision only."
+          }
+        ]
+      },
+      "identity": {
+        "canonical_name": "BoltzGen",
+        "upstream_owner": "Hannes Stark and the Boltz team (MIT); boltz.bio",
+        "what_it_is": "An all-atom generative model that unifies binder design and structure prediction, designing proteins and peptides across modalities from nanobodies to disulfide-bonded peptides against protein and small-molecule targets.",
+        "artifact_class": "generative-design-model",
+        "paper": "BoltzGen: Toward Universal Binder Design, bioRxiv 10.1101/2025.11.20.689494"
+      },
+      "code": {
+        "repository": "https://github.com/HannesStark/boltzgen",
+        "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "revision_kind": "release-tag-and-commit",
+        "revision_label": "v0.3.2, released 2026-05-01; branch head at retrieval was a3149cf18eeb58648d1abbb27539bd73f746cdda",
+        "package": {
+          "index": "https://pypi.org/simple",
+          "name": "boltzgen",
+          "version": "0.3.2",
+          "sdist_sha256": "ddc2832d2e73e24fae9cc027",
+          "wheel_sha256": "f832063040eb851deacca564"
+        },
+        "license": "MIT",
+        "commercial_use": "permitted"
+      },
+      "weights": [
+        {
+          "artifact_id": "boltzgen-1",
+          "host": "huggingface",
+          "locator": "boltzgen/boltzgen-1",
+          "revision": "c1be29e1f82ffcc72264f64b993c43fb4e0d17f0",
+          "files": [
+            "boltzgen1_diverse.ckpt",
+            "boltzgen1_adherence.ckpt",
+            "boltzgen1_ifold.ckpt",
+            "boltz2_conf_final.ckpt",
+            "boltz2_aff.ckpt",
+            "boltzgen1_structuretrained_small.ckpt"
+          ],
+          "size_note": "Roughly 5.96 GB pulled by the default protein protocol, plus 2.06 GB more for the small-molecule affinity step. BoltzGen-1 is fine-tuned from Boltz-2 and the pipeline also loads real Boltz-2 checkpoints, so a BoltzGen deployment is implicitly a Boltz-2 deployment. A separate ungated MIT dataset repository supplies a 391 MB chemical component dictionary.",
+          "license": "MIT",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        }
+      ],
+      "runtime_recommendation": {
+        "choice": "custom-workflow-container",
+        "rationale": "No NIM exists. Upstream ships its own Dockerfile with a DOWNLOAD_WEIGHTS build argument that bakes the roughly 6 GB of checkpoints into the image, which removes first-run download from the startup path and is the single most useful fast-start lever for this model. The workload is a multi-step ranked design campaign, not a request-response service.",
+        "nim_available": false,
+        "base_image_hint": "upstream Dockerfile built with --build-arg DOWNLOAD_WEIGHTS=true; Python 3.11 or newer",
+        "serving_shape": "batch-job"
+      },
+      "h100_fit": {
+        "state": "expected-compatible-untested",
+        "gpu_count": 1,
+        "vram_note": "No official VRAM figure is published; the maintainers state there are no memory estimates as a function of input length. A 16 GB card fails on a large target while a 48 GB card succeeds, so 80 GB is ample headroom.",
+        "multi_gpu": "data-parallel-independent-jobs",
+        "cpu_or_host_dependency": "Host memory is the real binding constraint, not VRAM: 64 GB of RAM is required and 16 GB is reported to fail in the analysis step even at 100 designs. There is no MSA at inference at all, so no alignment sidecar, no sequence databases and no network egress during a run.",
+        "evidence": "Per-design timings are published on an A100 and the kernel path auto-enables at compute capability 8 or above, which includes H100. An open upstream issue reports a run stalling partway through on an AMD EPYC host with an H100 while a different host completed, so H100 behaviour must be proven on the exact node type before the model is called qualified."
+      },
+      "semantic_validator": {
+        "fixture": "Upstream example example/vanilla_protein/1g13prot.yaml, which ships in the repository, run under the protein-anything protocol.",
+        "invocation": "boltzgen run example/vanilla_protein/1g13prot.yaml --output /workdir/accept --protocol protein-anything --num_designs 10 --budget 2",
+        "success_criteria": [
+          "All pipeline steps complete and the ranked output directory contains the requested budget of designs alongside the metrics CSV files.",
+          "Backbone self-consistency passes: the design and refold RMSD values sit below the pipeline's threshold, proving the designed sequence actually folds into the backbone the generator drew rather than being a hallucination.",
+          "Amino-acid composition filters pass, with no single residue exceeding roughly thirty percent. This is the explicit degenerate-output detector: poly-alanine and poly-glycine backbones can score well geometrically while not being real proteins.",
+          "Interface confidence is meaningfully above zero, showing a real binder-target interface rather than a dissociated chain.",
+          "No unresolved residues appear in the accepted designs."
+        ],
+        "expected_runtime_note": "A ten-design smoke run finishes in minutes with weights pre-baked. Production campaigns use ten to sixty thousand designs at roughly thirty to sixty seconds each, so a real campaign is a multi-GPU fleet workload measured in GPU-days, not a single pod."
+      },
+      "access_gates": [
+        {
+          "gate_id": "boltzgen-weights",
+          "action": "None. The weights repository is public and ungated and anonymous download works. Two upstream documentation traps must be avoided: the README names checkpoint repository identifiers that do not exist publicly, and it documents a hardcoded access token that is expired. The code defaults are correct; leave the HuggingFace token variable unset so a stale cluster-wide token is not sent and does not turn a working anonymous download into an authorization failure.",
+          "grantor": null,
+          "blocking": false,
+          "credential_handling": "No credential needed. Pre-stage into the shared cache or bake into the image to avoid a cold download."
+        }
+      ],
+      "blockers": [
+        "An open upstream issue reports H100 runs stalling partway through a large batch on one host architecture. Acceptance must include a longer run on the exact target node type, not only a ten-design smoke test."
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/HannesStark/boltzgen",
+          "established": "Canonical repository, MIT license, v0.3.2 tag and commit, Docker weight-baking build argument, CLI contract, example fixture, output layout, and the A100-based timing statement."
+        },
+        {
+          "url": "https://huggingface.co/api/models/boltzgen/boltzgen-1",
+          "established": "Weights repository revision, MIT license, ungated status, checkpoint file names and the Boltz-2 base-model lineage."
+        },
+        {
+          "url": "https://www.biorxiv.org/content/10.1101/2025.11.20.689494v1",
+          "established": "The preprint identity and the scope claim of universal binder design."
+        },
+        {
+          "url": "https://github.com/HannesStark/boltzgen/blob/main/Dockerfile",
+          "established": "CUDA 12.2 cuDNN 8 base on Ubuntu 22.04, Python 3.11, the weight-baking build argument, a non-root user and a cache path suitable for Kubernetes."
+        }
+      ]
+    },
+    "mosaic": {
+      "requested_name": "mosaic",
+      "role": "primary",
+      "resolution": {
+        "state": "resolved-pending-confirmation",
+        "rationale": "The lowercase generic word matches escalante-bio/mosaic with very high confidence: it is a protein design project, its published case studies are PD-L1 and IL7Ra minibinders which sit squarely in cancer immunotherapy, and it natively composes four other models on this same request list. The name is still a common English word, so one line of confirmation is recorded rather than assumed.",
+        "rejected_candidates": [
+          {
+            "candidate": "MosaicML",
+            "reason": "An LLM training platform, unrelated to protein design."
+          }
+        ]
+      },
+      "identity": {
+        "canonical_name": "mosaic",
+        "upstream_owner": "Escalante Bio (Nicholas Boyd, Stephen Guns)",
+        "what_it_is": "Not a model with its own weights: a JAX framework that reimplements many protein property models behind one interface so they can be combined into composite loss functions and optimized by gradient descent over relaxed sequence space.",
+        "artifact_class": "optimization-framework",
+        "paper": "No single paper; cite Boyd, N., Guns, S. & Escalante Bio. Mosaic. https://github.com/escalante-bio/mosaic (2025)"
+      },
+      "code": {
+        "repository": "https://github.com/escalante-bio/mosaic",
+        "revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+        "revision_kind": "commit",
+        "revision_label": "main branch head, 2026-08-01, commit message 'Add BindCraft-style optimizer (#73)'; repository publishes no git tags",
+        "package": null,
+        "license": "MIT",
+        "commercial_use": "permitted"
+      },
+      "weights": [],
+      "runtime_recommendation": {
+        "choice": "custom-workflow-container",
+        "rationale": "mosaic ships no weights of its own; it pulls the weights of whichever component models a script uses, so the container must be built per objective and the license of every pulled component travels with the job. It is a library driven from Python or a notebook, not a servable endpoint.",
+        "nim_available": false,
+        "base_image_hint": "uv sync --group jax-cuda, plus a CUDA 12 build of JAX",
+        "serving_shape": "batch-job"
+      },
+      "h100_fit": {
+        "state": "expected-compatible-untested",
+        "gpu_count": 1,
+        "vram_note": "Depends entirely on which component models a given objective loads; a Boltz-2 plus ProteinMPNN objective is the documented minimal case.",
+        "multi_gpu": "data-parallel-independent-jobs",
+        "cpu_or_host_dependency": "Heavy JAX just-in-time compilation on the first call to every compiled function. This is a real and repeated cold-start cost that image caching does not remove, and it should be measured separately from weight loading.",
+        "evidence": "The README requires a GPU or TPU build of JAX and names CUDA 12, but no upstream statement names H100 or Hopper."
+      },
+      "semantic_validator": {
+        "fixture": "The upstream PD-L1 minibinder walkthrough, reproduced as a short script using Boltz-2 with soluble ProteinMPNN and the simplex_APGM optimizer, matching the published case study.",
+        "invocation": "uv run python examples/example_notebook.py equivalent script driving a Boltz-2 binder objective against the PD-L1 target sequence with binder_length set to 80",
+        "success_criteria": [
+          "The composite loss decreases monotonically over optimization steps rather than staying flat, proving gradients flow through the component models.",
+          "The optimized sequence is a plausible protein, not a degenerate homopolymer.",
+          "The final design refolds with the binder in contact with the target under the same structure model.",
+          "Component model loading resolves real checkpoints, so a run that silently used random weights is detected."
+        ],
+        "expected_runtime_note": "The first call pays JAX compilation; keep the acceptance run in one process so compile time is measured once and separately."
+      },
+      "access_gates": [
+        {
+          "gate_id": "mosaic-component-weights",
+          "action": "mosaic itself is ungated, but each component model it loads carries its own gate. An objective using AlphaFold2 or OpenFold3 inherits those terms; an objective using only Boltz-2, BoltzGen and ProteinMPNN inherits only MIT terms.",
+          "grantor": "varies by component",
+          "blocking": false,
+          "credential_handling": "Pin the component set per job and record which licenses that job actually pulled."
+        }
+      ],
+      "blockers": [
+        "Upstream explicitly warns that mosaic needs substantial hand-holding, that it often produces proteins failing simple in-silico tests, and that it should be paired with standard filtering. It is a research framework and must not be presented as a turnkey binder generator alongside BindCraft."
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/escalante-bio/mosaic",
+          "established": "Canonical repository, MIT license, head commit adding a BindCraft-style optimizer, the JAX and CUDA 12 requirement, the full list of composed models, the PD-L1 and IL7Ra case studies, and the upstream reliability warnings quoted verbatim in the report."
+        }
+      ]
+    },
+    "esmfold2": {
+      "requested_name": "ESMFold2",
+      "role": "secondary",
+      "resolution": {
+        "state": "resolved",
+        "rationale": "Biohub publishes exactly two ESMFold2 weight repositories, named ESMFold2 and ESMFold2-Fast. The customer's two requested names map one to one onto them, which removes the ambiguity that the slash in the request implied.",
+        "rejected_candidates": [
+          {
+            "candidate": "facebookresearch/esm ESMFold",
+            "reason": "The original single-sequence ESMFold built on ESM-2. ESMFold2 is a distinct later all-atom complex model."
+          },
+          {
+            "candidate": "Phsntom/ESMFold2 and Phsntom/ESMFold2-Fast",
+            "reason": "Third-party mirrors under an unaffiliated account; the Biohub namespace is authoritative."
+          }
+        ]
+      },
+      "identity": {
+        "canonical_name": "ESMFold2",
+        "upstream_owner": "Biohub",
+        "what_it_is": "An all-atom structure prediction model that extends the ESM family beyond protein-only folding to complexes including small molecules, DNA, RNA and modified residues, with optional MSA conditioning.",
+        "artifact_class": "structure-prediction-model",
+        "paper": "bioRxiv 10.64898/2026.06.03.729735"
+      },
+      "code": {
+        "repository": "https://github.com/Biohub/esm",
+        "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "revision_kind": "release-tag-and-commit",
+        "revision_label": "tag v3.4.0, which was also the branch head at retrieval. The model cards document installing from the moving main branch, which is not reproducible; pin this tag instead, or pin the published package version, which is the same release.",
+        "package": {
+          "index": "https://pypi.org/simple",
+          "name": "esm",
+          "version": "3.4.0",
+          "sdist_sha256": null,
+          "wheel_sha256": null
+        },
+        "license": "MIT. The published package declares MIT and both model cards declare MIT; the repository's own licence file is not auto-classified by the forge, so record MIT from the package and model-card declarations rather than from the repository label.",
+        "commercial_use": "permitted"
+      },
+      "weights": [
+        {
+          "artifact_id": "esmfold2",
+          "host": "huggingface",
+          "locator": "biohub/ESMFold2",
+          "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
+          "files": [
+            "model.safetensors",
+            "config.json",
+            "ccd.pkl"
+          ],
+          "size_note": "Ships the chemical component dictionary needed for ligand and modified-residue support, which the Fast variant does not carry.",
+          "license": "MIT",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        }
+      ],
+      "runtime_recommendation": {
+        "choice": "open-runtime",
+        "rationale": "A plain PyTorch model loaded through a from_pretrained call with a single infer_protein entry point. This is the only model on the request list that fits a conventional low-latency HTTP model server without a workflow engine.",
+        "nim_available": false,
+        "base_image_hint": "PyTorch CUDA base plus the Biohub esm package",
+        "serving_shape": "http-service"
+      },
+      "h100_fit": {
+        "state": "expected-compatible-untested",
+        "gpu_count": 1,
+        "vram_note": "Weights are published as F32. No VRAM figure is documented; the model is small by structure-prediction standards but MSA conditioning raises activation memory with target length.",
+        "multi_gpu": "single-gpu-only",
+        "cpu_or_host_dependency": "MSA conditioning is optional. Running single-sequence removes the CPU-bound alignment search entirely, which is a major operational simplification versus AlphaFold3.",
+        "evidence": "The model card documents a CUDA call in the inference snippet but names no specific GPU, so Hopper support is expected and untested."
+      },
+      "semantic_validator": {
+        "fixture": "The ubiquitin sequence published in the model card's own inference snippet, which is a well-characterized 76-residue fold with a known structure.",
+        "invocation": "ESMFold2Model.from_pretrained('biohub/ESMFold2') then infer_protein(sequence, num_loops=3, num_sampling_steps=50)",
+        "success_criteria": [
+          "Output carries plddt, ptm, pae and mmCIF coordinates as documented.",
+          "Mean pLDDT for ubiquitin is high, consistent with a confidently folded well-known domain; a low-confidence result indicates a broken load.",
+          "Predicted coordinates reproduce the ubiquitin beta-grasp topology rather than an extended or collapsed chain.",
+          "A second run with the same seed reproduces the same structure, proving determinism for the fast-start comparison."
+        ],
+        "expected_runtime_note": "Seconds to low minutes for a 76-residue single-sequence prediction."
+      },
+      "access_gates": [
+        {
+          "gate_id": "esmfold2-weights",
+          "action": "None. The repository reports gated=false and MIT license.",
+          "grantor": null,
+          "blocking": false,
+          "credential_handling": "No credential needed."
+        }
+      ],
+      "blockers": [
+        "The model cards document installing from a moving branch. Onboarding must install the pinned tag or the published package version instead, otherwise the runtime identity is not reproducible."
+      ],
+      "sources": [
+        {
+          "url": "https://huggingface.co/biohub/ESMFold2",
+          "established": "Model identity, MIT license, ungated status, both official variant names, all-atom complex scope, optional MSA conditioning, the install command, the inference API and the output field names."
+        },
+        {
+          "url": "https://huggingface.co/api/models/biohub/ESMFold2",
+          "established": "Immutable revision SHA, gated status and the published file list."
+        },
+        {
+          "url": "https://biohub.org/news/world-model-of-protein-biology/",
+          "established": "Release by Biohub on 2026-05-27 alongside ESMC and ESM Atlas, and the preprint link."
+        },
+        {
+          "url": "https://github.com/Biohub/esm",
+          "established": "The package repository behind both ESMFold2 variants, its v3.4.0 tag and commit, which is what makes a reproducible pin possible."
+        }
+      ]
+    },
+    "esmfold2-fast": {
+      "requested_name": "ESMFold2-Fast",
+      "role": "secondary",
+      "resolution": {
+        "state": "resolved",
+        "rationale": "Published by Biohub as its own weight repository with the exact requested name.",
+        "rejected_candidates": []
+      },
+      "identity": {
+        "canonical_name": "ESMFold2-Fast",
+        "upstream_owner": "Biohub",
+        "what_it_is": "The inference-optimized single-sequence sibling of ESMFold2, which drops MSA conditioning in exchange for speed.",
+        "artifact_class": "structure-prediction-model",
+        "paper": "bioRxiv 10.64898/2026.06.03.729735"
+      },
+      "code": {
+        "repository": "https://github.com/Biohub/esm",
+        "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "revision_kind": "release-tag-and-commit",
+        "revision_label": "tag v3.4.0, which was also the branch head at retrieval. The model cards document installing from the moving main branch, which is not reproducible; pin this tag instead, or pin the published package version, which is the same release.",
+        "package": {
+          "index": "https://pypi.org/simple",
+          "name": "esm",
+          "version": "3.4.0",
+          "sdist_sha256": null,
+          "wheel_sha256": null
+        },
+        "license": "MIT. The published package declares MIT and both model cards declare MIT; the repository's own licence file is not auto-classified by the forge, so record MIT from the package and model-card declarations rather than from the repository label.",
+        "commercial_use": "permitted"
+      },
+      "weights": [
+        {
+          "artifact_id": "esmfold2-fast",
+          "host": "huggingface",
+          "locator": "biohub/ESMFold2-Fast",
+          "revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6",
+          "files": [
+            "model.safetensors",
+            "config.json"
+          ],
+          "size_note": "0.2B parameters, F32. Carries no chemical component dictionary, consistent with single-sequence protein-only use.",
+          "license": "MIT",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        }
+      ],
+      "runtime_recommendation": {
+        "choice": "open-runtime",
+        "rationale": "Same package and API as ESMFold2 with a different checkpoint id, so both variants share one image and differ only by the model identifier. This is the natural always-hot interactive lane for demos.",
+        "nim_available": false,
+        "base_image_hint": "shares the ESMFold2 image",
+        "serving_shape": "http-service"
+      },
+      "h100_fit": {
+        "state": "expected-compatible-untested",
+        "gpu_count": 1,
+        "vram_note": "0.2B parameters in F32 is a small footprint, comfortably inside 80 GB with room for large batches.",
+        "multi_gpu": "single-gpu-only",
+        "cpu_or_host_dependency": "None. Single-sequence only, so there is no alignment search at all.",
+        "evidence": "No upstream statement names a GPU model; expectation only."
+      },
+      "semantic_validator": {
+        "fixture": "The same ubiquitin sequence from the model card snippet, so the two variants are directly comparable.",
+        "invocation": "ESMFold2Model.from_pretrained('biohub/ESMFold2-Fast') then infer_protein(sequence, num_loops=3, num_sampling_steps=50)",
+        "success_criteria": [
+          "Output carries plddt and ptm as documented for this variant.",
+          "Mean pLDDT is high for ubiquitin.",
+          "Latency is measurably lower than the base ESMFold2 variant on the identical input, which is the whole reason this variant exists.",
+          "The predicted fold agrees with the base variant within a small backbone deviation, proving the fast variant is not silently degraded."
+        ],
+        "expected_runtime_note": "Fastest model on the request list; the best candidate for an interactive demo lane."
+      },
+      "access_gates": [
+        {
+          "gate_id": "esmfold2-fast-weights",
+          "action": "None. Reports gated=false and MIT license.",
+          "grantor": null,
+          "blocking": false,
+          "credential_handling": "No credential needed."
+        }
+      ],
+      "blockers": [
+        "The model cards document installing from a moving branch. Onboarding must install the pinned tag or the published package version instead, otherwise the runtime identity is not reproducible."
+      ],
+      "sources": [
+        {
+          "url": "https://huggingface.co/biohub/ESMFold2-Fast",
+          "established": "Variant identity as inference-optimized and not MSA conditioned, MIT license, 0.2B parameter count, the from_pretrained id and the output fields."
+        },
+        {
+          "url": "https://huggingface.co/api/models/biohub/ESMFold2-Fast",
+          "established": "Immutable revision SHA, ungated status and file list."
+        },
+        {
+          "url": "https://github.com/Biohub/esm",
+          "established": "The package repository behind both ESMFold2 variants, its v3.4.0 tag and commit, which is what makes a reproducible pin possible."
+        }
+      ]
+    },
+    "protenix-v2": {
+      "requested_name": "Protenix v2",
+      "role": "secondary",
+      "resolution": {
+        "state": "resolved",
+        "rationale": "A release tagged v2.0.0 exists and its notes name the model protenix-v2 explicitly, so the name is real and not an inferred version number. The code shipped; the weights did not. This is a resolved identity with an unavailable artifact, which is a different state from an ambiguous name.",
+        "rejected_candidates": [
+          {
+            "candidate": "TMF001/protenix-v2-weights and nabbo/protenix_v2",
+            "reason": "Third-party HuggingFace re-uploads; the ByteDance repository and its own weight fetcher are authoritative."
+          }
+        ]
+      },
+      "identity": {
+        "canonical_name": "protenix-v2",
+        "upstream_owner": "ByteDance",
+        "what_it_is": "An open-source AlphaFold3-style biomolecular structure prediction model; v2 is the enhanced-capacity 464M-parameter variant with a training-free guidance module for geometric and physical constraints during diffusion sampling.",
+        "artifact_class": "structure-prediction-model",
+        "paper": "Protenix-v2: Broadening the Reach of Structure Prediction and Biomolecular Design, bioRxiv 10.64898/2026.04.10.717613"
+      },
+      "code": {
+        "repository": "https://github.com/bytedance/Protenix",
+        "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+        "revision_kind": "release-tag-and-commit",
+        "revision_label": "v2.0.0, published 2026-04-07",
+        "package": {
+          "index": "https://pypi.org/simple",
+          "name": "protenix",
+          "version": "2.0.0",
+          "sdist_sha256": null,
+          "wheel_sha256": null
+        },
+        "license": "Apache-2.0",
+        "commercial_use": "permitted"
+      },
+      "weights": [
+        {
+          "artifact_id": "protenix-v2",
+          "host": "upstream-http",
+          "locator": "https://protenix.tos-cn-beijing.volces.com/checkpoint/protenix-v2.pt",
+          "revision": "not obtainable at retrieval; no published checksum exists because the object has never been publicly served",
+          "files": [
+            "protenix-v2.pt"
+          ],
+          "size_note": "464.44M parameters; training data cutoff 2021-09-30",
+          "license": "Apache-2.0 per the repository, but the license is moot while the artifact is not served",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "approval-required"
+        },
+        {
+          "artifact_id": "protenix-base-20250630-v1.0.0",
+          "host": "upstream-http",
+          "locator": "https://protenix.tos-cn-beijing.volces.com/checkpoint/protenix_base_20250630_v1.0.0.pt",
+          "revision": "served object, 1475945945 bytes at retrieval",
+          "files": [
+            "protenix_base_20250630_v1.0.0.pt"
+          ],
+          "size_note": "368.48M parameters; training cutoff 2025-06-30, the latest cutoff ByteDance publishes",
+          "license": "Apache-2.0",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        },
+        {
+          "artifact_id": "protenix-base-default-v1.0.0",
+          "host": "upstream-http",
+          "locator": "https://protenix.tos-cn-beijing.volces.com/checkpoint/protenix_base_default_v1.0.0.pt",
+          "revision": "served object, 1475950125 bytes at retrieval",
+          "files": [
+            "protenix_base_default_v1.0.0.pt"
+          ],
+          "size_note": "368.48M parameters; 2021-09-30 cutoff, matching the AlphaFold3 benchmark cutoff for like-for-like comparison",
+          "license": "Apache-2.0",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        }
+      ],
+      "runtime_recommendation": {
+        "choice": "open-runtime",
+        "rationale": "A conventional PyPI-installable PyTorch inference package with a documented CLI and a published model registry; no NIM exists and none is needed. Pin the substitute checkpoint explicitly, because the package will happily run a different model than the one the customer asked for if the name is left to a default.",
+        "nim_available": false,
+        "base_image_hint": "PyTorch CUDA base plus protenix==2.0.0; Python 3.11 or newer",
+        "serving_shape": "both"
+      },
+      "h100_fit": {
+        "state": "expected-compatible-untested",
+        "gpu_count": 1,
+        "vram_note": "Published inference cost table peaks at 78.1 GB for a 4000-token input, which leaves no headroom on an 80 GB H100 under any co-tenancy. Cap production inputs near 3000 tokens or reserve whole GPUs. The 500-token row is 6.1 GB, so acceptance runs are cheap.",
+        "multi_gpu": "data-parallel-independent-jobs",
+        "cpu_or_host_dependency": "MSA is optional but strongly recommended. The default MSA mode posts sequences to an externally operated server, which is unacceptable for proprietary candidate sequences; use local ColabFold search or precomputed alignments. Kernel just-in-time compilation on first call adds per-pod cold-start latency.",
+        "evidence": "The repository recommends A100, H20 or H100 for training but publishes no equivalent H100 inference validation, and the inference cost table does not name the GPU it was measured on. Hopper is expected to work and is architecturally supported at compute capability 9.0, but the numbers must not be quoted as H100 numbers."
+      },
+      "semantic_validator": {
+        "fixture": "Upstream example 7r6r, a protein-DNA complex of roughly 243 tokens whose alignments ship in the repository, so the acceptance run is fully offline with no external MSA call.",
+        "invocation": "protenix pred -i examples/example.json -o ./acceptance -s 101 -n protenix_base_20250630_v1.0.0 --use_default_params true",
+        "success_criteria": [
+          "Output mmCIF parses with three chains, one protein and two DNA strands.",
+          "Summary confidence shows plddt above 80, ptm above 0.7 and iptm above 0.7 with no clash flag.",
+          "The DNA duplex is base paired and B-form rather than melted, and the protein helix-turn-helix sits in the major groove instead of floating in solvent.",
+          "Different seeds produce different samples, proving the diffusion sampler is actually sampling rather than returning a fixed output.",
+          "Coordinates contain no NaN values, which is the classic signature of a misconfigured reduced-precision kernel."
+        ],
+        "expected_runtime_note": "Well under a minute of GPU time at this size; the first call additionally pays kernel compilation."
+      },
+      "access_gates": [
+        {
+          "gate_id": "protenix-v2-weights-restricted",
+          "action": "The v2 checkpoint object returns HTTP 403 AccessDenied while sibling v1 and v0.5.0 objects on the same bucket return 206. The maintainers stated on 2026-04-09 that release is under internal review with no timeline, and the tracking issue was still open on 2026-08-31. There is no form, contact or credential that unlocks it; the exact step is to re-probe the object URL on a schedule and treat a 200 as the trigger to onboard v2.",
+          "grantor": "ByteDance",
+          "blocking": true,
+          "credential_handling": "No credential exists. Do not substitute an unaffiliated re-upload of this checkpoint; its provenance cannot be verified against any publisher checksum."
+        }
+      ],
+      "blockers": [
+        "The protenix-v2 checkpoint is not publicly served and has not been for roughly five months. Independently confirmed at retrieval: HTTP 403 AccessDenied for protenix-v2.pt against HTTP 206 for both v1.0.0 checkpoints on the same bucket.",
+        "Even if released, protenix-v2 asserts a hard 2560-token ceiling in its inference runner, which is half the token budget of AlphaFold3 and is a real capability regression for large complexes.",
+        "Recommended substitute is protenix_base_20250630_v1.0.0, which is obtainable, Apache-2.0 and carries a later 2025-06-30 training cutoff. Onboarding must label it as a substitute rather than silently reporting it as Protenix v2."
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/bytedance/Protenix",
+          "established": "Canonical repository, Apache-2.0 license and the full release tag history."
+        },
+        {
+          "url": "https://github.com/bytedance/Protenix/releases/tag/v2.0.0",
+          "established": "That protenix-v2 is a real named release at 464M parameters, the training-free guidance module and its CLI flag, the 5-seeds-beats-1000-seeds efficiency claim, and the DockQ improvement over v1."
+        },
+        {
+          "url": "https://github.com/bytedance/Protenix/blob/v2.0.0/docs/supported_models.md",
+          "established": "The exact model name protenix-v2, its 464.44M parameter count, MSA, RNA MSA and template support, the 2021-09-30 data cutoff, and the v2 default sampling configuration."
+        },
+        {
+          "url": "https://protenix.tos-cn-beijing.volces.com/checkpoint/protenix-v2.pt",
+          "established": "Direct probe at retrieval returning HTTP 403 AccessDenied with error code 14006, against HTTP 206 for the two v1.0.0 checkpoints on the same host."
+        }
+      ]
+    },
+    "bindcraft": {
+      "requested_name": "BindCraft",
+      "role": "primary",
+      "resolution": {
+        "state": "resolved",
+        "rationale": "One canonical repository, one Nature paper and one maintained release line under the exact requested name.",
+        "rejected_candidates": [
+          {
+            "candidate": "cytokineking/FreeBindCraft",
+            "reason": "A maintained fork that removes the PyRosetta dependency. It is recorded separately as an alternative lane, not as the requested model."
+          }
+        ]
+      },
+      "identity": {
+        "canonical_name": "BindCraft",
+        "upstream_owner": "Martin Pacesa and co-authors",
+        "what_it_is": "A binder design pipeline, not a single model: it hallucinates binders by backpropagating through AlphaFold2, redesigns sequences with ProteinMPNN, then relaxes and scores interfaces with PyRosetta before applying roughly forty filters.",
+        "artifact_class": "pipeline",
+        "paper": "One-shot design of functional protein binders with BindCraft, Nature, https://www.nature.com/articles/s41586-025-09429-6"
+      },
+      "code": {
+        "repository": "https://github.com/martinpacesa/BindCraft",
+        "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+        "revision_kind": "commit",
+        "revision_label": "Pin this commit, not the tag. The published v.1.5.3 tag is diverged from the default branch and must not be used. Independently confirmed: comparing the tag to the branch returns status diverged with the tag twelve commits ahead and four behind, and the tag resolves to a 2025-07-20 merge commit while the v.1.5.3 release was published on 2026-04-17 with the note 'Small bug fixes'. The commit pinned here is the one immediately preceding that release by under two minutes. Branch head at retrieval was efb5bfeb8b4b1a5944256f979c34e0c8e6a82d9d.",
+        "package": null,
+        "license": "MIT for the BindCraft code itself",
+        "commercial_use": "requires-separate-license"
+      },
+      "weights": [
+        {
+          "artifact_id": "alphafold2-params",
+          "host": "upstream-http",
+          "locator": "AlphaFold2 parameters as fetched by the BindCraft install script",
+          "revision": "AlphaFold2 released parameter set",
+          "files": [],
+          "size_note": "AlphaFold2 multimer parameters drive the hallucination loop",
+          "license": "CC BY 4.0 for the AlphaFold2 parameters",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        },
+        {
+          "artifact_id": "proteinmpnn-weights",
+          "host": "github-release",
+          "locator": "ProteinMPNN weights vendored in the ProteinMPNN repository",
+          "revision": "v_48_020.pt and soluble_v_48_020.pt as shipped",
+          "files": [
+            "v_48_020.pt",
+            "soluble_v_48_020.pt"
+          ],
+          "size_note": "small; ship in-repo so no download step is needed",
+          "license": "MIT",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        }
+      ],
+      "runtime_recommendation": {
+        "choice": "custom-workflow-container",
+        "rationale": "No NIM exists. The pipeline couples JAX AlphaFold2, PyTorch ProteinMPNN and a licensed PyRosetta build behind one Python entry point and emits a filtered CSV of designs. It must be containerised and run as a job.",
+        "nim_available": false,
+        "base_image_hint": "built via the upstream install script pinned to a CUDA version; PyRosetta is installed from the Rosetta Commons channel and requires the license to be in place first",
+        "serving_shape": "batch-job"
+      },
+      "h100_fit": {
+        "state": "documented-supported",
+        "gpu_count": 1,
+        "vram_note": "Upstream documents that memory scales roughly linearly with total residue count of target plus binder: about 550 residues on a 32 GB card and about 950 residues on an 80 GB card. For typical targets the H100 is not the binding constraint; the number of trajectories is.",
+        "multi_gpu": "data-parallel-independent-jobs",
+        "cpu_or_host_dependency": "The PyRosetta relax and scoring stages are CPU-bound. Upstream job examples request on the order of 24 to 32 GB of RAM, sixteen CPU cores and roughly 10 GB of scratch. Interrupted campaigns resume from existing output directories.",
+        "evidence": "The project wiki gives H100 timings directly: about five minutes per trajectory for a 250-residue complex and two to three hours for a 900-residue complex, with the A100 roughly four times slower. It also states that a campaign cannot be parallelised across multiple GPUs, though independent instances can run on separate cards."
+      },
+      "semantic_validator": {
+        "fixture": "The upstream PD-L1 example, which ships in the repository as a single-chain target of roughly 115 residues with hotspot residue 56 and a binder length range of 65 to 150. PD-L1 is directly on-target for cancer immunotherapy and needs no external download.",
+        "invocation": "python -u ./bindcraft.py --settings ./settings_target/PDL1.json --filters ./settings_filters/default_filters.json --advanced ./settings_advanced/default_4stage_multimer.json",
+        "success_criteria": [
+          "The final design statistics file exists with at least one accepted row and at least one structure lands in the accepted directory.",
+          "The accepted structure has exactly two chains, the target coordinates are unchanged from the input, and the binder length falls inside the requested range.",
+          "The binder sequence contains no cysteine, because the default advanced settings omit it. A cysteine in the output means the constraint pipeline is broken.",
+          "At least one binder residue sits within about ten angstroms of the specified hotspot residue. A design that binds the opposite face is a silent semantic failure that every transport-level check would pass.",
+          "The PyRosetta-derived columns, in particular interface residue count and buried surface area, carry real non-zero values. This doubles as a live probe that PyRosetta initialised and is licensed, and it is the cheapest detector for the licence failure mode.",
+          "Across several seeds the accepted sequences differ from each other, ruling out mode collapse."
+        ],
+        "expected_runtime_note": "About five minutes per trajectory at this complex size on an H100. Easy targets need on the order of a hundred trajectories and hard targets one thousand to ten thousand, so treat a campaign as hours to weeks of single-GPU time and shard it across pods."
+      },
+      "access_gates": [
+        {
+          "gate_id": "pyrosetta-academic-license",
+          "action": "PyRosetta is a hard unconditional import in this pipeline and there is no upstream flag to disable it. For this academic proof of concept the free academic tier applies. The exact one-time step is to obtain a Rosetta licence and a PyRosetta licence for the academic institution through the University of Washington CoMotion express licensing portal at https://els2.comotion.uw.edu/product/pyrosetta, which is free of charge for academic, non-profit and government entities. Both licences are required: PyRosetta is only licensed to entities that already hold a Rosetta licence. Licensing questions go to license@uw.edu. Until the licence is in place, run the FreeBindCraft lane instead and label its scoring fields as placeholders.",
+          "grantor": "University of Washington CoMotion, on behalf of Rosetta Commons",
+          "blocking": true,
+          "credential_handling": "The PyRosetta channel credentials belong in a cluster secret consumed at image build time. Never commit them, and never bake them into a pushed image layer."
+        }
+      ],
+      "blockers": [
+        "Native BindCraft cannot run until the free academic PyRosetta and Rosetta licences are issued. This is a licence-acceptance step, not a technical one.",
+        "The published release tag is diverged from the default branch and points at a commit nine months older than the release it names. Pinning the tag would silently ship the wrong code, so onboarding must pin a commit SHA.",
+        "No official container image and no NIM exist. The community images on public registries are unofficial and most likely bake in PyRosetta, so they are not an acceptable supply-chain root."
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/martinpacesa/BindCraft",
+          "established": "Canonical repository, MIT code licence, the v.1.5.3 tag and its commit, the AlphaFold2 plus ProteinMPNN plus PyRosetta architecture, the 32 GB GPU recommendation and the explicit PyRosetta commercial-licence warning."
+        },
+        {
+          "url": "https://www.nature.com/articles/s41586-025-09429-6",
+          "established": "The peer-reviewed publication establishing BindCraft as a validated one-shot binder design method."
+        },
+        {
+          "url": "https://els2.comotion.uw.edu/product/pyrosetta",
+          "established": "That the University of Washington issues PyRosetta licences, that commercial tiers are priced by global headcount, and that a PyRosetta licence requires a Rosetta licence as well."
+        },
+        {
+          "url": "https://www.pyrosetta.org/home/licensing-pyrosetta",
+          "established": "That PyRosetta is free for academic, non-profit and government entities and requires a paid agreement otherwise."
+        },
+        {
+          "url": "https://api.github.com/repos/martinpacesa/BindCraft/compare/v.1.5.3...main",
+          "established": "Independently reproduced at retrieval: the v.1.5.3 tag is diverged from the default branch, twelve commits ahead and four behind, which is the evidence for pinning a commit rather than the tag."
+        },
+        {
+          "url": "https://github.com/martinpacesa/BindCraft/wiki/De-novo-binder-design-with-BindCraft",
+          "established": "H100 and A100 per-trajectory timings, the memory-versus-residue-count scaling, the absence of multi-GPU support, hotspot syntax and the output directory layout."
+        }
+      ]
+    },
+    "freebindcraft": {
+      "requested_name": "BindCraft (PyRosetta-free fallback lane)",
+      "role": "alternative",
+      "resolution": {
+        "state": "resolved",
+        "rationale": "Recorded because the operator asked for a PyRosetta-free comparison lane. It is a maintained fork of BindCraft, not the requested model, and is never to be reported as BindCraft.",
+        "rejected_candidates": []
+      },
+      "identity": {
+        "canonical_name": "FreeBindCraft",
+        "upstream_owner": "cytokineking, based on BindCraft v1.52",
+        "what_it_is": "A fork of BindCraft that adds a genuine PyRosetta bypass, substituting an OpenMM relax and open-source shape-complementarity and surface-area tools for the Rosetta stages.",
+        "artifact_class": "pipeline",
+        "paper": null
+      },
+      "code": {
+        "repository": "https://github.com/cytokineking/FreeBindCraft",
+        "revision": "main branch head at retrieval",
+        "revision_kind": "commit",
+        "revision_label": "Onboarding must resolve and pin an exact commit; the fork publishes no release tags matching upstream.",
+        "package": null,
+        "license": "MIT, an unmodified copy of the BindCraft licence",
+        "commercial_use": "permitted"
+      },
+      "weights": [
+        {
+          "artifact_id": "alphafold2-params",
+          "host": "upstream-http",
+          "locator": "same AlphaFold2 parameters as BindCraft",
+          "revision": "AlphaFold2 released parameter set",
+          "files": [],
+          "size_note": "unchanged from BindCraft",
+          "license": "CC BY 4.0",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        }
+      ],
+      "runtime_recommendation": {
+        "choice": "custom-workflow-container",
+        "rationale": "Installed with an explicit no-PyRosetta flag so the licensed component is never fetched. The OpenMM relax runs on GPU and upstream reports it is faster than the CPU FastRelax it replaces, which suits an H100 fleet.",
+        "nim_available": false,
+        "base_image_hint": "upstream install script invoked with the no-pyrosetta flag",
+        "serving_shape": "batch-job"
+      },
+      "h100_fit": {
+        "state": "expected-compatible-untested",
+        "gpu_count": 1,
+        "vram_note": "Same envelope as BindCraft.",
+        "multi_gpu": "data-parallel-independent-jobs",
+        "cpu_or_host_dependency": "Replaces the CPU FastRelax with a GPU OpenMM relax, shifting work onto the accelerator.",
+        "evidence": "No upstream statement names H100; expectation only."
+      },
+      "semantic_validator": {
+        "fixture": "The same target and settings used for the BindCraft lane, so the two lanes are directly comparable.",
+        "invocation": "the BindCraft entry point with the no-pyrosetta flag active",
+        "success_criteria": [
+          "The run completes and produces accepted designs with the same CSV schema as BindCraft.",
+          "AlphaFold2 metrics are real and discriminating, since these carry the overwhelming majority of the filtering power.",
+          "The genuinely recomputed geometric fields, including shape complementarity, buried surface area and interface residue counts, vary across designs rather than being constant.",
+          "The placeholder fields are recognised as constants and excluded from any ranking. A lane whose designs are ranked on these fields is silently ranking on nothing."
+        ],
+        "expected_runtime_note": "Comparable to BindCraft, with a faster relax stage."
+      },
+      "access_gates": [
+        {
+          "gate_id": "faspr-side-chain-repack",
+          "action": "The default side-chain repacking component states it is free to academic users and carries no explicit commercial grant or standard licence identifier. It is fine for this academic proof of concept, but it is a toggleable parameter and should be disabled or separately cleared before any commercial use.",
+          "grantor": "the FASPR author",
+          "blocking": false,
+          "credential_handling": null
+        }
+      ],
+      "blockers": [
+        "Seven interface metrics are hardcoded constants chosen to pass the default filters, including interface free energy, binder score and the buried unsatisfied hydrogen-bond counts. They are not measurements and must never be used to rank or select designs.",
+        "The fork's authors state that no wet-lab comparison of bypass mode against PyRosetta BindCraft has been conducted, so the scientific equivalence of this lane is unproven."
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/cytokineking/FreeBindCraft",
+          "established": "The fork's existence, its MIT licence, the install-time and runtime no-PyRosetta bypass, the substitution table, the hardcoded placeholder metric values, the rejection-attribution analysis showing AlphaFold2 metrics drive over ninety percent of filtering, and the authors' own statement that wet-lab equivalence is untested."
+        }
+      ]
+    },
+    "rfdiffusion": {
+      "requested_name": "RFdiffusion",
+      "role": "primary",
+      "resolution": {
+        "state": "resolved-pending-confirmation",
+        "rationale": "RFdiffusion resolves unambiguously to the RosettaCommons repository. The confirmation is needed only because a distinct successor, RFdiffusion2, now exists as its own repository; the plain name still denotes version one.",
+        "rejected_candidates": [
+          {
+            "candidate": "RosettaCommons/RFdiffusion2",
+            "reason": "A separate successor repository under a BSD 3-Clause licence with no published release tags at retrieval. It is a different model, not a newer tag of the requested one."
+          },
+          {
+            "candidate": "RFdiffusion3",
+            "reason": "No repository of that name exists under the RosettaCommons organisation at retrieval; third-party repositories reference it but there is no authoritative upstream release."
+          }
+        ]
+      },
+      "identity": {
+        "canonical_name": "RFdiffusion",
+        "upstream_owner": "Institute for Protein Design, University of Washington; RosettaCommons organisation",
+        "what_it_is": "A diffusion model that generates protein backbones, including binder backbones against a specified target and hotspots. It designs structure only; sequences come from a separate inverse-folding step.",
+        "artifact_class": "generative-design-model",
+        "paper": "Watson et al., de novo design of protein structure and function with RFdiffusion, Nature"
+      },
+      "code": {
+        "repository": "https://github.com/RosettaCommons/RFdiffusion",
+        "revision": "9273ef67335acaf91df0150473a274759229cdf6",
+        "revision_kind": "release-tag-and-commit",
+        "revision_label": "tag v1.1.0, the latest published tag; branch head at retrieval was 86507b6538f51fce57b5a72477165f03999ed7ae",
+        "package": null,
+        "license": "BSD, and the licence text states explicitly that it covers both the source code and the model weights referenced in the README",
+        "commercial_use": "permitted"
+      },
+      "weights": [
+        {
+          "artifact_id": "rfdiffusion-checkpoints",
+          "host": "institutional",
+          "locator": "Checkpoint download URLs published in the upstream README",
+          "revision": "released checkpoint set referenced by the README at tag v1.1.0",
+          "files": [],
+          "size_note": "Multiple checkpoints covering unconditional, binder and scaffolding modes.",
+          "license": "BSD, same licence instrument as the code",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        }
+      ],
+      "runtime_recommendation": {
+        "choice": "existing-nim",
+        "rationale": "An official NVIDIA NIM for RFdiffusion exists, publishes H100 in its support matrix and its benchmark table, and removes the single largest technical risk in the open route. The open repository ships a CUDA 11.1 conda environment and a CUDA 11.6 Dockerfile, neither of which targets Hopper, so the open route requires a CUDA modernisation rebuild first. The tradeoff is capability: the NIM endpoint exposes only contigs, an input structure, hotspot residues, diffusion steps and a seed, so symmetry, guiding potentials and partial diffusion are not reachable through it. Use the NIM for the mainline binder lane and keep a rebuilt open image for the conditioning modes the NIM does not expose.",
+        "nim_available": true,
+        "base_image_hint": "nvcr.io/nim/ipd/rfdiffusion, or a rebuilt open image on a CUDA 12 base with matching PyTorch and DGL",
+        "serving_shape": "both"
+      },
+      "h100_fit": {
+        "state": "documented-supported",
+        "gpu_count": 1,
+        "vram_note": "NVIDIA documents a minimum of 12 GB of GPU memory for the NIM, so an 80 GB H100 is heavily over-provisioned for a single trajectory.",
+        "multi_gpu": "data-parallel-independent-jobs",
+        "cpu_or_host_dependency": "The NIM asks for four CPU cores, 16 GB of RAM and about 15 GB of fast local disk, and requires a recent driver.",
+        "evidence": "H100 appears explicitly in the NIM support matrix and tops its published throughput table, so Hopper support is documented for the NIM route. The open repository is a different matter: its shipped conda environment pins CUDA 11.1 and its Dockerfile pins CUDA 11.6, neither of which covers Hopper, so the open route is untested and needs a rebuild. The target cluster was also inspected directly and runs driver 580.159.04, which meets this microservice's documented minimum of 580."
+      },
+      "semantic_validator": {
+        "fixture": "The upstream binder design example, which ships in the repository: a 150-residue target chain with three named hotspot residues and a diffused binder of 70 to 100 residues, run with inference noise set to zero and a fixed seed for reproducibility.",
+        "invocation": "the upstream inference script in binder mode with the target PDB, hotspot residue list and a fixed number of designs",
+        "success_criteria": [
+          "Every designed residue is glycine, because RFdiffusion emits backbone-only predictions. A full sequence in the output means a different model produced it.",
+          "The output has two chains, the target coordinates are unchanged from the input, and the binder length falls inside the requested range.",
+          "Consecutive backbone alpha carbons sit near 3.8 angstroms apart with no non-adjacent pair closer than about 3 angstroms. This single check catches an exploded or unfolded trajectory, which is the most common silent failure.",
+          "The binder is compact rather than extended, and its secondary-structure content is substantially more than random coil.",
+          "At least one designed residue lies within about ten angstroms of each specified hotspot residue, proving the run generated a binder rather than merely a protein.",
+          "Repeating with a fixed seed reproduces the coordinates, while different design indices produce genuinely different backbones.",
+          "If the NIM and the open route are both used, their outputs agree within the deviation NVIDIA publishes for the NIM against the open implementation."
+        ],
+        "expected_runtime_note": "Seconds per design at this size; the published baseline is about eleven seconds for a 100-residue protein on a much smaller GPU, so a ten-design acceptance run is a couple of minutes on an H100."
+      },
+      "access_gates": [
+        {
+          "gate_id": "rfdiffusion-weights",
+          "action": "None for the open route. Checkpoints download from published URLs under the same BSD instrument as the code.",
+          "grantor": null,
+          "blocking": false,
+          "credential_handling": "The checkpoint URLs are plain HTTP with opaque path segments and no published checksums. Download once, compute and record your own digests, mirror into the internal registry, and pin by digest. Pods must not fetch from the upstream host at runtime."
+        },
+        {
+          "gate_id": "ngc-api-key-for-nim",
+          "action": "The microservice route needs an NGC account and a personal or service API key; legacy keys are rejected. Some microservices additionally require a one-time Accept Terms click on their catalog page, once per NGC organisation. Current state, stated precisely: a read-only inspection of the registry from this build host using the host's stored docker credential returned HTTP 403 on the registry ping, and the fs2-models namespace on the cluster contains no secrets, so no pull secret exists there either. Live pull from inside the cluster is a separate question that this read-only task did not test, because it would require creating that pull secret. The exact one-time step is to obtain a valid NGC personal or service key, accept the terms for the specific microservice once per organisation, and create it as a pull secret in the target namespace. The entitlement tier also matters: NVIDIA's product terms allow these microservices without a subscription only on a workstation and explicitly exclude a server servicing multiple users, which is what this cluster is; the free developer programme separately covers research and experimentation on up to sixteen GPUs, which is the tier this academic proof of concept fits.",
+          "grantor": "NVIDIA",
+          "blocking": true,
+          "credential_handling": "Store the NGC key as a Kubernetes pull secret. Never commit it and never bake it into an image layer."
+        }
+      ],
+      "blockers": [
+        "The open repository's shipped CUDA environments predate Hopper, so an image rebuild on a modern CUDA base is required before the open route can run on H100. This is engineering work, not a licence issue.",
+        "The upstream project has not tagged a release since 2023 and the default branch is far ahead of the last tag, so onboarding must pin a commit SHA rather than a tag.",
+        "The microservice route's free tier covers research and experimentation only. If this workload later becomes production or commercial, the NIM lane needs an NVIDIA AI Enterprise subscription, whereas the open BSD route needs none. Keep the open image buildable so the lane is not trapped behind a subscription.",
+        "The microservice lane has no pull path yet: the build-host registry credential returns 403 and the target namespace holds no pull secret. Both must be resolved before the lane can start, and the in-cluster pull remains separately unverified."
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/RosettaCommons/RFdiffusion",
+          "established": "Canonical repository, the v1.1.0 tag and its commit, the free-for-non-profit-and-for-profit statement, the interface predicted aligned error threshold, and the explicit confirmation that ProteinMPNN can be run without the Rosetta relax step."
+        },
+        {
+          "url": "https://github.com/RosettaCommons/RFdiffusion/blob/main/LICENSE",
+          "established": "The BSD licence text and its explicit statement that the licence covers both source code and model weights."
+        },
+        {
+          "url": "https://github.com/RosettaCommons/RFdiffusion2",
+          "established": "That a distinct RFdiffusion2 repository exists under a BSD 3-Clause licence, which is the reason the plain name needs one line of confirmation."
+        },
+        {
+          "url": "https://docs.nvidia.com/nim/bionemo/rfdiffusion/latest/support-matrix.html",
+          "established": "That the RFdiffusion NIM lists H100 among tested GPUs, requires at least 12 GB of GPU memory and a recent driver, and is configured to run on a single GPU."
+        },
+        {
+          "url": "https://catalog.ngc.nvidia.com/orgs/nim/teams/ipd/containers/rfdiffusion",
+          "established": "The exact NIM container path, its published version tags, and the governing NVIDIA product agreement alongside the underlying BSD model licence."
+        },
+        {
+          "url": "https://www.nvidia.com/en-us/agreements/enterprise-software/product-specific-terms-for-ai-products/",
+          "established": "That the no-subscription allowance for these microservices is limited to workstation use and explicitly excludes a server servicing multiple users, which is why the entitlement tier must be stated rather than assumed."
+        }
+      ]
+    },
+    "proteinmpnn": {
+      "requested_name": "ProteinMPNN (pipeline dependency, not separately requested)",
+      "role": "supporting",
+      "resolution": {
+        "state": "resolved",
+        "rationale": "Required by BindCraft, RFdiffusion workflows, Proteina-Complexa and mosaic. Recorded so its licence travels with those lanes rather than being an unexamined transitive dependency.",
+        "rejected_candidates": []
+      },
+      "identity": {
+        "canonical_name": "ProteinMPNN",
+        "upstream_owner": "Justas Dauparas, Institute for Protein Design",
+        "what_it_is": "An inverse-folding model that designs an amino-acid sequence for a given backbone.",
+        "artifact_class": "sequence-design-model",
+        "paper": "Dauparas et al., Robust deep learning based protein sequence design using ProteinMPNN, Science"
+      },
+      "code": {
+        "repository": "https://github.com/dauparas/ProteinMPNN",
+        "revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+        "revision_kind": "commit",
+        "revision_label": "branch head at retrieval; the repository publishes no release tags",
+        "package": null,
+        "license": "MIT",
+        "commercial_use": "permitted"
+      },
+      "weights": [
+        {
+          "artifact_id": "proteinmpnn-vanilla-and-soluble",
+          "host": "github-release",
+          "locator": "weights vendored in the repository under the model weight directories",
+          "revision": "as shipped at the pinned commit",
+          "files": [
+            "v_48_020.pt",
+            "soluble_v_48_020.pt"
+          ],
+          "size_note": "Small enough to vendor; no separate download step.",
+          "license": "MIT",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        }
+      ],
+      "runtime_recommendation": {
+        "choice": "open-runtime",
+        "rationale": "Pure PyTorch with weights in the repository; it is a step inside other containers rather than a service of its own. An official NVIDIA microservice also exists and needs only about 3 GB of GPU memory, but adding a registry credential and a second licence for a small MIT model is not worth it when the weights already ship in the repository.",
+        "nim_available": true,
+        "base_image_hint": "any PyTorch CUDA base",
+        "serving_shape": "batch-job"
+      },
+      "h100_fit": {
+        "state": "expected-compatible-untested",
+        "gpu_count": 1,
+        "vram_note": "Very small; negligible next to the folding and diffusion models it accompanies.",
+        "multi_gpu": "single-gpu-only",
+        "cpu_or_host_dependency": null,
+        "evidence": "No upstream GPU statement; the model is small enough that fit is not in question, but it is still untested here."
+      },
+      "semantic_validator": {
+        "fixture": "A known backbone from the PDB, sequence-designed and then refolded.",
+        "invocation": "the upstream sequence design script over a single input backbone with a fixed seed",
+        "success_criteria": [
+          "Designed sequences are non-degenerate and of the correct length for the backbone.",
+          "Native sequence recovery on a natural backbone lands in the range reported upstream rather than near random.",
+          "Refolding the designed sequence reproduces the input backbone within a small deviation."
+        ],
+        "expected_runtime_note": "Seconds."
+      },
+      "access_gates": [],
+      "blockers": [],
+      "sources": [
+        {
+          "url": "https://github.com/dauparas/ProteinMPNN",
+          "established": "Canonical repository, MIT licence, in-repo weights and the absence of any Rosetta dependency."
+        },
+        {
+          "url": "https://docs.nvidia.com/nim/bionemo/proteinmpnn/latest/support-matrix.html",
+          "established": "That an official ProteinMPNN microservice exists with H100 listed and a roughly 3 GB memory floor, which is why the NIM-available flag is set even though the open route is recommended."
+        }
+      ]
+    },
+    "alphafold3": {
+      "requested_name": "AlphaFold3",
+      "role": "secondary",
+      "resolution": {
+        "state": "resolved",
+        "rationale": "One canonical DeepMind repository, one released parameter file and one set of governing terms. No ambiguity.",
+        "rejected_candidates": []
+      },
+      "identity": {
+        "canonical_name": "AlphaFold 3",
+        "upstream_owner": "Google DeepMind",
+        "what_it_is": "A biomolecular structure prediction model covering proteins, nucleic acids, ligands, ions and modified residues, shipped as an inference pipeline with a separate CPU data pipeline.",
+        "artifact_class": "structure-prediction-model",
+        "paper": "Abramson et al., Accurate structure prediction of biomolecular interactions with AlphaFold 3, Nature, https://doi.org/10.1038/s41586-024-07487-w"
+      },
+      "code": {
+        "repository": "https://github.com/google-deepmind/alphafold3",
+        "revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+        "revision_kind": "release-tag-and-commit",
+        "revision_label": "tag v3.0.4, the latest release; branch head at retrieval was c0f97eda1f1f482fd94d3a38bece18c7069b4a5c. Parameter files are compatible across all 3.0.x releases.",
+        "package": null,
+        "license": "Apache-2.0 for the code. The code was relicensed from a non-commercial Creative Commons licence to Apache-2.0 in release v3.0.3; the weights licence was explicitly not changed.",
+        "commercial_use": "permitted"
+      },
+      "weights": [
+        {
+          "artifact_id": "alphafold3-parameters",
+          "host": "upstream-http",
+          "locator": "https://storage.googleapis.com/alphafold3/af3.bin.zst",
+          "revision": "single released parameter file, roughly 973 MiB, compatible with any 3.0.x code release",
+          "files": [
+            "af3.bin.zst"
+          ],
+          "size_note": "Confirmed reachable at retrieval by a ranged request returning HTTP 206. No approval form stands between the URL and the file any more.",
+          "license": "AlphaFold 3 Model Parameters Terms of Use, last modified 2024-11-09",
+          "commercial_use": "prohibited",
+          "redistribution": "prohibited",
+          "gate": "click-through"
+        }
+      ],
+      "runtime_recommendation": {
+        "choice": "open-runtime",
+        "rationale": "No NVIDIA NIM for AlphaFold 3 exists. DeepMind publishes no prebuilt image either, so the image is built from the repository Dockerfile. The correct shape is two workloads, not one: a CPU-only data pipeline job that performs the alignment and template search, and a single-GPU inference job that consumes its JSON output. The repository supports this split directly through flags that disable either half.",
+        "nim_available": false,
+        "base_image_hint": "built from the upstream Dockerfile; the host needs a CUDA 12.6 capable driver",
+        "serving_shape": "both"
+      },
+      "h100_fit": {
+        "state": "documented-supported",
+        "gpu_count": 1,
+        "vram_note": "An 80 GB card handles up to 5120 tokens with memory preallocation enabled. Larger inputs need the documented unified-memory setting, which spills to host memory at a speed cost. Published H100 timings run from roughly 34 seconds at 1024 tokens to about 1416 seconds at 5120 tokens.",
+        "multi_gpu": "single-gpu-only",
+        "cpu_or_host_dependency": "The data pipeline is the dominant infrastructure cost and never touches the GPU. It needs nine genetic and structural databases totalling roughly 252 GB compressed and 630 GB unpacked, up to a terabyte of fast local disk, and at least 64 GB of RAM, with more for deep alignments.",
+        "evidence": "The upstream documentation officially supports a single H100 80GB alongside the A100 80GB, states that numerical accuracy was verified on both, requires compute capability 8.0 or above, and publishes an H100 timing table. This is the only model on the request list with documented, benchmarked H100 support from its own upstream."
+      },
+      "semantic_validator": {
+        "fixture": "Two shipped examples, run in order. First the ubiquitin monomer for a mechanical check, then the barnase-barstar complex, which is the one that matters because it exercises the interface confidence metrics an antibody-antigen user will actually consume. Both are small enough to run in minutes.",
+        "invocation": "the upstream inference entry point with the data pipeline disabled and a fixed model seed, pointing at the shipped example JSON",
+        "success_criteria": [
+          "Output is a parseable mmCIF plus the confidence and summary confidence JSON files, with the residue and chain counts matching the input.",
+          "For ubiquitin, mean atom confidence is high and the predicted fold reproduces the known beta-grasp topology within about one angstrom of the deposited structure.",
+          "For barnase-barstar, the interface predicted TM score exceeds the upstream threshold that distinguishes a confident prediction from a failed one, and no clash flag is set.",
+          "The ranking score is not pinned near its floor. A floor value is the documented signature of a wrong-kernel or wrong-precision deployment producing heavily clashing output.",
+          "Coordinates contain no NaN values and the chain is not collapsed or extended."
+        ],
+        "expected_runtime_note": "Both fixtures are far below the 1024-token point, so inference is seconds. Compilation dominates the first run, which is why a shared compilation cache directory must be configured or every cold pod repays it."
+      },
+      "access_gates": [
+        {
+          "gate_id": "alphafold3-parameters-terms",
+          "action": "There is no longer a request form: DeepMind removed the approval workflow in July 2026 and the parameter file now downloads directly and unauthenticated, which this task confirmed. The legal gate did not move with the technical one. The terms restrict use to non-commercial organisations such as universities, non-profits and research institutes, which this academic proof of concept satisfies. The exact one-time step is that the academic institution's authorised representative accepts the parameters terms of use and downloads the file themselves, because the terms state the parameters may only be used if received directly from Google. Nebius may then operate that institution's own copy under the agents and contractors provision, provided the copy is not shared beyond that organisation.",
+          "grantor": "Google DeepMind",
+          "blocking": true,
+          "credential_handling": "Never commit the parameter file and never bake it into a shared image. The terms designate the parameters as confidential information, so on a shared cluster the volume holding them must be restricted to this tenant's namespace and excluded from any shared model cache that other tenants can read."
+        }
+      ],
+      "blockers": [
+        "Weights and outputs are both restricted to non-commercial use. This is acceptable for the stated academic proof of concept, but the lane cannot carry over to commercial work without a separate commercial licence, which DeepMind does not offer through this channel.",
+        "The parameters are designated confidential information, which conflicts with placing them in a shared multi-tenant model cache. Isolation must be designed in rather than retrofitted.",
+        "The alignment pipeline needs on the order of a terabyte of fast local disk and 64 GB or more of RAM. The observed GPU nodes expose only about 277 GiB of ephemeral storage and have no large local NVMe, so the databases cannot live on node-local disk. They must be placed on the shared filesystem alongside the existing model cache volumes, whose current claims are 128Gi each and would need to be sized up substantially. This is the largest infrastructure commitment of any model on the request list."
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/google-deepmind/alphafold3",
+          "established": "Canonical repository, Apache-2.0 code licence, the v3.0.4 release tag and its commit, and the README statement that the parameters may only be used if received directly from Google."
+        },
+        {
+          "url": "https://storage.googleapis.com/alphafold3/af3.bin.zst",
+          "established": "Independently confirmed at retrieval by a ranged request returning HTTP 206, proving the parameter file is now directly downloadable with no form or credential."
+        },
+        {
+          "url": "https://github.com/google-deepmind/alphafold3/blob/main/WEIGHTS_TERMS_OF_USE.md",
+          "established": "The non-commercial restriction on parameters and output, the prohibition on publishing or sharing parameters, the sharing carve-out limited to an organisation's employees, consultants, contractors and agents, and the confidentiality designation."
+        },
+        {
+          "url": "https://github.com/google-deepmind/alphafold3/blob/main/docs/performance.md",
+          "established": "Official support for a single H100 80GB, the verified numerical accuracy statement, the 5120-token ceiling, the H100 timing table and the unified-memory workaround."
+        },
+        {
+          "url": "https://github.com/google-deepmind/alphafold3/blob/main/docs/installation.md",
+          "established": "Database download and unpacked sizes, the disk and RAM requirements, the CUDA 12.6 host requirement and the compute capability floor."
+        }
+      ]
+    },
+    "openfold3": {
+      "requested_name": "OpenFold3 (operator-supplied AlphaFold3 alternative)",
+      "role": "alternative",
+      "resolution": {
+        "state": "resolved",
+        "rationale": "The operator already runs OpenFold3 and asked whether it substitutes for AlphaFold3. It resolves to one repository, and the hyphenated name is the correct one: the unhyphenated variant does not exist, and the similarly named OpenFold repository is the separate AlphaFold2 reproduction.",
+        "rejected_candidates": [
+          {
+            "candidate": "aqlaboratory/openfold",
+            "reason": "The AlphaFold2 reproduction. A different model line, not OpenFold3."
+          },
+          {
+            "candidate": "OpenFold/OpenFold3 on HuggingFace",
+            "reason": "A real but stale secondary mirror behind an access gate; it predates the current default weights. Use the ungated public object store instead."
+          }
+        ]
+      },
+      "identity": {
+        "canonical_name": "OpenFold3",
+        "upstream_owner": "AlQuraishi Laboratory, Columbia University, and the OpenFold consortium",
+        "what_it_is": "An openly licensed reimplementation of AlphaFold3 built from the paper rather than from DeepMind's code, currently shipping as a research preview with production-grade open weights.",
+        "artifact_class": "structure-prediction-model",
+        "paper": "OpenFold3-preview technical report published by the OpenFold consortium"
+      },
+      "code": {
+        "repository": "https://github.com/aqlaboratory/openfold-3",
+        "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+        "revision_kind": "release-tag-and-commit",
+        "revision_label": "tag v0.5.0, the OpenBind-0 model release; branch head at retrieval was e47adbf95448956574603c9e8eb703cbb0c3bb0b",
+        "package": {
+          "index": "https://pypi.org/simple",
+          "name": "openfold3",
+          "version": "0.5.0",
+          "sdist_sha256": "a43357fddd4758dfb557",
+          "wheel_sha256": "9948071ed086ec063dac"
+        },
+        "license": "Apache-2.0",
+        "commercial_use": "permitted"
+      },
+      "weights": [
+        {
+          "artifact_id": "openfold3-openbind-0",
+          "host": "upstream-http",
+          "locator": "s3://openfold3-data/openfold3-parameters/of3-ob-2025-06-30-174k.pt, also reachable over HTTPS from the same public bucket",
+          "revision": "of3-ob-2025-06-30-174k, roughly 2.13 GiB, confirmed reachable unauthenticated at retrieval",
+          "files": [
+            "of3-ob-2025-06-30-174k.pt"
+          ],
+          "size_note": "The current default checkpoint. It requires package version 0.5.0 or newer; the older preview weights require a version below 0.5, so code and weights are version-locked and must not be mixed.",
+          "license": "Apache-2.0",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        },
+        {
+          "artifact_id": "openfold3-preview2",
+          "host": "upstream-http",
+          "locator": "s3://openfold3-data/openfold3-parameters/of3-p2-155k.pt",
+          "revision": "of3-p2-155k, roughly 2.13 GiB, confirmed reachable at retrieval",
+          "files": [
+            "of3-p2-155k.pt"
+          ],
+          "size_note": "The superseded preview-2 checkpoint, retained for reproducing published preview benchmarks.",
+          "license": "Apache-2.0",
+          "commercial_use": "permitted",
+          "redistribution": "permitted-with-attribution",
+          "gate": "none"
+        }
+      ],
+      "runtime_recommendation": {
+        "choice": "open-runtime",
+        "rationale": "Install the published package, pull the checkpoint from the ungated public bucket and run the documented entry point. This keeps the whole lane on a single permissive licence with no account or key in the image-pull path. An OpenFold3 NIM does exist and adds an optimised runtime, but it wraps the permissively licensed weights in an additional NVIDIA licence and a registry key dependency, which is a step backwards for an otherwise unencumbered model. As with AlphaFold3, split the work into a CPU alignment stage and a single-GPU inference stage.",
+        "nim_available": true,
+        "base_image_hint": "the published consortium image, or a CUDA 12 base with the pinned package version",
+        "serving_shape": "both"
+      },
+      "h100_fit": {
+        "state": "documented-supported",
+        "gpu_count": 1,
+        "vram_note": "Upstream requires at least 32 GB of GPU memory, and NVIDIA's own runtime documentation reports typical usage of 40 to 80 GB depending on sequence length. An 80 GB H100 sits comfortably above the minimum, so the low-memory mode should be left off because it serialises work and is markedly slower.",
+        "multi_gpu": "data-parallel-independent-jobs",
+        "cpu_or_host_dependency": "The alignment pipeline is CPU-bound and storage-hungry: roughly 330 GB of databases at minimum, rising to several terabytes if the large sequence databases are added, and upstream recommends node-local solid-state storage. The public hosted alignment service is not an option here: its operators ask that it not be queried from multiple machines, which a pod fleet inherently violates, and it would send target sequences to a third party.",
+        "evidence": "Upstream states a CUDA 12.1 floor and a 32 GB memory minimum, and NVIDIA's runtime support matrix names H100 80GB explicitly with published per-length latencies. The model was itself trained on a large H100 fleet. Hopper support is therefore documented rather than assumed."
+      },
+      "semantic_validator": {
+        "fixture": "Two shipped fixtures with upstream-calibrated thresholds. The ubiquitin query is the fast liveness check. The lysozyme-with-ligand query is the real correctness gate, because upstream publishes both a ceiling for the alignment-backed modes and a floor for the alignment-free mode.",
+        "invocation": "the package prediction entry point against the shipped example query, first with the alignment server disabled, then with alignments supplied",
+        "success_criteria": [
+          "Output is a parseable mmCIF with per-atom confidence written into the temperature-factor column, alongside the per-atom and aggregated confidence files and a timing file.",
+          "For ubiquitin, average confidence and predicted TM score land near the values upstream records for this fixture, averaged over several diffusion samples because a single sample is not a stable measurement.",
+          "For the lysozyme fixture with alignments, backbone deviation from the reference structure falls below the tight upstream ceiling and the ligand is placed in the correct pocket.",
+          "For the same fixture without alignments, backbone deviation stays above the upstream floor. This is the decisive check: a ceiling-only test still passes when the alignment path has silently died, and a floor catches exactly that.",
+          "No clash flag is set and coordinates contain no NaN values."
+        ],
+        "expected_runtime_note": "Roughly ten seconds for a small target on an H100 under the optimised runtime; the plain package stack is slower. Alignment time is excluded from the reported timing and dominates end to end."
+      },
+      "access_gates": [
+        {
+          "gate_id": "openfold3-weights",
+          "action": "None on the recommended path. The checkpoints sit in a public object store and were confirmed reachable unauthenticated at retrieval. Avoid the HuggingFace mirror, which is gated behind a questionnaire and would put a token in the pull path for no benefit.",
+          "grantor": null,
+          "blocking": false,
+          "credential_handling": "No credential needed. Fetch in an init container and cache on a shared volume."
+        }
+      ],
+      "blockers": [
+        "Covalent chemistry is not expressible at inference: covalently modified residues, cross-chain covalent bonds, covalently bound ligands and polymeric ligands such as glycans are all listed by upstream as not yet supported. Point mutations and simple non-canonical residue substitutions do work. If the workload involves glycosylated antibodies or covalent conjugates, this lane cannot represent the input at all and AlphaFold3 remains necessary.",
+        "The input and output formats are not interchangeable with AlphaFold3. The schemas are semantically close but syntactically different, so a converter is needed and it must reject rather than silently drop any AlphaFold3 job that uses covalent bonds.",
+        "Upstream describes the current release as a research preview and states plainly that no reproduction has fully matched AlphaFold3 across all modalities. Reported gaps concentrate in nucleic-acid monomers, protein-protein and protein-DNA interactions.",
+        "The same storage constraint as AlphaFold3 applies to its alignment databases, which range from roughly 330 GB upwards. The observed GPU nodes have no large local NVMe, so these must sit on the shared filesystem."
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/aqlaboratory/openfold-3",
+          "established": "Canonical repository with the hyphenated name, Apache-2.0 licence, the v0.5.0 tag and its commit, the research-preview status, the supported-modality list and the explicitly unsupported covalent and glycan features."
+        },
+        {
+          "url": "https://openfold3-data.s3.amazonaws.com/openfold3-parameters/of3-ob-2025-06-30-174k.pt",
+          "established": "Independently confirmed at retrieval: the current default checkpoint is reachable unauthenticated over HTTPS, while the withdrawn legacy checkpoint returns 404."
+        },
+        {
+          "url": "https://pypi.org/pypi/openfold3/json",
+          "established": "Published package version 0.5.0 under Apache-2.0 with release artifact checksums for immutable pinning."
+        },
+        {
+          "url": "https://docs.nvidia.com/nim/bionemo/openfold3/latest/support-matrix.html",
+          "established": "That H100 80GB is an explicitly supported target with published latencies, which is what makes the H100 fit documented rather than assumed."
+        },
+        {
+          "url": "https://openbind.uk/news/blog-openbind-0-advancing-open-molecular-structure-prediction/",
+          "established": "That the current default weights are released under Apache-2.0 together with training data and recipes, their mid-2025 structural-data cutoff, and the vendor's own benchmark comparison against AlphaFold3."
+        }
+      ]
+    }
+  },
+  "open_questions": [
+    {
+      "question_id": "q-mosaic-identity",
+      "models": [
+        "mosaic"
+      ],
+      "question": "Is 'mosaic' the Escalante Bio composite-objective protein design framework, whose published case studies are PD-L1 and IL7Ra minibinders?",
+      "default_if_unanswered": "Proceed with the Escalante Bio framework. Evidence is strong: it is a protein design project, its case studies are cancer-immunotherapy targets, and it natively composes four other models on this request list."
+    },
+    {
+      "question_id": "q-rfdiffusion-generation",
+      "models": [
+        "rfdiffusion"
+      ],
+      "question": "Which RFdiffusion generation is wanted: the original for protein-protein binders, RFdiffusion2 for enzyme active sites, or the all-atom line for small-molecule binders?",
+      "default_if_unanswered": "Proceed with the original RFdiffusion. It is the one with the widely cited paper, the one NVIDIA packages as a microservice, and the correct tool for protein binder design, which is this workload's stated purpose."
+    },
+    {
+      "question_id": "q-protenix-substitute",
+      "models": [
+        "protenix-v2"
+      ],
+      "question": "Protenix v2 weights are not publicly served. Should onboarding proceed on the obtainable Protenix v1 checkpoint with the later mid-2025 training cutoff, or hold the lane until v2 is released?",
+      "default_if_unanswered": "Proceed on the v1 checkpoint with the later cutoff, labelled explicitly as a substitute, and re-probe the v2 object on a schedule. Holding the lane would block a secondary model on a release with no published timeline."
+    },
+    {
+      "question_id": "q-proteina-variants",
+      "models": [
+        "proteina-complexa"
+      ],
+      "question": "Which Proteina-Complexa pipelines are in scope: protein-target binders, small-molecule-target binders, motif scaffolding, or all three?",
+      "default_if_unanswered": "Onboard the protein-target binder pipeline first, since it matches the stated immunotherapy workload, and stage the other two checkpoints without wiring their pipelines."
+    },
+    {
+      "question_id": "q-covalent-inputs",
+      "models": [
+        "openfold3",
+        "alphafold3"
+      ],
+      "question": "Does the workload need glycosylated antibodies, antibody-drug-conjugate linkers, or any other covalent conjugate modelled?",
+      "default_if_unanswered": "Assume not, and route structure prediction to OpenFold3 by default. If covalent chemistry is needed, OpenFold3 cannot express the input at all and the AlphaFold3 lane becomes required rather than optional."
+    }
+  ]
+}
