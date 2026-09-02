@@ -90,7 +90,7 @@ spec:
         - port: {{ $network.prometheus.port }}
           protocol: TCP
     {{- end }}
-    {{- if .Values.adminReadAdapters.capacity.enabled }}
+    {{- if or .Values.adminReadAdapters.capacity.enabled .Values.scientificBatch.enabled }}
     - to:
         {{- range $network.kubernetesApiCidrs }}
         - ipBlock:

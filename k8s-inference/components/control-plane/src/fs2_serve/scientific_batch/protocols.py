@@ -41,6 +41,7 @@ class ScientificBatchRepository(Protocol):
         *,
         operation_id: UUID,
         tenant_id: str,
+        model_id: str,
         plan: ScientificBatchPlan,
         scheduling: SchedulingSnapshot,
     ) -> ScientificBatchState: ...

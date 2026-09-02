@@ -246,6 +246,36 @@ app.kubernetes.io/component: model-controller
 - name: FS2_ADMIN_OBSERVABILITY_CONFIG_FILE
   value: /etc/fs2-serve/admin-observability/config.json
 {{- end }}
+{{- if .Values.scientificBatch.enabled }}
+- name: FS2_SCIENTIFIC_BATCH_ENABLED
+  value: "true"
+- name: FS2_SCIENTIFIC_BATCH_WRITES_ENABLED
+  value: {{ .Values.scientificBatch.writesEnabled | quote }}
+- name: FS2_SCIENTIFIC_BATCH_NAMESPACE
+  value: {{ .Values.scientificBatch.namespace | quote }}
+- name: FS2_SCIENTIFIC_BATCH_CONTROLLER_ID
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.uid
+- name: FS2_SCIENTIFIC_BATCH_KUBERNETES_API_URL
+  value: {{ .Values.scientificBatch.kubernetesApiUrl | quote }}
+- name: FS2_SCIENTIFIC_BATCH_KUBERNETES_TOKEN_FILE
+  value: /var/run/secrets/fs2-scientific-batch/token
+- name: FS2_SCIENTIFIC_BATCH_KUBERNETES_CA_FILE
+  value: /var/run/secrets/fs2-scientific-batch/ca.crt
+- name: FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_FILE
+  value: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.schedulingContractKey }}
+- name: FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE
+  value: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.executionMapKey }}
+- name: FS2_SCIENTIFIC_BATCH_WORKERS
+  value: {{ .Values.scientificBatch.workers | quote }}
+- name: FS2_SCIENTIFIC_BATCH_POLL_SECONDS
+  value: {{ .Values.scientificBatch.pollSeconds | quote }}
+- name: FS2_SCIENTIFIC_BATCH_LEASE_SECONDS
+  value: {{ .Values.scientificBatch.leaseSeconds | quote }}
+- name: FS2_SCIENTIFIC_BATCH_API_TIMEOUT_SECONDS
+  value: {{ .Values.scientificBatch.apiTimeoutSeconds | quote }}
+{{- end }}
 - name: FS2_ADMIN_ADAPTER_TIMEOUT_SECONDS
   value: {{ .Values.adminReadAdapters.adapterTimeoutSeconds | quote }}
 - name: FS2_ADMIN_SOURCE_MAX_AGE_SECONDS
@@ -377,6 +407,19 @@ app.kubernetes.io/component: model-controller
   subPath: {{ .Values.modelController.rendererBundlesKey }}
   readOnly: true
 {{- end }}
+{{- if .Values.scientificBatch.enabled }}
+- name: scientific-batch-kubernetes
+  mountPath: /var/run/secrets/fs2-scientific-batch
+  readOnly: true
+- name: scientific-batch-scheduling
+  mountPath: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.schedulingContractKey }}
+  subPath: {{ .Values.scientificBatch.schedulingContractKey }}
+  readOnly: true
+- name: scientific-batch-execution
+  mountPath: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.executionMapKey }}
+  subPath: {{ .Values.scientificBatch.executionMapKey }}
+  readOnly: true
+{{- end }}
 {{- end -}}
 
 {{- define "fs2-serve.cryptoVolumes" -}}
@@ -503,5 +546,32 @@ app.kubernetes.io/component: model-controller
     items:
       - key: {{ .Values.modelController.rendererBundlesKey }}
         path: {{ .Values.modelController.rendererBundlesKey }}
+{{- end }}
+{{- if .Values.scientificBatch.enabled }}
+- name: scientific-batch-kubernetes
+  projected:
+    defaultMode: 0400
+    sources:
+      - serviceAccountToken:
+          audience: kubernetes.default.svc
+          expirationSeconds: {{ .Values.scientificBatch.tokenExpirationSeconds }}
+          path: token
+      - configMap:
+          name: kube-root-ca.crt
+          items:
+            - key: ca.crt
+              path: ca.crt
+- name: scientific-batch-scheduling
+  configMap:
+    name: {{ .Values.scientificBatch.schedulingContractConfigMapName }}
+    items:
+      - key: {{ .Values.scientificBatch.schedulingContractKey }}
+        path: {{ .Values.scientificBatch.schedulingContractKey }}
+- name: scientific-batch-execution
+  configMap:
+    name: {{ .Values.scientificBatch.executionMapConfigMapName }}
+    items:
+      - key: {{ .Values.scientificBatch.executionMapKey }}
+        path: {{ .Values.scientificBatch.executionMapKey }}
 {{- end }}
 {{- end -}}

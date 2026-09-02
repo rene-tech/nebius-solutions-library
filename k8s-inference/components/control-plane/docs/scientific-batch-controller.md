@@ -1,20 +1,22 @@
-# Scientific batch controller core
+# Scientific batch controller
 
 The `fs2_serve.scientific_batch` package is the reusable state-machine core for
-staged scientific workloads. It is deliberately not wired into the API,
-PostgreSQL, Kubernetes, Kueue, Helm, or model adapters yet. Those integrations
-can implement the two protocols in `protocols.py` without changing controller
-semantics.
+staged scientific workloads and its production control-plane consumer. The
+state machine remains isolated behind repository and Kubernetes protocols;
+`PostgresScientificBatchRepository`, `HttpScientificBatchCluster`, the API/MCP
+service, and the supervised worker implement those boundaries without making
+the internal records into public schemas.
 
 ## Durable ownership and admission
 
-Every batch is keyed by the UUID of an existing durable FS2 Operation. The
-future PostgreSQL implementation must retain that parent relationship; the
-batch repository does not create a second public operation ledger.
+Every batch is keyed by the UUID of an existing durable FS2 Operation. Migration
+`0015_scientific_batch_controller.sql` stores only orchestration state, events,
+and foreign keys to artifact-service-owned rows; it does not create a second
+public operation ledger or duplicate artifact metadata.
 `batch_id` and logical `workload_id` are deterministic, stable children of the
 Operation. Both survive retry; only `attempt_id` and the concrete Kubernetes
-resource name change. A later persistence adapter projects these internal UUIDs
-to the corresponding opaque scientific API identities.
+resource name change. The service projects these internal UUIDs to opaque
+scientific API identities.
 
 Admission writes an immutable internal `ScientificBatchPlan` and
 `SchedulingSnapshot` once. The snapshot uses the Kueue scheduling contract's
@@ -52,7 +54,11 @@ Only one DAG stage is active at a time. A stage becomes eligible after every
 predecessor is durably succeeded and its atomic artifact-manifest commit is
 reopened, bound to the exact successful attempt IDs, and marked semantically
 valid. A partial upload, stale-attempt commit, missing validation receipt, or
-negative semantic result cannot unlock downstream work.
+negative semantic result cannot unlock downstream work. Kubernetes completion
+may become visible before its artifact transaction; the controller first
+persists the terminal attempt observation, then releases the completed Job and
+waits for the commit instead of treating temporary absence as a scientific
+failure.
 
 ## Workload mapping and quota handoff
 
@@ -64,15 +70,17 @@ negative semantic result cannot unlock downstream work.
 - Workload names and attempt UUIDs are deterministic functions of Operation,
   stage, shard, and attempt number. Re-applying after a process crash therefore
   adopts the same object instead of duplicating work.
-- Terminal stage resources are deleted before the durable stage-success
-  transition. Kueue also releases admission for terminal Jobs; the explicit
-  idempotent delete is the cleanup and quota-handoff fence before the next
-  sequential stage can be created.
+- A terminal observation is durable before workload deletion. The separate
+  `resource_released` marker is persisted after an idempotent, UID-fenced
+  delete, before the durable stage-success transition. If the controller loses
+  its database write after deleting, its successor safely repeats deletion.
+  This is the quota-handoff fence before the next sequential stage can be
+  created.
 
-Kubernetes implementations must retain or reconstruct terminal observations
-long enough for reconciliation after an idempotent delete. Apply and delete
-must reject an older controller fence and must verify immutable attempt
-ownership before adopting an existing deterministic name.
+Kubernetes implementations need not reconstruct an observation after deletion:
+the terminal outcome is already durable. Apply and delete must reject an older
+controller fence and verify immutable attempt ownership before adopting an
+existing deterministic name.
 
 ## Attempts, failures, and cancellation
 
@@ -81,11 +89,14 @@ observation whose attempt UUID does not equal the current resource binding is
 ignored and emits the deduplicated `attempt_fenced` event. Only
 `infrastructure` and `preemption` failures may be retried, and only below the
 stage's admission-time attempt limit. User input, application, semantic
-validation, missing commits, and stale commit bindings terminalize the batch.
+validation, and stale or negative commit bindings terminalize the batch.
 
-Cancellation is a fenced cascade: all active Jobs/JobSets receive idempotent
-deletes, active attempts move through grace/drain and teardown, every
-non-succeeded stage becomes cancelled, and no later stage can be created.
+Cancellations are durable level signals, so a cancellation racing with Job
+creation is carried through the reconciler's next compare-and-swap rather than
+orphaning the just-created object. Cancellation is a fenced cascade: all active
+Jobs/JobSets receive idempotent deletes, active attempts move through
+grace/drain and teardown, every non-succeeded stage becomes cancelled, and no
+later stage can be created.
 
 ## Lifecycle evidence
 
@@ -123,22 +134,88 @@ production adapter must, in one transaction:
 3. prove the immutable plan and scheduling snapshot did not change;
 4. replace orchestration state at exactly the next revision; and
 5. append new lifecycle/controller events, deduplicated by `event_id`, with
-   gap-free monotonically increasing per-Operation sequences.
+   monotonically increasing sequences.
 
 Artifact publication is a separate atomic producer transaction. Readers see
 either no `ArtifactCommit` or the complete manifest and semantic-validation
 receipt. Credentials, raw inputs, raw outputs, and validator diagnostics do
 not belong in lifecycle events.
 
+## Production API, MCP, and artifact projection
+
+The public adapters consume the canonical catalog schemas directly; there are
+no controller-owned copies of the scientific request, result, profile, or
+artifact-pointer JSON schemas.
+
+- `POST /v1/models/{model_id}:submit` validates
+  `scientific-run-request/v1`, authorizes the profile/model, freezes the
+  scheduling decision at the durable Operation `accepted_at`, and returns 202.
+- `GET /v1/operations/{operation_id}` returns the durable Operation and internal
+  batch-status projection. `GET .../events` returns ordered stable lifecycle
+  identities. `DELETE ...` and the existing `:cancel` route request the same
+  idempotent cascade.
+- `GET /v1/operations/{operation_id}/result` is assembled by
+  `ArtifactServiceBridge` from the artifact service's immutable terminal
+  manifest and validated against `scientific-run-result/v1`.
+- `GET /v1/artifacts/{artifact_id}` returns only the canonical pointer
+  projection. Storage keys, signed handles, access credentials, payload bytes,
+  and internal artifact records are never returned.
+- MCP exposes matching submit/status/cancel/events/artifact/result tools. Its
+  submit path additionally requires the profile's canonical `mcp.invocable`
+  gate; all tools reuse the HTTP service and never create Kubernetes objects
+  directly.
+
+The artifact service remains the sole owner of uploads, immutable artifact
+records, terminal result manifests, and their public projection. Stage commit
+rows contain only the exact successful attempt set and foreign keys/digests for
+the manifest and semantic evidence. A successful Job cannot unlock a successor
+until this join has been committed and reopened.
+
+## Kubernetes and Helm wiring
+
+`HttpScientificBatchCluster` uses the projected Kubernetes API token and the
+operator-owned execution map to POST suspended Kueue-managed Jobs or JobSets.
+It verifies deterministic name, attempt ownership, immutable manifest digest,
+and live UID before adoption or UID-preconditioned deletion. The Kueue contract
+is authoritative for LocalQueue, ClusterQueue, workload priority, accelerator,
+pool order, and preemption. ResourceFlavor remains null at submission because
+only Kueue may choose it.
+
+The execution map is a closed operator configuration, not a public request
+extension. It accepts only immutable digest-qualified images, direct argv,
+bounded fixed environment and resources, and stage IDs already present in a
+runnable profile. Caller values can select only fields allowed by the public
+request/parameter schemas; they never become image, command, environment,
+queue, priority, flavor, path, or URL values.
+
+Helm's `scientificBatch.enabled` and `scientificBatch.writesEnabled` gates are
+both false by default and must be enabled together. Enabling requires:
+
+- immutable scheduling-contract and execution-map ConfigMaps;
+- bounded Kubernetes API egress CIDRs;
+- Job, JobSet, and Pod read/write RBAC in the configured workload namespace;
+- a catalog profile whose route, immutable execution identity, access state,
+  semantic validator, and parameter schema are all qualified.
+
+The control-plane Pod UID is the controller identity. Each replica runs fenced
+workers over the shared PostgreSQL queue; generic inference workers explicitly
+exclude `scientific-batch-v1` Operations. Every worker observes its configured
+poll interval even while a batch remains continuously claimable, and readiness
+fails after repeated errors in any worker. Current checked-in scientific
+profiles remain candidate/unqualified, so the feature cannot be enabled
+truthfully until a qualified adapter lane lands its exact profiles, execution
+map, and scheduling ConfigMap.
+
 ## Verification
 
 The deterministic fake repository enforces compare-and-swap revisions,
 immutable admission, monotonically sequenced events, and controller fences.
 The fake cluster enforces immutable names and mutation fences. The focused
-tests cover sequential commit gating, fan-out and gang rendering, quota
-handoff, complete phase ingestion, infrastructure preemption/retry,
-stale-attempt observations, non-retryable taxonomy, cancellation cascade, and
-invalid DAGs/snapshots.
+tests cover sequential commit gating, delayed artifact publication, fan-out and gang rendering, quota
+handoff (including an injected crash after external deletion), complete phase ingestion, infrastructure preemption/retry,
+stale-attempt observations, non-retryable taxonomy, cancellation races and
+cascade, public HTTP/MCP lifecycle dispatch, Kubernetes REST creation, durable
+PostgreSQL fencing, and invalid DAGs/snapshots.
 
 Run them with:
 
@@ -146,5 +223,12 @@ Run them with:
 cd k8s-inference/components/control-plane
 PYTHONPATH="src:../../catalog/runtime" uv run pytest -q \
   tests/test_scientific_batch_controller.py \
-  tests/test_scientific_batch_catalog_adapter.py
+  tests/test_scientific_batch_catalog_adapter.py \
+  tests/test_scientific_batch_production.py
+
+# Requires a disposable PostgreSQL database.
+FS2_TEST_DATABASE_URL=postgresql://... uv run pytest -q \
+  tests/test_postgres_integration.py -k scientific_batch
+
+helm lint ../../charts/control-plane/fs2-serve-control-plane
 ```

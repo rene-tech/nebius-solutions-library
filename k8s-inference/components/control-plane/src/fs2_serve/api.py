@@ -87,6 +87,12 @@ from .models import (
 )
 from .registry import OperationalModel, Registry, RegistryError
 from .route_revalidation import RouteRevalidator
+from .scientific_artifacts import ArtifactConflictError, ArtifactNotFoundError, ArtifactPolicyError
+from .scientific_batch.kubernetes import HttpScientificBatchCluster
+from .scientific_batch.postgres_repository import ScientificBatchNotFoundError
+from .scientific_batch.profile_catalog import ScientificProfileError, ScientificRequestError
+from .scientific_batch.service import ScientificBatchService
+from .scientific_batch.worker import ScientificBatchWorker
 from .settings import Settings
 from .store import (
     BudgetExceededError,
@@ -172,6 +178,9 @@ class AppRuntime:
     model_deployment_read: ModelDeploymentReadService | None = None
     model_deployment_mutation: ModelDeploymentMutationService | None = None
     model_deployment_bridge: ModelDeploymentRuntimeBridge | None = None
+    scientific_batches: ScientificBatchService | None = None
+    scientific_batch_worker: ScientificBatchWorker | None = None
+    scientific_batch_cluster: HttpScientificBatchCluster | None = None
 
     async def revalidate_routes(self) -> bool:
         if self.route_revalidator is not None and not await self.route_revalidator.refresh():
@@ -376,11 +385,17 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             await runtime.route_revalidator.start()
         if runtime.model_deployment_bridge is not None:
             await runtime.model_deployment_bridge.start()
+        if runtime.scientific_batch_worker is not None:
+            await runtime.scientific_batch_worker.start()
         if runtime.settings.run_workers:
             await runtime.admission.start()
         try:
             yield
         finally:
+            if runtime.scientific_batch_worker is not None:
+                await runtime.scientific_batch_worker.close()
+            if runtime.scientific_batch_cluster is not None:
+                await runtime.scientific_batch_cluster.close()
             if runtime.model_deployment_bridge is not None:
                 await runtime.model_deployment_bridge.close()
             if runtime.route_revalidator is not None:
@@ -623,6 +638,30 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     async def registry_error(_: Request, __: RegistryError) -> JSONResponse:
         return _error(503, "route_unavailable", "model route is unavailable")
 
+    @app.exception_handler(ScientificRequestError)
+    async def scientific_request_error(_: Request, __: ScientificRequestError) -> JSONResponse:
+        return _error(422, "scientific_request_invalid", "request violates the canonical scientific contract")
+
+    @app.exception_handler(ScientificBatchNotFoundError)
+    async def scientific_not_found(_: Request, __: ScientificBatchNotFoundError) -> JSONResponse:
+        return _error(404, "scientific_batch_not_found", "scientific batch was not found")
+
+    @app.exception_handler(ScientificProfileError)
+    async def scientific_profile_error(_: Request, __: ScientificProfileError) -> JSONResponse:
+        return _error(503, "scientific_profile_unavailable", "scientific workload profile is unavailable")
+
+    @app.exception_handler(ArtifactNotFoundError)
+    async def artifact_not_found(_: Request, __: ArtifactNotFoundError) -> JSONResponse:
+        return _error(404, "artifact_not_found", "scientific artifact was not found")
+
+    @app.exception_handler(ArtifactConflictError)
+    async def artifact_conflict(_: Request, __: ArtifactConflictError) -> JSONResponse:
+        return _error(409, "artifact_conflict", "scientific artifact state conflicts")
+
+    @app.exception_handler(ArtifactPolicyError)
+    async def artifact_policy(_: Request, __: ArtifactPolicyError) -> JSONResponse:
+        return _error(422, "artifact_policy_rejected", "scientific artifact policy rejected the request")
+
     @app.exception_handler(KeyError)
     async def key_error(_: Request, __: KeyError) -> JSONResponse:
         return _error(404, "not_found", "model or operation was not found")
@@ -692,6 +731,11 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             worker_health = runtime.admission.health()
             if not worker_health["ready"]:
                 return _error(503, "worker_unavailable", "admission worker or janitor is unavailable")
+        scientific_health = (
+            runtime.scientific_batch_worker.health() if runtime.scientific_batch_worker is not None else None
+        )
+        if scientific_health is not None and not scientific_health["ready"]:
+            return _error(503, "scientific_batch_worker_unavailable", "scientific batch worker is unavailable")
         federation_health = (
             await runtime.admission.runtime.federation_health()
             if routable_models
@@ -709,6 +753,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 "route_evidence": route_health,
                 "activation": {"required": activation_required, "ready": activation_ready},
                 "admission": worker_health,
+                **({"scientific_batch": scientific_health} if scientific_health is not None else {}),
                 "federation": federation_health,
                 **({"dynamic_models": dynamic_model_health} if dynamic_model_health is not None else {}),
             }
@@ -865,16 +910,63 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             wait_seconds=wait_seconds,
         )
 
+    @app.post("/v1/models/{model_id}:submit")
+    async def scientific_submit(
+        model_id: str,
+        request: Request,
+        identity: Annotated[Principal, Depends(principal)],
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> Response:
+        if runtime.scientific_batches is None:
+            return _error(503, "scientific_batch_unavailable", "scientific batch submission is disabled")
+        model_id = _validate_model_id(model_id)
+        if idempotency_key is None:
+            raise HTTPException(status_code=400, detail="Idempotency-Key is required")
+        if not MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH:
+            raise HTTPException(status_code=400, detail="Idempotency-Key length is invalid")
+        try:
+            payload = json.loads(await request.body())
+        except (RecursionError, ValueError):
+            raise HTTPException(status_code=400, detail="request body must be JSON") from None
+        result = await runtime.scientific_batches.submit(
+            principal=identity,
+            model_id=model_id,
+            request=payload,
+            idempotency_key=idempotency_key,
+            traceparent=request.headers.get("traceparent"),
+        )
+        operation = result["operation"]
+        return JSONResponse(
+            result,
+            status_code=202,
+            headers={
+                "cache-control": "no-store",
+                "location": f"/v1/operations/{operation['id']}",
+                "x-fs2-operation-id": operation["id"],
+                "x-fs2-idempotent-replay": str(operation["reused"]).lower(),
+            },
+        )
+
     @app.get("/v1/operations/{operation_id}")
     async def operation_status(operation_id: UUID, identity: Annotated[Principal, Depends(principal)]) -> Response:
         operation = await runtime.store.get_operation(operation_id, tenant_id=identity.tenant_id)
         require_operation_access(identity, operation)
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            return JSONResponse(
+                await runtime.scientific_batches.status(operation_id, principal=identity),
+                headers=_operation_headers(operation),
+            )
         return JSONResponse(operation.model_dump(mode="json"), headers=_operation_headers(operation))
 
     @app.get("/v1/operations/{operation_id}/result")
     async def operation_result(operation_id: UUID, identity: Annotated[Principal, Depends(principal)]) -> Response:
         operation = await runtime.store.get_operation(operation_id, tenant_id=identity.tenant_id)
         require_operation_access(identity, operation)
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            return JSONResponse(
+                await runtime.scientific_batches.result(operation_id, principal=identity),
+                headers=_operation_headers(operation),
+            )
         result = await runtime.store.get_operation_result(operation_id, tenant_id=identity.tenant_id)
         return JSONResponse(result.result, headers=_operation_headers(result.operation))
 
@@ -882,10 +974,50 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     async def operation_cancel(operation_id: UUID, identity: Annotated[Principal, Depends(principal)]) -> OperationView:
         operation = await runtime.store.get_operation(operation_id, tenant_id=identity.tenant_id)
         require_operation_access(identity, operation)
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            result = await runtime.scientific_batches.cancel(operation_id, principal=identity)
+            return OperationView.model_validate(result["operation"])
         return await runtime.store.cancel_operation(
             operation_id,
             tenant_id=identity.tenant_id,
             actor=identity.principal_id,
+        )
+
+    @app.delete("/v1/operations/{operation_id}")
+    async def scientific_operation_cancel(
+        operation_id: UUID, identity: Annotated[Principal, Depends(principal)]
+    ) -> Response:
+        if runtime.scientific_batches is None:
+            return _error(404, "scientific_batch_not_found", "scientific batch was not found")
+        return JSONResponse(
+            await runtime.scientific_batches.cancel(operation_id, principal=identity),
+            status_code=202,
+            headers={"cache-control": "no-store"},
+        )
+
+    @app.get("/v1/operations/{operation_id}/events")
+    async def scientific_operation_events(
+        operation_id: UUID,
+        identity: Annotated[Principal, Depends(principal)],
+        after_sequence: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 1000,
+    ) -> Response:
+        if runtime.scientific_batches is None:
+            return _error(404, "scientific_batch_not_found", "scientific batch was not found")
+        return JSONResponse(
+            await runtime.scientific_batches.events(
+                operation_id, principal=identity, after_sequence=after_sequence, limit=limit
+            ),
+            headers={"cache-control": "no-store"},
+        )
+
+    @app.get("/v1/artifacts/{artifact_id}")
+    async def scientific_artifact(artifact_id: UUID, identity: Annotated[Principal, Depends(principal)]) -> Response:
+        if runtime.scientific_batches is None:
+            return _error(404, "artifact_not_found", "scientific artifact was not found")
+        return JSONResponse(
+            await runtime.scientific_batches.artifact(artifact_id, principal=identity),
+            headers={"cache-control": "no-store"},
         )
 
     @app.post("/v1/operations/{operation_id}:acknowledge")

@@ -359,6 +359,7 @@ class ScientificAttemptState:
     workload: WorkloadRef
     outcome: AttemptOutcome = AttemptOutcome.ACTIVE
     last_phase: LifecyclePhase = LifecyclePhase.SCHEDULING
+    resource_released: bool = False
     failure_kind: FailureKind | None = None
     failure_code: str | None = None
 
@@ -368,6 +369,8 @@ class ScientificAttemptState:
             _check_name(self.shard_id, "shard_id")
         if not 1 <= self.attempt_number <= 10:
             raise ValueError("attempt_number must be between 1 and 10")
+        if self.resource_released and self.outcome is AttemptOutcome.ACTIVE:
+            raise ValueError("an active attempt cannot have released its workload resource")
 
 
 @dataclass(frozen=True, slots=True)
@@ -390,6 +393,7 @@ class ScientificBatchState:
     batch_id: UUID
     workload_id: UUID
     tenant_id: str
+    model_id: str
     plan: ScientificBatchPlan
     scheduling: SchedulingSnapshot
     stages: tuple[ScientificStageState, ...]
@@ -408,13 +412,19 @@ class ScientificBatchState:
             raise ValueError("the frozen scheduling snapshot must cover every stage exactly once")
         if len([stage for stage in self.stages if stage.status is StageStatus.ACTIVE]) > 1:
             raise ValueError("only one DAG stage may hold quota at a time")
+        if any(
+            stage.status.terminal and any(not attempt.resource_released for attempt in stage.attempts)
+            for stage in self.stages
+        ):
+            raise ValueError("a terminal stage cannot retain Kubernetes workload resources")
+        if self.status.terminal and any(
+            not attempt.resource_released for stage in self.stages for attempt in stage.attempts
+        ):
+            raise ValueError("a terminal batch cannot retain Kubernetes workload resources")
         for plan in self.plan.stages:
             scheduling = self.scheduling.stage(plan.stage_id)
-            if (
-                scheduling.checkpoint_mode is not plan.checkpoint_mode
-                or scheduling.preemption_mode is not plan.preemption_mode
-            ):
-                raise ValueError("the scheduling snapshot must retain catalog checkpoint and preemption modes")
+            if scheduling.checkpoint_mode is not plan.checkpoint_mode:
+                raise ValueError("the scheduling snapshot must retain the catalog checkpoint mode")
             if plan.resource_class is ResourceClass.CPU and scheduling.accelerator_count != 0:
                 raise ValueError("CPU stages cannot reserve accelerators")
             if plan.resource_class is ResourceClass.GPU and scheduling.accelerator_count < 1:
@@ -428,12 +438,15 @@ class ScientificBatchState:
         tenant_id: str,
         plan: ScientificBatchPlan,
         scheduling: SchedulingSnapshot,
+        model_id: str,
     ) -> ScientificBatchState:
+        _check_name(model_id, "model_id")
         return cls(
             operation_id=operation_id,
             batch_id=batch_identity(operation_id),
             workload_id=workload_identity(operation_id),
             tenant_id=tenant_id,
+            model_id=model_id,
             plan=plan,
             scheduling=scheduling,
             stages=tuple(ScientificStageState(stage.stage_id) for stage in plan.stages),
@@ -476,6 +489,10 @@ class WorkloadResource:
     stage_id: str
     shard_id: str | None
     attempt_number: int
+    tenant_id: str
+    model_id: str
+    service_class: ServiceClass
+    scheduling_snapshot_digest: str
     namespace: str
     name: str
     kind: WorkloadKind
@@ -486,6 +503,10 @@ class WorkloadResource:
         _check_name(self.namespace, "namespace")
         _check_name(self.name, "workload name")
         _check_name(self.stage_id, "stage_id")
+        _check_name(self.model_id, "model_id")
+        _check_digest(self.scheduling_snapshot_digest, "scheduling_snapshot_digest")
+        if not self.tenant_id or len(self.tenant_id) > 120:
+            raise ValueError("tenant_id must be non-empty and at most 120 characters")
         if not 1 <= self.attempt_number <= 10:
             raise ValueError("attempt_number must be between 1 and 10")
         if self.kind is WorkloadKind.JOB:
