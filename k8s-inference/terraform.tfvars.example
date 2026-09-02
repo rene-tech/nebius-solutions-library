@@ -323,8 +323,9 @@ deployment = {
 # as FormalAcceptancePending until a named representative supplies a real receipt.
 #
 # Licensed bytes are mounted read-only from the canonical claim and are never baked
-# into an image. The canonical claim already holds verified bytes, so adopt it with
-# academic-assets/scripts/adopt-live-resources.sh instead of letting Terraform create it.
+# into an image. A fresh deployment creates an empty claim from these inputs. When
+# reusing an already-populated claim, adopt it with
+# academic-assets/scripts/adopt-live-resources.sh so Terraform does not recreate it.
 academic_assets = {
   enabled             = true
   tenant_id           = "tenant-academic"
@@ -333,11 +334,10 @@ academic_assets = {
   runtime_pvc_name    = "academic-assets-runtime-rwx"
   runtime_storage_gib = 128
 
-  # "retained" for a long-lived cluster holding verified licensed bytes: Terraform
-  # refuses to destroy or replace the claim. Use "disposable" for a throwaway
-  # acceptance cluster so it tears down cleanly, and set legacy_quarantine.retain
-  # to false there as well.
-  runtime_claim_lifecycle = "retained"
+  # The portable default is disposable, so a fresh acceptance cluster tears down
+  # completely. Select "retained" explicitly only for a long-lived claim whose
+  # verified licensed bytes must outlive the cluster.
+  runtime_claim_lifecycle = "disposable"
   storage_class       = "csi-mounted-fs-path-sc"
   mount_root          = "/opt/fs2/academic"
 
@@ -345,13 +345,13 @@ academic_assets = {
   # licensed bytes. The bytes stay group-readable only, never world-readable.
   asset_gid = 65532
 
-  deny_egress_during_offline_validation = true
+  # Optional qualification-only isolation; ordinary inference never depends on it.
+  deny_egress_during_offline_validation = false
 
-  # Retained, never runtime-mountable. Holds the rejected PyRosetta 2025.24 archive.
-  # Set retain = false only where the copy is genuinely disposable.
+  # Migration-only, never runtime-mountable. Fresh deployments leave this disabled.
   legacy_quarantine = {
-    enabled  = true
-    retain   = true
+    enabled  = false
+    retain   = false
     pvc_name = "cancer-immunotherapy-academic-assets-rwx-v1"
   }
 

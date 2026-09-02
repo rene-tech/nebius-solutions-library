@@ -29,7 +29,7 @@ variable "academic_assets" {
       storage_gib   = number
       storage_class = string
       access_mode   = string
-      lifecycle     = optional(string, "retained")
+      lifecycle     = optional(string, "disposable")
     })
     legacy_quarantine_claim = object({
       enabled     = bool

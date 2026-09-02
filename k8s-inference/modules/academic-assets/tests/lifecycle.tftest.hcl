@@ -141,6 +141,41 @@ run "disposable_acceptance_cluster_applies_and_destroys_cleanly" {
   }
 }
 
+run "omitted_lifecycle_defaults_to_disposable" {
+  command = plan
+
+  variables {
+    academic_assets = merge(var.academic_assets, {
+      runtime_claim = {
+        name          = "academic-assets-runtime-default"
+        storage_gib   = 128
+        storage_class = "csi-mounted-fs-path-sc"
+        access_mode   = "ReadWriteMany"
+      }
+      legacy_quarantine_claim = merge(var.academic_assets.legacy_quarantine_claim, {
+        enabled = false
+        retain  = false
+      })
+      delivery = merge(var.academic_assets.delivery, {
+        deny_egress_on_validate = false
+      })
+    })
+  }
+
+  assert {
+    condition = (
+      length(kubernetes_persistent_volume_claim_v1.academic_assets_runtime_disposable) == 1 &&
+      length(kubernetes_persistent_volume_claim_v1.academic_assets_runtime_retained) == 0
+    )
+    error_message = "Omitting lifecycle must keep the portable default fully disposable."
+  }
+
+  assert {
+    condition     = length(kubernetes_network_policy_v1.academic_offline_validation) == 0
+    error_message = "Offline-validation isolation is opt-in, not a default policy."
+  }
+}
+
 run "disabled_creates_nothing" {
   command = plan
 

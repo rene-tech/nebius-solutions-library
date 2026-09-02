@@ -1094,7 +1094,7 @@ variable "academic_assets" {
     #             to destroy or replace it.
     # disposable  the claim belongs to a throwaway acceptance environment and must
     #             tear down cleanly with the rest of it.
-    runtime_claim_lifecycle = optional(string, "retained")
+    runtime_claim_lifecycle = optional(string, "disposable")
     storage_class           = optional(string, "csi-mounted-fs-path-sc")
     access_mode             = optional(string, "ReadWriteMany")
     mount_root              = optional(string, "/opt/fs2/academic")
@@ -1103,17 +1103,17 @@ variable "academic_assets" {
     # supplemental group, so a runtime image running as its own uid can read them
     # without the bytes ever becoming world-readable.
     asset_gid                             = optional(number, 65532)
-    deny_egress_during_offline_validation = optional(bool, true)
+    deny_egress_during_offline_validation = optional(bool, false)
 
-    # The historical quarantine claim created before this volume became canonical.
-    # It is declared so no academic storage is left unmanaged, and retained because it
-    # holds the rejected PyRosetta 2025.24 archive that the contract says to keep.
+    # Optional migration binding for a historical quarantine claim created before
+    # the canonical volume. Fresh deployments leave it disabled; retention is an
+    # explicit operator choice rather than a default guardrail.
     legacy_quarantine = optional(object({
       enabled     = optional(bool, false)
       namespace   = optional(string, "fs2-models")
       pvc_name    = optional(string, "cancer-immunotherapy-academic-assets-rwx-v1")
       storage_gib = optional(number, 128)
-      retain      = optional(bool, true)
+      retain      = optional(bool, false)
     }), {})
 
     # Non-secret readiness digest emitted by academic-assets/scripts/academic_assets.py.
