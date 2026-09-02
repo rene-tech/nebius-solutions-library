@@ -1,0 +1,152 @@
+{
+  "schema": "fs2-serve.nebius.ai/reference-data-source-catalog/v1",
+  "generated_at": "2026-09-02T00:00:00Z",
+  "bundles": {
+    "alphafold3-public-databases-v3.0": {
+      "id": "alphafold3-public-databases-v3.0",
+      "revision": "v3.0-paper-snapshot-2022-09-28",
+      "description": "The exact public genetic, RNA, PDB sequence and mmCIF snapshot selected by AlphaFold3 fetch_databases.sh v3.0.1.",
+      "upstream": {
+        "project": "google-deepmind/alphafold3",
+        "revision": "231efc9bb9c13b45cc59e43f7107869084ee9624",
+        "source_url": "https://github.com/google-deepmind/alphafold3/blob/v3.0.1/fetch_databases.sh",
+        "source_sha256": "152b5a1a2af4c3128f9618939adec8f0389b604ddc767e3de81ccb8a6dc00d19"
+      },
+      "access": {
+        "state": "public",
+        "redistribution": "component-terms",
+        "staging_policy": "automatic-public",
+        "terms": [
+          {"component": "UniProt and UniRef", "license": "CC-BY-4.0", "url": "https://www.uniprot.org/help/license/", "verification": "primary-source-verified"},
+          {"component": "Rfam", "license": "CC0-1.0", "url": "https://docs.rfam.org/en/latest/", "verification": "primary-source-verified"},
+          {"component": "NCBI nucleotide data", "license": "NCBI molecular-data policy; contributor rights may apply", "url": "https://www.ncbi.nlm.nih.gov/home/about/policies/", "verification": "primary-source-verified"},
+          {"component": "MGnify, RNAcentral, BFD, PDB and CCD", "license": "upstream component terms", "url": "https://github.com/google-deepmind/alphafold3/blob/v3.0.1/docs/installation.md", "verification": "upstream-terms-review-required"}
+        ]
+      },
+      "sizing": {
+        "compressed_bytes": 238784443666,
+        "expanded_bytes": 630000000000,
+        "expanded_bytes_kind": "upstream-estimate"
+      },
+      "update_policy": {
+        "cadence": "frozen paper snapshot; review upstream AlphaFold3 releases quarterly",
+        "mutable_aliases_allowed": false,
+        "promotion": "new-revision-after-offline-validation"
+      },
+      "objects": [
+        {"id": "pdb-mmcif-2022-09-28", "source": {"url": "https://storage.googleapis.com/alphafold-databases/v3.0/pdb_2022_09_28_mmcif_files.tar.zst"}, "target": ".", "transform": "tar.zst", "source_bytes": 56979074571, "source_integrity": {"algorithm": "md5", "digest": "13447e161d081c7d5df71781b6de2427", "cryptographic": false}, "license_component": "PDB"},
+        {"id": "mgnify-2022-05", "source": {"url": "https://storage.googleapis.com/alphafold-databases/v3.0/mgy_clusters_2022_05.fa.zst"}, "target": "mgy_clusters_2022_05.fa", "transform": "zstd", "source_bytes": 69333008025, "source_integrity": {"algorithm": "md5", "digest": "d2482ea92b28ccb14e235bb4868b6d50", "cryptographic": false}, "license_component": "MGnify"},
+        {"id": "bfd-small", "source": {"url": "https://storage.googleapis.com/alphafold-databases/v3.0/bfd-first_non_consensus_sequences.fasta.zst"}, "target": "bfd-first_non_consensus_sequences.fasta", "transform": "zstd", "source_bytes": 9880478127, "source_integrity": {"algorithm": "md5", "digest": "ccde88faeb9eb62b0c83d07edcbf3459", "cryptographic": false}, "license_component": "BFD"},
+        {"id": "uniref90-2022-05", "source": {"url": "https://storage.googleapis.com/alphafold-databases/v3.0/uniref90_2022_05.fa.zst"}, "target": "uniref90_2022_05.fa", "transform": "zstd", "source_bytes": 33271639594, "source_integrity": {"algorithm": "md5", "digest": "c9136c52ca9e25c2ce8d3a569d47e912", "cryptographic": false}, "license_component": "UniRef"},
+        {"id": "uniprot-2021-04", "source": {"url": "https://storage.googleapis.com/alphafold-databases/v3.0/uniprot_all_2021_04.fa.zst"}, "target": "uniprot_all_2021_04.fa", "transform": "zstd", "source_bytes": 48688827585, "source_integrity": {"algorithm": "md5", "digest": "cabf618be6f8c85397c97f49d7da9307", "cryptographic": false}, "license_component": "UniProt"},
+        {"id": "pdb-seqres-2022-09-28", "source": {"url": "https://storage.googleapis.com/alphafold-databases/v3.0/pdb_seqres_2022_09_28.fasta.zst"}, "target": "pdb_seqres_2022_09_28.fasta", "transform": "zstd", "source_bytes": 26493534, "source_integrity": {"algorithm": "md5", "digest": "86a1b92d3988ca499d79651d075379b2", "cryptographic": false}, "license_component": "PDB"},
+        {"id": "rnacentral-clustered", "source": {"url": "https://storage.googleapis.com/alphafold-databases/v3.0/rnacentral_active_seq_id_90_cov_80_linclust.fasta.zst"}, "target": "rnacentral_active_seq_id_90_cov_80_linclust.fasta", "transform": "zstd", "source_bytes": 3519676108, "source_integrity": {"algorithm": "md5", "digest": "f4db49a31a8c2576210d5fa273296117", "cryptographic": false}, "license_component": "RNAcentral"},
+        {"id": "nt-rna-2023-02-23", "source": {"url": "https://storage.googleapis.com/alphafold-databases/v3.0/nt_rna_2023_02_23_clust_seq_id_90_cov_80_rep_seq.fasta.zst"}, "target": "nt_rna_2023_02_23_clust_seq_id_90_cov_80_rep_seq.fasta", "transform": "zstd", "source_bytes": 17028641580, "source_integrity": {"algorithm": "md5", "digest": "2da99b2f9704896ce9b4f5dd9425e432", "cryptographic": false}, "license_component": "NCBI nucleotide"},
+        {"id": "rfam-14.9-clustered", "source": {"url": "https://storage.googleapis.com/alphafold-databases/v3.0/rfam_14_9_clust_seq_id_90_cov_80_rep_seq.fasta.zst"}, "target": "rfam_14_9_clust_seq_id_90_cov_80_rep_seq.fasta", "transform": "zstd", "source_bytes": 56604542, "source_integrity": {"algorithm": "md5", "digest": "7dd833c908ae8288b320fdb363b56848", "cryptographic": false}, "license_component": "Rfam"}
+      ]
+    },
+    "colabfold-mmseqs-2025-08": {
+      "id": "colabfold-mmseqs-2025-08",
+      "revision": "uniref30-2302-envdb-202108-pdb100-230517-taxonomy-20250804",
+      "description": "Pinned local MMseqs/ColabFold databases for private protein MSA, pairing and optional template lookup.",
+      "upstream": {
+        "project": "sokrypton/ColabFold",
+        "revision": "c35de0221f4d297a39edf4cf292ba2832e321edc",
+        "source_url": "https://github.com/sokrypton/ColabFold/blob/c35de0221f4d297a39edf4cf292ba2832e321edc/setup_databases.sh",
+        "source_sha256": "ae89a23a67dff38c7bf118905b55bcc621850f9b7a1de5642a3f49dcde579112"
+      },
+      "access": {
+        "state": "public",
+        "redistribution": "review-required",
+        "staging_policy": "terms-receipt-required",
+        "terms": [
+          {"component": "UniRef", "license": "CC-BY-4.0", "url": "https://www.uniprot.org/help/license/", "verification": "primary-source-verified"},
+          {"component": "ColabFold environmental aggregation and PDB100", "license": "mixed upstream component terms", "url": "https://github.com/sokrypton/ColabFold/blob/c35de0221f4d297a39edf4cf292ba2832e321edc/setup_databases.sh", "verification": "upstream-terms-review-required"}
+        ]
+      },
+      "sizing": {
+        "compressed_bytes": 256499341805,
+        "expanded_bytes": null,
+        "expanded_bytes_kind": "not-published"
+      },
+      "update_policy": {
+        "cadence": "quarterly review; never follow mutable current/latest aliases",
+        "mutable_aliases_allowed": false,
+        "promotion": "new-revision-after-offline-validation"
+      },
+      "objects": [
+        {"id": "uniref30-2302-prebuilt", "source": {"url": "https://opendata.mmseqs.org/colabfold/uniref30_2302.db.tar.gz"}, "target": ".", "transform": "tar.gz", "source_bytes": 106729528496, "source_integrity": {"algorithm": "s3-multipart-etag", "digest": "3a352948c55458e2c5ecb45526655764-6362", "cryptographic": false}, "license_component": "UniRef"},
+        {"id": "colabfold-envdb-202108-prebuilt", "source": {"url": "https://opendata.mmseqs.org/colabfold/colabfold_envdb_202108.db.tar.gz"}, "target": ".", "transform": "tar.gz", "source_bytes": 128576661224, "source_integrity": {"algorithm": "s3-multipart-etag", "digest": "7699de1c4547b450673ab755a7c92702-7664", "cryptographic": false}, "license_component": "ColabFold environmental aggregation"},
+        {"id": "uniref30-2302-taxonomy-20250804", "source": {"url": "https://opendata.mmseqs.org/colabfold/uniref30_2302_newtaxonomy.tar.gz"}, "target": ".", "transform": "tar.gz", "source_bytes": 1975608472, "source_integrity": {"algorithm": "s3-multipart-etag", "digest": "db1c69f4837766cc5a370f2d352a6c87-236", "cryptographic": false}, "license_component": "UniRef", "overwrite": true},
+        {"id": "pdb100-230517-sequences", "source": {"url": "https://opendata.mmseqs.org/colabfold/pdb100_230517.fasta.gz"}, "target": "pdb100_230517.fasta", "transform": "gzip", "source_bytes": 28432889, "source_integrity": {"algorithm": "s3-multipart-etag", "digest": "0708721a4f48159d59600392a058ecb7-4", "cryptographic": false}, "license_component": "PDB100"},
+        {"id": "pdb100-230517-foldseek", "source": {"url": "https://opendata.mmseqs.org/colabfold/pdb100_foldseek_230517.tar.gz"}, "target": ".", "transform": "tar.gz", "source_bytes": 19189110724, "source_integrity": {"algorithm": "s3-multipart-etag", "digest": "171b13abaf7dcfe73bc2b33d05327f63-2288", "cryptographic": false}, "license_component": "PDB100"}
+      ]
+    },
+    "protenix-v2-inference-data-2026-01-29": {
+      "id": "protenix-v2-inference-data-2026-01-29",
+      "revision": "v2.0.0-inference-plus-mmcif-20260129",
+      "description": "Protenix v2 common/CCD, search and optional template mmCIF archives. The upstream inference script omits mmCIF by default; this bundle includes it for private template preprocessing.",
+      "upstream": {
+        "project": "bytedance/Protenix",
+        "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+        "source_url": "https://github.com/bytedance/Protenix/blob/2475421477ab414b571149ad4a875c390ff8a35d/scripts/database/download_protenix_data.sh",
+        "source_sha256": "27da2585d0ea1d820f4693099653aab1fdff7d4e18c21e6d90a0dc18f718dd89"
+      },
+      "access": {
+        "state": "public",
+        "redistribution": "review-required",
+        "staging_policy": "terms-receipt-required",
+        "terms": [
+          {"component": "Protenix packaged inference data", "license": "mixed upstream component terms; Apache-2.0 applies to downloader code only", "url": "https://github.com/bytedance/Protenix/tree/v2.0.0", "verification": "upstream-terms-review-required"}
+        ]
+      },
+      "sizing": {
+        "compressed_bytes": 119425157782,
+        "expanded_bytes": null,
+        "expanded_bytes_kind": "not-published"
+      },
+      "update_policy": {
+        "cadence": "per immutable Protenix model release; operator review required",
+        "mutable_aliases_allowed": false,
+        "promotion": "new-revision-after-offline-validation"
+      },
+      "objects": [
+        {"id": "protenix-common-20260129", "source": {"url": "https://protenix.tos-cn-beijing.volces.com/common.tar.gz"}, "target": ".", "transform": "tar.gz", "source_bytes": 475085654, "source_integrity": {"algorithm": "s3-multipart-etag", "digest": "b7c30fbcc62bcb2a8ebb33f276d32c14-29", "cryptographic": false}, "license_component": "Protenix packaged inference data"},
+        {"id": "protenix-search-databases-20260129", "source": {"url": "https://protenix.tos-cn-beijing.volces.com/search_database.tar.gz"}, "target": ".", "transform": "tar.gz", "source_bytes": 30675002513, "source_integrity": {"algorithm": "s3-multipart-etag", "digest": "4b4e2ed45354badf2ecdd5964c7729a9-1829", "cryptographic": false}, "license_component": "Protenix packaged inference data"},
+        {"id": "protenix-mmcif-20260129", "source": {"url": "https://protenix.tos-cn-beijing.volces.com/mmcif.tar.gz"}, "target": ".", "transform": "tar.gz", "source_bytes": 88275069615, "source_integrity": {"algorithm": "s3-multipart-etag", "digest": "8ddcd8cb7897fad718112fc48be38da5-5262", "cryptographic": false}, "license_component": "Protenix packaged inference data"}
+      ]
+    },
+    "boltzgen-inference-molecules-2026-08-11": {
+      "id": "boltzgen-inference-molecules-2026-08-11",
+      "revision": "boltzgen-v0.3.2-hf-c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+      "description": "Pinned BoltzGen small-molecule reference dictionary used by inference protocols. Checkpoints remain runtime artifacts and training MSA/targets remain out of scope.",
+      "upstream": {
+        "project": "HannesStark/boltzgen",
+        "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "source_url": "https://github.com/HannesStark/boltzgen/blob/v0.3.2/README.md",
+        "source_sha256": "3bc2809652c2f1dea82c5dce5560658d9517ec805edfc928082e9c94e08c1968"
+      },
+      "access": {
+        "state": "unresolved",
+        "redistribution": "review-required",
+        "staging_policy": "terms-receipt-required",
+        "terms": [
+          {"component": "BoltzGen inference-data mols.zip", "license": "dataset terms not declared by the pinned source; approval required before staging", "url": "https://huggingface.co/datasets/boltzgen/inference-data/tree/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c", "verification": "upstream-terms-review-required"}
+        ]
+      },
+      "sizing": {
+        "compressed_bytes": 391401102,
+        "expanded_bytes": null,
+        "expanded_bytes_kind": "not-published"
+      },
+      "update_policy": {
+        "cadence": "per immutable BoltzGen release; dataset terms and artifact identity must be re-reviewed",
+        "mutable_aliases_allowed": false,
+        "promotion": "new-revision-after-offline-validation"
+      },
+      "objects": [
+        {"id": "boltzgen-mols", "source": {"url": "https://huggingface.co/datasets/boltzgen/inference-data/resolve/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip"}, "target": ".", "transform": "zip", "source_bytes": 391401102, "source_integrity": {"algorithm": "sha256", "digest": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53", "cryptographic": true}, "license_component": "BoltzGen inference-data mols.zip"}
+      ]
+    }
+  }
+}

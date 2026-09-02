@@ -1,0 +1,140 @@
+{
+  "schema": "fs2-serve.nebius.ai/model-reference-data-requirements/v1",
+  "generated_at": "2026-09-02T00:00:00Z",
+  "default_policy": {
+    "customer_sequence_network": "private-only",
+    "public_msa_service": "disabled-unless-request-explicitly-opts-in",
+    "gpu_input": "immutable-object-and-reference-manifest-digests-only",
+    "gpu_downloads": "large-reference-downloads-prohibited"
+  },
+  "models": {
+    "alphafold3": {
+      "upstream": "google-deepmind/alphafold3@231efc9bb9c13b45cc59e43f7107869084ee9624",
+      "required_bundles": ["alphafold3-public-databases-v3.0"],
+      "preprocessing": "alphafold3-data",
+      "requirements": [
+        "BFD small, MGnify 2022-05, UniRef90 2022-05 and UniProt 2021-04 for protein searches",
+        "NT-RNA 2023-02-23, Rfam 14.9 and RNAcentral clustered snapshot for RNA searches",
+        "PDB seqres and mmCIF snapshot dated 2022-09-28 for templates",
+        "Chemical Component Dictionary distributed with the runtime source; validate its source revision separately"
+      ],
+      "access_dependencies": [
+        {"asset": "AlphaFold3 model parameters", "state": "academic-gated", "redistribution": "prohibited", "receipt_required": true}
+      ],
+      "gpu_contract": "Run data pipeline in CPU queue with run_data_pipeline=true/run_inference=false; pass immutable output JSON plus manifest digest to GPU inference with run_data_pipeline=false."
+    },
+    "openfold3-nim": {
+      "upstream": "NVIDIA OpenFold3 NIM 1.0.0 documentation",
+      "required_bundles": ["colabfold-mmseqs-2025-08"],
+      "preprocessing": "colabfold-search",
+      "requirements": [
+        "Precomputed protein/RNA MSA supplied as lowercase a3m or csv; first row must equal the query and at most three databases are accepted per protein",
+        "Optional structural templates supplied as CIF content",
+        "CCD codes are request-level identifiers resolved by the runtime; no external CCD mirror is declared by the NIM contract"
+      ],
+      "access_dependencies": [
+        {"asset": "NGC image and NIM entitlement", "state": "commercial-gated", "redistribution": "prohibited", "receipt_required": true}
+      ],
+      "gpu_contract": "Supply validated MSA/template content derived from immutable preprocessing output; the NIM must not call a public MSA endpoint."
+    },
+    "protenix-v2": {
+      "upstream": "bytedance/Protenix@2475421477ab414b571149ad4a875c390ff8a35d",
+      "required_bundles": ["protenix-v2-inference-data-2026-01-29", "colabfold-mmseqs-2025-08"],
+      "compatible_shared_objects": [
+        "alphafold3-public-databases-v3.0:pdb-seqres-2022-09-28",
+        "alphafold3-public-databases-v3.0:rfam-14.9-clustered",
+        "alphafold3-public-databases-v3.0:rnacentral-clustered",
+        "alphafold3-public-databases-v3.0:nt-rna-2023-02-23"
+      ],
+      "preprocessing": "protenix-inputprep",
+      "requirements": [
+        "common archive containing CCD/components.cif and processed RDKit component cache",
+        "Protein MSA with taxonomy-bearing paired and unpaired A3M output",
+        "PDB seqres 2022-09-28 plus mmCIF structures for template search",
+        "Rfam 14.9, RNAcentral and NT-RNA 2023-02-23 clustered snapshots for RNA MSA"
+      ],
+      "access_dependencies": [],
+      "gpu_contract": "Run protenix inputprep on CPU and supply its immutable JSON/A3M/template result references to protenix pred."
+    },
+    "esmfold2-full": {
+      "upstream": "Biohub/esm@827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "required_bundles": ["colabfold-mmseqs-2025-08"],
+      "preprocessing": "colabfold-search",
+      "requirements": ["Optional A3M for the full MSA-conditioned checkpoint; templates are not supported"],
+      "access_dependencies": [],
+      "gpu_contract": "Replace the upstream wrapper's api.colabfold.com default with the immutable private A3M result."
+    },
+    "esmfold2-fast": {
+      "upstream": "Biohub/esm@827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "required_bundles": [],
+      "preprocessing": "none",
+      "requirements": ["Single sequence only; the Fast checkpoint has no MSA encoder and rejects MSA use"],
+      "access_dependencies": [],
+      "gpu_contract": "Pass the immutable sequence object directly; no MSA or reference database allocation."
+    },
+    "mosaic": {
+      "upstream": "escalante-bio/mosaic@70fec525423f5f87156a1a957b4a4048f9f8e676",
+      "required_bundles": ["colabfold-mmseqs-2025-08", "protenix-v2-inference-data-2026-01-29"],
+      "preprocessing": "delegated-by-selected-backend",
+      "requirements": [
+        "Mosaic is an orchestrator: requirements are the union of the selected OpenFold3, Boltz, Protenix or ESMFold2 backend",
+        "Binder chains are MSA-free; target-chain MSA is optional by backend",
+        "Current upstream ESMFold2 and Boltz adapters default to api.colabfold.com and therefore require an integration override before private production use"
+      ],
+      "access_dependencies": [],
+      "gpu_contract": "Production admission must reject use_msa=true until a private precomputed-MSA adapter is selected; public service use is explicit opt-in only."
+    },
+    "boltzgen": {
+      "upstream": "HannesStark/boltzgen@31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0 (v0.3.2 reference-data contract; runtime owner must independently qualify the selected image/checkpoints)",
+      "required_bundles": ["boltzgen-inference-molecules-2026-08-11"],
+      "optional_bundles": ["colabfold-mmseqs-2025-08"],
+      "preprocessing": "colabfold-search-for-natural-targets-only",
+      "requirements": [
+        "Pinned mols.zip small-molecule dictionary for ligand/CCD-aware inference protocols",
+        "Immutable customer target PDB/mmCIF or sequence; designed binder chains remain MSA-free",
+        "A private target-chain A3M may be supplied only when the selected folding/validation step enables MSA"
+      ],
+      "access_dependencies": [
+        {"asset": "BoltzGen inference-data mols.zip", "state": "terms-unresolved", "redistribution": "review-required", "receipt_required": true}
+      ],
+      "gpu_contract": "Pre-stage the molecule dictionary and any private target MSA; pass immutable paths/digests so boltzgen download and MSA discovery never run while a GPU is allocated."
+    },
+    "proteina-complexa": {
+      "upstream": "NVIDIA-Digital-Bio/proteina-complexa@54058860d43444c7289873f77d3e50b5b02348cd (reference-data observation only; runtime owner must qualify the selected image/checkpoints)",
+      "required_bundles": [],
+      "preprocessing": "none",
+      "requirements": [
+        "Immutable customer target PDB/mmCIF and ligand inputs; no shared genetic or MSA database is declared by the inference pipeline",
+        "CCD handling and AF2/RF3 evaluation assets are runtime artifacts and must be pinned by the runtime manifest rather than downloaded by a GPU job"
+      ],
+      "access_dependencies": [
+        {"asset": "Proteina-Complexa checkpoints on NGC", "state": "commercial-gated", "redistribution": "prohibited-unless-entitled", "receipt_required": true}
+      ],
+      "gpu_contract": "Pass target/ligand objects by immutable digest and mount already-staged entitled runtime artifacts; no reference-data download or MSA CPU work occurs in the GPU allocation."
+    },
+    "bindcraft": {
+      "upstream": "martinpacesa/BindCraft@efb5bfeb8b4b1a5944256f979c34e0c8e6a82d9d",
+      "required_bundles": [],
+      "preprocessing": "none",
+      "requirements": ["Immutable customer-provided target PDB; design and validation are MSA-free/single-sequence"],
+      "access_dependencies": [
+        {"asset": "PyRosetta", "state": "academic-gated", "redistribution": "prohibited", "receipt_required": true}
+      ],
+      "gpu_contract": "Pass target PDB by immutable digest; AlphaFold2/ProteinMPNN weights are runtime artifacts, not shared reference databases."
+    },
+    "rfdiffusion": {
+      "upstream": "RosettaCommons/RFdiffusion@86507b6538f51fce57b5a72477165f03999ed7ae",
+      "required_bundles": [],
+      "preprocessing": "none",
+      "requirements": ["No genetic/MSA/template database; optional motif or target structure is an immutable customer input"],
+      "access_dependencies": [],
+      "gpu_contract": "Pass input PDB and contig specification by immutable digest; checkpoints remain runtime artifacts."
+    }
+  },
+  "sharing": [
+    {"objects": ["PDB seqres 2022-09-28", "Rfam 14.9", "RNAcentral clustered", "NT-RNA 2023-02-23"], "consumers": ["alphafold3", "protenix-v2"], "mode": "single-content-addressed-blob-with-runtime-specific-read-only-layout"},
+    {"objects": ["ColabFold UniRef30/environmental/PDB100"], "consumers": ["openfold3-nim", "protenix-v2", "esmfold2-full", "mosaic", "boltzgen-natural-target-validation"], "mode": "single-private-mmseqs-index"},
+    {"objects": ["BoltzGen inference molecule dictionary"], "consumers": ["boltzgen"], "mode": "dedicated-immutable-terms-receipt-required-bundle"},
+    {"objects": ["PDB mmCIF"], "consumers": ["alphafold3", "protenix-v2"], "mode": "do-not-alias-across-different-snapshot-dates; deduplicate blobs only when SHA-256 matches"}
+  ]
+}

@@ -1,0 +1,36 @@
+output "storage_contract" {
+  description = "Non-secret same-region immutable object/shared-filesystem layout."
+  value = {
+    schema                 = "fs2-serve.nebius.ai/reference-data-storage/v1"
+    region                 = var.cluster_region
+    object_bucket_name     = local.object_bucket_name
+    object_endpoint        = local.object_endpoint
+    object_prefix          = local.object_prefix
+    shared_filesystem_root = local.filesystem_file_uri
+    layout = {
+      blobs                 = "${local.object_prefix}/blobs/sha256/<sha256>"
+      manifests             = "${local.object_prefix}/manifests/sha256/<sha256>.json"
+      filesystem_datasets   = "${local.filesystem_file_uri}/datasets/<bundle>/<revision>/sha256/<tree-sha256>"
+      preprocessing_inputs  = "s3://<private-input-bucket>/inputs/sha256/<sha256>.<format>"
+      preprocessing_outputs = "s3://<private-output-bucket>/preprocessing/<tenant>/<workload>/requests/sha256/<request-sha256>/results/sha256/<result-manifest-sha256>"
+    }
+  }
+}
+
+output "dynamic_configuration" {
+  description = "Secret-free handoff for later root/control-plane integration."
+  value = {
+    schema                      = "fs2-serve.nebius.ai/reference-data-configuration/v1"
+    namespace                   = var.namespace
+    local_queue                 = var.queue.local_queue
+    cluster_queue               = var.queue.cluster_queue
+    resource_flavor             = var.queue.resource_flavor
+    tools_config_map            = local.tools_config_map
+    shared_filesystem_host_path = var.shared_filesystem_host_path
+    public_msa_default          = false
+    public_msa_opt_in_enabled   = var.allow_public_msa_opt_in
+    status_service              = var.status.enabled ? "fs2-reference-data-status.${var.namespace}.svc.cluster.local:8080" : null
+    source_catalog_sha256       = filesha256("${path.module}/../source-catalog.json")
+    requirements_sha256         = filesha256("${path.module}/../model-requirements.json")
+  }
+}

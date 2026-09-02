@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2.nebius.ai/schemas/private-preprocess-observation-v1.json",
+  "title": "FS2 private preprocessing status observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "request_id", "request_sha256", "tenant_id", "workload_id",
+    "backend", "privacy_mode", "outcome", "cache_hit", "duration_seconds",
+    "error_code", "output_bytes", "output_file_count", "retention_days",
+    "observed_at"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/private-preprocess-observation/v1"},
+    "request_id": {"type": "string", "minLength": 1},
+    "request_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "tenant_id": {"type": "string", "minLength": 1},
+    "workload_id": {"type": "string", "minLength": 1},
+    "backend": {"enum": ["colabfold-search", "protenix-inputprep", "alphafold3-data"]},
+    "privacy_mode": {"enum": ["private-only", "public-opt-in"]},
+    "outcome": {"enum": ["success", "error"]},
+    "cache_hit": {"type": "boolean"},
+    "duration_seconds": {"type": "number", "minimum": 0},
+    "error_code": {"type": ["string", "null"]},
+    "output_bytes": {"type": ["integer", "null"], "minimum": 1},
+    "output_file_count": {"type": ["integer", "null"], "minimum": 1},
+    "retention_days": {"type": "integer", "minimum": 1, "maximum": 3650},
+    "observed_at": {"type": "string", "format": "date-time"}
+  }
+}

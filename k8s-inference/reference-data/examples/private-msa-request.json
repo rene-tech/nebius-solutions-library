@@ -1,0 +1,41 @@
+{
+  "schema": "fs2-serve.nebius.ai/private-preprocess-request/v1",
+  "request_id": "example-msa-001",
+  "tenant_id": "tenant-example",
+  "workload_id": "workload-example-001",
+  "input": {
+    "uri": "s3://private-inputs/inputs/sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.fasta",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bytes": 128,
+    "media_type": "text/x-fasta"
+  },
+  "reference_data": {
+    "bundle_id": "colabfold-mmseqs-2025-08",
+    "revision": "uniref30-2302-envdb-202108-pdb100-230517-taxonomy-20250804",
+    "manifest_uri": "s3://private-reference-data/reference-data/manifests/sha256/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json",
+    "manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "backend": {
+    "kind": "colabfold-search",
+    "database_root": "/reference-data/datasets/colabfold-mmseqs-2025-08/uniref30-2302-envdb-202108-pdb100-230517-taxonomy-20250804/sha256/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "output_format": "a3m",
+    "threads": 16
+  },
+  "privacy": {
+    "network_mode": "private-only",
+    "public_msa_opt_in": false,
+    "log_sequence_content": false
+  },
+  "output": {
+    "prefix_uri": "s3://private-results/preprocessing/tenant-example/workload-example-001",
+    "retention_days": 30
+  },
+  "execution": {
+    "image": "registry.example.invalid/private-msa@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "cpu": "16",
+    "memory": "64Gi",
+    "ephemeral_storage": "32Gi",
+    "active_deadline_seconds": 21600,
+    "backoff_limit": 2
+  }
+}

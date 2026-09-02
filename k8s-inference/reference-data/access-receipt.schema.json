@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2.nebius.ai/schemas/reference-data-access-receipt-v1.json",
+  "title": "Non-secret reference-data access receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "bundle_id", "revision", "terms_sha256", "approved_at", "approved_by", "scope"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/reference-data-access-receipt/v1"},
+    "bundle_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+    "revision": {"type": "string", "minLength": 1},
+    "terms_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "approved_at": {"type": "string", "format": "date-time"},
+    "approved_by": {"type": "string", "minLength": 1, "maxLength": 200},
+    "scope": {"enum": ["academic-research", "commercial", "internal-evaluation"]}
+  }
+}
