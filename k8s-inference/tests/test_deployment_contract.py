@@ -438,6 +438,13 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn(
             '"/admin/api/v1/model-deployments:apply"', controller_source
         )
+        self.assertIn(
+            "public_authority = urllib.parse.urlsplit(public_origin).netloc",
+            controller_source,
+        )
+        self.assertIn('"Host": public_authority', controller_source)
+        self.assertIn('"Origin": public_origin', controller_source)
+        self.assertIn('name  = "FS2_BOOTSTRAP_PUBLIC_ORIGIN"', controller_source)
         self.assertNotIn('kind = "ModelDeployment"', controller_source)
 
     def test_model_cache_is_shared_rwx_without_changing_the_default_storage_class(

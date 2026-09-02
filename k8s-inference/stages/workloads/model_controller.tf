@@ -509,11 +509,13 @@ resource "kubernetes_config_map_v1" "model_controller_bootstrap" {
       from pathlib import Path
 
       base = os.environ["FS2_BOOTSTRAP_BASE_URL"].rstrip("/")
+      public_origin = os.environ["FS2_BOOTSTRAP_PUBLIC_ORIGIN"].rstrip("/")
+      public_authority = urllib.parse.urlsplit(public_origin).netloc
       token = Path("/var/run/fs2-admin/token").read_text(encoding="utf-8").strip()
       payload = json.loads(Path("/bootstrap/bootstrap.json").read_text(encoding="utf-8"))
 
       def call(path, *, method="GET", body=None, cookie=None, accepted=(200,)):
-          headers = {"Accept": "application/json"}
+          headers = {"Accept": "application/json", "Host": public_authority, "Origin": public_origin}
           if body is not None:
               headers["Content-Type"] = "application/json"
           if cookie is not None:
@@ -544,7 +546,12 @@ resource "kubernetes_config_map_v1" "model_controller_bootstrap" {
               request = urllib.request.Request(
                   base + "/admin/api/v1/session",
                   data=b"{}",
-                  headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+                  headers={
+                      "Authorization": "Bearer " + token,
+                      "Content-Type": "application/json",
+                      "Host": public_authority,
+                      "Origin": public_origin,
+                  },
                   method="POST",
               )
               response = urllib.request.urlopen(request, timeout=15)
@@ -666,6 +673,10 @@ resource "kubernetes_job_v1" "model_controller_bootstrap" {
           env {
             name  = "FS2_BOOTSTRAP_BASE_URL"
             value = "http://fs2-serve-control-plane.fs2-system.svc.cluster.local:8080"
+          }
+          env {
+            name  = "FS2_BOOTSTRAP_PUBLIC_ORIGIN"
+            value = local.public_base_url
           }
           resources {
             requests = { cpu = "25m", memory = "64Mi" }
