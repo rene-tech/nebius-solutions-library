@@ -55,6 +55,11 @@ data:
         "datasource_secret_key": {{ .Values.grafanaDashboard.reportingDatasourceSecretKey | quote }},
         "datasource_label": {{ .Values.grafanaDashboard.reportingDatasourceLabel | quote }},
         "datasource_label_value": {{ .Values.grafanaDashboard.reportingDatasourceLabelValue | quote }},
-        "allowed_relations": ["fs2_reporting_model_usage", "fs2_reporting_principal_usage"]
+        "allowed_relations": [
+          "fs2_reporting_model_usage",
+          "fs2_reporting_principal_usage",
+          "fs2_reporting_gpu_phase_usage",
+          "fs2_reporting_lifecycle_workloads"
+        ]
       }
     }

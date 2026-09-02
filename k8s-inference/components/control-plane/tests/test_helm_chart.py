@@ -1538,6 +1538,8 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
         "Fs2ServeQueueDepthHigh",
         "Fs2ServeSyncWaitSaturation",
         "Fs2ServeAuthenticationFailureSpike",
+        "Fs2ServeLifecycleReconciliationFailed",
+        "Fs2ServeLifecycleOccupancyUnclassified",
         "Fs2ServePublicCertificateNotReady",
         "Fs2ServePublicCertificateRenewalOverdue",
         "Fs2ServePublicCertificateExpiresSoon",
@@ -1548,6 +1550,8 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
     assert 'fs2_serve_operations{state=\\"queued\\"}' in rendered
     assert "fs2_serve_sync_wait_saturated_total" in rendered
     assert "fs2_serve_authentication_failures_total" in rendered
+    assert "fs2_serve_lifecycle_workloads_total" in rendered
+    assert "fs2_serve_lifecycle_unclassified_gpu_seconds_total" in rendered
     assert "kube_deployment_status_replicas_available" in rendered
     assert "certmanager_certificate_ready_status" in rendered
     assert "certmanager_certificate_renewal_timestamp_seconds" in rendered
@@ -1572,7 +1576,11 @@ def test_grafana_dashboard_is_discoverable_in_the_foundation_watch_namespace() -
     ]
     assert postgres_panels
     assert {panel["datasource"]["uid"] for panel in postgres_panels} == {"fs2-serve-reporting"}
-    assert {variable["name"] for variable in dashboard_json["templating"]["list"]} == {"prometheus"}
+    assert {variable["name"] for variable in dashboard_json["templating"]["list"]} == {
+        "prometheus",
+        "tenant",
+        "model",
+    }
 
 
 def test_value_suppressed_dependency_contract_binds_catalog_database_roles_and_reporting_datasource() -> None:
@@ -1628,7 +1636,12 @@ def test_value_suppressed_dependency_contract_binds_catalog_database_roles_and_r
         "datasource_secret_key": "datasource.yaml",
         "datasource_label": "grafana_datasource",
         "datasource_label_value": "1",
-        "allowed_relations": ["fs2_reporting_model_usage", "fs2_reporting_principal_usage"],
+        "allowed_relations": [
+            "fs2_reporting_model_usage",
+            "fs2_reporting_principal_usage",
+            "fs2_reporting_gpu_phase_usage",
+            "fs2_reporting_lifecycle_workloads",
+        ],
     }
     assert not any(document["kind"] == "Secret" for document in documents)
 
@@ -2611,6 +2624,11 @@ def test_grafana_dashboard_is_valid_and_separates_estimate_dcgm_and_principal_le
     assert "DCGM_FI_DEV_GPU_UTIL" in rendered
     assert "principal_id" in rendered and "fs2_reporting_principal_usage" in rendered
     assert "fs2_reporting_model_usage" in rendered and "FROM fs2_operations" not in rendered
+    assert "fs2_serve_lifecycle_gpu_seconds_total" in rendered
+    assert "fs2_serve_lifecycle_clock_gpu_seconds_total" in rendered
+    assert "fs2_serve_lifecycle_reconciliation_delta_seconds_total" in rendered
+    assert "fs2_reporting_lifecycle_workloads" in rendered
+    assert "occupied idle" in rendered.lower()
     assert '"uid": "fs2-serve-reporting"' in rendered
     assert "$postgres" not in rendered
     assert "request_ciphertext" not in rendered and "response_ciphertext" not in rendered

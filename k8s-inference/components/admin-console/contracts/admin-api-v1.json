@@ -237,6 +237,21 @@
     },
     {
       "method": "GET",
+      "path": "/admin/api/v1/telemetry/workloads",
+      "success_status": 200,
+      "data_schema": "LifecycleAdminList",
+      "authorization": "viewer; tenant-scoped unless the operator has global scope"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/telemetry/workloads/{subject_id}",
+      "success_status": 200,
+      "data_schema": "LifecycleWorkloadDetail",
+      "authorization": "viewer; tenant-scoped unless the operator has global scope",
+      "payloads_exposed": false
+    },
+    {
+      "method": "GET",
       "path": "/admin/api/v1/capacity",
       "success_status": 200,
       "data_schema": "AdminCapacity"
@@ -452,6 +467,24 @@
     "model_id",
     "operation_id"
   ],
+  "lifecycle_telemetry_filters": ["tenant_id", "model_id", "operation_id", "limit"],
+  "lifecycle_telemetry_identity_projection": {
+    "purpose": "operator-only reconstruction of immutable workload, attempt, Pod, node, Kueue and GPU allocation facts",
+    "authorization": "same-origin operator session with server-side tenant/global policy enforcement",
+    "fields": [
+      "operation_id",
+      "batch_id",
+      "workload_id",
+      "attempt_id",
+      "kueue_workload_uid",
+      "job_uid",
+      "pod_uid",
+      "node_uid",
+      "gpu_uuid",
+      "gpu_rank"
+    ],
+    "input_policy": "shape and canonical parameter digest only; raw request and response values are never projected"
+  },
   "capacity_contract": {
     "allocation_state": "estimated from bounded Pod requests",
     "health_state": "unavailable without an explicit GPU health source",
@@ -500,6 +533,7 @@
     "maximum_error_code_characters": 64,
     "maximum_model_page_size": 256,
     "maximum_operation_page_size": 200,
+    "maximum_lifecycle_workload_page_size": 200,
     "maximum_access_page_size": 1000,
     "maximum_model_deployment_namespace_characters": 63,
     "maximum_model_deployment_name_characters": 253,
@@ -517,8 +551,6 @@
     "error_detail",
     "traceparent",
     "gpu_uuids",
-    "pod_uid",
-    "node_uid",
     "raw_api_key",
     "database_url",
     "kubeconfig"

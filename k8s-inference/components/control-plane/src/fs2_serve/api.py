@@ -7,7 +7,7 @@ import secrets
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID, uuid4
@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Message, Receive, Send
@@ -68,6 +69,13 @@ from .auth import (
 )
 from .configuration import ConfigurationService
 from .configuration_routes import configuration_router
+from .lifecycle import (
+    LifecycleAdminList,
+    LifecycleRepository,
+    LifecycleWorkloadDetail,
+    NullLifecycleRepository,
+    api_key_id_hash,
+)
 from .model_deployment_admin import ModelDeploymentReadService, model_deployment_read_router
 from .model_deployment_bridge import ModelDeploymentRuntimeBridge
 from .model_deployment_mutation import ModelDeploymentMutationService, model_deployment_mutation_router
@@ -191,6 +199,7 @@ class AppRuntime:
     metrics: Metrics
     admin_token: bytes
     operator_sessions: OperatorSessionService
+    lifecycle: LifecycleRepository = field(default_factory=NullLifecycleRepository)
     owns_store: bool = True
     route_revalidator: RouteRevalidator | None = None
     admin_read: AdminReadService | None = None
@@ -793,6 +802,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         runtime.metrics.set_terminal_accounting(await runtime.store.terminal_accounting())
         runtime.metrics.set_queue(await runtime.store.queue_counts())
         runtime.metrics.set_queue_age(await runtime.store.oldest_queue_age())
+        runtime.metrics.set_lifecycle_accounting(await runtime.lifecycle.metric_rows())
+        runtime.metrics.set_lifecycle_rollups(await runtime.lifecycle.rollup_metric_rows())
         return Response(runtime.metrics.render(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
     @app.get("/v1/models")
@@ -847,6 +858,17 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 deadline_at=deadline_at,
             ),
         )
+        span = trace.get_current_span()
+        span.set_attribute("fs2.operation.id", str(admitted.id))
+        span.set_attribute("fs2.request.id", str(admitted.id))
+        span.set_attribute("fs2.workload.id", str(admitted.id))
+        span.set_attribute("fs2.tenant.id", identity.tenant_id)
+        span.set_attribute("fs2.principal.id", identity.principal_id)
+        span.set_attribute("fs2.api_key.id_hash", api_key_id_hash(identity.token_id))
+        span.set_attribute("fs2.model.id", admitted.model_id)
+        span.set_attribute("fs2.model.revision", admitted.model_revision)
+        span.set_attribute("fs2.protocol", protocol)
+        span.set_attribute("fs2.input.bytes", len(body))
         current = (
             await runtime.admission.wait(admitted.id, tenant_id=identity.tenant_id, seconds=wait) if wait else admitted
         )
@@ -1494,6 +1516,54 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 action="scientific_model.list",
             )
             return await scientific_admin.model_list(selected_context(params))
+
+    @app.get(
+        "/admin/api/v1/telemetry/workloads",
+        response_model=AdminEnvelope[LifecycleAdminList],
+        responses=admin_problem_responses,
+    )
+    async def admin_lifecycle_workloads(
+        identity: Annotated[OperatorPrincipal, Depends(operator)],
+        params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+        tenant_id: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
+        model_id: Annotated[str | None, Query(min_length=1, max_length=MAX_MODEL_ID_LENGTH)] = None,
+        operation_id: UUID | None = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    ) -> AdminEnvelope[LifecycleAdminList]:
+        authorized_tenant = await admin_access.authorize(
+            identity,
+            OperatorRole.VIEWER,
+            action="telemetry.workload.list",
+            tenant_id=tenant_id,
+        )
+        data = await runtime.lifecycle.list_workloads(
+            tenant_id=authorized_tenant,
+            model_id=model_id,
+            operation_id=operation_id,
+            limit=limit,
+        )
+        return access_envelope(data, params)
+
+    @app.get(
+        "/admin/api/v1/telemetry/workloads/{subject_id}",
+        response_model=AdminEnvelope[LifecycleWorkloadDetail],
+        responses=admin_problem_responses,
+    )
+    async def admin_lifecycle_workload_detail(
+        subject_id: UUID,
+        identity: Annotated[OperatorPrincipal, Depends(operator)],
+        params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+    ) -> AdminEnvelope[LifecycleWorkloadDetail]:
+        authorized_tenant = await admin_access.authorize(
+            identity,
+            OperatorRole.VIEWER,
+            action="telemetry.workload.read",
+            tenant_id=identity.tenant_id,
+        )
+        data = await runtime.lifecycle.get_workload(subject_id, tenant_id=authorized_tenant)
+        if data is None:
+            raise AdminProblemError(404, "telemetry_workload_not_found", "telemetry workload was not found")
+        return access_envelope(data, params)
 
     @app.get(
         "/admin/api/v1/capacity",

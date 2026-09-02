@@ -144,7 +144,7 @@ environment into its final stage before repeating those checks.
 
 The migration default resolves inside the installed `fs2_serve` package (and
 to the same source migration tree during development). The immutable-image
-gate proves all ten monotonically numbered migrations are available from the
+gate proves every declared migration is available from the
 installed wheel. Gateway terminal accounting remains the immutable migration
 `0005_terminal_accounting.sql` (SHA-256
 `fedb6789a4839d42645c5ffb6905ce46525c213d81f15d9d987eacc109614197`).
@@ -186,11 +186,18 @@ reviewed activation child and are merged only by the later integration lane.
 
 `fs2-serve postgresql-release-contract` emits the non-secret cross-lane receipt
 inputs. The committed contract under `contracts/` hash-binds the exact ordered
-`0001`-`0012` set (including the immutable activation lineage, additive
-maintenance boundary, admin configuration, and ModelDeployment ledger), the `fs2-data`
+set through additive `0016_workload_lifecycle_telemetry.sql` (including the
+immutable activation lineage, additive maintenance boundary, admin
+configuration, ModelDeployment ledger, and append-only GPU lifecycle
+accounting), the `fs2-data`
 database-resource versus `fs2-system` credential-Secret namespace split, and
 the sole migration/group-role owner. Migration and schema-wait paths reject
 missing, extra, reordered, or changed source and applied-ledger entries.
+Migration numbers 0014 and 0015 remain reserved for the active artifact and
+scientific-controller branches; integrate them before any shared rollout.
+The lifecycle schema, exact correlation model, reconciliation tolerance, safe
+application spans, and operator projections are documented in
+[`docs/workload-lifecycle-telemetry.md`](docs/workload-lifecycle-telemetry.md).
 
 The image uses
 digest-pinned Python and `uv` stages. Runtime dependencies come only from

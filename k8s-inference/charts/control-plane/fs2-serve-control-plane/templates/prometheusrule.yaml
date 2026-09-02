@@ -60,6 +60,22 @@ spec:
           annotations:
             summary: fs2-serve authentication failures exceed the release threshold
             description: Bounded authentication failure classes increased above the configured threshold.
+        - alert: Fs2ServeLifecycleReconciliationFailed
+          expr: sum(fs2_serve_lifecycle_workloads_total{reconciled="false"}) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: a terminal workload has unreconciled GPU lifecycle accounting
+            description: Inspect the durable lifecycle view for missing allocation clocks, invalid interval edges, or out-of-tolerance device occupancy.
+        - alert: Fs2ServeLifecycleOccupancyUnclassified
+          expr: sum(fs2_serve_lifecycle_unclassified_gpu_seconds_total) > 0
+          for: 15m
+          labels:
+            severity: info
+          annotations:
+            summary: GPU scheduler occupancy contains an unclassified interval
+            description: Occupied time is preserved without guessing; add the missing application, controller, Kubernetes, kubelet, or DCGM phase evidence.
 {{- if .Values.publicTls.enabled }}
         - alert: Fs2ServePublicCertificateNotReady
           expr: max(certmanager_certificate_ready_status{namespace={{ .Release.Namespace | quote }},name={{ printf "%s-public" (include "fs2-serve.fullname" .) | quote }},condition="True"}) != 1 or absent(certmanager_certificate_ready_status{namespace={{ .Release.Namespace | quote }},name={{ printf "%s-public" (include "fs2-serve.fullname" .) | quote }},condition="True"})

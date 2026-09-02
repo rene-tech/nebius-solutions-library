@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -15,9 +15,13 @@ from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info
 from .models import OperationView, TerminalAccounting
 from .registry import OperationalModel
 
+if TYPE_CHECKING:
+    from .lifecycle import LifecycleMetricRow, LifecycleRollupMetricRow
+
 
 class Metrics:
     _MAX_MODELS = 4096
+    _MAX_LIFECYCLE_SERIES = 65_536
 
     def __init__(self, models: Iterable[OperationalModel]) -> None:
         self.registry = CollectorRegistry(auto_describe=True)
@@ -51,6 +55,36 @@ class Metrics:
             "fs2_serve_estimated_gpu_seconds_total",
             "Conservative GPU-seconds estimate charged per claimed attempt; not measured utilization",
             ("model", "gpu_class"),
+            registry=self.registry,
+        )
+        self.lifecycle_gpu_seconds = Gauge(
+            "fs2_serve_lifecycle_gpu_seconds_total",
+            "Durable reconciled GPU-seconds partitioned by bounded tenant/model/phase/quality",
+            ("tenant", "model", "phase", "quality"),
+            registry=self.registry,
+        )
+        self.lifecycle_clock_gpu_seconds = Gauge(
+            "fs2_serve_lifecycle_clock_gpu_seconds_total",
+            "Durable GPU-seconds for quota, scheduler occupancy, and device allocation clocks",
+            ("tenant", "model", "clock", "quality", "reconciled"),
+            registry=self.registry,
+        )
+        self.lifecycle_workloads = Gauge(
+            "fs2_serve_lifecycle_workloads_total",
+            "Terminal durable lifecycle workloads by reconciliation state",
+            ("tenant", "model", "quality", "reconciled"),
+            registry=self.registry,
+        )
+        self.lifecycle_reconciliation_delta = Gauge(
+            "fs2_serve_lifecycle_reconciliation_delta_seconds_total",
+            "Cumulative absolute scheduler-occupancy partition delta from durable rollups",
+            ("tenant", "model", "quality", "reconciled"),
+            registry=self.registry,
+        )
+        self.lifecycle_unclassified_gpu_seconds = Gauge(
+            "fs2_serve_lifecycle_unclassified_gpu_seconds_total",
+            "Durable occupied GPU-seconds not classified by an observed phase",
+            ("tenant", "model", "quality", "reconciled"),
             registry=self.registry,
         )
         self.queue = Gauge(
@@ -90,6 +124,9 @@ class Metrics:
         self._models: dict[str, OperationalModel] = {}
         self._accounting_labels: set[tuple[str, str, str]] = set()
         self._queue_models: set[str] = set()
+        self._lifecycle_labels: set[tuple[str, str, str, str]] = set()
+        self._lifecycle_rollup_labels: set[tuple[str, str, str, str]] = set()
+        self._lifecycle_clock_labels: set[tuple[str, str, str, str, str]] = set()
         self.sync_models(models)
 
     def sync_models(self, models: Iterable[OperationalModel]) -> None:
@@ -177,6 +214,70 @@ class Metrics:
         for model in queue_models:
             self.queue_age.labels(model).set(ages.get(model, 0))
         self._queue_models = queue_models
+
+    def set_lifecycle_accounting(self, rows: Iterable[LifecycleMetricRow]) -> None:
+        """Project restart-safe durable rollups without request/Pod/GPU labels."""
+
+        values = list(rows)
+        labels = {(row.tenant_id, row.model_id, row.phase, str(row.quality)) for row in values}
+        if len(labels | self._lifecycle_labels) > self._MAX_LIFECYCLE_SERIES:
+            raise ValueError("lifecycle metric cardinality exceeds the configured bound")
+        for row in values:
+            self.lifecycle_gpu_seconds.labels(
+                row.tenant_id,
+                row.model_id,
+                row.phase,
+                str(row.quality),
+            ).set(row.seconds)
+        for missing in self._lifecycle_labels - labels:
+            self.lifecycle_gpu_seconds.labels(*missing).set(0)
+        self._lifecycle_labels = labels
+
+    def set_lifecycle_rollups(self, rows: Iterable[LifecycleRollupMetricRow]) -> None:
+        """Project three independent clocks and reconciliation quality."""
+
+        values = list(rows)
+        rollup_labels = {(row.tenant_id, row.model_id, str(row.quality), str(row.reconciled).lower()) for row in values}
+        clock_labels = {
+            (*labels[:2], clock, *labels[2:])
+            for labels in rollup_labels
+            for clock in ("quota_reserved", "scheduler_occupied", "device_allocated")
+        }
+        if (
+            len(rollup_labels | self._lifecycle_rollup_labels) + len(clock_labels | self._lifecycle_clock_labels)
+            > self._MAX_LIFECYCLE_SERIES
+        ):
+            raise ValueError("lifecycle rollup metric cardinality exceeds the configured bound")
+        for row in values:
+            labels = (
+                row.tenant_id,
+                row.model_id,
+                str(row.quality),
+                str(row.reconciled).lower(),
+            )
+            self.lifecycle_workloads.labels(*labels).set(row.workloads)
+            self.lifecycle_reconciliation_delta.labels(*labels).set(row.absolute_reconciliation_delta_seconds)
+            self.lifecycle_unclassified_gpu_seconds.labels(*labels).set(row.unclassified_gpu_seconds)
+            for clock, seconds in (
+                ("quota_reserved", row.quota_reserved_gpu_seconds),
+                ("scheduler_occupied", row.scheduler_occupied_gpu_seconds),
+                ("device_allocated", row.device_allocated_gpu_seconds),
+            ):
+                self.lifecycle_clock_gpu_seconds.labels(
+                    row.tenant_id,
+                    row.model_id,
+                    clock,
+                    str(row.quality),
+                    str(row.reconciled).lower(),
+                ).set(seconds)
+        for stale_rollup_labels in self._lifecycle_rollup_labels - rollup_labels:
+            self.lifecycle_workloads.labels(*stale_rollup_labels).set(0)
+            self.lifecycle_reconciliation_delta.labels(*stale_rollup_labels).set(0)
+            self.lifecycle_unclassified_gpu_seconds.labels(*stale_rollup_labels).set(0)
+        for stale_clock_labels in self._lifecycle_clock_labels - clock_labels:
+            self.lifecycle_clock_gpu_seconds.labels(*stale_clock_labels).set(0)
+        self._lifecycle_rollup_labels = rollup_labels
+        self._lifecycle_clock_labels = clock_labels
 
     def render(self) -> bytes:
         return generate_latest(self.registry)

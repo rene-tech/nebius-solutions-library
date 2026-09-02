@@ -54,6 +54,7 @@ from .configuration import (
 from .configuration_models import ConfigurationRevision, PlatformConfiguration
 from .crypto import KeyedHasher, PayloadCipher
 from .federation import FederationRouter
+from .lifecycle import PostgresLifecycleRepository
 from .mcp_server import mount_mcp
 from .model_deployment_admin import ModelDeploymentReadService, StoreModelDeploymentRepository
 from .model_deployment_bridge import ModelDeploymentRuntimeBridge
@@ -286,6 +287,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     store = await _store(settings)
     artifact_repository = PostgresArtifactRepository(store.pool)
     artifact_service = _artifact_service(settings, artifact_repository)
+    lifecycle = PostgresLifecycleRepository(store.pool)
     peppers = PepperRing.from_file(settings.token_pepper_file)
     tokens = TokenService(store, peppers)
     model_deployment_preview: ModelDeploymentPreviewService | None = None
@@ -429,6 +431,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         wait_poll_initial_seconds=settings.wait_poll_initial_seconds,
         wait_poll_max_seconds=settings.wait_poll_max_seconds,
         route_refresh=refresh_routes,
+        lifecycle=lifecycle,
     )
     initial_configuration = (
         load_platform_configuration(settings.admin_configuration_file)
@@ -495,6 +498,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             peppers,
             ttl_seconds=settings.admin_session_ttl_seconds,
         ),
+        lifecycle=lifecycle,
         route_revalidator=route_revalidator,
         admin_read=admin_read,
         scientific_admin=scientific_admin,

@@ -41,6 +41,18 @@ from fs2_serve.configuration import (
 )
 from fs2_serve.configuration_models import ConfigurationProposal, ReconciliationPhase, TerraformApplyReceipt
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
+from fs2_serve.lifecycle import (
+    LifecycleClock,
+    LifecycleCorrelation,
+    LifecycleEdge,
+    LifecyclePhase,
+    LifecycleSignal,
+    LifecycleSource,
+    LifecycleSubject,
+    MeasurementQuality,
+    PostgresLifecycleRepository,
+    WorkloadTelemetryKind,
+)
 from fs2_serve.model_deployment_admin import (
     ModelDeploymentReadService,
     StoreModelDeploymentRepository,
@@ -173,7 +185,8 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
     await asyncio.gather(store.migrate(), store.migrate())
     async with store.pool.acquire() as connection:
         await connection.execute(
-            "TRUNCATE fs2_model_deployment_status_events,fs2_model_deployment_idempotency,"
+            "TRUNCATE fs2_lifecycle_rollups,fs2_lifecycle_signals,fs2_telemetry_correlations,"
+            "fs2_telemetry_subjects,fs2_model_deployment_status_events,fs2_model_deployment_idempotency,"
             "fs2_model_deployments,fs2_model_deployment_revisions,"
             "fs2_configuration_reconciliation_events,fs2_configuration_plans,"
             "fs2_configuration_revisions,fs2_activation_controller_status,fs2_activation_target_state,"
@@ -188,7 +201,8 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
     finally:
         async with store.pool.acquire() as connection:
             await connection.execute(
-                "TRUNCATE fs2_model_deployment_status_events,fs2_model_deployment_idempotency,"
+                "TRUNCATE fs2_lifecycle_rollups,fs2_lifecycle_signals,fs2_telemetry_correlations,"
+                "fs2_telemetry_subjects,fs2_model_deployment_status_events,fs2_model_deployment_idempotency,"
                 "fs2_model_deployments,fs2_model_deployment_revisions,"
                 "fs2_configuration_reconciliation_events,fs2_configuration_plans,"
                 "fs2_configuration_revisions,fs2_activation_controller_status,fs2_activation_target_state,"
@@ -201,6 +215,193 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
                 "DELETE FROM fs2_operator_principals WHERE id<>$1", BOOTSTRAP_OPERATOR_PRINCIPAL_ID
             )
         await store.close()
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_real_postgres_lifecycle_ledger_is_append_only_and_reconciles_exact_gpu_ranks(
+    postgres_store: PostgresStore,
+) -> None:
+    repository = PostgresLifecycleRepository(postgres_store.pool)
+    accepted_at = datetime(2026, 9, 2, 20, 0, tzinfo=UTC)
+    subject_id = uuid4()
+    attempt_id = uuid4()
+    subject = LifecycleSubject(
+        subject_id=subject_id,
+        workload_kind=WorkloadTelemetryKind.SCIENTIFIC_BATCH,
+        operation_id=uuid4(),
+        request_id=uuid4(),
+        batch_id=uuid4(),
+        workload_id=uuid4(),
+        attempt_id=attempt_id,
+        tenant_id="oncology-a",
+        principal_id="batch-controller",
+        model_id="rfdiffusion",
+        model_revision="sha256:" + "a" * 64,
+        protocol="scientific-batch",
+        trace_id="1" * 32,
+        parent_span_id="2" * 16,
+        accepted_at=accepted_at,
+    )
+    assert await repository.register_subject(subject) == subject
+    assert await repository.register_subject(subject) == subject
+
+    correlation = LifecycleCorrelation(
+        correlation_key=f"attempt:{attempt_id}:pod:pod-uid-1:gpu:0",
+        subject_id=subject_id,
+        observed_at=accepted_at,
+        source=LifecycleSource.DCGM,
+        attempt=1,
+        cluster="k8s-inference-h100",
+        namespace="fs2-scientific",
+        queue_name="scientific-standard",
+        kueue_workload_name="rfdiffusion-attempt-1",
+        kueue_workload_uid="kueue-uid-1",
+        job_name="rfdiffusion-attempt-1",
+        job_uid="job-uid-1",
+        pod_name="rfdiffusion-attempt-1-abcde",
+        pod_uid="pod-uid-1",
+        node_name="h100-node-1",
+        node_uid="node-uid-1",
+        gpu_uuid="GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        gpu_rank=0,
+    )
+    await repository.append_correlations([correlation, correlation])
+
+    def edges(
+        key: str,
+        start: int,
+        end: int,
+        clock: LifecycleClock,
+        phase: LifecyclePhase,
+        *,
+        gpu_count: int,
+        gpu_uuid: str | None = None,
+        gpu_rank: int | None = None,
+    ) -> list[LifecycleSignal]:
+        return [
+            LifecycleSignal(
+                event_key=f"{subject_id}:{key}:{edge.value}",
+                subject_id=subject_id,
+                occurred_at=accepted_at + timedelta(seconds=offset),
+                observed_at=accepted_at + timedelta(seconds=end),
+                source=(
+                    LifecycleSource.DCGM if clock is LifecycleClock.DEVICE_ALLOCATED else LifecycleSource.KUBERNETES
+                ),
+                source_resolution_seconds=5,
+                quality=MeasurementQuality.MEASURED,
+                phase=phase,
+                edge=edge,
+                clock=clock,
+                interval_key=f"{subject_id}:{key}",
+                attempt=1,
+                gpu_count=gpu_count,
+                pod_uid="pod-uid-1",
+                kueue_workload_uid=("kueue-uid-1" if clock is LifecycleClock.QUOTA_RESERVED else None),
+                gpu_uuid=gpu_uuid,
+                gpu_rank=gpu_rank,
+            )
+            for edge, offset in ((LifecycleEdge.START, start), (LifecycleEdge.END, end))
+        ]
+
+    signals = [
+        *edges("quota", 0, 11, LifecycleClock.QUOTA_RESERVED, LifecyclePhase.ADMIT, gpu_count=2),
+        *edges(
+            "scheduler",
+            0,
+            10,
+            LifecycleClock.SCHEDULER_OCCUPIED,
+            LifecyclePhase.GPU_ALLOCATION,
+            gpu_count=2,
+        ),
+        *edges(
+            "device-0",
+            0,
+            10,
+            LifecycleClock.DEVICE_ALLOCATED,
+            LifecyclePhase.GPU_ALLOCATION,
+            gpu_count=1,
+            gpu_uuid="GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            gpu_rank=0,
+        ),
+        *edges(
+            "device-1",
+            0,
+            10,
+            LifecycleClock.DEVICE_ALLOCATED,
+            LifecyclePhase.GPU_ALLOCATION,
+            gpu_count=1,
+            gpu_uuid="GPU-bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+            gpu_rank=1,
+        ),
+        *edges("image", 0, 2, LifecycleClock.PHASE, LifecyclePhase.IMAGE_PULL, gpu_count=0),
+        *edges("active", 2, 8, LifecycleClock.PHASE, LifecyclePhase.ACTIVE_COMPUTE, gpu_count=0),
+        *edges("grace", 8, 10, LifecycleClock.PHASE, LifecyclePhase.COOLDOWN_GRACE, gpu_count=0),
+        LifecycleSignal(
+            event_key=f"{subject_id}:release",
+            subject_id=subject_id,
+            occurred_at=accepted_at + timedelta(seconds=10),
+            observed_at=accepted_at + timedelta(seconds=10),
+            source=LifecycleSource.KUBERNETES,
+            source_resolution_seconds=5,
+            quality=MeasurementQuality.MEASURED,
+            phase=LifecyclePhase.RELEASE,
+            edge=LifecycleEdge.INSTANT,
+            clock=LifecycleClock.LIFECYCLE,
+            attempt=1,
+            pod_uid="pod-uid-1",
+        ),
+    ]
+    await repository.append_signals(signals)
+    await repository.append_signals(signals)
+    rollup = await repository.reconcile(subject_id, terminal=True, outcome="succeeded")
+    assert rollup is not None
+    assert rollup.quota_reserved_gpu_seconds == 22
+    assert rollup.scheduler_occupied_gpu_seconds == 20
+    assert rollup.device_allocated_gpu_seconds == 20
+    assert rollup.active_gpu_seconds == 12
+    assert rollup.occupied_idle_gpu_seconds == 8
+    assert rollup.phase_gpu_seconds["active_compute"] == 12
+    assert rollup.phase_gpu_seconds["cooldown_grace"] == 4
+    assert rollup.phase_gpu_seconds["image_pull"] == 4
+    assert sum(rollup.phase_gpu_seconds.values()) == 20
+    assert rollup.reconciled is True
+
+    detail = await repository.get_workload(subject_id, tenant_id="oncology-a")
+    assert detail is not None
+    assert detail.correlations == [correlation]
+    assert detail.rollup == rollup
+    assert await repository.get_workload(subject_id, tenant_id="oncology-b") is None
+    assert (await repository.metric_rows())[0].tenant_id == "oncology-a"
+    assert (await repository.rollup_metric_rows())[0].workloads == 1
+
+    async with postgres_store.pool.acquire() as connection:
+        with pytest.raises(asyncpg.PostgresError) as raised:
+            await connection.execute(
+                "UPDATE fs2_lifecycle_signals SET detail='{}'::jsonb WHERE subject_id=$1",
+                subject_id,
+            )
+        assert raised.value.sqlstate == "55000"
+        privileges = await connection.fetchrow(
+            """
+            SELECT
+              has_table_privilege('fs2_serve_runtime','fs2_lifecycle_signals','SELECT,INSERT')
+                AS runtime_write,
+              has_table_privilege('fs2_serve_runtime','fs2_lifecycle_signals','UPDATE,DELETE')
+                AS runtime_mutate,
+              has_table_privilege('fs2_serve_reporting','fs2_reporting_lifecycle_workloads','SELECT')
+                AS reporting_read,
+              has_table_privilege('fs2_serve_reporting','fs2_lifecycle_signals','SELECT')
+                AS reporting_raw
+            """
+        )
+    assert privileges is not None
+    assert dict(privileges) == {
+        "runtime_write": True,
+        "runtime_mutate": False,
+        "reporting_read": True,
+        "reporting_raw": False,
+    }
 
 
 @pytest.mark.postgres
@@ -656,7 +857,7 @@ async def test_real_postgres_rejects_extra_or_reordered_applied_migration_ledger
         "scientific-batch-state-v7-545d71d9.json",
     ],
 )
-async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0017(
+async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_pending_migrations(
     postgres_store: PostgresStore,
     tmp_path: Path,
     legacy_fixture_name: str,
@@ -801,6 +1002,7 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 "sha256:" + "0" * 64,
                 json.dumps(legacy_fixture, sort_keys=True, separators=(",", ":")),
             )
+            assert await before_connection.fetchval("SELECT to_regclass('public.fs2_telemetry_subjects')") is None
         finally:
             await before_connection.close()
 
@@ -814,7 +1016,7 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 )
             }
             assert {version: after[version] for version in before} == before
-            assert list(after)[-1] == "0017_scientific_batch_state_v8.sql"
+            assert list(after)[-1] == "0018_workload_lifecycle_telemetry.sql"
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_activation_model_fences')")
                 == "fs2_activation_model_fences"
@@ -844,6 +1046,10 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_scientific_batches')")
                 == "fs2_scientific_batches"
+            )
+            assert (
+                await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_telemetry_subjects')")
+                == "fs2_telemetry_subjects"
             )
         finally:
             await upgraded_connection.close()

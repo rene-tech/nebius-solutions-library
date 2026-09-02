@@ -61,6 +61,10 @@ EXPECTED_MIGRATIONS: Final = (
         "0017_scientific_batch_state_v8.sql",
         "402af8eb08057ae564798af3880c14a62c5f13873787f2aa25745990eaa9b5aa",
     ),
+    (
+        "0018_workload_lifecycle_telemetry.sql",
+        "7d7b770d30db7ce465cc92a747de560c574a167554c6834c07f7c3e24acd48f8",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

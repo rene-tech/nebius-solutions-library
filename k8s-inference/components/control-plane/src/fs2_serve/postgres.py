@@ -463,7 +463,10 @@ class PostgresStore:
                     f"fs2_reporting_model_usage,fs2_reporting_principal_usage,"
                     f"fs2_reporting_terminal_totals,fs2_activation_intents,fs2_activation_events,"
                     f"fs2_activation_target_state,fs2_activation_controller_status,"
-                    f"fs2_activation_model_fences FROM {role}"
+                    f"fs2_activation_model_fences,fs2_telemetry_subjects,"
+                    f"fs2_telemetry_correlations,fs2_lifecycle_signals,fs2_lifecycle_rollups,"
+                    f"fs2_reporting_lifecycle_latest,fs2_reporting_gpu_phase_usage,"
+                    f"fs2_reporting_lifecycle_workloads FROM {role}"
                 )
                 await connection.execute(
                     f"REVOKE ALL ON fs2_operation_events_id_seq,fs2_audit_events_id_seq,"
@@ -472,7 +475,8 @@ class PostgresStore:
                     f"fs2_model_deployment_status_events_id_seq,"
                     f"fs2_scientific_artifact_events_id_seq,"
                     f"fs2_scientific_retention_ledger_id_seq,"
-                    f"fs2_scientific_batch_events_sequence_seq FROM {role}"
+                    f"fs2_scientific_batch_events_sequence_seq,"
+                    f"fs2_lifecycle_signals_id_seq FROM {role}"
                 )
                 await connection.execute(
                     f"REVOKE ALL ON FUNCTION fs2_activation_model_lock_key(text),"
@@ -484,11 +488,13 @@ class PostgresStore:
                     f"fs2_scientific_reject_mutation(),"
                     f"fs2_scientific_guard_retention_delete(),"
                     f"fs2_scientific_batch_state_immutable(),"
-                    f"fs2_scientific_batch_append_only() FROM {role}"
+                    f"fs2_scientific_batch_append_only(),"
+                    f"fs2_reject_telemetry_mutation() FROM {role}"
                 )
             await connection.execute(
                 f"GRANT SELECT ON fs2_reporting_model_usage,fs2_reporting_principal_usage,"
-                f"fs2_reporting_terminal_totals TO {quoted_reporting}"
+                f"fs2_reporting_terminal_totals,fs2_reporting_gpu_phase_usage,"
+                f"fs2_reporting_lifecycle_workloads TO {quoted_reporting}"
             )
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_tokens,fs2_operations TO {quoted_runtime}")
             await connection.execute(
@@ -504,6 +510,14 @@ class PostgresStore:
             await connection.execute(
                 f"GRANT SELECT,INSERT ON fs2_model_deployment_revisions,"
                 f"fs2_model_deployment_idempotency,fs2_model_deployment_status_events TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT SELECT,INSERT ON fs2_telemetry_subjects,fs2_telemetry_correlations,"
+                f"fs2_lifecycle_signals,fs2_lifecycle_rollups TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT SELECT ON fs2_reporting_lifecycle_latest,fs2_reporting_gpu_phase_usage,"
+                f"fs2_reporting_lifecycle_workloads TO {quoted_runtime}"
             )
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_model_deployments TO {quoted_runtime}")
             # Scientific artifact provenance. Rows are append-only for the
@@ -559,7 +573,8 @@ class PostgresStore:
                 f"fs2_model_deployment_status_events_id_seq,"
                 f"fs2_scientific_artifact_events_id_seq,"
                 f"fs2_scientific_retention_ledger_id_seq,"
-                f"fs2_scientific_batch_events_sequence_seq TO {quoted_runtime}"
+                f"fs2_scientific_batch_events_sequence_seq,"
+                f"fs2_lifecycle_signals_id_seq TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT EXECUTE ON FUNCTION fs2_runtime_ensure_activation_intent(uuid,integer,text,text,"

@@ -324,6 +324,11 @@ evidence limit: Kueue can clear `status.admission` when quota is released, so a
 controller outage spanning reservation and eviction can miss the tuple unless
 a prior poll persisted it. This scheduling task does not claim event/watch-
 complete accounting. Live contention, preemptible-loss,
+complete accounting. The append-only ledger, deterministic overlap
+reconciler, online application spans, tenant-authorized admin API and bounded
+Prometheus projections are implemented in
+`components/control-plane/docs/workload-lifecycle-telemetry.md`. Scientific
+controller hooks are integrated here. Live contention, preemptible-loss,
 scale-to-zero, and GPU accounting acceptance remain separate shared-cluster
 steps; this implementation does not claim those tests have run.
 

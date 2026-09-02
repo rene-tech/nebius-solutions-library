@@ -10,11 +10,31 @@ import logging
 import socket
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from opentelemetry import trace
+from opentelemetry.trace import SpanKind
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from .activation_contract import ActivationContractError, ScaleContract
+from .lifecycle import (
+    LifecycleClock,
+    LifecycleCorrelation,
+    LifecycleEdge,
+    LifecyclePhase,
+    LifecycleRepository,
+    LifecycleSignal,
+    LifecycleSource,
+    LifecycleSubject,
+    MeasurementQuality,
+    NullLifecycleRepository,
+    WorkloadTelemetryKind,
+    api_key_id_hash,
+    payload_shape,
+    reproducibility_metadata,
+    trace_identity,
+)
 from .models import (
     ActivationIntentStatus,
     AdmissionRequest,
@@ -63,6 +83,7 @@ class AdmissionService:
         wait_poll_initial_seconds: float = 0.05,
         wait_poll_max_seconds: float = 0.5,
         route_refresh: Callable[[], Awaitable[bool]] | None = None,
+        lifecycle: LifecycleRepository | None = None,
     ) -> None:
         self.registry = registry
         self.store = store
@@ -77,6 +98,7 @@ class AdmissionService:
         self.wait_poll_initial_seconds = wait_poll_initial_seconds
         self.wait_poll_max_seconds = wait_poll_max_seconds
         self.route_refresh = route_refresh
+        self.lifecycle = lifecycle or NullLifecycleRepository()
         self._wake = asyncio.Event()
         self._stop_claiming = asyncio.Event()
         self._stop_maintenance = asyncio.Event()
@@ -184,6 +206,11 @@ class AdmissionService:
         if admission.protocol not in model.gateway.protocols:
             raise ValueError("model does not implement requested protocol")
         request_body = admission.request_body
+        trace_carrier: dict[str, str] = {}
+        TraceContextTextMapPropagator().inject(trace_carrier)
+        continued_traceparent = trace_carrier.get("traceparent")
+        if trace_identity(continued_traceparent)[0] is None:
+            continued_traceparent = admission.traceparent
         if admission.protocol.startswith("openai-"):
             try:
                 payload = json.loads(request_body)
@@ -199,7 +226,13 @@ class AdmissionService:
                 ).encode("utf-8")
             except (TypeError, ValueError):
                 raise ValueError("OpenAI request payload is not canonical JSON") from None
-        canonical_admission = admission.model_copy(update={"model_id": model.id, "request_body": request_body})
+        canonical_admission = admission.model_copy(
+            update={
+                "model_id": model.id,
+                "request_body": request_body,
+                "traceparent": continued_traceparent,
+            }
+        )
         dynamic_policy = model.dynamic_policy
         if dynamic_policy is not None:
             queue_deadline = datetime.now(UTC) + timedelta(seconds=dynamic_policy.max_queue_seconds)
@@ -221,6 +254,45 @@ class AdmissionService:
                     etag=dynamic_policy.etag,
                 )
             ),
+        )
+        trace_id, parent_span_id = trace_identity(canonical_admission.traceparent)
+        subject = LifecycleSubject(
+            subject_id=operation.id,
+            workload_kind=WorkloadTelemetryKind.ONLINE,
+            operation_id=operation.id,
+            request_id=operation.id,
+            workload_id=operation.id,
+            tenant_id=operation.tenant_id,
+            principal_id=operation.principal_id,
+            api_key_id=operation.token_id,
+            api_key_fingerprint=api_key_id_hash(operation.token_id),
+            model_id=operation.model_id,
+            model_revision=operation.model_revision,
+            protocol=operation.protocol,
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
+            accepted_at=operation.accepted_at,
+            reproducibility=reproducibility_metadata(
+                canonical_admission.request_body,
+                canonical_admission.request_content_type,
+            ),
+        )
+        await self.lifecycle.register_subject(subject)
+        await self.lifecycle.append_signals(
+            [
+                LifecycleSignal(
+                    event_key=f"online:{operation.id}:{phase.value}",
+                    subject_id=operation.id,
+                    occurred_at=operation.accepted_at,
+                    observed_at=operation.accepted_at,
+                    source=LifecycleSource.APPLICATION,
+                    quality=MeasurementQuality.APPLICATION_OBSERVED,
+                    phase=phase,
+                    edge=LifecycleEdge.INSTANT,
+                    clock=LifecycleClock.LIFECYCLE,
+                )
+                for phase in (LifecyclePhase.RECEIVE, LifecyclePhase.ENQUEUE)
+            ]
         )
         self._wake.set()
         return operation
@@ -333,9 +405,23 @@ class AdmissionService:
         self._inflight[worker_id] = claimed
         clear_claim = False
         try:
-            with self._tracer.start_as_current_span("fs2.operation") as span:
+            carrier = {"traceparent": claimed.traceparent} if claimed.traceparent is not None else {}
+            parent_context = TraceContextTextMapPropagator().extract(carrier=carrier)
+            with self._tracer.start_as_current_span(
+                "fs2.operation",
+                context=parent_context,
+                kind=SpanKind.CONSUMER,
+            ) as span:
                 span.set_attribute("fs2.operation.id", str(claimed.id))
+                span.set_attribute("fs2.request.id", str(claimed.id))
+                span.set_attribute("fs2.workload.id", str(claimed.id))
+                span.set_attribute("fs2.tenant.id", claimed.tenant_id)
+                span.set_attribute("fs2.principal.id", claimed.principal_id)
+                span.set_attribute("fs2.api_key.id_hash", api_key_id_hash(claimed.token_id))
                 span.set_attribute("fs2.model.id", claimed.model_id)
+                span.set_attribute("fs2.model.revision", claimed.model_revision)
+                span.set_attribute("fs2.attempt.number", claimed.attempt)
+                await self._record_claim(claimed)
                 await self._execute(claimed)
             clear_claim = True
         except StaleLeaseError:
@@ -492,6 +578,26 @@ class AdmissionService:
             error_code=exc.code,
             error_detail=exc.code,
         )
+        await self._try_lifecycle(
+            claimed.id,
+            self.lifecycle.append_signals(
+                [
+                    LifecycleSignal(
+                        event_key=f"online:{claimed.id}:attempt:{claimed.attempt}:retry",
+                        subject_id=claimed.id,
+                        occurred_at=datetime.now(UTC),
+                        observed_at=datetime.now(UTC),
+                        source=LifecycleSource.APPLICATION,
+                        quality=MeasurementQuality.APPLICATION_OBSERVED,
+                        phase=LifecyclePhase.RETRY,
+                        edge=LifecycleEdge.INSTANT,
+                        clock=LifecycleClock.LIFECYCLE,
+                        attempt=claimed.attempt,
+                        detail={"reason_code": exc.code},
+                    )
+                ]
+            ),
+        )
         self._wake.set()
         return True
 
@@ -519,6 +625,8 @@ class AdmissionService:
 
     async def _execute_claim(self, claimed: ClaimedOperation) -> None:
         model: OperationalModel | None = None
+        result_body: bytes | None = None
+        result_content_type: str | None = None
         try:
             model = await self._current_model(claimed)
             if model.binding.backend_class == "local-kubernetes" and model.binding.activation.enabled:
@@ -537,7 +645,30 @@ class AdmissionService:
             )
             try:
                 model = await self._current_model(claimed)
-                result = await self.runtime.invoke(model, claimed, request_body)
+                invocation_started = datetime.now(UTC)
+                with self._tracer.start_as_current_span("fs2.runtime.invoke", kind=SpanKind.CLIENT) as span:
+                    span.set_attribute("fs2.operation.id", str(claimed.id))
+                    span.set_attribute("fs2.request.id", str(claimed.id))
+                    span.set_attribute("fs2.workload.id", str(claimed.id))
+                    span.set_attribute("fs2.tenant.id", claimed.tenant_id)
+                    span.set_attribute("fs2.principal.id", claimed.principal_id)
+                    span.set_attribute("fs2.api_key.id_hash", api_key_id_hash(claimed.token_id))
+                    span.set_attribute("fs2.model.id", claimed.model_id)
+                    span.set_attribute("fs2.model.revision", claimed.model_revision)
+                    span.set_attribute("fs2.attempt.number", claimed.attempt)
+                    span.set_attribute("fs2.protocol", claimed.protocol)
+                    result = await self.runtime.invoke(model, claimed, request_body)
+                    span.set_attribute("fs2.runtime.http_status", result.status_code)
+                    span.set_attribute("fs2.runtime.semantic_outcome", result.semantic_outcome)
+                invocation_finished = datetime.now(UTC)
+                result_body = result.body
+                result_content_type = result.content_type
+                await self._record_runtime_observation(
+                    claimed,
+                    result.runtime,
+                    started_at=invocation_started,
+                    completed_at=invocation_finished,
+                )
             finally:
                 del request_body
             if result.status_code >= 500:
@@ -575,7 +706,122 @@ class AdmissionService:
             final = await self._terminal_failure(claimed, failure)
         except StaleLeaseError:
             return
+        await self._try_lifecycle(
+            claimed.id,
+            self.lifecycle.reconcile(
+                claimed.id,
+                terminal=True,
+                outcome=final.outcome,
+                output_shape=payload_shape(result_body, result_content_type),
+            ),
+        )
         self.metrics.observe_worker_latency(final)
+
+    async def _record_claim(self, claimed: ClaimedOperation) -> None:
+        occurred_at = claimed.activation_started_at or datetime.now(UTC)
+        await self._try_lifecycle(
+            claimed.id,
+            self.lifecycle.append_signals(
+                [
+                    LifecycleSignal(
+                        event_key=f"online:{claimed.id}:attempt:{claimed.attempt}:admit",
+                        subject_id=claimed.id,
+                        occurred_at=occurred_at,
+                        observed_at=occurred_at,
+                        source=LifecycleSource.APPLICATION,
+                        quality=MeasurementQuality.APPLICATION_OBSERVED,
+                        phase=LifecyclePhase.ADMIT,
+                        edge=LifecycleEdge.INSTANT,
+                        clock=LifecycleClock.LIFECYCLE,
+                        attempt=claimed.attempt,
+                    )
+                ]
+            ),
+        )
+
+    async def _record_runtime_observation(
+        self,
+        claimed: ClaimedOperation,
+        runtime: RuntimeIdentity,
+        *,
+        started_at: datetime,
+        completed_at: datetime,
+    ) -> None:
+        correlations: list[LifecycleCorrelation] = []
+        signals: list[LifecycleSignal] = []
+        if runtime.pod_uid is not None or runtime.node_uid is not None or runtime.gpu_uuids:
+            gpu_values: list[tuple[str | None, int | None]] = (
+                [(gpu_uuid, rank) for rank, gpu_uuid in enumerate(runtime.gpu_uuids)]
+                if runtime.gpu_uuids
+                else [(None, None)]
+            )
+            for gpu_uuid, rank in gpu_values:
+                suffix = f":gpu:{gpu_uuid}:{rank}" if gpu_uuid is not None else ":pod"
+                correlations.append(
+                    LifecycleCorrelation(
+                        correlation_key=f"online:{claimed.id}:attempt:{claimed.attempt}:runtime{suffix}",
+                        subject_id=claimed.id,
+                        observed_at=completed_at,
+                        source=LifecycleSource.APPLICATION,
+                        attempt=claimed.attempt,
+                        pod_uid=runtime.pod_uid,
+                        node_uid=runtime.node_uid,
+                        gpu_uuid=gpu_uuid,
+                        gpu_rank=rank,
+                    )
+                )
+        # Active-compute facts require at least a trusted Pod identity. They do
+        # not invent scheduler/device allocation clocks from request latency.
+        if runtime.pod_uid is not None:
+            coordinates: list[tuple[str | None, int | None]] = (
+                [(gpu_uuid, rank) for rank, gpu_uuid in enumerate(runtime.gpu_uuids)]
+                if runtime.gpu_uuids
+                else [(None, None)]
+            )
+            for gpu_uuid, rank in coordinates:
+                interval_key = f"online:{claimed.id}:attempt:{claimed.attempt}:active:{gpu_uuid or 'pod'}:{rank or 0}"
+                for edge, occurred_at in (
+                    (LifecycleEdge.START, started_at),
+                    (LifecycleEdge.END, completed_at),
+                ):
+                    signals.append(
+                        LifecycleSignal(
+                            event_key=f"{interval_key}:{edge.value}",
+                            subject_id=claimed.id,
+                            occurred_at=occurred_at,
+                            observed_at=completed_at,
+                            source=LifecycleSource.APPLICATION,
+                            source_resolution_seconds=0.001,
+                            quality=MeasurementQuality.APPLICATION_OBSERVED,
+                            phase=LifecyclePhase.ACTIVE_COMPUTE,
+                            edge=edge,
+                            clock=LifecycleClock.PHASE,
+                            interval_key=interval_key,
+                            attempt=claimed.attempt,
+                            gpu_count=1 if gpu_uuid is not None else 0,
+                            pod_uid=runtime.pod_uid,
+                            node_uid=runtime.node_uid,
+                            gpu_uuid=gpu_uuid,
+                            gpu_rank=rank,
+                        )
+                    )
+        if correlations:
+            await self._try_lifecycle(claimed.id, self.lifecycle.append_correlations(correlations))
+        if signals:
+            await self._try_lifecycle(claimed.id, self.lifecycle.append_signals(signals))
+
+    @staticmethod
+    async def _try_lifecycle(operation_id: UUID, operation: Awaitable[Any]) -> Any:
+        try:
+            return await operation
+        except Exception:  # pragma: no cover - telemetry must not replay model work
+            # Exception strings from a downstream client are not safe log
+            # attributes; emit only the opaque operation identity.
+            LOGGER.error(
+                "lifecycle telemetry write failed after durable admission",
+                extra={"operation_id": str(operation_id)},
+            )
+            return None
 
     async def _await_activation(self, model: OperationalModel, claimed: ClaimedOperation) -> None:
         """Durably hand local scale-up to the sole Kubernetes mutation owner."""

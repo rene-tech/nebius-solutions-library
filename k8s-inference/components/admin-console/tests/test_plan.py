@@ -139,6 +139,30 @@ class AdminConsolePlanTests(unittest.TestCase):
         self.assertIn("/admin/api/v1/capacity", endpoints)
         self.assertIn("/admin/api/v1/observability", endpoints)
 
+        lifecycle_routes = {
+            ("GET", "/admin/api/v1/telemetry/workloads"),
+            ("GET", "/admin/api/v1/telemetry/workloads/{subject_id}"),
+        }
+        self.assertTrue(lifecycle_routes.issubset(contract_routes))
+        lifecycle_contract = self.api_contract[
+            "lifecycle_telemetry_identity_projection"
+        ]
+        self.assertFalse(
+            {
+                "pod_uid",
+                "node_uid",
+                "gpu_uuid",
+                "gpu_rank",
+            }
+            - set(lifecycle_contract["fields"])
+        )
+        self.assertEqual(
+            lifecycle_contract["input_policy"],
+            "shape and canonical parameter digest only; raw request and response values are never projected",
+        )
+        self.assertNotIn("request_body", lifecycle_contract["fields"])
+        self.assertNotIn("response_body", lifecycle_contract["fields"])
+
         configuration_routes = {
             ("GET", "/admin/api/v1/configuration"),
             ("POST", "/admin/api/v1/configuration:diff"),
