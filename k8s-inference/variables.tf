@@ -251,9 +251,14 @@ variable "deployment" {
           retention_mode = optional(string, "retain")
         }), {})
         cpu_pool = optional(object({
-          platform        = optional(string, "cpu-d3")
-          preset          = optional(string, "8vcpu-32gb")
-          node_count      = optional(number, 1)
+          platform   = optional(string, "cpu-d3")
+          preset     = optional(string, "8vcpu-32gb")
+          node_count = optional(number, 1)
+          schedulable_capacity = optional(object({
+            cpu_millicores        = optional(number, 7000)
+            memory_mib            = optional(number, 28672)
+            ephemeral_storage_mib = optional(number, 114688)
+          }), {})
           boot_disk_type  = optional(string, "NETWORK_SSD")
           boot_disk_gib   = optional(number, 160)
           max_surge       = optional(number, 1)
@@ -645,6 +650,12 @@ variable "deployment" {
         floor(var.deployment.storage.reference_data.cpu_pool.node_count) == var.deployment.storage.reference_data.cpu_pool.node_count &&
         var.deployment.storage.reference_data.cpu_pool.node_count >= 1 &&
         var.deployment.storage.reference_data.cpu_pool.node_count <= 32 &&
+        floor(var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.cpu_millicores) == var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.cpu_millicores &&
+        var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.cpu_millicores >= 1000 &&
+        floor(var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.memory_mib) == var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.memory_mib &&
+        var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.memory_mib >= 1024 &&
+        floor(var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.ephemeral_storage_mib) == var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.ephemeral_storage_mib &&
+        var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.ephemeral_storage_mib >= 1024 &&
         contains(["NETWORK_SSD", "NETWORK_SSD_IO_M3", "NETWORK_SSD_NON_REPLICATED"], var.deployment.storage.reference_data.cpu_pool.boot_disk_type) &&
         floor(var.deployment.storage.reference_data.cpu_pool.boot_disk_gib) == var.deployment.storage.reference_data.cpu_pool.boot_disk_gib &&
         var.deployment.storage.reference_data.cpu_pool.boot_disk_gib >= 32 &&
@@ -681,7 +692,7 @@ variable "deployment" {
       ),
       false,
     )
-    error_message = "enabled storage.reference_data requires retain+forbid_deletion or disposable+deletable lifecycle semantics, a bounded dedicated regular CPU pool, DNS-safe names and dedicated filesystem/object capacities of at least 1611 GiB (the 630 GB official AlphaFold3 expansion estimate plus 1 TiB headroom)."
+    error_message = "enabled storage.reference_data requires retain+forbid_deletion or disposable+deletable lifecycle semantics, a bounded dedicated regular CPU pool with positive conservative schedulable CPU/memory/ephemeral capacity, DNS-safe names and dedicated filesystem/object capacities of at least 1611 GiB (the 630 GB official AlphaFold3 expansion estimate plus 1 TiB headroom)."
   }
 
   validation {

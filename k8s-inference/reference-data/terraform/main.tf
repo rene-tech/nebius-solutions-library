@@ -28,6 +28,39 @@ locals {
       "ephemeral-storage" = var.pipeline.ephemeral_storage
     }
   }
+  status_resources = {
+    requests = { cpu = "50m", memory = "64Mi", "ephemeral-storage" = "64Mi" }
+    limits   = { cpu = "250m", memory = "256Mi", "ephemeral-storage" = "256Mi" }
+  }
+  pipeline_cpu_millicores = endswith(var.pipeline.cpu, "m") ? tonumber(trimsuffix(var.pipeline.cpu, "m")) : tonumber(var.pipeline.cpu) * 1000
+  pipeline_memory_parts   = regex("^([1-9][0-9]*)(Ki|Mi|Gi|Ti)$", var.pipeline.memory)
+  pipeline_memory_mib     = tonumber(local.pipeline_memory_parts[0]) * lookup({ Ki = 1 / 1024, Mi = 1, Gi = 1024, Ti = 1048576 }, local.pipeline_memory_parts[1])
+  pipeline_ephemeral_parts = regex(
+    "^([1-9][0-9]*)(Ki|Mi|Gi|Ti)$",
+    var.pipeline.ephemeral_storage,
+  )
+  pipeline_ephemeral_mib = tonumber(local.pipeline_ephemeral_parts[0]) * lookup({ Ki = 1 / 1024, Mi = 1, Gi = 1024, Ti = 1048576 }, local.pipeline_ephemeral_parts[1])
+  queue_cpu_millicores   = endswith(var.queue.nominal_cpu, "m") ? tonumber(trimsuffix(var.queue.nominal_cpu, "m")) : tonumber(var.queue.nominal_cpu) * 1000
+  queue_memory_parts     = regex("^([1-9][0-9]*)(Ki|Mi|Gi|Ti)$", var.queue.nominal_memory)
+  queue_memory_mib       = tonumber(local.queue_memory_parts[0]) * lookup({ Ki = 1 / 1024, Mi = 1, Gi = 1024, Ti = 1048576 }, local.queue_memory_parts[1])
+  required_capacity = {
+    cpu_millicores = (
+      (var.pipeline.enabled ? local.pipeline_cpu_millicores : 0) +
+      (var.status.enabled ? 50 * var.status.replicas : 0)
+    )
+    memory_mib = (
+      (var.pipeline.enabled ? local.pipeline_memory_mib : 0) +
+      (var.status.enabled ? 64 * var.status.replicas : 0)
+    )
+    ephemeral_storage_mib = (
+      (var.pipeline.enabled ? local.pipeline_ephemeral_mib : 0) +
+      (var.status.enabled ? 64 * var.status.replicas : 0)
+    )
+  }
+  total_schedulable_capacity = {
+    for resource, capacity in var.cpu_pool.schedulable_capacity :
+    resource => capacity * var.cpu_pool.node_count
+  }
   pipeline_tolerations = [{
     key      = var.cpu_pool.taint.key
     operator = "Equal"
@@ -195,6 +228,23 @@ resource "terraform_data" "region_contract" {
         )
       )
       error_message = "the official AlphaFold3 staging pipeline requires explicit public-source egress and the reviewed pinned upstream commit/script digest."
+    }
+    precondition {
+      condition = (
+        (!var.pipeline.enabled || (
+          local.pipeline_cpu_millicores <= var.cpu_pool.schedulable_capacity.cpu_millicores &&
+          local.pipeline_memory_mib <= var.cpu_pool.schedulable_capacity.memory_mib &&
+          local.pipeline_ephemeral_mib <= var.cpu_pool.schedulable_capacity.ephemeral_storage_mib &&
+          local.pipeline_cpu_millicores <= local.queue_cpu_millicores &&
+          local.pipeline_memory_mib <= local.queue_memory_mib
+        )) &&
+        local.queue_cpu_millicores <= local.total_schedulable_capacity.cpu_millicores &&
+        local.queue_memory_mib <= local.total_schedulable_capacity.memory_mib &&
+        local.required_capacity.cpu_millicores <= local.total_schedulable_capacity.cpu_millicores &&
+        local.required_capacity.memory_mib <= local.total_schedulable_capacity.memory_mib &&
+        local.required_capacity.ephemeral_storage_mib <= local.total_schedulable_capacity.ephemeral_storage_mib
+      )
+      error_message = "pipeline/status requests and Kueue quotas exceed the declared schedulable capacity of the dedicated tainted CPU preprocessing pool; the system node is not fallback capacity."
     }
   }
 }
@@ -573,8 +623,8 @@ resource "kubernetes_deployment_v1" "status" {
             protocol       = "TCP"
           }
           resources {
-            requests = { cpu = "50m", memory = "64Mi", ephemeral-storage = "64Mi" }
-            limits   = { cpu = "250m", memory = "256Mi", ephemeral-storage = "256Mi" }
+            requests = local.status_resources.requests
+            limits   = local.status_resources.limits
           }
           readiness_probe {
             http_get {

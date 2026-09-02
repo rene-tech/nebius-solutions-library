@@ -80,6 +80,40 @@ locals {
     var.deployment.storage.reference_data.status.enabled ? [split("/", var.deployment.storage.reference_data.status.image)[0]] : [],
     var.deployment.storage.reference_data.pipeline.enabled ? [split("/", var.deployment.storage.reference_data.pipeline.image)[0]] : [],
   )))
+  reference_data_pipeline_cpu_millicores = endswith(var.deployment.storage.reference_data.pipeline.cpu, "m") ? tonumber(trimsuffix(var.deployment.storage.reference_data.pipeline.cpu, "m")) : tonumber(var.deployment.storage.reference_data.pipeline.cpu) * 1000
+  reference_data_pipeline_memory_parts   = regex("^([1-9][0-9]*)(Ki|Mi|Gi|Ti)$", var.deployment.storage.reference_data.pipeline.memory)
+  reference_data_pipeline_memory_mib     = tonumber(local.reference_data_pipeline_memory_parts[0]) * lookup({ Ki = 1 / 1024, Mi = 1, Gi = 1024, Ti = 1048576 }, local.reference_data_pipeline_memory_parts[1])
+  reference_data_pipeline_ephemeral_parts = regex(
+    "^([1-9][0-9]*)(Ki|Mi|Gi|Ti)$",
+    var.deployment.storage.reference_data.pipeline.ephemeral_storage,
+  )
+  reference_data_pipeline_ephemeral_mib = tonumber(local.reference_data_pipeline_ephemeral_parts[0]) * lookup({ Ki = 1 / 1024, Mi = 1, Gi = 1024, Ti = 1048576 }, local.reference_data_pipeline_ephemeral_parts[1])
+  reference_data_queue_cpu_millicores   = endswith(var.deployment.storage.reference_data.queue.nominal_cpu, "m") ? tonumber(trimsuffix(var.deployment.storage.reference_data.queue.nominal_cpu, "m")) : tonumber(var.deployment.storage.reference_data.queue.nominal_cpu) * 1000
+  reference_data_queue_memory_parts     = regex("^([1-9][0-9]*)(Ki|Mi|Gi|Ti)$", var.deployment.storage.reference_data.queue.nominal_memory)
+  reference_data_queue_memory_mib       = tonumber(local.reference_data_queue_memory_parts[0]) * lookup({ Ki = 1 / 1024, Mi = 1, Gi = 1024, Ti = 1048576 }, local.reference_data_queue_memory_parts[1])
+  reference_data_status_request = {
+    cpu_millicores        = 50
+    memory_mib            = 64
+    ephemeral_storage_mib = 64
+  }
+  reference_data_required_capacity = {
+    cpu_millicores = (
+      (var.deployment.storage.reference_data.pipeline.enabled ? local.reference_data_pipeline_cpu_millicores : 0) +
+      (var.deployment.storage.reference_data.status.enabled ? local.reference_data_status_request.cpu_millicores * var.deployment.storage.reference_data.status.replicas : 0)
+    )
+    memory_mib = (
+      (var.deployment.storage.reference_data.pipeline.enabled ? local.reference_data_pipeline_memory_mib : 0) +
+      (var.deployment.storage.reference_data.status.enabled ? local.reference_data_status_request.memory_mib * var.deployment.storage.reference_data.status.replicas : 0)
+    )
+    ephemeral_storage_mib = (
+      (var.deployment.storage.reference_data.pipeline.enabled ? local.reference_data_pipeline_ephemeral_mib : 0) +
+      (var.deployment.storage.reference_data.status.enabled ? local.reference_data_status_request.ephemeral_storage_mib * var.deployment.storage.reference_data.status.replicas : 0)
+    )
+  }
+  reference_data_total_schedulable_capacity = {
+    for resource, capacity in var.deployment.storage.reference_data.cpu_pool.schedulable_capacity :
+    resource => capacity * var.deployment.storage.reference_data.cpu_pool.node_count
+  }
 
   # Nebius Managed Kubernetes builds the cluster-autoscaler template for a
   # zero-node pool from its network boot disk. Host-local NVMe is visible only
@@ -218,14 +252,15 @@ locals {
         retention_mode = var.deployment.storage.reference_data.lifecycle.retention_mode
       }
       cpu_pool = {
-        platform        = var.deployment.storage.reference_data.cpu_pool.platform
-        preset          = var.deployment.storage.reference_data.cpu_pool.preset
-        node_count      = var.deployment.storage.reference_data.cpu_pool.node_count
-        boot_disk_type  = var.deployment.storage.reference_data.cpu_pool.boot_disk_type
-        boot_disk_gib   = var.deployment.storage.reference_data.cpu_pool.boot_disk_gib
-        max_surge       = var.deployment.storage.reference_data.cpu_pool.max_surge
-        max_unavailable = var.deployment.storage.reference_data.cpu_pool.max_unavailable
-        drain_timeout   = var.deployment.storage.reference_data.cpu_pool.drain_timeout
+        platform             = var.deployment.storage.reference_data.cpu_pool.platform
+        preset               = var.deployment.storage.reference_data.cpu_pool.preset
+        node_count           = var.deployment.storage.reference_data.cpu_pool.node_count
+        schedulable_capacity = var.deployment.storage.reference_data.cpu_pool.schedulable_capacity
+        boot_disk_type       = var.deployment.storage.reference_data.cpu_pool.boot_disk_type
+        boot_disk_gib        = var.deployment.storage.reference_data.cpu_pool.boot_disk_gib
+        max_surge            = var.deployment.storage.reference_data.cpu_pool.max_surge
+        max_unavailable      = var.deployment.storage.reference_data.cpu_pool.max_unavailable
+        drain_timeout        = var.deployment.storage.reference_data.cpu_pool.drain_timeout
       }
       filesystem = {
         size_gib         = var.deployment.storage.reference_data.filesystem.size_gib

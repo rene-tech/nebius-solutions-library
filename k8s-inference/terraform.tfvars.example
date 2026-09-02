@@ -220,6 +220,12 @@ deployment = {
   #       platform        = "cpu-d3"
   #       preset          = "8vcpu-32gb"
   #       node_count      = 1
+  #       # Conservative capacity after Kubernetes/system DaemonSet reserve.
+  #       schedulable_capacity = {
+  #         cpu_millicores        = 7000
+  #         memory_mib            = 28672
+  #         ephemeral_storage_mib = 114688
+  #       }
   #       boot_disk_type  = "NETWORK_SSD"
   #       boot_disk_gib   = 160
   #       max_surge       = 1

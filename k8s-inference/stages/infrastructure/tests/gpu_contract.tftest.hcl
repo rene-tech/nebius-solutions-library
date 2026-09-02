@@ -261,7 +261,10 @@ run "enabled_reference_data_retained_provider_fixture" {
       enabled   = true
       lifecycle = { retention_mode = "retain" }
       cpu_pool = {
-        platform       = "cpu-d3", preset = "8vcpu-32gb", node_count = 1
+        platform = "cpu-d3", preset = "8vcpu-32gb", node_count = 1
+        schedulable_capacity = {
+          cpu_millicores = 7000, memory_mib = 28672, ephemeral_storage_mib = 114688
+        }
         boot_disk_type = "NETWORK_SSD", boot_disk_gib = 160
         max_surge      = 1, max_unavailable = 0, drain_timeout = "15m"
       }
@@ -305,7 +308,10 @@ run "fresh_empty_reference_storage_apply_acceptance" {
       enabled   = true
       lifecycle = { retention_mode = "disposable" }
       cpu_pool = {
-        platform       = "cpu-d3", preset = "8vcpu-32gb", node_count = 1
+        platform = "cpu-d3", preset = "8vcpu-32gb", node_count = 1
+        schedulable_capacity = {
+          cpu_millicores = 7000, memory_mib = 28672, ephemeral_storage_mib = 114688
+        }
         boot_disk_type = "NETWORK_SSD", boot_disk_gib = 160
         max_surge      = 1, max_unavailable = 0, drain_timeout = "15m"
       }

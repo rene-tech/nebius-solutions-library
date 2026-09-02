@@ -140,6 +140,7 @@ output "access_bundle" {
       bucket_id      = var.reference_data.storage_contract.object_storage.id
       bucket_name    = var.reference_data.storage_contract.object_storage.name
       cpu_pool_id    = var.reference_data.storage_contract.cpu_pool.id
+      capacity_fit   = module.reference_data[0].dynamic_configuration.capacity_fit
       status_service = module.reference_data[0].dynamic_configuration.status_service
       pipeline       = module.reference_data[0].dynamic_configuration.pipeline
     } : null
@@ -277,6 +278,7 @@ output "reference_data_status" {
     bucket_id      = var.reference_data.storage_contract.object_storage.id
     bucket_name    = var.reference_data.storage_contract.object_storage.name
     cpu_pool_id    = var.reference_data.storage_contract.cpu_pool.id
+    capacity_fit   = module.reference_data[0].dynamic_configuration.capacity_fit
     status_service = module.reference_data[0].dynamic_configuration.status_service
     pipeline       = module.reference_data[0].dynamic_configuration.pipeline
   } : null

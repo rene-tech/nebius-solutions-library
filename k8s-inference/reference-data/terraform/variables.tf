@@ -58,12 +58,17 @@ variable "namespace" {
 variable "cpu_pool" {
   description = "Infrastructure-owned dedicated regular CPU pool placement and taint contract."
   type = object({
-    id          = string
-    name        = string
-    platform    = string
-    preset      = string
-    node_count  = number
-    capacity    = string
+    id         = string
+    name       = string
+    platform   = string
+    preset     = string
+    node_count = number
+    capacity   = string
+    schedulable_capacity = object({
+      cpu_millicores        = number
+      memory_mib            = number
+      ephemeral_storage_mib = number
+    })
     node_labels = map(string)
     taint = object({
       key    = string
@@ -77,6 +82,12 @@ variable "cpu_pool" {
     condition = (
       var.cpu_pool.capacity == "regular" &&
       var.cpu_pool.node_count >= 1 &&
+      floor(var.cpu_pool.schedulable_capacity.cpu_millicores) == var.cpu_pool.schedulable_capacity.cpu_millicores &&
+      var.cpu_pool.schedulable_capacity.cpu_millicores >= 1000 &&
+      floor(var.cpu_pool.schedulable_capacity.memory_mib) == var.cpu_pool.schedulable_capacity.memory_mib &&
+      var.cpu_pool.schedulable_capacity.memory_mib >= 1024 &&
+      floor(var.cpu_pool.schedulable_capacity.ephemeral_storage_mib) == var.cpu_pool.schedulable_capacity.ephemeral_storage_mib &&
+      var.cpu_pool.schedulable_capacity.ephemeral_storage_mib >= 1024 &&
       var.cpu_pool.node_labels["workload.fs2.nebius/reference-data"] == "true" &&
       var.cpu_pool.node_labels["capacity.fs2.nebius/type"] == "regular" &&
       var.cpu_pool.node_labels["capacity.fs2.nebius/pool"] == "reference-data" &&
@@ -85,7 +96,7 @@ variable "cpu_pool" {
       var.cpu_pool.taint.value == "true" &&
       var.cpu_pool.taint.effect == "NoSchedule"
     )
-    error_message = "cpu_pool must be the infrastructure-owned, storage-attached, tainted regular reference-data pool."
+    error_message = "cpu_pool must be the infrastructure-owned, storage-attached, tainted regular reference-data pool with positive conservative schedulable capacity."
   }
 }
 

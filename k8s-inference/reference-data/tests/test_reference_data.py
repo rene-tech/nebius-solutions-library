@@ -458,6 +458,28 @@ class ReferenceDataContractTests(unittest.TestCase):
         self.assertRegex(module, r"job\s*= local\.pipeline_job_contract")
         self.assertIn("spec = local.pipeline_job_contract.spec", module)
 
+    def test_dedicated_worker_capacity_is_checked_before_workloads_exist(self) -> None:
+        module = (REFERENCE_DATA / "terraform" / "main.tf").read_text(encoding="utf-8")
+        variables = (REFERENCE_DATA / "terraform" / "variables.tf").read_text(
+            encoding="utf-8"
+        )
+        infrastructure = (
+            REFERENCE_DATA.parent / "stages" / "infrastructure" / "outputs.tf"
+        ).read_text(encoding="utf-8")
+        for field in (
+            "cpu_millicores",
+            "memory_mib",
+            "ephemeral_storage_mib",
+        ):
+            self.assertIn(field, variables)
+            self.assertIn(field, module)
+        self.assertIn("schedulable_capacity", infrastructure)
+        self.assertIn("local.required_capacity", module)
+        self.assertIn("local.total_schedulable_capacity", module)
+        self.assertIn("the system node is not fallback capacity", module)
+        self.assertIn("nodeSelector                 = var.cpu_pool.node_labels", module)
+        self.assertIn("node_selector                   = var.cpu_pool.node_labels", module)
+
 
 if __name__ == "__main__":
     unittest.main()

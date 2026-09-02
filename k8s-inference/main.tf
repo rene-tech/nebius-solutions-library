@@ -123,5 +123,23 @@ resource "terraform_data" "deployment_contract" {
       error_message = "An accelerator pool can opt into the reference-data filesystem only when storage.reference_data.enabled=true."
     }
 
+    precondition {
+      condition = !var.deployment.storage.reference_data.enabled || (
+        (!var.deployment.storage.reference_data.pipeline.enabled || (
+          local.reference_data_pipeline_cpu_millicores <= var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.cpu_millicores &&
+          local.reference_data_pipeline_memory_mib <= var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.memory_mib &&
+          local.reference_data_pipeline_ephemeral_mib <= var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.ephemeral_storage_mib &&
+          local.reference_data_pipeline_cpu_millicores <= local.reference_data_queue_cpu_millicores &&
+          local.reference_data_pipeline_memory_mib <= local.reference_data_queue_memory_mib
+        )) &&
+        local.reference_data_queue_cpu_millicores <= local.reference_data_total_schedulable_capacity.cpu_millicores &&
+        local.reference_data_queue_memory_mib <= local.reference_data_total_schedulable_capacity.memory_mib &&
+        local.reference_data_required_capacity.cpu_millicores <= local.reference_data_total_schedulable_capacity.cpu_millicores &&
+        local.reference_data_required_capacity.memory_mib <= local.reference_data_total_schedulable_capacity.memory_mib &&
+        local.reference_data_required_capacity.ephemeral_storage_mib <= local.reference_data_total_schedulable_capacity.ephemeral_storage_mib
+      )
+      error_message = "Reference-data staging/status requests and Kueue quotas must fit the conservative schedulable capacity of the dedicated tainted CPU preprocessing pool; the Kubernetes system pool is never fallback capacity."
+    }
+
   }
 }

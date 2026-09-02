@@ -784,6 +784,14 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual("fs2-reference-data", workloads["namespace"])
         self.assertEqual("8vcpu-32gb", infrastructure["cpu_pool"]["preset"])
         self.assertEqual(1, infrastructure["cpu_pool"]["node_count"])
+        self.assertEqual(
+            {
+                "cpu_millicores": 7000,
+                "memory_mib": 28672,
+                "ephemeral_storage_mib": 114688,
+            },
+            infrastructure["cpu_pool"]["schedulable_capacity"],
+        )
         self.assertEqual("6", workloads["queue"]["nominal_cpu"])
         self.assertEqual("24Gi", workloads["queue"]["nominal_memory"])
         self.assertEqual(2048, infrastructure["filesystem"]["size_gib"])
@@ -819,6 +827,10 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn('"--object-store-prefix", "s3://${var.object_bucket_name}/reference-data"', pipeline_source)
         self.assertIn("spec = local.pipeline_job_contract.spec", pipeline_source)
         self.assertIn('path = "/healthz"', pipeline_source)
+        self.assertIn(
+            "local.reference_data_required_capacity",
+            (DEPLOY_ROOT / "main.tf").read_text(encoding="utf-8"),
+        )
 
     def test_reference_filesystem_attachment_is_explicit_per_accelerator_pool(self) -> None:
         variables = (DEPLOY_ROOT / "variables.tf").read_text(encoding="utf-8")
@@ -856,6 +868,36 @@ class DeploymentContractTests(unittest.TestCase):
         result, _ = self._plan_file(variable_file, "reference-too-small")
         self.assertNotEqual(0, result.returncode)
         self.assertRegex(f"{result.stdout}\n{result.stderr}", r"at least\s+1611\s+GiB")
+
+    def test_reference_data_work_rejects_underdeclared_worker_capacity(self) -> None:
+        image = f"cr.eu-north1.nebius.cloud/test/reference-stager@sha256:{'a' * 64}"
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-reference-capacity-too-small",
+            "target": self.catalog_target(),
+            "storage": {
+                "reference_data": {
+                    "enabled": True,
+                    "cpu_pool": {
+                        "schedulable_capacity": {
+                            "cpu_millicores": 6000,
+                            "memory_mib": 28672,
+                            "ephemeral_storage_mib": 114688,
+                        }
+                    },
+                    "network": {"allow_public_source_staging": True},
+                    "status": {"enabled": True, "image": image},
+                    "pipeline": {"enabled": True, "image": image},
+                }
+            },
+        }
+        variable_file = self._write_configuration("reference-capacity-too-small", deployment)
+        result, _ = self._plan_file(variable_file, "reference-capacity-too-small")
+        self.assertNotEqual(0, result.returncode)
+        self.assertRegex(
+            f"{result.stdout}\n{result.stderr}",
+            r"dedicated tainted CPU preprocessing\s+pool",
+        )
 
     def test_regional_mirror_rejects_tag_only_model_override(self) -> None:
         deployment = {

@@ -24,6 +24,7 @@ output "effective_configuration" {
       namespace                 = var.deployment.storage.reference_data.namespace
       cpu_pool_nodes            = var.deployment.storage.reference_data.cpu_pool.node_count
       cpu_pool_preset           = var.deployment.storage.reference_data.cpu_pool.preset
+      cpu_pool_schedulable      = var.deployment.storage.reference_data.cpu_pool.schedulable_capacity
       retention_mode            = var.deployment.storage.reference_data.lifecycle.retention_mode
       filesystem_size_gib       = var.deployment.storage.reference_data.filesystem.size_gib
       object_storage_max_gib    = var.deployment.storage.reference_data.object_storage.max_size_gib

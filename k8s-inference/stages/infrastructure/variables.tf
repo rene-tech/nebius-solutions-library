@@ -320,9 +320,14 @@ variable "reference_data" {
       retention_mode = string
     })
     cpu_pool = object({
-      platform        = string
-      preset          = string
-      node_count      = number
+      platform   = string
+      preset     = string
+      node_count = number
+      schedulable_capacity = object({
+        cpu_millicores        = number
+        memory_mib            = number
+        ephemeral_storage_mib = number
+      })
       boot_disk_type  = string
       boot_disk_gib   = number
       max_surge       = number
@@ -346,9 +351,14 @@ variable "reference_data" {
       retention_mode = "retain"
     }
     cpu_pool = {
-      platform        = "cpu-d3"
-      preset          = "8vcpu-32gb"
-      node_count      = 1
+      platform   = "cpu-d3"
+      preset     = "8vcpu-32gb"
+      node_count = 1
+      schedulable_capacity = {
+        cpu_millicores        = 7000
+        memory_mib            = 28672
+        ephemeral_storage_mib = 114688
+      }
       boot_disk_type  = "NETWORK_SSD"
       boot_disk_gib   = 160
       max_surge       = 1
@@ -381,6 +391,12 @@ variable "reference_data" {
         floor(var.reference_data.cpu_pool.node_count) == var.reference_data.cpu_pool.node_count &&
         var.reference_data.cpu_pool.node_count >= 1 &&
         var.reference_data.cpu_pool.node_count <= 32 &&
+        floor(var.reference_data.cpu_pool.schedulable_capacity.cpu_millicores) == var.reference_data.cpu_pool.schedulable_capacity.cpu_millicores &&
+        var.reference_data.cpu_pool.schedulable_capacity.cpu_millicores >= 1000 &&
+        floor(var.reference_data.cpu_pool.schedulable_capacity.memory_mib) == var.reference_data.cpu_pool.schedulable_capacity.memory_mib &&
+        var.reference_data.cpu_pool.schedulable_capacity.memory_mib >= 1024 &&
+        floor(var.reference_data.cpu_pool.schedulable_capacity.ephemeral_storage_mib) == var.reference_data.cpu_pool.schedulable_capacity.ephemeral_storage_mib &&
+        var.reference_data.cpu_pool.schedulable_capacity.ephemeral_storage_mib >= 1024 &&
         contains(["NETWORK_SSD", "NETWORK_SSD_IO_M3", "NETWORK_SSD_NON_REPLICATED"], var.reference_data.cpu_pool.boot_disk_type) &&
         floor(var.reference_data.cpu_pool.boot_disk_gib) == var.reference_data.cpu_pool.boot_disk_gib &&
         var.reference_data.cpu_pool.boot_disk_gib >= 32 &&
@@ -403,7 +419,7 @@ variable "reference_data" {
       ),
       false,
     )
-    error_message = "enabled reference_data requires exact retain+forbid_deletion or disposable+deletable lifecycle semantics, a bounded dedicated CPU pool, a valid bucket and dedicated filesystem/object capacity of 1611-65536 whole GiB."
+    error_message = "enabled reference_data requires exact retain+forbid_deletion or disposable+deletable lifecycle semantics, a bounded dedicated CPU pool with conservative schedulable capacity, a valid bucket and dedicated filesystem/object capacity of 1611-65536 whole GiB."
   }
 }
 

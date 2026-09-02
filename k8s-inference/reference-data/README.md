@@ -12,6 +12,12 @@ from `file:///` or private `s3://` references, sequence content is never put in
 Job metadata or logs. The dedicated `fs2-reference-data` namespace has
 default-deny egress, and a tainted, storage-attached CPU pool keeps staging and
 MSA work off both the Kubernetes system pool and H100 nodes.
+The root `cpu_pool.schedulable_capacity` contract is deliberately lower than the
+provider preset's nominal capacity so Kubernetes and node DaemonSets retain
+headroom. Root and module preconditions reject a pipeline pod that cannot fit one
+worker, aggregate staging plus status requests that exceed the pool, or Kueue
+quota above that conservative capacity. The production `8vcpu-32gb` example
+declares 7000 millicores, 28 GiB memory and 112 GiB ephemeral storage as usable.
 The separate public-MSA network lane requires both Terraform
 `allow_public_msa_opt_in=true` and request/render-time opt-in. The included
 backends perform local searches; the opt-in does not silently substitute a
@@ -141,6 +147,11 @@ storage = {
       platform        = "cpu-d3"
       preset          = "8vcpu-32gb"
       node_count      = 1
+      schedulable_capacity = {
+        cpu_millicores        = 7000
+        memory_mib            = 28672
+        ephemeral_storage_mib = 114688
+      }
       boot_disk_type  = "NETWORK_SSD"
       boot_disk_gib   = 160
       max_surge       = 1

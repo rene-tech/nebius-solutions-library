@@ -20,10 +20,16 @@ output "storage_contract" {
 output "dynamic_configuration" {
   description = "Secret-free handoff for later root/control-plane integration."
   value = {
-    schema                      = "fs2-serve.nebius.ai/reference-data-configuration/v1"
-    namespace                   = var.namespace
-    cpu_pool_id                 = var.cpu_pool.id
-    cpu_pool_name               = var.cpu_pool.name
+    schema               = "fs2-serve.nebius.ai/reference-data-configuration/v1"
+    namespace            = var.namespace
+    cpu_pool_id          = var.cpu_pool.id
+    cpu_pool_name        = var.cpu_pool.name
+    cpu_pool_schedulable = var.cpu_pool.schedulable_capacity
+    capacity_fit = {
+      required  = local.required_capacity
+      available = local.total_schedulable_capacity
+      status    = "validated"
+    }
     local_queue                 = var.queue.local_queue
     cluster_queue               = var.queue.cluster_queue
     resource_flavor             = var.queue.resource_flavor

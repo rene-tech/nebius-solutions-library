@@ -58,12 +58,17 @@ variable "reference_data" {
       project_id = string
       region     = string
       cpu_pool = object({
-        id          = string
-        name        = string
-        platform    = string
-        preset      = string
-        node_count  = number
-        capacity    = string
+        id         = string
+        name       = string
+        platform   = string
+        preset     = string
+        node_count = number
+        capacity   = string
+        schedulable_capacity = object({
+          cpu_millicores        = number
+          memory_mib            = number
+          ephemeral_storage_mib = number
+        })
         node_labels = map(string)
         taint = object({
           key    = string
@@ -162,6 +167,9 @@ variable "reference_data" {
         var.reference_data.namespace == "fs2-reference-data" &&
         var.reference_data.storage_contract.cpu_pool.capacity == "regular" &&
         var.reference_data.storage_contract.cpu_pool.node_count >= 1 &&
+        var.reference_data.storage_contract.cpu_pool.schedulable_capacity.cpu_millicores >= 1000 &&
+        var.reference_data.storage_contract.cpu_pool.schedulable_capacity.memory_mib >= 1024 &&
+        var.reference_data.storage_contract.cpu_pool.schedulable_capacity.ephemeral_storage_mib >= 1024 &&
         var.reference_data.storage_contract.cpu_pool.node_labels["workload.fs2.nebius/reference-data"] == "true" &&
         var.reference_data.storage_contract.cpu_pool.node_labels["capacity.fs2.nebius/pool"] == "reference-data" &&
         var.reference_data.storage_contract.cpu_pool.node_labels["storage.fs2.nebius/reference-data"] == "true" &&
