@@ -19,6 +19,7 @@ from fs2_serve.scientific_batch.models import (
     WorkloadResource,
     WorkloadState,
 )
+from fs2_serve.scientific_batch.postgres_repository import ScientificBatchNotFoundError
 from fs2_serve.scientific_batch.protocols import BatchFenceLostError, BatchRepositoryConflictError
 
 
@@ -29,18 +30,21 @@ class FakeScientificBatchRepository:
         self.commits: dict[tuple[UUID, str], ArtifactCommit] = {}
         self._claims: dict[UUID, BatchClaim] = {}
         self._fences: dict[UUID, int] = {}
+        self.fail_next_replace = False
 
     async def create(
         self,
         *,
         operation_id: UUID,
         tenant_id: str,
+        model_id: str,
         plan: ScientificBatchPlan,
         scheduling: SchedulingSnapshot,
     ) -> ScientificBatchState:
         proposed = ScientificBatchState.admit(
             operation_id=operation_id,
             tenant_id=tenant_id,
+            model_id=model_id,
             plan=plan,
             scheduling=scheduling,
         )
@@ -49,7 +53,12 @@ class FakeScientificBatchRepository:
             self.records[operation_id] = proposed
             self.events[operation_id] = []
             return proposed
-        if current.tenant_id != tenant_id or current.plan != plan or current.scheduling != scheduling:
+        if (
+            current.tenant_id != tenant_id
+            or current.model_id != model_id
+            or current.plan != plan
+            or current.scheduling != scheduling
+        ):
             raise BatchRepositoryConflictError("operation already has a different frozen batch admission")
         return current
 
@@ -87,14 +96,20 @@ class FakeScientificBatchRepository:
         now,
     ) -> ScientificBatchState:
         self._assert_claim(claim)
+        if self.fail_next_replace:
+            self.fail_next_replace = False
+            raise RuntimeError("injected durable replace failure")
         current = self.records[claim.operation_id]
         if current.revision != expected_revision or record.revision != expected_revision + 1:
             raise BatchRepositoryConflictError("scientific-batch revision changed")
+        if current.cancel_requested and not record.cancel_requested:
+            record = replace(record, cancel_requested=True)
         if (
             record.operation_id != current.operation_id
             or record.batch_id != current.batch_id
             or record.workload_id != current.workload_id
             or record.tenant_id != current.tenant_id
+            or record.model_id != current.model_id
             or record.plan != current.plan
             or record.scheduling != current.scheduling
         ):
@@ -117,7 +132,32 @@ class FakeScientificBatchRepository:
         if self._claims.get(claim.operation_id) == claim:
             del self._claims[claim.operation_id]
 
-    def request_cancel(self, operation_id: UUID) -> None:
+    async def assert_fence(self, operation_id: UUID, *, controller_id: str, fencing_token: int) -> None:
+        claim = self._claims.get(operation_id)
+        if claim is None or claim.controller_id != controller_id or claim.fencing_token != fencing_token:
+            raise BatchFenceLostError("stale scientific-batch claim")
+
+    async def get(self, operation_id: UUID, *, tenant_id: str) -> ScientificBatchState:
+        current = self.records.get(operation_id)
+        if current is None or current.tenant_id != tenant_id:
+            raise ScientificBatchNotFoundError("scientific batch does not exist")
+        return current
+
+    async def request_cancel(self, operation_id: UUID, *, tenant_id: str, actor: str) -> ScientificBatchState:
+        del actor
+        current = await self.get(operation_id, tenant_id=tenant_id)
+        if not current.status.terminal and not current.cancel_requested:
+            current = replace(current, cancel_requested=True)
+            self.records[operation_id] = current
+        return current
+
+    async def list_events(
+        self, operation_id: UUID, *, tenant_id: str, after_sequence: int = 0, limit: int = 1000
+    ) -> list[BatchEvent]:
+        await self.get(operation_id, tenant_id=tenant_id)
+        return [event for event in self.events[operation_id] if event.sequence > after_sequence][:limit]
+
+    def force_cancel(self, operation_id: UUID) -> None:
         current = self.records[operation_id]
         self.records[operation_id] = replace(current, cancel_requested=True, revision=current.revision + 1)
 
@@ -133,6 +173,7 @@ class FakeScientificBatchCluster:
         self.fences: dict[tuple[str, str, str], int] = {}
         self.apply_history: list[WorkloadResource] = []
         self.delete_history: list[WorkloadRef] = []
+        self.delete_calls: list[WorkloadRef] = []
 
     @staticmethod
     def key(ref: WorkloadRef) -> tuple[str, str, str]:
@@ -171,6 +212,7 @@ class FakeScientificBatchCluster:
         if controller_fence < self.fences.get(key, 0):
             raise BatchFenceLostError("stale cluster delete fence")
         self.fences[key] = controller_fence
+        self.delete_calls.append(ref)
         if ref not in self.delete_history:
             self.delete_history.append(ref)
 

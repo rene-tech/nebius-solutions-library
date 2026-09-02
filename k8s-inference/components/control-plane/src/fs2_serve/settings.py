@@ -172,6 +172,26 @@ class Settings(BaseSettings):
     model_controller_workers: int = Field(default=2, ge=1, le=16)
     model_controller_api_timeout_seconds: float = Field(default=5, ge=0.5, le=30)
     model_controller_health_port: int = Field(default=8081, ge=1024, le=65535)
+    scientific_batch_enabled: bool = False
+    scientific_batch_writes_enabled: bool = False
+    scientific_batch_namespace: str = Field(
+        default="fs2-models",
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+    )
+    scientific_batch_controller_id: str | None = Field(default=None, min_length=1, max_length=253)
+    scientific_batch_kubernetes_api_url: str = Field(
+        default="https://kubernetes.default.svc", min_length=1, max_length=2048
+    )
+    scientific_batch_kubernetes_token_file: Path = Path("/var/run/secrets/fs2-scientific-batch/token")
+    scientific_batch_kubernetes_ca_file: Path = Path("/var/run/secrets/fs2-scientific-batch/ca.crt")
+    scientific_batch_scheduling_contract_file: Path = Path("/etc/fs2-scientific-batch/kueue-scheduling.json")
+    scientific_batch_execution_map_file: Path = Path("/etc/fs2-scientific-batch/execution-map.json")
+    scientific_batch_workers: int = Field(default=2, ge=1, le=32)
+    scientific_batch_poll_seconds: float = Field(default=0.25, ge=0.05, le=60)
+    scientific_batch_lease_seconds: float = Field(default=30, ge=5, le=300)
+    scientific_batch_api_timeout_seconds: float = Field(default=5, ge=0.5, le=30)
     public_base_url: str = Field(default="https://inference.example.invalid", min_length=1, max_length=2048)
     public_authority_mode: Literal["dns", "ip"] = "dns"
     authorization_server_url: str = "https://identity.example.invalid"
@@ -270,6 +290,14 @@ class Settings(BaseSettings):
             raise ValueError("model controller Kubernetes API URL must use HTTPS")
         if self.model_controller_workers > self.model_controller_queue_capacity:
             raise ValueError("model controller workers cannot exceed queue capacity")
+        if self.scientific_batch_writes_enabled and not self.scientific_batch_enabled:
+            raise ValueError("scientific batch writes require the controller feature gate")
+        if self.scientific_batch_enabled and not self.scientific_batch_writes_enabled:
+            raise ValueError("scientific batch API requires the independent Kubernetes write gate")
+        if self.scientific_batch_enabled and self.scientific_batch_controller_id is None:
+            raise ValueError("scientific batch controller identity is required when enabled")
+        if not self.scientific_batch_kubernetes_api_url.startswith("https://"):
+            raise ValueError("scientific batch Kubernetes API URL must use HTTPS")
         required_bootstrap_scopes = {Scope.CATALOG_READ, Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE}
         if not required_bootstrap_scopes.issubset(self.bootstrap_access_scopes):
             raise ValueError("bootstrap access requires catalog.read, inference.invoke, and mcp.invoke")

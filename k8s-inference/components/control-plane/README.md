@@ -14,6 +14,13 @@ metadata. See
 [`docs/operations.md`](docs/operations.md) for deployment, retention, and key
 rotation procedures.
 
+The optional scientific-batch consumer adds durable staged Operations,
+canonical scientific request/result validation, fenced Kueue Job/JobSet
+reconciliation, and shared artifact-result projection. It is disabled by
+default and fails closed unless qualified catalog profiles plus immutable
+scheduling and execution maps are mounted. See
+[`docs/scientific-batch-controller.md`](docs/scientific-batch-controller.md).
+
 Chart `0.3.0` owns the concrete direct-IP edge as one bound
 `EnvoyProxy`/`GatewayClass`/`Gateway`, an HTTPS-only application `HTTPRoute`,
 an exact-IP 160-hour `Certificate`, and an optional namespaced Let's Encrypt

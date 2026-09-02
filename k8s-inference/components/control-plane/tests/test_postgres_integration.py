@@ -15,6 +15,7 @@ import pytest
 import pytest_asyncio
 from conftest import CONTROL_ROOT
 from fastapi import FastAPI
+from scientific_batch_fakes import FakeScientificBatchCluster
 
 from fs2_serve.access import AdminAccessService
 from fs2_serve.access_models import (
@@ -64,6 +65,18 @@ from fs2_serve.models import (
 from fs2_serve.postgres import PostgresMaintenanceStore, PostgresStore, _decode_audit_detail
 from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS
 from fs2_serve.runtime import ActivationError, StubRuntimeClient
+from fs2_serve.scientific_batch.controller import ScientificBatchController
+from fs2_serve.scientific_batch.models import (
+    CheckpointMode,
+    PreemptionMode,
+    SchedulingSnapshot,
+    ScientificBatchPlan,
+    ScientificStagePlan,
+    ServiceClass,
+    StageSchedulingDecision,
+)
+from fs2_serve.scientific_batch.postgres_repository import PostgresScientificBatchRepository
+from fs2_serve.scientific_batch.protocols import BatchFenceLostError
 from fs2_serve.settings import Settings
 from fs2_serve.store import (
     ConcurrencyExceededError,
@@ -634,14 +647,14 @@ async def test_real_postgres_rejects_extra_or_reordered_applied_migration_ledger
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
-async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0014(
+async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0015(
     postgres_store: PostgresStore,
     tmp_path: Path,
 ) -> None:
     del postgres_store
     database_url = os.environ["FS2_TEST_DATABASE_URL"]
     admin_url, _ = database_url.rsplit("/", 1)
-    database_name = f"fs2_scientific_artifact_upgrade_{uuid4().hex[:10]}"
+    database_name = f"fs2_scientific_batch_upgrade_{uuid4().hex[:10]}"
     prior_dir = tmp_path / "prior-migrations"
     prior_dir.mkdir()
     for version, _ in EXPECTED_MIGRATIONS[:-1]:
@@ -699,7 +712,11 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 "WHERE table_schema='public' AND table_name='fs2_operations' "
                 "AND column_name='dispatch_snapshot')"
             )
-            assert await before_connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')") is None
+            assert (
+                await before_connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')")
+                == "fs2_scientific_artifacts"
+            )
+            assert await before_connection.fetchval("SELECT to_regclass('public.fs2_scientific_batches')") is None
         finally:
             await before_connection.close()
 
@@ -713,7 +730,7 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 )
             }
             assert {version: after[version] for version in before} == before
-            assert list(after)[-1] == "0014_scientific_artifact_results.sql"
+            assert list(after)[-1] == "0015_scientific_batch_controller.sql"
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_activation_model_fences')")
                 == "fs2_activation_model_fences"
@@ -739,6 +756,10 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')")
                 == "fs2_scientific_artifacts"
+            )
+            assert (
+                await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_scientific_batches')")
+                == "fs2_scientific_batches"
             )
         finally:
             await upgraded_connection.close()
@@ -2749,3 +2770,155 @@ async def test_admin_reporting_queries_are_bounded_paginated_and_payload_free(
     assert usage.latency_p50_seconds is not None
     assert usage.latency_p95_seconds is not None
     assert usage.latency_p99_seconds is not None
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_generic_claims(
+    postgres_store: PostgresStore,
+) -> None:
+    principal = await add_token(postgres_store)
+    operation = await postgres_store.append_operation(
+        principal=principal,
+        admission=AdmissionRequest(
+            model_id="qwen3-8b",
+            operation="design",
+            protocol="scientific-batch-v1",
+            idempotency_key="postgres-scientific-batch-0001",
+            request_body=b'{"schema":"fs2-serve.nebius.ai/scientific-run-request/v1"}',
+        ),
+        model_revision="b968826d",
+        reserved_gpu_seconds=0,
+        max_attempts=1,
+    )
+    assert await postgres_store.claim_operation("generic-worker", lease_seconds=30) is None
+
+    plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="design", max_attempts=2),))
+    scheduling = SchedulingSnapshot(
+        policy_revision=hashlib.sha256(b"postgres-scientific-policy").hexdigest(),
+        captured_at=operation.accepted_at,
+        service_class=ServiceClass.CUSTOMER_BATCH,
+        tenant_queue="scientific",
+        model_lane="qwen3-8b",
+        stages=(
+            StageSchedulingDecision(
+                stage_id="design",
+                resolved_cluster_queue="inference-accelerators",
+                resolved_local_queue="scientific",
+                workload_priority_class="customer-batch",
+                workload_priority_value=100,
+                resolved_pool_preference=("h100-preemptible",),
+                admitted_resource_flavor=None,
+                accelerator_resource_name="nvidia.com/gpu",
+                accelerator_count=1,
+                max_queue_seconds=None,
+                max_execution_seconds=None,
+                checkpoint_mode=CheckpointMode.RESTART,
+                preemption_mode=PreemptionMode.RESTARTABLE,
+            ),
+        ),
+    )
+    batches = PostgresScientificBatchRepository(postgres_store.pool)
+    async with postgres_store.pool.acquire() as connection:
+        assert await connection.fetchval(
+            "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_batches','SELECT,INSERT')"
+        )
+        assert not await connection.fetchval(
+            "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_batches','UPDATE')"
+        )
+        assert await connection.fetchval(
+            "SELECT has_column_privilege('fs2_serve_runtime','fs2_scientific_batches','status','UPDATE')"
+        )
+        assert not await connection.fetchval(
+            "SELECT has_column_privilege('fs2_serve_runtime','fs2_scientific_batches','tenant_id','UPDATE')"
+        )
+        assert await connection.fetchval(
+            "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_batch_events','SELECT,INSERT')"
+        )
+        assert not await connection.fetchval(
+            "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_batch_events','UPDATE,DELETE')"
+        )
+    admitted = await batches.create(
+        operation_id=operation.id,
+        tenant_id=principal.tenant_id,
+        model_id="qwen3-8b",
+        plan=plan,
+        scheduling=scheduling,
+    )
+    assert await batches.create(
+        operation_id=operation.id,
+        tenant_id=principal.tenant_id,
+        model_id="qwen3-8b",
+        plan=plan,
+        scheduling=scheduling,
+    ) == admitted
+
+    first_claim = await batches.claim_next(
+        controller_id="controller-a",
+        lease_seconds=30,
+        now=datetime.now(UTC),
+    )
+    assert first_claim is not None and await batches.load(first_claim) == admitted
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            "UPDATE fs2_scientific_batches SET lease_expires_at=clock_timestamp()-interval '1 second' "
+            "WHERE operation_id=$1",
+            operation.id,
+        )
+    second_claim = await batches.claim_next(
+        controller_id="controller-b",
+        lease_seconds=30,
+        now=datetime.now(UTC),
+    )
+    assert second_claim is not None and second_claim.fencing_token == first_claim.fencing_token + 1
+    with pytest.raises(BatchFenceLostError):
+        await batches.load(first_claim)
+    await batches.release(second_claim)
+
+    cluster = FakeScientificBatchCluster()
+    controller = ScientificBatchController(
+        repository=batches,
+        cluster=cluster,
+        controller_id="controller-b",
+        namespace="fs2-models",
+        lease_seconds=30,
+    )
+    assert await controller.reconcile_once() == operation.id
+    running = await batches.get(operation.id, tenant_id=principal.tenant_id)
+    assert running.status.value == "running"
+    projected_running = await postgres_store.get_operation(operation.id, tenant_id=principal.tenant_id)
+    assert projected_running.status is OperationStatus.RUNNING
+    async with postgres_store.pool.acquire() as connection:
+        operation_events = await connection.fetch(
+            "SELECT event,status FROM fs2_operation_events WHERE operation_id=$1 ORDER BY id",
+            operation.id,
+        )
+    assert [(row["event"], row["status"]) for row in operation_events][-1] == (
+        "scientific_batch_running",
+        "running",
+    )
+    events = await batches.list_events(operation.id, tenant_id=principal.tenant_id)
+    assert [event.sequence for event in events] == sorted(event.sequence for event in events)
+    assert [event.draft.phase.value for event in events] == ["queued", "scheduling"]
+
+    revision = running.revision
+    cancellation = await batches.request_cancel(
+        operation.id,
+        tenant_id=principal.tenant_id,
+        actor=principal.principal_id,
+    )
+    assert cancellation.cancel_requested is True and cancellation.revision == revision
+    assert await controller.reconcile_once() == operation.id
+    terminal = await batches.get(operation.id, tenant_id=principal.tenant_id)
+    assert terminal.status.value == "cancelled"
+    projected = await postgres_store.get_operation(operation.id, tenant_id=principal.tenant_id)
+    assert projected.status is OperationStatus.CANCELLED and projected.error_code == "cancelled"
+    async with postgres_store.pool.acquire() as connection:
+        operation_events = await connection.fetch(
+            "SELECT event,status FROM fs2_operation_events WHERE operation_id=$1 ORDER BY id",
+            operation.id,
+        )
+    assert [(row["event"], row["status"]) for row in operation_events][-1] == (
+        "scientific_batch_cancelled",
+        "cancelled",
+    )

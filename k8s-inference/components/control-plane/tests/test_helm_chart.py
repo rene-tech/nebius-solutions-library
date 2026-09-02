@@ -849,6 +849,94 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert any(rule["ports"] == [{"port": 9090, "protocol": "TCP"}] for rule in egress)
 
 
+def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() -> None:
+    documents = render(
+        "--set",
+        "scientificBatch.enabled=true",
+        "--set",
+        "scientificBatch.writesEnabled=true",
+        "--set",
+        "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+        "--set",
+        "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
+        "--set-string",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+    )
+    named = {(document["kind"], document["metadata"]["name"]): document for document in documents}
+    pod = gateway_deployment(documents)["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    environment = {item["name"]: item for item in container["env"]}
+    assert pod["automountServiceAccountToken"] is False
+    assert environment["FS2_SCIENTIFIC_BATCH_ENABLED"]["value"] == "true"
+    assert environment["FS2_SCIENTIFIC_BATCH_WRITES_ENABLED"]["value"] == "true"
+    assert environment["FS2_SCIENTIFIC_BATCH_CONTROLLER_ID"]["valueFrom"]["fieldRef"] == {
+        "fieldPath": "metadata.uid"
+    }
+    assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_FILE"]["value"].endswith(
+        "/kueue-scheduling.json"
+    )
+    assert environment["FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE"]["value"].endswith("/execution-map.json")
+    volumes = {item["name"]: item for item in pod["volumes"]}
+    token = volumes["scientific-batch-kubernetes"]["projected"]["sources"]
+    assert token[0]["serviceAccountToken"] == {
+        "audience": "kubernetes.default.svc",
+        "expirationSeconds": 600,
+        "path": "token",
+    }
+    assert volumes["scientific-batch-scheduling"]["configMap"]["name"] == "scientific-scheduling-a1"
+    assert volumes["scientific-batch-execution"]["configMap"]["name"] == "scientific-execution-b2"
+
+    role = named[("Role", "fs2-serve-control-plane-scientific-batch")]
+    binding = named[("RoleBinding", "fs2-serve-control-plane-scientific-batch")]
+    assert role["metadata"]["namespace"] == "fs2-models"
+    assert role["rules"] == [
+        {"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["get", "create", "delete"]},
+        {
+            "apiGroups": ["jobset.x-k8s.io"],
+            "resources": ["jobsets"],
+            "verbs": ["get", "create", "delete"],
+        },
+        {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]},
+    ]
+    assert binding["subjects"] == [
+        {"kind": "ServiceAccount", "name": "fs2-serve-control-plane-runtime", "namespace": "fs2-system"}
+    ]
+    assert not any(document["kind"] in {"ClusterRole", "ClusterRoleBinding"} for document in documents)
+    api_egress = next(
+        rule
+        for rule in named[("NetworkPolicy", "fs2-serve-control-plane-runtime")]["spec"]["egress"]
+        if rule["ports"] == [{"port": 443, "protocol": "TCP"}]
+    )
+    assert api_egress["to"] == [{"ipBlock": {"cidr": "192.0.2.10/32"}}]
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        (("--set", "scientificBatch.enabled=true"), "independent writesEnabled gate"),
+        (("--set", "scientificBatch.writesEnabled=true"), "requires scientificBatch.enabled"),
+        (
+            (
+                "--set",
+                "scientificBatch.enabled=true",
+                "--set",
+                "scientificBatch.writesEnabled=true",
+            ),
+            "immutable scheduling-contract and execution-map ConfigMaps",
+        ),
+    ],
+)
+def test_scientific_batch_consumer_rejects_partial_enablement(extra: tuple[str, ...], expected: str) -> None:
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and bounded adversarial values
+        render_command(*extra),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert expected in result.stderr
+
+
 def test_dynamic_model_writer_requires_delete_admission_gate() -> None:
     result = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
         [

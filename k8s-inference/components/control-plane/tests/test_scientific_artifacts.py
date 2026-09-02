@@ -46,6 +46,7 @@ from fs2_serve.scientific_artifacts import (
     artifact_storage_key,
     result_manifest_digest,
 )
+from fs2_serve.scientific_batch.postgres_repository import SCIENTIFIC_BATCH_ROLLBACK_SQL
 
 NOW = datetime(2026, 9, 2, 20, 0, tzinfo=UTC)
 ALLOWED_MEDIA_TYPES = {"application/json", "chemical/x-pdb", "text/x-fasta"}
@@ -807,6 +808,7 @@ async def test_postgres_repository_fences_attempt_and_commits_one_manifest(postg
 async def test_scientific_migration_executes_up_down_up(postgres_artifact_store) -> None:
     async with postgres_artifact_store.pool.acquire() as connection:
         assert await connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')") is not None
+        await connection.execute(SCIENTIFIC_BATCH_ROLLBACK_SQL)
         await connection.execute(SCIENTIFIC_ARTIFACT_ROLLBACK_SQL)
         assert await connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')") is None
         assert not await connection.fetchval(
