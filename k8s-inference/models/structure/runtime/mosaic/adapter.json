@@ -1,0 +1,41 @@
+{
+  "schema": "fs2-serve.nebius.ai/mosaic-batch-adapter/v1",
+  "model_id": "mosaic",
+  "adapter_id": "mosaic-boltz2-proteinmpnn-v1",
+  "backend_id": "mosaic-boltz2-proteinmpnn-v1",
+  "execution_mode": "scientific-batch",
+  "contracts": {
+    "request": "../../../../catalog/runtime/schema/scientific-run-request.schema.json",
+    "parameters": "parameters.schema.json",
+    "artifacts": "../../../../catalog/runtime/schema/scientific-artifact-manifest.schema.json",
+    "result": "../../../../catalog/runtime/schema/scientific-run-result.schema.json",
+    "workload": "workload.json"
+  },
+  "source": {
+    "repository": "https://github.com/escalante-bio/mosaic",
+    "revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+    "license": "MIT",
+    "license_state": "verified"
+  },
+  "recipe": {
+    "path": "recipe.json",
+    "sha256": "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe"
+  },
+  "runtime_image": {
+    "repository": "cr.eu-north1.nebius.cloud/project-e00rene/k8s-inference/scientific/mosaic",
+    "state": "wrapper-input-pinned-pending-publish",
+    "digest": null
+  },
+  "access": {"profile": "standard", "receipt_required": false},
+  "resource_profile": {
+    "id": "single-gpu-80gb",
+    "gpu_count": 1,
+    "gpu_memory_min_bytes": 85899345920,
+    "cpu_request": "8",
+    "cpu_limit": "16",
+    "memory_request": "64Gi",
+    "memory_limit": "128Gi",
+    "shard_parallelism": "independent"
+  },
+  "qualification": {"h100": "pending-published-digest", "route_exposed": false}
+}

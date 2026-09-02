@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""Versioned open BindCraft entrypoint; PyRosetta is forbidden."""
+import runpy, sys
+if "--pyrosetta" in sys.argv or "--enable-pyrosetta" in sys.argv:
+    raise SystemExit("PyRosetta is forbidden for the open variant")
+if len(sys.argv) < 2 or sys.argv[1] not in {"run-trajectory", "aggregate"}:
+    raise SystemExit("usage: freebindcraft-batch {run-trajectory|aggregate} ...")
+runpy.run_path("/opt/fs2/freebindcraft/runtime_entrypoint.py", run_name="__main__")

@@ -1,0 +1,46 @@
+{
+  "request": {
+    "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "operation": "design-binder",
+    "service_class": "customer-batch",
+    "input_manifest": {
+      "artifact_id": "manifest.bindcraft.open.pdl1.01",
+      "sha256": "24661f5d882732ca8ff3b1557a5aca16811019ba14838085cddd29c9a917d859",
+      "size_bytes": 402,
+      "media_type": "application/vnd.fs2.scientific-manifest+json",
+      "compression": "none"
+    },
+    "parameters": {
+      "schema": "fs2-serve.nebius.ai/bindcraft-native-pyrosetta-parameters/v1",
+      "shard_count": 2,
+      "base_seed": 6100,
+      "target_chains": ["A"],
+      "hotspots": [{"chain": "A", "residue": 3}, {"chain": "A", "residue": 7}],
+      "binder_length": {"minimum": 70, "maximum": 80},
+      "accepted_designs_per_shard": 1,
+      "max_trajectories_per_shard": 50
+    }
+  },
+  "input_manifest": {
+    "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+    "manifest_id": "manifest.bindcraft.open.pdl1.01",
+    "entries": [{
+      "name": "target_structure",
+      "semantic_type": "protein-structure-pdb/v1",
+      "artifact": {
+        "artifact_id": "artifact.bindcraft.target.1ubq",
+        "sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+        "size_bytes": 78570,
+        "media_type": "chemical/x-pdb",
+        "compression": "none"
+      }
+    }]
+  },
+  "admission": {
+    "runtime_image": "registry.invalid/fs2/bindcraft-open@sha256:b2c155033b4e4a10d2b00058edbe78a9e99513d3245f55332ae14f6601376dc4",
+    "operation_id": "operation.bindcraft.open.negative",
+    "workload_id": "bindcraft-open-workload-negative",
+    "attempt_id": "bindcraft-open-attempt-negative",
+    "tenant_id": "cancer-research"
+  }
+}
