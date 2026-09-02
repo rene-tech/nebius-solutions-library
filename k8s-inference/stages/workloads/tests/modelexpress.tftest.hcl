@@ -323,6 +323,47 @@ run "managed_server_digest_changes_client_binding" {
   }
 }
 
+run "dynamic_controller_envelope_includes_rendered_scheduling_choices" {
+  command = plan
+
+  variables {
+    scheduling = {
+      cluster_queues = {
+        science-batch = {}
+      }
+      local_queues = {
+        science-batch = {
+          cluster_queue = "science-batch"
+          model_ids     = ["qwen3-8b"]
+        }
+      }
+    }
+  }
+
+  plan_options {
+    target = [terraform_data.model_controller_contract]
+  }
+
+  assert {
+    condition = toset(local.model_controller_envelope.localQueues) == toset([
+      "inference-models",
+      "science-batch",
+    ])
+    error_message = "The dynamic controller envelope must expose every LocalQueue rendered by the Kueue module."
+  }
+
+  assert {
+    condition = (
+      contains(local.model_controller_envelope.priorityClasses, "platform-critical") &&
+      contains(local.model_controller_envelope.priorityClasses, "presentation") &&
+      contains(local.model_controller_envelope.priorityClasses, "interactive") &&
+      contains(local.model_controller_envelope.priorityClasses, "standard") &&
+      contains(local.model_controller_envelope.priorityClasses, "batch")
+    )
+    error_message = "The dynamic controller envelope must expose both base and service-class WorkloadPriorityClasses rendered by the Kueue module."
+  }
+}
+
 run "legacy_fast_start_projection_remains_historical" {
   command = plan
 

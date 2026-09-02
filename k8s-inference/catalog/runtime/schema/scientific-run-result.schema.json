@@ -147,25 +147,19 @@
       "additionalProperties": false,
       "required": [
         "policy_revision",
+        "captured_at",
         "service_class",
         "tenant_queue",
         "model_lane",
-        "resolved_cluster_queue",
-        "resolved_local_queue",
-        "workload_priority_class",
-        "workload_priority_value",
-        "resolved_pool_preference",
-        "admitted_resource_flavor",
-        "accelerator_resource_name",
-        "accelerator_count",
-        "max_queue_seconds",
-        "max_execution_seconds",
-        "checkpoint_mode",
-        "preemption_mode"
+        "stages"
       ],
       "properties": {
         "policy_revision": {
           "$ref": "#/$defs/opaque_id"
+        },
+        "captured_at": {
+          "type": "string",
+          "format": "date-time"
         },
         "service_class": {
           "enum": [
@@ -181,75 +175,14 @@
         "model_lane": {
           "$ref": "#/$defs/opaque_id"
         },
-        "resolved_cluster_queue": {
-          "$ref": "#/$defs/k8s_name"
-        },
-        "resolved_local_queue": {
-          "$ref": "#/$defs/k8s_name"
-        },
-        "workload_priority_class": {
-          "$ref": "#/$defs/k8s_name"
-        },
-        "workload_priority_value": {
-          "type": "integer"
-        },
-        "resolved_pool_preference": {
+        "stages": {
           "type": "array",
           "minItems": 1,
+          "maxItems": 64,
           "uniqueItems": true,
           "items": {
-            "type": "string",
-            "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$",
-            "maxLength": 128
+            "$ref": "#/$defs/stage_scheduling_decision"
           }
-        },
-        "admitted_resource_flavor": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/k8s_name"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "accelerator_resource_name": {
-          "type": "string",
-          "pattern": "^[a-z0-9.-]+/[A-Za-z0-9][A-Za-z0-9._-]*$",
-          "maxLength": 253
-        },
-        "accelerator_count": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 1024
-        },
-        "max_queue_seconds": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 1
-        },
-        "max_execution_seconds": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 1
-        },
-        "checkpoint_mode": {
-          "enum": [
-            "none",
-            "restart",
-            "resume"
-          ]
-        },
-        "preemption_mode": {
-          "enum": [
-            "non_preemptible",
-            "restartable",
-            "checkpointable"
-          ]
         }
       }
     },
@@ -269,7 +202,7 @@
     "attempts": {
       "type": "array",
       "minItems": 0,
-      "maxItems": 10,
+      "maxItems": 655360,
       "items": {
         "$ref": "#/$defs/attempt"
       }
@@ -406,6 +339,246 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
+    "stage_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "maxLength": 63
+    },
+    "pool_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$",
+      "maxLength": 128
+    },
+    "extended_resource_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9.-]+/[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "maxLength": 253
+    },
+    "stage_scheduling_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage_id",
+        "resource_class",
+        "resolved_cluster_queue",
+        "resolved_local_queue",
+        "workload_priority_class",
+        "workload_priority_value",
+        "resolved_pool_preference",
+        "accelerator_resource_name",
+        "accelerator_count",
+        "max_queue_seconds",
+        "max_execution_seconds",
+        "checkpoint_mode",
+        "preemption_mode"
+      ],
+      "properties": {
+        "stage_id": {
+          "$ref": "#/$defs/stage_id"
+        },
+        "resource_class": {
+          "enum": [
+            "cpu",
+            "gpu"
+          ]
+        },
+        "resolved_cluster_queue": {
+          "$ref": "#/$defs/k8s_name"
+        },
+        "resolved_local_queue": {
+          "$ref": "#/$defs/k8s_name"
+        },
+        "workload_priority_class": {
+          "$ref": "#/$defs/k8s_name"
+        },
+        "workload_priority_value": {
+          "type": "integer"
+        },
+        "resolved_pool_preference": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/pool_id"
+          }
+        },
+        "accelerator_resource_name": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/extended_resource_name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accelerator_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1024
+        },
+        "max_queue_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "max_execution_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "checkpoint_mode": {
+          "enum": [
+            "none",
+            "restart",
+            "resume"
+          ]
+        },
+        "preemption_mode": {
+          "enum": [
+            "non_preemptible",
+            "restartable",
+            "checkpointable"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "resource_class": {
+                "const": "gpu"
+              }
+            },
+            "required": [
+              "resource_class"
+            ]
+          },
+          "then": {
+            "properties": {
+              "resolved_pool_preference": {
+                "minItems": 1
+              },
+              "accelerator_resource_name": {
+                "$ref": "#/$defs/extended_resource_name"
+              },
+              "accelerator_count": {
+                "minimum": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "resolved_pool_preference": {
+                "maxItems": 0
+              },
+              "accelerator_resource_name": {
+                "type": "null"
+              },
+              "accelerator_count": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "scheduling_admission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resolved_pool_id",
+        "admitted_resource_flavor",
+        "accelerator_resource_name",
+        "accelerator_count",
+        "admitted_at"
+      ],
+      "properties": {
+        "resolved_pool_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/pool_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "admitted_resource_flavor": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/k8s_name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accelerator_resource_name": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/extended_resource_name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accelerator_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1024
+        },
+        "admitted_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "accelerator_count": {
+                "minimum": 1
+              }
+            },
+            "required": [
+              "accelerator_count"
+            ]
+          },
+          "then": {
+            "properties": {
+              "resolved_pool_id": {
+                "$ref": "#/$defs/pool_id"
+              },
+              "admitted_resource_flavor": {
+                "$ref": "#/$defs/k8s_name"
+              },
+              "accelerator_resource_name": {
+                "$ref": "#/$defs/extended_resource_name"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "resolved_pool_id": {
+                "type": "null"
+              },
+              "admitted_resource_flavor": {
+                "type": "null"
+              },
+              "accelerator_resource_name": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
     "artifact_ref": {
       "type": "object",
       "additionalProperties": false,
@@ -447,9 +620,12 @@
       "required": [
         "attempt_id",
         "stage_id",
+        "shard_id",
+        "attempt_number",
         "status",
         "started_at",
         "completed_at",
+        "scheduling_admission",
         "kueue_workload_uid",
         "k8s_job_uid",
         "pod_uids",
@@ -463,9 +639,22 @@
           "$ref": "#/$defs/opaque_id"
         },
         "stage_id": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*$",
-          "maxLength": 63
+          "$ref": "#/$defs/stage_id"
+        },
+        "shard_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/k8s_name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attempt_number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
         },
         "status": {
           "enum": [
@@ -482,6 +671,16 @@
         "completed_at": {
           "type": "string",
           "format": "date-time"
+        },
+        "scheduling_admission": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/scheduling_admission"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "kueue_workload_uid": {
           "type": [
@@ -544,7 +743,31 @@
             }
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "succeeded",
+                  "preempted"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "scheduling_admission": {
+                "$ref": "#/$defs/scheduling_admission"
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

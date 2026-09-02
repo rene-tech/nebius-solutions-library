@@ -22,23 +22,29 @@
   },
   "scheduling_snapshot": {
     "policy_revision": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "captured_at": "2026-09-02T00:00:01Z",
     "service_class": "customer-batch",
     "tenant_queue": "tenant-academic",
     "model_lane": "example-protein-design",
-    "resolved_cluster_queue": "scientific-gpu",
-    "resolved_local_queue": "example-protein-design",
-    "workload_priority_class": "customer-batch",
-    "workload_priority_value": 500,
-    "resolved_pool_preference": [
-      "gpu-preemptible"
-    ],
-    "admitted_resource_flavor": "gpu-preemptible",
-    "accelerator_resource_name": "nvidia.com/gpu",
-    "accelerator_count": 1,
-    "max_queue_seconds": 3600,
-    "max_execution_seconds": 21600,
-    "checkpoint_mode": "restart",
-    "preemption_mode": "restartable"
+    "stages": [
+      {
+        "stage_id": "design",
+        "resource_class": "gpu",
+        "resolved_cluster_queue": "scientific-gpu",
+        "resolved_local_queue": "example-protein-design",
+        "workload_priority_class": "customer-batch",
+        "workload_priority_value": 500,
+        "resolved_pool_preference": [
+          "gpu-preemptible"
+        ],
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "accelerator_count": 1,
+        "max_queue_seconds": 3600,
+        "max_execution_seconds": 21600,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      }
+    ]
   },
   "input_manifest": {
     "artifact_id": "manifest.input.01",
@@ -58,9 +64,18 @@
     {
       "attempt_id": "attempt.01",
       "stage_id": "design",
+      "shard_id": "candidate-0001",
+      "attempt_number": 1,
       "status": "succeeded",
       "started_at": "2026-09-02T00:01:00Z",
       "completed_at": "2026-09-02T00:05:00Z",
+      "scheduling_admission": {
+        "resolved_pool_id": "gpu-preemptible",
+        "admitted_resource_flavor": "gpu-preemptible",
+        "accelerator_resource_name": "nvidia.com/gpu",
+        "accelerator_count": 1,
+        "admitted_at": "2026-09-02T00:01:00Z"
+      },
       "kueue_workload_uid": "00000000-0000-0000-0000-000000000001",
       "k8s_job_uid": "00000000-0000-0000-0000-000000000002",
       "pod_uids": [

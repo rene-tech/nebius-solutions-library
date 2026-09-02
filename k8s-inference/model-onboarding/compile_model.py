@@ -440,6 +440,15 @@ def _custom_validate(declaration: Mapping[str, Any]) -> None:
                 )
             stage_ids.add(stage_id)
 
+    if (
+        _has_http(declaration)
+        and _has_scientific_batch(declaration)
+        and serving["mcp"]["tool_name"] == batch["mcp"]["tool_name"]
+    ):
+        raise OnboardingError(
+            "hybrid serving and scientific-batch interfaces require distinct MCP tool names"
+        )
+
     environment = runtime.get("environment", {})
     reserved = sorted(set(environment).intersection(_RESERVED_ENV))
     if reserved:
@@ -888,14 +897,19 @@ def _validate_collisions(declaration: Mapping[str, Any], solution_root: Path) ->
     model_path = solution_root / f"catalog/runtime/models/{model_id}.json"
     if model_path.exists() or model_path.is_symlink():
         collisions.add(f"catalog model {model_id}")
+    http_tool_name: str | None = None
+    batch_tool_name: str | None = None
     if _has_http(declaration):
         service_name = _service_name(declaration)
         assert declaration["serving"] is not None
-        tool_name = declaration["serving"]["mcp"]["tool_name"]
+        http_tool_name = declaration["serving"]["mcp"]["tool_name"]
         manifest_path = _manifest_path(declaration)
         manifest = solution_root / manifest_path
         if manifest.exists() or manifest.is_symlink():
             collisions.add(f"manifest {manifest_path}")
+    if _has_scientific_batch(declaration):
+        assert declaration["batch"] is not None
+        batch_tool_name = declaration["batch"]["mcp"]["tool_name"]
 
     catalog_path = solution_root / "catalog/runtime/catalog.json"
     if catalog_path.is_file():
@@ -927,17 +941,25 @@ def _validate_collisions(declaration: Mapping[str, Any], solution_root: Path) ->
         solution_root
         / "components/control-plane/contracts/all-models-live-services.json"
     )
-    if _has_http(declaration) and inventory_path.is_file():
+    if inventory_path.is_file():
         inventory = _load_json(inventory_path)
         for existing_model_id, route in inventory.get("routes", {}).items():
-            if existing_model_id == model_id:
-                collisions.add(f"live-service route {model_id}")
-            if route.get("service", {}).get("name") == service_name:
+            existing_tool_name = route.get("mcp", {}).get("tool_name")
+            if _has_http(declaration):
+                if existing_model_id == model_id:
+                    collisions.add(f"live-service route {model_id}")
+                if route.get("service", {}).get("name") == service_name:
+                    collisions.add(
+                        f"live service {service_name} (model={existing_model_id})"
+                    )
+                if http_tool_name is not None and existing_tool_name == http_tool_name:
+                    collisions.add(
+                        f"MCP tool {http_tool_name} (model={existing_model_id})"
+                    )
+            if batch_tool_name is not None and existing_tool_name == batch_tool_name:
                 collisions.add(
-                    f"live service {service_name} (model={existing_model_id})"
+                    f"scientific MCP tool {batch_tool_name} conflicts with live-service model={existing_model_id}"
                 )
-            if route.get("mcp", {}).get("tool_name") == tool_name:
-                collisions.add(f"MCP tool {tool_name} (model={existing_model_id})")
 
     scientific_profiles_path = (
         solution_root
@@ -948,17 +970,19 @@ def _validate_collisions(declaration: Mapping[str, Any], solution_root: Path) ->
         for profile in profiles.get("profiles", []):
             if profile.get("model_id") == model_id:
                 collisions.add(f"scientific workload profile {model_id}")
-            if _has_scientific_batch(declaration):
-                assert declaration["batch"] is not None
-                batch_tool = declaration["batch"]["mcp"]["tool_name"]
-                existing_tool = (
-                    profile.get("interface", {}).get("mcp", {}).get("tool_name")
+            existing_tool = (
+                profile.get("interface", {}).get("mcp", {}).get("tool_name")
+            )
+            if batch_tool_name is not None and existing_tool == batch_tool_name:
+                collisions.add(
+                    f"scientific MCP tool {batch_tool_name} "
+                    f"(model={profile.get('model_id', 'unknown')})"
                 )
-                if existing_tool == batch_tool:
-                    collisions.add(
-                        f"scientific MCP tool {batch_tool} "
-                        f"(model={profile.get('model_id', 'unknown')})"
-                    )
+            if http_tool_name is not None and existing_tool == http_tool_name:
+                collisions.add(
+                    f"MCP tool {http_tool_name} conflicts with scientific model="
+                    f"{profile.get('model_id', 'unknown')}"
+                )
 
     if collisions:
         raise OnboardingError(

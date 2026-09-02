@@ -87,6 +87,29 @@ class ModelOnboardingCompilerTests(unittest.TestCase):
         self.assertIn("projections/live-service-route.json", paths)
         self.assertIn("projections/scientific-workload-profile.json", paths)
 
+    def test_scientific_protein_hybrid_emits_both_contracts(self) -> None:
+        declaration = self.fixture(HYBRID_EXAMPLE)
+        declaration["model"]["family"] = "scientific-protein"
+        artifacts = COMPILER.compile_artifacts(declaration, ROOT)
+        catalog = json.loads(
+            next(
+                item.payload
+                for item in artifacts
+                if item.path == "catalog/runtime/models/example-hybrid-7b.json"
+            )
+        )
+        self.assertEqual("scientific-protein", catalog["model"]["family"])
+
+    def test_hybrid_interfaces_require_distinct_mcp_tools(self) -> None:
+        declaration = self.fixture(HYBRID_EXAMPLE)
+        declaration["batch"]["mcp"]["tool_name"] = declaration["serving"]["mcp"][
+            "tool_name"
+        ]
+        with self.assertRaisesRegex(
+            COMPILER.OnboardingError, "require distinct MCP tool names"
+        ):
+            COMPILER._custom_validate(declaration)
+
     def test_batch_dag_must_be_topological_and_bounded(self) -> None:
         declaration = self.fixture(BATCH_EXAMPLE)
         declaration["batch"]["stages"][0]["needs"] = ["score"]
@@ -441,6 +464,15 @@ class ModelOnboardingCompilerTests(unittest.TestCase):
                 COMPILER.OnboardingError, "live service example-7b"
             ):
                 COMPILER._validate_collisions(self.declaration(), root)
+
+    def test_scientific_mcp_tool_cannot_shadow_live_http_tool(self) -> None:
+        declaration = self.fixture(BATCH_EXAMPLE)
+        declaration["batch"]["mcp"]["tool_name"] = "qwen3_8b_chat"
+        with self.assertRaisesRegex(
+            COMPILER.OnboardingError,
+            "scientific MCP tool qwen3_8b_chat conflicts with live-service",
+        ):
+            COMPILER._validate_collisions(declaration, ROOT)
 
     def test_cli_check_returns_one_for_drift(self) -> None:
         with tempfile.TemporaryDirectory(prefix="fs2-onboarding-cli-") as temporary:

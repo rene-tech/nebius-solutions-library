@@ -48,17 +48,29 @@ request digest, and `Idempotency-Key`. Repeating the tuple returns the original
 each execution receives a new `attempt_id`. The result records Kueue Workload,
 Kubernetes Job/Pod/Node, and GPU identities without placing long IDs in labels.
 
-`service_class` is caller-selectable. Queue, priority, ResourceFlavor,
+`service_class` is caller-selectable. Queue, priority, pool preference,
 accelerator resource, runtime image, argv, environment, retry ceiling, and
-checkpoint policy are operator-owned and captured in an immutable scheduling
-snapshot. Model-artifact identity and runtime-recipe identity remain separate
-from mutable scheduling and access decisions.
+checkpoint policy are operator-owned. Model-artifact identity and runtime-
+recipe identity remain separate from mutable scheduling and access decisions.
 
-The scheduling snapshot retains logical `tenant_queue` and `model_lane`, exact
-resolved ClusterQueue/LocalQueue and workload priority class/value, ordered
-provider-neutral pool preferences, the admitted Kueue ResourceFlavor (when one
-was admitted), accelerator resource/count, queue/execution ceilings, and
-checkpoint/preemption modes. A future reconciler must propagate
+The immutable scheduling snapshot retains logical `tenant_queue` and
+`model_lane` plus one closed scheduling decision for every DAG stage. Each
+stage decision records its resource class, exact resolved ClusterQueue,
+LocalQueue, workload priority class/value, ordered provider-neutral pool
+preferences, accelerator resource/count, queue/execution ceilings, and
+checkpoint/preemption modes. The actual Kueue admission is recorded on each
+attempt when admission occurred: resolved pool, admitted ResourceFlavor,
+accelerator resource/count, and admission time. An explicit `null` records an
+attempt that ended before admission; terminal success cannot use that state.
+This stage/attempt split preserves one policy decision while allowing a retry
+to be admitted to a different compatible pool or flavor without rewriting
+history. `stage_id`, `shard_id`, and `attempt_number` provide the exact join.
+
+A terminal result can contain up to 64 stages, 1,024 independently admitted
+work units per stage, and 10 attempts per work unit. The closed result schema
+therefore bounds `attempts` at 655,360 instead of ten; operational APIs should
+paginate their attempt and event views while retaining the complete durable
+terminal record. A future reconciler must propagate
 `fs2.nebius.ai/{model-id,workload-id,attempt-id,tenant-id,service-class,local-queue}`
 labels to every Job, JobSet, and Pod; long or unrestricted identities remain in
 annotations and the operation store.

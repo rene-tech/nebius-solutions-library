@@ -108,6 +108,65 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         failed_semantics = copy.deepcopy(result)
         failed_semantics["semantic_validation"]["status"] = "failed"
         self.assertTrue(list(validator.iter_errors(failed_semantics)))
+        missing_admission = copy.deepcopy(result)
+        missing_admission["attempts"][0]["scheduling_admission"] = None
+        self.assertTrue(list(validator.iter_errors(missing_admission)))
+        preempted_without_admission = copy.deepcopy(result)
+        preempted_without_admission["terminal_status"] = "failed"
+        preempted_without_admission["output_manifest"] = None
+        preempted_without_admission["semantic_validation"] = {
+            "validator_id": "example-protein-design-v1",
+            "status": "not-run",
+            "receipt_digest": None,
+        }
+        preempted_without_admission["error"] = {
+            "code": "PREEMPTED",
+            "message": "Capacity was reclaimed before the retry completed.",
+            "retryable": True,
+        }
+        preempted_without_admission["attempts"][0]["status"] = "preempted"
+        preempted_without_admission["attempts"][0]["scheduling_admission"] = None
+        self.assertTrue(list(validator.iter_errors(preempted_without_admission)))
+
+    def test_scheduling_is_exact_for_each_stage_and_attempt(self) -> None:
+        result = self.load(EXAMPLE_ROOT / "scientific-run-result.example.json")
+        validator = self.validator("scientific-run-result.schema.json")
+
+        cpu_stage = copy.deepcopy(result["scheduling_snapshot"]["stages"][0])
+        cpu_stage.update(
+            {
+                "stage_id": "prepare",
+                "resource_class": "cpu",
+                "resolved_pool_preference": [],
+                "accelerator_resource_name": None,
+                "accelerator_count": 0,
+            }
+        )
+        result["scheduling_snapshot"]["stages"].insert(0, cpu_stage)
+        self.assertFalse(list(validator.iter_errors(result)))
+
+        unknown_stage_field = copy.deepcopy(result)
+        unknown_stage_field["scheduling_snapshot"]["stages"][0][
+            "provider_instance_type"
+        ] = "gpu-vendor-specific"
+        self.assertTrue(list(validator.iter_errors(unknown_stage_field)))
+
+        unknown_admission_field = copy.deepcopy(result)
+        unknown_admission_field["attempts"][0]["scheduling_admission"][
+            "provider_instance_id"
+        ] = "instance-secret"
+        self.assertTrue(list(validator.iter_errors(unknown_admission_field)))
+
+        invalid_gpu_stage = copy.deepcopy(result)
+        invalid_gpu_stage["scheduling_snapshot"]["stages"][1][
+            "accelerator_resource_name"
+        ] = None
+        invalid_gpu_stage["scheduling_snapshot"]["stages"][1]["accelerator_count"] = 0
+        self.assertTrue(list(validator.iter_errors(invalid_gpu_stage)))
+
+    def test_attempt_bound_covers_every_stage_shard_and_retry(self) -> None:
+        schema = self.load(SCHEMA_ROOT / "scientific-run-result.schema.json")
+        self.assertEqual(64 * 1024 * 10, schema["properties"]["attempts"]["maxItems"])
 
     def test_queued_cancellation_can_have_no_attempt_but_academic_run_needs_receipt(
         self,

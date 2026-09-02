@@ -12,6 +12,7 @@ from fs2_serve_catalog.artifacts import canonical_bytes, load_artifact_manifest
 from fs2_serve_catalog.loader import (
     CatalogError,
     REQUIRED_TESTED_MODEL_IDS,
+    SUPPORTED_MODEL_FAMILIES,
     execution_identity,
     load_catalog,
     resource_placement_identity,
@@ -1684,6 +1685,10 @@ class CatalogLoaderTests(unittest.TestCase):
         value = json.loads((CATALOG_ROOT / "schema" / "model.schema.json").read_text())
         self.assertEqual("https://json-schema.org/draft/2020-12/schema", value["$schema"])
         self.assertEqual("https://fs2-serve.nebius.ai/schema/model/v1", value["$id"])
+        self.assertEqual(
+            SUPPORTED_MODEL_FAMILIES,
+            frozenset(value["properties"]["model"]["properties"]["family"]["enum"]),
+        )
         variant_schema = json.loads(
             (CATALOG_ROOT / "schema" / "model-variants.schema.json").read_text()
         )

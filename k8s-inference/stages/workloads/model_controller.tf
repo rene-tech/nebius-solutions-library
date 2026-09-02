@@ -769,8 +769,8 @@ locals {
   model_controller_envelope_without_revision = {
     pools                         = local.model_controller_pool_envelope
     qualifications                = local.model_controller_qualifications
-    localQueues                   = [local.selected_accelerator_pool_profile.queue.local_queue_name]
-    priorityClasses               = sort(keys(var.model_controller.priority_classes))
+    localQueues                   = sort(keys(module.kueue_scheduling.contract.local_queues))
+    priorityClasses               = sort(keys(module.kueue_scheduling.contract.workload_priority_classes))
     tenantIds                     = [local.selected_target.tenant_id]
     maxAcceleratorsPerModel       = sum([for pool in values(local.selected_queue_pools) : pool.node.gpus_per_node * pool.capacity.max_nodes])
     fastStartWaitSecondValue      = var.model_controller.fast_start_wait_second_value

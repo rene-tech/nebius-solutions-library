@@ -48,6 +48,25 @@ class SchedulingObservabilityContractTests(unittest.TestCase):
         self.assertIn('module "kueue_scheduling"', queue_source)
         self.assertIn("pool.node.gpus_per_node * pool.capacity.max_nodes", queue_source)
 
+    def test_dynamic_model_controller_accepts_every_rendered_queue_and_priority(
+        self,
+    ) -> None:
+        source = (ROOT / "stages/workloads/model_controller.tf").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "sort(keys(module.kueue_scheduling.contract.local_queues))", source
+        )
+        self.assertIn(
+            "sort(keys(module.kueue_scheduling.contract.workload_priority_classes))",
+            source,
+        )
+        self.assertNotIn(
+            "localQueues                   = "
+            "[local.selected_accelerator_pool_profile.queue.local_queue_name]",
+            source,
+        )
+
     def test_dcgm_keeps_exact_gpu_and_pod_identity_at_five_seconds(self) -> None:
         base = load_yaml("stages/workloads/values/dcgm-exporter.yaml")
         cadence = load_yaml(

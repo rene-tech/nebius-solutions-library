@@ -26,6 +26,16 @@ MODEL_VARIANT_SUPPLY_SCHEMA = "fs2-serve.nebius.ai/model-variant-supply-receipt/
 MODEL_VARIANT_QUALIFICATION_SCHEMA = (
     "fs2-serve.nebius.ai/model-variant-qualification-receipt/v5"
 )
+SUPPORTED_MODEL_FAMILIES = frozenset(
+    {
+        "bionemo-nim",
+        "image-generation",
+        "llm",
+        "medical-imaging",
+        "scientific-protein",
+        "video-generation",
+    }
+)
 REQUIRED_FALLBACK_CANDIDATE_IDS = frozenset(
     {
         "boltz2-hf",
@@ -736,11 +746,7 @@ def _validate_model(
     if filename != f"{model_id}.json":
         raise CatalogError("model filename must match model.id")
     _text(model["display_name"], "model.display_name")
-    _enum(
-        model["family"],
-        {"bionemo-nim", "medical-imaging", "llm", "image-generation", "video-generation"},
-        "model.family",
-    )
+    _enum(model["family"], SUPPORTED_MODEL_FAMILIES, "model.family")
     tested_lane = _boolean(model["tested_lane"], "model.tested_lane")
     source = _exact(model["source"], {"kind", "repository", "revision", "license", "entitlement"}, "model.source")
     source_kind = _enum(
