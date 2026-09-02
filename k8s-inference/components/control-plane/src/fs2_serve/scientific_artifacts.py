@@ -422,6 +422,29 @@ class ArtifactRepository(Protocol):
     async def list_events(self, operation_id: UUID, *, tenant_id: str) -> list[ArtifactEvent]: ...
 
 
+class ScientificArtifactControllerPort(Protocol):
+    """Stable controller port; implementations never expose persistence records publicly."""
+
+    async def begin_upload(
+        self,
+        request: BeginArtifactUpload,
+        *,
+        handle_ttl: timedelta | None = None,
+    ) -> BeginUploadResult: ...
+
+    async def finalize_upload(self, request: FinalizeArtifactUpload) -> ArtifactRecord: ...
+
+    async def commit_terminal_result(self, draft: TerminalResultDraft) -> TerminalResultManifest: ...
+
+    async def download(
+        self,
+        artifact_id: UUID,
+        *,
+        tenant_id: str,
+        handle_ttl: timedelta | None = None,
+    ) -> ArtifactDownload: ...
+
+
 @dataclass(frozen=True, slots=True)
 class EphemeralHandle:
     """Short-lived secret returned to a caller and excluded from object repr."""
