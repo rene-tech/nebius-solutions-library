@@ -44,6 +44,12 @@ CORE_TOOLS = {
     "get_operation_result",
     "cancel_operation",
     "acknowledge_operation",
+    "submit_scientific_run",
+    "get_scientific_status",
+    "cancel_scientific_run",
+    "list_scientific_events",
+    "get_scientific_artifact",
+    "get_scientific_result",
 }
 MCP_HTTP_PATH = "/mcp"
 MCP_CHILD_MOUNT_PATH = "/"
@@ -322,10 +328,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         principal.require(Scope.CATALOG_READ)
         return {
             "object": "list",
-            "data": [
-                _model_view(model)
-                for model in runtime.registry.allowed_for_principal(principal, surface="mcp")
-            ],
+            "data": [_model_view(model) for model in runtime.registry.allowed_for_principal(principal, surface="mcp")],
         }
 
     async def invoke_model(
@@ -378,12 +381,16 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     async def get_operation_result(operation_id: UUID) -> dict[str, Any]:
         principal = _principal()
         operation = await _metadata(runtime, principal, operation_id)
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            return dict(await runtime.scientific_batches.result(operation.id, principal=principal))
         result = await runtime.store.get_operation_result(operation.id, tenant_id=principal.tenant_id)
         return result.model_dump(mode="json")
 
     async def cancel_operation(operation_id: UUID) -> dict[str, Any]:
         principal = _principal()
         operation = await _metadata(runtime, principal, operation_id)
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            return await runtime.scientific_batches.cancel(operation.id, principal=principal)
         cancelled = await runtime.store.cancel_operation(
             operation.id, tenant_id=principal.tenant_id, actor=principal.principal_id
         )
@@ -397,6 +404,64 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         await runtime.store.purge_operation_payload(operation.id, tenant_id=principal.tenant_id)
         return (await runtime.store.get_operation(operation.id, tenant_id=principal.tenant_id)).model_dump(mode="json")
 
+    async def submit_scientific_run(
+        model_id: str,
+        request: dict[str, Any],
+        ctx: Context,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Submit a canonical scientific-run-request to a qualified profile."""
+
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific batch submission is unavailable")
+        principal = _principal()
+        if idempotency_key is not None and not (
+            MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH
+        ):
+            raise MCPError(code=INVALID_PARAMS, message="idempotency_key length is invalid")
+        try:
+            traceparent = (ctx.headers or {}).get("traceparent")
+        except ValueError:
+            traceparent = None
+        return await runtime.scientific_batches.submit(
+            principal=principal,
+            model_id=model_id,
+            request=request,
+            idempotency_key=idempotency_key or f"mcp-scientific-{uuid4()}",
+            traceparent=traceparent,
+            require_mcp_invocable=True,
+        )
+
+    async def get_scientific_status(operation_id: UUID) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
+        return await runtime.scientific_batches.status(operation_id, principal=_principal())
+
+    async def cancel_scientific_run(operation_id: UUID) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
+        return await runtime.scientific_batches.cancel(operation_id, principal=_principal())
+
+    async def list_scientific_events(operation_id: UUID, after_sequence: int = 0, limit: int = 1000) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
+        return await runtime.scientific_batches.events(
+            operation_id,
+            principal=_principal(),
+            after_sequence=after_sequence,
+            limit=limit,
+        )
+
+    async def get_scientific_artifact(artifact_id: UUID) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
+        return dict(await runtime.scientific_batches.artifact(artifact_id, principal=_principal()))
+
+    async def get_scientific_result(operation_id: UUID) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific result service is unavailable")
+        return dict(await runtime.scientific_batches.result(operation_id, principal=_principal()))
+
     for function in (
         list_models,
         invoke_model,
@@ -404,6 +469,12 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         get_operation_result,
         cancel_operation,
         acknowledge_operation,
+        submit_scientific_run,
+        get_scientific_status,
+        cancel_scientific_run,
+        list_scientific_events,
+        get_scientific_artifact,
+        get_scientific_result,
     ):
         server.add_tool(function, name=function.__name__, meta={"fs2_core": True})
 

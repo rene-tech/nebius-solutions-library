@@ -93,6 +93,24 @@ modelController:
   tolerations: []
   affinity: {}
 
+# Staged scientific-batch API and reconciler. Both gates must be explicitly
+# enabled after immutable profile, execution-map, and Kueue contract ConfigMaps
+# are installed. Default releases receive no workload mutation credential.
+scientificBatch:
+  enabled: false
+  writesEnabled: false
+  namespace: fs2-models
+  kubernetesApiUrl: https://kubernetes.default.svc
+  schedulingContractConfigMapName: ""
+  schedulingContractKey: kueue-scheduling.json
+  executionMapConfigMapName: ""
+  executionMapKey: execution-map.json
+  workers: 2
+  pollSeconds: "0.25"
+  leaseSeconds: "30"
+  apiTimeoutSeconds: "5"
+  tokenExpirationSeconds: 600
+
 # Idempotent initialization of the Terraform-owned client PAT. The raw token
 # remains in a Kubernetes Secret and Terraform state; Helm receives only the
 # Secret reference plus its least-privilege policy.
@@ -255,11 +273,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 85ccac5ef465e21bb88e2232c3783967d5265bd16378af1506d1119cdcf354e8
-    migrationSetSha256: 39536717cf8fbb35325bc7ccf0585247ace2f0b9446b3340724fecfab0e430c3
-    migrationCount: 14
+    contractPayloadSha256: 6b7e92782d7d1b3b299c7b560342758be49366c4cc7344149aef2a3e407f05d8
+    migrationSetSha256: 4a119d6e14e4e124a318257628987f600230c7e834753ef402173dda1925ed95
+    migrationCount: 15
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0014_scientific_artifact_results.sql
+    lastMigrationVersion: 0015_scientific_batch_controller.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:

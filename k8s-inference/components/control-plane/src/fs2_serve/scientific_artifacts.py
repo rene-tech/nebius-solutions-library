@@ -417,6 +417,8 @@ class ArtifactRepository(Protocol):
 
     async def commit_terminal_result(self, manifest: TerminalResultManifest) -> TerminalResultManifest: ...
 
+    async def get_terminal_result(self, operation_id: UUID, *, tenant_id: str) -> TerminalResultManifest: ...
+
     async def list_events(self, operation_id: UUID, *, tenant_id: str) -> list[ArtifactEvent]: ...
 
 
@@ -658,6 +660,9 @@ class ScientificArtifactService:
         manifest = build_terminal_manifest(draft, committed_at=self.clock())
         return await self.repository.commit_terminal_result(manifest)
 
+    async def get_terminal_result(self, operation_id: UUID, *, tenant_id: str) -> TerminalResultManifest:
+        return await self.repository.get_terminal_result(operation_id, tenant_id=tenant_id)
+
 
 @dataclass(slots=True)
 class _MemoryOperation:
@@ -868,6 +873,14 @@ class MemoryArtifactRepository:
                 attempt=manifest.attempt,
                 manifest_digest=manifest.manifest_digest,
             )
+            return manifest.model_copy(deep=True)
+
+    async def get_terminal_result(self, operation_id: UUID, *, tenant_id: str) -> TerminalResultManifest:
+        async with self._lock:
+            operation = self._operations.get(operation_id)
+            manifest = self._manifests.get(operation_id)
+            if operation is None or operation.tenant_id != tenant_id or manifest is None:
+                raise ArtifactNotFoundError("terminal result does not exist")
             return manifest.model_copy(deep=True)
 
     async def list_events(self, operation_id: UUID, *, tenant_id: str) -> list[ArtifactEvent]:
@@ -1227,6 +1240,19 @@ class PostgresArtifactRepository:
             if translated is not None:
                 raise translated from None
             raise
+
+    async def get_terminal_result(self, operation_id: UUID, *, tenant_id: str) -> TerminalResultManifest:
+        async with self.pool.acquire() as connection:
+            record = await connection.fetchrow(
+                "SELECT manifest FROM fs2_scientific_result_manifests WHERE operation_id=$1 AND tenant_id=$2",
+                operation_id,
+                tenant_id,
+            )
+        if record is None:
+            raise ArtifactNotFoundError("terminal result does not exist")
+        return TerminalResultManifest.model_validate(
+            _decode_json_object(record["manifest"], label="scientific result manifest", maximum_bytes=1 << 20)
+        )
 
     async def list_events(self, operation_id: UUID, *, tenant_id: str) -> list[ArtifactEvent]:
         async with self.pool.acquire() as connection:

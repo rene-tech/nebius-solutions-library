@@ -63,6 +63,16 @@ from .postgresql_release import render_postgresql_release_contract
 from .registry import Registry
 from .route_revalidation import RouteRevalidator
 from .runtime import RuntimeClient
+from .scientific_artifacts import PostgresArtifactRepository
+from .scientific_batch.artifact_bridge import ArtifactServiceBridge
+from .scientific_batch.controller import ScientificBatchController
+from .scientific_batch.execution import FileScientificManifestRenderer
+from .scientific_batch.kubernetes import HttpScientificBatchCluster
+from .scientific_batch.postgres_repository import PostgresScientificBatchRepository
+from .scientific_batch.profile_catalog import ScientificProfileCatalog
+from .scientific_batch.scheduling import SchedulingContractResolver
+from .scientific_batch.service import ScientificBatchService
+from .scientific_batch.worker import ScientificBatchWorker
 from .settings import Settings
 from .store import ConflictError
 from .telemetry import Metrics, configure_tracing
@@ -227,6 +237,9 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     model_deployment_read: ModelDeploymentReadService | None = None
     model_deployment_mutation: ModelDeploymentMutationService | None = None
     model_deployment_bridge: ModelDeploymentRuntimeBridge | None = None
+    scientific_batches: ScientificBatchService | None = None
+    scientific_batch_worker: ScientificBatchWorker | None = None
+    scientific_batch_cluster: HttpScientificBatchCluster | None = None
     if settings.model_controller_enabled:
         controller_files = ControllerFiles.load(
             settings.model_controller_envelope_file,
@@ -266,6 +279,52 @@ async def build_runtime(settings: Settings) -> AppRuntime:
                 namespace=settings.model_controller_namespace,
                 close_source=kubernetes_models.close,
             )
+    if settings.scientific_batch_enabled:
+        assert settings.scientific_batch_controller_id is not None
+        scientific_profiles = ScientificProfileCatalog.load(settings.catalog_dir)
+        if not scientific_profiles.list():
+            raise RuntimeError("scientific batch is enabled without a runnable qualified profile")
+        scientific_repository = PostgresScientificBatchRepository(store.pool)
+        scientific_renderer = FileScientificManifestRenderer(
+            path=settings.scientific_batch_execution_map_file,
+            profiles=scientific_profiles,
+        )
+        scientific_batch_cluster = HttpScientificBatchCluster(
+            base_url=settings.scientific_batch_kubernetes_api_url,
+            token_file=settings.scientific_batch_kubernetes_token_file,
+            ca_file=settings.scientific_batch_kubernetes_ca_file,
+            controller_id=settings.scientific_batch_controller_id,
+            fence=scientific_repository,
+            renderer=scientific_renderer,
+            writes_enabled=settings.scientific_batch_writes_enabled,
+            timeout_seconds=settings.scientific_batch_api_timeout_seconds,
+        )
+        scientific_controller = ScientificBatchController(
+            repository=scientific_repository,
+            cluster=scientific_batch_cluster,
+            controller_id=settings.scientific_batch_controller_id,
+            namespace=settings.scientific_batch_namespace,
+            lease_seconds=settings.scientific_batch_lease_seconds,
+        )
+        artifact_repository = PostgresArtifactRepository(store.pool)
+        scientific_batches = ScientificBatchService(
+            store=store,
+            repository=scientific_repository,
+            controller=scientific_controller,
+            profiles=scientific_profiles,
+            scheduling=SchedulingContractResolver.load(settings.scientific_batch_scheduling_contract_file),
+            artifacts=ArtifactServiceBridge(
+                artifacts=artifact_repository,
+                batches=scientific_repository,
+                profiles=scientific_profiles,
+                store=store,
+            ),
+        )
+        scientific_batch_worker = ScientificBatchWorker(
+            scientific_controller,
+            workers=settings.scientific_batch_workers,
+            poll_seconds=settings.scientific_batch_poll_seconds,
+        )
     # Canonical catalog metadata remains observable when promotion deliberately
     # leaves zero routable models. Request and queue series are still populated
     # only from durable admitted operations.
@@ -365,6 +424,9 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         model_deployment_read=model_deployment_read,
         model_deployment_mutation=model_deployment_mutation,
         model_deployment_bridge=model_deployment_bridge,
+        scientific_batches=scientific_batches,
+        scientific_batch_worker=scientific_batch_worker,
+        scientific_batch_cluster=scientific_batch_cluster,
     )
 
 

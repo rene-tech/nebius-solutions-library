@@ -143,6 +143,7 @@ async def test_frozen_snapshot_validated_commit_gates_next_stage_and_releases_fa
     admitted = await reconciler.admit(
         operation_id=operation_id,
         tenant_id="cancer-immunotherapy",
+        model_id="protein-design",
         plan=batch_plan,
         scheduling=frozen,
     )
@@ -154,6 +155,7 @@ async def test_frozen_snapshot_validated_commit_gates_next_stage_and_releases_fa
         await reconciler.admit(
             operation_id=operation_id,
             tenant_id="cancer-immunotherapy",
+            model_id="protein-design",
             plan=batch_plan,
             scheduling=snapshot(batch_plan, service_class=ServiceClass.INTERACTIVE),
         )
@@ -170,9 +172,28 @@ async def test_frozen_snapshot_validated_commit_gates_next_stage_and_releases_fa
 
     for attempt in prepare.attempts:
         observe_success(cluster, attempt)
-    repository.put_commit(commit(operation_id, "prepare", tuple(attempt.attempt_id for attempt in prepare.attempts)))
     await reconciler.reconcile_once()
 
+    awaiting_commit = repository.records[operation_id]
+    assert awaiting_commit.stage("prepare").status is StageStatus.ACTIVE
+    assert awaiting_commit.stage("design").status is StageStatus.PENDING
+    assert len(cluster.delete_history) == 0
+    assert all(
+        attempt.outcome is AttemptOutcome.SUCCEEDED and not attempt.resource_released
+        for attempt in awaiting_commit.stage("prepare").attempts
+    )
+
+    await reconciler.reconcile_once()
+    awaiting_commit = repository.records[operation_id]
+    assert len(cluster.delete_history) == 2
+    assert all(attempt.resource_released for attempt in awaiting_commit.stage("prepare").attempts)
+    waiting_revision = awaiting_commit.revision
+    await reconciler.reconcile_once()
+    assert repository.records[operation_id].revision == waiting_revision
+    assert not any(resource.kind is WorkloadKind.JOB_SET for resource in cluster.apply_history)
+
+    repository.put_commit(commit(operation_id, "prepare", tuple(attempt.attempt_id for attempt in prepare.attempts)))
+    await reconciler.reconcile_once()
     prepared = repository.records[operation_id]
     assert prepared.stage("prepare").status is StageStatus.SUCCEEDED
     assert prepared.stage("design").status is StageStatus.PENDING
@@ -189,6 +210,7 @@ async def test_frozen_snapshot_validated_commit_gates_next_stage_and_releases_fa
 
     observe_success(cluster, design.attempts[0])
     repository.put_commit(commit(operation_id, "design", (design.attempts[0].attempt_id,)))
+    await reconciler.reconcile_once()
     await reconciler.reconcile_once()
     await reconciler.reconcile_once()
     final = repository.records[operation_id]
@@ -215,6 +237,7 @@ async def test_preemption_retries_with_new_attempt_and_stale_observation_is_fenc
     await reconciler.admit(
         operation_id=operation_id,
         tenant_id="tenant-a",
+        model_id="protein-design",
         plan=batch_plan,
         scheduling=snapshot(batch_plan),
     )
@@ -231,6 +254,10 @@ async def test_preemption_retries_with_new_attempt_and_stale_observation_is_fenc
             failure_code="node_preempted",
         ),
     )
+    await reconciler.reconcile_once()
+    observed = repository.records[operation_id].stage("fold").latest_attempt("main")
+    assert observed is not None and observed.outcome is AttemptOutcome.PREEMPTED
+    assert not observed.resource_released
     await reconciler.reconcile_once()
     assert repository.records[operation_id].stage("fold").status is StageStatus.PENDING
 
@@ -262,6 +289,7 @@ async def test_preemption_retries_with_new_attempt_and_stale_observation_is_fenc
     repository.put_commit(commit(operation_id, "fold", (second.attempt_id,)))
     await reconciler.reconcile_once()
     await reconciler.reconcile_once()
+    await reconciler.reconcile_once()
     assert repository.records[operation_id].status is BatchStatus.SUCCEEDED
     assert len(cluster.apply_history) == 2
     assert any(event.draft.kind is BatchEventKind.RETRY_SCHEDULED for event in repository.events[operation_id])
@@ -277,6 +305,7 @@ async def test_infrastructure_failure_is_retried_but_phase_replay_is_idempotent(
     await reconciler.admit(
         operation_id=operation_id,
         tenant_id="tenant-a",
+        model_id="protein-design",
         plan=batch_plan,
         scheduling=snapshot(batch_plan),
     )
@@ -309,9 +338,85 @@ async def test_infrastructure_failure_is_retried_but_phase_replay_is_idempotent(
     )
     await reconciler.reconcile_once()
     await reconciler.reconcile_once()
+    await reconciler.reconcile_once()
     latest = repository.records[operation_id].stage("dock").latest_attempt("main")
     assert latest is not None and latest.attempt_number == 2
     assert len(cluster.apply_history) == 2
+
+
+@pytest.mark.asyncio
+async def test_terminal_observation_is_durable_before_idempotent_workload_cleanup() -> None:
+    repository = FakeScientificBatchRepository()
+    cluster = FakeScientificBatchCluster()
+    reconciler = controller(repository, cluster)
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="dock"),))
+    await reconciler.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        plan=batch_plan,
+        scheduling=snapshot(batch_plan),
+    )
+    await reconciler.reconcile_once()
+    attempt = repository.records[operation_id].stage("dock").attempts[0]
+    observe_success(cluster, attempt)
+
+    await reconciler.reconcile_once()
+    observed = repository.records[operation_id].stage("dock").attempts[0]
+    assert observed.outcome is AttemptOutcome.SUCCEEDED
+    assert not observed.resource_released
+    assert cluster.delete_calls == []
+
+    repository.fail_next_replace = True
+    with pytest.raises(RuntimeError, match="injected durable replace failure"):
+        await reconciler.reconcile_once()
+    assert not repository.records[operation_id].stage("dock").attempts[0].resource_released
+    assert cluster.delete_calls == [attempt.workload]
+
+    await reconciler.reconcile_once()
+    cleaned = repository.records[operation_id].stage("dock").attempts[0]
+    assert cleaned.resource_released
+    assert cluster.delete_calls == [attempt.workload, attempt.workload]
+
+
+@pytest.mark.asyncio
+async def test_cancel_racing_with_job_creation_is_carried_into_fenced_state() -> None:
+    repository = FakeScientificBatchRepository()
+
+    class CancellingCluster(FakeScientificBatchCluster):
+        async def apply(self, resource, *, controller_fence: int):
+            ref = await super().apply(resource, controller_fence=controller_fence)
+            await repository.request_cancel(
+                resource.operation_id,
+                tenant_id=resource.tenant_id,
+                actor="scientist-a",
+            )
+            return ref
+
+    cluster = CancellingCluster()
+    reconciler = controller(repository, cluster)
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="fold"),))
+    await reconciler.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        plan=batch_plan,
+        scheduling=snapshot(batch_plan),
+    )
+
+    await reconciler.reconcile_once()
+    recorded = repository.records[operation_id]
+    assert recorded.cancel_requested is True
+    assert recorded.stage("fold").status is StageStatus.ACTIVE
+    assert len(cluster.apply_history) == 1
+
+    await reconciler.reconcile_once()
+    cancelled = repository.records[operation_id]
+    assert cancelled.status is BatchStatus.CANCELLED
+    assert cancelled.stage("fold").attempts[0].outcome is AttemptOutcome.CANCELLED
+    assert cluster.delete_history == [cancelled.stage("fold").attempts[0].workload]
 
 
 @pytest.mark.asyncio
@@ -329,6 +434,7 @@ async def test_negative_semantic_commit_cannot_unlock_downstream_stage() -> None
     await reconciler.admit(
         operation_id=operation_id,
         tenant_id="tenant-a",
+        model_id="protein-design",
         plan=batch_plan,
         scheduling=snapshot(batch_plan),
     )
@@ -336,6 +442,9 @@ async def test_negative_semantic_commit_cannot_unlock_downstream_stage() -> None
     attempt = repository.records[operation_id].stage("prepare").attempts[0]
     observe_success(cluster, attempt)
     repository.put_commit(commit(operation_id, "prepare", (attempt.attempt_id,), valid=False))
+    await reconciler.reconcile_once()
+    observed = repository.records[operation_id].stage("prepare").attempts[0]
+    assert observed.outcome is AttemptOutcome.SUCCEEDED and not observed.resource_released
     await reconciler.reconcile_once()
 
     failed = repository.records[operation_id]
@@ -363,6 +472,7 @@ async def test_only_infrastructure_failures_are_retried(failure_kind: FailureKin
     await reconciler.admit(
         operation_id=operation_id,
         tenant_id="tenant-a",
+        model_id="protein-design",
         plan=batch_plan,
         scheduling=snapshot(batch_plan),
     )
@@ -398,17 +508,19 @@ async def test_cancel_cascades_to_active_attempts_and_never_creates_downstream_s
     await reconciler.admit(
         operation_id=operation_id,
         tenant_id="tenant-a",
+        model_id="protein-design",
         plan=batch_plan,
         scheduling=snapshot(batch_plan),
     )
     await reconciler.reconcile_once()
-    repository.request_cancel(operation_id)
+    repository.force_cancel(operation_id)
     await reconciler.reconcile_once()
 
     cancelled = repository.records[operation_id]
     assert cancelled.status is BatchStatus.CANCELLED
     assert [stage.status for stage in cancelled.stages] == [StageStatus.CANCELLED, StageStatus.CANCELLED]
     assert all(attempt.outcome is AttemptOutcome.CANCELLED for attempt in cancelled.stage("prepare").attempts)
+    assert all(attempt.resource_released for attempt in cancelled.stage("prepare").attempts)
     assert len(cluster.delete_history) == 2
     assert not any(resource.kind is WorkloadKind.JOB_SET for resource in cluster.apply_history)
     phases = [event.draft.phase for event in repository.events[operation_id] if event.draft.phase is not None]
