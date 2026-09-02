@@ -1929,7 +1929,6 @@ def _assert_runtime_attribution(
         and pod_node_name == node_name
         and observation.pod_count == 1
         and observation.terminating_pods == 0
-        and observation.ready_replicas == 1
         and observation.endpoints == 1
         and observation.ready_endpoint_pod_uids == (pod_uid,)
         and (

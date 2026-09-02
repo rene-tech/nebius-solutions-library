@@ -411,7 +411,7 @@ def test_model_deployment_binding_rejects_foreign_owner_and_generation() -> None
         )
 
 
-def _runtime_observation(*, pod_count: int = 1) -> object:
+def _runtime_observation(*, pod_count: int = 1, ready_replicas: int = 1) -> object:
     _model_deployment, bound_observation = _model_deployment_binding_fixture()
     pod_uid = "11111111-1111-4111-8111-111111111111"
     node_uid = "22222222-2222-4222-8222-222222222222"
@@ -439,7 +439,7 @@ def _runtime_observation(*, pod_count: int = 1) -> object:
     return MODULE.ClusterObservation(
         observed_at="2026-09-02T00:00:00.000Z",
         replicas=1,
-        ready_replicas=1,
+        ready_replicas=ready_replicas,
         endpoints=1,
         capacity_requested=True,
         capacity_available=True,
@@ -511,6 +511,27 @@ def test_runtime_compatibility_rejects_incomplete_or_mismatched_gpu() -> None:
 
 def test_null_runtime_uses_exact_single_pod_kubernetes_proof() -> None:
     observation = _runtime_observation()
+    authority = MODULE._assert_runtime_attribution(
+        {
+            "runtime": {
+                "pod_uid": None,
+                "node_uid": None,
+                "gpu_uuids": [],
+                "gpu_count": 0,
+                "preemptible": None,
+            }
+        },
+        observation,
+        1,
+        observation.pod["metadata"]["uid"],
+        **_runtime_binding_kwargs(),
+    )
+
+    assert authority == "kubernetes-single-pod-proof-null-operation-runtime"
+
+
+def test_null_runtime_accepts_exact_ready_endpoint_while_deployment_status_lags() -> None:
+    observation = _runtime_observation(ready_replicas=0)
     authority = MODULE._assert_runtime_attribution(
         {
             "runtime": {
