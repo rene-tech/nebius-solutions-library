@@ -244,6 +244,35 @@ variable "deployment" {
         block_size_bytes = optional(number, 4096)
         forbid_deletion  = optional(bool, false)
       }))
+
+      # Durable scientific result storage. This is deliberately a separate
+      # bucket from the reference-data model cache: that cache is rebuildable
+      # from upstream and is torn down with the run, whereas these are tenant
+      # results held under a retention contract. Set create_bucket = false to
+      # bind an already-provisioned shared artifact plane instead.
+      scientific_artifacts = optional(object({
+        enabled              = optional(bool, false)
+        bucket_name          = optional(string)
+        create_bucket        = optional(bool, true)
+        forbid_deletion      = optional(bool, true)
+        versioning           = optional(string, "ENABLED")
+        max_size_gib         = optional(number)
+        retention_days       = optional(number, 90)
+        handle_ttl_seconds   = optional(number, 600)
+        max_artifact_gib     = optional(number, 1024)
+        secret_delivery_mode = optional(string, "INLINE")
+        egress_cidrs         = optional(set(string), [])
+        media_types = optional(set(string), [
+          "application/octet-stream",
+          "application/json",
+          "application/gzip",
+          "application/vnd.fs2.scientific-manifest+json",
+          "chemical/x-pdb",
+          "chemical/x-cif",
+          "text/plain",
+          "text/x-fasta",
+        ])
+      }), {})
     }), {})
 
     artifacts = optional(object({
@@ -573,6 +602,77 @@ variable "deployment" {
       false,
     )
     error_message = "storage.shared_cache must use a positive whole-GiB size and a supported network filesystem type/block size."
+  }
+
+  validation {
+    condition = !var.deployment.storage.scientific_artifacts.enabled || try(
+      can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.deployment.storage.scientific_artifacts.bucket_name)),
+      false,
+    )
+    error_message = "storage.scientific_artifacts.enabled requires bucket_name to be a valid 3-63 character object-storage bucket name."
+  }
+
+  validation {
+    condition = !var.deployment.storage.scientific_artifacts.enabled || try(
+      contains(["ENABLED", "DISABLED"], var.deployment.storage.scientific_artifacts.versioning) &&
+      contains(["INLINE", "MYSTERY_BOX"], var.deployment.storage.scientific_artifacts.secret_delivery_mode),
+      false,
+    )
+    error_message = "storage.scientific_artifacts must use a supported versioning policy and access-key secret delivery mode."
+  }
+
+  validation {
+    condition = (
+      !var.deployment.storage.scientific_artifacts.enabled ||
+      var.deployment.storage.scientific_artifacts.secret_delivery_mode == "INLINE"
+    )
+    error_message = "storage.scientific_artifacts.secret_delivery_mode must be INLINE. MYSTERY_BOX keeps the key out of Terraform, so the control-plane Secret would have to be delivered out of band, which this path does not provision."
+  }
+
+  validation {
+    condition = !var.deployment.storage.scientific_artifacts.enabled || try(
+      floor(var.deployment.storage.scientific_artifacts.retention_days) == var.deployment.storage.scientific_artifacts.retention_days &&
+      var.deployment.storage.scientific_artifacts.retention_days >= 1 &&
+      var.deployment.storage.scientific_artifacts.retention_days <= 3650 &&
+      var.deployment.storage.scientific_artifacts.handle_ttl_seconds >= 30 &&
+      var.deployment.storage.scientific_artifacts.handle_ttl_seconds <= 900 &&
+      var.deployment.storage.scientific_artifacts.max_artifact_gib >= 1 &&
+      var.deployment.storage.scientific_artifacts.max_artifact_gib <= 1024,
+      false,
+    )
+    error_message = "storage.scientific_artifacts must keep retention within 1-3650 whole days, handle lifetime within 30-900 seconds, and artifact size within 1-1024 GiB."
+  }
+
+  validation {
+    condition = !var.deployment.storage.scientific_artifacts.enabled || try(
+      var.deployment.storage.scientific_artifacts.max_size_gib == null ||
+      (
+        floor(var.deployment.storage.scientific_artifacts.max_size_gib) == var.deployment.storage.scientific_artifacts.max_size_gib &&
+        var.deployment.storage.scientific_artifacts.max_size_gib >= var.deployment.storage.scientific_artifacts.max_artifact_gib
+      ),
+      false,
+    )
+    error_message = "storage.scientific_artifacts.max_size_gib must be a whole GiB value that can hold at least one maximum-size artifact."
+  }
+
+  validation {
+    condition = !var.deployment.storage.scientific_artifacts.enabled || alltrue([
+      for cidr in var.deployment.storage.scientific_artifacts.egress_cidrs : can(cidrhost(cidr, 0))
+    ])
+    error_message = "storage.scientific_artifacts.egress_cidrs must contain only valid CIDR blocks reachable on TCP 443."
+  }
+
+  validation {
+    condition = !var.deployment.storage.scientific_artifacts.enabled || alltrue([
+      for media_type in var.deployment.storage.scientific_artifacts.media_types :
+      can(regex("^[a-z0-9][a-z0-9.+-]*/[A-Za-z0-9][A-Za-z0-9.+_-]*$", media_type))
+    ])
+    error_message = "storage.scientific_artifacts.media_types must be an exact allowlist of well-formed media types."
+  }
+
+  validation {
+    condition     = !var.deployment.storage.scientific_artifacts.enabled || length(var.deployment.storage.scientific_artifacts.media_types) > 0
+    error_message = "storage.scientific_artifacts.media_types must accept at least one media type."
   }
 
   validation {

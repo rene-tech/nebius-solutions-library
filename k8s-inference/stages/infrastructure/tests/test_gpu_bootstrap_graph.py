@@ -107,3 +107,64 @@ class GpuBootstrapGraphTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScientificArtifactStoreGraphTests(GpuBootstrapGraphTests):
+    """Ordering proofs for the opt-in durable scientific result store."""
+
+    def test_the_access_key_waits_for_the_scoped_bucket_permit(self) -> None:
+        key = "[root] nebius_iam_v2_access_key.scientific_artifacts (expand)"
+        permit = "[root] nebius_iam_v1_access_permit.scientific_artifacts_writer (expand)"
+        self.assertIn((key, permit), self.edges)
+
+    def reaches(self, source: str, target: str) -> bool:
+        """Whether Terraform must create target before source, directly or not.
+
+        The bucket identity reaches the permit through a local value, so the
+        ordering is a path rather than a single edge.
+        """
+
+        seen: set[str] = set()
+        frontier = [source]
+        while frontier:
+            node = frontier.pop()
+            if node == target:
+                return True
+            if node in seen:
+                continue
+            seen.add(node)
+            frontier.extend(child for parent, child in self.edges if parent == node)
+        return False
+
+    def test_the_permit_waits_for_the_bucket_and_the_writer_group(self) -> None:
+        permit = "[root] nebius_iam_v1_access_permit.scientific_artifacts_writer (expand)"
+        for resource in (
+            "nebius_storage_v1_bucket.scientific_artifacts",
+            "nebius_iam_v1_group.scientific_artifacts_writers",
+        ):
+            with self.subTest(resource=resource):
+                self.assertTrue(self.reaches(permit, f"[root] {resource} (expand)"))
+
+    def test_every_artifact_cloud_resource_waits_for_the_validated_target(self) -> None:
+        target = "[root] terraform_data.target_contract (expand)"
+        receipt = "[root] terraform_data.scientific_artifacts_contract (expand)"
+        for resource in (
+            "nebius_storage_v1_bucket.scientific_artifacts",
+            "nebius_iam_v1_service_account.scientific_artifacts_writer",
+            "nebius_iam_v1_group.scientific_artifacts_writers",
+        ):
+            with self.subTest(resource=resource):
+                node = f"[root] {resource} (expand)"
+                self.assertIn((node, target), self.edges)
+                self.assertIn((node, receipt), self.edges)
+
+    def test_the_result_store_is_independent_of_the_disposable_model_cache(self) -> None:
+        cache = "[root] nebius_compute_v1_filesystem.cache (expand)"
+        for resource in (
+            "nebius_storage_v1_bucket.scientific_artifacts",
+            "nebius_iam_v2_access_key.scientific_artifacts",
+        ):
+            with self.subTest(resource=resource):
+                node = f"[root] {resource} (expand)"
+                self.assertNotIn((node, cache), self.edges)
+                self.assertNotIn((cache, node), self.edges)

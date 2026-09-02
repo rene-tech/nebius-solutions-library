@@ -294,3 +294,20 @@ output "managed_resource_count" {
 output "sensitive_state_notice" {
   value = "Generated admin, MCP/inference, Grafana, database, and cryptographic bootstrap material is stored in the run-owned local workloads state; keep the run root mode 0700/state files mode 0600 and destroy it after acceptance."
 }
+
+output "scientific_artifact_store" {
+  description = "Non-secret readiness of the durable scientific result store. The credential is deliberately absent; it exists only inside the mounted Kubernetes Secret."
+  value = {
+    schema             = "fs2-serve.nebius.ai/scientific-artifact-store-readiness/v1"
+    enabled            = local.scientific_artifacts_enabled
+    bucket             = local.scientific_artifacts_enabled ? var.scientific_artifacts.bucket_name : null
+    region             = local.scientific_artifacts_enabled ? var.scientific_artifacts.region : null
+    endpoint           = local.scientific_artifacts_enabled ? var.scientific_artifacts.endpoint : null
+    secret_name        = local.scientific_artifacts_enabled ? local.scientific_artifacts_secret : null
+    namespace          = local.scientific_artifacts_enabled ? "fs2-system" : null
+    routes_mounted     = local.scientific_artifacts_enabled
+    egress_configured  = local.scientific_artifacts_enabled && length(var.scientific_artifacts.egress_cidrs) > 0
+    retention_seconds  = local.scientific_artifacts_enabled ? var.scientific_artifacts.retention_seconds : null
+    handle_ttl_seconds = local.scientific_artifacts_enabled ? var.scientific_artifacts.handle_ttl_seconds : null
+  }
+}

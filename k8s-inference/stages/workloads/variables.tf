@@ -830,3 +830,60 @@ variable "run_acceptance_job" {
   type        = bool
   default     = false
 }
+
+variable "scientific_artifacts" {
+  description = "Non-secret scientific artifact store contract from the facade. Disabled by default; when enabled the control plane mounts a generated object-storage credential and exposes the artifact routes."
+  type = object({
+    enabled            = optional(bool, false)
+    bucket_name        = optional(string)
+    region             = optional(string)
+    endpoint           = optional(string)
+    addressing_style   = optional(string, "path")
+    verify_tls         = optional(bool, true)
+    retention_seconds  = optional(number, 7776000)
+    handle_ttl_seconds = optional(number, 600)
+    max_bytes          = optional(number, 1099511627776)
+    media_types        = optional(list(string), [])
+    egress_cidrs       = optional(list(string), [])
+    # Injected by the orchestrator from the infrastructure stage. The key ID is
+    # an identifier, not a secret; it lets the Secret be rewritten on rotation.
+    access_key_id = optional(string)
+  })
+  default = {}
+
+  validation {
+    condition = !var.scientific_artifacts.enabled || try(
+      can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.scientific_artifacts.bucket_name)) &&
+      can(regex("^https://[^ ]+$", var.scientific_artifacts.endpoint)) &&
+      can(regex("^[a-z][a-z0-9-]{1,31}[a-z0-9]$", var.scientific_artifacts.region)) &&
+      contains(["path", "virtual"], var.scientific_artifacts.addressing_style) &&
+      length(var.scientific_artifacts.media_types) > 0,
+      false,
+    )
+    error_message = "scientific_artifacts must name a valid bucket, an HTTPS regional endpoint, a region, a supported addressing style, and a non-empty media-type allowlist."
+  }
+
+  validation {
+    condition = !var.scientific_artifacts.enabled || try(
+      var.scientific_artifacts.handle_ttl_seconds >= 30 &&
+      var.scientific_artifacts.handle_ttl_seconds <= 900 &&
+      var.scientific_artifacts.retention_seconds >= 86400 &&
+      var.scientific_artifacts.max_bytes >= 1024,
+      false,
+    )
+    error_message = "scientific_artifacts must keep handle lifetime within 30-900 seconds, retention at one day or more, and a positive artifact ceiling."
+  }
+}
+
+# Ephemeral so the generated object-storage secret never enters workloads state.
+# It is consumed only by a write-only Kubernetes Secret argument.
+variable "scientific_artifact_store_credentials" {
+  description = "Generated scientific artifact S3 key pair supplied by the infrastructure stage. Never persisted to state and never placed in a Helm release value."
+  type = object({
+    access_key_id     = string
+    secret_access_key = string
+  })
+  default   = null
+  nullable  = true
+  ephemeral = true
+}

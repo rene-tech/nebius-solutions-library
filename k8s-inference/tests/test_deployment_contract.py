@@ -1659,10 +1659,183 @@ class DeploymentContractTests(unittest.TestCase):
         if plan_path.exists():
             self.assertGreater(plan_path.stat().st_size, 0)
 
+    def scientific_storage(self, **overrides: Any) -> dict[str, Any]:
+        store = {
+            "enabled": True,
+            "bucket_name": "fs2-scientific-artifacts-test",
+            "egress_cidrs": ["203.0.113.0/24"],
+        }
+        store.update(overrides)
+        return {"scientific_artifacts": store}
+
+    def test_the_scientific_artifact_store_is_absent_until_it_is_configured(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-artifact-default-test",
+            "target": self.catalog_target(),
+        }
+        outputs = self._planned_outputs(
+            self._write_configuration("artifact-default", deployment), "artifact-default"
+        )
+        summary = outputs["effective_configuration"]["scientific_artifacts"]
+        self.assertFalse(summary["enabled"])
+        self.assertFalse(summary["ready"])
+        self.assertIsNone(summary["bucket"])
+
+        stages = outputs["deployment_contract"]["stages"]
+        self.assertFalse(stages["infrastructure"]["scientific_artifacts"]["enabled"])
+        self.assertFalse(stages["workloads"]["scientific_artifacts"]["enabled"])
+
+    def test_an_enabled_store_reaches_both_stages_with_one_regional_identity(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-artifact-enabled-test",
+            "target": self.catalog_target(),
+            "storage": self.scientific_storage(retention_days=30, handle_ttl_seconds=300),
+        }
+        outputs = self._planned_outputs(
+            self._write_configuration("artifact-enabled", deployment), "artifact-enabled"
+        )
+        stages = outputs["deployment_contract"]["stages"]
+        infrastructure = stages["infrastructure"]["scientific_artifacts"]
+        workloads = stages["workloads"]["scientific_artifacts"]
+        region = TEST_TARGET["region"]
+
+        self.assertTrue(infrastructure["enabled"])
+        self.assertTrue(infrastructure["create_bucket"])
+        self.assertTrue(infrastructure["forbid_deletion"])
+        self.assertEqual(infrastructure["versioning_policy"], "ENABLED")
+        self.assertEqual(infrastructure["region"], region)
+
+        # One bucket identity, in the cluster region, on both sides of the split.
+        self.assertEqual(workloads["bucket_name"], infrastructure["bucket_name"])
+        self.assertEqual(workloads["region"], region)
+        self.assertEqual(workloads["endpoint"], f"https://storage.{region}.nebius.cloud")
+        self.assertEqual(workloads["retention_seconds"], 30 * 86400)
+        self.assertEqual(workloads["handle_ttl_seconds"], 300)
+        self.assertEqual(workloads["egress_cidrs"], ["203.0.113.0/24"])
+        self.assertIn("chemical/x-pdb", workloads["media_types"])
+
+        summary = outputs["effective_configuration"]["scientific_artifacts"]
+        self.assertTrue(summary["enabled"])
+        self.assertTrue(summary["ready"])
+        self.assertEqual(summary["retention_days"], 30)
+
+    def test_a_store_without_object_storage_egress_is_configured_but_not_ready(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-artifact-egress-test",
+            "target": self.catalog_target(),
+            "storage": self.scientific_storage(egress_cidrs=[]),
+        }
+        outputs = self._planned_outputs(
+            self._write_configuration("artifact-egress", deployment), "artifact-egress"
+        )
+        summary = outputs["effective_configuration"]["scientific_artifacts"]
+        self.assertTrue(summary["enabled"])
+        self.assertFalse(summary["egress_configured"])
+        self.assertFalse(summary["ready"])
+
+    def test_the_result_store_never_inherits_the_disposable_cache_identity(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-artifact-separation-test",
+            "target": self.catalog_target(),
+            "storage": {
+                "shared_cache": {"size_gib": 128, "forbid_deletion": False},
+                **self.scientific_storage(),
+            },
+        }
+        outputs = self._planned_outputs(
+            self._write_configuration("artifact-separation", deployment),
+            "artifact-separation",
+        )
+        infrastructure = outputs["deployment_contract"]["stages"]["infrastructure"]
+
+        # The model cache is disposable; results are not. They must never share
+        # a resource, a name, or a deletion policy.
+        self.assertFalse(infrastructure["shared_cache"]["forbid_deletion"])
+        self.assertTrue(infrastructure["scientific_artifacts"]["forbid_deletion"])
+        self.assertNotIn(
+            str(infrastructure["scientific_artifacts"]["bucket_name"]),
+            json.dumps(infrastructure["shared_cache"]),
+        )
+
+    def test_an_invalid_scientific_store_is_rejected_before_any_cloud_plan(self) -> None:
+        cases = (
+            ("missing-bucket", {"enabled": True}, "bucket_name"),
+            (
+                "bad-bucket",
+                {"enabled": True, "bucket_name": "Not_A_Bucket"},
+                "bucket_name",
+            ),
+            (
+                "bad-retention",
+                {
+                    "enabled": True,
+                    "bucket_name": "fs2-artifacts-test",
+                    "retention_days": 0,
+                },
+                "retention",
+            ),
+            (
+                "bad-handle-ttl",
+                {
+                    "enabled": True,
+                    "bucket_name": "fs2-artifacts-test",
+                    "handle_ttl_seconds": 5400,
+                },
+                "handle lifetime",
+            ),
+            (
+                "bad-egress",
+                {
+                    "enabled": True,
+                    "bucket_name": "fs2-artifacts-test",
+                    "egress_cidrs": ["not-a-cidr"],
+                },
+                "egress_cidrs",
+            ),
+            (
+                "bad-media-type",
+                {
+                    "enabled": True,
+                    "bucket_name": "fs2-artifacts-test",
+                    "media_types": ["NOT A MEDIA TYPE"],
+                },
+                "media_types",
+            ),
+            (
+                "undersized-bucket",
+                {
+                    "enabled": True,
+                    "bucket_name": "fs2-artifacts-test",
+                    "max_artifact_gib": 64,
+                    "max_size_gib": 32,
+                },
+                "max_size_gib",
+            ),
+        )
+        for name, store, expected in cases:
+            with self.subTest(case=name):
+                deployment = {
+                    "schema_version": 1,
+                    "name": "fs2-artifact-invalid-test",
+                    "target": self.catalog_target(),
+                    "storage": {"scientific_artifacts": store},
+                }
+                result, _ = self._plan_file(
+                    self._write_configuration(f"artifact-invalid-{name}", deployment),
+                    f"artifact-invalid-{name}",
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, f"{result.stdout}\n{result.stderr}")
+
     def test_shipped_examples_track_the_executable_contract(self) -> None:
         successful = (
             DEPLOY_ROOT / "terraform.tfvars.example",
             DEPLOY_ROOT / "examples/b300-zero-hot.tfvars",
+            DEPLOY_ROOT / "examples/scientific-artifacts.tfvars",
         )
         for index, variable_file in enumerate(successful):
             with self.subTest(example=variable_file.name):

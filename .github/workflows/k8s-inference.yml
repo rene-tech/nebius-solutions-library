@@ -115,3 +115,16 @@ jobs:
           ./k8s-inference/inference-stack validate \
             --var-file k8s-inference/terraform.tfvars.example \
             --run-root "${RUNNER_TEMP}/k8s-inference-validation"
+
+      # Provider-mocked plan fixtures. They need no cloud credentials and are
+      # the only gate that proves an opt-in stage resource plans, and refuses
+      # to plan, exactly as intended.
+      - name: Test provider-mocked stage fixtures
+        run: |
+          for stage in infrastructure workloads; do
+            root="k8s-inference/stages/${stage}"
+            TF_DATA_DIR="${RUNNER_TEMP}/k8s-inference-tftest/${stage}" \
+              terraform -chdir="${root}" init -backend=false -input=false >/dev/null
+            TF_DATA_DIR="${RUNNER_TEMP}/k8s-inference-tftest/${stage}" \
+              terraform -chdir="${root}" test -no-color
+          done

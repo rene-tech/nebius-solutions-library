@@ -574,3 +574,60 @@ class DisposableTerraformContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScientificArtifactStoreContractTests(unittest.TestCase):
+    """Pin the exact shape of the opt-in durable scientific result store."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.terraform = "\n".join(
+            path.read_text(encoding="utf-8") for path in sorted(ROOT.glob("*.tf"))
+        )
+
+    def test_the_store_is_opt_in_and_regional(self) -> None:
+        self.assertIn('variable "scientific_artifacts"', self.terraform)
+        self.assertIn("enabled              = optional(bool, false)", self.terraform)
+        self.assertIn(
+            'error_message = "scientific_artifacts.region must be the exact target region; '
+            'results and the cluster stay in one region."',
+            self.terraform,
+        )
+
+    def test_results_outlive_the_disposable_cluster(self) -> None:
+        # The model cache is explicitly deletable; results must not inherit that.
+        self.assertIn("forbid_deletion      = optional(bool, true)", self.terraform)
+        self.assertIn('versioning_policy    = optional(string, "ENABLED")', self.terraform)
+        self.assertIn("ignore_changes = [name]", self.terraform)
+
+    def test_the_writer_identity_is_separate_and_bucket_scoped(self) -> None:
+        self.assertIn(
+            'resource "nebius_iam_v1_service_account" "scientific_artifacts_writer"',
+            self.terraform,
+        )
+        self.assertIn(
+            'resource "nebius_iam_v1_access_permit" "scientific_artifacts_writer"',
+            self.terraform,
+        )
+        self.assertIn("resource_id = local.scientific_artifacts_bucket_id", self.terraform)
+        # A project-wide grant would let the key read the cache and the registry.
+        self.assertNotIn(
+            "resource_id = data.nebius_iam_v2_project.target.id", self.terraform
+        )
+
+    def test_an_existing_shared_plane_can_be_bound_instead_of_duplicated(self) -> None:
+        self.assertIn(
+            'data "nebius_storage_v1_bucket" "scientific_artifacts"', self.terraform
+        )
+        self.assertIn("count = local.scientific_artifacts_bound ? 1 : 0", self.terraform)
+
+    def test_the_generated_secret_is_published_only_as_a_sensitive_output(self) -> None:
+        outputs = (ROOT / "outputs.tf").read_text(encoding="utf-8")
+        self.assertIn('output "scientific_artifact_store_credentials"', outputs)
+        self.assertIn("sensitive   = true", outputs)
+        # The non-secret contract names the key but never its secret.
+        contract_start = outputs.index('output "scientific_artifact_store_contract"')
+        contract_end = outputs.index('output "scientific_artifact_store_credentials"')
+        contract = outputs[contract_start:contract_end]
+        self.assertIn("access_key_id", contract)
+        self.assertNotIn("secret_access_key", contract)

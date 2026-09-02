@@ -176,3 +176,32 @@ output "kubeconfig_command" {
   description = "Run only with KUBECONFIG pointing at the run-scoped mode-0600 file."
   value       = "nebius mk8s cluster get-credentials --id ${nebius_mk8s_v1_cluster.validation.id} --external --force --context-name ${local.resource_name}"
 }
+
+output "scientific_artifact_store_contract" {
+  description = "Non-secret scientific artifact store identity. It names the bucket, region, endpoint and access-key ID; the secret is delivered separately."
+  value = {
+    schema               = "fs2-serve.nebius.ai/scientific-artifact-store/v1"
+    enabled              = local.scientific_artifacts_enabled
+    bucket_name          = local.scientific_artifacts_bucket_name
+    bucket_id            = local.scientific_artifacts_bucket_id
+    region               = local.scientific_artifacts_enabled ? var.scientific_artifacts.region : null
+    endpoint             = local.scientific_artifacts_endpoint
+    created_by_terraform = local.scientific_artifacts_created
+    access_key_id = local.scientific_artifacts_enabled ? try(
+      nebius_iam_v2_access_key.scientific_artifacts[0].status.aws_access_key_id, null
+    ) : null
+    secret_delivery_mode = local.scientific_artifacts_enabled ? var.scientific_artifacts.secret_delivery_mode : null
+    service_account_id = local.scientific_artifacts_enabled ? one(
+      nebius_iam_v1_service_account.scientific_artifacts_writer[*].id
+    ) : null
+  }
+}
+
+output "scientific_artifact_store_credentials" {
+  description = "Generated scientific artifact S3 key pair. Consumed once by the workloads stage as an ephemeral value and written write-only into a Kubernetes Secret; it is never placed in a Helm release value."
+  sensitive   = true
+  value = local.scientific_artifacts_enabled && var.scientific_artifacts.secret_delivery_mode == "INLINE" ? {
+    access_key_id     = try(nebius_iam_v2_access_key.scientific_artifacts[0].status.aws_access_key_id, null)
+    secret_access_key = try(nebius_iam_v2_access_key.scientific_artifacts[0].status.secret, null)
+  } : null
+}

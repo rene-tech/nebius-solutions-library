@@ -31,6 +31,21 @@ PUBLIC_EDGE_MANAGED_ADDRESSES = frozenset(
         "nebius_vpc_v1_allocation.gateway[0]",
     }
 )
+
+# Opt-in durable result storage. Its bucket deliberately survives a teardown of
+# the disposable cluster, so it is verified as its own selectable address set.
+SCIENTIFIC_ARTIFACT_MANAGED_ADDRESSES = frozenset(
+    {
+        "terraform_data.scientific_artifacts_contract[0]",
+        "nebius_storage_v1_bucket.scientific_artifacts[0]",
+        "nebius_iam_v1_service_account.scientific_artifacts_writer[0]",
+        "nebius_iam_v1_group.scientific_artifacts_writers[0]",
+        "nebius_iam_v1_group_membership.scientific_artifacts_writer[0]",
+        "nebius_iam_v1_access_permit.scientific_artifacts_writer[0]",
+        "nebius_iam_v2_access_key.scientific_artifacts[0]",
+    }
+)
+
 REQUIRED_MANAGED_ADDRESSES = (
     BASE_REQUIRED_MANAGED_ADDRESSES | PUBLIC_EDGE_MANAGED_ADDRESSES
 )
@@ -44,15 +59,30 @@ ALLOWED_DATA_ADDRESSES = frozenset(
 )
 
 
-def validate_addresses(lines: list[str], mode: str, edge_mode: str = "public") -> list[str]:
+def selected_managed_addresses(
+    edge_mode: str, scientific_artifacts: bool = False
+) -> frozenset[str]:
+    """Return the exact managed address set the selected options require."""
+
+    return (
+        BASE_REQUIRED_MANAGED_ADDRESSES
+        | (PUBLIC_EDGE_MANAGED_ADDRESSES if edge_mode == "public" else frozenset())
+        | (SCIENTIFIC_ARTIFACT_MANAGED_ADDRESSES if scientific_artifacts else frozenset())
+    )
+
+
+def validate_addresses(
+    lines: list[str],
+    mode: str,
+    edge_mode: str = "public",
+    scientific_artifacts: bool = False,
+) -> list[str]:
     addresses = [line.strip() for line in lines if line.strip()]
     counts = Counter(addresses)
     actual = set(addresses)
     actual_data = {address for address in actual if address.startswith("data.")}
     actual_managed = actual - actual_data
-    selected_managed = BASE_REQUIRED_MANAGED_ADDRESSES | (
-        PUBLIC_EDGE_MANAGED_ADDRESSES if edge_mode == "public" else frozenset()
-    )
+    selected_managed = selected_managed_addresses(edge_mode, scientific_artifacts)
     expected_managed = selected_managed if mode == "create" else frozenset()
     expected_data = ALLOWED_DATA_ADDRESSES if mode == "create" else frozenset()
     errors: list[str] = []
@@ -84,6 +114,11 @@ def parse_args() -> argparse.Namespace:
         choices=("public", "internal-only"),
         default="public",
     )
+    parser.add_argument(
+        "--scientific-artifacts",
+        action="store_true",
+        help="expect the opt-in durable scientific result storage addresses",
+    )
     return parser.parse_args()
 
 
@@ -93,16 +128,15 @@ def main() -> int:
         args.state_list.read_text(encoding="utf-8").splitlines(),
         args.mode,
         args.public_edge_mode,
+        args.scientific_artifacts,
     )
     if errors:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
 
-    selected_managed = BASE_REQUIRED_MANAGED_ADDRESSES | (
-        PUBLIC_EDGE_MANAGED_ADDRESSES
-        if args.public_edge_mode == "public"
-        else frozenset()
+    selected_managed = selected_managed_addresses(
+        args.public_edge_mode, args.scientific_artifacts
     )
     managed_count = len(selected_managed) if args.mode == "create" else 0
     data_count = len(ALLOWED_DATA_ADDRESSES) if args.mode == "create" else 0

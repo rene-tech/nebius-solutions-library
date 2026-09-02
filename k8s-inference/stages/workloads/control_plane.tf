@@ -184,9 +184,11 @@ resource "helm_release" "control_plane" {
     yamlencode(local.control_plane_overrides),
     yamlencode(local.admin_control_plane_overrides),
     yamlencode(local.bootstrap_access_overrides),
+    yamlencode(local.scientific_artifacts_overrides),
   ]
 
   depends_on = [
+    kubernetes_secret_v1.scientific_artifact_store,
     kubernetes_manifest.model_deployment_crd,
     kubernetes_manifest.control_database,
     kubernetes_secret_v1.database_consumer,

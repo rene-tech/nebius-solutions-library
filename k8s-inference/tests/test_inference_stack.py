@@ -750,7 +750,9 @@ class InferenceStackTests(unittest.TestCase):
                 ],
                 "cr.us-north1.nebius.cloud/test",
             )
-            self.assertEqual(terraform_output.call_count, 2)
+            # Every legitimately absent output is resolved from one batched
+            # read, so adding another optional output must not add a round trip.
+            self.assertEqual(terraform_output.call_count, 1)
 
     def test_stage_readiness_requires_completion_output(self) -> None:
         with tempfile.TemporaryDirectory(prefix="inference-stack-ready-") as temporary:
@@ -1750,3 +1752,146 @@ class InferenceStackTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+ARTIFACT_STORE_POLICY = {
+    "enabled": True,
+    "bucket_name": "fs2-scientific-artifacts-test",
+    "region": "us-north1",
+    "endpoint": "https://storage.us-north1.nebius.cloud",
+    "addressing_style": "path",
+    "verify_tls": True,
+    "retention_seconds": 7776000,
+    "handle_ttl_seconds": 600,
+    "max_bytes": 1099511627776,
+    "media_types": ["application/json"],
+    "egress_cidrs": ["203.0.113.0/24"],
+}
+
+ARTIFACT_STORE_OBSERVED = {
+    "schema": "fs2-serve.nebius.ai/scientific-artifact-store/v1",
+    "enabled": True,
+    "bucket_name": "fs2-scientific-artifacts-test",
+    "region": "us-north1",
+    "endpoint": "https://storage.us-north1.nebius.cloud",
+    "access_key_id": "TESTACCESSKEYID0001",
+}
+
+ARTIFACT_STORE_SECRET = {
+    "access_key_id": "TESTACCESSKEYID0001",
+    "secret_access_key": "test-object-storage-secret-value",
+}
+
+
+def artifact_contract() -> dict:
+    document = contract()
+    document["stages"]["workloads"]["scientific_artifacts"] = dict(ARTIFACT_STORE_POLICY)
+    return document
+
+
+def artifact_dynamic(run_root: Path) -> dict:
+    document = dynamic_outputs(run_root)
+    document["scientific_artifact_store_contract"] = dict(ARTIFACT_STORE_OBSERVED)
+    document["scientific_artifact_store_credentials"] = dict(ARTIFACT_STORE_SECRET)
+    return document
+
+
+class ScientificArtifactStoreHandoffTests(unittest.TestCase):
+    def test_the_key_identity_is_bound_but_the_secret_is_not(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="inference-stack-artifacts-") as temporary:
+            run_root = Path(temporary)
+            bound = STACK.bind_scientific_artifact_store(
+                {"scientific_artifacts": dict(ARTIFACT_STORE_POLICY)},
+                artifact_dynamic(run_root),
+            )
+        store = bound["scientific_artifacts"]
+        self.assertEqual(store["access_key_id"], "TESTACCESSKEYID0001")
+        self.assertNotIn("secret_access_key", json.dumps(store))
+
+    def test_a_disabled_store_needs_no_infrastructure_contract(self) -> None:
+        workloads = {"scientific_artifacts": {"enabled": False}}
+        self.assertEqual(
+            STACK.bind_scientific_artifact_store(workloads, {}), workloads
+        )
+
+    def test_a_store_that_infrastructure_did_not_create_is_refused(self) -> None:
+        with self.assertRaises(STACK.DeploymentError):
+            STACK.bind_scientific_artifact_store(
+                {"scientific_artifacts": dict(ARTIFACT_STORE_POLICY)},
+                {"scientific_artifact_store_contract": {"enabled": False}},
+            )
+
+    def test_a_bucket_that_disagrees_with_infrastructure_is_refused(self) -> None:
+        observed = dict(ARTIFACT_STORE_OBSERVED, bucket_name="some-other-bucket")
+        with self.assertRaises(STACK.DeploymentError) as raised:
+            STACK.bind_scientific_artifact_store(
+                {"scientific_artifacts": dict(ARTIFACT_STORE_POLICY)},
+                {"scientific_artifact_store_contract": observed},
+            )
+        self.assertIn("bucket_name", str(raised.exception))
+
+    def test_the_secret_reaches_workloads_only_as_an_environment_value(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="inference-stack-artifacts-env-") as temporary:
+            run_root = Path(temporary)
+            document = artifact_contract()
+            dynamic = artifact_dynamic(run_root)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "TEST_FS2_NGC_API_KEY": "ngc-test",
+                    "TEST_FS2_NVCR_DOCKERCONFIGJSON": "{}",
+                }
+            )
+            with mock.patch.dict(os.environ, environment, clear=True):
+                resolved = STACK.stage_environment(
+                    run_root, "workloads", document, dynamic=dynamic
+                )
+            self.assertEqual(
+                json.loads(resolved["TF_VAR_scientific_artifact_store_credentials"]),
+                ARTIFACT_STORE_SECRET,
+            )
+
+            foundation_path, workloads_path = STACK.write_downstream_variables(
+                run_root, document, dynamic
+            )
+            written = workloads_path.read_text(encoding="utf-8")
+            # The tfvars file is the one artifact that persists on disk; the
+            # secret must never appear in it, only the key identity.
+            self.assertNotIn(ARTIFACT_STORE_SECRET["secret_access_key"], written)
+            self.assertIn("TESTACCESSKEYID0001", written)
+            self.assertNotIn(
+                ARTIFACT_STORE_SECRET["secret_access_key"],
+                foundation_path.read_text(encoding="utf-8"),
+            )
+
+    def test_an_enabled_store_without_a_generated_key_stops_the_run(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="inference-stack-artifacts-none-") as temporary:
+            run_root = Path(temporary)
+            document = artifact_contract()
+            dynamic = artifact_dynamic(run_root)
+            dynamic["scientific_artifact_store_credentials"] = None
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "TEST_FS2_NGC_API_KEY": "ngc-test",
+                    "TEST_FS2_NVCR_DOCKERCONFIGJSON": "{}",
+                },
+                clear=True,
+            ):
+                with self.assertRaises(STACK.DeploymentError) as raised:
+                    STACK.stage_environment(
+                        run_root, "workloads", document, dynamic=dynamic
+                    )
+        self.assertIn("credential", str(raised.exception))
+
+    def test_a_destroy_never_requests_the_object_storage_secret(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="inference-stack-artifacts-destroy-") as temporary:
+            run_root = Path(temporary)
+            resolved = STACK.stage_environment(
+                run_root,
+                "workloads",
+                artifact_contract(),
+                include_secrets=False,
+                dynamic=artifact_dynamic(run_root),
+            )
+        self.assertNotIn("TF_VAR_scientific_artifact_store_credentials", resolved)

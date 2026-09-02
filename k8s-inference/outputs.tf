@@ -59,5 +59,18 @@ output "effective_configuration" {
       }
     }
     registry_policy = local.deployment_contract.artifact_delivery
+    scientific_artifacts = {
+      enabled  = local.scientific_artifacts_workloads.enabled
+      bucket   = local.scientific_artifacts_workloads.bucket_name
+      region   = local.scientific_artifacts_workloads.region
+      endpoint = local.scientific_artifacts_workloads.endpoint
+      # A configured store is not a reachable one: without an egress allowlist
+      # the control plane can presign handles but cannot verify stored objects.
+      egress_configured  = length(local.scientific_artifacts_workloads.egress_cidrs) > 0
+      ready              = local.scientific_artifacts_workloads.enabled && length(local.scientific_artifacts_workloads.egress_cidrs) > 0
+      creates_bucket     = local.scientific_artifacts_infrastructure.create_bucket
+      retention_days     = local.scientific_artifacts_workloads.retention_seconds / 86400
+      handle_ttl_seconds = local.scientific_artifacts_workloads.handle_ttl_seconds
+    }
   }
 }

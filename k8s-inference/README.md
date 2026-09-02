@@ -498,6 +498,45 @@ The secret-free [live deployment acceptance history](LIVE_ACCEPTANCE.md)
 records the dated B300/H100 exercises, the current retained H100 topology, and
 the measured qualification boundaries.
 
+### Durable scientific result storage
+
+Scientific batch results are content addressed in object storage rather than in
+the database. The store is off by default; one tfvars block turns the whole path
+on, and nothing about it is a manual step:
+
+```hcl
+storage = {
+  scientific_artifacts = {
+    enabled      = true
+    bucket_name  = "fs2-scientific-artifacts-example"
+    egress_cidrs = ["203.0.113.0/24"]
+  }
+}
+```
+
+`terraform apply` then creates a versioned regional bucket, a service account
+whose access permit is scoped to that bucket alone, and an S3 key for it. The
+key reaches the workloads stage as an ephemeral value and is written into the
+`fs2-serve-artifact-store` Secret with the provider's write-only argument, so it
+never enters workloads state, a plan file, a tfvars file, or a Helm value. The
+control plane mounts it read-only at mode 0400 and exposes the artifact routes.
+See [examples/scientific-artifacts.tfvars](examples/scientific-artifacts.tfvars).
+
+Two properties are deliberate. First, the bucket is **not** the reference-data
+model cache: that cache is rebuildable from upstream and is disposable with the
+run, whereas these are tenant results under a retention contract, so the result
+bucket defaults to versioned and undeletable and survives a cluster teardown.
+Set `create_bucket = false` to bind an already-provisioned shared artifact plane
+instead of provisioning a second one. Second, `egress_cidrs` is required before
+the store is usable: presigning a handle is local, but verifying a stored
+object's digest is a call to object storage, and the chart's egress policy is
+default-deny. `terraform output effective_configuration` reports
+`scientific_artifacts.ready` as false until that allowlist is set.
+
+Teardown follows the ordinary reverse order. Because the bucket defaults to
+`forbid_deletion = true`, destroying the cluster leaves committed results in
+place; removing them is a separate, deliberate act.
+
 ## Destroy
 
 Destroy uses the reverse dependency order: workloads, foundation, then

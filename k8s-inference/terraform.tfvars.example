@@ -230,6 +230,29 @@ deployment = {
     }
   }
 
+  # Durable scientific result storage, off by default because it needs a real
+  # bucket name and the regional object-storage egress prefixes. Turning it on
+  # makes Terraform create a versioned regional bucket and a least-privilege
+  # writer key, mount that key as a Kubernetes Secret, and enable the artifact
+  # routes on the control plane. See examples/scientific-artifacts.tfvars.
+  #
+  # This bucket is deliberately not the reference-data model cache: that cache
+  # is rebuildable and disposable, these are tenant results under retention.
+  storage = {
+    scientific_artifacts = {
+      enabled     = false
+      bucket_name = "fs2-scientific-artifacts-example"
+
+      retention_days     = 90
+      handle_ttl_seconds = 600
+      max_artifact_gib   = 512
+
+      # Required before the store reports ready: presigning is local, but
+      # verifying a stored object's digest is a call to object storage.
+      egress_cidrs = []
+    }
+  }
+
   secrets = {
     grafana_username_env  = "FS2_GRAFANA_ADMIN_USERNAME"
     grafana_password_env  = "FS2_GRAFANA_ADMIN_PASSWORD"

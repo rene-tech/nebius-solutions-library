@@ -110,6 +110,13 @@ The service is disabled by default. It is mounted only when object storage is
 fully configured, so an unconfigured cluster never exposes an endpoint backed by
 absent credentials.
 
+Operators do not set these values by hand. One tfvars block,
+`deployment.storage.scientific_artifacts`, drives the whole path: the
+infrastructure stage creates the bucket and a bucket-scoped writer key, the
+workloads stage writes that key into the Secret below, and the chart values
+here are rendered from the same contract. The repository README documents the
+block; the table names the values it produces.
+
 | Helm value | Environment variable | Notes |
 | --- | --- | --- |
 | `scientificArtifacts.enabled` | `FS2_SCIENTIFIC_ARTIFACTS_ENABLED` | Gates the routes entirely |
@@ -129,6 +136,11 @@ projected read-only into the pod. They are never passed as environment values.
 `scientificArtifacts.egressCidrs` opens TCP 443 to object storage in the
 default-deny NetworkPolicy. Leave it empty and finalize cannot reach the
 gateway, because presigning is local but digest verification is not.
+
+The bucket is deliberately separate from the reference-data model cache. That
+cache is rebuildable from upstream and is labelled disposable with the run;
+these are tenant results under a retention contract, so the result bucket is
+versioned and undeletable and survives a cluster teardown.
 
 ## Authorization
 

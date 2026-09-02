@@ -205,9 +205,42 @@ locals {
     }
     system_pool              = var.deployment.cluster.system_pool
     shared_cache             = var.deployment.storage.shared_cache
+    scientific_artifacts     = local.scientific_artifacts_infrastructure
     public_edge_mode         = var.deployment.edge.mode
     public_edge_source_cidrs = sort(tolist(var.deployment.edge.source_cidrs))
     port_forward_local_ports = var.deployment.edge.port_forward_ports
+  }
+
+  scientific_artifacts_input = var.deployment.storage.scientific_artifacts
+
+  # Object storage must be regional with the cluster: finalize streams the
+  # stored object back to recompute its digest, so a cross-region bucket would
+  # pay egress on every artifact and break the private-egress allowlist.
+  scientific_artifacts_endpoint = "https://storage.${var.deployment.target.region}.nebius.cloud"
+
+  scientific_artifacts_infrastructure = {
+    enabled              = local.scientific_artifacts_input.enabled
+    bucket_name          = local.scientific_artifacts_input.bucket_name
+    create_bucket        = local.scientific_artifacts_input.create_bucket
+    forbid_deletion      = local.scientific_artifacts_input.forbid_deletion
+    versioning_policy    = local.scientific_artifacts_input.versioning
+    max_size_bytes       = try(local.scientific_artifacts_input.max_size_gib * 1024 * 1024 * 1024, null)
+    secret_delivery_mode = local.scientific_artifacts_input.secret_delivery_mode
+    region               = var.deployment.target.region
+  }
+
+  scientific_artifacts_workloads = {
+    enabled            = local.scientific_artifacts_input.enabled
+    bucket_name        = local.scientific_artifacts_input.bucket_name
+    region             = var.deployment.target.region
+    endpoint           = local.scientific_artifacts_endpoint
+    addressing_style   = "path"
+    verify_tls         = true
+    retention_seconds  = local.scientific_artifacts_input.retention_days * 86400
+    handle_ttl_seconds = local.scientific_artifacts_input.handle_ttl_seconds
+    max_bytes          = local.scientific_artifacts_input.max_artifact_gib * 1024 * 1024 * 1024
+    media_types        = sort(tolist(local.scientific_artifacts_input.media_types))
+    egress_cidrs       = sort(tolist(local.scientific_artifacts_input.egress_cidrs))
   }
 
   foundation_variables = {
@@ -254,6 +287,7 @@ locals {
       digest     = var.deployment.applications.control_plane.digest
     }
     catalog_rollout_digest = var.deployment.applications.control_plane.catalog_rollout_digest
+    scientific_artifacts   = local.scientific_artifacts_workloads
     admin_console = {
       image = {
         repository = var.deployment.applications.admin_console.repository

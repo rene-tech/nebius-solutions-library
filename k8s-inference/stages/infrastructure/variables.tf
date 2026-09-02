@@ -914,3 +914,37 @@ locals {
   }
   infrastructure_contract = local.legacy_b300_fixture ? local.legacy_infrastructure_contract : null
 }
+
+variable "scientific_artifacts" {
+  description = "Durable scientific result object storage. Disabled by default; when enabled this stage creates or binds one regional bucket and a least-privilege writer identity whose generated key is handed to workloads."
+  type = object({
+    enabled              = optional(bool, false)
+    bucket_name          = optional(string)
+    create_bucket        = optional(bool, true)
+    forbid_deletion      = optional(bool, true)
+    versioning_policy    = optional(string, "ENABLED")
+    max_size_bytes       = optional(number)
+    secret_delivery_mode = optional(string, "INLINE")
+    region               = optional(string)
+  })
+  default = {}
+
+  validation {
+    condition = !var.scientific_artifacts.enabled || try(
+      can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.scientific_artifacts.bucket_name)) &&
+      contains(["ENABLED", "DISABLED"], var.scientific_artifacts.versioning_policy) &&
+      contains(["INLINE", "MYSTERY_BOX"], var.scientific_artifacts.secret_delivery_mode) &&
+      (var.scientific_artifacts.max_size_bytes == null || var.scientific_artifacts.max_size_bytes > 0),
+      false,
+    )
+    error_message = "scientific_artifacts must name a valid bucket, a supported versioning policy, a supported secret delivery mode, and a positive size ceiling."
+  }
+
+  validation {
+    condition = !var.scientific_artifacts.enabled || try(
+      can(regex("^[a-z][a-z0-9-]{1,31}[a-z0-9]$", var.scientific_artifacts.region)),
+      false,
+    )
+    error_message = "scientific_artifacts.region must be the exact target region; results and the cluster stay in one region."
+  }
+}
