@@ -273,6 +273,7 @@ def assert_profile_identity(
     profile: Mapping[str, object],
     *,
     model_id: str,
+    variant_id: str,
     repository: str,
     revision: str,
     parameter_schema: str,
@@ -281,6 +282,7 @@ def assert_profile_identity(
     if (
         profile.get("schema") != "fs2-serve.nebius.ai/scientific-workload-profile/v1"
         or profile.get("model_id") != model_id
+        or profile.get("variant_id") != variant_id
         or profile.get("state") != "candidate-unqualified"
         or profile.get("route_exposed") is not False
     ):
@@ -297,10 +299,13 @@ def assert_profile_identity(
         required=frozenset(
             {
                 "protocol",
-                "submit_endpoint",
+                "variant_submit_endpoint",
+                "default_submit_endpoint",
                 "request_schema",
                 "result_schema",
                 "parameter_schema",
+                "parameter_schema_sha256",
+                "parameter_schema_definition",
                 "operations",
                 "service_classes",
                 "mcp",
@@ -308,8 +313,18 @@ def assert_profile_identity(
         ),
         label="catalog profile interface",
     )
-    if interface["request_schema"] != RUN_REQUEST_SCHEMA or interface["parameter_schema"] != parameter_schema:
+    if (
+        interface["request_schema"] != RUN_REQUEST_SCHEMA
+        or interface["parameter_schema"] != parameter_schema
+        or interface["variant_submit_endpoint"]
+        != f"/v1/models/{model_id}/variants/{variant_id}:submit"
+    ):
         raise ScientificAdapterError("catalog profile does not use the adapter's canonical request contracts")
+    expected_default_endpoint = f"/v1/models/{model_id}:submit" if profile.get("default_variant") is True else None
+    if interface["default_submit_endpoint"] != expected_default_endpoint:
+        raise ScientificAdapterError("catalog profile default route does not resolve to the selected variant")
+    if interface["parameter_schema_sha256"] != canonical_digest(interface["parameter_schema_definition"]):
+        raise ScientificAdapterError("catalog parameter schema digest does not match its definition")
     operations = interface["operations"]
     service_classes = interface["service_classes"]
     if not isinstance(operations, list) or not all(isinstance(value, str) for value in operations):
@@ -323,12 +338,57 @@ def assert_profile_identity(
     resources = strict_object(
         profile.get("resources"),
         required=frozenset(
-            {"gpu_count", "gpu_topology", "host_architectures", "compatible_pool_ids", "required_node_labels"}
+            {
+                "gpu_count",
+                "gpu_topology",
+                "host_architectures",
+                "compatible_pool_ids",
+                "required_node_labels",
+                "accelerator_requirement",
+                "cache_pvc",
+            }
         ),
         label="catalog profile resources",
     )
     if resources["gpu_count"] != 1 or resources["gpu_topology"] != "single-gpu":
         raise ScientificAdapterError("primary adapters require one GPU per GPU workload unit")
+    if resources["compatible_pool_ids"] != ["h100-reserved-8x", "h100-1x"]:
+        raise ScientificAdapterError("primary adapters require the reviewed H100 deployment pools")
+    accelerator = strict_object(
+        resources["accelerator_requirement"],
+        required=frozenset({"class", "resource_name", "count"}),
+        label="catalog profile accelerator requirement",
+    )
+    if accelerator != {
+        "class": "nvidia-h100-sxm5-80gb",
+        "resource_name": "nvidia.com/gpu",
+        "count": 1,
+    }:
+        raise ScientificAdapterError("catalog profile accelerator requirement is not the reviewed H100 contract")
+
+
+def assert_artifact_requirement(
+    profile: Mapping[str, object],
+    *,
+    artifact_id: str,
+    content_sha256: str | None,
+    required_file: str | None = None,
+) -> Mapping[str, object]:
+    """Bind an invocation to one exact compiler-produced artifact requirement."""
+
+    raw = profile.get("artifact_requirements")
+    if not isinstance(raw, list):
+        raise ScientificAdapterError("catalog profile artifact requirements are invalid")
+    matches = [item for item in raw if isinstance(item, Mapping) and item.get("artifact_id") == artifact_id]
+    if len(matches) != 1:
+        raise ScientificAdapterError(f"catalog profile must contain exactly one {artifact_id} artifact")
+    requirement = cast(Mapping[str, object], matches[0])
+    if content_sha256 is not None and requirement.get("content_digest_sha256") != content_sha256:
+        raise ScientificAdapterError(f"catalog profile {artifact_id} digest does not match the adapter")
+    files = requirement.get("required_files")
+    if required_file is not None and (not isinstance(files, list) or required_file not in files):
+        raise ScientificAdapterError(f"catalog profile {artifact_id} file inventory is incomplete")
+    return requirement
 
 
 def input_root(artifact_id: str) -> str:

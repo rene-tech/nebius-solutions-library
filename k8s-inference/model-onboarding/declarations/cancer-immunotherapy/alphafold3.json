@@ -1,0 +1,287 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "scientific-batch",
+  "model": {
+    "id": "alphafold3",
+    "variant_id": "upstream-v3-0-4",
+    "display_name": "AlphaFold 3",
+    "family": "scientific-protein",
+    "source": {
+      "kind": "git",
+      "repository": "google-deepmind/alphafold3",
+      "revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+      "review": {
+        "url": "https://github.com/google-deepmind/alphafold3/tree/85c4d20505fd5cef05eac22b534d4e793971ae69",
+        "revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+        "summary": "Qualified v3.0.4 code source; parameter acceptance and private staging remain pending."
+      },
+      "license": {
+        "id": "Apache-2.0-code-and-AF3-parameter-terms",
+        "state": "unverified",
+        "notes": "Code is Apache-2.0. The exact model parameters are authorized for this restricted technical PoC; formal institutional acceptance remains pending and is still required before production promotion."
+      },
+      "entitlement": {
+        "required": true,
+        "state": "license-acceptance-pending",
+        "credential_contract": "academic-license-acceptance/v1",
+        "notes": "Technical PoC quarantine is separately authorized; formal institutional license acceptance remains pending."
+      }
+    },
+    "artifacts": [
+      {
+        "artifact_id": "alphafold3-parameters",
+        "kind": "weights",
+        "source": {
+          "kind": "operator-staged",
+          "repository": null,
+          "revision": null,
+          "release_id": "af3.bin.zst-generation-1780568696389861"
+        },
+        "required_files": [
+          "af3.bin.zst"
+        ],
+        "supply_state": "poc-staged-quarantine",
+        "handling": "restricted-quarantine",
+        "content_digest_sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+        "total_size_bytes": 1020545840,
+        "file_manifest": [
+          {
+            "path": "af3.bin.zst",
+            "size_bytes": 1020545840,
+            "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+            "generation": "1780568696389861"
+          }
+        ]
+      },
+      {
+        "artifact_id": "alphafold3-reference-databases",
+        "kind": "reference-data",
+        "source": {
+          "kind": "operator-staged",
+          "repository": null,
+          "revision": null,
+          "release_id": "alphafold3-reference-data"
+        },
+        "required_files": [],
+        "supply_state": "unresolved",
+        "handling": "restricted-quarantine"
+      }
+    ],
+    "default_variant": true
+  },
+  "runtime": {
+    "template": "scientific-batch",
+    "kind": "custom",
+    "version": "3.0.4-candidate",
+    "image": {
+      "logical_repository": "cancer-immunotherapy/alphafold3",
+      "digest": null,
+      "state": "build-required"
+    },
+    "command": [
+      "/opt/alphafold3-venv/bin/python",
+      "/opt/alphafold3/run_alphafold.py"
+    ],
+    "args": [
+      "--json_path={REQUEST_PATH}",
+      "--model_dir=/opt/fs2/academic/alphafold3",
+      "--db_dir={REFERENCE_DATA_PATH}",
+      "--output_dir={OUTPUT_PATH}",
+      "--norun_data_pipeline"
+    ],
+    "environment": {
+      "XLA_PYTHON_CLIENT_PREALLOCATE": "true"
+    }
+  },
+  "resources": {
+    "host_ram_min_bytes": 68719476736,
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "32Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "8",
+      "memory": "64Gi",
+      "ephemeral_storage": "16Gi"
+    },
+    "limits": {
+      "cpu": "32",
+      "memory": "192Gi",
+      "ephemeral_storage": "64Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_resource_name": "nvidia.com/gpu",
+    "compatible_pool_ids": [
+      "h100-reserved-8x",
+      "h100-1x"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    }
+  },
+  "serving": null,
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": {
+      "id": "fs2-serve.nebius.ai/alphafold3-upstream-v3-0-4-parameters/v1",
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_seeds",
+          "num_diffusion_samples"
+        ],
+        "properties": {
+          "model_seeds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "num_diffusion_samples": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16
+          },
+          "input_mode": {
+            "type": "string",
+            "enum": ["raw", "enriched"],
+            "default": "raw",
+            "description": "raw runs the CPU data pipeline; enriched consumes the verified reference artifact and skips preprocessing."
+          }
+        }
+      }
+    },
+    "operations": [
+      "predict-complex-structure"
+    ],
+    "service_classes": [
+      "customer-batch"
+    ],
+    "access_profile": "academic",
+    "access_state": "license-acceptance-pending",
+    "poc_authorization": "user-authorized-academic-poc",
+    "stages": [
+      {
+        "id": "data-pipeline",
+        "needs": [],
+        "resource_class": "cpu",
+        "resources": {
+          "gpu_count": 0,
+          "requests": {
+            "cpu": "16",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "64",
+            "memory": "256Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "none",
+        "preemption_mode": "non_preemptible"
+      },
+      {
+        "id": "inference",
+        "needs": [
+          "data-pipeline"
+        ],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "192Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      }
+    ],
+    "storage": [
+      {
+        "id": "alphafold3-reference-data",
+        "purpose": "reference-data",
+        "minimum_bytes": 1099511627776,
+        "access_mode": "ReadWriteMany",
+        "read_only": true,
+        "stages": [
+          "data-pipeline"
+        ]
+      },
+      {
+        "id": "alphafold3-run-artifacts",
+        "purpose": "run-artifacts",
+        "minimum_bytes": 107374182400,
+        "access_mode": "ReadWriteMany",
+        "read_only": false,
+        "stages": [
+          "data-pipeline",
+          "inference"
+        ]
+      }
+    ],
+    "retry": {
+      "max_attempts": 2,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 60
+    },
+    "semantic_validation": {
+      "validator_id": "alphafold3-upstream-v3-0-4",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_alphafold3",
+      "description": "Submit an access-gated AlphaFold 3 scientific run."
+    }
+  },
+  "policy": {
+    "commercial_use": "prohibited",
+    "non_clinical": true,
+    "limitations": [
+      "The user-authorized academic PoC may stage and execute the exact parameter asset only in restricted quarantine; formal institutional acceptance remains required for production promotion.",
+      "The official-loader-v2 H100 run passed after correcting private-volume permissions (405 arrays, 368384602 elements, 41.42-second minimal inference, five CIFs), but the tested bead2e image reports a development identity; rebuild to a final digest and repeat the semantic gate before route qualification.",
+      "Reference databases require at least one TiB of shared ReadWriteMany storage; GPU-node ephemeral disk is not used."
+    ],
+    "fast_start": {
+      "requested_level": "Off",
+      "state": "candidate-unqualified",
+      "cache_strategy": "shared-pvc"
+    }
+  }
+}

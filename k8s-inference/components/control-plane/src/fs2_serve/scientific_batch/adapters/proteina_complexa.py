@@ -17,6 +17,7 @@ from .common import (
     CollectedOutput,
     PublicRunRequest,
     ScientificAdapterError,
+    assert_artifact_requirement,
     assert_profile_identity,
     bounded_int,
     build_execution_plan,
@@ -45,6 +46,8 @@ MAX_OUTPUT_BYTES = 2 * 1024 * 1024 * 1024
 
 AF2_ARTIFACT_ID = "alphafold2-params"
 RF3_ARTIFACT_ID = "rosettafold3-checkpoint"
+AF2_CONTENT_SHA256 = "b2fec032b5b9dab74dbeb7489d425b4fb4124742a3b368272bfa1555fe06650a"
+RF3_CONTENT_SHA256 = "08c0f4d6d58d81ebf7effa5cf2461856bdc8dc8fb49cbfa6f4b51a480aaece3e"
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,10 +219,38 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
     assert_profile_identity(
         profile,
         model_id=MODEL_ID,
+        variant_id=VARIANT_ID,
         repository=SOURCE_REPOSITORY,
         revision=SOURCE_REVISION,
         parameter_schema=PARAMETER_SCHEMA,
         request=request,
+    )
+    assert_artifact_requirement(
+        profile,
+        artifact_id=parameters.variant.runtime_artifact_id,
+        content_sha256={
+            "complexa-protein": "dae819c6e8c6c09f7ee2f8b5ee4b3ab51acb674da193cac53170f615cd52a28d",
+            "complexa-ligand": "543e963c407db556d3204da62e3c321c10428ebf1ae174df2370297ce62366c7",
+            "complexa-ame": "bb5d47194561eeaf219b420c731abd858058c3602d581c34babdbcd10c3c72ae",
+        }[parameters.variant.runtime_artifact_id],
+        required_file=parameters.variant.checkpoint,
+    )
+    assert_artifact_requirement(
+        profile,
+        artifact_id=parameters.variant.runtime_artifact_id,
+        content_sha256=None,
+        required_file=parameters.variant.autoencoder,
+    )
+    folding_artifact = AF2_ARTIFACT_ID if parameters.variant.name == "protein-target" else RF3_ARTIFACT_ID
+    assert_artifact_requirement(
+        profile,
+        artifact_id=folding_artifact,
+        content_sha256=AF2_CONTENT_SHA256 if folding_artifact == AF2_ARTIFACT_ID else RF3_CONTENT_SHA256,
+        required_file=(
+            "alphafold_params_2022-12-06.tar"
+            if folding_artifact == AF2_ARTIFACT_ID
+            else "rf3_foundry_01_24_latest_remapped.ckpt"
+        ),
     )
     stage_ids = ("generate", "filter", "evaluate", "analyze")
     invocations: list[StageInvocation] = []

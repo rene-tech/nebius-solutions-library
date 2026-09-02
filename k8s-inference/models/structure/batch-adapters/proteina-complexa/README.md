@@ -48,7 +48,12 @@ PYTHONPATH=src:../../catalog/runtime uv run pytest -q \
   tests/test_scientific_primary_adapters.py
 ```
 
-The runtime contract is bound to the locally smoke-tested immutable image
-digest, but the candidate still has no complete artifact-readiness manifest,
-H100 semantic receipt, exposed route, or deployment readiness. In particular,
-the AlphaFold2 cache still needs a declared, verified archive expansion.
+The local image ID
+`sha256:0a656b6d1324809d99048d46c28623eff2584a1cf19e0de895330f5cd98c4141`
+was interface-smoke-tested, and build receipt
+`d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8`
+records that local build. Neither is a registry manifest digest, so the runtime
+remains `build-required` with no deployable image identity. The candidate also
+has no complete artifact-readiness manifest, H100 semantic receipt, exposed
+route, or deployment readiness. In particular, the AlphaFold2 cache still
+needs a declared, verified archive expansion.

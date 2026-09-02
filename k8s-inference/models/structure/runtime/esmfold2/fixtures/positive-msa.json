@@ -1,0 +1,17 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-structure",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "manifest.esmfold2.msa",
+    "sha256": "6986ea1d6e21feb12cc09d0f019f93740bdc4f3af33c51855af9d6c942a4dd90",
+    "size_bytes": 768,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "parameters": {
+    "sequence": "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ",
+    "mode": "precomputed-msa",
+    "seed": 8
+  }
+}

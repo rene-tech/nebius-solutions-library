@@ -38,7 +38,10 @@
     "preemption_mode": "restartable",
     "platform_resume_supported": false
   },
-  "runtime_image_digest": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
+  "runtime_image_state": "build-required",
+  "runtime_image_digest": null,
+  "local_image_id": "sha256:17d1e0e9151e6ad9313718d3a8db3bbdd2d5ed4e06c394423360984285722802",
+  "local_build_receipt_sha256": "1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
   "artifact_manifest_digest": null,
   "h100_qualification_receipt": null,
   "fast_start_qualification_receipt": null

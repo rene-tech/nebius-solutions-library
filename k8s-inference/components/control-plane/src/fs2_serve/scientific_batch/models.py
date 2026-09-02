@@ -23,6 +23,10 @@ _ARTIFACT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _SENSITIVE_KEY_RE = re.compile(r"(?:token|secret|password|credential|private[_-]?key)", re.IGNORECASE)
 _CONTROLLER_MOUNT_ROOT = PurePosixPath("/mnt/fs2-scientific")
+_RUNTIME_MOUNT_ROOTS = tuple(
+    PurePosixPath(value)
+    for value in ("/models", "/databases", "/opt/fs2/artifacts", "/opt/fs2/academic")
+)
 
 
 class BatchStatus(StrEnum):
@@ -69,6 +73,11 @@ class PreemptionMode(StrEnum):
     NON_PREEMPTIBLE = "non_preemptible"
     RESTARTABLE = "restartable"
     CHECKPOINTABLE = "checkpointable"
+
+
+class StorageAccessMode(StrEnum):
+    READ_WRITE_ONCE = "ReadWriteOnce"
+    READ_WRITE_MANY = "ReadWriteMany"
 
 
 class ServiceClass(StrEnum):
@@ -175,6 +184,96 @@ def _check_digest(value: str, label: str) -> None:
 
 
 @dataclass(frozen=True, slots=True)
+class ScientificStageResources:
+    cpu_millis: int
+    memory_bytes: int
+    ephemeral_storage_bytes: int
+    gpu_count: int
+    cpu_limit_millis: int
+    memory_limit_bytes: int
+    ephemeral_storage_limit_bytes: int
+
+    def __post_init__(self) -> None:
+        if min(
+            self.cpu_millis,
+            self.memory_bytes,
+            self.ephemeral_storage_bytes,
+            self.cpu_limit_millis,
+            self.memory_limit_bytes,
+            self.ephemeral_storage_limit_bytes,
+        ) < 1:
+            raise ValueError("stage resource requests and limits must be positive")
+        if not 0 <= self.gpu_count <= 8:
+            raise ValueError("stage gpu_count must be between 0 and 8")
+        if self.cpu_limit_millis < self.cpu_millis:
+            raise ValueError("stage CPU limit cannot be below its request")
+        if self.memory_limit_bytes < self.memory_bytes:
+            raise ValueError("stage memory limit cannot be below its request")
+        if self.ephemeral_storage_limit_bytes < self.ephemeral_storage_bytes:
+            raise ValueError("stage ephemeral-storage limit cannot be below its request")
+
+
+@dataclass(frozen=True, slots=True)
+class ScientificStagePlacement:
+    accelerator_class: str | None
+    accelerator_resource_name: str | None
+    accelerator_count: int
+    compatible_pool_ids: tuple[str, ...]
+    required_node_labels: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        if len(self.compatible_pool_ids) != len(set(self.compatible_pool_ids)):
+            raise ValueError("compatible scientific pool IDs must be unique")
+        if len(dict(self.required_node_labels)) != len(self.required_node_labels):
+            raise ValueError("scientific placement label keys must be unique")
+        if self.accelerator_count == 0:
+            if (
+                self.accelerator_class is not None
+                or self.accelerator_resource_name is not None
+                or self.compatible_pool_ids
+                or self.required_node_labels
+            ):
+                raise ValueError("CPU stage placement cannot retain accelerator selectors")
+            return
+        if not 1 <= self.accelerator_count <= 8:
+            raise ValueError("GPU stage accelerator count must be between 1 and 8")
+        if self.accelerator_class is None or _POOL_RE.fullmatch(self.accelerator_class) is None:
+            raise ValueError("GPU stage placement requires a provider-neutral accelerator class")
+        if (
+            self.accelerator_resource_name is None
+            or _RESOURCE_NAME_RE.fullmatch(self.accelerator_resource_name) is None
+        ):
+            raise ValueError("GPU stage placement requires an accelerator resource name")
+        if not self.compatible_pool_ids:
+            raise ValueError("GPU stage placement requires resolved deployment pools")
+        for pool_id in self.compatible_pool_ids:
+            if _POOL_RE.fullmatch(pool_id) is None:
+                raise ValueError("scientific placement pool ID is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ScientificStorageRequirement:
+    storage_id: str
+    purpose: str
+    minimum_bytes: int
+    access_mode: StorageAccessMode
+    read_only: bool
+    stages: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.storage_id or len(self.storage_id) > 128 or _POOL_RE.fullmatch(self.storage_id) is None:
+            raise ValueError("storage_id must be a provider-neutral name of at most 128 characters")
+        if self.purpose not in {"reference-data", "run-artifacts", "model-artifacts"}:
+            raise ValueError("storage purpose is unsupported")
+        if self.minimum_bytes < 1:
+            raise ValueError("storage minimum_bytes must be positive")
+        if not self.stages or len(self.stages) != len(set(self.stages)):
+            raise ValueError("storage stages must be non-empty and unique")
+        for stage_id in self.stages:
+            _check_name(stage_id, "storage stage")
+
+
+@dataclass(frozen=True, slots=True)
 class ScientificStagePlan:
     stage_id: str
     depends_on: tuple[str, ...] = ()
@@ -187,6 +286,8 @@ class ScientificStagePlan:
     max_parallelism: int = 1024
     checkpoint_mode: CheckpointMode = CheckpointMode.RESTART
     preemption_mode: PreemptionMode = PreemptionMode.RESTARTABLE
+    resources: ScientificStageResources | None = None
+    placement: ScientificStagePlacement | None = None
 
     def __post_init__(self) -> None:
         _check_name(self.stage_id, "stage_id")
@@ -214,6 +315,17 @@ class ScientificStagePlan:
             raise ValueError("expanded stage parallelism is outside the catalog profile bounds")
         if self.checkpoint_mode is CheckpointMode.RESUME and self.preemption_mode is not PreemptionMode.CHECKPOINTABLE:
             raise ValueError("resume checkpoints require checkpointable preemption")
+        if self.resources is not None:
+            if self.resource_class is ResourceClass.CPU and self.resources.gpu_count != 0:
+                raise ValueError("CPU stage resources cannot reserve GPUs")
+            if self.resource_class is ResourceClass.GPU and self.resources.gpu_count < 1:
+                raise ValueError("GPU stage resources require at least one GPU")
+        if self.placement is not None:
+            expected = 0 if self.resource_class is ResourceClass.CPU else (
+                self.resources.gpu_count if self.resources is not None else 1
+            )
+            if self.placement.accelerator_count != expected:
+                raise ValueError("stage placement accelerator count must match stage resources")
 
     @property
     def workload_units(self) -> tuple[str | None, ...]:
@@ -225,6 +337,7 @@ class ScientificStagePlan:
 @dataclass(frozen=True, slots=True)
 class ScientificBatchPlan:
     stages: tuple[ScientificStagePlan, ...]
+    storage: tuple[ScientificStorageRequirement, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.stages:
@@ -243,6 +356,12 @@ class ScientificBatchPlan:
                     f"stage {stage.stage_id} dependencies must precede it in topological order: {sorted(forward)}"
                 )
             known.add(stage.stage_id)
+        for requirement in self.storage:
+            missing = set(requirement.stages) - set(ids)
+            if missing:
+                raise ValueError(
+                    f"storage {requirement.storage_id} has unknown stages: {sorted(missing)}"
+                )
 
     def stage(self, stage_id: str) -> ScientificStagePlan:
         return next(stage for stage in self.stages if stage.stage_id == stage_id)
@@ -298,6 +417,46 @@ class ArtifactMaterialization:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeArtifactMount:
+    """Deployment-neutral binding from a logical artifact to an image path."""
+
+    artifact_id: str
+    mount_path: str
+    sub_path: str | None = None
+    read_only: bool = True
+    expected_content_sha256: str | None = None
+    authorization_receipt_sha256: str | None = None
+    readiness_receipt_sha256: str | None = None
+    supplemental_groups: tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        if _ARTIFACT_ID_RE.fullmatch(self.artifact_id) is None:
+            raise ValueError("runtime mount artifact_id must be a logical artifact ID")
+        mount = PurePosixPath(self.mount_path)
+        if not mount.is_absolute() or not any(root == mount or root in mount.parents for root in _RUNTIME_MOUNT_ROOTS):
+            raise ValueError("runtime artifact mount must use an approved image root")
+        if any(part in {"", ".", ".."} for part in mount.parts[1:]):
+            raise ValueError("runtime artifact mount path is not canonical")
+        if not self.read_only:
+            raise ValueError("model and licensed runtime artifacts must be mounted read-only")
+        if self.sub_path is not None:
+            relative = PurePosixPath(self.sub_path)
+            if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+                raise ValueError("runtime artifact sub_path must be a safe relative path")
+        for value, label in (
+            (self.expected_content_sha256, "expected content digest"),
+            (self.authorization_receipt_sha256, "authorization receipt digest"),
+            (self.readiness_receipt_sha256, "readiness receipt digest"),
+        ):
+            if value is not None and re.fullmatch(r"[0-9a-f]{64}", value) is None:
+                raise ValueError(f"runtime artifact {label} must be a lowercase SHA-256")
+        if len(self.supplemental_groups) != len(set(self.supplemental_groups)) or any(
+            group < 1 or group > 2**31 - 1 for group in self.supplemental_groups
+        ):
+            raise ValueError("runtime artifact supplemental groups are invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class StageInvocation:
     """Immutable exec-form workload payload attached to a controller stage."""
 
@@ -310,6 +469,7 @@ class StageInvocation:
     produces: str
     materializations: tuple[ArtifactMaterialization, ...] = ()
     runtime_artifacts: tuple[str, ...] = ()
+    runtime_mounts: tuple[RuntimeArtifactMount, ...] = ()
 
     def __post_init__(self) -> None:
         _check_name(self.stage_id, "stage_id")
@@ -334,6 +494,10 @@ class StageInvocation:
         for artifact_id in self.runtime_artifacts:
             if _ARTIFACT_ID_RE.fullmatch(artifact_id) is None:
                 raise ValueError("stage runtime artifact IDs must be logical IDs")
+        if self.runtime_mounts:
+            mounted = tuple(item.artifact_id for item in self.runtime_mounts)
+            if len(set(mounted)) != len(mounted) or set(mounted) != set(self.runtime_artifacts):
+                raise ValueError("explicit runtime mounts must exactly bind stage runtime artifacts")
         materialized = tuple(item.artifact_id for item in self.materializations)
         if len(set(materialized)) != len(materialized) or not set(materialized).issubset(self.consumes):
             raise ValueError("materializations must uniquely reference consumed logical artifacts")
@@ -645,6 +809,9 @@ class WorkloadResource:
     invocation: StageInvocation | None = None
     model_id: str | None = None
     variant_id: str | None = None
+    resources: ScientificStageResources | None = None
+    placement: ScientificStagePlacement | None = None
+    storage: tuple[ScientificStorageRequirement, ...] = ()
 
     def __post_init__(self) -> None:
         _check_name(self.namespace, "namespace")
@@ -663,6 +830,21 @@ class WorkloadResource:
             raise ValueError("workload invocation identity must match the controller workload")
         if (self.model_id is None) != (self.variant_id is None):
             raise ValueError("workload model_id and variant_id must be present together")
+        if self.resources is not None:
+            expected_accelerators = self.resources.gpu_count * (self.gang_size or 1)
+            if expected_accelerators != self.scheduling.accelerator_count:
+                raise ValueError("catalog GPU count must match the frozen scheduling admission")
+        if self.placement is not None:
+            if self.placement.accelerator_resource_name != self.scheduling.accelerator_resource_name:
+                raise ValueError("catalog accelerator resource must match scheduling admission")
+            if self.placement.accelerator_count * (self.gang_size or 1) != self.scheduling.accelerator_count:
+                raise ValueError("catalog accelerator count must match scheduling admission")
+            if not set(self.scheduling.resolved_pool_preference).issubset(
+                self.placement.compatible_pool_ids
+            ):
+                raise ValueError("scheduling pools must be compatible with catalog placement")
+        if any(self.stage_id not in requirement.stages for requirement in self.storage):
+            raise ValueError("workload storage must apply to its stage")
 
     @property
     def ref(self) -> WorkloadRef:

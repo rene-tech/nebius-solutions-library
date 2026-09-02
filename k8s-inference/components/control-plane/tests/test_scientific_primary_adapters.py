@@ -285,6 +285,12 @@ def test_adapter_identities_match_the_checked_in_source_qualification() -> None:
     assert boltz_contract["runtime_reference_artifact"] == "boltzgen-inference-molecules"
     assert proteina_contract["runtime_artifact_mount_root"] == "/opt/fs2/artifacts"
     assert boltz_contract["runtime_artifact_mount_root"] == "/opt/fs2/artifacts"
+    for contract in (proteina_contract, boltz_contract):
+        assert contract["runtime_image_state"] == "build-required"
+        assert contract["runtime_image_digest"] is None
+        assert contract["local_image_id"].startswith("sha256:")
+        assert len(contract["local_image_id"]) == 71
+        assert len(contract["local_build_receipt_sha256"]) == 64
 
 
 def test_catalog_recipe_hashes_cover_the_adapter_and_canonical_workload() -> None:
@@ -462,6 +468,32 @@ def test_identity_and_all_numeric_batch_bounds_fail_closed() -> None:
             request,
             operation_id="op-bad-variant",
             variant_id="upstream-wrong",
+        )
+
+
+def test_compilation_binds_exact_catalog_artifact_manifests() -> None:
+    boltz_request = fixture("boltzgen", "positive-design.json")
+    boltz_profile = copy.deepcopy(dict(profile("boltzgen")))
+    boltz_profile["artifact_requirements"][0]["content_digest_sha256"] = "0" * 64
+    with pytest.raises(ScientificAdapterError, match="digest does not match"):
+        boltzgen.compile_run(boltz_profile, boltz_request, operation_id="op-bad-artifact-digest")
+
+    boltz_profile = copy.deepcopy(dict(profile("boltzgen")))
+    boltz_profile["artifact_requirements"][0]["required_files"].remove("boltz2_aff.ckpt")
+    with pytest.raises(ScientificAdapterError, match="file inventory is incomplete"):
+        boltzgen.compile_run(boltz_profile, boltz_request, operation_id="op-bad-artifact-files")
+
+    proteina_request = fixture("proteina-complexa", "positive-protein.json")
+    proteina_profile = copy.deepcopy(dict(profile("proteina-complexa")))
+    weight = next(
+        item for item in proteina_profile["artifact_requirements"] if item["artifact_id"] == "complexa-protein"
+    )
+    weight["content_digest_sha256"] = "f" * 64
+    with pytest.raises(ScientificAdapterError, match="digest does not match"):
+        proteina_complexa.compile_run(
+            proteina_profile,
+            proteina_request,
+            operation_id="op-bad-complexa-artifact",
         )
 
 

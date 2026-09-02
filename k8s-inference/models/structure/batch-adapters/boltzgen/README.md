@@ -60,7 +60,12 @@ PYTHONPATH=src:../../catalog/runtime uv run pytest -q \
   tests/test_scientific_primary_adapters.py
 ```
 
-The runtime contract is bound to the locally smoke-tested immutable image
-digest, but the molecule dataset remains terms/readiness-blocked. The candidate
-has no complete artifact manifest, H100 semantic receipt, exposed route, or
-deployment readiness.
+The local image ID
+`sha256:17d1e0e9151e6ad9313718d3a8db3bbdd2d5ed4e06c394423360984285722802`
+was interface-smoke-tested, and build receipt
+`1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544`
+records that local build. Neither is a registry manifest digest, so the runtime
+remains `build-required` with no deployable image identity. The molecule
+dataset also remains terms/readiness-blocked. The candidate has no complete
+artifact manifest, H100 semantic receipt, exposed route, or deployment
+readiness.

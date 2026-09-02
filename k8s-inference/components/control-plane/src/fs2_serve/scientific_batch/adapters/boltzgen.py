@@ -14,6 +14,7 @@ from .common import (
     CollectedOutput,
     PublicRunRequest,
     ScientificAdapterError,
+    assert_artifact_requirement,
     assert_profile_identity,
     bounded_int,
     build_execution_plan,
@@ -42,6 +43,8 @@ PARAMETER_SCHEMA = "fs2-serve.nebius.ai/boltzgen-parameters/v1"
 WEIGHTS_ARTIFACT_ID = "boltzgen-checkpoints"
 WEIGHTS_REVISION = "c1be29e1f82ffcc72264f64b993c43fb4e0d17f0"
 MOLECULES_ARTIFACT_ID = "boltzgen-inference-molecules"
+WEIGHTS_CONTENT_SHA256 = "b8831a6b22eefd8222d123fb9675815d004a6cec4c9bfe990e48ccb1fb529900"
+MOLECULES_CONTENT_SHA256 = "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53"
 CHECKPOINTS = (
     "boltzgen1_diverse.ckpt",
     "boltzgen1_adherence.ckpt",
@@ -220,10 +223,24 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
     assert_profile_identity(
         profile,
         model_id=MODEL_ID,
+        variant_id=VARIANT_ID,
         repository=SOURCE_REPOSITORY,
         revision=SOURCE_REVISION,
         parameter_schema=PARAMETER_SCHEMA,
         request=request,
+    )
+    for checkpoint in CHECKPOINTS:
+        assert_artifact_requirement(
+            profile,
+            artifact_id=WEIGHTS_ARTIFACT_ID,
+            content_sha256=WEIGHTS_CONTENT_SHA256,
+            required_file=checkpoint,
+        )
+    assert_artifact_requirement(
+        profile,
+        artifact_id=MOLECULES_ARTIFACT_ID,
+        content_sha256=MOLECULES_CONTENT_SHA256,
+        required_file="mols.zip",
     )
     shard_ids = tuple(batch.shard_id for batch in parameters.batches)
     selected_stages = _protocol_steps(parameters.protocol)

@@ -17,6 +17,7 @@ SCRIPT = ONBOARDING_ROOT / "compile_model.py"
 EXAMPLE = ONBOARDING_ROOT / "examples/vllm-huggingface.json"
 BATCH_EXAMPLE = ONBOARDING_ROOT / "examples/scientific-batch-git.json"
 HYBRID_EXAMPLE = ONBOARDING_ROOT / "examples/hybrid-huggingface.json"
+CANCER_DECLARATIONS = ONBOARDING_ROOT / "declarations/cancer-immunotherapy"
 
 SPEC = importlib.util.spec_from_file_location("fs2_model_onboarding", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
@@ -77,6 +78,156 @@ class ModelOnboardingCompilerTests(unittest.TestCase):
             projection["merge_target"],
             "catalog/runtime/contracts/scientific-workload-profiles.json",
         )
+
+    def test_cancer_candidate_declarations_compile_through_canonical_profile(self) -> None:
+        identities = set()
+        for path in sorted(CANCER_DECLARATIONS.glob("*.json")):
+            with self.subTest(declaration=path.name):
+                declaration = COMPILER.load_declaration(path)
+                profile = COMPILER.compile_scientific_profile(declaration, ROOT)
+                identity = (profile["model_id"], profile["variant_id"])
+                self.assertNotIn(identity, identities)
+                identities.add(identity)
+                self.assertEqual("scientific-protein", declaration["model"]["family"])
+                self.assertEqual("candidate-unqualified", profile["state"])
+                self.assertFalse(profile["interface"]["mcp"]["invocable"])
+                self.assertEqual(
+                    declaration["runtime"]["image"]["state"],
+                    profile["execution_identity"]["runtime_image_state"],
+                )
+                self.assertEqual(
+                    declaration["runtime"]["image"]["digest"],
+                    profile["execution_identity"]["runtime_image_digest"],
+                )
+                self.assertEqual(
+                    "build-required",
+                    profile["execution_identity"]["runtime_image_state"],
+                )
+                self.assertIsNone(
+                    profile["execution_identity"]["runtime_image_digest"]
+                )
+                self.assertFalse(profile["interface"]["parameter_schema_definition"]["additionalProperties"])
+                self.assertEqual(
+                    profile["policy"]["fast_start"],
+                    {
+                        "requested_level": "Off",
+                        "state": "candidate-unqualified",
+                        "cache_strategy": "shared-pvc",
+                    },
+                )
+                self.assertEqual(
+                    profile["resources"]["compatible_pool_ids"],
+                    ["h100-reserved-8x", "h100-1x"],
+                )
+                self.assertEqual(
+                    profile["resources"]["accelerator_requirement"],
+                    {
+                        "class": "nvidia-h100-sxm5-80gb",
+                        "resource_name": "nvidia.com/gpu",
+                        "count": 1,
+                    },
+                )
+                for stage in profile["workload"]["stages"]:
+                    stage_placement = stage["placement"]
+                    if stage["resource_class"] == "cpu":
+                        self.assertIsNone(stage_placement["accelerator_requirement"])
+                        self.assertEqual(stage_placement["compatible_pool_ids"], [])
+                        self.assertEqual(stage_placement["required_node_labels"], {})
+                    else:
+                        self.assertEqual(
+                            stage_placement["compatible_pool_ids"],
+                            ["h100-reserved-8x", "h100-1x"],
+                        )
+        self.assertEqual(12, len(identities))
+
+    def test_scientific_pool_resolution_fails_closed_against_inventory(self) -> None:
+        declaration = COMPILER.load_declaration(
+            CANCER_DECLARATIONS / "esmfold2-fast.json"
+        )
+        declaration["placement"]["compatible_pool_ids"] = ["invented-h100"]
+        with self.assertRaisesRegex(
+            COMPILER.OnboardingError, "absent from the reviewed deployment inventory"
+        ):
+            COMPILER.compile_scientific_profile(declaration, ROOT)
+
+    def test_workload_recipe_binds_parameter_schema_content(self) -> None:
+        declaration = COMPILER.load_declaration(
+            CANCER_DECLARATIONS / "esmfold2-fast.json"
+        )
+        before = COMPILER.compile_scientific_profile(declaration, ROOT)
+        declaration["batch"]["parameter_schema"]["document"]["properties"][
+            "sequence"
+        ]["maxLength"] = 2048
+        after = COMPILER.compile_scientific_profile(declaration, ROOT)
+        self.assertNotEqual(
+            before["execution_identity"]["workload_recipe_sha256"],
+            after["execution_identity"]["workload_recipe_sha256"],
+        )
+        self.assertNotEqual(
+            before["interface"]["parameter_schema_sha256"],
+            after["interface"]["parameter_schema_sha256"],
+        )
+
+    def test_variant_route_and_default_alias_are_explicit(self) -> None:
+        canonical = COMPILER.compile_scientific_profile(
+            COMPILER.load_declaration(CANCER_DECLARATIONS / "rfdiffusion-upstream.json"),
+            ROOT,
+        )
+        self.assertEqual(
+            canonical["interface"]["variant_submit_endpoint"],
+            "/v1/models/rfdiffusion/variants/upstream-v1-1-0:submit",
+        )
+        self.assertIsNone(canonical["interface"]["default_submit_endpoint"])
+        candidate = COMPILER.compile_scientific_profile(
+            COMPILER.load_declaration(CANCER_DECLARATIONS / "boltzgen.json"), ROOT
+        )
+        self.assertEqual(
+            candidate["interface"]["default_submit_endpoint"],
+            "/v1/models/boltzgen:submit",
+        )
+
+    def test_known_artifact_layouts_and_digests_are_exact(self) -> None:
+        protein = COMPILER.load_declaration(CANCER_DECLARATIONS / "proteinmpnn.json")
+        self.assertIn(
+            "soluble_model_weights/v_48_020.pt",
+            protein["model"]["artifacts"][0]["required_files"],
+        )
+        boltzgen = COMPILER.load_declaration(CANCER_DECLARATIONS / "boltzgen.json")
+        molecules = next(
+            item
+            for item in boltzgen["model"]["artifacts"]
+            if item["artifact_id"] == "boltzgen-inference-molecules"
+        )
+        self.assertEqual(molecules["required_files"], ["mols.zip"])
+        self.assertEqual(
+            molecules["content_digest_sha256"],
+            "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+        )
+
+    def test_inline_scientific_parameters_reject_unknown_fields(self) -> None:
+        declaration = COMPILER.load_declaration(CANCER_DECLARATIONS / "esmfold2-fast.json")
+        parameters = declaration["batch"]["parameter_schema"]["document"]
+        self.assertFalse(parameters["additionalProperties"])
+        with self.assertRaisesRegex(COMPILER.OnboardingError, "fail-closed object"):
+            parameters["additionalProperties"] = True
+            COMPILER._custom_validate(declaration)
+
+    def test_logical_image_repository_rejects_embedded_registry_host(self) -> None:
+        declaration = COMPILER.load_declaration(CANCER_DECLARATIONS / "esmfold2-fast.json")
+        declaration["runtime"]["image"]["logical_repository"] = "cr.example.invalid/team/image"
+        with self.assertRaisesRegex(COMPILER.OnboardingError, "cannot contain a registry host"):
+            COMPILER._custom_validate(declaration)
+
+    def test_scientific_runtime_repository_collision_fails(self) -> None:
+        declaration = COMPILER.load_declaration(CANCER_DECLARATIONS / "esmfold2-fast.json")
+        declaration["model"]["id"] = "another-fold"
+        declaration["model"]["variant_id"] = "upstream"
+        declaration["batch"]["mcp"]["tool_name"] = "submit_another_fold"
+        declaration["batch"]["parameter_schema"]["id"] = (
+            "fs2-serve.nebius.ai/another-fold-upstream-parameters/v1"
+        )
+        with self.assertRaisesRegex(COMPILER.OnboardingError, "scientific runtime repository"):
+            COMPILER._validate_collisions(declaration, ROOT)
 
     def test_hybrid_emits_http_and_separate_batch_candidate(self) -> None:
         declaration = COMPILER.load_declaration(HYBRID_EXAMPLE)

@@ -213,6 +213,13 @@ class ScientificBatchController:
                     ),
                     model_id=record.model_id,
                     variant_id=record.variant_id,
+                    resources=spec.resources,
+                    placement=spec.placement,
+                    storage=tuple(
+                        requirement
+                        for requirement in record.plan.storage
+                        if spec.stage_id in requirement.stages
+                    ),
                 )
                 ref = await self.cluster.apply(resource, controller_fence=claim.fencing_token)
                 if (ref.namespace, ref.name, ref.kind) != (resource.namespace, resource.name, resource.kind):

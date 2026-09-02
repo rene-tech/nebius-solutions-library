@@ -26,7 +26,9 @@
         "credential_contract": null,
         "notes": "The illustrative repository is declared public and ungated."
       }
-    }
+    },
+    "default_variant": true,
+    "variant_id": "default"
   },
   "runtime": {
     "template": "hybrid",
@@ -71,11 +73,14 @@
       "amd64"
     ],
     "compatible_pool_ids": [
-      "gpu-preemptible"
+      "h100-1x",
+      "h100-reserved-8x"
     ],
     "required_node_labels": {
-      "accelerator.fs2.nebius/class": "nvidia-gpu"
-    }
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    },
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_resource_name": "nvidia.com/gpu"
   },
   "serving": {
     "port": 8000,
@@ -98,7 +103,15 @@
     "protocol": "scientific-batch-v1",
     "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
     "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
-    "parameter_schema": "fs2-serve.nebius.ai/example-hybrid-parameters/v1",
+    "parameter_schema": {
+      "id": "fs2-serve.nebius.ai/example-hybrid-7b-default-parameters/v1",
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      }
+    },
     "operations": [
       "predict-batch"
     ],

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://fs2-serve.nebius.ai/schema/scientific-run-request/v1",
   "title": "Scientific batch run request",
-  "description": "User-authored request for POST /v1/models/{model_id}:submit. Idempotency is supplied in the Idempotency-Key HTTP header; queue, image, command, environment, and accelerator placement remain operator-owned.",
+  "description": "User-authored request for POST /v1/models/{model_id}/variants/{variant_id}:submit, or the explicitly declared default alias. Idempotency is supplied in the Idempotency-Key HTTP header; queue, image, command, environment, and accelerator placement remain operator-owned.",
   "type": "object",
   "additionalProperties": false,
   "required": [
