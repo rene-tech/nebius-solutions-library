@@ -1,0 +1,5 @@
+# Raw per-attempt receipts name the exact node they ran on, which the public
+# export rule forbids in the checked-in tree. The campaign writes them here for
+# inspection; only the redacted comparison and EVIDENCE.md are committed.
+evidence/*/attempt-*.json
+evidence/*/warmup-*.json
