@@ -361,5 +361,30 @@
     ],
     "loader_job": "fs2-complexa-af2-loader-canonical-20260903",
     "result": "passed on preemptible H100; AF2_PARAMETER_LOADER_OK"
+  },
+  "artifact_localization_successor": {
+    "catalog_candidate": "58e84e",
+    "source_manifests": {
+      "protein": {
+        "revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+        "digest": "dae819c6e8c6c09f7ee2f8b5ee4b3ab51acb674da193cac53170f615cd52a28d"
+      },
+      "ligand": {
+        "revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+        "digest": "543e963c407db556d3204da62e3c321c10428ebf1ae174df2370297ce62366c7"
+      },
+      "ame": {
+        "revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+        "digest": "bb5d47194561eeaf219b420c731abd858058c3602d581c34babdbcd10c3c72ae"
+      },
+      "rf3": {
+        "revision": "foundry-production-b02eed6a-checksum-lock",
+        "digest": "08c0f4d6d58d81ebf7effa5cf2461856bdc8dc8fb49cbfa6f4b51a480aaece3e"
+      }
+    },
+    "private_staging_root": "/tmp/fs2-complexa-stage-20260903",
+    "status": "download initiated; promotion pending immutable terminal-marker generation",
+    "consumer_mount_namespace": "fs2-academic-poc",
+    "consumer_claim": "academic-assets-runtime-rwx"
   }
 }
