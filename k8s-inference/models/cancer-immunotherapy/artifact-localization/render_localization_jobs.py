@@ -457,6 +457,30 @@ def qualify_job(
     if missing:
         raise SystemExit(f"no storage plane was given for {missing}; a mixed-plane consumer needs each one")
 
+    # Qualification can join multiple storage planes in one Pod.  Placement
+    # and Unix access therefore have to be derived from every selected
+    # artifact, not from the CLI's single --plane value (which describes
+    # stage/promotion writes).  In particular, BindCraft reads public trees
+    # owned by 1000:1000 and a private PyRosetta tree group-owned by 65532.
+    node_selector = dict(node_selector)
+    security_context = json.loads(json.dumps(security_context))
+    supplemental_groups = list(security_context.get("supplementalGroups", []))
+    if "public" in used:
+        selected_value = node_selector.get(REFERENCE_DATA_NODE_LABEL)
+        if selected_value not in {None, "true"}:
+            raise SystemExit(
+                f"a public artifact requires {REFERENCE_DATA_NODE_LABEL}=true; "
+                f"the requested selector used {selected_value!r}"
+            )
+        node_selector[REFERENCE_DATA_NODE_LABEL] = "true"
+        supplemental_groups.append(PUBLIC_PLANE_UID)
+    if "tenant-private" in used:
+        private_plane = planes["tenant-private"]
+        if namespace == ACADEMIC_NAMESPACE and private_plane.get("claim") == ACADEMIC_CLAIM:
+            supplemental_groups.append(ACADEMIC_ASSET_GID)
+    if supplemental_groups:
+        security_context["supplementalGroups"] = sorted(set(supplemental_groups))
+
     volumes = [
         {"name": "verifier", "configMap": {"name": config_map}},
         {"name": "scratch", "emptyDir": {}},
@@ -1200,7 +1224,7 @@ def main(argv: list[str] | None = None) -> int:
                 "run mounts, and that claim also holds another tenant's assets; join the group with "
                 f"--supplemental-group {ACADEMIC_ASSET_GID} instead"
             )
-    elif not host_plane and not supplemental and options.fs_group is None:
+    elif options.mode != "qualify" and not host_plane and not supplemental and options.fs_group is None:
         raise SystemExit(
             "a claim's ownership is a property of that volume, and this tool will not guess it. "
             "Pass --supplemental-group to join the group that owns the claim, or --fs-group if the "

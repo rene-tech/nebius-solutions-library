@@ -3511,6 +3511,8 @@ def test_a_mixed_plane_consumer_mounts_each_tree_from_the_plane_that_holds_it() 
         private_tree_prefix="scientific-localization/private",
     )
     spec = job["spec"]["template"]["spec"]
+    assert spec["nodeSelector"]["storage.fs2.nebius/reference-data"] == "true"
+    assert spec["securityContext"]["supplementalGroups"] == [1000, 65532]
     volumes = {item["name"]: item for item in spec["volumes"]}
     assert volumes["trees"]["hostPath"]["path"] == "/mnt/fs2-reference-data/data"
     assert volumes["trees-private"]["persistentVolumeClaim"]["claimName"] == "academic-assets-runtime-rwx"
@@ -3536,6 +3538,48 @@ def test_a_mixed_plane_consumer_mounts_each_tree_from_the_plane_that_holds_it() 
     assert public_step[public_step.index("--expect-volume-kind") + 1] == "host-path"
     assert public_step[public_step.index("--expect-host-root") + 1] == "/mnt/fs2-reference-data/data"
     assert "--expect-claim" not in public_step
+
+
+def test_the_mixed_plane_cli_derives_public_placement_and_both_plane_groups() -> None:
+    """Exercise the operator CLI path, whose --plane default is claim-backed.
+
+    The qualifier still mounts public trees, so the write-plane default must
+    not erase their placement or access requirements.
+    """
+
+    argv = [
+        "qualify",
+        "--namespace",
+        "fs2-academic-poc",
+        "--run-id",
+        "r",
+        "--claim",
+        "academic-assets-runtime-rwx",
+        "--config-map",
+        "cm",
+        "--contract",
+        _contract_path(),
+        "--image",
+        _RENDER_IMAGE,
+        "--model-id",
+        "bindcraft",
+        "--probe",
+        "/bin/true",
+    ]
+    for artifact_id in (
+        "alphafold2-params-bindcraft",
+        "colabdesign-mpnn-weights-vanilla",
+        "colabdesign-mpnn-weights-soluble",
+        "bindcraft-pyrosetta-installed-tree",
+    ):
+        argv.extend(("--artifact-id", artifact_id))
+
+    document = _render(*argv)
+    spec = next(item for item in document["items"] if item["kind"] == "Job")["spec"]["template"]["spec"]
+    assert spec["nodeSelector"]["storage.fs2.nebius/reference-data"] == "true"
+    assert spec["securityContext"]["runAsUser"] == 10001
+    assert spec["securityContext"]["runAsGroup"] == 10001
+    assert spec["securityContext"]["supplementalGroups"] == [1000, 65532]
 
 
 def test_a_consumer_whose_plane_was_not_supplied_is_refused() -> None:
