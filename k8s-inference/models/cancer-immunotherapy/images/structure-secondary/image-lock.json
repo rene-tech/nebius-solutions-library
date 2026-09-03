@@ -104,7 +104,7 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null
+      "published_digest": "sha256:24f40e67f332ecf694cb0dbb06a4a2a6cb0d49d8ee8fffd2c1d96631c7d3af14"
     },
     {
       "id": "esmfold2-fast",
@@ -182,7 +182,7 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null
+      "published_digest": "sha256:ad7948c23817f61304c570077a62e3734c4afecfb18a05ea7cb08bd0551f553e"
     },
     {
       "id": "protenix-v2",
@@ -272,7 +272,7 @@
         "blackwell": {"status": "unsupported", "scope": "pinned-pytorch-2.7.1-cu126-libtorch-has-no-blackwell-cubin-or-ptx", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null
+      "published_digest": "sha256:beeaa5173f102656437724376bad858de54232ef7ad1e342b8c2534428775494"
     },
     {
       "id": "openfold3",
@@ -348,7 +348,7 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-not-readiness", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null
+      "published_digest": "sha256:ca05bb15341045bb2876153faccb0d029a27b0050350d6b86a83a76b4fa73bb4"
     }
   ]
 }

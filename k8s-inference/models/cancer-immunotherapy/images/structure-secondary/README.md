@@ -26,6 +26,23 @@ claims its final database/runtime readiness.
 | Protenix v2 | `2475421477ab414b571149ad4a875c390ff8a35d` (`v2.0.0`) | one composite artifact candidate `protenix-v2` at `/models/protenix-v2`, containing the required mirror-verified checkpoint candidate, four common files, `manifest.json`, and `.fs2-manifest-sha256` |
 | OpenFold3 | `c4771653c5d0a3ebb0b3af71b05efd64bc44ee86` (`v0.5.0`) | OpenBind-0 checkpoint SHA-256 `bd43301c…e29e4` and `components.bcif` SHA-256 `473d845c…fcc0c` |
 
+The scanner-free publication from clean image source
+`ebed271a555488e87cd91157cd812101f0091fde`, accepted main
+`9d48fe0ef380ec736e113a89215f3730534693ad`, and exact runtime adapter
+`47ef64d479418eb823f2dc0761d8630be295b831` produced these immutable
+build-only candidates:
+
+| Runtime | Immutable regional image |
+|---|---|
+| ESMFold2 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:24f40e67f332ecf694cb0dbb06a4a2a6cb0d49d8ee8fffd2c1d96631c7d3af14` |
+| ESMFold2-Fast | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:ad7948c23817f61304c570077a62e3734c4afecfb18a05ea7cb08bd0551f553e` |
+| Protenix v2 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:beeaa5173f102656437724376bad858de54232ef7ad1e342b8c2534428775494` |
+| OpenFold3 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:ca05bb15341045bb2876153faccb0d029a27b0050350d6b86a83a76b4fa73bb4` |
+
+Each image passed the nonroot, network-disabled build smoke. Publication does
+not qualify semantic H100 readiness, Blackwell portability, or any numbered
+fast-start level; those states remain pending exactly as recorded below.
+
 OpenFold3 is an independent, non-equivalent backend; it is never reported as
 native AlphaFold3. The Protenix v2 checkpoint was recovered from the immutable
 third-party mirror `TMF001/protenix-v2-weights@653edab…ecc3` and validated as

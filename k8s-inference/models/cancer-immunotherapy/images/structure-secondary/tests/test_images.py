@@ -538,9 +538,18 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             "protenix-v2": "pending-exact-checkpoint-semantic-test",
             "openfold3": "pending-exact-artifact-semantic-test",
         }
+        expected_published_digests = {
+            "esmfold2": "sha256:24f40e67f332ecf694cb0dbb06a4a2a6cb0d49d8ee8fffd2c1d96631c7d3af14",
+            "esmfold2-fast": "sha256:ad7948c23817f61304c570077a62e3734c4afecfb18a05ea7cb08bd0551f553e",
+            "protenix-v2": "sha256:beeaa5173f102656437724376bad858de54232ef7ad1e342b8c2534428775494",
+            "openfold3": "sha256:ca05bb15341045bb2876153faccb0d029a27b0050350d6b86a83a76b4fa73bb4",
+        }
         for image in LOCK["images"]:
             with self.subTest(image=image["id"]):
-                self.assertIsNone(image["published_digest"])
+                self.assertEqual(
+                    image["published_digest"],
+                    expected_published_digests[image["id"]],
+                )
                 self.assertEqual(
                     image["accelerator_support"]["h100"]["status"],
                     expected_h100_states[image["id"]],
