@@ -1,0 +1,6 @@
+{
+  "error": "parameter object size mismatch at /models/af3.bin.zst: found 33 bytes, authorized artifact is 1020545840 bytes",
+  "mode": "inference",
+  "schema": "fs2-serve.nebius.ai/alphafold3-runtime-receipt/v1",
+  "status": "FAIL"
+}

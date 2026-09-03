@@ -1,0 +1,184 @@
+{
+  "contract": "fs2.cancer-immunotherapy.alphafold3.reference-data-binding",
+  "contract_version": "1.0.0",
+  "runtime_id": "alphafold3",
+  "state": "pending-publication",
+  "state_reason": "The reference-data worker has not yet published the AlphaFold 3 v3.0 public bundle. Until it generates a real handoff, the CPU data stage must not run, and this runtime fails closed rather than guessing an identity.",
+  "owner": {
+    "producer": "fs2-cancer-immunotherapy-reference-data-msa / fs2-af3-reference-data-live-remediation",
+    "consumer": "this runtime image",
+    "boundary": "This runtime never downloads, stages, expands, mutates or re-digests reference data. It only consumes an already published, already verified tree through a read-only mount."
+  },
+  "bundle": {
+    "bundle_id": "alphafold3-public-databases-v3.0",
+    "revision": "v3.0-paper-snapshot-2022-09-28",
+    "access": "public",
+    "redistribution_by_this_image": "none",
+    "embedded_in_image": false
+  },
+  "identities": {
+    "required": [
+      "content_tree_sha256",
+      "manifest_sha256"
+    ],
+    "content_tree_sha256": null,
+    "manifest_sha256": null,
+    "producer_field_names": {
+      "content_tree_sha256": "terminal receipt content.tree_sha256",
+      "manifest_sha256": "terminal receipt content.manifest_sha256",
+      "inventory_sha256": "terminal receipt content.inventory_sha256"
+    },
+    "independence_rule": "The aggregate tree digest and the manifest digest identify two different objects. Neither may be derived from, defaulted to, or reported as equal to the other. Both the publisher and this runtime reject a receipt whose two values are equal.",
+    "verification_rule": "The receipt's manifest digest is bound to the mounted tree by requiring the publisher's .fs2-manifest-sha256 readiness marker inside that tree to equal it. When a localized manifest document is supplied, its canonical digest is additionally recomputed and must match.",
+    "forbidden_field_names": {
+      "published_manifest_sha256": "content.manifest_sha256",
+      "source_sub_path": "storage.dataset_sub_path",
+      "published_tree_sha256": "content.tree_sha256",
+      "manifest_digest": "content.manifest_sha256",
+      "shared_filesystem_uri": "storage.host_root with storage.dataset_sub_path"
+    },
+    "forbidden_field_rule": "These near-miss names do not exist in the published contract. Accepting one would let this runtime bind a digest nobody produced, so a receipt carrying any of them is refused rather than having the field ignored.",
+    "manifest_schema": "fs2-serve.nebius.ai/reference-data-manifest/v1"
+  },
+  "storage": {
+    "shared_filesystem_host_root": "/mnt/fs2-reference-data/data",
+    "container_mount_path": "/reference-data",
+    "single_shared_filesystem": true,
+    "dataset_sub_path_template": "datasets/<bundle_id>/<revision>/sha256/<content_tree_sha256>",
+    "database_root_derivation": "<mount_path>/<dataset_sub_path>",
+    "exact_path_rule": "host_root must equal /mnt/fs2-reference-data/data and mount_path must equal /reference-data, so a receipt cannot redirect this runtime at another filesystem. The dataset sub-path must match the template exactly and its final segment must be the full 64-character aggregate tree digest; a revision-only match or a truncated digest prefix is refused.",
+    "runtime_binding_rule": "The binding rests on the mounted filesystem, not on any string in the receipt. The mounted database_root directory's full name must equal the aggregate tree digest, and the .fs2-manifest-sha256 readiness marker inside it must equal the receipt's independent manifest digest.",
+    "read_only": true,
+    "note": "One shared filesystem only. No second copy, no per-pod expansion, and no large download from a GPU stage. This runtime never writes to the reference tree."
+  },
+  "expected_objects": {
+    "flat_files": [
+      "bfd-first_non_consensus_sequences.fasta",
+      "mgy_clusters_2022_05.fa",
+      "uniref90_2022_05.fa",
+      "uniprot_all_2021_04.fa",
+      "pdb_seqres_2022_09_28.fasta",
+      "rnacentral_active_seq_id_90_cov_80_linclust.fasta",
+      "nt_rna_2023_02_23_clust_seq_id_90_cov_80_rep_seq.fasta",
+      "rfam_14_9_clust_seq_id_90_cov_80_rep_seq.fasta"
+    ],
+    "directories": [
+      "mmcif_files"
+    ],
+    "source": "Derived from run_alphafold.py database path defaults and fetch_databases.sh at upstream commit 85c4d20505fd5cef05eac22b534d4e793971ae69.",
+    "usage": "The runtime uses this list only to prove that a GPU inference stage has no reference database bound to it. It never fetches these objects."
+  },
+  "stage_separation": {
+    "data_stage": {
+      "role": "cpu",
+      "reference_data_bound": true,
+      "parameters_bound": false,
+      "gpu_requested": false,
+      "alphafold3_flags": [
+        "--norun_inference"
+      ],
+      "produces": "immutable data-pipeline output JSON plus its digest, the handoff consumed by the GPU stage"
+    },
+    "inference_stage": {
+      "role": "gpu",
+      "reference_data_bound": false,
+      "parameters_bound": true,
+      "gpu_requested": true,
+      "alphafold3_flags": [
+        "--norun_data_pipeline"
+      ],
+      "consumes": "the CPU stage's immutable handoff JSON and the published reference manifest digests as metadata only"
+    },
+    "forbidden": "A single stage must never hold both the licensed parameter binding and a reference-database binding, and must never carry CPU-queue and GPU selectors at the same time. The runtime refuses such a stage before composing any argv.",
+    "placement_rule": "The receipt's placement must declare resource_class cpu, must not carry an accelerator, and must not name a GPU node-selector key. A receipt that reserves an accelerator means preprocessing was given a GPU it must never hold, and is refused."
+  },
+  "handoff": {
+    "source": "generated by the reference-data worker; never authored by this runtime",
+    "object": "reference_data",
+    "exact_fields": [
+      "bundle_id",
+      "revision",
+      "manifest_uri",
+      "manifest_sha256"
+    ],
+    "exact_fields_rule": "Exactly these four keys, matching the publisher's own consumer contract in reference-data/reference_data.py. A handoff with a missing or extra key is rejected.",
+    "manifest_uri_rule": "The URI path must end with /<manifest_sha256>.json; scheme file or s3."
+  },
+  "producer_receipt": {
+    "role": "terminal reference-data receipt, generated by the reference-data producer",
+    "schema": "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1",
+    "implementation": "reference-data/reference_data.py _terminal_receipt",
+    "validator": "reference-data/reference_data.py validate_terminal_receipt",
+    "exact_fields": [
+      "schema",
+      "bundle_id",
+      "revision",
+      "created_at",
+      "storage",
+      "content",
+      "placement"
+    ],
+    "exact_storage_fields": [
+      "host_root",
+      "mount_path",
+      "dataset_sub_path",
+      "read_only"
+    ],
+    "exact_content_fields": [
+      "tree_sha256",
+      "manifest_sha256",
+      "inventory_sha256",
+      "inventory_marker",
+      "file_count",
+      "expanded_bytes",
+      "inline_inventory"
+    ],
+    "carries_manifest_digest": true,
+    "carries_manifest_uri": false,
+    "carries_file_list": false,
+    "note": "The receipt is bounded: it carries an inventory digest with counts rather than a file list, so a consumer binds a mount from this document alone. The publisher never invents a manifest location, so the manifest URI is supplied by the caller."
+  },
+  "preprocess_request_transform": {
+    "producer_implementation": "reference-data/reference_data.py derive_preprocess_reference_data",
+    "runtime_implementation": "runtime/af3_runtime.py ReferenceBinding.preprocess_reference_data",
+    "relationship": "The producer owns the transform. This runtime cannot import the producer's module inside the image, so it mirrors the same semantics and the integration tests assert the two produce identical output for a producer-generated receipt.",
+    "input": [
+      "the producer-generated terminal receipt",
+      "the manifest URI the caller published the manifest to"
+    ],
+    "output_object": "reference_data",
+    "output_fields": [
+      "bundle_id",
+      "revision",
+      "manifest_uri",
+      "manifest_sha256"
+    ],
+    "output_consumer": "reference-data/reference_data.py validate_preprocess_request, schema fs2-serve.nebius.ai/private-preprocess-request/v1"
+  },
+  "cpu_envelope": {
+    "rule": "The CPU data stage always passes --jackhmmer_n_cpu and --nhmmer_n_cpu explicitly, driven by the controller-frozen thread count.",
+    "upstream_default": "min(cpu_count, 8), read from the node rather than from the pod",
+    "why": "The node-derived default is wrong in both directions. The reference-data plane declares the AlphaFold 3 preprocessing stage as 16 CPU and refuses a smaller request, so the default would silently cap both MSA tools at 8 and waste half the stage; on any stage smaller than 8 CPU the same default would oversubscribe the cgroup instead.",
+    "declared_capacity": {
+      "source": "reference-data/model-requirements.json models.alphafold3.preprocessing_capacity",
+      "cpu": "16",
+      "memory": "64Gi",
+      "ephemeral_storage": "32Gi"
+    },
+    "producer_field": "preprocess request backend.threads, an integer between 1 and 128",
+    "validation": "The thread count is rejected when it exceeds the stage CPU request, so a frozen value can never oversubscribe its envelope."
+  },
+  "cpu_to_gpu_handoff": {
+    "packaged_directory": "fs2-af3-handoff",
+    "index": "index.json",
+    "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v1",
+    "layout": "<handoff>/<fold_job>/<fold_job>_data.json",
+    "paths": "relative to the handoff directory only",
+    "portability_rule": "A CPU pod's absolute output path is meaningless in the GPU pod, so no absolute producer path is recorded or reused. The GPU stage mounts the packaged directory and reconstructs every path under its own mount, verifying each payload digest.",
+    "multiplicity": {
+      "one_fold_job": "--fold-job may be omitted",
+      "many_fold_jobs": "--fold-job is required; an omitted selector is refused as ambiguous",
+      "duplicate_names": "refused, because the handoff could not address them unambiguously"
+    }
+  }
+}

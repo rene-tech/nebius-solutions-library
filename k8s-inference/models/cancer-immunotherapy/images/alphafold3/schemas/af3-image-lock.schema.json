@@ -1,0 +1,366 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2.nebius.ai/schemas/alphafold3-image-lock-v1.json",
+  "title": "AlphaFold 3 runtime image lock",
+  "description": "The immutable identity of a built and published fs2 AlphaFold 3 runtime image, together with the supply-chain receipts that prove it carries no licensed parameters and no reference-database bytes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "runtime_id",
+    "source",
+    "build",
+    "publication",
+    "hygiene"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/alphafold3-image-lock/v1"
+    },
+    "runtime_id": {
+      "const": "alphafold3"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "upstream_commit",
+        "upstream_tree",
+        "upstream_version",
+        "source_lock_sha256",
+        "dockerfile_sha256",
+        "entrypoint_sha256",
+        "source_revision",
+        "attestation_vcs_revision",
+        "context_sha256"
+      ],
+      "properties": {
+        "upstream_commit": {
+          "const": "85c4d20505fd5cef05eac22b534d4e793971ae69"
+        },
+        "upstream_tree": {
+          "const": "efa1a376c9cf94d517d70e68425bc1ed3b17a570"
+        },
+        "upstream_version": {
+          "const": "3.0.4"
+        },
+        "source_lock_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "dockerfile_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "entrypoint_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "parameter_binding_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "The repository commit the image was built from. Must equal the revision recorded in the SLSA provenance."
+        },
+        "source_tree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "attestation_vcs_revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "The revision BuildKit recorded in the provenance. The build fails if it differs from source_revision."
+        },
+        "context_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Digest over the exact build-context files. BuildKit's resolvedDependencies records base images but not the local context, so it is bound here."
+        },
+        "context_files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform",
+        "base_image_digest",
+        "image_manifest_digest",
+        "attestation_predicates",
+        "oci_archive_sha256",
+        "created"
+      ],
+      "properties": {
+        "platform": {
+          "const": "linux/amd64"
+        },
+        "base_image_digest": {
+          "const": "sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e"
+        },
+        "image_manifest_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "attestation_manifest_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "attestation_predicates": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "https://spdx.dev/Document",
+              "https://slsa.dev/provenance/v1"
+            ]
+          },
+          "minItems": 2,
+          "uniqueItems": true
+        },
+        "oci_archive_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "builder": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "apt_packages": {
+          "type": "object",
+          "description": "Exact installed versions of the apt packages that are not digest pinned, so apt drift between builds is detectable.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "repository",
+        "digest"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "unpublished",
+            "published"
+          ]
+        },
+        "repository": {
+          "const": "withheld",
+          "description": "The registry account path is a deploy-time binding and is never committed. The digest is the authoritative identity."
+        },
+        "region": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "published_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "overwrote_existing_tag": {
+          "const": false
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "published"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "digest": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "digest",
+              "published_at"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "unpublished"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "digest": {
+                "const": null
+              }
+            }
+          }
+        }
+      ]
+    },
+    "hygiene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "layer_inspection",
+        "parameters_embedded",
+        "reference_databases_embedded"
+      ],
+      "properties": {
+        "layer_inspection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "layers_inspected",
+            "entries_inspected",
+            "offenders"
+          ],
+          "properties": {
+            "method": {
+              "type": "string",
+              "minLength": 1
+            },
+            "layers_inspected": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "entries_inspected": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "offenders": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 0
+            },
+            "largest_entries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "bytes"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "bytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters_embedded": {
+          "const": false
+        },
+        "reference_databases_embedded": {
+          "const": false
+        },
+        "sbom_package_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      }
+    },
+    "smoke": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distribution_version",
+        "entrypoint_exit_code"
+      ],
+      "properties": {
+        "distribution_version": {
+          "const": "3.0.4"
+        },
+        "entrypoint_exit_code": {
+          "const": 0
+        },
+        "cli_help_ok": {
+          "type": "boolean"
+        },
+        "gpu_present": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}
