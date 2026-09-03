@@ -1,6 +1,6 @@
 {
   "schema": "fs2.nebius.ai/cancer-runtime-final-image-qualification/v1",
-  "recorded_at": "2026-09-03T06:05:00Z",
+  "recorded_at": "2026-09-03T07:20:00Z",
   "model": "bindcraft-native-pyrosetta",
   "package_scope": {
     "path": "k8s-inference/models/cancer-immunotherapy/images/bindcraft-native",
@@ -25,8 +25,8 @@
     "archive_sha256": "cada0f51f221af568ad0ee84ada2e68317501adad233008d073d66839b1afb8d"
   },
   "final_image": {
-    "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r17",
-    "digest": "sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
+    "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18",
+    "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
     "platform": "linux/amd64",
     "attestation_predicate_types": [
       "https://slsa.dev/provenance/v1",
@@ -34,17 +34,15 @@
     ],
     "registry_digest_verified_after_push": true,
     "attested_source": {
-      "revision": "bd5ce9911f0f513f81ca284d6b55129af1cf1892",
+      "revision": "aadd4a88dad488f2c7e8093d63990f7ab59e7824",
       "source": "https://github.com/rene-tech/nebius-solutions-library.git",
       "context_path": "k8s-inference/models/cancer-immunotherapy/images/bindcraft-native",
       "reachable_from": [
         "origin/agent/fs2-bindcraft-final-image-h100-successor-r20260903-clean"
       ],
-      "verified": "the publisher read the published SLSA provenance back and required the attested revision and context to be the ones it built",
-      "source_fingerprint": "916cd3f79f1595efeac87ac6b265802110764360898faee478e51b2f0a420e6a",
-      "source_fingerprint_scope": "the files the Dockerfile copies into the image plus the Dockerfile, its dockerignore, the pinned requirements and the adapter wrapper; documents, tests and the renderer are build context but never image content, so they do not move this value"
+      "verified": "the publisher read the published SLSA provenance back and required the attested revision and context to be the ones it built"
     },
-    "qualification_state": "offline-qualified; live H100 production-filter semantics gated on the immutable four-tree localization generation"
+    "qualification_state": "offline-qualified; live H100 production-filter semantics gated on generation publication"
   },
   "non_overwriting_publication": {
     "policy": "every tag is asserted absent before publication; a tag is never overwritten",
@@ -87,13 +85,19 @@
       {
         "tag_suffix": "-cuda121-r17",
         "digest": "sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
+        "state": "superseded-not-qualified",
+        "finding": "reconstructible, but could not read a single accepted generation: the artifact plane writes a .fs2-runtime-tree.json marker inside every generation, and r17's flat inventory rejected it on its leading dot while the nested manifest would have hashed it into the digest"
+      },
+      {
+        "tag_suffix": "-cuda121-r18",
+        "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
         "state": "final"
       }
     ]
   },
   "source_identity_in_published_image": {
     "method": "SHA-256 of each runtime file read from the pulled digest reference, compared to the repository working tree",
-    "match": "pending r18 publication",
+    "match": true,
     "files": [
       {
         "path": "/opt/fs2/bindcraft/runtime_entrypoint.py",
@@ -125,7 +129,8 @@
         "size_bytes": 336,
         "repository_path": "models/structure/runtime/bindcraft-native/bin/bindcraft-batch"
       }
-    ]
+    ],
+    "verified_against": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d"
   },
   "controller_interface": {
     "requirement": "--runtime-localization-marker <absolute path> accepted on both subcommands",
@@ -210,7 +215,8 @@
         "source": "catalog/runtime/contracts/academic-asset-readiness.json on origin/main",
         "asset_gid": 65532,
         "consumer_access": "supplemental-group",
-        "applies_to": "both academic models"
+        "applies_to": "both academic models",
+        "public_plane_gid": 1000
       },
       "measured_state": {
         "measured_at": "2026-09-03T06:20:00Z on academic-assets-runtime-rwx",
@@ -234,7 +240,11 @@
         "default_supplemental_group": 65532,
         "why_unchanged": "65532 is the published contract; the measurement is damage and must not be encoded",
         "works_in_both_states": "the Pod runs runAsUser 10001 runAsGroup 10001 with supplemental group 65532, so it reaches a repaired tree through the supplemental group and the damaged tree through its primary group",
-        "hazard_to_watch": "that robustness masks the fault: an acceptance run would succeed against the damaged claim and must not be read as proving the 65532 supplemental-group access contract. Re-measure the ownership at run time and record it beside the result."
+        "hazard_to_watch": "that robustness masks the fault: an acceptance run would succeed against the damaged claim and must not be read as proving the 65532 supplemental-group access contract. Re-measure the ownership at run time and record it beside the result.",
+        "default_supplemental_groups": [
+          1000,
+          65532
+        ]
       },
       "shared_repair": "repairing the claim is the academic-assets owner's call, not this task's; four tasks have now hit it and none has repaired it, and this task will not chown a shared claim it does not own",
       "latent_risk": "no pod currently mounting the claim sets fsGroup, so a repair would hold today, but seven fs2-cxq-* pods run with fsGroup 10001 against other volumes; if one ever mounts this claim the chown recurs. Confirmed read-only by the BindCraft adapter task.",
@@ -380,9 +390,8 @@
   "offline_test_evidence": {
     "image_contract_suite": {
       "command": "python3 -m unittest discover -s tests",
-      "tests": 65,
-      "result": "passed",
-      "note": "an earlier receipt claimed 60 tests against a 56-test suite; both numbers are corrected here"
+      "tests": 76,
+      "result": "passed"
     },
     "native_adapter_suite": {
       "command": "PYTHONPATH=catalog/runtime python3 -m unittest discover -s models/structure/runtime/bindcraft-native/tests",
@@ -402,28 +411,13 @@
   },
   "live_semantic_acceptance": {
     "state": "not executed",
-    "blocker": "the canonical immutable four-tree localization generation is not published yet",
+    "blocker": "the accepted generations are rendered, not published: the handoff itself reports generations_published false, and the host plane root carries no generations directory",
     "instruction": "do not bind the mutable scientific-localization/public/<artifact_id> paths or its three-tree handoff; wait for the immutable /sha256/<tree> four-tree handoff with in-generation stable terminal markers and recursive PyRosetta identity",
     "observed_state_of_the_claim": {
-      "checked_at": "2026-09-03T05:05:00Z",
-      "rechecked": "three times across roughly an hour, with an identical result each time",
-      "sha256_generation_root": "absent",
-      "localization_sha256_or_generations_root": "absent",
-      "scientific_localization_children": [
-        "public"
-      ],
-      "public_children": [
-        ".receipts",
-        "alphafold2-params-bindcraft",
-        "alphafold2-params",
-        "boltzgen-inference-molecules",
-        "colabdesign-mpnn-weights-soluble",
-        "colabdesign-mpnn-weights-vanilla",
-        "markers"
-      ],
-      "public_markers": "present but empty",
-      "scientific_ingestion": "only fs2-proteina-complexa-r20260903, unrelated to BindCraft",
-      "conclusion": "the immutable four-tree generation does not exist; only the superseded mutable layout is present, and this task must not bind it"
+      "checked_at": "2026-09-03T07:00:00Z",
+      "host_plane_root_mounted_on_h100": true,
+      "generations_directory": "absent under /mnt/fs2-reference-data/data/scientific-localization/public/generations",
+      "handoff_self_report": "evidence.generations_published = false"
     },
     "ready_to_run": "qualification/render_semantic_job.py renders the whole run from the handoff document; nothing else is outstanding on the image side",
     "handoff_requirements": [
@@ -455,7 +449,8 @@
         "colabdesign-mpnn-weights-soluble": null
       },
       "contract_conformance": "unproven"
-    }
+    },
+    "renderer_refuses_unpublished": "the renderer fails closed on a handoff reporting its generations unpublished, so a run cannot be started against directories that do not exist"
   },
   "cleanup": {
     "task_owned_pods_deleted": [
@@ -493,7 +488,7 @@
     "correction": "the design GPU init container plus CPU main container held the accelerator for the whole Pod lifetime, so a GPU sat idle through the CPU-only aggregation",
     "now": "one stage per Job over a durable workspace claim; the GPU is released when design ends",
     "handoff": "content-addressed: the aggregate re-reads every artifact the design stage published and holds it to that shard's declared SHA-256 and size, rejecting a missing, rewritten or escaping path",
-    "server_validated": "both rendered Jobs passed kubectl apply --dry-run=server against k8s-inference-h100 with synthetic content-addressed subPaths; nothing was created"
+    "server_validated": "both rendered Jobs passed kubectl apply --dry-run=server against k8s-inference-h100 using the real accepted handoff with only generations_published flipped; nothing was created"
   },
   "deferred_r18_proposal": {
     "state": "proposed, not built; r17 remains the final digest unless this is approved",
@@ -511,5 +506,18 @@
       }
     ],
     "cost": "one non-overwriting rebuild to r18 and a re-verification pass; no behavioural change to the design stage"
+  },
+  "accepted_localization_contract": {
+    "source": "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json on origin/main",
+    "schema": "fs2-serve.nebius.ai/scientific-localization-binding-handoff/v1",
+    "superseded": "the handoff shape this package invented while the real one was unavailable is gone; the renderer now reads the plane's own document",
+    "mixed_plane": {
+      "public": "three immutable generations on the reference-data host plane at /mnt/fs2-reference-data/data, node selector storage.fs2.nebius/reference-data=true",
+      "private": "the licensed PyRosetta tree only, on claim academic-assets-runtime-rwx in fs2-academic-poc"
+    },
+    "generation_is_per_artifact": "each artifact's generation equals its own tree identity digest; there is no run-level generation token, and none is invented here",
+    "marker_in_generation": "every generation carries .fs2-runtime-tree.json inside it, excluded from both identities by that one reserved name exactly as the producer excludes it",
+    "supplemental_groups": "[1000, 65532], derived from the planes actually mounted, matching the assertion in the localization renderer on main",
+    "cross_contract_tests": "read the real handoff and hold this runtime to its four mount paths, per-role identity algorithms, planes, node selector and marker"
   }
 }

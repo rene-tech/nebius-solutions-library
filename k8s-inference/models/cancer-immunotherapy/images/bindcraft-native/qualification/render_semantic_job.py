@@ -36,7 +36,8 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HANDOFF_SCHEMA = "fs2.nebius.ai/bindcraft-external-tree-handoff/v2"
+HANDOFF_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-binding-handoff/v1"
+MODEL_ID = "bindcraft"
 REQUEST_SCHEMA = "fs2-serve.nebius.ai/scientific-run-request/v1"
 PARAMETER_SCHEMA = "fs2-serve.nebius.ai/bindcraft-native-pyrosetta-parameters/v1"
 ARTIFACT_MANIFEST_SCHEMA = "fs2-serve.nebius.ai/scientific-artifact-manifest/v1"
@@ -53,7 +54,12 @@ DEFAULT_TARGET_PDB = "/opt/bindcraft/example/PDL1.pdb"
 DEFAULT_TARGET_SHA256 = "d3c95434dcadf26d005340b15bd92be61e101ed921478c26f2a5550f198e61f6"
 DEFAULT_TARGET_BYTES = 74686
 
+# A mixed-plane consumer needs both planes' groups, and which it needs follows
+# from the planes it actually mounts rather than from a flag. Kept identical to
+# the localization renderer on main, which asserts [1000, 65532] for exactly
+# this shape.
 ACADEMIC_ASSET_GID = 65532
+PUBLIC_PLANE_GID = 1000
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 DIGEST_REFERENCE = re.compile(r"^[^@\s]+@sha256:[0-9a-f]{64}$")
 SUB_PATH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,507}$")
@@ -64,19 +70,19 @@ class RenderError(RuntimeError):
     """The requested semantic run could not be rendered."""
 
 
-def _runtime_contract() -> Any:
-    """Load the image's own runtime module so its constants are not duplicated."""
+def _runtime_module(name: str, filename: str) -> Any:
+    """Load the image's own runtime modules so their constants are not duplicated."""
 
-    path = ROOT / "runtime" / "bindcraft_runtime_entrypoint.py"
-    spec = importlib.util.spec_from_file_location("fs2_bindcraft_runtime", path)
+    spec = importlib.util.spec_from_file_location(name, ROOT / "runtime" / filename)
     if spec is None or spec.loader is None:
-        raise RenderError("runtime entrypoint is unavailable")
+        raise RenderError(f"runtime module {filename!r} is unavailable")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-CONTRACT = _runtime_contract()
+CONTRACT = _runtime_module("fs2_bindcraft_runtime", "bindcraft_runtime_entrypoint.py")
+IDENTITY = _runtime_module("fs2_tree_identity", "tree_identity.py")
 
 # Where each tree has to be mounted for the model code to find it. The MPNN
 # roots are colabdesign.mpnn's own package directories, which the image builds
@@ -93,106 +99,144 @@ def canonical(value: Any) -> str:
     return json.dumps(value, indent=2, sort_keys=True) + "\n"
 
 
-def _volume_source(role: str, value: Any) -> dict[str, Any]:
-    """Validate one tree's own volume source.
+def _volume_source(artifact_id: str, value: Any) -> dict[str, Any]:
+    """Read one artifact's own volume source from the accepted handoff.
 
     The four trees do not share a backing store. The three public ones are
-    immutable generations on the reference-data filesystem, mounted by hostPath
-    on nodes that carry it; only the licensed PyRosetta tree lives on the
-    private academic claim. A renderer that assumed one claim for all four would
-    emit a Job that cannot mount three of them.
+    immutable generations on the reference-data host plane; only the licensed
+    PyRosetta tree is on the private academic claim. A renderer that assumed one
+    claim for all four could not mount three of them.
     """
 
     if not isinstance(value, dict):
-        raise RenderError(f"{role}: external tree handoff declares no volume source")
+        raise RenderError(f"{artifact_id}: handoff artifact declares no volume")
     kind = value.get("kind")
-    if kind == "hostPath":
-        host_path = value.get("path")
-        if not isinstance(host_path, str) or not host_path.startswith("/"):
-            raise RenderError(f"{role}: hostPath volume needs an absolute path")
-        if ".." in host_path.split("/"):
-            raise RenderError(f"{role}: hostPath volume path is unsafe")
-        return {"kind": kind, "path": host_path}
-    if kind == "persistentVolumeClaim":
+    sub_path = value.get("sub_path")
+    if not isinstance(sub_path, str) or SUB_PATH.fullmatch(sub_path) is None or ".." in sub_path.split("/"):
+        raise RenderError(f"{artifact_id}: handoff sub path is unsafe")
+    selector = value.get("node_selector", {})
+    if not isinstance(selector, dict) or not all(
+        isinstance(key, str) and isinstance(item, str) for key, item in selector.items()
+    ):
+        raise RenderError(f"{artifact_id}: handoff node selector must be a string map")
+    if kind == "host-path":
+        host_root = value.get("host_root")
+        if not isinstance(host_root, str) or not host_root.startswith("/") or ".." in host_root.split("/"):
+            raise RenderError(f"{artifact_id}: host-path volume needs a safe absolute host root")
+        return {"kind": kind, "path": host_root, "sub_path": sub_path, "node_selector": selector}
+    if kind == "persistent-volume-claim":
         claim = value.get("claim")
         if not isinstance(claim, str) or DNS_SUBDOMAIN.fullmatch(claim) is None:
-            raise RenderError(f"{role}: persistentVolumeClaim volume needs a claim name")
-        return {"kind": kind, "claim": claim}
-    raise RenderError(f"{role}: unsupported external tree volume kind {kind!r}")
+            raise RenderError(f"{artifact_id}: claim volume needs a claim name")
+        return {"kind": kind, "claim": claim, "sub_path": sub_path, "node_selector": selector}
+    raise RenderError(f"{artifact_id}: unsupported handoff volume kind {kind!r}")
 
 
 def _volume_key(source: dict[str, Any]) -> str:
-    return source["path"] if source["kind"] == "hostPath" else "pvc:" + source["claim"]
+    return source["path"] if source["kind"] == "host-path" else "pvc:" + source["claim"]
 
 
 def load_handoff(path: Path) -> dict[str, Any]:
-    """Validate the artifact plane's four-tree handoff before trusting a path."""
+    """Consume the artifact plane's accepted binding handoff.
+
+    This reads the plane's own document rather than a shape invented here, so a
+    generation, identity, mount path or plane decided upstream cannot silently
+    disagree with what this run mounts.
+    """
 
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or value.get("schema") != HANDOFF_SCHEMA:
-        raise RenderError("external tree handoff schema is unsupported")
-    selector = value.get("node_selector", {})
-    if not isinstance(selector, dict) or not all(
-        isinstance(key, str) and isinstance(item, str) and key and item
-        for key, item in selector.items()
-    ):
-        raise RenderError("external tree handoff node selector must be a string map")
-    # Which groups grant read access is a property of where the trees were
-    # published, not of this image. The private academic tree is group-readable
-    # only, and a public plane may be owned by a different group again, so the
-    # handoff declares them rather than this renderer guessing one constant.
-    groups = value.get("supplemental_groups", [])
-    if not isinstance(groups, list) or not all(
-        isinstance(item, int) and not isinstance(item, bool) and 0 < item < 2**31
-        for item in groups
-    ):
-        raise RenderError("external tree handoff supplemental groups must be positive integers")
-    declared = value.get("trees")
-    if not isinstance(declared, list):
-        raise RenderError("external tree handoff declares no trees")
-    by_role: dict[str, dict[str, Any]] = {}
-    for entry in declared:
-        if not isinstance(entry, dict):
-            raise RenderError("external tree handoff entry is malformed")
-        role = entry.get("role")
-        if role not in CONTRACT.REQUIRED_TREE_ROLES:
-            raise RenderError(f"external tree handoff declares unsupported role {role!r}")
-        if role in by_role:
-            raise RenderError(f"external tree handoff declares role {role!r} twice")
-        for field in ("artifact_id", "sub_path", "sha256"):
-            if not isinstance(entry.get(field), str) or not entry[field]:
-                raise RenderError(f"{role}: external tree handoff has no {field}")
-        if SHA256.fullmatch(entry["sha256"]) is None:
-            raise RenderError(f"{role}: external tree identity must be a lowercase SHA-256")
-        if SUB_PATH.fullmatch(entry["sub_path"]) is None or ".." in entry["sub_path"].split("/"):
-            raise RenderError(f"{role}: external tree subPath is unsafe")
-        by_role[role] = {**entry, "volume": _volume_source(role, entry.get("volume"))}
-    missing = sorted(CONTRACT.REQUIRED_TREE_ROLES - set(by_role))
+        raise RenderError("localization binding handoff schema is unsupported")
+    published = value.get("evidence", {}).get("generations_published")
+    if published is not True:
+        raise RenderError(
+            "the handoff reports its generations as not published; rendering a run against "
+            "generations that do not exist would mount empty directories"
+        )
+    declared = value.get("models", {}).get(MODEL_ID)
+    if not isinstance(declared, list) or not declared:
+        raise RenderError("localization binding handoff binds no BindCraft artifacts")
+    by_artifact = {
+        artifact["artifact_id"]: artifact
+        for artifact in value.get("artifacts", [])
+        if isinstance(artifact, dict) and isinstance(artifact.get("artifact_id"), str)
+    }
+    role_by_mount = {mount: role for role, mount in MOUNT_PATH_BY_ROLE.items()}
+
+    trees: dict[str, dict[str, Any]] = {}
+    selector: dict[str, str] = {}
+    for artifact_id in declared:
+        artifact = by_artifact.get(artifact_id)
+        if artifact is None:
+            raise RenderError(f"{artifact_id}: bound to BindCraft but absent from the handoff artifacts")
+        consumers = [
+            consumer
+            for consumer in artifact.get("consumers", [])
+            if isinstance(consumer, dict) and consumer.get("model_id") == MODEL_ID
+        ]
+        if len(consumers) != 1:
+            raise RenderError(f"{artifact_id}: expected exactly one BindCraft consumer")
+        mount_path = consumers[0].get("mount_path")
+        role = role_by_mount.get(mount_path)
+        if role is None:
+            raise RenderError(f"{artifact_id}: mounts {mount_path!r}, which this image does not read")
+        if role in trees:
+            raise RenderError(f"{role}: bound by more than one artifact")
+        identity = artifact.get("tree_identity", {})
+        digest = identity.get("inventory_sha256")
+        if not isinstance(digest, str) or SHA256.fullmatch(digest) is None:
+            raise RenderError(f"{artifact_id}: tree identity is not a lowercase SHA-256")
+        expected_algorithm = (
+            IDENTITY.TREE_MANIFEST_ALGORITHM
+            if role in CONTRACT.NESTED_TREE_ROLES
+            else IDENTITY.FLAT_INVENTORY_ALGORITHM
+        )
+        if identity.get("inventory_algorithm") != expected_algorithm:
+            raise RenderError(
+                f"{artifact_id}: identity algorithm {identity.get('inventory_algorithm')!r} is not the "
+                f"{expected_algorithm!r} this runtime verifies for {role}"
+            )
+        source = _volume_source(artifact_id, artifact.get("volume"))
+        selector.update(source["node_selector"])
+        # A generation is per artifact and equals that tree's own identity
+        # digest; there is no run-level generation token in the accepted
+        # contract, so none is invented here.
+        generation = str(artifact.get("generation", ""))
+        if generation != digest:
+            raise RenderError(
+                f"{artifact_id}: published generation does not equal its tree identity"
+            )
+        trees[role] = {"artifact_id": artifact_id, "sha256": digest, "volume": source,
+                       "sub_path": source["sub_path"], "generation": generation}
+
+    missing = sorted(CONTRACT.REQUIRED_TREE_ROLES - set(trees))
     if missing:
-        raise RenderError("external tree handoff is missing roles: " + ", ".join(missing))
-    licensed = by_role[CONTRACT.PYROSETTA_ROLE]["sha256"]
-    if licensed != CONTRACT.PYROSETTA_TREE_MANIFEST_SHA256:
+        raise RenderError("localization binding handoff is missing roles: " + ", ".join(missing))
+    licensed = trees[CONTRACT.PYROSETTA_ROLE]
+    if licensed["sha256"] != CONTRACT.PYROSETTA_TREE_MANIFEST_SHA256:
         raise RenderError(
             "handoff PyRosetta tree identity is not the licensed tree this image is built for"
         )
-    generation = value.get("generation")
-    if not isinstance(generation, str) or CONTRACT.LOCALIZATION_GENERATION.fullmatch(generation) is None:
-        raise RenderError("external tree handoff names no immutable localization generation")
-    licensed = by_role[CONTRACT.PYROSETTA_ROLE]["volume"]
-    if licensed["kind"] != "persistentVolumeClaim":
+    if licensed["volume"]["kind"] != "persistent-volume-claim":
         raise RenderError(
             "the licensed PyRosetta tree must come from the private academic claim, not a public volume"
         )
-    for role, entry in by_role.items():
-        if role != CONTRACT.PYROSETTA_ROLE and entry["volume"] == licensed:
-            raise RenderError(
-                f"{role}: a public tree must not be served from the private academic claim"
-            )
+    for role, entry in trees.items():
+        if role != CONTRACT.PYROSETTA_ROLE and entry["volume"] == licensed["volume"]:
+            raise RenderError(f"{role}: a public tree must not be served from the private academic claim")
+    groups = value.get("supplemental_groups", [])
+    if not isinstance(groups, list) or not all(
+        isinstance(item, int) and not isinstance(item, bool) and 0 < item < 2**31 for item in groups
+    ):
+        raise RenderError("handoff supplemental groups must be positive integers")
+    for entry in trees.values():
+        groups.append(
+            PUBLIC_PLANE_GID if entry["volume"]["kind"] == "host-path" else ACADEMIC_ASSET_GID
+        )
     return {
-        "generation": generation,
         "node_selector": selector,
-        "supplemental_groups": sorted({ACADEMIC_ASSET_GID, *groups}),
-        "trees": by_role,
+        "supplemental_groups": sorted(set(groups)),
+        "trees": trees,
     }
 
 
@@ -206,9 +250,13 @@ def localization_marker(handoff: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "schema": "fs2.nebius.ai/runtime-localization-marker/v1",
-        "generation": handoff["generation"],
         "trees": {
-            role: {"artifact_id": entry["artifact_id"], "sub_path": entry["sub_path"]}
+            role: {
+                "artifact_id": entry["artifact_id"],
+                "sub_path": entry["sub_path"],
+                "volume_kind": entry["volume"]["kind"],
+                "generation": entry["generation"],
+            }
             for role, entry in sorted(handoff["trees"].items())
         },
     }
@@ -217,7 +265,6 @@ def localization_marker(handoff: dict[str, Any]) -> dict[str, Any]:
 def admission_document(handoff: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema": CONTRACT.EXTERNAL_TREE_ADMISSION_SCHEMA,
-        "generation": handoff["generation"],
         "trees": [
             {
                 "role": role,
@@ -332,7 +379,7 @@ def _tree_volumes(handoff: dict[str, Any]) -> tuple[list[dict[str, Any]], list[d
         if name is None:
             name = f"trees-{len(names)}"
             names[key] = name
-            if source["kind"] == "hostPath":
+            if source["kind"] == "host-path":
                 volumes.append({"name": name, "hostPath": {"path": source["path"], "type": "Directory"}})
             else:
                 volumes.append({

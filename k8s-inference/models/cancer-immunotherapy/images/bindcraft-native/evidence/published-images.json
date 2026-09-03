@@ -17,15 +17,15 @@
         "reachable_from": [
           "origin/agent/fs2-bindcraft-final-image-h100-successor-r20260903-clean"
         ],
-        "revision": "bd5ce9911f0f513f81ca284d6b55129af1cf1892",
+        "revision": "aadd4a88dad488f2c7e8093d63990f7ab59e7824",
         "source": "https://github.com/rene-tech/nebius-solutions-library.git",
-        "source_fingerprint": "b74f0a8d6fa3424c53f2471279cedc1b17cacf74d93fe92f6f06b2986df34a0f"
+        "source_fingerprint": "b56dbafca8da54fbd506563a0a4da589ba37933714a243812824950921699b09"
       },
-      "digest": "sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
-      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
+      "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
       "id": "bindcraft-academic",
-      "manifest_sha256": "aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
-      "pull_stdout_sha256": "e3ec2c9e8f00df5d6a814898e1dffc5331443a5525eb4ab578b57f4e44f139a1",
+      "manifest_sha256": "806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+      "pull_stdout_sha256": "fdee770af1c06100c8e5fa836565e36932499cba6e0d07b1e06e550bcbd278e1",
       "smoke": [
         {
           "command": [
@@ -36,7 +36,7 @@
             "linux/amd64",
             "--network",
             "none",
-            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
             "--fs2-image-smoke"
           ],
           "last_line": "{\"cuda_available\": false, \"cuda_build\": \"12.1\", \"embedded_model_artifacts\": false, \"embedded_pyrosetta\": false, \"gpu_evidence\": {}, \"gpu_required_imports_deferred\": [], \"imports\": {\"Bio\": \"1.85\", \"colabdesign\": \"imported\", \"jax\": \"0.4.28\", \"jaxlib\": \"0.4.28+cuda12.cudnn89\", \"torch\": \"2.3.0\"}, \"runtime\": \"bindcraft-academic\", \"schema\": \"fs2.nebius.ai/runtime-image-smoke/v1\", \"source_revision\": \"7cd4ace1b7407adf66a50dfefa47de2270f5e4a9\"}",
@@ -53,7 +53,7 @@
             "none",
             "--entrypoint",
             "/opt/fs2/bin/bindcraft-batch",
-            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
             "run-trajectory",
             "--help"
           ],
@@ -71,7 +71,7 @@
             "none",
             "--entrypoint",
             "/opt/fs2/bin/bindcraft-batch",
-            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
             "aggregate",
             "--help"
           ],
@@ -84,10 +84,10 @@
         "repository": "https://github.com/martinpacesa/BindCraft",
         "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
       },
-      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r17"
+      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18"
     }
   ],
   "platform": "linux/amd64",
-  "recorded_at": "2026-09-03T05:34:17.448199Z",
+  "recorded_at": "2026-09-03T05:45:38.426183Z",
   "schema": "fs2.nebius.ai/cancer-runtime-image-publication/v1"
 }

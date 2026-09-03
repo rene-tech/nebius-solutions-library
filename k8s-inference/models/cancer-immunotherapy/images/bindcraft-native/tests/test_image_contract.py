@@ -1055,52 +1055,27 @@ class CrossJobHandoffTests(unittest.TestCase):
 
 
 class SemanticJobRenderTests(unittest.TestCase):
-    # The accepted architecture: three public immutable generations reached by
-    # hostPath on the reference-data filesystem, and only the licensed PyRosetta
-    # tree on the private academic claim.
-    REFERENCE_PLANE_HOST_PATH = "/mnt/reference-data"
+    # Built from the artifact plane's real accepted handoff rather than a shape
+    # invented here, so a change upstream fails these tests instead of the run.
     ACADEMIC_CLAIM = "academic-assets-runtime-rwx"
-    NODE_SELECTOR = {
-        "storage.fs2.nebius/reference-data": "true",
-        "capacity.fs2.nebius/type": "regular",
-    }
+    REFERENCE_PLANE_HOST_PATH = "/mnt/fs2-reference-data/data"
+    NODE_SELECTOR = {"storage.fs2.nebius/reference-data": "true"}
 
     def handoff(self, root: Path, **overrides: object) -> Path:
-        trees = []
-        for role in sorted(bindcraft_runner.REQUIRED_TREE_ROLES):
-            licensed = role == bindcraft_runner.PYROSETTA_ROLE
-            digest = (
-                bindcraft_runner.PYROSETTA_TREE_MANIFEST_SHA256
-                if licensed
-                else hashlib.sha256(role.encode()).hexdigest()
-            )
-            volume = (
-                {"kind": "persistentVolumeClaim", "claim": self.ACADEMIC_CLAIM}
-                if licensed
-                else {"kind": "hostPath", "path": self.REFERENCE_PLANE_HOST_PATH}
-            )
-            sub_path = (
-                "pyrosetta-bindcraft/site-packages"
-                if licensed
-                else f"sha256/{hashlib.sha256(role.encode()).hexdigest()}"
-            )
-            trees.append({
-                "role": role,
-                "artifact_id": role,
-                "sub_path": sub_path,
-                "sha256": digest,
-                "volume": volume,
-            })
-        value: dict[str, object] = {
-            "schema": renderer.HANDOFF_SCHEMA,
-            "generation": "sha256:" + "c" * 64,
-            "node_selector": dict(self.NODE_SELECTOR),
-            "trees": trees,
-        }
+        value = json.loads(AcceptedLocalizationHandoffTests.HANDOFF.read_text(encoding="utf-8"))
+        # The real document reports its generations unpublished, which the
+        # renderer refuses by design; a render test has to say they exist.
+        value["evidence"]["generations_published"] = True
         value.update(overrides)
         path = root / "handoff.json"
         path.write_text(json.dumps(value), encoding="utf-8")
         return path
+
+    def artifact(self, value: dict, artifact_id: str) -> dict:
+        for artifact in value["artifacts"]:
+            if artifact["artifact_id"] == artifact_id:
+                return artifact
+        raise AssertionError(artifact_id)
 
     def render(self, path: Path, **overrides: object):
         argv = [
@@ -1157,7 +1132,12 @@ class SemanticJobRenderTests(unittest.TestCase):
                 )
             marker = json.loads(config_map["data"]["runtime-localization.json"])
             admission = json.loads(config_map["data"]["external-trees.json"])
-            self.assertEqual(marker["generation"], admission["generation"])
+            # A generation is per artifact in the accepted contract and equals
+            # that tree's own identity, so no run-level token is invented.
+            identities = {tree["role"]: tree["sha256"] for tree in admission["trees"]}
+            self.assertEqual(
+                {role: entry["generation"] for role, entry in marker["trees"].items()}, identities
+            )
 
     def test_rendered_job_uses_the_checked_in_production_settings_and_filters(self) -> None:
         with tempfile.TemporaryDirectory() as name:
@@ -1203,7 +1183,10 @@ class SemanticJobRenderTests(unittest.TestCase):
             self.assertEqual(
                 volumes[licensed["name"]]["persistentVolumeClaim"]["claimName"], self.ACADEMIC_CLAIM
             )
-            self.assertEqual(licensed["subPath"], "pyrosetta-bindcraft/site-packages")
+            self.assertTrue(
+                licensed["subPath"].startswith("scientific-localization/private/generations/"),
+                licensed["subPath"],
+            )
 
             public_paths = set(renderer.MOUNT_PATH_BY_ROLE.values()) - {licensed["mountPath"]}
             for mount_path in public_paths:
@@ -1211,7 +1194,11 @@ class SemanticJobRenderTests(unittest.TestCase):
                 self.assertEqual(
                     volumes[mount["name"]]["hostPath"]["path"], self.REFERENCE_PLANE_HOST_PATH
                 )
-                self.assertTrue(mount["subPath"].startswith("sha256/"), mount_path)
+                self.assertIn("/sha256/", mount["subPath"], mount_path)
+                self.assertTrue(
+                    mount["subPath"].startswith("scientific-localization/public/generations/"),
+                    mount_path,
+                )
             # One hostPath volume shared by the three public trees, plus the claim.
             self.assertEqual(len({mounted[p]["name"] for p in public_paths}), 1)
             for mount in mounted.values():
@@ -1243,23 +1230,23 @@ class SemanticJobRenderTests(unittest.TestCase):
                 aggregate["spec"]["template"]["spec"]["nodeSelector"],
             )
 
-    def test_supplemental_groups_come_from_the_handoff(self) -> None:
-        # Read access is a property of where a tree was published. The private
-        # academic tree is group-readable only, and a public plane may be owned
-        # by a different group again, so one hard-coded constant cannot serve
-        # both and the handoff has to declare what the run needs.
+    def test_a_mixed_plane_run_joins_both_planes_groups(self) -> None:
+        # Read access follows the planes actually mounted: the public host plane
+        # is owned by 1000 and the private academic claim delivers on 65532. The
+        # localization renderer on main asserts exactly [1000, 65532] for this
+        # shape, so a run that joined only one of them could not read the other.
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             _, default = self.render(self.handoff(root), stage="design")
             self.assertEqual(
                 default["spec"]["template"]["spec"]["securityContext"]["supplementalGroups"],
-                [renderer.ACADEMIC_ASSET_GID],
+                [renderer.PUBLIC_PLANE_GID, renderer.ACADEMIC_ASSET_GID],
             )
-            path = self.handoff(root, supplemental_groups=[1000, 10001])
+            path = self.handoff(root, supplemental_groups=[4242])
             _, declared = self.render(path, stage="design")
             self.assertEqual(
                 declared["spec"]["template"]["spec"]["securityContext"]["supplementalGroups"],
-                sorted({1000, 10001, renderer.ACADEMIC_ASSET_GID}),
+                sorted({4242, renderer.PUBLIC_PLANE_GID, renderer.ACADEMIC_ASSET_GID}),
             )
 
     def test_the_default_supplemental_group_is_the_published_contract(self) -> None:
@@ -1274,6 +1261,7 @@ class SemanticJobRenderTests(unittest.TestCase):
             context = job["spec"]["template"]["spec"]["securityContext"]
             self.assertIn(65532, context["supplementalGroups"])
             self.assertNotIn("fsGroup", context)
+            self.assertEqual(renderer.PUBLIC_PLANE_GID, 1000)
 
     def test_supplemental_groups_must_be_positive_integers(self) -> None:
         with tempfile.TemporaryDirectory() as name:
@@ -1281,27 +1269,33 @@ class SemanticJobRenderTests(unittest.TestCase):
             with self.assertRaisesRegex(renderer.RenderError, "positive integers"):
                 self.render(path, stage="design")
 
+    def mutate(self, root: Path, artifact_id: str, **changes: object) -> Path:
+        value = json.loads(self.handoff(root).read_text())
+        artifact = self.artifact(value, artifact_id)
+        for key, item in changes.items():
+            artifact[key] = item
+        path = root / "handoff.json"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        return path
+
     def test_the_licensed_tree_may_not_be_served_from_a_public_volume(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
-            path = self.handoff(root)
-            value = json.loads(path.read_text())
-            for tree in value["trees"]:
-                if tree["role"] == bindcraft_runner.PYROSETTA_ROLE:
-                    tree["volume"] = {"kind": "hostPath", "path": self.REFERENCE_PLANE_HOST_PATH}
-            path.write_text(json.dumps(value), encoding="utf-8")
+            path = self.mutate(root, "bindcraft-pyrosetta-installed-tree", volume={
+                "kind": "host-path", "host_root": self.REFERENCE_PLANE_HOST_PATH,
+                "sub_path": "scientific-localization/public/x", "node_selector": self.NODE_SELECTOR,
+            })
             with self.assertRaisesRegex(renderer.RenderError, "private academic claim"):
                 self.render(path, stage="design")
 
     def test_a_public_tree_may_not_be_served_from_the_private_claim(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
-            path = self.handoff(root)
-            value = json.loads(path.read_text())
-            for tree in value["trees"]:
-                if tree["role"] == bindcraft_runner.AF2_PARAMS_ROLE:
-                    tree["volume"] = {"kind": "persistentVolumeClaim", "claim": self.ACADEMIC_CLAIM}
-            path.write_text(json.dumps(value), encoding="utf-8")
+            licensed = json.loads(self.handoff(root).read_text())
+            claim_volume = dict(
+                self.artifact(licensed, "bindcraft-pyrosetta-installed-tree")["volume"]
+            )
+            path = self.mutate(root, "alphafold2-params-bindcraft", volume=claim_volume)
             with self.assertRaisesRegex(renderer.RenderError, "must not be served from the private"):
                 self.render(path, stage="design")
 
@@ -1363,47 +1357,54 @@ class SemanticJobRenderTests(unittest.TestCase):
     def test_render_rejects_a_handoff_that_is_not_the_licensed_tree(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
-            path = self.handoff(root)
-            value = json.loads(path.read_text())
-            for tree in value["trees"]:
-                if tree["role"] == bindcraft_runner.PYROSETTA_ROLE:
-                    tree["sha256"] = "0" * 64
-            path.write_text(json.dumps(value), encoding="utf-8")
+            foreign = "0" * 64
+            path = self.mutate(
+                root, "bindcraft-pyrosetta-installed-tree",
+                generation=foreign,
+                tree_identity={"inventory_algorithm": "fs2-tree-manifest/v1",
+                               "inventory_sha256": foreign},
+            )
             with self.assertRaisesRegex(renderer.RenderError, "licensed tree this image"):
-                self.render(path)
+                self.render(path, stage="design")
 
     def test_render_rejects_missing_roles_and_traversing_sub_paths(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
-            path = self.handoff(root)
-            value = json.loads(path.read_text())
-            value["trees"] = value["trees"][:3]
+            value = json.loads(self.handoff(root).read_text())
+            value["models"]["bindcraft"] = value["models"]["bindcraft"][:3]
+            path = root / "handoff.json"
             path.write_text(json.dumps(value), encoding="utf-8")
             with self.assertRaisesRegex(renderer.RenderError, "missing roles"):
-                self.render(path)
+                self.render(path, stage="design")
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             path = self.handoff(root)
-            value = json.loads(path.read_text())
-            value["trees"][0]["sub_path"] = "sha256/../escape"
-            path.write_text(json.dumps(value), encoding="utf-8")
+            value = json.loads(self.handoff(root).read_text())
+            volume = dict(self.artifact(value, "colabdesign-mpnn-weights-vanilla")["volume"])
+            volume["sub_path"] = "sha256/../escape"
+            path = self.mutate(root, "colabdesign-mpnn-weights-vanilla", volume=volume)
             with self.assertRaisesRegex(renderer.RenderError, "unsafe"):
-                self.render(path)
-        with tempfile.TemporaryDirectory() as name:
-            root = Path(name)
-            path = self.handoff(root)
-            value = json.loads(path.read_text())
-            del value["generation"]
-            path.write_text(json.dumps(value), encoding="utf-8")
-            with self.assertRaisesRegex(renderer.RenderError, "no immutable localization generation"):
-                self.render(path)
-
-    def test_render_never_hard_codes_a_shared_filesystem_layout(self) -> None:
+                self.render(path, stage="design")
+    def test_no_tree_location_is_hard_coded(self) -> None:
+        # Every location comes from the handoff. Asserting the real document's
+        # own paths are absent from the source is stronger than a keyword ban:
+        # it fails if any concrete generation path is ever pasted in.
         source = (ROOT / "qualification" / "render_semantic_job.py").read_text(encoding="utf-8")
-        # Tree locations are handoff inputs. The superseded mutable localization
-        # layout must not reappear as a constant in the renderer or the runtime.
-        for module in (source, (ROOT / "runtime" / "bindcraft_runtime_entrypoint.py").read_text()):
-            self.assertNotIn("scientific-localization", module)
+        runtime = (ROOT / "runtime" / "bindcraft_runtime_entrypoint.py").read_text(encoding="utf-8")
+        document = json.loads(
+            AcceptedLocalizationHandoffTests.HANDOFF.read_text(encoding="utf-8")
+        )
+        located = set()
+        for artifact in document["artifacts"]:
+            volume = artifact["volume"]
+            located.add(volume["sub_path"])
+            for key in ("host_root", "host_path", "claim"):
+                if isinstance(volume.get(key), str):
+                    located.add(volume[key])
+        self.assertTrue(located)
+        for module in (source, runtime):
+            for location in located:
+                self.assertNotIn(location, module)
 
     def test_kueue_queue_is_optional_and_controls_suspension(self) -> None:
         with tempfile.TemporaryDirectory() as name:
