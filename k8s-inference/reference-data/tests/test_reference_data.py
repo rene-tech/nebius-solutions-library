@@ -515,6 +515,7 @@ class ReferenceDataContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8"))
         self.assertIn('port     = "8080"', module)
         self.assertIn('namespace = kubernetes_namespace_v1.reference_data.metadata[0].name', module)
+        self.assertIn('values   = ["coredns", "kube-dns"]', module)
 
     def test_pipeline_identity_covers_every_immutable_pod_input_family(self) -> None:
         module = (REFERENCE_DATA / "terraform" / "main.tf").read_text(encoding="utf-8")

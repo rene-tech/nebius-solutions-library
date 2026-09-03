@@ -391,7 +391,11 @@ resource "kubernetes_network_policy_v1" "dns" {
           match_labels = { "kubernetes.io/metadata.name" = "kube-system" }
         }
         pod_selector {
-          match_labels = { "k8s-app" = "kube-dns" }
+          match_expressions {
+            key      = "k8s-app"
+            operator = "In"
+            values   = ["coredns", "kube-dns"]
+          }
         }
       }
       ports {
