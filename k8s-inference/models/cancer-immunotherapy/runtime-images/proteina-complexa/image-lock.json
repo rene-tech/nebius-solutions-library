@@ -1,0 +1,382 @@
+{
+  "schema": "fs2.nebius.ai/proteina-complexa-runtime-image-lock/v1",
+  "model_id": "proteina-complexa",
+  "owner_task": "fs2-complexa-final-h100-qualification-r20260903",
+  "publication_policy": "explicit-non-overwriting-qualified-tags",
+  "source": {
+    "repository": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+    "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+    "revision_label": "the source-candidate revision recorded in catalog/runtime/contracts/scientific-source-candidate-receipts.json and models/cancer-immunotherapy/model-source-qualification.json",
+    "archive_url": "https://codeload.github.com/NVIDIA-BioNeMo/Proteina-Complexa/tar.gz/54058860d43444c7289873f77d3e50b5b02348cd",
+    "archive_sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b",
+    "archive_bytes": 3880947,
+    "license": "Apache-2.0",
+    "license_state": "verified",
+    "source_date_epoch": 1787870240,
+    "equivalence_check": {
+      "method": "the pinned archive is re-fetched, its sha256 compared to archive_sha256, extracted, and compared file by file against /opt/fs2/source inside the predecessor digest",
+      "state": "equivalent: 632/632 files match",
+      "evidence": "evidence/source-equivalence.json"
+    }
+  },
+  "image": {
+    "id": "proteina-complexa",
+    "platform": "linux/amd64",
+    "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
+    "repository": "proteina-complexa",
+    "tag_suffix": "batch-v1",
+    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd-batch-v1",
+    "build_context": "..",
+    "dockerfile": "Dockerfile",
+    "python": "3.12",
+    "base": {
+      "builder": "nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04@sha256:50efab398f76258daa91ceebb33b6467e40217c67ea44fb5a2cebc6be7d9cce3",
+      "runtime": "nvidia/cuda:12.6.3-base-ubuntu24.04@sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e",
+      "uv": "ghcr.io/astral-sh/uv:0.11.7@sha256:240fb85ab0f263ef12f492d8476aa3a2e4e1e333f7d67fbdd923d00a506a516a",
+      "substitution": "nvcr.io/nvidia/pytorch:24.08-py3 -> nvidia/cuda:12.6.3-*-ubuntu24.04; NVCR returned HTTP 403 for the upstream-recommended base, so the public NVIDIA CUDA images are used and the substitution is declared in an image label"
+    },
+    "accelerator_runtime": {
+      "framework": "torch",
+      "framework_version": "2.7.0+cu126",
+      "cuda_abi": "12.6",
+      "torch_cuda_arch_list": "7.5;8.0;8.6;8.9;9.0+PTX",
+      "architecture_policy": "capability-driven. The runtime entrypoint admits any device torch reports as CUDA-capable and records its name and compute capability; there is no device-name allowlist and no H100-only admission check. H100 (sm90) is the present acceptance target. B200/B300/GB300 (sm100) are not covered by the compiled arch list above and would need a lock revision that adds their capability, which is a build input change, not a code change.",
+      "ptxas": "12.6.85, retained in the runtime stage because ColabDesign's JAX 0.4.29 path compiles PTX at runtime for the AlphaFold2 reward model"
+    },
+    "dependency_lock": {
+      "path": "requirements.lock",
+      "sha256": "0fb7e8443b5d46a20692e560e8834d6c78a53f31881492c0dcee740ecc2a71ed",
+      "provenance": "reused verbatim from the predecessor build inputs at agent/fs2-cancer-images-complexa-boltzgen-successor-r20260903 4a1c0f90; the lock is fully hash-pinned"
+    },
+    "runtime_entrypoint": {
+      "path": "runtime_entrypoint.py",
+      "container_path": "/opt/fs2/complexa/runtime_entrypoint.py",
+      "sha256": null
+    },
+    "smoke": [
+      [
+        "python",
+        "/opt/fs2/runtime_probe.py",
+        "--model",
+        "proteina-complexa"
+      ],
+      [
+        "python",
+        "/opt/fs2/complexa/runtime_entrypoint.py",
+        "describe"
+      ]
+    ],
+    "published_digest": null,
+    "provenance": {
+      "mode": "slsa-provenance-max-attached-at-push",
+      "vcs_revision": null,
+      "requirement": "the attached SLSA provenance must name the exact clean commit of this repository that carries these build inputs; a dirty tree or an uncommitted build input invalidates the publication"
+    },
+    "supersedes": [
+      {
+        "tag_suffix": null,
+        "tag": "54058860d43444c7289873f77d3e50b5b02348cd",
+        "digest": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+        "deployable": false,
+        "reason": "first Complexa publication. Carries the correct upstream source but no runtime batch contract, no ptxas in the runtime stage, and image cache defaults (HF_HOME, XDG_CACHE_HOME) that resolve under the read-only external artifact root."
+      },
+      {
+        "tag_suffix": "ptxas-v1",
+        "tag": "54058860d43444c7289873f77d3e50b5b02348cd-ptxas-v1",
+        "digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+        "deployable": false,
+        "reason": "added ptxas to the runtime stage. Its only recorded H100 outcome is an AlphaFold2 multimer parameter load through ColabDesign (AF2_PARAMETER_LOADER_OK) driven by a bash -lc wrapper that wrote a .env file; the predecessor receipt itself records forward_result as blocked. That evidence exercises a reward-model dependency, not the Proteina-Complexa score model, so it never qualified any Complexa variant. It also carries no OCI referrer, so it has no attached SLSA provenance at all, and it was built from unmerged branch commit 07adbbb8 rather than a clean main commit.",
+        "reused_for": "this task ran its first real Complexa forward inference on this digest with the runtime entrypoint mounted from a ConfigMap, to prove the recipe before committing to a rebuild; see evidence/h100-run-receipt.json contract_proving_runs"
+      }
+    ],
+    "cache_policy": {
+      "rationale": "the external artifact root is mounted read-only and the controller Job is expected to grant only /tmp and /workspace as writable, so every cache default must resolve under /tmp rather than under /opt/fs2/artifacts",
+      "variables": {
+        "HOME": "/tmp/fs2-home",
+        "HF_HOME": "/tmp/fs2-home/huggingface",
+        "XDG_CACHE_HOME": "/tmp/fs2-home/xdg",
+        "MPLCONFIGDIR": "/tmp/fs2-home/matplotlib",
+        "NUMBA_CACHE_DIR": "/tmp/fs2-home/numba",
+        "TRITON_CACHE_DIR": "/tmp/fs2-home/triton"
+      },
+      "corrects": "the predecessor digests pointed HF_HOME and XDG_CACHE_HOME at /opt/fs2/artifacts, which is the read-only external artifact mount"
+    },
+    "qualification": {
+      "state": "pending",
+      "evidence": [],
+      "route_exposed": false,
+      "servable": false,
+      "servable_gate": "all three variants qualified on real H100 AND the scientific batch controller route exercised end to end. The controller route is owned by another workstream and is not deployed here, so this runtime is never reported as servable by this task."
+    },
+    "baked_working_directory": {
+      "path": "/opt/fs2/complexa/workdir",
+      "asset_link": "assets -> /opt/fs2/source/assets",
+      "why": "upstream target dictionaries carry relative ./assets/... paths and Hydra cannot express an absolute override for task names that begin with a digit, so the binding is baked into the image rather than created at run time"
+    },
+    "reward_models": {
+      "protein": {
+        "model": "alphafold2",
+        "binding": "AF2_DIR",
+        "exercisable_here": false,
+        "reason": "no alphafold2-params generation is published on the plane"
+      },
+      "ligand": {
+        "model": "rosettafold3",
+        "binding": "RF3_CKPT_PATH and RF3_EXEC_PATH",
+        "exercisable_here": true
+      },
+      "ame": {
+        "model": "rosettafold3",
+        "binding": "RF3_CKPT_PATH and RF3_EXEC_PATH",
+        "exercisable_here": true
+      }
+    }
+  },
+  "weight_policy": {
+    "embedded": false,
+    "external_root": "/opt/fs2/artifacts",
+    "notes": "no Complexa checkpoint is baked into the image. The six public checkpoints and the RosettaFold3 checkpoint are mounted from the regional artifact plane at /opt/fs2/artifacts/<artifact id>/. runtime_probe.py fails the build if any weight-shaped file appears inside the source tree."
+  },
+  "external_artifacts": [
+    {
+      "artifact_id": "complexa-protein",
+      "model_id": "proteina-complexa-protein-target-160m-v1",
+      "source_uri": "hf://nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1",
+      "source_revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+      "license_id": "NVIDIA-Open-Model-License-2024-06",
+      "entitlement_state": "not-required",
+      "mount_path": "/opt/fs2/artifacts/complexa-protein",
+      "role": "protein-binder score model and partial autoencoder",
+      "files": [
+        {
+          "path": "complexa.ckpt",
+          "bytes": 2934289381,
+          "sha256": "589db1741f29838c7961386f6b873087238c72682e56189b89e0ae02610c19e9"
+        },
+        {
+          "path": "complexa_ae.ckpt",
+          "bytes": 4100101779,
+          "sha256": "35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816"
+        }
+      ],
+      "generation": {
+        "generation": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+        "marker_sha256": "b84403b26e5ac4acd2ea3203d3ea7936e8ef009a9ac1c19fbcfddd7c40667851",
+        "sub_path": "scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+        "entry_count": 2,
+        "total_bytes": 7034391160,
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "plane": {
+        "volume_kind": "host-path",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "visibility": "public",
+        "node_requirement": "storage.fs2.nebius/reference-data=true",
+        "owner_uid_gid": 1000
+      }
+    },
+    {
+      "artifact_id": "complexa-ligand",
+      "model_id": "proteina-complexa-ligand-target-160m-v1",
+      "source_uri": "hf://nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1",
+      "source_revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+      "license_id": "NVIDIA-Open-Model-License-2024-06",
+      "entitlement_state": "not-required",
+      "mount_path": "/opt/fs2/artifacts/complexa-ligand",
+      "role": "small-molecule binder score model (LoRA) and partial autoencoder",
+      "files": [
+        {
+          "path": "complexa_ligand.ckpt",
+          "bytes": 1790554392,
+          "sha256": "8175213eac5ec6433fed1756d055ce3f867129bfdb033040e1a0560ca558bfe5"
+        },
+        {
+          "path": "complexa_ligand_ae.ckpt",
+          "bytes": 4100184649,
+          "sha256": "898da17022cdeaaaea7caace41c8b6fe7bfcb78be4876b0113127eb9bb1527e6"
+        }
+      ],
+      "generation": {
+        "generation": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+        "marker_sha256": "868551c2ec89d8296155ac5e5e0a674205cbc851c301ed58f32014d7fe404177",
+        "sub_path": "scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+        "entry_count": 2,
+        "total_bytes": 5890739041,
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "plane": {
+        "volume_kind": "host-path",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "visibility": "public",
+        "node_requirement": "storage.fs2.nebius/reference-data=true",
+        "owner_uid_gid": 1000
+      }
+    },
+    {
+      "artifact_id": "complexa-ame",
+      "model_id": "proteina-complexa-ame-160m-v1",
+      "source_uri": "hf://nvidia/NV-Proteina-Complexa-AME-160M-v1",
+      "source_revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+      "license_id": "NVIDIA-Open-Model-License-2024-06",
+      "entitlement_state": "not-required",
+      "mount_path": "/opt/fs2/artifacts/complexa-ame",
+      "role": "motif-plus-ligand (AME) score model (LoRA, v2 architecture) and partial autoencoder",
+      "files": [
+        {
+          "path": "complexa_ame.ckpt",
+          "bytes": 1792013880,
+          "sha256": "d11319693d024d0427abc356a86350a694a1cb7dceb8db642c8041e5a20a9f7b"
+        },
+        {
+          "path": "complexa_ame_ae.ckpt",
+          "bytes": 4100197925,
+          "sha256": "63b1358c5459e968628094fdc9a2a6a95ac003606fcf7b1a3a21174458a69734"
+        }
+      ],
+      "generation": {
+        "generation": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+        "marker_sha256": "18199cf0468000baefa7ed0cb604a2a7c64d0228ddf8d8e5579d6c1e543267db",
+        "sub_path": "scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+        "entry_count": 2,
+        "total_bytes": 5892211805,
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "plane": {
+        "volume_kind": "host-path",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "visibility": "public",
+        "node_requirement": "storage.fs2.nebius/reference-data=true",
+        "owner_uid_gid": 1000
+      }
+    },
+    {
+      "artifact_id": "rosettafold3-checkpoint",
+      "model_id": "rosettafold3-foundry-2024-01",
+      "source_uri": "https://files.ipd.uw.edu/pub/rf3/",
+      "source_revision": "foundry-production-b02eed6a-checksum-lock",
+      "license_id": "BSD-3-Clause",
+      "entitlement_state": "not-required",
+      "mount_path": "/opt/fs2/artifacts/rosettafold3",
+      "role": "reward and evaluation folding model for the ligand and AME pipelines; bound and marker-verified on every run, exercised only when a request asks for the upstream default reward model",
+      "files": [
+        {
+          "path": "rf3_foundry_01_24_latest_remapped.ckpt",
+          "bytes": 3038876446,
+          "sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0"
+        }
+      ],
+      "generation": {
+        "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "marker_sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822",
+        "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "entry_count": 1,
+        "total_bytes": 3038876446,
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "plane": {
+        "volume_kind": "host-path",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "visibility": "public",
+        "node_requirement": "storage.fs2.nebius/reference-data=true",
+        "owner_uid_gid": 1000
+      }
+    },
+    {
+      "artifact_id": "alphafold2-params",
+      "model_id": "alphafold2-multimer-v3-params",
+      "license_id": "CC-BY-4.0",
+      "entitlement_state": "not-required",
+      "mount_path": "/opt/fs2/artifacts/alphafold2",
+      "role": "reward and evaluation folding model for the protein-binder pipeline, reached through ColabDesign. Not required by, and not mounted for, the reward-free qualification runs.",
+      "files": [],
+      "generation": null,
+      "plane": {
+        "state": "not-published",
+        "note": "no generation for this artifact exists on the localization plane; the merged contract declares alphafold2-params with a proteina-complexa consumer bound by AF2_DIR, but its binding handoff reports generations_published: false, so the AlphaFold2 reward path for the protein pipeline cannot be exercised here"
+      }
+    },
+    {
+      "artifact_id": "proteina-complexa-target-data",
+      "model_id": "proteina-complexa",
+      "source_uri": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+      "source_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+      "archive_sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b",
+      "license_id": "Apache-2.0",
+      "entitlement_state": "not-required",
+      "mount_path": "/opt/fs2/source/assets/target_data",
+      "role": "target structures the design pipelines condition on; a real runtime dependency, not incidental image content",
+      "binding": "baked into the image at /opt/fs2/source/assets and reached through an image-baked read-only working directory; never a writable .env and never a symlink created at run time",
+      "delivery": "baked into the image from the pinned upstream source archive, so its identity is covered by the image digest and needs no mount",
+      "files": [
+        {
+          "path": "assets/target_data/ame_input_structures/M0024_1nzy.pdb",
+          "bytes": 8586,
+          "sha256": "70cff8a74c8fa5628a94a93828e98e9b16651c83927feb038b834e46696372eb"
+        },
+        {
+          "path": "assets/target_data/bindcraft_targets/PD-L1.pdb",
+          "bytes": 74614,
+          "sha256": "5e949950d8255ec3bf390b8bf24f5c71c6ac8fc65bc553d7e477563c9599b93e"
+        },
+        {
+          "path": "assets/target_data/ligand_targets/7v11_ligand_centered.pdb",
+          "bytes": 4045,
+          "sha256": "ffa26a9b1ed40e7a0cdc4a9f74ce105b965f65d095b66d60b30c8e1cf79fb391"
+        }
+      ]
+    }
+  ],
+  "artifact_delivery": {
+    "state": "immutable-public-generations",
+    "plane": "shared reference-data host plane",
+    "host_root": "/mnt/fs2-reference-data/data",
+    "generation_root": "scientific-localization/public/generations",
+    "volume_kind": "host-path",
+    "visibility": "public",
+    "node_requirement": "storage.fs2.nebius/reference-data=true, present on every GPU node in this cluster",
+    "promoted_by": "fs2-proteina-complexa-public-artifact-live-ingestion-r20260903, terminal run r20260903b, four generations, zero failures",
+    "promotion_receipt": "scientific-localization/public/complexa-ingestion/receipts/promotion.r20260903b.json",
+    "licence_separation": "Complexa and RosettaFold3 are public and host-path, so this consumer never touches the tenant-private academic claim and never places a public byte on it. No mixed-plane machinery is needed because no licensed tree is read.",
+    "admission": "the runtime entrypoint reproduces the plane's own admission rules: marker schema, artifact, generation, sub-path, plane, visibility, licence and inventory algorithm, the marker document digest published by the promotion receipt, and a fs2-tree-inventory/v2 digest recomputed from the mounted bytes",
+    "supersedes": "an earlier revision of this task staged the same file identities into its own claim because the ingestion successor had removed its staging tree mid-run; that path is abandoned in favour of the promoted generations"
+  },
+  "upstream_contract_defects": [
+    {
+      "id": "relative-target-path",
+      "detail": "the target dictionaries in configs/targets/*.yaml and configs/design_tasks/ame_dict_v2.yaml carry relative target_path values (./assets/target_data/...), resolved against the process working directory. A container workingDir of /workspace therefore fails inside the conditional-feature constructor with FileNotFoundError. An absolute Hydra override is not an available fix: most upstream task names begin with a digit (02_PDL1, 39_7V11_LIGAND) and Hydra's override grammar only admits key segments starting with a letter or underscore, so ++generation.target_dict_cfg.02_PDL1.target_path=... is a lexer error. Observed live on H100: with the override in place the protein and ligand variants died in Hydra's lexer while AME, whose task name starts with a letter, ran to completion.",
+      "handled_by": "the runtime entrypoint independently resolves and existence-checks the target against /opt/fs2/source, then symlinks the in-image asset root into a scratch working directory outside the output root and runs upstream there, so upstream's own relative path resolves. Output discovery uses os.walk with followlinks=False so the asset tree can never be mistaken for generated output.",
+      "upstream_change_required": false
+    },
+    {
+      "id": "cli-requires-writable-dotenv",
+      "detail": "the packaged complexa console script expects a writable .env in the working directory, which is why the predecessor qualification attempt was recorded as blocked. proteinfoundation.generate itself only calls dotenv.load_dotenv(), which tolerates an absent .env.",
+      "handled_by": "the runtime contract invokes python -m proteinfoundation.generate directly as an argv list; the console script is never used and no .env is written",
+      "upstream_change_required": false
+    },
+    {
+      "id": "unset-runtime-environment",
+      "detail": "DATA_PATH and RF3_EXEC_PATH are read by upstream configs via ${oc.env:...} but are not set by the image. DATA_PATH is only a fallback once target_path is absolute; RF3_EXEC_PATH is required before any RosettaFold3 reward or evaluation run.",
+      "handled_by": "both are set in the image environment and re-asserted by the runtime entrypoint before the upstream process starts",
+      "upstream_change_required": false
+    },
+    {
+      "id": "two-pass-lora-load-warning",
+      "detail": "for the ligand and AME releases lightning first reports the LoRA tensors as unexpected keys, because upstream loads the checkpoint once, injects LoRA layers, then reloads. The warning is benign but indistinguishable from a genuinely skipped adapter by log inspection alone.",
+      "handled_by": "the runtime entrypoint requires the 'Re-create LoRA layers and reload the weights now' marker for the two LoRA variants and forbids it for the protein variant, so a silently unadapted model fails the run",
+      "upstream_change_required": false
+    },
+    {
+      "id": "ame-default-task-has-no-bundled-structure",
+      "detail": "the upstream AME default task M0096_1chm resolves its structure through ${oc.env:DATA_PATH}/target_data/ame_targets/, a directory that does not exist in the source tree (the bundled directory is ame_input_structures).",
+      "handled_by": "the runtime contract admits only tasks that declare a target_path which resolves to a file shipped in the image, and rejects the rest fail-closed",
+      "upstream_change_required": false
+    }
+  ],
+  "integration": {
+    "base_commit": "e48aee14",
+    "base_branch": "main",
+    "predecessor_build_inputs": "4a1c0f90 (agent/fs2-cancer-images-complexa-boltzgen-successor-r20260903)",
+    "not_replayed": "no adapter, controller, catalog, admin, model-onboarding, Terraform or shared-service file is touched. The shared scientific-source-candidate receipt keeps status candidate and qualification_state unqualified, exactly as the merged Mosaic qualification left it; a runtime-image qualification is not a source-candidate promotion.",
+    "handoff": "the accepted digest, the argv contract and the request/result schemas are handed to the scientific-batch controller and model-onboarding owners; this task deploys neither."
+  }
+}
