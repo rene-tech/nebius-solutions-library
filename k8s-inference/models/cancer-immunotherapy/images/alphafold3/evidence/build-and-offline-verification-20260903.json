@@ -155,7 +155,8 @@
         "terminal_state": "succeeded",
         "relative_path": "relocation_probe/relocation_probe_data.json",
         "seconds": 33.09,
-        "cif_files": 6
+        "cif_files": 6,
+        "note": "Faster than the direct run in the same pod. The cause is most likely the persistent JAX compilation cache, but that is an observation and not yet a measurement: see unverified_claims below. Whatever the cause, it is a compiler effect and no GPU snapshot or cache level above image-local L1 is claimed from it."
       },
       {
         "fold_job": "second_job",
@@ -164,7 +165,8 @@
         "terminal_state": "succeeded",
         "relative_path": "second_job/second_job_data.json",
         "seconds": 33.63,
-        "cif_files": 6
+        "cif_files": 6,
+        "note": "Faster than the direct run in the same pod. The cause is most likely the persistent JAX compilation cache, but that is an observation and not yet a measurement: see unverified_claims below. Whatever the cause, it is a compiler effect and no GPU snapshot or cache level above image-local L1 is claimed from it."
       }
     ],
     "multi_handoff_selection_proven": true,
@@ -209,5 +211,51 @@
     "b300": "not touched",
     "gpu_seconds": "approximately 132 on one H100",
     "registry_writes": "one new non-overwriting tag, 3.0.4-85c4d205-r6"
-  }
+  },
+  "unverified_claims": [
+    {
+      "claim": "the intra-pod inference speedup is caused by the persistent JAX compilation cache",
+      "status": "not verified",
+      "why_it_matters": "JAX only writes a compilation to its persistent cache when that compilation exceeds jax_persistent_cache_min_compile_time_secs, which defaults to 1.0 and which AlphaFold 3 does not lower; it sets only jax_compilation_cache_dir. A workload made of many short compilations therefore caches nothing and gives no warning, so a speedup must be measured rather than assumed.",
+      "observed_so_far": {
+        "jax_persistent_cache_min_compile_time_secs": 1.0,
+        "cache_entries_before_first_inference": 0,
+        "cache_bytes_before_first_inference": 0
+      },
+      "measurement_attempted": "A probe Job on the same published digest was submitted to count cache entries and bytes before the first inference, after it, and after a second. It reached the pre-inference probe and then failed on the parameter mount, for the unrelated reason recorded in post_acceptance_findings, so the after-values were never collected.",
+      "credit": "Raised by the fast-start live campaign task, which hit the silent-no-write case directly on another model.",
+      "next_step": "Re-run the probe once the academic claim's permissions are repaired, and either substantiate the attribution with entry and byte counts or withdraw it."
+    }
+  ],
+  "post_acceptance_findings": [
+    {
+      "finding": "the academic parameter object's group ownership and mode were rewritten after this acceptance",
+      "severity": "blocks every contract-conforming consumer, and weakens containment of licensed bytes",
+      "observed_at": "2026-09-03T04:45:00Z",
+      "contracted_state": {
+        "owner_gid": 65532,
+        "file_mode": "0440",
+        "consumer_access": "supplemental-group"
+      },
+      "observed_state": {
+        "owner_uid": 65532,
+        "owner_gid": 10001,
+        "file_mode": "0660",
+        "directory_mode": "2770 with setgid"
+      },
+      "content_unchanged": true,
+      "content_evidence": "size is still 1020545840 and the mtime is unchanged; only ownership and mode moved, which is a chown and chmod rather than a rewrite",
+      "effect": "A pod following the published binding, runAsUser 12345 with supplementalGroups [65532] and no fsGroup, now gets EACCES opening /models/af3.bin.zst, because 65532 is the owning uid while the group is 10001. Licensed bytes are also now group writable, which the academic-assets contract forbids.",
+      "attributed_cause": "Two pods in fs2-academic-poc, fs2-cxq-p-fsg and fs2-cxq-perm2, mounted the claim with fsGroup 10001. With the default fsGroupChangePolicy of Always the kubelet recursively chowns the whole claim, which is exactly the outcome the parameter binding contract warns about.",
+      "impact_on_this_acceptance": "None. The H100 acceptance recorded above ran and passed before this change, verified the artifact digest at that time, and the artifact content is unchanged.",
+      "not_repaired_by_this_task": "The claim and its permissions are owned by the academic-assets work and its Terraform module. Changing ownership or modes on another task's licensed asset is outside this task's scope, so the finding is reported rather than patched."
+    },
+    {
+      "finding": "the runtime reports an unreadable parameter mount as a traceback rather than a fail-closed receipt",
+      "severity": "cosmetic for safety, real for operability",
+      "detail": "verify_parameter_artifact lets a PermissionError from opening the mount escape, so an operator sees a stack trace instead of a receipt naming the claim, the subPath and the required supplemental group. The run still fails closed and no parameter byte is used, so nothing unsafe happens, but the diagnosis is worse than it should be.",
+      "owned_by_this_task": true,
+      "not_yet_fixed": "The fix changes the runtime source and therefore the digest, and a new digest cannot be hardware-accepted while the claim is unreadable. It is deliberately deferred rather than shipped unverified."
+    }
+  ]
 }
