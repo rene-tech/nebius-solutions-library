@@ -3,10 +3,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
+from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
@@ -58,6 +61,9 @@ from fs2_serve.scientific_batch.kubernetes import (
     ATTEMPT_LABEL,
     CLUSTER_QUEUE_ANNOTATION,
     MANIFEST_ANNOTATION,
+    OPERATION_LABEL,
+    PODSET_ENVELOPE_ANNOTATION,
+    PODSET_ENVELOPE_DIGEST_ANNOTATION,
     ROUTE_NAMESPACE_ANNOTATION,
     WORKLOAD_NAMESPACE_ANNOTATION,
     HttpScientificBatchCluster,
@@ -101,6 +107,7 @@ from fs2_serve.scientific_batch.models import (
     WorkloadResource,
     WorkloadState,
 )
+from fs2_serve.scientific_batch.podset_envelope import envelope_from_manifest
 from fs2_serve.scientific_batch.profile_catalog import (
     SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA,
     SCIENTIFIC_REQUEST_SCHEMA,
@@ -1488,21 +1495,169 @@ class Fence:
         self.calls.append((operation_id, controller_id, fencing_token))
 
 
-class JobRenderer:
-    def render(self, resource: WorkloadResource):
-        return {
-            "apiVersion": "batch/v1",
-            "kind": "Job",
-            "metadata": {"name": resource.name, "namespace": resource.namespace},
-            "spec": {
-                "template": {
-                    "metadata": {},
-                    "spec": {
-                        "restartPolicy": "Never",
-                        "containers": [{"name": "model", "image": "registry/model@sha256:" + "a" * 64}],
+def _rendered_pod(
+    *,
+    gpu: int,
+    cpu: str = "4",
+    memory: str = "32Gi",
+    ephemeral: str = "100Gi",
+    accelerator: str = "nvidia.com/gpu",
+) -> dict[str, Any]:
+    """A Pod template with the container shape the production renderer emits.
+
+    One workspace init container, the model container carrying the stage
+    request, and the artifact collector beside it, so the effective per-Pod
+    request is the sum of the two regular containers raised to the init
+    container's maximum, exactly as Kueue reads it.
+    """
+
+    stage_resources: dict[str, str] = {"cpu": cpu, "memory": memory, "ephemeral-storage": ephemeral}
+    if gpu:
+        stage_resources[accelerator] = str(gpu)
+    return {
+        "metadata": {},
+        "spec": {
+            "restartPolicy": "Never",
+            "initContainers": [
+                {
+                    "name": "prepare-workspace",
+                    "resources": {
+                        "requests": {"cpu": "50m", "memory": "64Mi"},
+                        "limits": {"cpu": "500m", "memory": "256Mi"},
                     },
                 }
+            ],
+            "containers": [
+                {
+                    "name": "scientific-stage",
+                    "image": "registry/model@sha256:" + "a" * 64,
+                    "resources": {"requests": dict(stage_resources), "limits": dict(stage_resources)},
+                },
+                {
+                    "name": "artifact-collector",
+                    "resources": {
+                        "requests": {"cpu": "100m", "memory": "256Mi"},
+                        "limits": {"cpu": "2", "memory": "2Gi"},
+                    },
+                },
+            ],
+        },
+    }
+
+
+def _workload_spec(
+    kind: WorkloadKind,
+    *,
+    gpu: int = 1,
+    gang_size: int | None = None,
+    accelerator: str = "nvidia.com/gpu",
+    cpu: str = "4",
+    memory: str = "32Gi",
+    ephemeral: str = "100Gi",
+) -> dict[str, Any]:
+    pod = _rendered_pod(gpu=gpu, cpu=cpu, memory=memory, ephemeral=ephemeral, accelerator=accelerator)
+    if kind is WorkloadKind.JOB:
+        return {"activeDeadlineSeconds": 3600, "template": pod}
+    return {
+        "failurePolicy": {"maxRestarts": 0},
+        "replicatedJobs": [
+            {
+                "name": "gang",
+                "replicas": gang_size if gang_size is not None else 2,
+                "template": {"spec": {"backoffLimit": 0, "activeDeadlineSeconds": 3600, "template": pod}},
+            }
+        ],
+    }
+
+
+def _mixed_gang_spec(*, worker_replicas: int, worker_gpu: int) -> dict[str, Any]:
+    """A JobSet with a CPU coordinator PodSet beside a multi-replica GPU gang."""
+
+    return {
+        "failurePolicy": {"maxRestarts": 0},
+        "replicatedJobs": [
+            {
+                "name": "coordinator",
+                "replicas": 1,
+                "template": {
+                    "spec": {
+                        "backoffLimit": 0,
+                        "template": _rendered_pod(gpu=0, cpu="2", memory="8Gi", ephemeral="8Gi"),
+                    }
+                },
             },
+            {
+                "name": "workers",
+                "replicas": worker_replicas,
+                "template": {"spec": {"backoffLimit": 0, "template": _rendered_pod(gpu=worker_gpu)}},
+            },
+        ],
+    }
+
+
+def _envelope_annotations(spec: Mapping[str, Any], kind: WorkloadKind) -> dict[str, str]:
+    envelope = envelope_from_manifest({"spec": spec}, kind)
+    return {
+        PODSET_ENVELOPE_ANNOTATION: envelope.to_json(),
+        PODSET_ENVELOPE_DIGEST_ANNOTATION: envelope.digest,
+    }
+
+
+def _live_workload(
+    ref: WorkloadRef,
+    attempt_id: UUID,
+    *,
+    uid: str,
+    status: Mapping[str, Any] | None = None,
+    spec: Mapping[str, Any] | None = None,
+    gpu: int = 1,
+    cluster_queue: str = "inference",
+    operation_id: UUID | None = None,
+    resource_version: str = "1001",
+) -> dict[str, Any]:
+    """One live Job or JobSet exactly as this controller applied it."""
+
+    body_spec = dict(spec) if spec is not None else _workload_spec(ref.kind, gpu=gpu)
+    labels: dict[str, str] = {ATTEMPT_LABEL: str(attempt_id)}
+    if operation_id is not None:
+        labels[OPERATION_LABEL] = str(operation_id)
+    return {
+        "metadata": {
+            "name": ref.name,
+            "namespace": ref.namespace,
+            "uid": uid,
+            "resourceVersion": resource_version,
+            "labels": labels,
+            "annotations": {
+                CLUSTER_QUEUE_ANNOTATION: cluster_queue,
+                ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
+                ACCELERATOR_COUNT_ANNOTATION: str(gpu),
+                WORKLOAD_NAMESPACE_ANNOTATION: ref.namespace,
+                ROUTE_NAMESPACE_ANNOTATION: ref.route_namespace or ref.namespace,
+                **_envelope_annotations(body_spec, ref.kind),
+            },
+        },
+        "spec": body_spec,
+        "status": dict(status or {}),
+    }
+
+
+class JobRenderer:
+    """Model-owned renderer double: exact resources, no caller-supplied field."""
+
+    def render(self, resource: WorkloadResource) -> Mapping[str, Any]:
+        accelerator = resource.scheduling.accelerator_resource_name or "nvidia.com/gpu"
+        spec = _workload_spec(
+            resource.kind,
+            gpu=resource.scheduling.accelerator_count,
+            gang_size=resource.gang_size,
+            accelerator=accelerator,
+        )
+        return {
+            "apiVersion": "batch/v1" if resource.kind is WorkloadKind.JOB else "jobset.x-k8s.io/v1alpha2",
+            "kind": str(resource.kind),
+            "metadata": {"name": resource.name, "namespace": resource.namespace},
+            "spec": spec,
         }
 
 
@@ -1568,22 +1723,12 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
         if request.url.path.endswith("/scientific-job"):
             return httpx.Response(
                 200,
-                json={
-                    "metadata": {
-                        "name": "scientific-job",
-                        "namespace": "fs2-models",
-                        "uid": "job-uid",
-                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
-                        "annotations": {
-                            CLUSTER_QUEUE_ANNOTATION: "inference",
-                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
-                            ACCELERATOR_COUNT_ANNOTATION: "1",
-                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
-                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
-                        },
-                    },
-                    "status": {"succeeded": 1, "startTime": "2026-09-02T20:00:00Z"},
-                },
+                json=_live_workload(
+                    resource.ref,
+                    attempt_id,
+                    uid="job-uid",
+                    status={"succeeded": 1, "startTime": "2026-09-02T20:00:00Z"},
+                ),
             )
         if request.url.path.endswith("/workloads"):
             return httpx.Response(
@@ -1722,6 +1867,7 @@ async def test_kueue_admission_rejects_resource_flavor_with_only_retired_pool_la
                 uid="job-uid",
             ),
             "job-uid",
+            envelope=envelope_from_manifest({"spec": _workload_spec(WorkloadKind.JOB)}, WorkloadKind.JOB),
             expected_cluster_queue="inference",
             expected_pool_preference=("h100-preemptible",),
             expected_accelerator_resource="nvidia.com/gpu",
@@ -1796,6 +1942,10 @@ async def test_kueue_cpu_admission_captures_exact_flavor_pool_quantities_and_two
             uid="cpu-job-uid",
         ),
         "cpu-job-uid",
+        envelope=envelope_from_manifest(
+            {"spec": _workload_spec(WorkloadKind.JOB, gpu=0, cpu="16", memory="64Gi", ephemeral="32Gi")},
+            WorkloadKind.JOB,
+        ),
         expected_cluster_queue="reference-data-cpu",
         expected_pool_preference=("reference-cpu",),
         expected_accelerator_resource=None,
@@ -1867,6 +2017,7 @@ async def test_academic_namespace_is_frozen_and_used_for_apply_observe_delete_an
             assert body["metadata"]["namespace"] == "fs2-academic-poc"
             assert body["metadata"]["labels"]["kueue.x-k8s.io/queue-name"] == "academic-scientific"
             body["metadata"]["uid"] = "academic-job-uid"
+            body["metadata"]["resourceVersion"] = "4242"
             rendered.update(body)
             return httpx.Response(201, json=body)
         if request.method == "DELETE":
@@ -1998,25 +2149,7 @@ async def test_kubernetes_observer_persists_quota_reservation_without_claiming_a
 
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/scientific-pending"):
-            return httpx.Response(
-                200,
-                json={
-                    "metadata": {
-                        "name": ref.name,
-                        "namespace": ref.namespace,
-                        "uid": "pending-job-uid",
-                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
-                        "annotations": {
-                            CLUSTER_QUEUE_ANNOTATION: "inference",
-                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
-                            ACCELERATOR_COUNT_ANNOTATION: "1",
-                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
-                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
-                        },
-                    },
-                    "status": {},
-                },
-            )
+            return httpx.Response(200, json=_live_workload(ref, attempt_id, uid="pending-job-uid"))
         if request.url.path.endswith("/workloads"):
             return httpx.Response(
                 200,
@@ -2106,22 +2239,12 @@ async def test_kubernetes_observer_reports_eviction_after_admission_is_cleared(t
         if request.url.path.endswith("/scientific-evicted"):
             return httpx.Response(
                 200,
-                json={
-                    "metadata": {
-                        "name": ref.name,
-                        "namespace": ref.namespace,
-                        "uid": ref.uid,
-                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
-                        "annotations": {
-                            CLUSTER_QUEUE_ANNOTATION: "inference",
-                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
-                            ACCELERATOR_COUNT_ANNOTATION: "1",
-                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
-                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
-                        },
-                    },
-                    "status": {"startTime": "2026-09-03T07:55:00Z"},
-                },
+                json=_live_workload(
+                    ref,
+                    attempt_id,
+                    uid=str(ref.uid),
+                    status={"startTime": "2026-09-03T07:55:00Z"},
+                ),
             )
         if request.url.path.endswith("/workloads"):
             return httpx.Response(
@@ -2227,25 +2350,7 @@ async def test_kubernetes_observer_normalizes_raw_and_composed_kueue_deactivatio
 
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith(f"/{ref.name}"):
-            return httpx.Response(
-                200,
-                json={
-                    "metadata": {
-                        "name": ref.name,
-                        "namespace": ref.namespace,
-                        "uid": ref.uid,
-                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
-                        "annotations": {
-                            CLUSTER_QUEUE_ANNOTATION: "inference",
-                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
-                            ACCELERATOR_COUNT_ANNOTATION: "1",
-                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
-                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
-                        },
-                    },
-                    "status": {},
-                },
-            )
+            return httpx.Response(200, json=_live_workload(ref, attempt_id, uid=str(ref.uid)))
         if request.url.path.endswith("/workloads"):
             return httpx.Response(
                 200,
@@ -2371,22 +2476,12 @@ def _collection_cluster(
         if request.url.path.endswith(f"/{ref.name}"):
             return httpx.Response(
                 200,
-                json={
-                    "metadata": {
-                        "name": ref.name,
-                        "namespace": ref.namespace,
-                        "uid": "collecting-job-uid",
-                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
-                        "annotations": {
-                            CLUSTER_QUEUE_ANNOTATION: "inference",
-                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
-                            ACCELERATOR_COUNT_ANNOTATION: "1",
-                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
-                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
-                        },
-                    },
-                    "status": {"startTime": "2026-09-03T03:00:00Z"},
-                },
+                json=_live_workload(
+                    ref,
+                    attempt_id,
+                    uid="collecting-job-uid",
+                    status={"startTime": "2026-09-03T03:00:00Z"},
+                ),
             )
         if request.url.path.endswith("/workloads"):
             return httpx.Response(
@@ -2593,6 +2688,14 @@ async def test_kubernetes_observer_leaves_running_and_settled_pods_to_the_existi
 
 @pytest.mark.asyncio
 async def test_kubernetes_observer_counts_only_exact_gpu_podsets_in_mixed_jobset(tmp_path: Path) -> None:
+    """A gang's per-replica identity survives Kueue's aggregate resourceUsage.
+
+    The JobSet carries a single CPU coordinator Pod beside two four-GPU worker
+    replicas, so Kueue charges eight accelerators for the Workload while the
+    frozen scheduling decision requests four per Pod. Both figures are exact
+    and neither replaces the other.
+    """
+
     attempt_id = uuid4()
     decision = replace(
         scheduling()
@@ -2608,31 +2711,22 @@ async def test_kubernetes_observer_counts_only_exact_gpu_podsets_in_mixed_jobset
     )
     ref = WorkloadRef(
         namespace="fs2-models",
+        route_namespace="fs2-models",
         name="scientific-mixed-gang",
         kind=WorkloadKind.JOB_SET,
         uid="mixed-jobset-uid",
     )
+    spec = _mixed_gang_spec(worker_replicas=2, worker_gpu=4)
+    envelope = envelope_from_manifest({"spec": spec}, WorkloadKind.JOB_SET)
+    assert envelope.pod_set("workers").per_replica_requests.accelerator("nvidia.com/gpu") == 4
+    assert envelope.pod_set("workers").aggregate_requests.accelerator("nvidia.com/gpu") == 8
+    assert envelope.pod_set("coordinator").count == 1
 
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/scientific-mixed-gang"):
             return httpx.Response(
                 200,
-                json={
-                    "metadata": {
-                        "name": ref.name,
-                        "namespace": ref.namespace,
-                        "uid": ref.uid,
-                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
-                        "annotations": {
-                            CLUSTER_QUEUE_ANNOTATION: "inference",
-                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
-                            ACCELERATOR_COUNT_ANNOTATION: "4",
-                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
-                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
-                        },
-                    },
-                    "status": {},
-                },
+                json=_live_workload(ref, attempt_id, uid=str(ref.uid), spec=spec, gpu=4),
             )
         if request.url.path.endswith("/workloads"):
             return httpx.Response(
@@ -2654,20 +2748,22 @@ async def test_kubernetes_observer_counts_only_exact_gpu_podsets_in_mixed_jobset
                                     "podSetAssignments": [
                                         {
                                             "name": "coordinator",
-                                            "flavors": {"cpu": "cpu-general"},
-                                            "resourceUsage": {"cpu": "2", "memory": "8Gi"},
+                                            "count": 1,
+                                            "flavors": {"cpu": "cpu-general", "memory": "cpu-general"},
+                                            "resourceUsage": {"cpu": "2100m", "memory": "8448Mi"},
                                         },
                                         {
                                             "name": "workers",
+                                            "count": 2,
                                             "flavors": {
                                                 "cpu": "cpu-general",
                                                 "nvidia.com/gpu": "inference-h100-1x",
                                             },
                                             "resourceUsage": {
-                                                "cpu": "32",
-                                                "memory": "256Gi",
-                                                "example.com/rdma": "4",
-                                                "nvidia.com/gpu": "4",
+                                                "cpu": "8200m",
+                                                "memory": "66048Mi",
+                                                "example.com/rdma": "8",
+                                                "nvidia.com/gpu": "8",
                                             },
                                         },
                                     ],
@@ -2702,6 +2798,7 @@ async def test_kubernetes_observer_counts_only_exact_gpu_podsets_in_mixed_jobset
         resolved_pool_id="h100-preemptible",
         admitted_resource_flavor="inference-h100-1x",
         accelerator_resource_name="nvidia.com/gpu",
+        # Per replica, the same unit as the frozen StageSchedulingDecision.
         accelerator_count=4,
         quota_reserved_at=datetime(2026, 9, 3, 8, 0, tzinfo=UTC),
         admitted_at=None,
@@ -2711,8 +2808,22 @@ async def test_kubernetes_observer_counts_only_exact_gpu_podsets_in_mixed_jobset
     await client.aclose()
 
 
+@pytest.mark.parametrize(
+    ("admitted_gpu", "expected_message"),
+    [
+        ("0", "nvidia.com/gpu=0 for PodSet 'workers' instead of the frozen 8"),
+        # The gang's per-replica request, charged as if there were one replica.
+        ("4", "nvidia.com/gpu=4 for PodSet 'workers' instead of the frozen 8"),
+        # The aggregate multiplied by the replica count a second time.
+        ("16", "nvidia.com/gpu=16 for PodSet 'workers' instead of the frozen 8"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_kubernetes_observer_rejects_nonpositive_exact_gpu_podset(tmp_path: Path) -> None:
+async def test_kubernetes_observer_rejects_nonpositive_exact_gpu_podset(
+    tmp_path: Path, admitted_gpu: str, expected_message: str
+) -> None:
+    """Zero, missing and doubled gang multiplication are all refused."""
+
     attempt_id = uuid4()
     decision = replace(
         scheduling()
@@ -2728,31 +2839,18 @@ async def test_kubernetes_observer_rejects_nonpositive_exact_gpu_podset(tmp_path
     )
     ref = WorkloadRef(
         namespace="fs2-models",
+        route_namespace="fs2-models",
         name="scientific-invalid-gang",
         kind=WorkloadKind.JOB_SET,
         uid="invalid-jobset-uid",
     )
+    spec = _mixed_gang_spec(worker_replicas=2, worker_gpu=4)
 
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/scientific-invalid-gang"):
             return httpx.Response(
                 200,
-                json={
-                    "metadata": {
-                        "name": ref.name,
-                        "namespace": ref.namespace,
-                        "uid": ref.uid,
-                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
-                        "annotations": {
-                            CLUSTER_QUEUE_ANNOTATION: "inference",
-                            ACCELERATOR_RESOURCE_ANNOTATION: "nvidia.com/gpu",
-                            ACCELERATOR_COUNT_ANNOTATION: "4",
-                            WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
-                            ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
-                        },
-                    },
-                    "status": {},
-                },
+                json=_live_workload(ref, attempt_id, uid=str(ref.uid), spec=spec, gpu=4),
             )
         if request.url.path.endswith("/workloads"):
             return httpx.Response(
@@ -2775,12 +2873,12 @@ async def test_kubernetes_observer_rejects_nonpositive_exact_gpu_podset(tmp_path
                                         {
                                             "name": "coordinator",
                                             "flavors": {"cpu": "cpu-general"},
-                                            "resourceUsage": {"cpu": "2"},
+                                            "resourceUsage": {"cpu": "2100m", "memory": "8448Mi"},
                                         },
                                         {
                                             "name": "workers",
                                             "flavors": {"nvidia.com/gpu": "inference-h100-8x"},
-                                            "resourceUsage": {"nvidia.com/gpu": "0"},
+                                            "resourceUsage": {"nvidia.com/gpu": admitted_gpu},
                                         },
                                     ],
                                 },
@@ -2791,7 +2889,7 @@ async def test_kubernetes_observer_rejects_nonpositive_exact_gpu_podset(tmp_path
             )
         return httpx.Response(200, json={"items": []})
 
-    token = tmp_path / "invalid-mixed-token"
+    token = tmp_path / f"invalid-mixed-{admitted_gpu}-token"
     token.write_text("x" * 32)
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
     cluster = HttpScientificBatchCluster(
@@ -2804,7 +2902,7 @@ async def test_kubernetes_observer_rejects_nonpositive_exact_gpu_podset(tmp_path
         writes_enabled=True,
         client=client,
     )
-    with pytest.raises(ScientificKubernetesError, match="GPU PodSet admission is not positive"):
+    with pytest.raises(ScientificKubernetesError, match=re.escape(expected_message)):
         await cluster.observe(ref, scheduling=decision)
     await client.aclose()
 
@@ -2812,34 +2910,27 @@ async def test_kubernetes_observer_rejects_nonpositive_exact_gpu_podset(tmp_path
 @pytest.mark.asyncio
 async def test_kubernetes_delete_waits_for_uid_absence_and_fences_precondition_conflict(tmp_path: Path) -> None:
     operation_id = uuid4()
-    ref = WorkloadRef(namespace="fs2-models", name="scientific-delete", kind=WorkloadKind.JOB, uid="job-uid")
+    ref = WorkloadRef(
+        namespace="fs2-models",
+        route_namespace="fs2-models",
+        name="scientific-delete",
+        kind=WorkloadKind.JOB,
+        uid="job-uid",
+    )
     get_count = 0
+    deletes: list[dict[str, object]] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
         nonlocal get_count
         if request.method == "DELETE":
             body = json.loads(request.content)
-            assert body["preconditions"] == {"uid": "job-uid"}
+            deletes.append(body["preconditions"])
             assert body["propagationPolicy"] == "Foreground"
             return httpx.Response(202, json={"status": "Success"})
         get_count += 1
         if get_count == 3:
             return httpx.Response(404)
-        return httpx.Response(
-            200,
-            json={
-                "metadata": {
-                    "name": ref.name,
-                    "namespace": ref.namespace,
-                    "uid": ref.uid,
-                    "labels": {"fs2.nebius.ai/operation-id": str(operation_id)},
-                    "annotations": {
-                        WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
-                        ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
-                    },
-                }
-            },
-        )
+        return httpx.Response(200, json=_live_workload(ref, uuid4(), uid=str(ref.uid), operation_id=operation_id))
 
     token = tmp_path / "delete-token"
     token.write_text("x" * 32)
@@ -2855,6 +2946,9 @@ async def test_kubernetes_delete_waits_for_uid_absence_and_fences_precondition_c
         client=client,
     )
     await cluster.delete(ref, controller_fence=9)
+    # Both preconditions travel with the delete: the UID fences this attempt's
+    # object and the resourceVersion fences the exact version that was read.
+    assert deletes == [{"uid": "job-uid", "resourceVersion": "1001"}]
     assert await cluster.absent(ref) is False
     assert await cluster.absent(ref) is True
     await client.aclose()
@@ -2862,21 +2956,7 @@ async def test_kubernetes_delete_waits_for_uid_absence_and_fences_precondition_c
     async def conflict_handler(request: httpx.Request) -> httpx.Response:
         if request.method == "DELETE":
             return httpx.Response(409, json={"reason": "Conflict"})
-        return httpx.Response(
-            200,
-            json={
-                "metadata": {
-                    "name": ref.name,
-                    "namespace": ref.namespace,
-                    "uid": ref.uid,
-                    "labels": {"fs2.nebius.ai/operation-id": str(operation_id)},
-                    "annotations": {
-                        WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
-                        ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
-                    },
-                }
-            },
-        )
+        return httpx.Response(200, json=_live_workload(ref, uuid4(), uid=str(ref.uid), operation_id=operation_id))
 
     conflict_client = httpx.AsyncClient(
         transport=httpx.MockTransport(conflict_handler), base_url="https://kubernetes.test"
@@ -2896,31 +2976,37 @@ async def test_kubernetes_delete_waits_for_uid_absence_and_fences_precondition_c
     await conflict_client.aclose()
 
 
+@pytest.mark.parametrize("accepted_status", [200, 202])
 @pytest.mark.asyncio
-async def test_kubernetes_delete_rejects_synchronous_success(tmp_path: Path) -> None:
+async def test_kubernetes_delete_accepts_both_synchronous_and_asynchronous_acceptance(
+    tmp_path: Path, accepted_status: int
+) -> None:
+    """The API server may answer an accepted delete with 200 or with 202.
+
+    Which one arrives depends on the resource and the propagation policy, not
+    on whether the deletion took effect, so refusing 200 would strand an
+    already-deleting workload and leak its Kueue reservation until the lease
+    expired. Absence remains proven by :meth:`absent`, not by the status code.
+    """
+
     operation_id = uuid4()
-    ref = WorkloadRef(namespace="fs2-models", name="scientific-delete", kind=WorkloadKind.JOB, uid="job-uid")
+    ref = WorkloadRef(
+        namespace="fs2-models",
+        route_namespace="fs2-models",
+        name="scientific-delete-status",
+        kind=WorkloadKind.JOB,
+        uid="job-uid",
+    )
+    fence = Fence()
+    deletes: list[dict[str, object]] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "DELETE":
-            return httpx.Response(200, json={"status": "Success"})
-        return httpx.Response(
-            200,
-            json={
-                "metadata": {
-                    "name": ref.name,
-                    "namespace": ref.namespace,
-                    "uid": ref.uid,
-                    "labels": {"fs2.nebius.ai/operation-id": str(operation_id)},
-                    "annotations": {
-                        WORKLOAD_NAMESPACE_ANNOTATION: "fs2-models",
-                        ROUTE_NAMESPACE_ANNOTATION: "fs2-models",
-                    },
-                }
-            },
-        )
+            deletes.append(json.loads(request.content)["preconditions"])
+            return httpx.Response(accepted_status, json={"status": "Success"})
+        return httpx.Response(200, json=_live_workload(ref, uuid4(), uid=str(ref.uid), operation_id=operation_id))
 
-    token = tmp_path / "delete-token-200"
+    token = tmp_path / f"delete-token-{accepted_status}"
     token.write_text("x" * 32)
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
     cluster = HttpScientificBatchCluster(
@@ -2928,13 +3014,131 @@ async def test_kubernetes_delete_rejects_synchronous_success(tmp_path: Path) -> 
         token_file=token,
         ca_file=tmp_path / "ca.crt",
         controller_id="controller-a",
-        fence=Fence(),
+        fence=fence,
         renderer=JobRenderer(),
         writes_enabled=True,
         client=client,
     )
-    with pytest.raises(ScientificKubernetesError, match="not accepted asynchronously"):
-        await cluster.delete(ref, controller_fence=9)
+    await cluster.delete(ref, controller_fence=9)
+    assert deletes == [{"uid": "job-uid", "resourceVersion": "1001"}]
+    assert fence.calls == [(operation_id, "controller-a", 9)]
+    # An accepted delete is not a completed one; the UID must still disappear.
+    assert await cluster.absent(ref) is False
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_delete_retries_once_with_the_fresh_resource_version(tmp_path: Path) -> None:
+    """A status write between the read and the delete is not a lost update.
+
+    The Job controller updates status while this controller is deleting, so the
+    first precondition is stale. The delete is refused rather than applied to
+    the newer version, and one bounded retry re-reads that version, re-checks
+    ownership and deletes exactly the object it just read.
+    """
+
+    operation_id = uuid4()
+    ref = WorkloadRef(
+        namespace="fs2-models",
+        route_namespace="fs2-models",
+        name="scientific-delete-race",
+        kind=WorkloadKind.JOB,
+        uid="job-uid",
+    )
+    versions = ["1001", "1002"]
+    deletes: list[dict[str, object]] = []
+    fence = Fence()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "DELETE":
+            body = json.loads(request.content)
+            deletes.append(body["preconditions"])
+            if body["preconditions"]["resourceVersion"] == "1001":
+                return httpx.Response(409, json={"reason": "Conflict"})
+            return httpx.Response(202, json={"status": "Success"})
+        return httpx.Response(
+            200,
+            json=_live_workload(
+                ref,
+                uuid4(),
+                uid=str(ref.uid),
+                operation_id=operation_id,
+                resource_version=versions.pop(0) if versions else "1002",
+            ),
+        )
+
+    token = tmp_path / "delete-race-token"
+    token.write_text("x" * 32)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=fence,
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=client,
+    )
+    await cluster.delete(ref, controller_fence=12)
+    assert deletes == [
+        {"uid": "job-uid", "resourceVersion": "1001"},
+        {"uid": "job-uid", "resourceVersion": "1002"},
+    ]
+    # The fence is asserted once for the whole delete, not once per attempt.
+    assert fence.calls == [(operation_id, "controller-a", 12)]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_delete_refuses_a_recreated_name_and_a_missing_resource_version(
+    tmp_path: Path,
+) -> None:
+    """Ownership and version evidence are both required before deleting."""
+
+    operation_id = uuid4()
+    ref = WorkloadRef(
+        namespace="fs2-models",
+        route_namespace="fs2-models",
+        name="scientific-delete-recreated",
+        kind=WorkloadKind.JOB,
+        uid="job-uid",
+    )
+
+    def cluster_for(body: dict[str, Any], token_name: str) -> tuple[HttpScientificBatchCluster, httpx.AsyncClient]:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "DELETE":
+                raise AssertionError("a workload with different ownership must never be deleted")
+            return httpx.Response(200, json=body)
+
+        token = tmp_path / token_name
+        token.write_text("x" * 32)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+        return (
+            HttpScientificBatchCluster(
+                base_url="https://kubernetes.test",
+                token_file=token,
+                ca_file=tmp_path / "ca.crt",
+                controller_id="controller-a",
+                fence=Fence(),
+                renderer=JobRenderer(),
+                writes_enabled=True,
+                client=client,
+            ),
+            client,
+        )
+
+    recreated = _live_workload(ref, uuid4(), uid="a-different-job-uid", operation_id=operation_id)
+    cluster, client = cluster_for(recreated, "delete-recreated-token")
+    with pytest.raises(BatchRepositoryConflictError, match="UID changed before delete"):
+        await cluster.delete(ref, controller_fence=13)
+    await client.aclose()
+
+    unversioned = _live_workload(ref, uuid4(), uid=str(ref.uid), operation_id=operation_id)
+    del unversioned["metadata"]["resourceVersion"]
+    cluster, client = cluster_for(unversioned, "delete-unversioned-token")
+    with pytest.raises(ScientificKubernetesError, match="resourceVersion is absent"):
+        await cluster.delete(ref, controller_fence=14)
     await client.aclose()
 
 

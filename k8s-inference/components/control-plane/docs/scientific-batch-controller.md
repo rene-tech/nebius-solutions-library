@@ -103,12 +103,71 @@ application/policy code `EXECUTION_TIMEOUT`, while `RequeuingLimitExceeded`
 is an infrastructure failure eligible for the normal bounded new-attempt
 retry. A generic `Deactivated` condition never replaces either exact cause.
 
-For a mixed JobSet, reservation parsing is scoped to the stage's exact frozen
-accelerator resource. CPU-only coordinator PodSets and unrelated extended
-resources do not contribute to the GPU quantity and need no GPU ResourceFlavor.
-Every PodSet that does request the exact GPU resource must carry a positive
-quantity and one consistent ResourceFlavor; their total must equal the frozen
-accelerator count before the assignment is persisted.
+For a mixed JobSet, ResourceFlavor parsing is scoped to the stage's exact
+frozen accelerator resource. CPU-only coordinator PodSets and unrelated
+extended resources need no GPU ResourceFlavor. Every PodSet that does request
+the exact GPU resource must carry one consistent ResourceFlavor, and every
+admitted quantity must equal the frozen PodSet envelope described next.
+
+## Canonical PodSet resource envelope
+
+Kueue budgets a Workload, and a Workload is a list of PodSets, so quota
+correctness depends on one shared arithmetic. `scientific_batch.podset_envelope`
+is that arithmetic and nothing else computes it.
+
+- **Per-replica request** is the *effective pod resource request* of one Pod of
+  the PodSet: the sum over the regular containers, raised to the maximum
+  effective init-container request, plus Pod overhead. Native sidecars (init
+  containers with `restartPolicy: Always`) are additive to the regular sum and
+  also accumulate into the init-container maxima. This mirrors Kubernetes'
+  `resourcehelper.PodRequests`, which is what Kueue itself reads, and it means
+  the workspace, artifact-verification and materialization init containers and
+  the artifact collector are all inside the frozen figure, not beside it.
+  An omitted request defaults to that container's limit per resource.
+- **PodSet count** is the number of Pods Kueue reserves: a Job's `parallelism`
+  bounded by `completions` (a fanout attempt is exactly one Pod, because
+  independent shards are separate Jobs), and for a JobSet the replicated Job's
+  `replicas` times its `parallelism`. A true-gang stage renders one replicated
+  Job whose `replicas` is `gang_size`, so **`gang_size` enters the arithmetic
+  here and only here**.
+- **Aggregate request** is `count * per-replica`, derived in exactly one
+  property. Kueue's `status.admission.podSetAssignments[].resourceUsage` is the
+  aggregate for the PodSet, so a comparison that forgets the multiplication
+  under-charges a gang by `gang_size` and one that applies it twice
+  over-charges by the same factor. Both are silent: the Workload is still
+  admitted, only against the wrong quota.
+- CPU is compared in milli-cores, memory and ephemeral storage in bytes, and
+  accelerators as device counts, through one parser shared by the rendered
+  request and the admitted quantity.
+
+The envelope is frozen into the workload's own
+`fs2.nebius.ai/podset-resource-envelope` and `...-sha256` annotations before
+creation, ahead of the manifest digest, so it is covered by that digest and an
+adopted pre-existing object with a different envelope is a conflict. At apply
+time the rendered envelope must agree with the frozen scheduling decision: the
+per-Pod accelerator request equals `accelerator_count`, an accelerator PodSet
+reserves exactly `gang_size` Pods, a fanout Job reserves one, and a CPU stage
+renders no accelerator at all. At observe time the envelope is recomputed from
+the live object and must equal the annotation, so a live edit of a container's
+resources, of `parallelism` or of `replicas` is an attempt conflict rather than
+a mis-budgeted reservation.
+
+Every admitted PodSet is then matched by name against that envelope. Each core
+or accelerator quantity Kueue reports must equal the PodSet's aggregate exactly;
+an assignment `count` must equal the frozen count, because no scientific PodSet
+opts into partial admission; a PodSet the envelope does not declare, a missing
+frozen PodSet, and a charge for a resource the Pods do not request are all
+refused. Extended resources no ClusterQueue budgets (an RDMA device, for
+example) are ignored, and a core resource Kueue does not report is one this
+deployment excluded from quota: `cpu` and `memory` are budgeted only when
+`deployment.scheduling.budget_core_resources` is on, and `ephemeral-storage` is
+always excluded because no ClusterQueue here budgets it. Whatever Kueue does
+report is exact.
+
+The recorded `SchedulingAdmission` keeps **per-replica** quantities, the same
+units as the frozen `StageSchedulingDecision`, so a gang's immutable attempt
+evidence never depends on which side multiplied by `gang_size`. The aggregate
+is verified against Kueue but stays derivable rather than stored twice.
 
 Routes are filtered by service class, model, and tenant. A matching exact tenant
 route outranks a wildcard-tenant route; the explicitly unrestricted service-class
@@ -160,14 +219,27 @@ failure.
   The second fenced transition binds the returned Job/JobSet UID. A crash in
   between leaves a recognizable pending apply, and a fast Kueue admission can
   never present a companion capability before the controller record exists.
-- A terminal observation is durable before workload deletion. Kubernetes
-  `DELETE 202` only advances the attempt to a durable `deletion_requested`
-  state. A later reconcile performs a UID-specific GET; only `404` advances
-  `resource_released` and emits `teardown`. A still-present UID retains GPU and
-  quota accounting, while a changed UID or DELETE precondition `409` is a
-  fenced conflict. If the controller loses its database write after deletion,
-  its successor safely repeats the UID-preconditioned request. Confirmed
-  absence is the quota-handoff fence before retry or the next sequential stage.
+- A terminal observation is durable before workload deletion. An accepted
+  Kubernetes `DELETE` only advances the attempt to a durable
+  `deletion_requested` state. The API server answers an accepted deletion with
+  `200` (the object, now carrying a deletion timestamp) or `202` depending on
+  the resource and propagation policy, and **both are accepted**; refusing
+  `200` would strand an already-deleting workload and leak its Kueue
+  reservation until the lease expired. A later reconcile performs a
+  UID-specific GET; only `404` advances `resource_released` and emits
+  `teardown`. A still-present UID retains GPU and quota accounting.
+- The delete carries both preconditions Kubernetes offers: `uid`, so a
+  recreated name is never deleted for this attempt, and `resourceVersion`, so a
+  delete issued against a version the API server has already replaced is
+  refused instead of applied to whatever the object has since become. A stale
+  version is usually just the Job controller writing status between the read
+  and the delete, so one bounded retry re-reads the fresh version, re-checks
+  ownership and tries again; a second `409`, or a changed UID, is a fenced
+  conflict the controller retries on its own clock. The fence is asserted once
+  per delete, not once per attempt. If the controller loses its database write
+  after deletion, its successor safely repeats the preconditioned request.
+  Confirmed absence is the quota-handoff fence before retry or the next
+  sequential stage.
 
 Kubernetes implementations need not reconstruct a full workload observation
 after deletion: the terminal outcome is already durable. They must expose a
@@ -634,6 +706,10 @@ fan-out and gang rendering, routed
 LocalQueue namespaces, required GPU pool affinity, and quota handoff (including
 DELETE 202, a still-present UID, confirmed absence, and a DELETE 409 fence),
 canonical scheduling routing/deadlines, same-poll QuotaReserved persistence,
+the canonical PodSet resource envelope (effective init-container maxima, native
+sidecars, Pod overhead, `gang_size` applied exactly once, exact per-PodSet
+Kueue `resourceUsage` comparison, and the zero-, single- and double-multiplied
+negatives that must fail),
 complete phase ingestion, exact Kueue preemption/retry, stale-attempt
 observations, non-retryable taxonomy,
 the model/collector exit handshake (positive completion after pending polls,
@@ -652,6 +728,7 @@ PYTHONPATH="src:../../catalog/runtime" uv run pytest -q \
   tests/test_scientific_batch_catalog_adapter.py \
   tests/test_scientific_batch_production.py \
   tests/test_scientific_batch_execution_handoff.py \
+  tests/test_scientific_podset_envelope.py \
   tests/test_scientific_artifacts.py
 
 # Requires a disposable PostgreSQL database.

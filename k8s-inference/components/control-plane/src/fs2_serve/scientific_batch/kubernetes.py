@@ -8,7 +8,6 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol, cast
 from urllib.parse import quote
@@ -32,6 +31,15 @@ from .models import (
     WorkloadRef,
     WorkloadResource,
     WorkloadState,
+)
+from .podset_envelope import (
+    PodSetEnvelopeError,
+    WorkloadEnvelope,
+    compare_kueue_usage,
+    envelope_from_json,
+    envelope_from_manifest,
+    parse_bytes,
+    parse_cpu_millis,
 )
 from .protocols import BatchRepositoryConflictError
 
@@ -59,6 +67,8 @@ MAX_QUEUE_ANNOTATION = "fs2.nebius.ai/max-queue-seconds"
 ACCELERATOR_RESOURCE_ANNOTATION = "fs2.nebius.ai/accelerator-resource"
 ACCELERATOR_COUNT_ANNOTATION = "fs2.nebius.ai/accelerator-count"
 WORKLOAD_NAMESPACE_ANNOTATION = "fs2.nebius.ai/workload-namespace"
+PODSET_ENVELOPE_ANNOTATION = "fs2.nebius.ai/podset-resource-envelope"
+PODSET_ENVELOPE_DIGEST_ANNOTATION = "fs2.nebius.ai/podset-resource-envelope-sha256"
 ROUTE_NAMESPACE_ANNOTATION = "fs2.nebius.ai/route-namespace"
 # A trusted kubelet/DCGM enricher may publish the immutable allocation on the
 # Pod. Workload containers cannot forge it because scientific Pods do not mount
@@ -136,36 +146,24 @@ def _timestamp(condition: Mapping[str, Any], label: str) -> datetime:
 
 
 def _quantity(value: object, *, resource: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, str | int):
-        raise ScientificKubernetesError(f"Kueue {resource} admission quantity is invalid")
-    raw = str(value)
-    suffixes = {
-        "Ki": 1024,
-        "Mi": 1024**2,
-        "Gi": 1024**3,
-        "Ti": 1024**4,
-        "K": 1000,
-        "M": 1000**2,
-        "G": 1000**3,
-        "T": 1000**4,
-    }
-    multiplier = Decimal(1000 if resource == "cpu" else 1)
-    if resource == "cpu" and raw.endswith("m"):
-        raw = raw[:-1]
-        multiplier = Decimal(1)
-    elif resource == "memory":
-        for suffix, factor in suffixes.items():
-            if raw.endswith(suffix):
-                raw = raw[: -len(suffix)]
-                multiplier = Decimal(factor)
-                break
+    """Parse one admitted Kueue quantity through the canonical envelope units.
+
+    CPU becomes milli-cores and memory becomes bytes, using the same parser the
+    frozen envelope uses, so an admitted quantity and a rendered request can
+    never be compared in different units.
+    """
+
     try:
-        normalized = Decimal(raw) * multiplier
-    except InvalidOperation as error:
+        parsed = (
+            parse_cpu_millis(value, label="Kueue cpu")
+            if resource == "cpu"
+            else parse_bytes(value, label=f"Kueue {resource}")
+        )
+    except PodSetEnvelopeError as error:
         raise ScientificKubernetesError(f"Kueue {resource} admission quantity is invalid") from error
-    if normalized != normalized.to_integral_value() or normalized <= 0:
+    if parsed <= 0:
         raise ScientificKubernetesError(f"Kueue {resource} admission quantity is not positive and exact")
-    return int(normalized)
+    return parsed
 
 
 def _failure(reasons: list[str]) -> tuple[WorkloadState, FailureKind, str]:
@@ -736,8 +734,93 @@ class HttpScientificBatchCluster:
             spec["backoffLimit"] = 0
         if resource.scheduling.max_execution_seconds is not None:
             _set_active_deadline(manifest, resource.kind, resource.scheduling.max_execution_seconds)
+        envelope = self._frozen_envelope(manifest, resource)
+        annotations[PODSET_ENVELOPE_ANNOTATION] = envelope.to_json()
+        annotations[PODSET_ENVELOPE_DIGEST_ANNOTATION] = envelope.digest
         annotations[MANIFEST_ANNOTATION] = _manifest_digest(manifest)
         return manifest
+
+    @staticmethod
+    def _frozen_envelope(manifest: Mapping[str, Any], resource: WorkloadResource) -> WorkloadEnvelope:
+        """Freeze the rendered per-Pod and aggregate envelope for this attempt.
+
+        The envelope is derived from the manifest that will actually be created
+        and is checked against the frozen scheduling decision here, before the
+        object exists: the per-Pod accelerator request must be exactly the
+        decision's ``accelerator_count``, and the replica count must apply the
+        attempt's ``gang_size`` exactly once. Both annotations are written
+        before the manifest digest, so they are covered by it and an adopted
+        pre-existing object with a different envelope is refused as a conflict.
+        """
+
+        try:
+            envelope = envelope_from_manifest(manifest, resource.kind)
+        except PodSetEnvelopeError as error:
+            raise ScientificKubernetesError(
+                f"rendered workload has no exact PodSet resource envelope: {error}"
+            ) from error
+        if resource.kind is WorkloadKind.JOB:
+            # Independent shards are separate Jobs, so a fanout attempt is
+            # exactly one Pod. A Job that fanned out internally would have a
+            # replica count no frozen gang size accounts for.
+            if envelope.pod_sets[0].count != 1:
+                raise ScientificKubernetesError("a fanout Job must reserve exactly one Pod per attempt")
+        else:
+            gang_size = resource.gang_size
+            if gang_size is None:
+                raise ScientificKubernetesError("a JobSet attempt has no frozen gang size")
+            counts = [item.count for item in envelope.pod_sets]
+            if max(counts) != gang_size or any(count > gang_size for count in counts):
+                raise ScientificKubernetesError(
+                    f"rendered JobSet reserves {max(counts)} Pods per PodSet instead of the frozen gang size "
+                    f"{gang_size}"
+                )
+        accelerator_resource = resource.scheduling.accelerator_resource_name
+        if resource.scheduling.resource_class is ResourceClass.GPU:
+            if accelerator_resource is None:
+                raise ScientificKubernetesError("GPU scheduling has no frozen accelerator resource")
+            accelerator_pod_sets = envelope.accelerator_pod_sets(accelerator_resource)
+            if not accelerator_pod_sets:
+                raise ScientificKubernetesError("rendered GPU workload requests no frozen accelerator")
+            for pod_set in accelerator_pod_sets:
+                if pod_set.per_replica_requests.accelerator(accelerator_resource) != (
+                    resource.scheduling.accelerator_count
+                ):
+                    raise ScientificKubernetesError(
+                        "rendered per-Pod accelerator request differs from the frozen scheduling decision"
+                    )
+                if resource.kind is WorkloadKind.JOB_SET and pod_set.count != resource.gang_size:
+                    raise ScientificKubernetesError("rendered accelerator PodSet does not reserve the frozen gang size")
+        elif any(item.per_replica_requests.accelerators for item in envelope.pod_sets):
+            raise ScientificKubernetesError("rendered CPU workload requests an accelerator")
+        return envelope
+
+    @staticmethod
+    def _observed_envelope(value: Mapping[str, Any], ref: WorkloadRef) -> WorkloadEnvelope:
+        """Reopen the frozen envelope and prove the live object still renders it.
+
+        The annotation is the frozen claim and the live Pod templates are the
+        fact. Recomputing the envelope from the object Kueue actually admitted
+        turns any live mutation of a container's resources, of ``parallelism``
+        or of a JobSet's ``replicas`` into an attempt conflict rather than a
+        silently mis-budgeted reservation.
+        """
+
+        annotations = _object(_metadata(value).get("annotations"), "Kubernetes annotations")
+        raw = annotations.get(PODSET_ENVELOPE_ANNOTATION)
+        digest = annotations.get(PODSET_ENVELOPE_DIGEST_ANNOTATION)
+        if not isinstance(raw, str) or not isinstance(digest, str):
+            raise BatchRepositoryConflictError("workload has no frozen PodSet resource envelope")
+        try:
+            frozen = envelope_from_json(raw, kind=ref.kind)
+            rendered = envelope_from_manifest(value, ref.kind)
+        except PodSetEnvelopeError as error:
+            raise BatchRepositoryConflictError(f"workload PodSet resource envelope is not exact: {error}") from error
+        if frozen.digest != digest:
+            raise BatchRepositoryConflictError("frozen PodSet resource envelope digest does not match its document")
+        if frozen != rendered:
+            raise BatchRepositoryConflictError("live workload resources differ from the frozen PodSet envelope")
+        return frozen
 
     async def apply(self, resource: WorkloadResource, *, controller_fence: int) -> WorkloadRef:
         if not self.writes_enabled:
@@ -807,11 +890,13 @@ class HttpScientificBatchCluster:
             or raw_expected_accelerator_count != str(scheduling.accelerator_count)
         ):
             raise BatchRepositoryConflictError("workload scheduling annotations differ from the frozen attempt")
+        envelope = self._observed_envelope(value, ref)
         status = _object(value.get("status", {}), "Kubernetes workload status")
         phases: list[LifecyclePhase] = []
         scheduling_admission, kueue_workload_uid, admitted, eviction_reason = await self._scheduling_admission(
             ref,
             str(metadata.get("uid", "")),
+            envelope=envelope,
             expected_cluster_queue=scheduling.resolved_cluster_queue,
             expected_pool_preference=scheduling.resolved_pool_preference,
             expected_accelerator_resource=scheduling.accelerator_resource_name,
@@ -968,6 +1053,7 @@ class HttpScientificBatchCluster:
         ref: WorkloadRef,
         job_uid: str,
         *,
+        envelope: WorkloadEnvelope,
         expected_cluster_queue: str,
         expected_pool_preference: tuple[str, ...],
         expected_accelerator_resource: str | None,
@@ -976,10 +1062,17 @@ class HttpScientificBatchCluster:
     ) -> tuple[SchedulingAdmission | None, str | None, bool, str | None]:
         """Reopen the exact frozen-resource Kueue reservation.
 
-        JobSets may contain CPU-only coordinator PodSets alongside GPU worker
-        PodSets. Only assignments carrying the frozen accelerator resource
-        contribute to the accelerator reservation; unrelated extended
-        resources are deliberately ignored.
+        Every PodSet Kueue admitted is matched by name against the frozen
+        envelope, and every core or accelerator quantity it reports must equal
+        that PodSet's aggregate request, which is its replica count times its
+        per-Pod request. A JobSet may carry a CPU-only coordinator PodSet
+        beside its GPU worker PodSet; each is compared on its own terms, and
+        extended resources no ClusterQueue budgets are deliberately ignored.
+
+        The recorded ``SchedulingAdmission`` keeps **per-replica** quantities,
+        the same units as the frozen ``StageSchedulingDecision``, so a gang's
+        immutable attempt evidence never depends on which side multiplied by
+        ``gang_size``.
         """
 
         if not job_uid:
@@ -1047,10 +1140,13 @@ class HttpScientificBatchCluster:
         assignments = admission.get("podSetAssignments")
         if not isinstance(assignments, list) or not assignments:
             raise ScientificKubernetesError("Kueue admission has no PodSet assignment")
-        accelerator_count = 0
+        try:
+            comparison = compare_kueue_usage(envelope, assignments, accelerator_resource=expected_accelerator_resource)
+        except PodSetEnvelopeError as error:
+            raise ScientificKubernetesError(
+                f"Kueue resourceUsage differs from the frozen PodSet envelope: {error}"
+            ) from error
         accelerator_flavor: str | None = None
-        cpu_millis = 0
-        memory_bytes = 0
         cpu_flavor: str | None = None
         for raw_assignment in assignments:
             if not isinstance(raw_assignment, Mapping):
@@ -1073,22 +1169,18 @@ class HttpScientificBatchCluster:
                 if cpu_flavor is not None and cpu_flavor != assignment_cpu_flavor:
                     raise ScientificKubernetesError("Kueue admitted multiple CPU ResourceFlavors")
                 cpu_flavor = assignment_cpu_flavor
-                cpu_millis += _quantity(usage["cpu"], resource="cpu")
-                memory_bytes += _quantity(usage["memory"], resource="memory")
                 continue
             if expected_accelerator_resource not in usage:
                 continue
-            try:
-                count = int(usage[expected_accelerator_resource])
-            except (TypeError, ValueError):
-                raise ScientificKubernetesError("Kueue accelerator admission quantity is invalid") from None
             flavor = flavors.get(expected_accelerator_resource)
-            if count <= 0 or not isinstance(flavor, str) or not flavor:
+            if not isinstance(flavor, str) or not flavor:
                 raise ScientificKubernetesError("Kueue GPU PodSet admission is not positive and complete")
             if accelerator_flavor is not None and accelerator_flavor != flavor:
                 raise ScientificKubernetesError("Kueue admitted multiple ResourceFlavors for one accelerator")
             accelerator_flavor = flavor
-            accelerator_count += count
+        cpu_millis = comparison.cpu_millis_per_replica
+        memory_bytes = comparison.memory_bytes_per_replica
+        accelerator_count = comparison.accelerator_per_replica
         if expected_accelerator_resource is None:
             if expected_accelerator_count != 0:
                 raise ScientificKubernetesError("frozen accelerator count has no exact resource")
@@ -1119,6 +1211,10 @@ class HttpScientificBatchCluster:
             raise ScientificKubernetesError("Kueue admission has no positive PodSet for the frozen accelerator")
         if accelerator_count != expected_accelerator_count:
             raise ScientificKubernetesError("Kueue accelerator admission differs from the frozen quantity")
+        if comparison.accelerator_aggregate != accelerator_count * sum(
+            item.count for item in envelope.accelerator_pod_sets(expected_accelerator_resource)
+        ):
+            raise ScientificKubernetesError("Kueue accelerator reservation does not aggregate over its PodSets")
         flavor = accelerator_flavor
         flavor_response = await self._request(
             "GET", f"/apis/kueue.x-k8s.io/v1beta1/resourceflavors/{quote(flavor, safe='')}"
@@ -1147,44 +1243,76 @@ class HttpScientificBatchCluster:
         )
 
     async def delete(self, ref: WorkloadRef, *, controller_fence: int) -> None:
+        """Delete this attempt's workload without ever losing an update.
+
+        The DELETE carries both preconditions Kubernetes offers: the object's
+        ``uid``, so a recreated name is never deleted for this attempt, and its
+        ``resourceVersion``, so a delete issued against a version the API
+        server has already replaced is refused instead of removing whatever the
+        object has since become. The API server answers an accepted deletion
+        with HTTP 200 (the object, now carrying a deletion timestamp) or 202,
+        depending on the resource and the propagation policy, and both are
+        accepted here; :meth:`absent` remains the completion gate.
+
+        A failed precondition on a hot object is usually just the Job
+        controller having written status between the read and the delete, so
+        one bounded retry re-reads the fresh ``resourceVersion``, re-checks
+        ownership and tries once more before surfacing a conflict for the
+        controller to retry on its own clock.
+        """
+
         if not self.writes_enabled:
             raise ScientificKubernetesError("scientific Kubernetes writes are disabled")
         _, item = self._paths(ref)
-        current = await self._request("GET", item)
-        if current.status_code == 404:
-            return
-        value = cast(dict[str, Any], current.json())
-        metadata = _metadata(value)
-        labels = _object(metadata.get("labels"), "Kubernetes labels")
-        annotations = _object(metadata.get("annotations"), "Kubernetes annotations")
-        if (
-            annotations.get(WORKLOAD_NAMESPACE_ANNOTATION) != ref.namespace
-            or annotations.get(ROUTE_NAMESPACE_ANNOTATION) != ref.route_namespace
-            or ref.route_namespace != ref.namespace
-        ):
-            raise BatchRepositoryConflictError("workload route namespace changed before delete")
-        try:
-            operation_id = UUID(str(labels[OPERATION_LABEL]))
-        except (KeyError, ValueError):
-            raise BatchRepositoryConflictError("workload operation identity is absent or invalid") from None
-        if ref.uid is not None and metadata.get("uid") != ref.uid:
-            raise BatchRepositoryConflictError("workload UID changed before delete")
-        await self.fence.assert_fence(operation_id, controller_id=self.controller_id, fencing_token=controller_fence)
-        uid = metadata.get("uid")
-        response = await self._request(
-            "DELETE",
-            item,
-            json={
-                "kind": "DeleteOptions",
-                "apiVersion": "v1",
-                "propagationPolicy": "Foreground",
-                "preconditions": {"uid": uid},
-            },
-        )
-        if response.status_code == 409:
-            raise BatchRepositoryConflictError("workload UID precondition failed during delete")
-        if response.status_code != 202:
-            raise ScientificKubernetesError("Kubernetes workload delete was not accepted asynchronously")
+        fenced = False
+        for remaining in (1, 0):
+            current = await self._request("GET", item)
+            if current.status_code == 404:
+                return
+            value = cast(dict[str, Any], current.json())
+            metadata = _metadata(value)
+            labels = _object(metadata.get("labels"), "Kubernetes labels")
+            annotations = _object(metadata.get("annotations"), "Kubernetes annotations")
+            if (
+                annotations.get(WORKLOAD_NAMESPACE_ANNOTATION) != ref.namespace
+                or annotations.get(ROUTE_NAMESPACE_ANNOTATION) != ref.route_namespace
+                or ref.route_namespace != ref.namespace
+            ):
+                raise BatchRepositoryConflictError("workload route namespace changed before delete")
+            try:
+                operation_id = UUID(str(labels[OPERATION_LABEL]))
+            except (KeyError, ValueError):
+                raise BatchRepositoryConflictError("workload operation identity is absent or invalid") from None
+            uid = metadata.get("uid")
+            if not isinstance(uid, str) or not uid:
+                raise ScientificKubernetesError("Kubernetes workload UID is absent before delete")
+            if ref.uid is not None and uid != ref.uid:
+                raise BatchRepositoryConflictError("workload UID changed before delete")
+            resource_version = metadata.get("resourceVersion")
+            if not isinstance(resource_version, str) or not resource_version:
+                raise ScientificKubernetesError("Kubernetes workload resourceVersion is absent before delete")
+            if not fenced:
+                await self.fence.assert_fence(
+                    operation_id, controller_id=self.controller_id, fencing_token=controller_fence
+                )
+                fenced = True
+            response = await self._request(
+                "DELETE",
+                item,
+                json={
+                    "kind": "DeleteOptions",
+                    "apiVersion": "v1",
+                    "propagationPolicy": "Foreground",
+                    "preconditions": {"uid": uid, "resourceVersion": resource_version},
+                },
+            )
+            if response.status_code in {200, 202, 404}:
+                return
+            if response.status_code != 409:
+                raise ScientificKubernetesError(f"Kubernetes workload delete returned HTTP {response.status_code}")
+            if not remaining:
+                raise BatchRepositoryConflictError("workload UID or resourceVersion precondition failed during delete")
+        raise ScientificKubernetesError("Kubernetes workload delete did not settle")
 
     async def absent(self, ref: WorkloadRef) -> bool:
         """Confirm UID-specific absence after an accepted foreground deletion."""
