@@ -123,7 +123,21 @@
     ],
     "open_dependency": "the controller companion must also publish the external tree admission document and point FS2_BINDCRAFT_EXTERNAL_TREES at it, beside .fs2/request.json and .fs2/input-manifest.json; without it the design stage fails closed",
     "mpnn_lane": "FS2_BINDCRAFT_MPNN_WEIGHTS selects original or soluble; unset defers to the pinned advanced template. Both colabdesign weight directories are absent from the image and mounted per run.",
-    "output_directory": "run-trajectory accepts a pre-created empty output directory and rejects a non-empty one rather than merging into a previous attempt"
+    "output_directory": "run-trajectory accepts a pre-created empty output directory and rejects a non-empty one rather than merging into a previous attempt",
+    "artifact_id_is_not_matched": "the admission document's artifact_id must be a non-empty string but is never compared to an expected value; the role key selects the algorithm and mount. The adapter's bindcraft-pyrosetta-installed-tree is preferred over the renderer's example value because it matches the ID in the adapter's artifact-lock.json",
+    "input_manifest_digest_is_not_verified": "the wrapper cross-checks only request.input_manifest.artifact_id against manifest.manifest_id, so the manifest's own sha256/size_bytes and both files' on-disk formatting are free; request_sha256 is hashed over a re-canonicalization of the parsed request. The target structure itself is still gated: its size and SHA-256 are verified against the manifest entry before design starts. Reported to the adapter task as a deliberate gap rather than silently tightened",
+    "reported_defect_in_consumer": {
+      "where": "models/structure/runtime/bindcraft-native/parameters.schema.json versus the adapter's design sharding",
+      "finding": "the adapter distributes designs with shards = min(designs, 32), which exceeds accepted_designs_per_shard maximum 10 as soon as designs > 320; the schema's hard ceiling is shard_count 64 x 10 = 640 designs, so a claimed 1..1024 range cannot validate",
+      "boundaries": {
+        "320": "valid",
+        "321": "rejected, quota 11",
+        "641": "not representable at any shard count"
+      },
+      "suggested": "shards = min(64, ceil(designs / 10)) covers 1..640 with no schema change; anything above needs a public parameter-schema change",
+      "owner": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903",
+      "reported": true
+    }
   },
   "external_tree_contract": {
     "roles": [
