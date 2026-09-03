@@ -91,7 +91,7 @@ fetch_verified.py                   sha256-verified build-time downloader
 runtime_entrypoint.py               the production adapter
 build_rfdiffusion.py                build, publish, verify attestations
 image-lock.json                     the immutable identity and the superseded chain
-qualification/stage_checkpoint.py   stage the checkpoint as a content-addressed generation
+qualification/stage_checkpoint.py   verify/place an archival interim run input (not localization)
 qualification/render_job.py         render the semantic Job for a published digest
 qualification/validate_result.py    independent acceptance gate over an exported run
 evidence/                           live H100 receipts
@@ -181,16 +181,6 @@ conflict is resolved rather than papered over: the artifact catalog binds
 images hard-coded `FS2_ARTIFACT_ROOT=/models/rfdiffusion`. This image hard-codes
 neither and works at whatever mount point the plane chooses.
 
-`qualification/stage_checkpoint.py` promotes the checkpoint into
-
-```
-<root>/generations/rfdiffusion-base-checkpoint/sha256/<generation>/
-```
-
-using the `fs2-flat-tree-inventory/v1` digest and the localization plane's
-`.fs2-runtime-tree.json` marker schema, so the tree moves to that plane without
-restaging. Promotion is atomic and never overwrites an existing generation.
-
 **Checkpoint localization is not this runtime's to claim.** Raw single-file artifact
 localization is owned by `fs2-single-file-model-artifact-localization-r20260903`. This
 runtime publishes no generation, writes no `.fs2-runtime-tree.json` marker and emits no
@@ -204,7 +194,10 @@ What remains here is run-input staging: fetch the exact bytes, refuse them unles
 sha256 and byte count match the accepted catalog, and place them at
 `<root>/inputs/sha256/<object sha256>/Base_ckpt.pt`. The digest in that path is the
 object's own catalog digest, not a tree-inventory generation, and it retires the moment
-the localization contract is accepted.
+the localization contract is accepted. This helper is retained as an archival byte
+verification utility only: `render_job.py` and the committed input manifests do not
+consume its new path, so it must not be used to claim a repeatable qualification rerun.
+New reruns wait for the canonical single-file localization contract.
 
 Delivery is mixed-plane *capable* — `render_job.py` takes repeatable `--plane` and
 refuses to run with none, so the single-claim assumption is gone — but no plane binding

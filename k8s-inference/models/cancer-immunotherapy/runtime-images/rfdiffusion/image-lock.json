@@ -248,14 +248,16 @@
       "this_runtime_claims": "No checkpoint localization and no qualified generation. This runtime publishes no generation, writes no .fs2-runtime-tree.json marker and emits no localization receipt. An earlier revision of qualification/stage_checkpoint.py did mimic the plane's marker schema; that was a task-local substitute for another task's contract and was removed rather than left to be mistaken for it."
     },
     "run_input_staging": {
-      "purpose": "place the exact checkpoint bytes where a qualification Job can read them",
+      "purpose": "retain an archival exact-byte verifier/helper for the historical qualification input; it is not wired to the current renderer or manifests",
       "is_localization": false,
       "tool": "qualification/stage_checkpoint.py",
       "path": "<root>/inputs/sha256/<object sha256>/Base_ckpt.pt",
       "addressing": "named by the object's own catalog sha256, not by a tree-inventory generation; the digest in the path means only 'these are the bytes that hash to this'",
       "verification": "sha256 and byte count both checked against the accepted catalog before use",
       "interim_claim": "fs2-runtime-qualification-artifacts-r20260902",
-      "retires_when": "the single-file localization contract is accepted, at which point this staging is deleted"
+      "rerunnable": false,
+      "rerun_policy": "do not use this helper for a new qualification; wait for the accepted single-file localization contract and regenerate the renderer manifest from it",
+      "retires_when": "the single-file localization contract is accepted, at which point this helper and interim staging are deleted"
     }
   },
   "mount_contract": {
@@ -343,7 +345,7 @@
         "Leave visibility unset or public: RFdiffusion code and weights are BSD-3-Clause with entitlement_state not-required, so it belongs on the reference-data host plane reached by node label, never on a licence-scoped claim.",
         "Move the prefix from this runtime's interim 'rfdiffusion' to 'scientific-localization/public', and stop using fs2-runtime-qualification-artifacts-r20260902, which is neither of the two planes.",
         "Add probe_entries, which is mandatory for a flat-inventory tree, and an entry_path_pattern admitting .pt.",
-        "Keep the generation layout, fs2-flat-tree-inventory/v1 and .fs2-runtime-tree.json: qualification/stage_checkpoint.py already produces exactly these, so the tree is portable without restaging."
+        "Use the shared single-file contract's canonical generation, marker and admission layout; the archival qualification helper deliberately produces none of these and must be retired rather than promoted."
       ],
       "renderer_note": "qualification/render_job.py currently mounts each plane at <artifact-root>/<plane-name> and takes --plane NAME=CLAIM[:SUBPATH]. That removes the single-claim assumption but is this runtime's own addressing, not the foundation's: the foundation mounts each artifact at its contract-declared mount_path with subPath <prefix>/generations/<id>/sha256/<digest>, from volume 'trees' (hostPath, public) or 'trees-private' (claim), and runs a fs2_localization.localization marker init container per artifact. Converting is deliberately deferred until an rfdiffusion contract entry exists, because the marker admission cannot be exercised against a contract that does not list the artifact, and rewriting the renderer now would desynchronise it from the evidence above without being testable."
     },
