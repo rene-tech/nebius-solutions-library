@@ -9,10 +9,13 @@ provide.
 Nothing here can raise a level.  A mechanism is operator detail; the level
 comes from evidence alone.
 
-The render adapters land one mechanism at a time.  ``regional-cache`` costs no
-reserved capacity.  ``host-memory-residency`` trades an explicit host RAM
-reservation for start latency, so its price is scheduled and attributable
-rather than an incidental page-cache effect another workload can evict.
+``regional-cache`` costs no reserved capacity.  ``host-memory-residency``
+trades an explicit host RAM reservation for start latency, so its price is
+scheduled and attributable rather than an incidental page-cache effect another
+workload can evict.  ``gpu-resident`` parks a warm engine in GPU memory so
+activation is a promotion instead of a load, which costs an accelerator for as
+long as the replica is parked; the declaration states the hot floor it depends
+on and validation refuses an implicit one.
 """
 
 from __future__ import annotations
@@ -47,7 +50,11 @@ SNAPSHOT_ELIGIBLE_LABEL = "snapshot.fs2.nebius/eligible"
 MECHANISM_ANNOTATION = "fast-start.fs2.nebius/mechanism"
 MECHANISM_CONFIG_DIGEST_ANNOTATION = "fast-start.fs2.nebius/mechanism-config-digest"
 MECHANISM_RESERVED_MEMORY_ANNOTATION = "fast-start.fs2.nebius/reserved-host-memory-bytes"
+MECHANISM_STANDBY_ANNOTATION = "fast-start.fs2.nebius/gpu-resident-standby-replicas"
+MECHANISM_HOT_FLOOR_ANNOTATION = "fast-start.fs2.nebius/gpu-resident-minimum-hot-replicas"
 HOST_MEMORY_RESIDENCY_LABEL = "fast-start.fs2.nebius/host-memory-residency"
+GPU_RESIDENT_ROLE_LABEL = "fast-start.fs2.nebius/gpu-resident-role"
+GPU_RESIDENT_READINESS_GATE = "fast-start.fs2.nebius/promoted"
 
 HOSTNAME_TOPOLOGY_KEY = "kubernetes.io/hostname"
 
@@ -1002,3 +1009,57 @@ def _payload_mount_root(content_path: str) -> str:
     if not parts:
         raise FastStartMechanismError("the retained payload content path is empty")
     return f"/{parts[0]}"
+
+
+def configure_gpu_resident(
+    *,
+    pod_spec: dict[str, Any],
+    pod_metadata: dict[str, Any],
+    qualification: GpuResidentQualification,
+    configured_hot_replicas: int,
+    role: Literal["standby", "serving"] = "standby",
+    runtime_container_name: str | None = None,
+) -> None:
+    """Park a warm engine in GPU memory and promote it instead of loading it.
+
+    A ``standby`` replica loads the engine, keeps the weights in GPU memory, and
+    carries a readiness gate that holds it out of the Service until the promoter
+    sets the gate's condition.  Activation is then one readiness period rather
+    than a model load.  The Pod records the standby count, the reserved
+    accelerators and the hot floor the mechanism depends on.
+    """
+
+    if configured_hot_replicas < qualification.minimum_hot_replicas:
+        raise FastStartMechanismError("gpu-resident needs the deployment's hot floor to cover its declared minimum")
+    container = _container(pod_spec, runtime_container_name)
+    _set_env(
+        container,
+        {
+            "FS2_FAST_START_MECHANISM": FastStartMechanism.GPU_RESIDENT.value,
+            "FS2_FAST_START_RESIDENCY_MODE": qualification.residency_mode,
+        },
+    )
+    if role == "standby":
+        gates = pod_spec.setdefault("readinessGates", [])
+        if not isinstance(gates, list):
+            raise FastStartMechanismError("rendered Pod readinessGates must be a list")
+        gate = {"conditionType": GPU_RESIDENT_READINESS_GATE}
+        if gate not in gates:
+            gates.append(gate)
+        readiness = container.get("readinessProbe")
+        if isinstance(readiness, dict):
+            probe = dict(readiness)
+            probe["periodSeconds"] = qualification.promotion_probe_period_seconds
+            container["readinessProbe"] = probe
+    _label(pod_metadata, {GPU_RESIDENT_ROLE_LABEL: role})
+    _annotate(
+        pod_metadata,
+        {
+            MECHANISM_ANNOTATION: FastStartMechanism.GPU_RESIDENT.value,
+            MECHANISM_CONFIG_DIGEST_ANNOTATION: qualification.config_digest,
+            MECHANISM_STANDBY_ANNOTATION: str(qualification.standby_replicas),
+            MECHANISM_HOT_FLOOR_ANNOTATION: str(qualification.minimum_hot_replicas),
+            "fast-start.fs2.nebius/gpu-resident-reserved-accelerators": str(qualification.reserved_accelerators),
+            "fast-start.fs2.nebius/residency-mode": qualification.residency_mode,
+        },
+    )
