@@ -1,0 +1,47 @@
+absl-py==2.1.0
+biopython==1.85
+chex==0.1.87
+dm-haiku==0.0.13
+dm-tree==0.1.9
+flax==0.8.5
+fonttools==4.64.0
+fsspec==2025.2.0
+humanize==4.16.0
+immutabledict==4.2.1
+importlib-resources==7.1.0
+jax==0.4.28
+jaxlib @ https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.28%2Bcuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl#sha256=3d7b56bfe50470c585f0b8567ba67550691fd783c6ddd909d08a29d0b8a29a74
+# The pinned PyTorch CUDA 12.1 base contains cuSPARSE 12.0.2. JAX's CUDA 12
+# wheel requires at least cuSPARSE 12.1; install only the two exact NVIDIA
+# runtime components needed to close that Hopper-only compatibility gap.
+nvidia-nvjitlink-cu12 @ https://files.pythonhosted.org/packages/e2/d2/19760b2ee3bfe3b32feec7f69484ed4942d053198481c4abc7afd10f3ab0/nvidia_nvjitlink_cu12-12.1.105-py3-none-manylinux1_x86_64.whl#sha256=015fed699b390ce3b8a8578d822d501a4194d0a341d3859554067c1ab291cb85
+nvidia-cusparse-cu12 @ https://files.pythonhosted.org/packages/65/5b/cfaeebf25cd9fdec14338ccb16f6b2c4c7fa9163aefcf057d86b9cc248bb/nvidia_cusparse_cu12-12.1.0.106-py3-none-manylinux1_x86_64.whl#sha256=f3b50f42cf363f86ab21f720998517a659a48131e8d538dc02f8768237bd884c
+nvidia-cuda-nvcc-cu12 @ https://files.pythonhosted.org/packages/ac/12/1d881feaf81b0b56e11ee7fdde9a688ffd4e09208136ea6cfeea7b05edb9/nvidia_cuda_nvcc_cu12-12.1.105-py3-none-manylinux1_x86_64.whl#sha256=a0712a05ffd57d9f017580ffcc808b207f7f4ef7a5ca8ac1312318b153739a18
+jmp==0.0.4
+joblib==1.4.2
+kiwisolver==1.5.1
+markdown-it-py==4.2.0
+matplotlib==3.9.4
+mdurl==0.1.2
+ml-collections==1.0.0
+ml-dtypes==0.5.4
+msgpack==1.2.2
+nest-asyncio==1.6.0
+numpy==1.26.4
+opt-einsum==3.4.0
+optax==0.2.3
+orbax-checkpoint==0.6.4
+pandas==2.2.3
+protobuf==7.36.1
+py3Dmol==2.4.2
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+rich==15.0.0
+scipy==1.15.1
+seaborn==0.13.2
+tabulate==0.10.0
+tensorstore==0.1.78
+tqdm==4.67.1
+tzdata==2026.3
+wrapt==2.4.0
+zipp==4.1.0

@@ -1,0 +1,199 @@
+# Native academic BindCraft runtime image
+
+This package builds one `linux/amd64` image: the native PyRosetta BindCraft
+lane, which is the required lane for the cancer-immunotherapy workload. It is
+not a model bundle. The image contains the pinned BindCraft source and its
+CUDA 12.1 / JAX stack and nothing else — no PyRosetta, no AlphaFold2 parameters,
+and neither ColabDesign ProteinMPNN weights directory. Everything the model
+reads arrives at run time and is verified before any model code executes.
+
+The open PyRosetta-free fallback, RFdiffusion and ProteinMPNN were built by an
+earlier mixed package and are deliberately not here. This tree is the final
+BindCraft image, its runtime source, its immutable lock and receipt, its
+qualification evidence, and the tests and docs for exactly that.
+
+| | |
+|---|---|
+| Source | BindCraft `7cd4ace1b7407adf66a50dfefa47de2270f5e4a9`, archive `cada0f51…` |
+| Base | `pytorch/pytorch@sha256:0279f7aa…` (PyTorch 2.3.0, CUDA 12.1, Python 3.10.14) |
+| Final tag | `…/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r16` |
+| Final digest | `sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d` |
+| Attestations | SPDX SBOM and SLSA provenance |
+| Qualification | offline-qualified; the live H100 semantic acceptance has **not** run |
+
+## Academic PoC authorization
+
+The owner has authorized the free academic PyRosetta path for this proof of
+concept, and the image is built around exactly that authorization:
+
+* The exact private **PyRosetta 2026.29** installed tree is consumed
+  **read-only** from the tenant-private claim. The runtime verifies it, imports
+  from it, and never writes to it.
+* Licensed bytes are **never embedded** in the image and never placed in a
+  public cache. The image is scanned for an importable `pyrosetta` and for model
+  artifacts on every canary, and publication fails if either appears.
+* **No per-request license receipt is required.** Admission is
+  `AdmittedNoPerRequestLicenseReceipt`; the authorization and install receipt
+  digests are deployment metadata, not request fields and not init gates.
+* Broader or commercial use beyond this PoC is **advisory** and out of scope
+  here. Nothing in this package grants or implies redistribution rights.
+
+The mounted object is the canonical `ArtifactMaterialization`
+`bindcraft-pyrosetta-installed-tree`: a 3,287,122,494-byte installed tree whose
+`fs2-tree-manifest/v1` identity is
+`a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d`. That digest
+is **pinned inside the image**, because the licensed tree is what the image is
+licensed around: a run declaring a different identity for that role is refused
+outright. The 1,667,097,173-byte source wheel (`4383d8d1…`) remains distinct
+provenance and is not what ordinary runs consume.
+
+## The four external trees
+
+| Role | Mounted at | Identity algorithm | Authority |
+|---|---|---|---|
+| `pyrosetta-site-packages` | `/opt/fs2/academic/pyrosetta-bindcraft/site-packages` | `fs2-tree-manifest/v1` | pinned in the image |
+| `alphafold2-params` | `/models/alphafold2` | `fs2-flat-tree-inventory/v1` | declared per run |
+| `colabdesign-mpnn-weights-vanilla` | `…/colabdesign/mpnn/weights` | `fs2-flat-tree-inventory/v1` | declared per run |
+| `colabdesign-mpnn-weights-soluble` | `…/colabdesign/mpnn/weights_soluble` | `fs2-flat-tree-inventory/v1` | declared per run |
+
+`runtime/tree_identity.py` implements both algorithms and keeps each
+byte-identical to the component that publishes the tree it guards:
+`fs2-tree-manifest/v1` to `academic-assets/scripts/install_tree.py`, which
+installs the licensed tree, and `fs2-flat-tree-inventory/v1` to the
+scientific-localization staging receipts. A digest only this runtime could
+reproduce would prove nothing about the tree the publisher actually shipped.
+
+Every admitted tree is read in full. That is affordable and measured on the
+eu-north1 shared filesystem — 3.29 GB of PyRosetta in 14.85 s, 5.59 GB of
+AlphaFold2 in 5.36 s, each 26 MB MPNN tree in under 0.04 s, about 20 s in
+total — against trajectories that run for minutes. No metadata-only shortcut is
+offered, because a size-and-shape check passes on a tree whose contents were
+swapped. Both MPNN roots must additionally be the directories `colabdesign.mpnn`
+itself imports, so a declared root the model would never read cannot be admitted.
+
+**Tree locations are inputs, never constants.** `FS2_BINDCRAFT_EXTERNAL_TREES`
+points at an `fs2.nebius.ai/bindcraft-external-tree-admission/v1` document giving
+each role's root and expected identity, so a re-publication that moves paths
+without changing bytes needs no rebuild.
+
+## Controller interface
+
+Both `run-trajectory` and `aggregate` require
+`--runtime-localization-marker <absolute path>`, because the shared controller
+rejects any runtime-artifact stage whose argv omits
+`<working directory>/.fs2/runtime-localization.json`. The wrapper reads it: the
+controller owns the file's schema, so only an absolute path to a readable JSON
+object agreeing with `FS2_RUNTIME_LOCALIZATION_MARKER` is required, and its path,
+size and SHA-256 are recorded. A `generation` the marker declares is
+cross-checked against the mounted trees, and `aggregate` applies the same check
+across shards — the only place separately-scheduled Pods can be compared.
+
+The ProteinMPNN lane is a request parameter, not an image constant:
+`FS2_BINDCRAFT_MPNN_WEIGHTS` selects `original` or `soluble`, and with it unset
+the SHA-256-pinned advanced template decides.
+
+Two things the wrapper deliberately does not verify, so a consumer is not misled:
+the admission document's `artifact_id` is required to be a non-empty string but
+is never matched against an expected value, and `request.input_manifest.sha256`
+is not checked, so both documents' on-disk formatting is free. The bytes that
+matter scientifically are still gated: the materialized target structure's size
+and SHA-256 are verified against the manifest entry before design starts.
+
+## Why r16, and what r14 and r15 got wrong
+
+`r12` through `r15` are superseded and must not be consumed. Tags are never
+overwritten; the number advances because the runtime contract changed.
+
+* `r12` ran its semantic workflow under `no_filters`. Its accepted design's mean
+  pLDDT of 0.79 would not pass the production filter set.
+* `r14` read `Average_InterfaceResidues` and `Average_BuriedSASA`, which upstream
+  never writes, each with a `"0"` default — so every accepted design reported
+  zero interface residues and zero buried area. It also reported a hard-coded
+  `hotspot_geometry_validated`, and overrode the pinned template with one
+  validation recycle and one sampled MPNN sequence where production uses three
+  and twenty.
+* `r15` corrected all of that and added the four-tree admission gate, but
+  predates the controller's marker flag.
+
+`r16` reads the columns upstream actually writes
+(`Average_n_InterfaceResidues`, `Average_dSASA`,
+`Average_Binder_Energy_Score`, `Average_Hotspot_RMSD`) and rejects a run whose
+statistics are missing or non-numeric rather than substituting a zero. It
+measures hotspot geometry from the accepted complex at upstream's own 4.0 Å
+contact criterion, because `target_hotspot_residues` is a loss preference and
+the interface residues upstream records are binder-side, so no upstream column
+answers whether the binder reached the requested site.
+
+## Build and publish
+
+```bash
+python3 build_images.py plan                    # exact plan
+python3 build_images.py check-targets           # assert the target tag is absent
+python3 build_images.py build                   # local build, no attestations
+python3 build_images.py push                    # non-overwriting publish + verify + receipt
+```
+
+`push` refuses to overwrite an existing tag, builds with SPDX and SLSA
+attestations, re-pulls by digest, runs the artifact-free canary and both batch
+subcommands, and only then writes `evidence/published-images.json`.
+
+The image consumes the adapter's published `bindcraft-batch` wrapper from
+`models/structure/runtime/bindcraft-native/bin/` through a read-only BuildKit
+build context. That single file is the only thing this package needs from the
+adapter tree, and it is carried alone rather than vendoring an adapter this task
+does not own.
+
+`runtime/runtime_entrypoint.py` is the shared outer entrypoint and still names
+the split-out runtimes in its import and artifact-scan tables. That is
+intentional: it is byte-identical to the file that produced the published r16
+digest, and trimming it would break that match for no behavioural gain, since
+this image only ever sets `FS2_RUNTIME_NAME=bindcraft-academic`. A test pins the
+SHA-256 of all five in-image files against the qualification evidence so the
+match cannot be lost by accident.
+
+## Live H100 semantic acceptance — not yet run
+
+**No current-digest H100 success is claimed.** r16 is offline-qualified: 56
+contract tests, the artifact-free image canary, byte-for-byte source identity
+against the pulled digest, four in-image fail-closed proofs, and a server-side
+dry run of the rendered Job against `k8s-inference-h100`.
+
+The production run is blocked on the canonical immutable four-tree localization
+generation. The mutable `scientific-localization/public/<artifact_id>` paths must
+not be bound. As of the last check the claim has no `/sha256` generation root, an
+empty `markers` directory, and only the superseded three-tree receipts.
+
+When the generation lands, the run is one command:
+
+```bash
+python3 qualification/render_semantic_job.py \
+  --handoff <four-tree-handoff.json> \
+  --image …/bindcraft@sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d \
+  --run-id <run> --job-name <job> | kubectl apply -f -
+```
+
+The rendered Job runs the design stage as an init container and the aggregate as
+the main container over one workspace, because the shard output lives on the
+Pod's own volume and two Jobs could not share it. Both stages enter the image
+through its outer entrypoint and carry the pinned
+`default_4stage_multimer.json` and `default_filters.json` digests; only the
+design stage requests an accelerator.
+
+Passing `default_filters.json` is the semantic bar, not a formality. Its 54
+active thresholds require `Average_n_InterfaceResidues` ≥ 7, `Average_dSASA` ≥ 1,
+`Average_dG` ≤ 0, `Average_Binder_Energy_Score` ≤ 0, `Average_Hotspot_RMSD` ≤ 6,
+`Average_ShapeComplementarity` ≥ 0.6, `Average_pLDDT` ≥ 0.8 and
+`Average_i_pTM` ≥ 0.5 — so a design that passes has, by construction, non-zero
+interface residues, non-zero buried area and a non-zero PyRosetta score.
+
+Two requirements the handoff must satisfy, both cheap now and expensive after
+publication:
+
+* A terminal marker written **inside** a tree root changes that tree's
+  `fs2-flat-tree-inventory/v1` digest, because the inventory enumerates every
+  regular file in the flat root. Markers must live outside the tree roots.
+* The AlphaFold2 root must keep a `manifest.json` declaring `artifact_kind`
+  `bindcraft-af2-params` and `source_revision` `7cd4ace1…`, because the shared
+  outer entrypoint's artifact gate reads it on every non-smoke command.
+
+Full detail is in `evidence/native-final-image-qualification.json`.
