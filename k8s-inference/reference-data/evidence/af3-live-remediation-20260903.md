@@ -8,8 +8,11 @@ No B300 resource was read or mutated.
 ## Preserved in-flight staging
 
 Two stagers were running when this work started and both were preserved. No
-pod, Job, ConfigMap, queue, filesystem object or Terraform resource was
-deleted, patched or applied during the remediation.
+stager pod, Job, ConfigMap, queue, filesystem object or Terraform resource was
+deleted, patched or replaced while staging was active. After the authoritative
+staging Job completed, the successor applied only the reviewed bounded-upgrade
+Job and immutable tools ConfigMap described below, then removed those two
+temporary objects after recording their terminal evidence.
 
 | pod | node | role |
 | --- | --- | --- |
@@ -104,16 +107,25 @@ exists, independent of whether Kueue enforces the quota.
 
 ## Status and readiness
 
-`Deployment/fs2-reference-data-status` is 1/1 Running.
+`Deployment/fs2-reference-data-status` remained 1/1 Running throughout. Before
+publication, `/readyz` returned HTTP 503, `/v1/status` contained zero items and
+`fs2_reference_data_dataset_ready` was 0. The publisher did not expose an early
+status while materializing the tree or copying the source objects.
 
-* `/healthz` returns `ok`.
-* `/readyz` returns HTTP 503 `not ready`.
-* `/v1/status` returns `{"ready": false, "ready_items": 0, "items": [],
-  "invalid_items": 0, "scan_errors": 0}`.
-* `/metrics` reports `fs2_reference_data_dataset_ready 0`.
+After the bounded upgrade completed:
 
-The plane truthfully reports AlphaFold 3 as not ready. No dataset revision is
-published, so no readiness claim is made.
+* `/healthz` returns `ok` and `/readyz` returns HTTP 200.
+* `/v1/status` contains exactly one ready item, zero not-ready/invalid items and
+  zero scan errors.
+* `/metrics` reports `fs2_reference_data_dataset_ready 1`, one ready status
+  item and zero not-ready/invalid items or scan errors.
+* The ready item binds tree `d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea`,
+  manifest `aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748`,
+  inventory `38af3baa89a66cd24dec785279670a2e37597f98d206f555a04c138c6be71579`
+  and receipt `b049e69846867caa75ef140e105a962fcf14e5c78ec8bfd97741cced32a8f6a6`.
+
+This is reference-data readiness only. It is not a claim that an AlphaFold 3
+platform route or raw-input workflow is runnable.
 
 ## Staging parallelism benchmark
 
@@ -148,6 +160,111 @@ a second copy. Where linking were unsupported the code falls back to renaming,
 and a failure part-way through assembly loses only recomputable expansion work:
 the downloaded blobs are untouched and a retry re-expands from them.
 
+## Materialization, and why the handoff has to be bounded
+
+The preserved stager expanded the PDB mmCIF snapshot first: a 56,979,074,571
+byte archive decompressed to a 233 GiB intermediate tar, extracted, and the
+intermediate released. At 05:03Z the staging tree held **195,859** mmCIF files
+in 234.6 GiB, with the eight single-file sequence databases still to expand.
+
+That number is the concrete reason the terminal handoff is bounded. The
+published tree is roughly 195,867 files, about forty-eight times the
+4,096-file inventory a consuming controller can safely validate. A manifest
+carrying that inventory inline would be tens of megabytes and could not be
+consumed. The bounded receipt instead carries the aggregate tree digest, an
+independent manifest digest, the inventory digest and the counts, and the full
+inventory lives in a separate content-addressed document that only a full audit
+reads.
+
+Filesystem use through materialization stayed well inside the 2.0 TB volume:
+222.4 GiB of blobs, a 233 GiB peak for the intermediate archive, and 477.8 GiB
+in use with 1.5 TB free once the archive was released.
+
+## Terminal publication and bounded upgrade
+
+The preserved orphan publisher completed without a restart and atomically
+installed the read-only tree at 06:56:48Z. Its legacy manifest was
+`a1b11b12eece39e6ea79f7c624611ed1b2664be73ab4882f744807f01dc32066`.
+That 32,771,550-byte document carried all 195,867 file entries inline, so it
+was a valid immutable publication but not the bounded consumer contract.
+
+The Terraform-owned Job `fs2-stage-af3-c0d769c79972` was never restarted or
+replaced. It acquired the original bundle lock after the orphan exited and
+independently re-hashed the whole published tree. It completed successfully at
+09:00:25Z and reported the same legacy manifest digest. Only after that
+`Complete` condition did the successor apply the already-rendered upgrade:
+
+| resource | identity | result |
+| --- | --- | --- |
+| accepted artifact | SHA-256 `082a051cf05b291048983f4475dff6664634f680f76a4d62d75994704f71bca6` | server-side dry run and apply passed |
+| upgrade Job | `fs2-upgrade-af3-a3069616aae1`, UID `8d5c9b09-a48f-45a2-a64f-098664210539` | 09:01:24Z to 09:30:35Z, `Complete`, zero failed pods |
+| Kueue Workload | `job-fs2-upgrade-af3-a3069616aae1-d3d34`, UID `064eb8d2-2a14-46c0-9e23-942f53695fba` | admitted by `reference-data-cpu` at 09:01:24Z |
+| tools ConfigMap | `fs2-reference-data-upgrade-tools-a3069616aae1`, UID `c2a27076-9738-450f-9303-1f8066f5a8a1` | immutable; exact repository source and contract bytes |
+
+The upgrade used the same immutable stager image digest
+`sha256:89b826c4783bcb726f76fa55cbec4b9461ce774a0d8e11d7003c3a01e5eb5b44`,
+6 CPU, 24 GiB memory and 2 GiB ephemeral storage. It selected only the stable
+regular reference-data pool labels, tolerated only that pool's taint and
+requested no accelerator. The embedded `reference_data.py`, requirements and
+placement documents matched the task branch byte-for-byte at SHA-256
+`d670ef1053dcbcb7cfa396d56360a9af5bc8279f7bc4e757d9d3effc1d6e2822`,
+`88e1ab5cd6b029a39b857212d5b7e513e46389f09edbd088d6dbe956e72968ab`
+and `e1036f7a760cf561be12643d85d40d8f02eff8f34193bd20a520938be70e39f4`.
+
+Before writing metadata, the upgrade performed a second full content hash and
+proved the exact aggregate identity again. It then published the external
+inventory and bounded manifest to the private regional object prefix, changed
+only the marker/manifest/inventory/receipt/status metadata, and did not
+re-download or re-materialize a database byte. Its terminal values are:
+
+| identity | exact value |
+| --- | --- |
+| tree SHA-256 | `d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea` |
+| bounded manifest SHA-256 | `aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748` |
+| inventory SHA-256 | `38af3baa89a66cd24dec785279670a2e37597f98d206f555a04c138c6be71579` |
+| terminal receipt SHA-256 | `b049e69846867caa75ef140e105a962fcf14e5c78ec8bfd97741cced32a8f6a6` |
+| files / expanded bytes | 195,867 / 672,435,030,513 |
+| dataset sub-path | `datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea` |
+
+The exact bounded document is checked in as
+`evidence/af3-terminal-receipt-20260903.json`. Its canonical digest matches the
+live `receipt_sha256`; the bounded manifest has zero inline inventory entries.
+
+An independent read-only validation ran from the existing status pod after the
+upgrade. It recomputed the canonical manifest, inventory and receipt digests,
+walked and `lstat`-validated all 195,867 inventory paths, summed exactly
+672,435,030,513 bytes, proved every entry is a regular non-symlink of its
+recorded size, opened representative first/middle/last files, verified mode
+`0555`, and bound `.fs2-manifest-sha256` to the new manifest. Every check
+passed. This metadata/readability walk is independent of the two full content
+hashes performed by the preserved staging Job and the upgrade Job.
+
+## A sibling task shares this filesystem
+
+At 05:47Z three directories appeared in `/reference-data/.staging` that this
+task did not create: `fs2-boltzgen-archive-1`,
+`fs2-boltzgen-boltzgen-checkpoints-1` and
+`fs2-boltzgen-boltzgen-inference-molecules-1`, holding `mols.zip`,
+`boltz2_aff.ckpt` and a molecule pickle, about 1.6 GB in total. They are
+written by two pods in the `fs2-models` namespace,
+`fs2-boltzgen-localize-checkpoints-r20260903` and
+`fs2-boltzgen-localize-molecules-r20260903`, which mount the same host path
+`/mnt/fs2-reference-data/data`.
+
+This does not disturb AlphaFold 3 staging and the space is immaterial against
+the 2.0 TB volume. It is recorded because it makes one property load-bearing:
+**`.staging` is shared, so it must only ever be cleaned entry by entry.** The
+publisher creates its working directories with `mkdtemp` under `.staging` and
+removes only those, never the directory itself, and the tar path's intermediate
+archive lives there too. A future change that cleaned `.staging` wholesale
+would destroy a sibling task's in-flight artifacts, and equally a sibling that
+cleaned it would destroy an in-flight reference-data expansion.
+
+Two further observations for the program, not for this task: pods in
+`fs2-models` are writing into the plane the reference-data module owns, and the
+peak AlphaFold 3 footprint plus sibling artifacts share one volume. Neither is
+a problem today; both are worth an explicit owner.
+
 ## Raw data-pipeline capacity is not satisfied by the reference pool
 
 The bulk database stager and the AlphaFold 3 raw data pipeline are different
@@ -158,11 +275,11 @@ workloads and are sized separately.
 | bulk database staging | 6 CPU / 24 GiB | yes |
 | AlphaFold 3 raw data pipeline | 16 CPU / 64 GiB | no |
 
-Both live reference nodes are `8vcpu-32gb`, schedulable at 7,000 millicores and
-28,672 MiB, behind a Kueue nominal quota of 6 CPU / 24Gi. That is enough to
-download, decompress and hash the databases, and it is not enough to run
-jackhmmer and nhmmer over them. `reference_data.py capacity-requirements`
-reports the split directly:
+Both live reference nodes are `8vcpu-32gb`; the terminal inventory reported
+7,900 millicores and about 30.7 GiB allocatable on each, behind a Kueue nominal
+quota of 6 CPU / 24Gi. That is enough to download, decompress and hash the
+databases, and it is not enough to run jackhmmer and nhmmer over them.
+`reference_data.py capacity-requirements` reports the split directly:
 
 ```
 staging     pool=reference-cpu  requested={"cpu":"6","memory":"24Gi","ephemeral_storage":"2Gi"}   runnable=true
@@ -180,19 +297,20 @@ before it is provisioned.
 
 **This means the data-pipeline lane must not be advertised as runnable on the
 current pool.** Provisioning that CPU class is scheduling and Terraform work,
-and it is a precondition for any semantic raw-input run.
+and it is a precondition for any semantic raw-input run. As of 2026-09-03 the
+general CPU task is adding a 16 CPU / 64 GiB capable reference class; when it
+lands, `runnable_on_declared_pool` flips to true with no code change, because
+the requirement and the pool contract are both data.
 
 ## Runtime dependency for the raw-input run
 
-The AlphaFold 3 data pipeline needs an AlphaFold 3 runtime image. The image
-that produced the existing H100 semantic evidence is recorded as
-`sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887`, but
-its repository is deliberately `withheld` in `academic-assets/contracts`, it is
-marked `role: historical-semantic-evidence` with `final_wrapper: false`, and
-the `fs2-academic-poc` namespace holds no running workload or image pull secret
-from which the concrete registry path could be read. The final AlphaFold 3
-runtime wrapper is owned by
-`fs2-cancer-images-structure-secondary-r20260902` and is not yet published.
+The final AlphaFold 3 academic runtime wrapper is published as tag
+`3.0.4-85c4d205-r6`, immutable digest
+`sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e`.
+Its source/provenance and real H100 semantic evidence are accepted in the
+runtime-owned contract. The concrete registry repository remains an explicit
+deployment binding and is deliberately not committed; the digest is the
+authoritative portable identity.
 
 That image also lays out its interpreter and entrypoint differently from the
 path the executor previously hardcoded: it uses `/alphafold3_venv/bin/python3`
@@ -201,44 +319,45 @@ The request contract now declares the interpreter and script explicitly, with
 absolute-path and character validation, so the acceptance run binds whichever
 layout the published wrapper actually uses instead of assuming one.
 
-## Not yet done, and why
+## Remaining platform blockers
 
-**The immutable tree is still being materialized.** The preserved stager began
-expanding the bundle at 03:24Z. Decompressing 222.4 GiB of sources into roughly
-630 GB and hashing every expanded file is a multi-hour operation, and it was
-deliberately left to run rather than being restarted under the new tooling.
-Until it publishes there is no manifest digest, no aggregate tree digest and no
-terminal receipt, so none is quoted anywhere.
+Reference publication is complete. A live raw-input or GPU run was not started
+because the remaining dependencies are outside this publication task and the
+ticket explicitly forbids GPU use before the adapter route is ready:
 
-**The semantic raw-input run is blocked on an AlphaFold 3 runtime image.** The
-data pipeline needs an image containing `run_alphafold.py`. No such image is
-obtainable from this task: the registry path of the one that produced the
-existing H100 evidence is deliberately withheld, that image is explicitly not
-the runtime wrapper, the final wrapper owned by
-`fs2-cancer-images-structure-secondary-r20260902` is unpublished, and neither
-service account carries an image pull secret that would resolve a path. This is
-a missing-resource dependency, not a defect in this work, and it is recorded
-rather than worked around.
+* Current main contains no AlphaFold 3 scientific workload profile or
+  controller adapter registration. The reviewed adapter remains on its task
+  branch and has not been integrated into the runnable platform route.
+* The live reference pool remains 8 vCPU / 32 GiB per node and cannot admit the
+  declared 16 CPU / 64 GiB AlphaFold 3 data pipeline. The separate general CPU
+  pool task must be integrated and deployed; the request must not be silently
+  reduced to fit the staging node.
+* The runtime repository/image-pull deployment binding must be supplied by the
+  runtime/controller integration. This task does not infer it from private
+  credentials or bypass the withheld-repository contract.
 
-Once the tree publishes, the part of acceptance that does not need that image
-can still be run and is worth running: a rendered raw-input Job admitted into
-`reference-data-cpu`, scheduled onto a reference-data node under its taint,
-mounting the published tree read-only, validating the input object checksum,
-the reference manifest digest, the `/sha256/<tree>` path component and the
-`.fs2-manifest-sha256` marker against the real published values, and then
-failing closed on the absent runtime executable. That exercises everything this
-task owns and names the external dependency precisely.
+These blockers do not weaken the reference-data result. The parameters and r6
+runtime have their own accepted identities, while this task establishes the
+database tree, manifest, inventory, terminal receipt, CPU Job scheduling and
+node readability. Full AlphaFold 3 readiness still requires the integrated raw
+route and a semantic H100 run using all of those exact identities together.
 
-No AlphaFold 3 readiness is claimed. The status service reports
-`fs2_reference_data_dataset_ready 0` and `/readyz` returns 503, which is the
-truthful state. Readiness requires the parameter identity, the reference
-database tree and manifest identity, the runtime image digest, Job scheduling
-and a semantic H100 run all to pass; four of those five are outstanding.
+`scripts/validate_published_revision.py` validates a published revision in
+place and writes nothing: the status document, the manifest and its digest, the
+canonical dataset sub-path, the readiness marker, the read-only mode of the
+tree, and the walked file count and byte total against the manifest. For a
+revision published in the pre-bounded shape it also derives, without writing,
+the exact terminal receipt the bounded contract requires. Its contract tests
+cover both legacy and bounded publications plus tampered-tree rejection.
 
 ## Cleanup
 
 The tooling copied into the stager's `emptyDir` scratch space for the read-only
 plan runs was removed, and the hard-link probe directory was removed
-immediately after the probe. The shared filesystem holds only the stager's own
-`blobs`, `downloads`, `locks` and `.staging` directories. One shared
-reference-data filesystem, no split copy, no destructive restaging.
+immediately after the probe. After terminal validation, the task-owned upgrade
+Job and immutable tools ConfigMap were deleted; their owner-controlled Kueue
+Workload and pod were garbage-collected with the Job. `/readyz` remained HTTP
+200 after cleanup. The published tree, manifests, inventory, receipt, status
+service, original staging Jobs/pods, sibling artifacts and shared filesystem
+were retained. One shared reference-data filesystem, no split copy, no
+destructive restaging, no GPU allocation and no B300 access or mutation.
