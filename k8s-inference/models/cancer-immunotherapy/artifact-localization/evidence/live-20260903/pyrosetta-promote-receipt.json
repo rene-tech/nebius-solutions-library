@@ -1,0 +1,44 @@
+{
+  "archive_provenance": {
+    "bytes": 1667097173,
+    "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+    "license_id": "Rosetta-and-PyRosetta-Non-Commercial-License-Chain",
+    "present_in_mount": false,
+    "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+    "source_revision": "2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64",
+    "source_uri": "https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/pyrosetta-2026.29%2Breleasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl"
+  },
+  "artifact_id": "bindcraft-pyrosetta-installed-tree",
+  "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+  "observation": {
+    "bytes_copied": 0,
+    "bytes_linked": 3287122494,
+    "duration_seconds": 53.293,
+    "files_copied": 0,
+    "files_linked": 8697,
+    "generation": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+    "generation_reused": false,
+    "generation_sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+    "marker_sha256": "ee24f7445426b0536da9781bc57a9ef33e4e1e98a3434afae31cdd84e7b473d3"
+  },
+  "observed_at": "2026-09-03T12:50:02Z",
+  "runtime_bindings": [
+    {
+      "binding_kind": "environment-variable",
+      "binding_name": "PYTHONPATH",
+      "binding_value": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+      "model_id": "bindcraft"
+    }
+  ],
+  "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+  "state": "verified",
+  "tree_identity": {
+    "directory_count": 779,
+    "entry_count": 8697,
+    "inventory_algorithm": "fs2-tree-manifest/v1",
+    "inventory_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+    "probe_entries_verified": 0,
+    "symlink_count": 0,
+    "total_bytes": 3287122494
+  }
+}

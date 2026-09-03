@@ -1,0 +1,48 @@
+{
+  "alphafold2_gate": {
+    "bytes": 5587956571,
+    "files": 16,
+    "manifest_sha256": "9d0b7e45378ed707cfc31585f3ae960282dc76f3e2c4f60b545b02dbc728423b"
+  },
+  "duration_seconds": 9.321,
+  "mpnn_directories_are_distinct": true,
+  "mpnn_weights": {
+    "original": {
+      "bytes": 6650698,
+      "checkpoint": "v_48_020.pkl",
+      "directory": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+      "entries": [
+        "__init__.py",
+        "v_48_002.pkl",
+        "v_48_010.pkl",
+        "v_48_020.pkl",
+        "v_48_030.pkl"
+      ],
+      "model_type": "mk_mpnn_model",
+      "sha256": "993194d9cbe9334f6c2c81bddeb1404ea831711bca8e38b591b4116060484ac3"
+    },
+    "soluble": {
+      "bytes": 6650310,
+      "checkpoint": "v_48_020.pkl",
+      "directory": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+      "entries": [
+        "__init__.py",
+        "v_48_002.pkl",
+        "v_48_010.pkl",
+        "v_48_020.pkl",
+        "v_48_030.pkl"
+      ],
+      "model_type": "mk_mpnn_model",
+      "sha256": "f3f705752e625a173ac5ea4d2b2e46bd10ff13905a73bcc1ca2ecd3420b361e1"
+    }
+  },
+  "node_digest": "89d4e9197704f712",
+  "runtime_environment": {
+    "FS2_ARTIFACT_KIND": "bindcraft-af2-params",
+    "FS2_ARTIFACT_MANIFEST": "/models/alphafold2/manifest.json",
+    "FS2_ARTIFACT_ROOT": "/models/alphafold2",
+    "FS2_SOURCE_REVISION": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
+  },
+  "schema": "fs2-serve.nebius.ai/bindcraft-mount-probe/v1",
+  "state": "passed"
+}

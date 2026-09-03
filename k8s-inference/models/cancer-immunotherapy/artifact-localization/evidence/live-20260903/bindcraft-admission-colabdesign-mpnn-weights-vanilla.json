@@ -1,0 +1,33 @@
+{
+  "manifest_digest": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
+  "marker": {
+    "artifact_id": "colabdesign-mpnn-weights-vanilla",
+    "artifact_kind": "colabdesign-mpnn-weights-vanilla",
+    "claim": "",
+    "consumer_paths": [
+      "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights"
+    ],
+    "directory_count": 0,
+    "entry_count": 5,
+    "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+    "generator_identity": [],
+    "host_root": "/mnt/fs2-reference-data/data",
+    "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+    "inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+    "license_id": "Apache-2.0",
+    "namespace": "",
+    "read_only": true,
+    "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1",
+    "source_bytes": 50276715,
+    "source_filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+    "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+    "source_sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+    "source_uri": "https://github.com/sokrypton/ColabDesign/archive/e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+    "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+    "symlink_count": null,
+    "total_bytes": 26602793,
+    "visibility": "public",
+    "volume_kind": "host-path"
+  },
+  "state": "admitted"
+}

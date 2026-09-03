@@ -1,0 +1,33 @@
+{
+  "manifest_digest": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+  "marker": {
+    "artifact_id": "boltzgen-inference-molecules",
+    "artifact_kind": "boltzgen-inference-molecules",
+    "claim": "",
+    "consumer_paths": [
+      "/opt/fs2/artifacts/boltzgen-inference-molecules"
+    ],
+    "directory_count": 0,
+    "entry_count": 45227,
+    "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+    "generator_identity": [],
+    "host_root": "/mnt/fs2-reference-data/data",
+    "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+    "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+    "license_id": "MIT",
+    "namespace": "",
+    "read_only": true,
+    "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1",
+    "source_bytes": 391401102,
+    "source_filename": "mols.zip",
+    "source_revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+    "source_sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+    "source_uri": "https://huggingface.co/datasets/boltzgen/inference-data/resolve/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip",
+    "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+    "symlink_count": null,
+    "total_bytes": 1820698819,
+    "visibility": "public",
+    "volume_kind": "host-path"
+  },
+  "state": "admitted"
+}
