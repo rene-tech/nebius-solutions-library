@@ -304,6 +304,12 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 1048576
+        },
+        "symlink_count": {
+          "description": "Symbolic links the tree contains, when the producing plane measured them. Only fs2-tree-manifest/v1 describes symlinks; omit the field rather than asserting a zero nobody established, which would refuse a tree that has them.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
         }
       },
       "allOf": [

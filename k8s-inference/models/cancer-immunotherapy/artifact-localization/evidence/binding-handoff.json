@@ -49,12 +49,13 @@
           "source_sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
           "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar",
           "sub_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "symlink_count": null,
           "total_bytes": 5587956571,
           "visibility": "public",
           "volume_kind": "host-path"
         },
         "in_generation": true,
-        "manifest_digest": "dc7ec998352f91e4ab8318e346e18e5d3bef43c2e8754448c50dfaa9f3c2f055",
+        "manifest_digest": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
         "path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4/.fs2-runtime-tree.json",
         "relative_path": ".fs2-runtime-tree.json",
         "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
@@ -153,12 +154,13 @@
           "source_sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
           "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar",
           "sub_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "symlink_count": null,
           "total_bytes": 5587959437,
           "visibility": "public",
           "volume_kind": "host-path"
         },
         "in_generation": true,
-        "manifest_digest": "b8f35b37b1a553e08f4fa4d7381e894dddd302c32ac15ceab756520309937b5a",
+        "manifest_digest": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
         "path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f/.fs2-runtime-tree.json",
         "relative_path": ".fs2-runtime-tree.json",
         "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
@@ -236,12 +238,13 @@
           "source_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
           "source_uri": "https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/pyrosetta-2026.29%2Breleasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
           "sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+          "symlink_count": null,
           "total_bytes": 3287122494,
           "visibility": "tenant-private",
           "volume_kind": "persistent-volume-claim"
         },
         "in_generation": true,
-        "manifest_digest": "ea515539ab91068939ddc1d39d2d42d3b80012eaa564a85661c9f0642c31b5c7",
+        "manifest_digest": "b0f15625be401a308ef2b8865875eecbc4e0775721affa5a2c7d60c51f84cde7",
         "path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d/.fs2-runtime-tree.json",
         "relative_path": ".fs2-runtime-tree.json",
         "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
@@ -333,12 +336,13 @@
           "source_sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
           "source_uri": "https://huggingface.co/datasets/boltzgen/inference-data/resolve/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip",
           "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "symlink_count": null,
           "total_bytes": 1820698819,
           "visibility": "public",
           "volume_kind": "host-path"
         },
         "in_generation": true,
-        "manifest_digest": "058104037e0c00ac53beb4c10492a2dcf78bd8674966b0e6ed8b2d172d787fd6",
+        "manifest_digest": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
         "path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc/.fs2-runtime-tree.json",
         "relative_path": ".fs2-runtime-tree.json",
         "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
@@ -416,12 +420,13 @@
           "source_sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
           "source_uri": "https://github.com/sokrypton/ColabDesign/archive/e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
           "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "symlink_count": null,
           "total_bytes": 26601241,
           "visibility": "public",
           "volume_kind": "host-path"
         },
         "in_generation": true,
-        "manifest_digest": "517a337c5c726a2c78f9743ceadee2b6cba4bed59daa4d96ea42939c4deeee01",
+        "manifest_digest": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
         "path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146/.fs2-runtime-tree.json",
         "relative_path": ".fs2-runtime-tree.json",
         "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
@@ -499,12 +504,13 @@
           "source_sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
           "source_uri": "https://github.com/sokrypton/ColabDesign/archive/e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
           "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "symlink_count": null,
           "total_bytes": 26602793,
           "visibility": "public",
           "volume_kind": "host-path"
         },
         "in_generation": true,
-        "manifest_digest": "4e2fa33c42b719f9d239df1d06131e831391fcc9d77fd9615ec75c39e4cbafb9",
+        "manifest_digest": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
         "path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f/.fs2-runtime-tree.json",
         "relative_path": ".fs2-runtime-tree.json",
         "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"

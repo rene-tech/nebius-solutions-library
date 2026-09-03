@@ -43,6 +43,9 @@ def _localization() -> Any:
 
     spec = importlib.util.spec_from_file_location("fs2_localization_render", PACKAGE_ROOT / "localization.py")
     assert spec is not None and spec.loader is not None
+    # The module uses a relative import, so it has to load as a package for its
+    # own spec and __package__ to agree.
+    spec.submodule_search_locations = []
     module = importlib.util.module_from_spec(spec)
     sys.modules.setdefault("fs2_localization_render", module)
     primitives = importlib.util.spec_from_file_location("fs2_localization_render_primitives", PACKAGE_ROOT / "primitives.py")
@@ -186,21 +189,45 @@ def tree_claim(name: str, namespace: str, run_id: str, storage_class: str, size:
     }
 
 
+def tree_volume(plane: dict[str, Any], name: str = "trees") -> dict[str, Any]:
+    """The Kubernetes volume for whichever plane holds these generations.
+
+    The public model-artifact plane is a Terraform-managed host directory that
+    every labelled node mounts, so it is a hostPath and a node selector; the
+    licensed plane is a namespaced claim. Rendering one as the other produces a
+    Job that cannot bind.
+    """
+
+    if plane["kind"] == "host-path":
+        return {"name": name, "hostPath": {"path": plane["host_root"], "type": "Directory"}}
+    if plane["kind"] == "persistent-volume-claim":
+        return {"name": name, "persistentVolumeClaim": {"claimName": plane["claim"]}}
+    raise SystemExit(f"unsupported storage plane kind {plane['kind']!r}")
+
+
+def plane_localizer_arguments(plane: dict[str, Any], namespace: str) -> list[str]:
+    """Tell the localizer which plane it is publishing onto, exactly."""
+
+    if plane["kind"] == "host-path":
+        return ["--volume-kind", "host-path", "--host-root", plane["host_root"]]
+    return ["--volume-kind", "persistent-volume-claim", "--namespace", namespace, "--claim", plane["claim"]]
+
+
 def _verifier_volumes(
     config_map: str,
-    claim: str,
+    plane: dict[str, Any],
     tree_prefix: str = "",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Mount the verifier and the tree store.
 
-    ``tree_prefix`` keeps these trees inside their own subtree of a claim that
-    already holds other tenants' assets, so a shared volume never becomes a
-    shared namespace.
+    ``tree_prefix`` keeps these trees inside their own subtree of a volume that
+    already holds other assets, so a shared volume never becomes a shared
+    namespace.
     """
 
     volumes = [
         {"name": "verifier", "configMap": {"name": config_map}},
-        {"name": "trees", "persistentVolumeClaim": {"claimName": claim}},
+        tree_volume(plane),
         {"name": "scratch", "emptyDir": {}},
     ]
     tree_mount: dict[str, Any] = {"name": "trees", "mountPath": TREE_ROOT}
@@ -222,7 +249,7 @@ def stage_job(
     image: str,
     python: str,
     config_map: str,
-    claim: str,
+    plane: dict[str, Any],
     artifacts: list[dict[str, Any]],
     node_selector: dict[str, str],
     tolerations: list[dict[str, Any]],
@@ -230,7 +257,7 @@ def stage_job(
     security_context: dict[str, Any],
     tree_prefix: str = "",
 ) -> dict[str, Any]:
-    volumes, mounts = _verifier_volumes(config_map, claim, tree_prefix)
+    volumes, mounts = _verifier_volumes(config_map, plane, tree_prefix)
     steps: list[dict[str, Any]] = []
     # Two artifacts can share one upstream archive; fetch it once and let the
     # later step localize from the copy already on disk.
@@ -271,10 +298,7 @@ def stage_job(
                     f"{TREE_ROOT}/{GENERATIONS_DIR}/{artifact_id}",
                     "--sub-path",
                     sub_path,
-                    "--namespace",
-                    namespace,
-                    "--claim",
-                    claim,
+                    *plane_localizer_arguments(plane, namespace),
                     "--visibility",
                     artifact.get("visibility", "public"),
                     "--receipt",
@@ -351,7 +375,7 @@ def qualify_job(
     image: str,
     python: str,
     config_map: str,
-    claim: str,
+    plane: dict[str, Any],
     artifacts: list[dict[str, Any]],
     probe: list[str],
     queue: str | None,
@@ -363,7 +387,16 @@ def qualify_job(
     resources: dict[str, Any],
     tree_prefix: str = "",
 ) -> dict[str, Any]:
-    volumes, mounts = _verifier_volumes(config_map, claim, tree_prefix)
+    volumes, mounts = _verifier_volumes(config_map, plane, tree_prefix)
+    marker_digests = {
+        item["artifact_id"]: marker_digest_for(
+            item,
+            plane=plane,
+            namespace=namespace,
+            sub_path=generation_sub_path(tree_prefix, item["artifact_id"], item["tree"]["inventory_sha256"]),
+        )
+        for item in artifacts
+    }
     runtime_mounts = list(mounts)
     for artifact in artifacts:
         generation = artifact["tree"]["inventory_sha256"]
@@ -397,6 +430,27 @@ def qualify_job(
                 artifact["tree"]["inventory_sha256"],
                 "--sub-path",
                 generation_sub_path(tree_prefix, artifact["artifact_id"], artifact["tree"]["inventory_sha256"]),
+                # Bytes that are right in a place or a licence that is wrong are
+                # still wrong, so admission pins the plane, the visibility and
+                # the algorithm alongside the digest.
+                "--expect-manifest-digest",
+                marker_digests[artifact["artifact_id"]],
+                "--expect-visibility",
+                artifact.get("visibility", "public"),
+                "--expect-algorithm",
+                artifact["tree"]["inventory_algorithm"],
+                *(
+                    ["--expect-volume-kind", "host-path", "--expect-host-root", plane["host_root"]]
+                    if plane["kind"] == "host-path"
+                    else [
+                        "--expect-volume-kind",
+                        "persistent-volume-claim",
+                        "--expect-namespace",
+                        namespace,
+                        "--expect-claim",
+                        plane["claim"],
+                    ]
+                ),
             ],
             "env": [
                 {"name": "PYTHONPATH", "value": PACKAGE_MOUNT},
@@ -518,23 +572,11 @@ def binding_handoff(
         # not a name that can only ever mean these bytes. Binding a runtime to it
         # would let the tree change underneath an admitted workload.
         sub_path = generation_sub_path(prefix, artifact["artifact_id"], generation)
-        marker = localization.generation_marker(
-            artifact_id=contract.artifact_id,
-            artifact_kind=contract.artifact_kind,
-            generation=generation,
-            entry_count=tree["entry_count"],
-            directory_count=tree.get("directory_count", 0),
-            total_bytes=tree["total_bytes"],
-            inventory_algorithm=tree["inventory_algorithm"],
-            sub_path=sub_path,
-            volume_kind=volume["kind"],
+        marker = marker_document(
+            artifact,
+            plane=volume,
             namespace=volume.get("namespace", ""),
-            claim=volume.get("claim", ""),
-            host_root=volume.get("host_root", ""),
-            visibility=contract.visibility,
-            archive=contract.archive,
-            generated_entries=contract.tree.generated_entries,
-            consumer_paths=contract.tree.mount_paths,
+            sub_path=sub_path,
         )
         entry: dict[str, Any] = {
             "artifact_id": artifact["artifact_id"],
@@ -607,6 +649,167 @@ def binding_handoff(
         "volumes": {"public": public_volume, "tenant-private": private_volume},
         "models": {model: sorted(ids) for model, ids in sorted(by_model.items())},
         "artifacts": entries,
+    }
+
+
+def marker_document(
+    artifact: dict[str, Any], *, plane: dict[str, Any], namespace: str, sub_path: str
+) -> dict[str, Any]:
+    """The exact marker a promotion will seal into this generation.
+
+    Produced by the module that actually writes it, so a digest a rendered Job
+    pins and a digest a node computes cannot come from two implementations.
+    """
+
+    localization = _localization()
+    contract = localization.LocalizationContract.parse(artifact)
+    tree = artifact["tree"]
+    return localization.generation_marker(
+        artifact_id=contract.artifact_id,
+        artifact_kind=contract.artifact_kind,
+        generation=tree["inventory_sha256"],
+        entry_count=tree["entry_count"],
+        directory_count=tree.get("directory_count", 0),
+        symlink_count=tree.get("symlink_count"),
+        total_bytes=tree["total_bytes"],
+        inventory_algorithm=tree["inventory_algorithm"],
+        sub_path=sub_path,
+        volume_kind=plane["kind"],
+        namespace=namespace if plane["kind"] == "persistent-volume-claim" else "",
+        claim=plane.get("claim", "") if plane["kind"] == "persistent-volume-claim" else "",
+        host_root=plane.get("host_root", "") if plane["kind"] == "host-path" else "",
+        visibility=contract.visibility,
+        archive=contract.archive,
+        generated_entries=contract.tree.generated_entries,
+        consumer_paths=contract.tree.mount_paths,
+    )
+
+
+def marker_digest_for(
+    artifact: dict[str, Any], *, plane: dict[str, Any], namespace: str, sub_path: str
+) -> str:
+    return _localization().marker_sha256(
+        marker_document(artifact, plane=plane, namespace=namespace, sub_path=sub_path)
+    )
+
+
+def promote_job(
+    *,
+    name: str,
+    namespace: str,
+    run_id: str,
+    artifact: dict[str, Any],
+    image: str,
+    python: str,
+    config_map: str,
+    plane: dict[str, Any],
+    source_claim: str,
+    tree_prefix: str,
+    node_selector: dict[str, str],
+    tolerations: list[dict[str, Any]],
+    resources: dict[str, Any],
+    security_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Publish a tree another plane installed as an immutable generation.
+
+    Two mounts of the same claim: the installed tree read-only at ``/source``,
+    and the generation root this tool owns at ``/trees``. The bytes are shared by
+    hard link rather than copied, which is why both have to be one filesystem,
+    and the source is mounted read-only so a promotion cannot write into the tree
+    it is promoting from.
+    """
+
+    artifact_id = artifact["artifact_id"]
+    if artifact["transform"] != "external-installed-tree":
+        raise SystemExit(f"{artifact_id} is staged from its archive, not promoted from an installed tree")
+    generation = artifact["tree"]["inventory_sha256"]
+    sub_path = generation_sub_path(tree_prefix, artifact_id, generation)
+    volumes = [
+        {"name": "verifier", "configMap": {"name": config_map}},
+        {"name": "source", "persistentVolumeClaim": {"claimName": source_claim, "readOnly": True}},
+        tree_volume(plane),
+        {"name": "scratch", "emptyDir": {}},
+    ]
+    mounts = [
+        {"name": "verifier", "mountPath": f"{PACKAGE_MOUNT}/{PACKAGE_NAME}", "readOnly": True},
+        {
+            "name": "source",
+            "mountPath": "/source",
+            "subPath": artifact["source_sub_path"],
+            "readOnly": True,
+        },
+        {"name": "trees", "mountPath": TREE_ROOT, "subPath": tree_prefix},
+        {"name": "scratch", "mountPath": "/scratch"},
+    ]
+    command = [
+        python,
+        "-m",
+        f"{PACKAGE_NAME}.localization",
+        "promote",
+        "--contract",
+        CONTRACT_MOUNT,
+        "--artifact-id",
+        artifact_id,
+        "--promote-from",
+        "/source",
+        "--artifact-root",
+        f"{TREE_ROOT}/{GENERATIONS_DIR}/{artifact_id}",
+        "--sub-path",
+        sub_path,
+        *plane_localizer_arguments(plane, namespace),
+        "--visibility",
+        artifact.get("visibility", "tenant-private"),
+        "--receipt",
+        f"{RECEIPT_DIR}/{artifact_id}.promote.json",
+    ]
+    return {
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {"name": name, "namespace": namespace, "labels": labels(run_id, "promote")},
+        "spec": {
+            "backoffLimit": 0,
+            "ttlSecondsAfterFinished": 86400,
+            "template": {
+                "metadata": {"labels": labels(run_id, "promote")},
+                "spec": {
+                    "restartPolicy": "Never",
+                    "enableServiceLinks": False,
+                    "automountServiceAccountToken": False,
+                    "nodeSelector": node_selector,
+                    "tolerations": tolerations,
+                    "securityContext": security_context,
+                    "initContainers": [
+                        {
+                            "name": "receipts",
+                            "image": image,
+                            "command": [
+                                python,
+                                "-c",
+                                f"import os; os.makedirs({RECEIPT_DIR!r}, mode=0o775, exist_ok=True); "
+                                f"os.chmod({RECEIPT_DIR!r}, 0o775)",
+                            ],
+                            "volumeMounts": mounts,
+                            "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}},
+                        }
+                    ],
+                    "containers": [
+                        {
+                            "name": f"promote-{artifact_id}"[:63],
+                            "image": image,
+                            "command": command,
+                            "env": [
+                                {"name": "PYTHONPATH", "value": PACKAGE_MOUNT},
+                                {"name": "PYTHONDONTWRITEBYTECODE", "value": "1"},
+                                {"name": "HOME", "value": "/scratch"},
+                            ],
+                            "volumeMounts": mounts,
+                            "resources": resources,
+                        }
+                    ],
+                    "volumes": volumes,
+                },
+            },
+        },
     }
 
 
@@ -715,7 +918,7 @@ def inventory_job(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("stage", "qualify", "handoff", "inventory"))
+    parser.add_argument("mode", choices=("stage", "promote", "qualify", "handoff", "inventory"))
     parser.add_argument("--contract", type=Path, default=DEFAULT_CONTRACT)
     parser.add_argument("--artifact-id", action="append", required=True)
     parser.add_argument("--namespace", required=True)
@@ -733,6 +936,21 @@ def main(argv: list[str] | None = None) -> int:
         "--tree-prefix",
         default="",
         help="subtree of the claim these trees live under, for a claim shared with other assets",
+    )
+    parser.add_argument(
+        "--plane",
+        default="persistent-volume-claim",
+        choices=("persistent-volume-claim", "host-path"),
+        help="which storage plane this run writes generations to",
+    )
+    parser.add_argument(
+        "--host-root",
+        default="/mnt/fs2-reference-data/data",
+        help="host-path plane: the Terraform-managed public model-artifact host root",
+    )
+    parser.add_argument(
+        "--source-claim",
+        help="promote: claim holding the tree another plane installed",
     )
     parser.add_argument(
         "--private-tree-prefix",
@@ -807,6 +1025,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--toleration", action="append", default=[], metavar="KEY=VALUE:EFFECT")
     options = parser.parse_args(argv)
 
+    # Which storage plane this run writes to. Public model artifacts live on the
+    # Terraform-managed reference-data host root that every labelled node mounts;
+    # the licensed tree lives in a namespaced claim.
+    if options.plane == "host-path":
+        plane: dict[str, Any] = {"kind": "host-path", "host_root": options.host_root}
+    else:
+        if not options.claim:
+            raise SystemExit("a claim-backed plane requires --claim")
+        plane = {"kind": "persistent-volume-claim", "claim": options.claim}
+
     security_context_early = pod_security_context(
         uid=options.run_as_user,
         gid=options.run_as_group,
@@ -832,7 +1060,7 @@ def main(argv: list[str] | None = None) -> int:
                         image=options.image,
                         python=options.python,
                         config_map=options.config_map,
-                        claim=options.claim,
+                        plane=plane,
                         source_sub_path=options.source_sub_path,
                         marker_prefix=options.marker_prefix,
                         expect_bytes=options.expect_bytes,
@@ -912,7 +1140,33 @@ def main(argv: list[str] | None = None) -> int:
             tuple(options.probe_file),
         )
     ]
-    if options.mode == "stage":
+    if options.mode == "promote":
+        if len(artifacts) != 1:
+            raise SystemExit("promote takes exactly one --artifact-id")
+        if not options.source_claim:
+            raise SystemExit("promote requires --source-claim")
+        items.append(
+            promote_job(
+                name=f"fs2-localize-promote-{options.run_id}"[:63],
+                namespace=options.namespace,
+                run_id=options.run_id,
+                artifact=artifacts[0],
+                image=options.image,
+                python=options.python,
+                config_map=options.config_map,
+                plane=plane,
+                source_claim=options.source_claim,
+                tree_prefix=options.private_tree_prefix,
+                node_selector=node_selector,
+                tolerations=tolerations,
+                resources={
+                    "requests": {"cpu": options.cpu_request, "memory": options.memory_request},
+                    "limits": {"cpu": options.cpu_limit, "memory": options.memory_limit},
+                },
+                security_context=security_context,
+            )
+        )
+    elif options.mode == "stage":
         if options.storage_class:
             items.append(
                 tree_claim(
@@ -927,7 +1181,7 @@ def main(argv: list[str] | None = None) -> int:
                 image=options.image,
                 python=options.python,
                 config_map=options.config_map,
-                claim=options.claim,
+                plane=plane,
                 artifacts=artifacts,
                 node_selector=node_selector,
                 tolerations=tolerations,
@@ -951,7 +1205,7 @@ def main(argv: list[str] | None = None) -> int:
                 image=options.image,
                 python=options.python,
                 config_map=options.config_map,
-                claim=options.claim,
+                plane=plane,
                 artifacts=artifacts,
                 probe=options.probe,
                 queue=options.queue,

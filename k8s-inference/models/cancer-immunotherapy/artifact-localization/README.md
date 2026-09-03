@@ -171,21 +171,60 @@ python render_localization_jobs.py qualify \
   --probe=--moldir --probe=/opt/fs2/artifacts/boltzgen-inference-molecules | kubectl apply -f -
 ```
 
-A tree another plane installed is promoted rather than staged. This shares its
-bytes by hard link, verifies the result under the producer's own algorithm,
-seals the marker inside and publishes by rename:
+Public artifacts stage onto the host plane, so the rendered Job mounts a
+`hostPath` and tells the localizer which plane it is writing to:
 
 ```bash
-python -m fs2_localization.localization promote \
-  --contract "${CONTRACT}" \
-  --artifact-id bindcraft-pyrosetta-installed-tree \
-  --promote-from /academic/pyrosetta-bindcraft/site-packages \
-  --artifact-root /trees/generations/bindcraft-pyrosetta-installed-tree \
-  --sub-path "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/${GENERATION}" \
-  --namespace fs2-academic-poc --claim academic-assets-runtime-rwx \
-  --visibility tenant-private \
-  --receipt /trees/.receipts/bindcraft-pyrosetta-installed-tree.promote.json
+python render_localization_jobs.py stage \
+  --artifact-id boltzgen-inference-molecules \
+  --plane host-path --host-root /mnt/fs2-reference-data/data \
+  --node-selector storage.fs2.nebius/reference-data=true \
+  ... | kubectl apply -f -
 ```
+
+A tree another plane installed is promoted rather than staged. The Job mounts
+the installed tree read-only at `/source` and this tool's own generation root at
+`/trees`, shares the bytes by hard link, verifies the result under the
+producer's own algorithm, seals the marker inside and publishes by rename:
+
+```bash
+python render_localization_jobs.py promote \
+  --artifact-id bindcraft-pyrosetta-installed-tree \
+  --namespace fs2-academic-poc \
+  --claim academic-assets-runtime-rwx \
+  --source-claim academic-assets-runtime-rwx \
+  --config-map "${CONFIG_MAP}" --image "${REGISTRY}/bindcraft@sha256:..." \
+  --node-selector storage.fs2.nebius/shared-cache=true | kubectl apply -f -
+```
+
+## What admission pins
+
+`qualify` renders a `marker` step that names, and the localizer checks, every
+one of: the generation, the sub-path, the marker's own `manifest_digest`, the
+plane kind and its host root or namespace and claim, the visibility, and the
+identity algorithm. Bytes that are right in the wrong place, under the wrong
+licence, or measured by the wrong algorithm are still wrong. The marker file
+must also be the canonical serialization of what it parses to, so a padded or
+reordered document cannot carry a digest for bytes a reader never sees.
+
+Admission then counts the mount recursively — files, directories and symlinks —
+without reading content. A tree identified by `fs2-tree-manifest/v1` may hold
+symlinks, because that algorithm covers them by target; one identified by a file
+inventory may not. A declared count that does not match the mount is refused.
+
+## What happens when publication fails
+
+Every terminal state of a run leaves the same receipt: a marker that cannot be
+written, a link that cannot be made, a rename that cannot commit, and a
+generation that already exists but does not verify all produce a `rejected`
+receipt naming the reason, not a traceback. Staging this run owns is removed on
+the way out, because the claim it sits on has gigabytes of headroom rather than
+tens of them.
+
+An existing generation is never trusted on the strength of its name. This tool
+proved the bytes it staged and nothing about bytes someone else published under
+the same digest, so a reused target is verified in place, its marker digest
+compared, and only then reported as a success.
 
 The receipt reports `bytes_linked` and `bytes_copied`, so "no second copy" is a
 measured claim. Promotion fails closed rather than publishing if the source is

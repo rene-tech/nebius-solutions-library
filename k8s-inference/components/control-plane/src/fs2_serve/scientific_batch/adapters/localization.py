@@ -1576,6 +1576,7 @@ def generation_marker(
     sub_path: str,
     visibility: str,
     volume_kind: str = "persistent-volume-claim",
+    symlink_count: int | None = None,
     namespace: str = "",
     claim: str = "",
     host_root: str = "",
@@ -1633,6 +1634,10 @@ def generation_marker(
         "inventory_sha256": generation,
         "entry_count": entry_count,
         "directory_count": directory_count,
+        # null when the producing plane never measured it. A structural check
+        # then skips this one comparison rather than asserting a zero nobody
+        # established, which would refuse every tree that has a symlink.
+        "symlink_count": symlink_count,
         "total_bytes": total_bytes,
         "volume_kind": volume_kind,
         "namespace": namespace,
@@ -1824,6 +1829,7 @@ def load_generation_marker(path: Path) -> Mapping[str, object]:
                 "inventory_sha256",
                 "entry_count",
                 "directory_count",
+                "symlink_count",
                 "total_bytes",
                 "volume_kind",
                 "namespace",
@@ -1864,8 +1870,21 @@ def verify_generation_marker(
     artifact_id: str,
     expected_generation: str,
     expected_sub_path: str,
+    expected_manifest_digest: str = "",
+    expected_volume_kind: str = "",
+    expected_namespace: str = "",
+    expected_claim: str = "",
+    expected_host_root: str = "",
+    expected_visibility: str = "",
+    expected_inventory_algorithm: str = "",
 ) -> Mapping[str, object]:
-    """Fail closed unless the marker describes exactly the mounted generation."""
+    """Fail closed unless the marker describes exactly the mounted generation.
+
+    Everything a caller states it expects is compared. A marker that agreed about
+    the digest but named a different plane, visibility or algorithm would admit
+    bytes that are right into a place or a licence that is wrong, so those are
+    checked here rather than left to whoever reads the document afterwards.
+    """
 
     if marker.get("schema") != MARKER_SCHEMA:
         raise ArtifactLocalizationError("generation marker schema is unsupported")
@@ -1877,6 +1896,25 @@ def verify_generation_marker(
         raise ArtifactLocalizationError("generation marker sub-path does not match the mount")
     if marker["read_only"] is not True:
         raise ArtifactLocalizationError("generation marker does not assert a read-only mount")
+    if expected_manifest_digest:
+        # The digest a handoff pinned, recomputed from the document itself.
+        observed = marker_sha256(marker)
+        if observed != expected_manifest_digest:
+            raise ArtifactLocalizationError(
+                f"generation marker digest is {observed} and {expected_manifest_digest} was pinned"
+            )
+    for field, expected in (
+        ("volume_kind", expected_volume_kind),
+        ("namespace", expected_namespace),
+        ("claim", expected_claim),
+        ("host_root", expected_host_root),
+        ("visibility", expected_visibility),
+        ("inventory_algorithm", expected_inventory_algorithm),
+    ):
+        if expected and marker[field] != expected:
+            raise ArtifactLocalizationError(
+                f"generation marker {field} is {marker[field]!r} and {expected!r} was expected"
+            )
     return marker
 
 
@@ -1946,7 +1984,7 @@ def prepare_staging_directory(artifact_root: Path, *, reclaim_after_seconds: flo
     return Path(tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=artifact_root))
 
 
-def promote_generation(staged: Path, artifact_root: Path, generation: str) -> Path:
+def promote_generation(staged: Path, artifact_root: Path, generation: str) -> tuple[Path, bool]:
     """Make a verified tree read-only, then publish it under its own digest.
 
     The rename is the commit point: a consumer either sees no generation or sees
@@ -1954,12 +1992,17 @@ def promote_generation(staged: Path, artifact_root: Path, generation: str) -> Pa
     generation that already exists is a no-op rather than an overwrite, so
     restaging can never destroy bytes another workload is already mounting, and
     an interrupted run leaves only a temporary directory the next run reclaims.
+
+    Returns the published path and whether it already existed. A caller must
+    verify a reused target rather than trust its name: this tool proved the bytes
+    it staged, and it has proved nothing about bytes someone else published under
+    the same digest.
     """
 
     target = generation_directory(artifact_root, generation)
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
-        return target
+        return target, True
     resolved = _real_directory(staged, "staged generation")
     # A generation is world-readable on purpose: several runtimes mount it under
     # their own accounts. It is never writable, which is the property that keeps
@@ -1992,9 +2035,9 @@ def promote_generation(staged: Path, artifact_root: Path, generation: str) -> Pa
         os.rename(resolved, target)
     except OSError as error:
         if target.exists():
-            # Another writer promoted the identical generation first, which is
-            # the same bytes by construction.
-            return target
+            # Another writer promoted the same generation first. Its bytes still
+            # have to be proved by the caller, not assumed from the name.
+            return target, True
         if getattr(error, "errno", None) == errno.EXDEV:
             raise ArtifactLocalizationError(
                 "a generation must be staged on the same filesystem it is published to, "
@@ -2002,10 +2045,10 @@ def promote_generation(staged: Path, artifact_root: Path, generation: str) -> Pa
             ) from error
         raise ArtifactLocalizationError("could not publish the verified generation") from error
     for path in sorted(target.rglob("*"), reverse=True):
-        if path.is_dir():
+        if path.is_dir() and not path.is_symlink():
             os.chmod(path, 0o555)  # noqa: S103 - read-only for every reader
     os.chmod(target, 0o555)  # noqa: S103 - read-only for every reader
-    return target
+    return target, False
 
 
 # ---------------------------------------------------------------------------
@@ -2013,33 +2056,41 @@ def promote_generation(staged: Path, artifact_root: Path, generation: str) -> Pa
 # ---------------------------------------------------------------------------
 
 
-def count_generation(mount: Path, *, maximum_entries: int) -> tuple[int, int]:
-    """Count a mounted generation's files and directories, recursively.
+def count_generation(mount: Path, *, maximum_entries: int, permit_symlinks: bool = False) -> tuple[int, int, int]:
+    """Count a mounted generation's files, directories and symlinks, recursively.
 
     This walks the tree but reads no file content, so a start-up gate can afford
     it on gigabytes where rehashing would be unaffordable. It is a structural
     cross-check that the mount is shaped like the generation the marker
     describes, never a substitute for the digest that named the directory.
+
+    An installed package tree legitimately contains symbolic links, and the
+    algorithm that identifies such a tree covers them by target, so refusing them
+    here would make a correctly published generation unadmittable. A tree whose
+    algorithm has no notion of a symlink still rejects one.
     """
 
     resolved = _real_directory(mount, "mounted generation")
-    files = directories = 0
+    files = directories = symlinks = 0
     stack = [resolved]
     while stack:
         with os.scandir(stack.pop()) as scan:
             for item in scan:
-                if files + directories > maximum_entries:
+                if files + directories + symlinks > maximum_entries:
                     raise TreeBoundExceededError("mounted generation exceeds its declared entry bound")
                 if item.name == RUNTIME_MARKER_NAME:
                     continue
                 if item.is_symlink():
-                    raise ArtifactLocalizationError("mounted generation contains a symbolic link")
+                    if not permit_symlinks:
+                        raise ArtifactLocalizationError("mounted generation contains a symbolic link")
+                    symlinks += 1
+                    continue
                 if item.is_dir(follow_symlinks=False):
                     directories += 1
                     stack.append(Path(item.path))
                 else:
                     files += 1
-    return files, directories
+    return files, directories, symlinks
 
 
 def _verify_marker(options: argparse.Namespace) -> int:
@@ -2055,21 +2106,44 @@ def _verify_marker(options: argparse.Namespace) -> int:
     if marker_path is None:
         raise SystemExit("marker requires --marker or --mount")
     try:
+        payload = marker_path.read_bytes() if marker_path.is_file() and not marker_path.is_symlink() else b""
         marker = load_generation_marker(marker_path)
+        # The bytes on disk must be the canonical serialization of what was
+        # parsed. Otherwise a document could be padded or reordered to carry a
+        # digest that no longer describes the file a reader actually sees.
+        if payload != marker_bytes(marker):
+            raise ArtifactLocalizationError("generation marker bytes are not the canonical serialization")
         identity = verify_generation_marker(
             marker,
             artifact_id=options.artifact_id,
             expected_generation=expected,
             expected_sub_path=options.sub_path,
+            expected_manifest_digest=options.expect_manifest_digest or "",
+            expected_volume_kind=options.expect_volume_kind or "",
+            expected_namespace=options.expect_namespace or "",
+            expected_claim=options.expect_claim or "",
+            expected_host_root=options.expect_host_root or "",
+            expected_visibility=options.expect_visibility or "",
+            expected_inventory_algorithm=options.expect_algorithm or "",
         )
         if mount is not None:
-            files, directories = count_generation(mount, maximum_entries=options.maximum_entries)
+            # A tree identified per symlink by target may legitimately contain
+            # them; one identified by a file inventory may not.
+            permit_symlinks = identity["inventory_algorithm"] == TREE_MANIFEST_ALGORITHM
+            files, directories, symlinks = count_generation(
+                mount, maximum_entries=options.maximum_entries, permit_symlinks=permit_symlinks
+            )
             declared_files = identity["entry_count"]
-            declared_directories = identity.get("directory_count", 0)
+            declared_directories = identity["directory_count"]
+            declared_symlinks = identity["symlink_count"]
             if files != declared_files or directories != declared_directories:
                 raise ArtifactLocalizationError(
                     f"mount holds {files} files and {directories} directories, and the marker declares "
                     f"{declared_files} files and {declared_directories} directories"
+                )
+            if declared_symlinks is not None and symlinks != declared_symlinks:
+                raise ArtifactLocalizationError(
+                    f"mount holds {symlinks} symbolic links and the marker declares {declared_symlinks}"
                 )
     except (ArtifactLocalizationError, ScientificAdapterError) as error:
         print(json.dumps({"state": "rejected", "reason": str(error)}, indent=2, sort_keys=True))
@@ -2079,7 +2153,7 @@ def _verify_marker(options: argparse.Namespace) -> int:
             {
                 "state": "admitted",
                 "marker": dict(marker),
-                "marker_sha256": marker_sha256(marker),
+                "manifest_digest": marker_sha256(marker),
             },
             indent=2,
             sort_keys=True,
@@ -2160,6 +2234,23 @@ def _inventory(options: argparse.Namespace, started: float) -> int:
     return 0
 
 
+def _emit_receipt(receipt: LocalizationReceipt, path: Path | None) -> int:
+    """Every terminal state of a run leaves the same document behind.
+
+    A caller reading a receipt must be able to tell a rejection from a crash. If
+    publication fails after the tree verified, that is still an outcome of this
+    run and is reported as one rather than as a traceback with no receipt.
+    """
+
+    rendered = json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n"
+    if path is not None:
+        with contextlib.suppress(OSError):
+            path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(rendered, encoding="utf-8")
+    print(rendered, end="")
+    return 0 if receipt.verified else 1
+
+
 def _cli_source(value: str | None) -> Mapping[str, object] | None:
     """Describe where a tree this tool did not extract actually came from."""
 
@@ -2233,6 +2324,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--host-root", default="", help="host-path plane: the Terraform-managed host root")
     parser.add_argument("--visibility", default="public", choices=("public", "tenant-private"))
     parser.add_argument("--expect-generation", help="marker: the generation the caller believes it mounted")
+    parser.add_argument("--expect-manifest-digest", help="marker: the marker digest a handoff pinned")
+    parser.add_argument(
+        "--expect-volume-kind", choices=("persistent-volume-claim", "host-path"), help="marker: expected plane kind"
+    )
+    parser.add_argument("--expect-namespace", help="marker: expected claim namespace")
+    parser.add_argument("--expect-claim", help="marker: expected claim name")
+    parser.add_argument("--expect-host-root", help="marker: expected host-path root")
+    parser.add_argument("--expect-visibility", choices=("public", "tenant-private"), help="marker: expected visibility")
+    parser.add_argument("--expect-algorithm", choices=INVENTORY_ALGORITHMS, help="marker: expected identity algorithm")
     parser.add_argument("--expect-entries", type=int, help="inventory: fail unless the tree holds exactly this many")
     parser.add_argument("--expect-bytes", type=int, help="inventory: fail unless the tree holds exactly this many")
     parser.add_argument(
@@ -2344,37 +2444,79 @@ def main(argv: Sequence[str] | None = None) -> int:
             generated_entries=contract.tree.generated_entries,
             consumer_paths=contract.tree.mount_paths,
         )
-        # Write the marker into the tree before sealing it, so the rename that
-        # publishes the generation publishes its marker with it and a consumer
-        # that mounts only the generation can still admit it.
-        marker_digest = write_generation_marker(options.mount / RUNTIME_MARKER_NAME, marker)
-        published = promote_generation(options.mount, options.artifact_root, generation)
-        observation["generation"] = published.name
-        observation["generation_sub_path"] = sub_path
-        observation["marker_sha256"] = marker_digest
+        try:
+            # Write the marker into the tree before sealing it, so the rename
+            # that publishes the generation publishes its marker with it and a
+            # consumer that mounts only the generation can still admit it.
+            marker_digest = write_generation_marker(options.mount / RUNTIME_MARKER_NAME, marker)
+            published, reused = promote_generation(options.mount, options.artifact_root, generation)
+            if reused:
+                # Someone else published under this digest. This tool proved the
+                # bytes it staged and nothing about theirs, so the target is
+                # verified in place before any success is reported, and the
+                # staging this run owns is reclaimed either way.
+                _remove_tree(options.mount)
+                republished = verify_localized_tree(
+                    published,
+                    contract,
+                    verify_probes=not options.skip_probes,
+                    observation=observation or None,
+                )
+                if not republished.verified:
+                    raise ArtifactLocalizationError(
+                        f"an existing generation is already published at {sub_path} and does not "
+                        f"verify: {republished.rejection_reason}"
+                    )
+                existing = load_generation_marker(published / RUNTIME_MARKER_NAME)
+                if marker_sha256(existing) != marker_digest:
+                    raise ArtifactLocalizationError(
+                        "an existing generation is already published with a different marker"
+                    )
+                receipt = republished
+            observation["generation"] = published.name
+            observation["generation_sub_path"] = sub_path
+            observation["generation_reused"] = reused
+            observation["marker_sha256"] = marker_digest
+        except (ArtifactLocalizationError, OSError) as error:
+            # Publication, marker and link failures are terminal states of this
+            # run, not crashes: emit the same receipt shape every other outcome
+            # emits, and leave no staging behind.
+            if options.mount is not None and options.mount.name.startswith(STAGING_PREFIX):
+                _remove_tree(options.mount)
+            observation["duration_seconds"] = round(time.monotonic() - started, 3)
+            return _emit_receipt(
+                _rejected(
+                    contract,
+                    f"generation-publication-failed: {error}",
+                    now=receipt.observed_at,
+                    entry_count=receipt.entry_count,
+                    total_bytes=receipt.total_bytes,
+                    inventory=receipt.tree_inventory_sha256,
+                    observation=observation,
+                ),
+                options.receipt,
+            )
     observation["duration_seconds"] = round(time.monotonic() - started, 3)
-    document = LocalizationReceipt(
-        artifact_id=receipt.artifact_id,
-        mount_path=receipt.mount_path,
-        state=receipt.state,
-        observed_at=receipt.observed_at,
-        archive=receipt.archive,
-        archive_present_in_mount=receipt.archive_present_in_mount,
-        entry_count=receipt.entry_count,
-        total_bytes=receipt.total_bytes,
-        tree_inventory_sha256=receipt.tree_inventory_sha256,
-        probe_entries_verified=receipt.probe_entries_verified,
-        runtime_bindings=receipt.runtime_bindings,
-        rejection_reason=receipt.rejection_reason,
-        observation=observation,
-        inventory_algorithm=receipt.inventory_algorithm,
-        directory_count=receipt.directory_count,
-    ).to_dict()
-    rendered = json.dumps(document, indent=2, sort_keys=True) + "\n"
-    if options.receipt is not None:
-        options.receipt.write_text(rendered, encoding="utf-8")
-    print(rendered, end="")
-    return 0 if receipt.verified else 1
+    return _emit_receipt(
+        LocalizationReceipt(
+            artifact_id=receipt.artifact_id,
+            mount_path=receipt.mount_path,
+            state=receipt.state,
+            observed_at=receipt.observed_at,
+            archive=receipt.archive,
+            archive_present_in_mount=receipt.archive_present_in_mount,
+            entry_count=receipt.entry_count,
+            total_bytes=receipt.total_bytes,
+            tree_inventory_sha256=receipt.tree_inventory_sha256,
+            probe_entries_verified=receipt.probe_entries_verified,
+            runtime_bindings=receipt.runtime_bindings,
+            rejection_reason=receipt.rejection_reason,
+            observation=observation,
+            inventory_algorithm=receipt.inventory_algorithm,
+            directory_count=receipt.directory_count,
+        ),
+        options.receipt,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised as a staging entry point

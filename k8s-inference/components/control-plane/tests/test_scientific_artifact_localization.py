@@ -27,6 +27,7 @@ import pytest
 from fs2_serve.scientific_batch import ScientificAdapterError, profile_from_catalog
 from fs2_serve.scientific_batch.adapters import boltzgen, preflight_stage_trees, proteina_complexa
 from fs2_serve.scientific_batch.adapters.localization import (
+    RECURSIVE_INVENTORY_ALGORITHM,
     RUNTIME_MARKER_NAME,
     STAGING_PREFIX,
     TREE_INVENTORY_ALGORITHM,
@@ -1292,7 +1293,8 @@ def _promoted(tmp_path: Path, entries: Mapping[str, bytes]) -> tuple[Path, Path,
     staged = _materialize(tmp_path / "staged", entries)
     generation = _inventory(entries)
     root = tmp_path / "boltzgen-inference-molecules"
-    return root, promote_generation(staged, root, generation), generation
+    published, _reused = promote_generation(staged, root, generation)
+    return root, published, generation
 
 
 def test_a_generation_is_published_under_its_own_digest(tmp_path: Path) -> None:
@@ -1315,7 +1317,8 @@ def test_a_promoted_generation_cannot_be_written_or_deleted(tmp_path: Path) -> N
 def test_different_bytes_are_a_different_generation_not_an_overwrite(tmp_path: Path) -> None:
     root, published, _generation = _promoted(tmp_path, SYNTHETIC_ENTRIES)
     changed = {**SYNTHETIC_ENTRIES, "ZN.pkl": b"an extra molecule"}
-    other = promote_generation(_materialize(tmp_path / "other", changed), root, _inventory(changed))
+    other, reused = promote_generation(_materialize(tmp_path / "other", changed), root, _inventory(changed))
+    assert not reused
     assert other != published
     assert published.is_dir() and other.is_dir()
 
@@ -1325,7 +1328,8 @@ def test_promoting_the_same_generation_twice_keeps_the_first_bytes(tmp_path: Pat
 
     root, published, generation = _promoted(tmp_path, SYNTHETIC_ENTRIES)
     before = {item.name: item.read_bytes() for item in published.iterdir()}
-    again = promote_generation(_materialize(tmp_path / "again", SYNTHETIC_ENTRIES), root, generation)
+    again, reused = promote_generation(_materialize(tmp_path / "again", SYNTHETIC_ENTRIES), root, generation)
+    assert reused, "an existing generation is reported as reused so a caller reverifies it"
     assert again == published
     assert {item.name: item.read_bytes() for item in published.iterdir()} == before
 
@@ -1475,7 +1479,7 @@ def test_the_marker_travels_inside_the_generation_and_leaves_its_digest_alone(tm
     staged = _materialize(tmp_path / "staged", SYNTHETIC_ENTRIES)
     generation = _inventory(SYNTHETIC_ENTRIES)
     write_generation_marker(staged / RUNTIME_MARKER_NAME, _marker(generation=generation))
-    published = promote_generation(staged, tmp_path / "artifact", generation)
+    published, _reused = promote_generation(staged, tmp_path / "artifact", generation)
 
     assert (published / RUNTIME_MARKER_NAME).is_file()
     entries = scan_localized_tree(published, maximum_entries=100, maximum_bytes=1 << 20)
@@ -1546,7 +1550,7 @@ def test_counting_a_generation_matches_the_recursive_scan_without_reading_bytes(
 
     entries = scan_recursive_tree(root, maximum_entries=100, maximum_bytes=1 << 20)
     files, directories, _total = tree_counts(entries)
-    assert count_generation(root, maximum_entries=100) == (files, directories) == (3, 2)
+    assert count_generation(root, maximum_entries=100) == (files, directories, 0) == (3, 2, 0)
 
 
 def test_a_mount_that_is_not_the_generation_the_marker_describes_is_refused(tmp_path: Path) -> None:
@@ -1562,7 +1566,7 @@ def test_a_mount_that_is_not_the_generation_the_marker_describes_is_refused(tmp_
         sub_path=sub_path,
     )
     write_generation_marker(staged / RUNTIME_MARKER_NAME, document)
-    published = promote_generation(staged, tmp_path / "artifact", generation)
+    published, _reused = promote_generation(staged, tmp_path / "artifact", generation)
 
     argv = [
         "marker",
@@ -1717,15 +1721,26 @@ def test_render_stage_and_qualify_round_trip_on_the_argv_they_render(tmp_path: P
     generation = artifact["tree"]["inventory_sha256"]
     prefix = "scientific-localization/public"
     sub_path = renderer.generation_sub_path(prefix, MOLECULES_ID, generation)
-    trees = tmp_path / "trees"
+    trees = tmp_path / "plane-root"
     trees.mkdir()
 
+    def rewrite(part: str) -> str:
+        """Point one rendered container path at this test's real directories.
+
+        Only a whole leading path segment is substituted: a blunt string replace
+        would also rewrite a value that merely contains the container root.
+        """
+
+        if part == renderer.CONTRACT_MOUNT:
+            return str(contract_path)
+        if part == renderer.TREE_ROOT:
+            return str(trees)
+        if part.startswith(renderer.TREE_ROOT + "/"):
+            return str(trees) + part[len(renderer.TREE_ROOT) :]
+        return part
+
     def localize(argv: list[str]) -> int:
-        rewritten = [
-            part.replace(renderer.CONTRACT_MOUNT, str(contract_path)).replace(renderer.TREE_ROOT, str(trees))
-            for part in argv
-        ]
-        return localization_main(rewritten)
+        return localization_main([rewrite(part) for part in argv])
 
     stage = renderer.stage_job(
         name="stage",
@@ -1735,7 +1750,7 @@ def test_render_stage_and_qualify_round_trip_on_the_argv_they_render(tmp_path: P
         image="registry.invalid/x@sha256:" + "0" * 64,
         python="/usr/bin/python3",
         config_map="c",
-        claim="academic-assets-runtime-rwx",
+        plane={"kind": "host-path", "host_root": str(trees)},
         node_selector={},
         tolerations=[],
         resources={},
@@ -1747,7 +1762,13 @@ def test_render_stage_and_qualify_round_trip_on_the_argv_they_render(tmp_path: P
     assert renderer.RECEIPT_DIR in init
     (trees / ".receipts").mkdir()
 
+    # The public plane is a host directory, so the rendered Job must mount one.
+    tree_volume = next(item for item in stage["spec"]["template"]["spec"]["volumes"] if item["name"] == "trees")
+    assert tree_volume["hostPath"] == {"path": str(trees), "type": "Directory"}
+
     argv = _localize_argv(stage, "stage-")
+    assert argv[argv.index("--volume-kind") + 1] == "host-path"
+    assert argv[argv.index("--host-root") + 1] == str(trees)
     # The archive is already local here; the rendered job fetches it instead.
     fetch = argv.index("--fetch-archive-to")
     argv[fetch : fetch + 2] = ["--archive", str(archive)]
@@ -1772,7 +1793,7 @@ def test_render_stage_and_qualify_round_trip_on_the_argv_they_render(tmp_path: P
         image="registry.invalid/x@sha256:" + "0" * 64,
         python="/usr/bin/python3",
         config_map="c",
-        claim="academic-assets-runtime-rwx",
+        plane={"kind": "host-path", "host_root": str(trees)},
         queue="inference-models",
         probe=[],
         node_selector={},
@@ -1843,7 +1864,7 @@ def test_promotion_seals_a_marker_without_moving_the_producer_identity(tmp_path:
         staging / RUNTIME_MARKER_NAME,
         _marker(generation=before.sha256, inventory_algorithm=TREE_MANIFEST_ALGORITHM),
     )
-    published = promote_generation(staging, root, before.sha256)
+    published, _reused = promote_generation(staging, root, before.sha256)
 
     assert published == root / "sha256" / before.sha256
     assert (published / RUNTIME_MARKER_NAME).is_file()
@@ -1967,3 +1988,333 @@ def test_a_marker_names_the_kind_of_plane_that_holds_the_generation() -> None:
         }
         with pytest.raises(ArtifactLocalizationError, match=message):
             generation_marker(**arguments)
+
+
+# ---------------------------------------------------------------------------
+# Adversarial: admission, symlinks, terminal receipts, reuse
+# ---------------------------------------------------------------------------
+
+
+def _published(tmp_path: Path, entries: Mapping[str, bytes], **overrides: Any) -> tuple[Path, str, str]:
+    """Publish a generation and return its path, generation and marker digest."""
+
+    generation = _inventory(entries)
+    staged = _materialize(tmp_path / "staged", entries)
+    document = _marker(
+        generation=generation,
+        entry_count=len(entries),
+        total_bytes=sum(map(len, entries.values())),
+        sub_path=f"p/generations/{MOLECULES_ID}/sha256/{generation}",
+        **overrides,
+    )
+    digest = write_generation_marker(staged / RUNTIME_MARKER_NAME, document)
+    published, _reused = promote_generation(staged, tmp_path / "artifact", generation)
+    return published, generation, digest
+
+
+def _admit(published: Path, generation: str, *extra: str) -> int:
+    return localization_main(
+        [
+            "marker",
+            "--artifact-id",
+            MOLECULES_ID,
+            "--mount",
+            str(published),
+            "--expect-generation",
+            generation,
+            "--sub-path",
+            f"p/generations/{MOLECULES_ID}/sha256/{generation}",
+            *extra,
+        ]
+    )
+
+
+def test_admission_pins_the_marker_digest_and_every_plane_field(tmp_path: Path) -> None:
+    """Right bytes in the wrong place, licence or algorithm are still wrong."""
+
+    published, generation, digest = _published(tmp_path, SYNTHETIC_ENTRIES)
+    assert (
+        _admit(
+            published,
+            generation,
+            "--expect-manifest-digest",
+            digest,
+            "--expect-volume-kind",
+            "persistent-volume-claim",
+            "--expect-namespace",
+            "fs2-academic-poc",
+            "--expect-claim",
+            "academic-assets-runtime-rwx",
+            "--expect-visibility",
+            "public",
+            "--expect-algorithm",
+            TREE_INVENTORY_ALGORITHM,
+        )
+        == 0
+    )
+
+    for wrong in (
+        ("--expect-manifest-digest", "f" * 64),
+        ("--expect-volume-kind", "host-path"),
+        ("--expect-namespace", "somebody-else"),
+        ("--expect-claim", "another-claim"),
+        ("--expect-host-root", "/mnt/elsewhere"),
+        ("--expect-visibility", "tenant-private"),
+        ("--expect-algorithm", RECURSIVE_INVENTORY_ALGORITHM),
+    ):
+        assert _admit(published, generation, *wrong) == 1, f"{wrong} must be refused"
+
+
+def test_admission_refuses_a_marker_whose_bytes_are_not_canonical(tmp_path: Path) -> None:
+    """A padded or reordered document would carry a digest for bytes nobody reads."""
+
+    published, generation, digest = _published(tmp_path, SYNTHETIC_ENTRIES)
+    marker = published / RUNTIME_MARKER_NAME
+    document = json.loads(marker.read_text(encoding="utf-8"))
+    os.chmod(published, 0o755)  # noqa: S103 - reopening a sealed generation to tamper with it
+    os.chmod(marker, 0o644)
+    # Same content, different bytes: compact instead of the canonical form.
+    marker.write_text(json.dumps(document, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+    assert _admit(published, generation, "--expect-manifest-digest", digest) == 1
+
+
+def test_a_symlinked_generation_is_admissible_under_the_algorithm_that_covers_symlinks(
+    tmp_path: Path,
+) -> None:
+    """PyRosetta's identity covers symlinks by target, so a mount holding them must admit."""
+
+    source = _installed_tree(tmp_path / "producer")
+    identity = tree_manifest_identity(source)
+    root = tmp_path / "artifact"
+    staging = prepare_staging_directory(root)
+    link_tree_into(source, staging)
+    sub_path = f"p/generations/{MOLECULES_ID}/sha256/{identity.sha256}"
+    document = _marker(
+        generation=identity.sha256,
+        entry_count=identity.file_count,
+        directory_count=2,
+        symlink_count=identity.symlink_count,
+        total_bytes=identity.total_bytes,
+        inventory_algorithm=TREE_MANIFEST_ALGORITHM,
+        sub_path=sub_path,
+    )
+    write_generation_marker(staging / RUNTIME_MARKER_NAME, document)
+    published, _reused = promote_generation(staging, root, identity.sha256)
+
+    assert identity.symlink_count == 1
+    assert count_generation(published, maximum_entries=100, permit_symlinks=True) == (2, 2, 1)
+    assert _admit(published, identity.sha256, "--expect-algorithm", TREE_MANIFEST_ALGORITHM) == 0
+
+    # A flat-inventory generation still refuses a symlink outright.
+    with pytest.raises(ArtifactLocalizationError, match="symbolic link"):
+        count_generation(published, maximum_entries=100)
+
+
+def test_a_declared_symlink_count_that_does_not_match_the_mount_is_refused(tmp_path: Path) -> None:
+    source = _installed_tree(tmp_path / "producer")
+    identity = tree_manifest_identity(source)
+    root = tmp_path / "artifact"
+    staging = prepare_staging_directory(root)
+    link_tree_into(source, staging)
+    sub_path = f"p/generations/{MOLECULES_ID}/sha256/{identity.sha256}"
+    write_generation_marker(
+        staging / RUNTIME_MARKER_NAME,
+        _marker(
+            generation=identity.sha256,
+            entry_count=identity.file_count,
+            directory_count=2,
+            symlink_count=7,
+            total_bytes=identity.total_bytes,
+            inventory_algorithm=TREE_MANIFEST_ALGORITHM,
+            sub_path=sub_path,
+        ),
+    )
+    published, _reused = promote_generation(staging, root, identity.sha256)
+    assert _admit(published, identity.sha256) == 1
+
+
+def _stage_argv(contract_path: Path, archive: Path, artifact_root: Path, receipt: Path, sub_path: str) -> list[str]:
+    return [
+        "stage",
+        "--contract",
+        str(contract_path),
+        "--artifact-id",
+        MOLECULES_ID,
+        "--archive",
+        str(archive),
+        "--artifact-root",
+        str(artifact_root),
+        "--sub-path",
+        sub_path,
+        "--volume-kind",
+        "persistent-volume-claim",
+        "--namespace",
+        "fs2-academic-poc",
+        "--claim",
+        "academic-assets-runtime-rwx",
+        "--visibility",
+        "public",
+        "--receipt",
+        str(receipt),
+    ]
+
+
+def _stage_fixture(tmp_path: Path) -> tuple[Path, Path, str, str]:
+    entries = SYNTHETIC_ENTRIES
+    payload = _zip_bytes(sorted(entries.items()))
+    artifact = _document(payload, entries)
+    contract_path = tmp_path / "contract.json"
+    contract_path.write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/scientific-artifact-localization/v1",
+                "generated_at": "2026-09-03T00:00:00Z",
+                "artifacts": [artifact],
+            }
+        ),
+        encoding="utf-8",
+    )
+    archive = tmp_path / "mols.zip"
+    archive.write_bytes(payload)
+    generation = artifact["tree"]["inventory_sha256"]
+    return contract_path, archive, generation, f"p/generations/{MOLECULES_ID}/sha256/{generation}"
+
+
+def test_a_publication_failure_still_emits_a_receipt_and_leaves_no_staging(tmp_path: Path) -> None:
+    """A tree that verified and then failed to publish is an outcome, not a crash.
+
+    Without a receipt a caller cannot tell a refusal from a container that died,
+    and a staging directory left behind consumes a claim that has little room.
+    """
+
+    contract_path, archive, generation, sub_path = _stage_fixture(tmp_path)
+    root = tmp_path / "artifact"
+    receipt = tmp_path / "receipts" / "stage.json"
+    # A file where the generation directory must go: publication cannot succeed.
+    (root / "sha256").mkdir(parents=True)
+    (root / "sha256" / generation).write_bytes(b"not a directory")
+
+    code = localization_main(_stage_argv(contract_path, archive, root, receipt, sub_path))
+    assert code == 1
+    document = json.loads(receipt.read_text(encoding="utf-8"))
+    assert document["state"] == "rejected"
+    assert "generation-publication-failed" in document["rejection_reason"]
+    # The tree still verified, so the receipt says what it saw.
+    assert document["tree_identity"]["inventory_sha256"] == generation
+    assert [item.name for item in root.iterdir()] == ["sha256"], "no staging directory survives"
+
+
+def test_an_existing_generation_is_reverified_before_success(tmp_path: Path) -> None:
+    """This tool proved the bytes it staged, and nothing about someone else's.
+
+    A digest is a name, and a name is not evidence. A target that already exists
+    is verified in place, so a directory holding the wrong bytes under the right
+    digest is refused rather than reported as a successful publication.
+    """
+
+    contract_path, archive, generation, sub_path = _stage_fixture(tmp_path)
+    root = tmp_path / "artifact"
+    receipt = tmp_path / "receipts" / "stage.json"
+
+    # First publication succeeds and is genuinely verified.
+    assert localization_main(_stage_argv(contract_path, archive, root, receipt, sub_path)) == 0
+    first = json.loads(receipt.read_text(encoding="utf-8"))
+    assert first["state"] == "verified"
+    assert first["observation"]["generation_reused"] is False
+
+    # Re-running against the published generation reuses and reverifies it.
+    assert localization_main(_stage_argv(contract_path, archive, root, receipt, sub_path)) == 0
+    second = json.loads(receipt.read_text(encoding="utf-8"))
+    assert second["observation"]["generation_reused"] is True
+    assert second["observation"]["marker_sha256"] == first["observation"]["marker_sha256"]
+
+    # Now corrupt the published bytes under the same digest.
+    published = root / "sha256" / generation
+    os.chmod(published, 0o755)  # noqa: S103 - reopening a sealed generation to tamper with it
+    victim = published / "HEM.pkl"
+    os.chmod(victim, 0o644)
+    victim.write_bytes(b"tampered but the directory is still named the same")
+
+    assert localization_main(_stage_argv(contract_path, archive, root, receipt, sub_path)) == 1
+    third = json.loads(receipt.read_text(encoding="utf-8"))
+    assert third["state"] == "rejected"
+    assert "does not verify" in third["rejection_reason"]
+
+
+def test_the_promotion_job_mounts_the_source_read_only_beside_its_generation_root() -> None:
+    """Promotion reads the installed tree and writes only into its own root."""
+
+    renderer = _renderer()
+    contract = json.loads(
+        (
+            Path(__file__).resolve().parents[3] / "catalog/runtime/contracts/scientific-artifact-localization.json"
+        ).read_text(encoding="utf-8")
+    )
+    artifact = next(
+        item for item in contract["artifacts"] if item["artifact_id"] == "bindcraft-pyrosetta-installed-tree"
+    )
+    job = renderer.promote_job(
+        name="promote",
+        namespace="fs2-academic-poc",
+        run_id="r",
+        artifact=artifact,
+        image="registry.invalid/x@sha256:" + "0" * 64,
+        python="/usr/bin/python3",
+        config_map="c",
+        plane={"kind": "persistent-volume-claim", "claim": "academic-assets-runtime-rwx"},
+        source_claim="academic-assets-runtime-rwx",
+        tree_prefix="scientific-localization/private",
+        node_selector={"storage.fs2.nebius/shared-cache": "true"},
+        tolerations=[],
+        resources={},
+        security_context={},
+    )
+    spec = job["spec"]["template"]["spec"]
+    volumes = {item["name"]: item for item in spec["volumes"]}
+    assert volumes["source"]["persistentVolumeClaim"]["readOnly"] is True
+    mounts = {item["name"]: item for item in spec["containers"][0]["volumeMounts"]}
+    # The producing plane's tree is an input and is mounted read-only.
+    assert mounts["source"]["subPath"] == "pyrosetta-bindcraft/site-packages"
+    assert mounts["source"]["readOnly"] is True
+    # This tool writes only into the generation root it owns.
+    assert mounts["trees"]["subPath"] == "scientific-localization/private"
+    assert mounts["trees"].get("readOnly") is not True
+
+    argv = spec["containers"][0]["command"]
+    assert argv[3] == "promote"
+    generation = artifact["tree"]["inventory_sha256"]
+    assert argv[argv.index("--promote-from") + 1] == "/source"
+    assert argv[argv.index("--artifact-root") + 1].endswith("/bindcraft-pyrosetta-installed-tree")
+    assert argv[argv.index("--sub-path") + 1] == (
+        f"scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/{generation}"
+    )
+    assert argv[argv.index("--visibility") + 1] == "tenant-private"
+
+
+def test_a_staged_artifact_cannot_be_rendered_as_a_promotion() -> None:
+    """Only a tree another plane installed is promoted; the rest are staged."""
+
+    renderer = _renderer()
+    contract = json.loads(
+        (
+            Path(__file__).resolve().parents[3] / "catalog/runtime/contracts/scientific-artifact-localization.json"
+        ).read_text(encoding="utf-8")
+    )
+    artifact = next(item for item in contract["artifacts"] if item["artifact_id"] == MOLECULES_ID)
+    with pytest.raises(SystemExit, match="staged from its archive"):
+        renderer.promote_job(
+            name="promote",
+            namespace="fs2-academic-poc",
+            run_id="r",
+            artifact=artifact,
+            image="registry.invalid/x@sha256:" + "0" * 64,
+            python="/usr/bin/python3",
+            config_map="c",
+            plane={"kind": "persistent-volume-claim", "claim": "c"},
+            source_claim="c",
+            tree_prefix="p",
+            node_selector={},
+            tolerations=[],
+            resources={},
+            security_context={},
+        )
