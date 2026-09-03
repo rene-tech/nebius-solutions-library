@@ -1,0 +1,44 @@
+{
+  "schema": "fs2.nebius.ai/scientific-dependency-generation-observation/v1",
+  "observed_at": "2026-09-03T06:22:00Z",
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "namespace": "fs2-academic-poc",
+    "resource_name_sha256": "sha256:5edaaf892bc9b5969ab5cd93b4b2beec36397d77991afe355085451f33cc0c18",
+    "tenant_sha256": "sha256:dc08b68fb449f950eeff645e6ad8d94ef7ee74ff48b1fb7f0519aef2dd75d5bf"
+  },
+  "observation": {
+    "pod": "fs2-cxq-artifact-inspector",
+    "host_root": "/mnt/fs2-reference-data/data",
+    "read_only": true,
+    "node_name_sha256": "sha256:89d4e9197704f71277273877bbf6ce43fe6d64b192b831fe14003fa5c450efd6"
+  },
+  "artifacts": [
+    {
+      "artifact_id": "alphafold2-params",
+      "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+      "sub_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+      "marker_sha256": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+      "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+      "entry_count": 16,
+      "total_bytes": 5587956571,
+      "binding": "AF2_DIR=/opt/fs2/artifacts/alphafold2-params",
+      "live_state": "generation and marker present; sixteen payload entries observed",
+      "qualification_state": "not mounted or exercised by the accepted reward-free runs"
+    },
+    {
+      "artifact_id": "rosettafold3-checkpoint",
+      "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "marker_sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822",
+      "inventory_algorithm": "fs2-tree-inventory/v2",
+      "entry_count": 1,
+      "total_bytes": 3038876446,
+      "binding": "RF3_CKPT_PATH=/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt",
+      "live_state": "generation and marker present; every accepted variant independently recomputed the generation and verified the checkpoint digest",
+      "qualification_state": "bound but not exercised because the accepted runs were reward-free"
+    }
+  ]
+}

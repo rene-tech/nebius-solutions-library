@@ -1,0 +1,40 @@
+{
+  "schema": "fs2.nebius.ai/oci-registry-provenance-verification/v1",
+  "checked_at": "2026-09-03T06:24:12Z",
+  "image": {
+    "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd-batch-v1",
+    "index_digest": "sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+    "platform": "linux/amd64",
+    "platform_manifest_digest": "sha256:75eb31a22b8566e3a3016fceee173cd3705145ee34acbe6edb1ffedce0cb035f",
+    "attestation_manifest_digest": "sha256:e8b3265bc60e5edd93ed6843bd913d60bcdabab657d37b627d631bef4a9b6082"
+  },
+  "slsa": {
+    "build_type": "https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md",
+    "vcs": {
+      "source": "https://github.com/rene-tech/nebius-solutions-library.git",
+      "revision": "cb8d6bea1bd15ae4cd68f588e718c14333acbac2",
+      "context": "k8s-inference/models/cancer-immunotherapy/runtime-images",
+      "dockerfile": "k8s-inference/models/cancer-immunotherapy/runtime-images/proteina-complexa"
+    },
+    "source": {
+      "repository": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+      "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+      "archive_sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b"
+    },
+    "started_at": "2026-09-03T05:50:44.897139737Z",
+    "finished_at": "2026-09-03T05:55:30.162685105Z",
+    "invocation_id": "xvqdvbsq1gqy6n0lwggq1nkir"
+  },
+  "verification": {
+    "tag_digest_matches_index": true,
+    "attestation_is_attached_to_platform_manifest": true,
+    "vcs_revision_exists_in_this_branch": true,
+    "build_inputs_unchanged_since_vcs_revision": true,
+    "commands": [
+      "crane digest <tag>",
+      "crane manifest <tag>",
+      "docker buildx imagetools inspect <tag> --format {{json .Provenance}}",
+      "git diff --exit-code cb8d6bea -- Dockerfile runtime_entrypoint.py requirements.lock"
+    ]
+  }
+}
