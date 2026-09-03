@@ -611,6 +611,70 @@ def qualify_job(
     }
 
 
+def _evidence_pairs(values: list[str], label: str) -> dict[str, Path]:
+    pairs: dict[str, Path] = {}
+    for item in values:
+        artifact_id, separator, path = item.partition("=")
+        if not separator or not artifact_id or not path:
+            raise SystemExit(f"--{label} expects ARTIFACT_ID=PATH")
+        pairs[artifact_id] = Path(path)
+    return pairs
+
+
+def ingest_evidence(
+    artifacts: list[dict[str, Any]],
+    *,
+    receipts: dict[str, Path],
+    admissions: dict[str, Path],
+    probes: dict[str, Path],
+) -> dict[str, Any]:
+    """Establish per-artifact state from documents a run actually produced.
+
+    Attribution is explicit rather than guessed from a filename, because a
+    receipt handed over for the wrong artifact must be an error and not a
+    quietly lower state.
+    """
+
+    ingest = _receipt_ingest()
+    localization = _localization()
+    known = {item["artifact_id"] for item in artifacts}
+    unknown = sorted((set(receipts) | set(admissions) | set(probes)) - known)
+    if unknown:
+        raise SystemExit(f"evidence was supplied for artifacts this handoff does not describe: {unknown}")
+
+    established: dict[str, Any] = {}
+    for artifact in artifacts:
+        artifact_id = artifact["artifact_id"]
+        if artifact_id not in receipts and artifact_id not in admissions:
+            continue
+        contract = localization.LocalizationContract.parse(artifact)
+        evidence = ingest.ingest_artifact(
+            contract,
+            receipt=ingest.load_localization_receipt(receipts[artifact_id]) if artifact_id in receipts else None,
+            admission=ingest.load_admission(admissions[artifact_id]) if artifact_id in admissions else None,
+            probe=ingest.load_probe(probes[artifact_id]) if artifact_id in probes else None,
+        )
+        established[artifact_id] = evidence
+    return established
+
+
+def _receipt_ingest() -> Any:
+    """Load the ingestion module the control plane itself uses."""
+
+    spec = importlib.util.spec_from_file_location(
+        "fs2_localization_render.receipt_ingest", PACKAGE_ROOT / "receipt_ingest.py"
+    )
+    assert spec is not None and spec.loader is not None
+    # receipt_ingest imports its siblings relatively, so they have to be
+    # reachable under the same synthetic package name.
+    sys.modules["fs2_localization_render.localization"] = _localization()
+    module = importlib.util.module_from_spec(spec)
+    module.__package__ = "fs2_localization_render"
+    sys.modules["fs2_localization_render.receipt_ingest"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _resolved_volume(volume: dict[str, Any], sub_path: str) -> dict[str, Any]:
     """Address one generation on whichever plane holds it.
 
@@ -652,6 +716,7 @@ def binding_handoff(
     tree_prefix: str,
     private_tree_prefix: str,
     artifacts: list[dict[str, Any]],
+    established: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Describe exactly how a consumer mounts each localized tree.
 
@@ -722,6 +787,15 @@ def binding_handoff(
             },
             "generated_entries": tree.get("generated_entries", []),
         }
+        proven = (established or {}).get(artifact["artifact_id"])
+        if proven is not None:
+            # A real document raised this state, so the document is named beside
+            # it. Nothing here is asserted that a receipt does not back.
+            entry["volume"]["binding_state"] = proven.state.label
+            entry["localization_receipt_digest"] = f"sha256:{proven.receipt_digest}"
+            entry["established_by"] = [
+                {"kind": item.kind, "file": item.path, "sha256": item.sha256} for item in proven.documents
+            ]
         if contract.externally_installed:
             # Where the producing plane built the bytes. It is an input to the
             # promotion and a provenance record, never something a runtime binds.
@@ -752,10 +826,29 @@ def binding_handoff(
             "tree only on the tenant-private academic claim."
         ),
         "evidence": {
-            "state": "rendered",
-            "generations_published": False,
-            "promotion_receipts": [],
-            "node_probes": [],
+            "state": min(
+                (item.state for item in (established or {}).values()),
+                default=None,
+            ).label
+            if established and len(established) == len(entries)
+            else "rendered",
+            "generations_published": bool(established) and len(established) == len(entries),
+            "promotion_receipts": sorted(
+                {
+                    item.path
+                    for value in (established or {}).values()
+                    for item in value.documents
+                    if item.kind in {"localization-receipt", "admission"}
+                }
+            ),
+            "node_probes": sorted(
+                {
+                    item.path
+                    for value in (established or {}).values()
+                    for item in value.documents
+                    if item.kind == "model-probe"
+                }
+            ),
             "meaning": (
                 "Every path, identity and marker digest in this document is derived from the "
                 "checked-in contract by the same code that writes a marker. None of it has "
@@ -1072,7 +1165,7 @@ def inventory_job(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("stage", "promote", "qualify", "handoff", "inventory"))
+    parser.add_argument("mode", choices=("stage", "promote", "qualify", "handoff", "inventory", "execution-map"))
     parser.add_argument("--contract", type=Path, default=DEFAULT_CONTRACT)
     parser.add_argument("--artifact-id", action="append", required=True)
     parser.add_argument("--namespace", required=True)
@@ -1090,6 +1183,34 @@ def main(argv: list[str] | None = None) -> int:
         "--tree-prefix",
         default="",
         help="subtree of the claim these trees live under, for a claim shared with other assets",
+    )
+    parser.add_argument(
+        "--receipt-evidence",
+        action="append",
+        default=[],
+        metavar="ARTIFACT_ID=PATH",
+        help="handoff/execution-map: a terminal localization receipt that backs this artifact",
+    )
+    parser.add_argument(
+        "--admission-evidence",
+        action="append",
+        default=[],
+        metavar="ARTIFACT_ID=PATH",
+        help="handoff/execution-map: a node admission that backs this artifact",
+    )
+    parser.add_argument(
+        "--probe-evidence",
+        action="append",
+        default=[],
+        metavar="ARTIFACT_ID=PATH",
+        help="handoff/execution-map: a passing model probe, which is what raises qualified",
+    )
+    parser.add_argument(
+        "--model-artifact",
+        action="append",
+        default=[],
+        metavar="MODEL_ID=ARTIFACT_ID",
+        help="execution-map: which artifacts one model reads",
     )
     parser.add_argument(
         "--plane",
@@ -1212,6 +1333,11 @@ def main(argv: list[str] | None = None) -> int:
     run_as_user = options.run_as_user if options.run_as_user is not None else default_uid
     run_as_group = options.run_as_group if options.run_as_group is not None else default_uid
     supplemental = list(options.supplemental_group)
+    # Only a mode that renders a Pod needs an ownership decision; a handoff or
+    # an execution-map fragment mounts nothing.
+    # Only a mode that writes to the volume needs an ownership decision; a
+    # handoff, an execution-map fragment and a read-only qualification do not.
+    writes_to_the_volume = options.mode in {"stage", "promote", "inventory"}
     academic_claim = (
         not host_plane and options.namespace == ACADEMIC_NAMESPACE and options.claim == ACADEMIC_CLAIM
     )
@@ -1224,7 +1350,7 @@ def main(argv: list[str] | None = None) -> int:
                 "run mounts, and that claim also holds another tenant's assets; join the group with "
                 f"--supplemental-group {ACADEMIC_ASSET_GID} instead"
             )
-    elif options.mode != "qualify" and not host_plane and not supplemental and options.fs_group is None:
+    elif writes_to_the_volume and not host_plane and not supplemental and options.fs_group is None:
         raise SystemExit(
             "a claim's ownership is a property of that volume, and this tool will not guess it. "
             "Pass --supplemental-group to join the group that owns the claim, or --fs-group if the "
@@ -1288,6 +1414,47 @@ def main(argv: list[str] | None = None) -> int:
 
     document = load_contract(options.contract)
     artifacts = selected_artifacts(document, tuple(options.artifact_id))
+    established = ingest_evidence(
+        artifacts,
+        receipts=_evidence_pairs(options.receipt_evidence, "receipt-evidence"),
+        admissions=_evidence_pairs(options.admission_evidence, "admission-evidence"),
+        probes=_evidence_pairs(options.probe_evidence, "probe-evidence"),
+    )
+
+    if options.mode == "execution-map":
+        if not options.model_artifact:
+            raise SystemExit("execution-map requires --model-artifact MODEL_ID=ARTIFACT_ID")
+        ingest = _receipt_ingest()
+        by_model: dict[str, list[dict[str, Any]]] = {}
+        for item in options.model_artifact:
+            model_id, separator, artifact_id = item.partition("=")
+            if not separator:
+                raise SystemExit("--model-artifact expects MODEL_ID=ARTIFACT_ID")
+            proven = established.get(artifact_id)
+            if proven is None:
+                raise SystemExit(
+                    f"{artifact_id} has no ingested evidence, and an execution map entry may not be "
+                    "written for an artifact nothing has established"
+                )
+            by_model.setdefault(model_id, []).append(ingest.runtime_artifact_entry(proven))
+        json.dump(
+            {
+                "schema": "fs2-serve.nebius.ai/scientific-localization-execution-fragment/v1",
+                "note": (
+                    "runtime_artifacts entries for a schema-v3 scientific execution map, each backed by a "
+                    "receipt this run ingested. Every digest is the SHA-256 of bytes on disk. The owning "
+                    "lane supplies model_id, variant_id, execution_identity_sha256 and stages."
+                ),
+                "runtime_artifacts": {model: sorted(rows, key=lambda row: row["artifact_id"]) for model, rows in sorted(by_model.items())},
+                "ingest": ingest.ingest_report(list(established.values())),
+            },
+            sys.stdout,
+            indent=2,
+            sort_keys=True,
+        )
+        sys.stdout.write("\n")
+        return 0
+
     if options.mode == "handoff":
         json.dump(
             binding_handoff(
@@ -1312,6 +1479,7 @@ def main(argv: list[str] | None = None) -> int:
                 tree_prefix=options.tree_prefix,
                 private_tree_prefix=options.private_tree_prefix,
                 artifacts=artifacts,
+                established=established,
             ),
             sys.stdout,
             indent=2,
