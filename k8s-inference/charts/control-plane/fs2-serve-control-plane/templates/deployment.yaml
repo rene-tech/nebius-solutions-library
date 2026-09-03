@@ -139,6 +139,20 @@
 {{- if eq (len .Values.scientificBatch.executionMap.models) 0 }}
 {{- fail "scientificBatch requires a generated schema-v3 execution map" }}
 {{- end }}
+{{- $academicAssets := .Values.academicAssets }}
+{{- range .Values.scientificBatch.executionMap.models }}
+{{- if or (eq .model_id "alphafold3") (eq .model_id "bindcraft") }}
+{{- if not (and $academicAssets.enabled $academicAssets.execution.enabled) }}
+{{- fail "academic scientific models require the academic execution contract" }}
+{{- end }}
+{{- if or (ne .workload_namespace $academicAssets.namespace) (ne .workload_namespace $academicAssets.execution.namespace) }}
+{{- fail "academic scientific workload namespace must equal the licensed PVC namespace" }}
+{{- end }}
+{{- if or (ne $academicAssets.namespace "fs2-academic-poc") (ne $academicAssets.claim "academic-assets-runtime-rwx") (ne $academicAssets.execution.localQueue "academic-scientific") (ne $academicAssets.execution.serviceAccount "fs2-academic-runner") }}
+{{- fail "academic scientific execution differs from the reviewed namespace, PVC, LocalQueue, or ServiceAccount" }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- if or (not .Values.networkPolicy.enabled) (eq (len .Values.networkPolicy.kubernetesApiCidrs) 0) }}
 {{- fail "scientificBatch requires bounded Kubernetes API egress" }}
 {{- end }}

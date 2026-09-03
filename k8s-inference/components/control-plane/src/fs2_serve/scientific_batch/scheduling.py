@@ -82,12 +82,12 @@ class SchedulingContractResolver:
         policy = _object(self.service_classes.get(service_class), "Kueue service class")
         if policy.get("caller_selectable") is not True:
             raise SchedulingContractError("Kueue service class is not caller-selectable")
-        local_queue_name = policy.get("default_local_queue")
+        default_local_queue_name = policy.get("default_local_queue")
         priority_name = policy.get("workload_priority_class")
         priority = policy.get("priority")
         pool_preference = policy.get("pool_preference")
         if (
-            not isinstance(local_queue_name, str)
+            not isinstance(default_local_queue_name, str)
             or not isinstance(priority_name, str)
             or not isinstance(priority, int)
             or isinstance(priority, bool)
@@ -96,6 +96,43 @@ class SchedulingContractResolver:
             or not all(isinstance(item, str) for item in pool_preference)
         ):
             raise SchedulingContractError("Kueue service class is incomplete")
+
+        # A service class supplies the fallback queue, priority and policy. A
+        # model/tenant-specific LocalQueue route is more specific and must win
+        # before the execution namespace is frozen. This lets licensed models
+        # execute beside their namespace-local PVC without allowing the
+        # execution map to invent queue, ClusterQueue, flavor or pool fields.
+        model_routes: list[tuple[str, tuple[str, ...]]] = []
+        tenant_routes: list[str] = []
+        for queue_name, raw_route in self.local_queue_routes.items():
+            if not isinstance(queue_name, str):
+                raise SchedulingContractError("Kueue LocalQueue route identity is invalid")
+            route = _object(raw_route, "Kueue LocalQueue route")
+            route_models = route.get("model_ids")
+            route_tenants = route.get("tenant_ids")
+            if (
+                not isinstance(route_models, list)
+                or not all(isinstance(item, str) for item in route_models)
+                or not isinstance(route_tenants, list)
+                or not all(isinstance(item, str) for item in route_tenants)
+            ):
+                raise SchedulingContractError("Kueue LocalQueue route selectors are invalid")
+            if route_models and model_id in route_models:
+                model_routes.append((queue_name, tuple(route_tenants)))
+            elif not route_models and route_tenants and tenant_id in route_tenants:
+                tenant_routes.append(queue_name)
+
+        if model_routes:
+            selected_routes = [
+                queue_name for queue_name, tenant_ids in model_routes if not tenant_ids or tenant_id in tenant_ids
+            ]
+            if not selected_routes:
+                raise SchedulingContractError("tenant is not routed to the model-specific Kueue LocalQueue")
+        else:
+            selected_routes = tenant_routes
+        if len(selected_routes) > 1:
+            raise SchedulingContractError("model and tenant resolve to multiple Kueue LocalQueues")
+        local_queue_name = selected_routes[0] if selected_routes else default_local_queue_name
 
         local_queue = _object(self.local_queues.get(local_queue_name), "Kueue LocalQueue")
         local_metadata = _object(local_queue.get("metadata"), "Kueue LocalQueue metadata")

@@ -61,11 +61,15 @@ Pod `PriorityClass`. A queue can reclaim borrowed capacity with
 not be described as checkpointable merely to make preemption easier.
 
 An operator can add primary and secondary scientific lanes by supplying
-LocalQueues with different weights and model-ID sets. Those sets are
-non-enforcing routing metadata until the scientific Job creator lands; the Job
-creator must resolve the selected model to its authorized lane. Native
-BindCraft/PyRosetta and AlphaFold3 Jobs additionally require the academic
-access profile and immutable asset/access receipt before Job creation.
+LocalQueues with different weights and model/tenant selector sets. The
+scientific controller resolves the unique most-specific route before operation
+admission and freezes its namespace and LocalQueue in the scheduling snapshot;
+it rejects ambiguous selectors and any execution namespace mismatch. Native
+BindCraft/PyRosetta and AlphaFold3 therefore route to the namespace-local
+`fs2-academic-poc/academic-scientific` queue rather than claiming that the
+licensed PVC can be mounted by a Job in `fs2-models`. They additionally require
+the academic access profile and immutable asset/access receipt before Job
+creation.
 
 ## Correlation contract
 

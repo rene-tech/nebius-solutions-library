@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from conftest import CATALOG_ROOT, REPO_ROOT
+from conftest import CATALOG_ROOT, REPO_ROOT, SOLUTION_ROOT
 from fastapi import FastAPI
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 from mcp.server.auth.middleware.auth_context import auth_context_var
@@ -234,6 +234,43 @@ def scheduling() -> SchedulingContractResolver:
             },
         }
     )
+
+
+ACADEMIC_TENANT_ID = "tenant-academic"
+
+
+def scheduling_with_academic_route(*, shadow: bool = False) -> dict[str, object]:
+    academic_contract = json.loads((SOLUTION_ROOT / "academic-assets/contracts/academic-assets.json").read_text())
+    execution = academic_contract["execution"]
+    namespace = execution["namespace"]
+    local_queue = execution["local_queue"]
+    cluster_queue = execution["cluster_queue"]
+    contract = json.loads(json.dumps(scheduling().contract))
+    cluster_queue_manifest = json.loads(json.dumps(contract["cluster_queues"]["inference"]))
+    cluster_queue_manifest["metadata"]["name"] = cluster_queue
+    contract["cluster_queues"][cluster_queue] = cluster_queue_manifest
+    contract["local_queues"][local_queue] = {
+        "metadata": {"name": local_queue, "namespace": namespace},
+        "spec": {"clusterQueue": cluster_queue},
+    }
+    contract["local_queue_routes"][local_queue] = {
+        "namespace": namespace,
+        "cluster_queue": cluster_queue,
+        "model_ids": ["alphafold3", "bindcraft"],
+        "tenant_ids": [ACADEMIC_TENANT_ID],
+    }
+    if shadow:
+        contract["local_queues"]["academic-shadow"] = {
+            "metadata": {"name": "academic-shadow", "namespace": "fs2-academic-shadow"},
+            "spec": {"clusterQueue": cluster_queue},
+        }
+        contract["local_queue_routes"]["academic-shadow"] = {
+            "namespace": "fs2-academic-shadow",
+            "cluster_queue": cluster_queue,
+            "model_ids": ["alphafold3"],
+            "tenant_ids": [ACADEMIC_TENANT_ID],
+        }
+    return contract
 
 
 class FakeArtifactAccess:
@@ -765,41 +802,59 @@ def test_scheduling_resolver_enforces_canonical_tenant_route_and_priority() -> N
         )
 
 
-def test_scheduling_resolver_freezes_academic_execution_and_localqueue_namespace() -> None:
-    contract = json.loads(json.dumps(scheduling().contract))
-    contract["service_classes"]["customer-batch"]["default_local_queue"] = "academic-scientific"
-    contract["local_queues"]["academic-scientific"] = {
-        "metadata": {"name": "academic-scientific", "namespace": "fs2-academic-poc"},
-        "spec": {"clusterQueue": "inference"},
-    }
-    contract["local_queue_routes"]["academic-scientific"] = {
-        "namespace": "fs2-academic-poc",
-        "cluster_queue": "inference",
-        "model_ids": ["protein-design"],
-        "tenant_ids": ["academic-poc"],
-    }
-    resolver = SchedulingContractResolver(contract)
+@pytest.mark.parametrize("model_id", ["alphafold3", "bindcraft"])
+def test_scheduling_resolver_freezes_academic_execution_and_localqueue_namespace(model_id: str) -> None:
+    resolver = SchedulingContractResolver(scheduling_with_academic_route())
     batch_plan = ScientificBatchPlan((ScientificStagePlan(stage_id="design"),))
+    academic_profile = profile_value()
+    academic_profile["model_id"] = model_id
     frozen = resolver.freeze(
         service_class="customer-batch",
-        model_id="protein-design",
-        tenant_id="academic-poc",
-        profile=profile_value(),
+        model_id=model_id,
+        tenant_id=ACADEMIC_TENANT_ID,
+        profile=academic_profile,
         plan=batch_plan,
         workload_namespace="fs2-academic-poc",
     )
     assert frozen.workload_namespace == "fs2-academic-poc"
     assert frozen.route_namespace == "fs2-academic-poc"
     assert frozen.stage("design").resolved_local_queue == "academic-scientific"
+    assert frozen.stage("design").resolved_cluster_queue == "inference-accelerators"
 
     with pytest.raises(SchedulingContractError, match="execution namespace differs"):
         resolver.freeze(
             service_class="customer-batch",
-            model_id="protein-design",
-            tenant_id="academic-poc",
-            profile=profile_value(),
+            model_id=model_id,
+            tenant_id=ACADEMIC_TENANT_ID,
+            profile=academic_profile,
             plan=batch_plan,
             workload_namespace="fs2-models",
+        )
+
+    with pytest.raises(SchedulingContractError, match="tenant is not routed"):
+        resolver.freeze(
+            service_class="customer-batch",
+            model_id=model_id,
+            tenant_id="another-tenant",
+            profile=academic_profile,
+            plan=batch_plan,
+            workload_namespace="fs2-academic-poc",
+        )
+
+
+def test_scheduling_resolver_rejects_ambiguous_model_tenant_execution_namespaces() -> None:
+    resolver = SchedulingContractResolver(scheduling_with_academic_route(shadow=True))
+    academic_profile = profile_value()
+    academic_profile["model_id"] = "alphafold3"
+
+    with pytest.raises(SchedulingContractError, match="multiple Kueue LocalQueues"):
+        resolver.freeze(
+            service_class="customer-batch",
+            model_id="alphafold3",
+            tenant_id=ACADEMIC_TENANT_ID,
+            profile=academic_profile,
+            plan=ScientificBatchPlan((ScientificStagePlan(stage_id="fold"),)),
+            workload_namespace="fs2-academic-poc",
         )
 
 
@@ -979,6 +1034,148 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
     assert fence.calls == [(operation_id, "controller-a", 7)]
     assert [request.method for request in requests] == ["POST", "GET", "GET", "GET", "GET"]
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_academic_namespace_is_frozen_and_used_for_apply_observe_delete_and_result(tmp_path: Path) -> None:
+    model_profile = profile_value()
+    model_profile["model_id"] = "alphafold3"
+    plan = ScientificBatchPlan((ScientificStagePlan(stage_id="inference"),))
+    snapshot = SchedulingContractResolver(scheduling_with_academic_route()).freeze(
+        service_class="customer-batch",
+        model_id="alphafold3",
+        tenant_id=ACADEMIC_TENANT_ID,
+        profile=model_profile,
+        plan=plan,
+        workload_namespace="fs2-academic-poc",
+        captured_at=datetime(2026, 9, 2, 19, 58, tzinfo=UTC),
+    )
+    assert snapshot.tenant_queue == "academic-scientific"
+    assert snapshot.workload_namespace == snapshot.route_namespace == "fs2-academic-poc"
+
+    operation_id = uuid4()
+    attempt_id = uuid4()
+    resource = WorkloadResource(
+        operation_id=operation_id,
+        batch_id=uuid4(),
+        workload_id=uuid4(),
+        attempt_id=attempt_id,
+        stage_id="inference",
+        shard_id="main",
+        attempt_number=1,
+        tenant_id=ACADEMIC_TENANT_ID,
+        model_id="alphafold3",
+        variant_id="upstream-v3-0-4",
+        input_artifact_id=uuid4(),
+        service_class=ServiceClass.CUSTOMER_BATCH,
+        scheduling_snapshot_digest=snapshot.digest,
+        namespace=snapshot.workload_namespace,
+        route_namespace=snapshot.route_namespace,
+        name="scientific-af3-inference",
+        kind=WorkloadKind.JOB,
+        scheduling=snapshot.stage("inference"),
+    )
+    rendered: dict[str, object] = {}
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "POST":
+            assert request.url.path == "/apis/batch/v1/namespaces/fs2-academic-poc/jobs"
+            body = json.loads(request.content)
+            assert body["metadata"]["namespace"] == "fs2-academic-poc"
+            assert body["metadata"]["labels"]["kueue.x-k8s.io/queue-name"] == "academic-scientific"
+            body["metadata"]["uid"] = "academic-job-uid"
+            rendered.update(body)
+            return httpx.Response(201, json=body)
+        if request.method == "DELETE":
+            assert request.url.path == "/apis/batch/v1/namespaces/fs2-academic-poc/jobs/scientific-af3-inference"
+            return httpx.Response(202, json={"status": "Success"})
+        if request.url.path.endswith("/workloads"):
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "metadata": {"uid": "academic-kueue-uid"},
+                            "status": {
+                                "conditions": [
+                                    {
+                                        "type": "QuotaReserved",
+                                        "status": "True",
+                                        "lastTransitionTime": "2026-09-02T19:59:00Z",
+                                    },
+                                    {
+                                        "type": "Admitted",
+                                        "status": "True",
+                                        "lastTransitionTime": "2026-09-02T20:00:00Z",
+                                    },
+                                ],
+                                "admission": {
+                                    "clusterQueue": "inference-accelerators",
+                                    "podSetAssignments": [
+                                        {
+                                            "flavors": {"nvidia.com/gpu": "inference-h100-1x"},
+                                            "resourceUsage": {"nvidia.com/gpu": "1"},
+                                        }
+                                    ],
+                                },
+                            },
+                        }
+                    ]
+                },
+            )
+        if request.url.path.endswith("/resourceflavors/inference-h100-1x"):
+            return httpx.Response(
+                200,
+                json={"metadata": {"labels": {"fs2.nebius.ai/pool-id": "h100-preemptible"}}},
+            )
+        if request.url.path.endswith("/scientific-af3-inference"):
+            body = json.loads(json.dumps(rendered))
+            body["status"] = {"succeeded": 1, "startTime": "2026-09-02T20:00:00Z"}
+            return httpx.Response(200, json=body)
+        return httpx.Response(200, json={"items": []})
+
+    token = tmp_path / "academic-token"
+    token.write_text("x" * 32)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=client,
+    )
+    ref = await cluster.apply(resource, controller_fence=11)
+    observation = await cluster.observe(ref, scheduling=resource.scheduling)
+    await cluster.delete(ref, controller_fence=11)
+    assert observation.state is WorkloadState.SUCCEEDED
+    assert observation.kueue_workload_uid == "academic-kueue-uid"
+    assert all(
+        "/namespaces/fs2-academic-poc/" in request.url.path
+        for request in requests
+        if "/namespaces/" in request.url.path
+    )
+    assert not any("/namespaces/fs2-models/" in request.url.path for request in requests)
+    await client.aclose()
+
+    state = ScientificBatchState.admit(
+        operation_id=operation_id,
+        tenant_id=ACADEMIC_TENANT_ID,
+        model_id="alphafold3",
+        variant_id="upstream-v3-0-4",
+        input_artifact_id=uuid4(),
+        plan=plan,
+        scheduling=snapshot,
+    )
+    decoded = state_from_value(state_to_value(state))
+    assert decoded.scheduling.workload_namespace == decoded.scheduling.route_namespace == "fs2-academic-poc"
+    result_snapshot = ArtifactServiceBridge._scheduling_snapshot(decoded)
+    assert result_snapshot["workload_namespace"] == result_snapshot["route_namespace"] == "fs2-academic-poc"
+    assert result_snapshot["stages"][0]["resolved_local_queue"] == "academic-scientific"
 
 
 @pytest.mark.asyncio
