@@ -279,22 +279,17 @@ class FileScientificManifestRenderer:
                 raise ScientificExecutionMapError("runtime artifact localizations are not bounded")
             for raw_artifact in raw_runtime_artifacts:
                 artifact = _object(raw_artifact, "runtime artifact localization")
-                if set(artifact) not in (
-                    {
-                        "artifact_id",
-                        "mount_path",
-                        "content_digest",
-                        "file_manifest",
-                        "localization_receipt_digest",
-                    },
-                    {
-                        "artifact_id",
-                        "mount_path",
-                        "content_digest",
-                        "aggregate_tree",
-                        "localization_receipt_digest",
-                    },
-                ):
+                base_fields = {
+                    "artifact_id",
+                    "mount_path",
+                    "content_digest",
+                    "localization_receipt_digest",
+                }
+                identity_fields = set(artifact) - {"verification_receipt"}
+                if identity_fields not in (
+                    base_fields | {"file_manifest"},
+                    base_fields | {"aggregate_tree"},
+                ) or set(artifact) - identity_fields not in (set(), {"verification_receipt"}):
                     raise ScientificExecutionMapError("runtime artifact localization fields differ")
                 artifact_id = _bounded_string(artifact["artifact_id"], "runtime artifact ID", maximum=128)
                 key = (model_id, artifact_id)
@@ -324,6 +319,19 @@ class FileScientificManifestRenderer:
                 receipt_digest = _bounded_string(
                     artifact["localization_receipt_digest"], "runtime artifact localization receipt", maximum=71
                 )
+                verification_receipt_json = None
+                if "verification_receipt" in artifact:
+                    verification_receipt = _object(
+                        artifact["verification_receipt"], "runtime artifact verification receipt"
+                    )
+                    verification_receipt_json = json.dumps(
+                        verification_receipt,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    )
+                    if len(verification_receipt_json.encode()) > 64 * 1024:
+                        raise ScientificExecutionMapError("runtime artifact verification receipt exceeds the bound")
                 aggregate_tree = None
                 if "aggregate_tree" in artifact:
                     raw_tree = _object(artifact["aggregate_tree"], "runtime artifact aggregate tree")
@@ -378,6 +386,7 @@ class FileScientificManifestRenderer:
                         receipt_digest if receipt_digest.startswith("sha256:") else f"sha256:{receipt_digest}"
                     ),
                     aggregate_tree=aggregate_tree,
+                    verification_receipt_json=verification_receipt_json,
                 )
             stages = model["stages"]
             if not isinstance(stages, list) or not stages:
@@ -1181,6 +1190,11 @@ class FileScientificManifestRenderer:
                     "sub_path": binding.sub_path,
                     "readiness_receipt_sha256": binding.readiness_receipt_sha256,
                     "authorization_receipt_sha256": binding.authorization_receipt_sha256,
+                    "verification_receipt": (
+                        None
+                        if item.verification_receipt_json is None
+                        else json.loads(item.verification_receipt_json)
+                    ),
                     "aggregate_tree": (
                         None
                         if item.aggregate_tree is None

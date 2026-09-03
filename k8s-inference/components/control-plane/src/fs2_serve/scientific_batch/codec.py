@@ -69,6 +69,12 @@ def _object(value: object, keys: set[str], label: str) -> Mapping[str, Any]:
     return result
 
 
+def _mapping(value: object, label: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
+        raise ValueError(f"stored {label} is not an object")
+    return cast(Mapping[str, Any], value)
+
+
 def _items(value: object, label: str, *, maximum: int = 4096) -> list[Any]:
     if not isinstance(value, list) or len(value) > maximum:
         raise ValueError(f"stored {label} is not a bounded array")
@@ -179,6 +185,11 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                         "storage_kind": item.aggregate_tree.storage_kind,
                         "marker_relative_path": item.aggregate_tree.marker_relative_path,
                     }
+                ),
+                **(
+                    {}
+                    if item.verification_receipt_json is None
+                    else {"verification_receipt": json.loads(item.verification_receipt_json)}
                 ),
             }
             for item in state.runtime_artifacts
@@ -573,6 +584,11 @@ def state_from_value(raw: object) -> ScientificBatchState:
         }
         if not legacy_before_v8:
             artifact_fields.add("aggregate_tree")
+        if not isinstance(raw_artifact, Mapping) or not all(isinstance(key, str) for key in raw_artifact):
+            raise ValueError("stored runtime artifact localization is not an object")
+        raw_fields = set(raw_artifact)
+        if not legacy_before_v8 and "verification_receipt" in raw_fields:
+            artifact_fields.add("verification_receipt")
         artifact = _object(raw_artifact, artifact_fields, "runtime artifact localization")
         aggregate_tree = None
         if not legacy_before_v8 and artifact["aggregate_tree"] is not None:
@@ -626,6 +642,16 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     artifact["localization_receipt_digest"], "runtime artifact localization receipt"
                 ),
                 aggregate_tree=aggregate_tree,
+                verification_receipt_json=(
+                    None
+                    if "verification_receipt" not in artifact
+                    else json.dumps(
+                        _mapping(artifact["verification_receipt"], "runtime artifact verification receipt"),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    )
+                ),
             )
         )
 

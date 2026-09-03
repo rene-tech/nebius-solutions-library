@@ -6,7 +6,7 @@ import json
 import tarfile
 from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from uuid import UUID, uuid4
 
@@ -625,6 +625,7 @@ def test_mounted_runtime_verifier_supports_real_size_aggregate_tree_without_enum
                 "sub_path": "protenix-v2/common",
                 "readiness_receipt_sha256": "2" * 64,
                 "authorization_receipt_sha256": None,
+                "verification_receipt": None,
                 "files": [
                     {
                         "path": "components.cif",
@@ -643,6 +644,7 @@ def test_mounted_runtime_verifier_supports_real_size_aggregate_tree_without_enum
                 "sub_path": tree_identity["sub_path"],
                 "readiness_receipt_sha256": "3" * 64,
                 "authorization_receipt_sha256": "4" * 64,
+                "verification_receipt": None,
                 "files": [],
                 "aggregate_tree": {
                     "tree_digest": "sha256:" + "a" * 64,
@@ -1068,6 +1070,41 @@ def _academic_af3_renderer(
             }
         )
     )
+    reference_receipt = {
+        "schema": "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1",
+        "bundle_id": "alphafold3-public-databases-v3.0",
+        "revision": "v3.0-paper-snapshot-2022-09-28",
+        "created_at": "2026-09-03T00:00:00Z",
+        "storage": {
+            "host_root": "/mnt/fs2-reference-data/data",
+            "mount_path": "/reference-data",
+            "dataset_sub_path": database_sub_path,
+            "read_only": True,
+        },
+        "content": {
+            "tree_sha256": "d" * 64,
+            "manifest_sha256": "2" * 64,
+            "inventory_sha256": "e" * 64,
+            "inventory_marker": ".fs2-manifest-sha256",
+            "file_count": 20_000,
+            "expanded_bytes": 1_000_000_000,
+            "inline_inventory": False,
+        },
+        "placement": {
+            "resource_class": "cpu",
+            "pool": "reference-cpu",
+            "node_selector": {"storage.fs2.nebius/reference-data": "true"},
+            "tolerations": [
+                {
+                    "key": "workload.fs2.nebius/reference-data",
+                    "operator": "Equal",
+                    "value": "true",
+                    "effect": "NoSchedule",
+                }
+            ],
+        },
+    }
+    reference_receipt_json = json.dumps(reference_receipt, sort_keys=True, separators=(",", ":"))
     localizations = (
         {
             "artifact_id": "alphafold3-parameters",
@@ -1092,7 +1129,8 @@ def _academic_af3_renderer(
                 "canonical_path": database_sub_path,
                 "marker_relative_path": ".fs2-manifest-sha256",
             },
-            "localization_receipt_digest": sha("localized-af3-databases"),
+            "verification_receipt": reference_receipt,
+            "localization_receipt_digest": sha(reference_receipt_json),
         },
     )
     value = {
@@ -1812,6 +1850,76 @@ def test_companion_materializes_collects_validates_and_commits_exact_handoff(
     validation = json.loads(client.uploads["fold-result:validation"][0])
     assert validation["status"] == "passed"
     assert validation["logical_output_id"] == "fold-result"
+
+
+def test_companion_verifies_reference_plane_and_materializes_exact_terminal_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture_root = Path("models/cancer-immunotherapy/images/alphafold3/fixtures")
+    receipt = json.loads((fixture_root / "reference-terminal-receipt.json").read_bytes())
+    manifest = json.loads((fixture_root / "reference-published-manifest.json").read_bytes())
+    receipt_bytes = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    manifest_bytes = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    reference_root = tmp_path / "reference-data"
+    dataset = reference_root.joinpath(*PurePosixPath(receipt["storage"]["dataset_sub_path"]).parts)
+    dataset.mkdir(parents=True)
+    manifest_digest = receipt["content"]["manifest_sha256"]
+    (dataset / companion.REFERENCE_DATA_TREE_MARKER).write_text(manifest_digest, encoding="utf-8")
+    manifest_path = reference_root / "manifests" / "sha256" / f"{manifest_digest}.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_bytes(manifest_bytes)
+    assert hashlib.sha256(manifest_bytes).hexdigest() == manifest_digest
+
+    marker = {
+        "schema": companion.RUNTIME_LOCALIZATION_SCHEMA,
+        "operation_id": str(uuid4()),
+        "attempt_id": str(uuid4()),
+        "tenant_id": "academic-poc",
+        "model_id": "alphafold3",
+        "variant_id": "upstream-v3-0-4",
+        "stage_id": "data-pipeline",
+        "artifacts": [
+            {
+                "artifact_id": receipt["bundle_id"],
+                "mount_path": str(reference_root),
+                "content_digest": f"sha256:{receipt['content']['tree_sha256']}",
+                "artifact_manifest_sha256": manifest_digest,
+                "localization_receipt_digest": f"sha256:{hashlib.sha256(receipt_bytes).hexdigest()}",
+                "sub_path": None,
+                "readiness_receipt_sha256": manifest_digest,
+                "authorization_receipt_sha256": None,
+                "verification_receipt": receipt,
+                "files": [],
+                "aggregate_tree": {
+                    "tree_digest": f"sha256:{receipt['content']['tree_sha256']}",
+                    "manifest_digest": f"sha256:{manifest_digest}",
+                    "inventory_digest": f"sha256:{receipt['content']['inventory_sha256']}",
+                    "manifest_algorithm": companion.REFERENCE_DATA_MANIFEST_SCHEMA,
+                    "file_count": receipt["content"]["file_count"],
+                    "directory_count": 1,
+                    "expanded_bytes": receipt["content"]["expanded_bytes"],
+                    "canonical_path": receipt["storage"]["dataset_sub_path"],
+                    "storage_kind": "reference-data-plane",
+                    "marker_relative_path": receipt["content"]["inventory_marker"],
+                },
+            }
+        ],
+    }
+    marker_json = json.dumps(marker, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    companion.verify_runtime_artifacts(runtime_localization_json=marker_json)
+
+    scientific_root = tmp_path / "scientific"
+    scientific_root.mkdir()
+    monkeypatch.setattr(companion, "_ROOT", scientific_root)
+    workspace = scientific_root / "work" / "data-pipeline" / "main"
+    companion.prepare_workspace(workspace, runtime_localization_json=marker_json)
+    receipt_path = workspace / ".fs2/runtime-artifacts/alphafold3-public-databases-v3.0.receipt.json"
+    assert receipt_path.read_bytes() == receipt_bytes
+
+    (dataset / companion.REFERENCE_DATA_TREE_MARKER).write_text("0" * 64, encoding="utf-8")
+    with pytest.raises(ValueError, match="publication marker differs"):
+        companion.verify_runtime_artifacts(runtime_localization_json=marker_json)
 
 
 def _collection_invocation(*, collector_id: str, validator_id: str) -> dict[str, object]:

@@ -79,6 +79,7 @@ def _runtime_marker(runtime_localization_json: str) -> dict[str, Any]:
             "sub_path",
             "readiness_receipt_sha256",
             "authorization_receipt_sha256",
+            "verification_receipt",
             "files",
             "aggregate_tree",
         }:
@@ -87,6 +88,12 @@ def _runtime_marker(runtime_localization_json: str) -> dict[str, Any]:
             raise ValueError("runtime localization file evidence is not bounded")
         if bool(artifact["files"]) == (artifact["aggregate_tree"] is not None):
             raise ValueError("runtime localization requires one bounded identity mode")
+        reference_plane = (
+            isinstance(artifact["aggregate_tree"], dict)
+            and artifact["aggregate_tree"].get("storage_kind") == "reference-data-plane"
+        )
+        if reference_plane != isinstance(artifact["verification_receipt"], dict):
+            raise ValueError("reference-data localization requires exactly one terminal verification receipt")
     return cast(dict[str, Any], marker)
 
 
@@ -109,6 +116,22 @@ def prepare_workspace(workspace: Path, *, runtime_localization_json: str) -> Non
     canonical = json.dumps(marker, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     marker_directory = target / ".fs2"
     marker_directory.mkdir(mode=0o700)
+    receipt_directory = marker_directory / "runtime-artifacts"
+    receipts = [
+        (artifact["artifact_id"], artifact["verification_receipt"])
+        for artifact in marker["artifacts"]
+        if artifact["verification_receipt"] is not None
+    ]
+    if receipts:
+        receipt_directory.mkdir(mode=0o700)
+        for artifact_id, receipt in receipts:
+            payload = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+            receipt_path = receipt_directory / f"{artifact_id}.receipt.json"
+            descriptor = os.open(receipt_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(payload)
+                output.flush()
+                os.fsync(output.fileno())
     temporary = marker_directory / ".runtime-localization.json.tmp"
     destination = marker_directory / "runtime-localization.json"
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
@@ -236,8 +259,12 @@ def _verify_localization_generation(*, artifact: dict[str, Any], mount: Path, tr
 
 
 def _verify_reference_data_plane(*, artifact: dict[str, Any], mount: Path, tree: dict[str, Any]) -> None:
-    if artifact["mount_path"] != "/reference-data" or tree["marker_relative_path"] != REFERENCE_DATA_TREE_MARKER:
-        raise ValueError("reference-data plane root or marker differs")
+    # The renderer freezes and enforces the production container root
+    # (``/reference-data``).  Verification deliberately follows the mounted
+    # path in the marker so the same verifier can be exercised against an
+    # isolated filesystem fixture without weakening the render-time binding.
+    if tree["marker_relative_path"] != REFERENCE_DATA_TREE_MARKER:
+        raise ValueError("reference-data plane marker differs")
     root = mount.resolve(strict=True)
     dataset = mount.joinpath(*_safe_relative(tree["canonical_path"]).parts)
     resolved_dataset = dataset.resolve(strict=True)
@@ -256,7 +283,6 @@ def _verify_reference_data_plane(*, artifact: dict[str, Any], mount: Path, tree:
     if hashlib.sha256(canonical).hexdigest() != manifest_digest:
         raise ValueError("reference-data publication manifest digest differs")
     content = manifest.get("content")
-    storage = manifest.get("storage")
     expected_content = {
         "tree_sha256": tree["tree_digest"].removeprefix("sha256:"),
         "inventory_sha256": tree["inventory_digest"].removeprefix("sha256:"),
@@ -268,11 +294,33 @@ def _verify_reference_data_plane(*, artifact: dict[str, Any], mount: Path, tree:
         or manifest.get("bundle_id") != artifact["artifact_id"]
         or not isinstance(content, dict)
         or any(content.get(key) != value for key, value in expected_content.items())
-        or not isinstance(storage, dict)
-        or storage.get("dataset_sub_path") != tree["canonical_path"]
-        or storage.get("host_root") != "/mnt/fs2-reference-data/data"
     ):
         raise ValueError("reference-data publication manifest content differs")
+    receipt = artifact["verification_receipt"]
+    if not isinstance(receipt, dict):
+        raise ValueError("reference-data terminal receipt is absent")
+    receipt_storage = receipt.get("storage")
+    receipt_content = receipt.get("content")
+    canonical_receipt = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    if (
+        receipt.get("schema") != "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1"
+        or receipt.get("bundle_id") != artifact["artifact_id"]
+        or not isinstance(receipt_storage, dict)
+        or receipt_storage.get("host_root") != "/mnt/fs2-reference-data/data"
+        or receipt_storage.get("mount_path") != "/reference-data"
+        or receipt_storage.get("dataset_sub_path") != tree["canonical_path"]
+        or receipt_storage.get("read_only") is not True
+        or not isinstance(receipt_content, dict)
+        or receipt_content.get("tree_sha256") != tree["tree_digest"].removeprefix("sha256:")
+        or receipt_content.get("manifest_sha256") != manifest_digest
+        or receipt_content.get("inventory_sha256") != tree["inventory_digest"].removeprefix("sha256:")
+        or receipt_content.get("inventory_marker") != tree["marker_relative_path"]
+        or receipt_content.get("file_count") != tree["file_count"]
+        or receipt_content.get("expanded_bytes") != tree["expanded_bytes"]
+        or "sha256:" + hashlib.sha256(canonical_receipt).hexdigest()
+        != artifact["localization_receipt_digest"]
+    ):
+        raise ValueError("reference-data terminal receipt differs from the mounted publication")
 
 
 def _safe_relative(value: str) -> PurePosixPath:

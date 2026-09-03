@@ -564,6 +564,7 @@ class RuntimeArtifactLocalization:
     files: tuple[RuntimeArtifactFile, ...]
     localization_receipt_digest: str
     aggregate_tree: RuntimeArtifactAggregateTree | None = None
+    verification_receipt_json: str | None = None
 
     def __post_init__(self) -> None:
         if _ARTIFACT_ID_RE.fullmatch(self.logical_artifact_id) is None:
@@ -580,6 +581,49 @@ class RuntimeArtifactLocalization:
             raise ValueError("runtime artifact localization requires either bounded files or one aggregate tree")
         if self.aggregate_tree is not None and self.content_digest != self.aggregate_tree.tree_digest:
             raise ValueError("runtime artifact content digest differs from its aggregate tree")
+        receipt: object | None = None
+        if self.verification_receipt_json is not None:
+            encoded = self.verification_receipt_json.encode()
+            if len(encoded) > 64 * 1024:
+                raise ValueError("runtime artifact verification receipt exceeds the bound")
+            try:
+                receipt = json.loads(encoded)
+            except (UnicodeError, ValueError) as error:
+                raise ValueError("runtime artifact verification receipt is invalid") from error
+            canonical = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False)
+            if canonical != self.verification_receipt_json:
+                raise ValueError("runtime artifact verification receipt is not canonical JSON")
+        reference_plane = (
+            self.aggregate_tree is not None
+            and self.aggregate_tree.storage_kind is RuntimeArtifactTreeKind.REFERENCE_DATA_PLANE
+        )
+        if reference_plane != (receipt is not None):
+            raise ValueError("reference-data localization requires exactly one terminal verification receipt")
+        if reference_plane:
+            assert isinstance(receipt, dict)
+            assert self.aggregate_tree is not None
+            storage = receipt.get("storage")
+            content = receipt.get("content")
+            if (
+                receipt.get("schema") != "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1"
+                or receipt.get("bundle_id") != self.logical_artifact_id
+                or not isinstance(storage, dict)
+                or storage.get("host_root") != "/mnt/fs2-reference-data/data"
+                or storage.get("mount_path") != "/reference-data"
+                or storage.get("dataset_sub_path") != self.aggregate_tree.canonical_path
+                or storage.get("read_only") is not True
+                or not isinstance(content, dict)
+                or content.get("tree_sha256") != self.aggregate_tree.tree_digest.removeprefix("sha256:")
+                or content.get("manifest_sha256") != self.aggregate_tree.manifest_digest.removeprefix("sha256:")
+                or content.get("inventory_sha256") != self.aggregate_tree.inventory_digest.removeprefix("sha256:")
+                or content.get("inventory_marker") != self.aggregate_tree.marker_relative_path
+                or content.get("file_count") != self.aggregate_tree.file_count
+                or content.get("expanded_bytes") != self.aggregate_tree.expanded_bytes
+            ):
+                raise ValueError("reference-data terminal receipt differs from its frozen aggregate identity")
+            digest = "sha256:" + hashlib.sha256(self.verification_receipt_json.encode()).hexdigest()
+            if digest != self.localization_receipt_digest:
+                raise ValueError("reference-data terminal receipt digest differs from its localization receipt")
 
 
 @dataclass(frozen=True, slots=True)
