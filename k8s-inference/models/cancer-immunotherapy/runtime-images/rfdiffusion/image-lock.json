@@ -16,8 +16,8 @@
     "license": "BSD-3-Clause",
     "license_state": "verified",
     "license_covers_weights": true,
-    "build_commit": null,
-    "attestation_vcs_revision": null
+    "build_commit": "bfdeee8ceb964c978e4b72e8c5a65bfe44daaee9",
+    "attestation_vcs_revision": "bfdeee8ceb964c978e4b72e8c5a65bfe44daaee9"
   },
   "image": {
     "id": "rfdiffusion",
@@ -58,9 +58,12 @@
       "other_families": "unqualified-pending-per-family-evidence",
       "architecture_policy": "Qualified on H100 (sm90) only. torch 2.3.0/cu121 and the prebuilt DGL cu121 wheel ship a fixed set of compiled kernels and this runtime has audited neither the cubin nor the PTX they carry, so no portability claim is made for any other GPU family. Nothing in the image hard-codes a device selector, so another family needs per-family evidence rather than a code change; until that evidence exists it is unqualified. Accelerator breadth belongs in the Terraform resource profiles, not in a binary property of this image."
     },
-    "published_digest": null,
-    "published_reference": null,
-    "attestation_predicate_types": null,
+    "published_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+    "published_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+    "attestation_predicate_types": [
+      "https://slsa.dev/provenance/v1",
+      "https://spdx.dev/Document"
+    ],
     "supersedes": [
       {
         "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r11",
@@ -255,14 +258,37 @@
     "conflict": "The artifact catalog's consumer layout binds rfdiffusion-checkpoints at /models/rfdiffusion-checkpoints, while the superseded r6/r7 images hard-coded FS2_ARTIFACT_ROOT=/models/rfdiffusion. This runtime resolves the conflict by not hard-coding either: the checkpoint is located through the input manifest's relative path under --artifact-root, so the same image works at any mount point the plane chooses."
   },
   "qualification": {
-    "state": "pending-live-h100-run",
-    "route_exposed": false,
-    "route_state": "closed",
+    "state": "h100-semantic-qualified",
+    "qualified_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+    "qualified_operations": [
+      "design-backbone",
+      "scaffold-motif"
+    ],
     "qualified_accelerator": "nvidia-h100-sxm5-80gb (sm90)",
     "other_accelerators": "not-qualified; each family needs its own evidence",
-    "evidence": [],
-    "evidence_transfer_policy": "Evidence is bound to an exact image digest. Nothing from r6-r10 transfers.",
-    "scope": "one design-backbone and one scaffold-motif run; no throughput, contention, elasticity or snapshot measurement"
+    "route_exposed": false,
+    "route_state": "closed",
+    "evidence": [
+      "evidence/h100-run-receipt.json",
+      "evidence/h100-semantic-qualification-design-backbone.json",
+      "evidence/h100-semantic-qualification-scaffold-motif.json",
+      "evidence/design/design_8100.pdb",
+      "evidence/design/design_9100_motif.pdb",
+      "evidence/superseded/r10-scaffold-motif-failed-result.json"
+    ],
+    "evidence_transfer_policy": "Evidence is bound to an exact image digest. Nothing from r6-r11 transfers to this image.",
+    "kubelet_image_id_verified": true,
+    "criteria_met": {
+      "cuda_execution": "upstream .trb recorded NVIDIA H100 80GB HBM3 on both runs",
+      "parseable_structure": "complete N/CA/C backbone on every residue in both designs",
+      "requested_contig_length": "76 residues for contig 76-76; 32 residues for 10-10/A23-34/10-10",
+      "unconditional_backbone_is_glycine": "glycine_fraction 1.0 on design-backbone",
+      "motif_preserved": "12/12 identities unchanged, superposed CA RMSD 0.1129 A against a 1.5 A limit",
+      "physical_geometry": "max CA-CA deviation 0.125 A and 0.137 A from 3.8 A",
+      "terminal_success_after_upstream": "the envelope reports succeeded only after marker verification",
+      "determinism": "seed 8100 reproduced byte-identically across three independently built images and four nodes"
+    },
+    "scope": "One design-backbone and one scaffold-motif run, each once. No throughput, contention, elasticity, multi-design fan-out or snapshot measurement, and no cold-start measurement for this digest: both runs landed on nodes that already held the layers."
   },
   "upstream_contract_defects": [
     {
@@ -299,6 +325,21 @@
     }
   ],
   "follow_ups": [
+    {
+      "id": "align-rfdiffusion-with-the-localization-foundation",
+      "owner": "scientific artifact localization owner, with this runtime",
+      "blocking": "blocks canonical delivery and route exposure, not this semantic qualification",
+      "detail": "The accepted foundation at origin/main 3a7ceb25 carries no rfdiffusion artifact, and nothing has been published to either plane yet (binding-handoff evidence still reads generations_published: false). This runtime therefore qualified against a task-owned interim and states so rather than implying canonical delivery.",
+      "alignment_required": [
+        "Register an rfdiffusion artifact in catalog/runtime/contracts/scientific-artifact-localization.json; nothing can stage, promote or admit without an entry there.",
+        "Decide between the one-file rfdiffusion-base-checkpoint identity this runtime uses and the eight-file rfdiffusion-checkpoints identity in model-artifacts. Declaring both as separate identities is the sanctioned pattern, as alphafold2-params and alphafold2-params-bindcraft already do.",
+        "Leave visibility unset or public: RFdiffusion code and weights are BSD-3-Clause with entitlement_state not-required, so it belongs on the reference-data host plane reached by node label, never on a licence-scoped claim.",
+        "Move the prefix from this runtime's interim 'rfdiffusion' to 'scientific-localization/public', and stop using fs2-runtime-qualification-artifacts-r20260902, which is neither of the two planes.",
+        "Add probe_entries, which is mandatory for a flat-inventory tree, and an entry_path_pattern admitting .pt.",
+        "Keep the generation layout, fs2-flat-tree-inventory/v1 and .fs2-runtime-tree.json: qualification/stage_checkpoint.py already produces exactly these, so the tree is portable without restaging."
+      ],
+      "renderer_note": "qualification/render_job.py currently mounts each plane at <artifact-root>/<plane-name> and takes --plane NAME=CLAIM[:SUBPATH]. That removes the single-claim assumption but is this runtime's own addressing, not the foundation's: the foundation mounts each artifact at its contract-declared mount_path with subPath <prefix>/generations/<id>/sha256/<digest>, from volume 'trees' (hostPath, public) or 'trees-private' (claim), and runs a fs2_localization.localization marker init container per artifact. Converting is deliberately deferred until an rfdiffusion contract entry exists, because the marker admission cannot be exercised against a contract that does not list the artifact, and rewriting the renderer now would desynchronise it from the evidence above without being testable."
+    },
     {
       "id": "localization-contract-cannot-express-a-single-object-artifact",
       "owner": "scientific artifact localization owner",

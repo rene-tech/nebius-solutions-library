@@ -1,23 +1,21 @@
 {
-  "schema": "fs2.nebius.ai/rfdiffusion-h100-run-receipt/v1",
-  "recorded_at": "2026-09-03T05:15:00Z",
+  "schema": "fs2.nebius.ai/rfdiffusion-h100-run-receipt/v2",
+  "recorded_at": "2026-09-03T05:47:00Z",
   "owner_task": "fs2-rfdiffusion-final-image-h100-successor-r20260903",
   "runtime_image": {
-    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:c63e82292d69609eef1d4624ae9a68ef9d106377bb61334d6dda5ff0f04a4563",
-    "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r9",
-    "digest": "sha256:c63e82292d69609eef1d4624ae9a68ef9d106377bb61334d6dda5ff0f04a4563",
-    "size_bytes": 4154019160,
-    "kubelet_image_id_matches_published_digest": true,
-    "attestation_vcs_revision": "76d1e7da005d0e57aa9cbe319298cc7e974cc7ca",
+    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+    "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r12",
+    "digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+    "attestation_vcs_revision": "bfdeee8ceb964c978e4b72e8c5a65bfe44daaee9",
     "attestation_predicate_types": [
       "https://slsa.dev/provenance/v1",
       "https://spdx.dev/Document"
-    ]
+    ],
+    "kubelet_image_id_matched_published_digest_on_every_run": true
   },
   "environment": {
     "project": "project-e00rene",
     "region": "eu-north1",
-    "kubeconfig": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
     "context": "k8s-inference-h100",
     "namespace": "fs2-models",
     "kube_system_namespace_uid": "5e8135da-4a78-4669-863d-455840d0700b",
@@ -25,167 +23,155 @@
     "cluster_queue": "inference-accelerators",
     "b300_touched": false
   },
-  "external_checkpoint": {
-    "artifact_id": "artifact.rfdiffusion.base-ckpt",
-    "file": "Base_ckpt.pt",
-    "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
-    "size_bytes": 483616107,
-    "embedded_in_image": false,
-    "digest_verified_by_runtime_each_run": true,
-    "generation": "5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab",
-    "generation_sub_path": "rfdiffusion/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab",
-    "claim": "fs2-runtime-qualification-artifacts-r20260902"
-  },
-  "request": {
-    "operation": "design-backbone",
-    "contigs": ["76-76"],
-    "num_designs": 1,
-    "seed": 8100,
-    "diffuser_T": 50,
-    "upstream_argv": [
-      "python",
-      "/opt/rfdiffusion/scripts/run_inference.py",
-      "inference.output_prefix=<run>/designs/design",
-      "inference.ckpt_override_path=/opt/fs2/artifacts/Base_ckpt.pt",
-      "inference.num_designs=1",
-      "inference.design_startnum=8100",
-      "inference.deterministic=True",
-      "diffuser.T=50",
-      "contigmap.contigs=[76-76]",
-      "inference.schedule_directory_path=/tmp/fs2-rfdiffusion/schedules",
-      "hydra.run.dir=/tmp/fs2-rfdiffusion/hydra",
-      "hydra.output_subdir=null"
+  "artifact_delivery_as_run": {
+    "model": "mixed-plane-capable renderer, one plane in use",
+    "planes_mounted": [
+      {
+        "name": "public",
+        "kind": "persistent-volume-claim",
+        "claim": "fs2-runtime-qualification-artifacts-r20260902",
+        "sub_path": "rfdiffusion",
+        "mount_path": "/opt/fs2/artifacts/public",
+        "read_only": true
+      }
     ],
-    "shell_free": true
+    "honest_caveat": "This is NOT the foundation's public plane. The accepted foundation puts public artifacts on the hostPath /mnt/fs2-reference-data/data behind the node label storage.fs2.nebius/reference-data=true, under prefix scientific-localization/public. That plane has published no RFdiffusion generation and the localization contract carries no rfdiffusion artifact, so nothing canonical exists to bind. The claim used here is a task-owned interim and is neither of the two real planes.",
+    "checkpoint": {
+      "artifact_id": "artifact.rfdiffusion.base-ckpt",
+      "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+      "size_bytes": 483616107,
+      "digest_verified_in_container_each_run": true,
+      "generation": "5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab"
+    },
+    "motif_target": {
+      "artifact_id": "artifact.rfdiffusion.target.1ubq",
+      "sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+      "size_bytes": 78570
+    }
   },
   "runs": [
     {
-      "id": "warm-image-node",
-      "job": "fs2-rfd-semantic-r9-cold",
-      "pod": "fs2-rfd-semantic-r9-cold-9smvn",
-      "pod_uid": "0606fe1b-3afd-46d2-8ce7-72db6ad6642b",
-      "node": "computeinstance-e00nycmfmarxv6kq9w",
-      "node_uid": "201014a0-232f-4890-89ea-4eae126b8fd6",
+      "operation": "design-backbone",
+      "job": "fs2-rfd-r12-design-backbone",
+      "pod": "fs2-rfd-r12-design-backbone-vhn9f",
+      "pod_uid": "23ddaa6d-b4d2-4114-9c32-8e151deb1b67",
+      "node": "computeinstance-e00pwgcqf990qy867k",
+      "node_uid": "8abdaa14-88a5-4336-88cc-fd2007d05a96",
       "accelerator": {
         "class": "nvidia-h100-sxm5-80gb",
         "pool_id": "h100-1x",
         "instance_type": "gpu-h100-sxm",
-        "capacity_type": "elastic-autoscaled",
         "gpus_requested": 1,
         "device_reported_by_upstream": "NVIDIA H100 80GB HBM3"
       },
-      "admission": "Kueue LocalQueue inference-models, ClusterQueue inference-accelerators",
+      "admission": "Kueue LocalQueue inference-models",
       "exit_code": 0,
-      "container_started_at": "2026-09-03T05:11:18Z",
-      "container_finished_at": "2026-09-03T05:11:49Z",
-      "image_pull_seconds": 0.296,
+      "container_started_at": "2026-09-03T05:45:34Z",
+      "container_finished_at": "2026-09-03T05:46:07Z",
+      "image_pull_seconds": 0.291,
       "cache_level": {
-        "declared_by_plan": "cold-registry-pull",
+        "declared_by_plan": "artifact-local",
         "observed": "image-and-artifact-local",
-        "declaration_was_wrong": true,
-        "detail": "The plan declared a cold registry pull, but this node had already pulled the r8 layer set and every layer except the adapter layer was resident, so the pull completed in 296 ms. The declaration is recorded as made and corrected here rather than quietly rewritten. The 'true-cold-node' run below is the honest cold-start measurement.",
+        "detail": "Layers were resident from an earlier run on this node; the 291 ms pull is not a cold pull. The cold-start measurements for this runtime are in the r9 receipt and remain valid as scale, not as qualification of this digest.",
         "gpu_snapshot_used": false
       },
       "phases_seconds": {
-        "validate_request": 0.003,
-        "resolve_checkpoint": 0.383,
+        "validate_request": 0.005,
+        "resolve_checkpoint": 0.356,
         "resolve_inputs": 0.0,
-        "upstream_execute": 30.992,
-        "verify_artifacts": 0.061,
+        "upstream_execute": 33.411,
+        "verify_artifacts": 0.068,
         "write_envelope": 0.003,
-        "adapter_total": 31.443
+        "adapter_total": 33.844
       },
-      "model_ready_seconds": 9.364,
-      "upstream_design_seconds": 20.513
+      "model_ready_seconds": 13.028,
+      "upstream_design_seconds": 19.096,
+      "result": {
+        "residues": 76,
+        "chains": [
+          "A"
+        ],
+        "glycine_fraction": 1.0,
+        "max_ca_ca_deviation_angstrom": 0.125,
+        "max_extent_angstrom": 30.5,
+        "pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806"
+      }
     },
     {
-      "id": "true-cold-node",
-      "job": "fs2-rfd-semantic-r9-truecold",
-      "pod": "fs2-rfd-semantic-r9-truecold-cpqhz",
-      "node": "computeinstance-e00m0hsph76ajt9sdb",
-      "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+      "operation": "scaffold-motif",
+      "job": "fs2-rfd-r12-scaffold-motif",
+      "pod": "fs2-rfd-r12-scaffold-motif-6qzqm",
+      "pod_uid": "d7e4f5a3-d462-4ba6-acc6-6f53ee77f37b",
+      "node": "computeinstance-e00rb3a26wtq7cjf88",
+      "node_uid": "107cb526-94bc-48b4-95c7-496cdbcc6951",
       "accelerator": {
         "class": "nvidia-h100-sxm5-80gb",
-        "pool_id": "h100-reserved-8x",
+        "pool_id": "h100-1x",
         "instance_type": "gpu-h100-sxm",
-        "capacity_type": "capacity-block",
         "gpus_requested": 1,
         "device_reported_by_upstream": "NVIDIA H100 80GB HBM3"
       },
-      "admission": "unqueued, node-pinned to a node that had never pulled this digest",
+      "admission": "Kueue LocalQueue inference-models",
       "exit_code": 0,
-      "container_started_at": "2026-09-03T05:12:58Z",
-      "container_finished_at": "2026-09-03T05:13:56Z",
-      "image_pull_seconds": 7.252,
+      "container_started_at": "2026-09-03T05:45:37Z",
+      "container_finished_at": "2026-09-03T05:46:10Z",
+      "image_pull_seconds": 0.285,
       "cache_level": {
-        "declared_by_plan": "cold-registry-pull",
-        "observed": "cold-registry-pull",
-        "declaration_was_wrong": false,
-        "detail": "This node had never pulled this digest. The 7.252 s pull of a 4.15 GB image reflects an in-region registry and base layers already resident from sibling RFdiffusion images; it is not a from-nothing node pull. The from-nothing figure is recorded under fresh_node_reference below.",
+        "declared_by_plan": "artifact-local",
+        "observed": "image-and-artifact-local",
         "gpu_snapshot_used": false
       },
       "phases_seconds": {
         "validate_request": 0.003,
-        "resolve_checkpoint": 0.436,
-        "resolve_inputs": 0.0,
-        "upstream_execute": 56.612,
-        "verify_artifacts": 0.059,
-        "write_envelope": 0.003,
-        "adapter_total": 57.112
+        "resolve_checkpoint": 0.381,
+        "resolve_inputs": 0.004,
+        "upstream_execute": 32.473,
+        "verify_artifacts": 0.061,
+        "write_envelope": 0.002,
+        "adapter_total": 32.924
       },
-      "model_ready_seconds": 35.909,
-      "upstream_design_seconds": 19.59,
-      "upstream_phase_timestamps": {
-        "container_start": "2026-09-03T05:12:58Z",
-        "loading_checkpoint": "2026-09-03T05:13:07.222Z",
-        "first_design_started": "2026-09-03T05:13:35.366Z",
-        "first_diffusion_timestep": "2026-09-03T05:13:37.222Z",
-        "last_diffusion_timestep": "2026-09-03T05:13:54.367Z",
-        "design_finished": "2026-09-03T05:13:55.411Z"
+      "model_ready_seconds": 11.983,
+      "upstream_design_seconds": 19.611,
+      "request": {
+        "contigs": [
+          "10-10/A23-34/10-10"
+        ],
+        "seed": 9100,
+        "diffuser_T": 50,
+        "motif": "1UBQ chain A residues 23-34, the ubiquitin alpha-helix"
       },
-      "upstream_phase_breakdown_seconds": {
-        "import_and_config": 9.2,
-        "checkpoint_load_and_igso3_schedule": 28.14,
-        "diffusion_50_steps": 20.05
-      },
-      "schedule_to_semantic_complete_seconds": 67.0
+      "result": {
+        "residues": 32,
+        "chains": [
+          "A"
+        ],
+        "glycine_fraction": 0.625,
+        "max_ca_ca_deviation_angstrom": 0.137,
+        "max_extent_angstrom": 38.36,
+        "pdb_sha256": "ed7d8d33ae73d2e6ffdfd86703e6569e18353fe9985f824973153b4270c520d4",
+        "motif": {
+          "positions_preserved": 12,
+          "sequence": "ILE GLU ASN VAL LYS ALA LYS ILE GLN ASP LYS GLU",
+          "ca_rmsd_angstrom_superposed": 0.1129,
+          "ca_rmsd_angstrom_unaligned": 47.9563,
+          "rigid_body_rotation_degrees": 0.978,
+          "rigid_body_translation_angstrom": 47.9561,
+          "superposition": "horn-quaternion-optimal-superposition",
+          "upstream_reported_sampled_motif_rmsd": "~0.19 (backbone N/CA/C; this value is CA-only)",
+          "recomputed_independently_by_the_gate": true
+        }
+      }
     }
   ],
-  "fresh_node_reference": {
-    "detail": "The superseded r8 attempt scheduled onto a node the cluster autoscaler had just created, so it is the only from-nothing datum captured. Recorded for scale, not as qualification: it belongs to a different digest.",
-    "digest": "sha256:9aae23f0465c77e47a07d6afc820a1173bd5d2474c818423356e06efb799c0f6",
-    "node": "computeinstance-e00nycmfmarxv6kq9w",
-    "node_scale_up_to_scheduled_seconds": 154,
-    "image_pull_seconds": 118.6,
-    "image_size_bytes": 4154018578,
-    "autoscaler_event": "pod triggered scale-up: mk8snodegroup-e00n67290jzpdmffbv 0->1 (max: 2)"
-  },
   "determinism": {
-    "claim": "the deterministic-seed contract is real, not asserted",
-    "evidence": "Both runs above executed seed 8100 on two different H100 nodes and produced a byte-identical structure, sha256 78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806.",
-    "independent_corroboration": "The superseded r6 generation, built independently on the mixed BindCraft/RFdiffusion branch, recorded the same output sha256 for the same seed and contig. An independently rebuilt image reproducing a prior image's exact bytes is strong evidence that seed -> inference.design_startnum is the correct mapping."
+    "design_backbone": "Seed 8100 has now produced the byte-identical structure 78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806 from three independently built images (r6 on the mixed branch, r9 and r12 here) across four different H100 nodes.",
+    "scaffold_motif": "Seed 9100 produced the same motif geometry on r10 and r12: superposed CA RMSD 0.1129 A and a 47.956 A rigid-body offset in both."
   },
   "preserved_workloads": {
     "checked_after_all_runs": true,
     "fs2-models/qwen3-8b-b300-hot-h100-reserved-8x": "1/1 available",
     "fs2-models/qwen3-8b-b300-burst-h100-1x": "0/0, unchanged",
     "fs2-models/cosmos3-nano-burst-h100-1x": "0/0, unchanged",
-    "detail": "No shared service, Deployment, route, queue or Terraform resource was modified. Only task-owned Jobs, Pods and a ConfigMap were created."
-  },
-  "cleanup": {
-    "task_owned_jobs_deleted": [
-      "fs2-rfd-semantic-r8-cold",
-      "fs2-rfd-semantic-r9-cold",
-      "fs2-rfd-semantic-r9-truecold",
-      "fs2-rfd-stage-base-ckpt"
-    ],
-    "task_owned_pods_deleted": [
-      "fs2-rfd-artifact-probe",
-      "fs2-rfd-deps-probe",
-      "fs2-rfd-mkrun",
-      "fs2-rfd-export"
-    ],
-    "task_owned_configmaps_deleted": ["fs2-rfd-stage-tools", "fs2-rfd-request-r8"],
-    "retained": "The staged checkpoint generation and the exported run directories are retained on the shared qualification claim under rfdiffusion/, because they are the artifact plane and the evidence this receipt refers to."
+    "detail": "No shared service, Deployment, route, queue or Terraform resource was modified."
   }
 }
