@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 MPNN_MODEL = "v_48_020"
+RUNTIME_MARKER_NAME = ".fs2-runtime-tree.json"
 
 
 def node_digest() -> str:
@@ -87,7 +88,9 @@ def main() -> int:
                 "checkpoint": checkpoint.name,
                 "bytes": len(payload),
                 "sha256": digests[selector],
-                "entries": sorted(item.name for item in directory.iterdir()),
+                "entries": sorted(
+                    item.name for item in directory.iterdir() if item.name != RUNTIME_MARKER_NAME
+                ),
                 "model_type": type(loaded).__name__,
             }
         except Exception as error:  # pragma: no cover - reported, not raised

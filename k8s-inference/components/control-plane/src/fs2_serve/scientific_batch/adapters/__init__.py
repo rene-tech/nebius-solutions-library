@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..models import AdapterExecutionPlan, RuntimeTreeBinding, StageInvocation
-from . import boltzgen, localization, proteina_complexa
+from . import bindcraft, boltzgen, localization, proteina_complexa
 from .common import ScientificAdapterError, load_json_request, profile_from_catalog
 from .localization import (
     ArtifactLocalizationError,
@@ -95,6 +95,10 @@ def compile_adapter_run(
         if variant_id is not None and variant_id != boltzgen.VARIANT_ID:
             raise ScientificAdapterError("route variant_id does not match the BoltzGen adapter")
         return boltzgen.compile_run(profile, request_value, operation_id=operation_id)
+    if model_id == bindcraft.MODEL_ID:
+        if variant_id is not None and variant_id != bindcraft.VARIANT_ID:
+            raise ScientificAdapterError("route variant_id does not match the BindCraft adapter")
+        return bindcraft.compile_run(profile, request_value, operation_id=operation_id)
     raise ScientificAdapterError(f"no scientific adapter is registered for {model_id}")
 
 
@@ -104,6 +108,7 @@ __all__ = [
     "LocalizationContract",
     "LocalizationReceipt",
     "ScientificAdapterError",
+    "bindcraft",
     "boltzgen",
     "compile_adapter_run",
     "load_json_request",

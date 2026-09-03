@@ -1,0 +1,131 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-adapter-identity/v1",
+  "model_id": "bindcraft",
+  "variant_id": "v1-5-3-pyrosetta-academic",
+  "backend_id": "bindcraft-v1-5-3-pyrosetta-academic",
+  "module": "fs2_serve.scientific_batch.adapters.bindcraft",
+  "registration": "fs2_serve.scientific_batch.adapters imports this module and dispatches bindcraft through its explicit model allow-list",
+  "source": {
+    "repository": "martinpacesa/BindCraft",
+    "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+    "release_tag": null
+  },
+  "interface": {
+    "parameter_schema": "fs2-serve.nebius.ai/bindcraft-v1-5-3-parameters/v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "runtime_parameter_schema": "fs2-serve.nebius.ai/bindcraft-native-pyrosetta-parameters/v1",
+    "operations": [
+      "design-binder"
+    ],
+    "runtime_gate_argv": [
+      "python",
+      "/opt/fs2/runtime_entrypoint.py"
+    ],
+    "batch_wrapper": "/opt/fs2/bin/bindcraft-batch",
+    "subcommands": [
+      "run-trajectory",
+      "aggregate"
+    ],
+    "qualified_against": "offline contract only: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d; no live H100 semantic qualification is claimed"
+  },
+  "stages": [
+    {
+      "stage_id": "design",
+      "resource_class": "gpu",
+      "collector_id": "bindcraft-design-output-v1",
+      "max_parallelism": 32,
+      "handoff": {
+        "name": "design-result",
+        "semantic_type": "bindcraft-native-shard-bundle-tar/v1",
+        "media_type": "application/octet-stream",
+        "materialization": "overlay-tar",
+        "note": "collect_design_output validates the r18 shard descriptor, its exact content-addressed closure and assigned quota, then emits a byte-deterministic zstd-compressed USTAR. The aggregate stage overlays it at shards/<index>, because the reviewed wrapper reads a whole directory, not one JSON document.",
+        "media_type_note": "The artifact service's allowlist has no tar entry; the tar-ness is carried by the semantic type.",
+        "contents": "shard-output.json plus exactly the artifact_paths closure, never the whole output directory",
+        "bounds": "256 MiB and 4096 members, matching the controller's overlay materialization limits, checked against the written archive"
+      }
+    },
+    {
+      "stage_id": "aggregate",
+      "resource_class": "cpu",
+      "collector_id": "bindcraft-aggregate-output-v1",
+      "max_parallelism": 1,
+      "result": {
+        "returns": "collect_aggregate_output verifies every entry in output-manifest.json through its artifact-paths sidecar, revalidates the scientific outputs and immutable aggregate identity, and returns every result plus the source manifest itself under new content-addressed pointers",
+        "why": "The workspace is an attempt-local emptyDir. A file the manifest names by path but the collector does not return is lost when the Pod exits, taking the scientific result with it.",
+        "bound": "993 manifest entries at the executable ceiling plus the manifest, inside the 1024 collector bound",
+        "identity_bindings": [
+          "aggregate.request_sha256 equals the digest of the request document this attempt froze",
+          "aggregate.academic_asset_id and academic_artifact_sha256 equal the licensed asset the adapter pins",
+          "aggregate.runtime_localization_marker_sha256 equals the single marker every materialized shard recorded"
+        ]
+      }
+    }
+  ],
+  "design_distribution": {
+    "public_schema_range": "1..320, narrowed to the executable ceiling by deabec07",
+    "executable_ceiling": 320,
+    "shard_bound": 32,
+    "accepted_designs_per_shard_bound": 10,
+    "rule": "shards = min(designs, 32); shard i is assigned designs//shards + (1 if i < designs % shards else 0), so the per-shard quotas always sum back to the requested total and no design is silently dropped",
+    "above_ceiling": "refused at parse time, and now also unreachable through a schema-validating caller. The onboarding owner lowered the public designs maximum from 1024 to 320 rather than inventing capacity: raising the design stage's max_parallelism to fit 1024 at 10 designs per shard would claim 102 concurrent accelerators on a 16-GPU cluster. The public schema records the derivation under x-fs2-executable-ceiling, and this adapter's constants are pinned to it by test_the_ceiling_matches_the_public_schema_when_that_schema_is_on_the_base, which skips until that schema is on the base and binds automatically afterwards. The parse-time refusal is kept as defence in depth for anything reaching the adapter without public validation. Raising the ceiling later needs three coordinated changes: fs2-cancer-primary-adapters-mosaic-bindcraft-rfdiffusion-r20260902 raises accepted_designs_per_shard, fs2-scientific-runtime-onboarding-successor-r20260903 raises the recorded bound and the public maximum together, then this adapter raises EXECUTABLE_DESIGN_CEILING.",
+    "carried_as": "FS2_BINDCRAFT_ACCEPTED_DESIGNS and parameters.accepted_designs_per_shard",
+    "shard_bound_note": "32 is an admission bound, not achievable concurrency: the accelerator pool is 16 GPUs. The distribution is unaffected, but nothing downstream should read 32 as a throughput figure."
+  },
+  "access": {
+    "profile": "academic",
+    "request_time_license_receipt_required": false,
+    "admission": "deployment-bound-granted-authorized"
+  },
+  "runtime_image": {
+    "digest": null,
+    "state": "pending-reviewed-live-h100-qualification",
+    "targets": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18, sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+    "provenance": "attests revision aadd4a88; supersedes r17, which could not read an accepted generation. Do not cite r16 or r17.",
+    "note": "The generations are rendered, not published: the accepted handoff reports generations_published false and the host plane has no generations directory. No live run exists. The private academic plane is repaired and conforming; public immutable generation publication remains the runtime gate."
+  },
+  "controller_requirements": [
+    "The adapter supplies a per-stage public-to-native translation in FS2_BINDCRAFT_REQUEST_JSON. bindcraft.materialize_runtime_documents publishes it as .fs2/request.json byte for byte beside the localization marker, idempotently refusing drift.",
+    "The adapter supplies FS2_BINDCRAFT_INPUT_MANIFEST_JSON, whose exact bytes are bound by the native request. bindcraft.materialize_runtime_documents publishes it as .fs2/input-manifest.json and verifies the ID, size and SHA-256 join before either file is usable.",
+    "Publish .fs2/external-trees.json in schema fs2.nebius.ai/bindcraft-external-tree-admission/v1, using the four roles and roots in FS2_BINDCRAFT_EXTERNAL_TREE_ROLES and filling each tree's sha256 from the localization the controller itself verified. The adapter supplies no digest on purpose, so the pending four-tree generation is bound in exactly one place.",
+    "Keep exporting FS2_RUNTIME_IMAGE_DIGEST; the reviewed wrapper's aggregate subcommand requires it."
+  ],
+  "open_dependencies": [
+    "The controller execution map supplies each runtime artifact's claim and immutable content-addressed sub path. The adapter binds no sub path, so the blocked localization candidate cannot leak a mutable read-write-many path into a rendered Job.",
+    "runtime_image.digest stays null until the reviewed live H100 qualification exists."
+  ],
+  "canonical_bytes": {
+    "owner": "fs2_serve_catalog.artifacts.canonical_bytes",
+    "trailing_newline": true,
+    "applies_to": "the request and input-manifest documents the runtime reads, which the reviewed wrapper and the model validator both canonicalize with a trailing newline",
+    "does_not_apply_to": "the collected output manifest, which the controller companion hashes with no trailing newline; the two differ by exactly one byte"
+  },
+  "volume_contract": {
+    "rule": "Per artifact, by contract identity. Each tree carries its archive provenance and its extracted-tree inventory as two separate digests; the archive digest never qualifies a mount. The adapter names no claim, no sub path and no group -- the plane is the localization contract's to state.",
+    "planes": "Mixed. bindcraft-pyrosetta-installed-tree is visibility tenant-private; the other three are public generations. Treating all four as one PVC was the assumption the image gate rejected.",
+    "stage_scope": "The design stage reads all four. The aggregate stage's own logic reads none, but the shared outer entrypoint verifies AlphaFold2 and binds PyRosetta on every non-smoke command before exec'ing the wrapper, so two of four is the floor. Zero needs an image change.",
+    "authority": "catalog/runtime/contracts/scientific-artifact-localization.json, merged on main; every identity is pinned to it by test_every_tree_binding_matches_the_merged_localization_contract.",
+    "supplemental_groups": "Not an adapter concern on this seam. RuntimeTreeBinding carries no group; the localization renderer derives supplementalGroups [1000, 65532] from the planes a stage actually mounts -- 1000 for the reference-data host plane and 65532 for the private academic claim. A mixed-plane consumer joins both. The private claim has since been repaired to gid 65532; 10001 is neither declared nor accepted as the contract.",
+    "generation_shape": "A generation is per artifact and equals that tree's own identity digest; there is no run-level generation token. Public sub paths are full generation paths, scientific-localization/public/generations/<artifact_id>/sha256/<digest>, mounted as three subPaths off one hostPath volume at /mnt/fs2-reference-data/data. Every generation carries .fs2-runtime-tree.json inside it, excluded from both inventory algorithms by that one reserved name.",
+    "delivery_state": "Private plane CONFORMING as of the 2026-09-03 ownership repair v2. The gated trees are uid/gid 65532 with modes restored, 9,481 paths verified and 0 violations, and a conforming reader (uid 12345, supplemental 65532, no fsGroup) reads the AlphaFold 3 parameters, the PyRosetta wheel and the installed tree. Corroborated read-only from this task: job academic-ownership-repair-v2 completed once, its pod ran runAsUser 65532 with no fsGroup so the kubelet performed no recursive chown, and the before/after probe pods ran in exactly the conforming shape. Public generation publication is still in progress, so the live BindCraft route stays gated.",
+    "masking_hazard": "RESOLVED for the private plane by the repair. While the trees were uid 65532 / gid 10001, a Pod reached them through its primary group 10001 whether or not the supplemental-group contract held, so no green run could evidence the delivery. Now that they are gid 65532, a reader can only reach them through supplemental 65532, which is the contract itself -- so a passing run on the private plane is now real evidence. Two caveats stand: the recurrence risk is unchanged, since a pod that mounts this claim with fsGroup would chown it again and no policy prevents that; and nothing here says anything about the public generations, which are not published yet."
+  },
+  "blocked_on": [
+    "The BindCraft workload profile is not in the published catalog yet; the runtime-onboarding task owns it. The adapter's tests build the profile shape and test_the_profile_matches_the_catalog_when_published binds them once it lands.",
+    "Public generation publication is in progress; the localize-stage job for the public plane has not completed. r18 sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d stays unbound and runtime_image_digest stays null until the terminal public receipts and probes land and a reviewed live run exists.",
+    "runtime_recipe_sha256 has no bindcraft entry yet. Registering one needs the parameter schema and the model-side adapter shim that arrive with the workload profile, so it lands with the onboarding task's profile rather than here, where it would reference files that do not exist."
+  ],
+  "seam": {
+    "dispatch": "fs2_serve.scientific_batch.adapters.compile_adapter_run, explicit allow-list; the adapter adds one branch",
+    "plan_type": "AdapterExecutionPlan with RuntimeTreeBinding per localized tree",
+    "collector_dispatch": "Every invocation freezes FS2_SCIENTIFIC_COLLECTOR_ID. bindcraft.collect_stage_output is an explicit two-value allow-list that dispatches to the design bundle or final aggregate collector and rejects every other value.",
+    "native_document_handoff": "Every invocation carries canonical FS2_BINDCRAFT_REQUEST_JSON and FS2_BINDCRAFT_INPUT_MANIFEST_JSON bytes plus the exact controller-owned destinations named in argv. materialize_runtime_documents performs the executable, idempotent bytes-to-files handoff. Tests pass the compiled argv and translated request through the real immutable r18 parser/settings code, then feed the deterministic design bundles into r18 aggregate and collect its actual result.",
+    "note": "Rebuilt against the accepted localization foundation on main. The earlier revision targeted the unaccepted controller branch's richer seam (RuntimeArtifactMount, execution-map bindings, a registry) which main does not have."
+  },
+  "known_defects": [
+    "r18's aggregate display name for each relaxed complex advances after the structure entry, so its human name is one ordinal late. Artifact IDs retain the exact shard/local candidate identity. collect_aggregate_output derives candidate identity from those immutable IDs, validates all three files together, and emits corrected customer-facing ordinals; it does not trust the defective display name. A future image can fix the label without changing this adapter contract."
+  ],
+  "shared_fixes": [
+    "adapters/common.py collect_output_files derived media type with branches only for CSV and mmCIF, so every JSON result was labelled chemical/x-pdb. BindCraft is the first JSON-emitting adapter to hit it. Fixed here: a JSON branch keyed on the semantic type or a .json suffix, ordered after CSV so nothing else moves. Regression tests cover JSON, PDB, mmCIF and CSV through the shared helper directly, and the BindCraft collector asserts typed metrics plus PDB structures with content-addressed pointers. Because runtime_recipe_sha256 hashes common.py, the recorded recipe digests for boltzgen and proteina-complexa moved with it and were recomputed; clean main passes that test, so the change is the cause and the update is its completion."
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design-binder",
+  "service_class": "customer-batch",
+  "license_receipt": {
+    "receipt_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "input_manifest": {
+    "artifact_id": "bindcraft.pdl1.target.03",
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "size_bytes": 24576,
+    "media_type": "chemical/x-pdb"
+  },
+  "parameters": {
+    "target": {
+      "chain": "A",
+      "hotspot_residues": [56]
+    },
+    "binder_length": {
+      "minimum": 55,
+      "maximum": 90
+    },
+    "designs": 1,
+    "mpnn_lane": "soluble"
+  }
+}

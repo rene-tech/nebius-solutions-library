@@ -22,6 +22,7 @@ from pathlib import Path
 # Chemical Component Dictionary codes are one to five characters. Sampling
 # across that range catches a tree staged with a three-character assumption.
 PROBE_CODES = ("I", "CL", "ZN", "MG", "HEM", "ATP", "NAD", "GLC", "HOH", "A1LV8")
+RUNTIME_MARKER_NAME = ".fs2-runtime-tree.json"
 
 
 def node_digest() -> str:
@@ -57,7 +58,7 @@ def main() -> int:
         _emit(report, options.report)
         return 1
 
-    entries = sorted(item.name for item in moldir.iterdir())
+    entries = sorted(item.name for item in moldir.iterdir() if item.name != RUNTIME_MARKER_NAME)
     archives = [name for name in entries if name.endswith((".zip", ".tar", ".tar.gz", ".tgz"))]
     report["entry_count"] = len(entries)
     report["archives_present"] = archives
