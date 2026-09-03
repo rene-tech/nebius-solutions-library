@@ -60,6 +60,7 @@ DEFAULT_TARGET_BYTES = 74686
 # this shape.
 ACADEMIC_ASSET_GID = 65532
 PUBLIC_PLANE_GID = 1000
+CANONICAL_PYROSETTA_SUB_PATH = "pyrosetta-bindcraft/site-packages"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 DIGEST_REFERENCE = re.compile(r"^[^@\s]+@sha256:[0-9a-f]{64}$")
 SUB_PATH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,507}$")
@@ -136,7 +137,9 @@ def _volume_key(source: dict[str, Any]) -> str:
     return source["path"] if source["kind"] == "host-path" else "pvc:" + source["claim"]
 
 
-def load_handoff(path: Path) -> dict[str, Any]:
+def load_handoff(
+    path: Path, *, direct_live_canonical_pyrosetta: bool = False,
+) -> dict[str, Any]:
     """Consume the artifact plane's accepted binding handoff.
 
     This reads the plane's own document rather than a shape invented here, so a
@@ -148,7 +151,7 @@ def load_handoff(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict) or value.get("schema") != HANDOFF_SCHEMA:
         raise RenderError("localization binding handoff schema is unsupported")
     published = value.get("evidence", {}).get("generations_published")
-    if published is not True:
+    if published is not True and not direct_live_canonical_pyrosetta:
         raise RenderError(
             "the handoff reports its generations as not published; rendering a run against "
             "generations that do not exist would mount empty directories"
@@ -201,11 +204,24 @@ def load_handoff(path: Path) -> dict[str, Any]:
         # A generation is per artifact and equals that tree's own identity
         # digest; there is no run-level generation token in the accepted
         # contract, so none is invented here.
-        generation = str(artifact.get("generation", ""))
-        if generation != digest:
+        declared_generation = str(artifact.get("generation", ""))
+        if declared_generation != digest:
             raise RenderError(
                 f"{artifact_id}: published generation does not equal its tree identity"
             )
+        generation = declared_generation
+        if role == CONTRACT.PYROSETTA_ROLE and direct_live_canonical_pyrosetta:
+            # The direct H100 acceptance may start as soon as the public
+            # generations have terminal markers.  The private tree predates the
+            # localization plane and is already delivered at this canonical
+            # claim path.  r18 still reads every byte and holds it to the pinned
+            # recursive identity before importing PyRosetta, so a missing
+            # private promotion marker does not weaken model admission.  Keep
+            # this explicit and qualification-only: the catalog handoff must
+            # still publish the private generation before route readiness.
+            source = dict(source)
+            source["sub_path"] = CANONICAL_PYROSETTA_SUB_PATH
+            generation = ""
         trees[role] = {"artifact_id": artifact_id, "sha256": digest, "volume": source,
                        "sub_path": source["sub_path"], "generation": generation}
 
@@ -512,7 +528,10 @@ def job(args: argparse.Namespace, handoff: dict[str, Any], config_name: str) -> 
 
 
 def render(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
-    handoff = load_handoff(Path(args.handoff))
+    handoff = load_handoff(
+        Path(args.handoff),
+        direct_live_canonical_pyrosetta=args.direct_live_canonical_pyrosetta,
+    )
     manifest_bytes = canonical(input_manifest(args)).encode()
     documents = {
         "request.json": canonical(request(args, manifest_bytes)),
@@ -541,6 +560,15 @@ def parser() -> argparse.ArgumentParser:
     root.add_argument("--accelerator-class", default="nvidia-h100-sxm5-80gb")
     root.add_argument("--local-queue", default="", help="Kueue LocalQueue; empty runs unqueued")
     root.add_argument("--service-class", default="customer-batch")
+    root.add_argument(
+        "--direct-live-canonical-pyrosetta",
+        action="store_true",
+        help=(
+            "qualification only: mount the fully content-verified canonical private PyRosetta "
+            "tree while keeping all public trees on immutable generations; this does not make "
+            "the catalog handoff route-ready"
+        ),
+    )
     root.add_argument("--seed", type=int, default=384856)
     root.add_argument("--shard-index", type=int, default=0)
     root.add_argument("--max-trajectories", type=int, default=30)

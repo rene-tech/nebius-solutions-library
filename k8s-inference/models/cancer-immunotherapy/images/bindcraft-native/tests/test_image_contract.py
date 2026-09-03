@@ -1088,7 +1088,12 @@ class SemanticJobRenderTests(unittest.TestCase):
         if "stage" not in overrides:
             argv += ["--stage", "design"]
         for key, item in overrides.items():
-            argv += ["--" + key.replace("_", "-"), str(item)]
+            option = "--" + key.replace("_", "-")
+            if isinstance(item, bool):
+                if item:
+                    argv.append(option)
+            else:
+                argv += [option, str(item)]
         args = renderer.parser().parse_args(argv)
         if args.hotspot is None:
             args.hotspot = [56]
@@ -1209,6 +1214,42 @@ class SemanticJobRenderTests(unittest.TestCase):
             self.assertTrue(vanilla.endswith("/colabdesign/mpnn/weights"))
             self.assertTrue(soluble.endswith("/colabdesign/mpnn/weights_soluble"))
             self.assertNotEqual(mounted[vanilla]["subPath"], mounted[soluble]["subPath"])
+
+    def test_direct_live_mode_uses_only_the_content_pinned_canonical_private_tree(self) -> None:
+        """A private promotion marker must not block the direct semantic proof.
+
+        The public generation paths remain immutable.  Only the licensed tree,
+        whose recursive identity is pinned in the image and verified before
+        import, moves to the already repaired canonical claim path.  The empty
+        generation in the marker prevents this direct run from masquerading as
+        catalog localization readiness.
+        """
+
+        with tempfile.TemporaryDirectory() as name:
+            original = AcceptedLocalizationHandoffTests.HANDOFF
+            with self.assertRaisesRegex(renderer.RenderError, "generations as not published"):
+                self.render(original, stage="design")
+            config_map, job = self.render(
+                original, stage="design", direct_live_canonical_pyrosetta=True,
+            )
+            spec = job["spec"]["template"]["spec"]
+            container = spec["containers"][0]
+            mounted = {
+                mount["mountPath"]: mount
+                for mount in container["volumeMounts"]
+                if mount["name"].startswith("trees-")
+            }
+            private = mounted[renderer.MOUNT_PATH_BY_ROLE[bindcraft_runner.PYROSETTA_ROLE]]
+            self.assertEqual(private["subPath"], renderer.CANONICAL_PYROSETTA_SUB_PATH)
+            self.assertTrue(private["readOnly"])
+            for role in bindcraft_runner.FLAT_TREE_ROLES:
+                public = mounted[renderer.MOUNT_PATH_BY_ROLE[role]]
+                self.assertIn("/sha256/", public["subPath"])
+                self.assertTrue(public["readOnly"])
+            marker = json.loads(config_map["data"]["runtime-localization.json"])
+            self.assertEqual(marker["trees"][bindcraft_runner.PYROSETTA_ROLE]["generation"], "")
+            for role in bindcraft_runner.FLAT_TREE_ROLES:
+                self.assertRegex(marker["trees"][role]["generation"], r"^[0-9a-f]{64}$")
 
     def test_both_stages_are_pinned_to_a_node_carrying_the_reference_plane(self) -> None:
         # The public generations are hostPath, so a Pod that lands elsewhere

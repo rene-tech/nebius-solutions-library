@@ -179,6 +179,23 @@ this image only ever sets `FS2_RUNTIME_NAME=bindcraft-academic`. A test pins the
 SHA-256 of all five in-image files against the qualification evidence so the
 match cannot be lost by accident.
 
+## Direct live H100 qualification before private promotion
+
+The public AF2 and MPNN trees must have their immutable generation directories
+and terminal in-generation markers before a direct acceptance starts. The
+private PyRosetta installed tree is different: r18 pins its recursive identity
+inside the image, reads every byte before import, and records the mounted root's
+ownership. A missing localization marker for that already repaired canonical
+claim tree therefore does not block the direct semantic proof.
+
+Pass `--direct-live-canonical-pyrosetta` to the renderer to mount only that
+private role from `pyrosetta-bindcraft/site-packages`; the three public roles
+remain on the exact `/generations/.../sha256/...` paths from the accepted
+handoff. The private role's generation is deliberately empty in the runtime
+marker so this qualification cannot be mistaken for catalog localization or
+route readiness. Normal rendering stays fail-closed until every handoff
+generation is published.
+
 ## Live H100 semantic acceptance — not yet run
 
 **No current-digest H100 success is claimed.** r16 is offline-qualified: 56
@@ -197,9 +214,11 @@ When the generation lands, the run is one command:
 R=qualification/render_semantic_job.py
 COMMON="--handoff <four-tree-handoff.json> --image <r17 digest reference>
         --run-id <run> --job-name <job> --workspace-claim <durable claim>"
-python3 $R $COMMON --stage design    | kubectl apply -f -   # GPU
+python3 $R $COMMON --direct-live-canonical-pyrosetta --stage design \
+  | kubectl apply -f -   # GPU
 # wait for the design Job to succeed, then:
-python3 $R $COMMON --stage aggregate | kubectl apply -f -   # CPU only
+python3 $R $COMMON --direct-live-canonical-pyrosetta --stage aggregate \
+  | kubectl apply -f -   # CPU only
 ```
 
 One stage per Job. Running the design as an init container of the aggregate's
