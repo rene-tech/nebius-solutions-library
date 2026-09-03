@@ -31,6 +31,7 @@ from fs2_serve.scientific_batch.models import (
     BatchEventKind,
     BatchStatus,
     CheckpointMode,
+    LifecyclePhase,
     PreemptionMode,
     ResourceClass,
     SchedulingSnapshot,
@@ -328,6 +329,52 @@ async def test_real_postgres_cancellation_settles_in_one_reconcile_and_fences_a_
     # write, and no controller can claim it back into a running state.
     stale = await batches.claim_next(controller_id="controller-a", lease_seconds=30, now=datetime.now(UTC))
     assert stale is None
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_real_postgres_restart_resumes_a_durable_mid_cancel_deletion(
+    store: PostgresStore,
+) -> None:
+    principal = await principal_of(store)
+    operation_id, batches = await admit_batch(store, principal, idempotency_key="scientific-cancel-restart-0001")
+    cluster = FakeScientificBatchCluster()
+    first_controller = controller_for(batches, cluster, controller_id="controller-before-restart")
+    assert await first_controller.reconcile_once() == operation_id
+    running = await batches.get(operation_id, tenant_id=TENANT)
+    attempt = running.stage("design").attempts[0]
+    cluster.deletion_polls_before_absent[cluster.key(attempt.workload)] = 1
+    await batches.request_cancel(operation_id, tenant_id=TENANT, actor=principal.principal_id)
+
+    # The accepted DELETE is one durable write, while UID-specific absence is
+    # deliberately still false.  This is the exact crash/restart boundary: the
+    # stored row must not claim that Kubernetes released quota or GPUs.
+    assert await first_controller.reconcile_once() == operation_id
+    deleting = await batches.get(operation_id, tenant_id=TENANT)
+    persisted_attempt = deleting.stage("design").attempts[0]
+    assert deleting.status is BatchStatus.RUNNING
+    assert persisted_attempt.deletion_requested is True
+    assert persisted_attempt.resource_released is False
+    row = await stored_row(store, operation_id)
+    encoded = json.loads(row["state"])
+    encoded_attempt = encoded["stages"][0]["attempts"][0]
+    assert encoded_attempt["deletion_requested"] is True
+    assert encoded_attempt["resource_released"] is False
+    assert cluster.delete_history == [attempt.workload]
+
+    # A fresh controller identity reopens the row, polls the same workload UID,
+    # and completes teardown without issuing another DELETE or creating work.
+    restarted = controller_for(batches, cluster, controller_id="controller-after-restart")
+    assert await restarted.reconcile_once() == operation_id
+    terminal = await batches.get(operation_id, tenant_id=TENANT)
+    assert terminal.status is BatchStatus.CANCELLED
+    settled_attempt = terminal.stage("design").attempts[0]
+    assert settled_attempt.resource_released is True
+    assert settled_attempt.last_phase is LifecyclePhase.TEARDOWN
+    assert cluster.delete_history == [attempt.workload]
+    assert len(cluster.apply_history) == 1
+    events = await batches.list_events(operation_id, tenant_id=TENANT)
+    assert [event.draft.kind for event in events].count(BatchEventKind.BATCH_CANCELLED) == 1
 
 
 @pytest.mark.postgres
