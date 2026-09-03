@@ -229,6 +229,13 @@ every handed-off artifact against the digest the design stage published before
 using it. Both stages enter the image through its outer entrypoint and carry the
 pinned `default_4stage_multimer.json` and `default_filters.json` digests.
 
+Each Pod has one small non-GPU init container that copies the four ConfigMap
+control documents into an `emptyDir`. Kubernetes projects ConfigMap keys as
+symlinks, while r18 intentionally refuses symlinked localization and tree
+admission documents; the copy makes them regular read-only files without
+relaxing the image gate. The design itself remains the GPU main container and
+the aggregate remains a separate CPU-only Job.
+
 Passing `default_filters.json` is the semantic bar, not a formality. Its 54
 active thresholds require `Average_n_InterfaceResidues` ≥ 7, `Average_dSASA` ≥ 1,
 `Average_dG` ≤ 0, `Average_Binder_Energy_Score` ≤ 0, `Average_Hotspot_RMSD` ≤ 6,

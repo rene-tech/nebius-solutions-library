@@ -1341,16 +1341,19 @@ class SemanticJobRenderTests(unittest.TestCase):
                 self.render(path, stage="design")
 
     def test_each_stage_is_its_own_job_so_the_gpu_is_released_after_design(self) -> None:
-        # Running design as an init container of the aggregate's Pod kept the
-        # accelerator allocated for the whole Pod lifetime, including the
-        # CPU-only aggregation.
+        # Running design itself as an init container of the aggregate's Pod kept
+        # the accelerator allocated for the whole CPU-only aggregation. A tiny
+        # non-GPU control-file materializer is unrelated and is allowed here.
         with tempfile.TemporaryDirectory() as name:
             path = self.handoff(Path(name))
             _, design = self.render(path, stage="design")
             _, aggregate = self.render(path, stage="aggregate")
             for job in (design, aggregate):
                 spec = job["spec"]["template"]["spec"]
-                self.assertNotIn("initContainers", spec)
+                self.assertEqual(len(spec["initContainers"]), 1)
+                init = spec["initContainers"][0]
+                self.assertEqual(init["name"], "materialize-request")
+                self.assertNotIn("nvidia.com/gpu", init["resources"]["limits"])
                 self.assertEqual(len(spec["containers"]), 1)
             self.assertTrue(design["metadata"]["name"].endswith("-design"))
             self.assertTrue(aggregate["metadata"]["name"].endswith("-aggregate"))
@@ -1369,6 +1372,25 @@ class SemanticJobRenderTests(unittest.TestCase):
                 volumes = {v["name"]: v for v in job["spec"]["template"]["spec"]["volumes"]}
                 self.assertIn("persistentVolumeClaim", volumes["workspace"])
                 self.assertNotIn("emptyDir", volumes["workspace"])
+
+    def test_configmap_control_files_are_materialized_as_regular_files(self) -> None:
+        """Kubernetes projects ConfigMap keys as symlinks, which r18 rejects."""
+
+        with tempfile.TemporaryDirectory() as name:
+            _, job = self.render(self.handoff(Path(name)), stage="design")
+            spec = job["spec"]["template"]["spec"]
+            volumes = {volume["name"]: volume for volume in spec["volumes"]}
+            self.assertIn("configMap", volumes["request-source"])
+            self.assertIn("emptyDir", volumes["request"])
+            init = spec["initContainers"][0]
+            self.assertEqual(init["command"][:2], ["python", "-c"])
+            for filename in renderer.REQUEST_FILENAMES:
+                self.assertIn(filename, init["command"][2])
+            main_mounts = {
+                mount["name"]: mount for mount in spec["containers"][0]["volumeMounts"]
+            }
+            self.assertEqual(main_mounts["request"]["mountPath"], "/var/run/fs2")
+            self.assertNotIn("request-source", main_mounts)
 
     def test_rendered_admission_matches_the_mount_paths_and_handoff_identities(self) -> None:
         with tempfile.TemporaryDirectory() as name:

@@ -345,6 +345,22 @@ def request(args: argparse.Namespace, manifest_bytes: bytes) -> dict[str, Any]:
 
 
 MARKER_PATH = "/var/run/fs2/runtime-localization.json"
+REQUEST_FILENAMES = (
+    "request.json",
+    "input-manifest.json",
+    "external-trees.json",
+    "runtime-localization.json",
+)
+MATERIALIZE_REQUEST_SCRIPT = """\
+from pathlib import Path
+
+source = Path("/var/run/fs2-source")
+destination = Path("/var/run/fs2")
+for name in ("request.json", "input-manifest.json", "external-trees.json", "runtime-localization.json"):
+    target = destination / name
+    target.write_bytes((source / name).read_bytes())
+    target.chmod(0o444)
+"""
 
 
 def _stage_command(args: argparse.Namespace, stage: str) -> list[str]:
@@ -478,6 +494,26 @@ def job(args: argparse.Namespace, handoff: dict[str, Any], config_name: str) -> 
             "supplementalGroups": handoff["supplemental_groups"],
             "seccompProfile": {"type": "RuntimeDefault"},
         },
+        # ConfigMap key projections are symlinks.  The runtime rejects a
+        # symlinked localization marker or external-tree admission document so
+        # an attacker cannot redirect either after admission. Materialize the
+        # four bounded control files into an emptyDir first; the model process
+        # then reads regular, read-only files without weakening that gate.
+        "initContainers": [{
+            "name": "materialize-request",
+            "image": args.image,
+            "imagePullPolicy": "IfNotPresent",
+            "command": ["python", "-c", MATERIALIZE_REQUEST_SCRIPT],
+            "resources": {
+                "requests": {"cpu": "50m", "memory": "64Mi"},
+                "limits": {"cpu": "1", "memory": "256Mi"},
+            },
+            "securityContext": security,
+            "volumeMounts": [
+                {"name": "request-source", "mountPath": "/var/run/fs2-source", "readOnly": True},
+                {"name": "request", "mountPath": "/var/run/fs2"},
+            ],
+        }],
         # One stage per Job. Running the design as an init container of the
         # aggregate's Pod kept the GPU allocated for the whole Pod lifetime,
         # including the CPU-only aggregation, so the accelerator sat idle while
@@ -501,7 +537,8 @@ def job(args: argparse.Namespace, handoff: dict[str, Any], config_name: str) -> 
             "volumeMounts": volume_mounts,
         }],
         "volumes": [
-            {"name": "request", "configMap": {"name": config_name, "defaultMode": 0o444}},
+            {"name": "request-source", "configMap": {"name": config_name, "defaultMode": 0o444}},
+            {"name": "request", "emptyDir": {"sizeLimit": "1Mi"}},
             # Durable, so the design stage's output outlives its Pod and the
             # aggregate Job in a later Pod can read and re-verify it.
             {"name": "workspace", "persistentVolumeClaim": {"claimName": args.workspace_claim}},
