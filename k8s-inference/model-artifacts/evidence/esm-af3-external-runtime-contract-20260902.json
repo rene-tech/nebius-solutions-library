@@ -1,0 +1,64 @@
+{
+  "alphafold3_private_parameters": {
+    "artifact_id": "alphafold3-private",
+    "bytes": 1020545840,
+    "cache_scope": "tenant-private",
+    "embed_in_image": false,
+    "file_path": "/models/af3.bin.zst",
+    "filename": "af3.bin.zst",
+    "general_shared_cache_allowed": false,
+    "generation": "1780568696389861",
+    "last_modified": "2026-06-04T10:24:56Z",
+    "mount_path": "/models",
+    "read_only": true,
+    "runtime_argument": "--model_dir=/models",
+    "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+    "source_plane": "academic-assets",
+    "source_revision": "gs://alphafold3/af3.bin.zst#1780568696389861",
+    "source_url": "https://storage.googleapis.com/alphafold3/af3.bin.zst"
+  },
+  "esm_current_image": {
+    "binary_evidence": {
+      "component": "flash-attn",
+      "inspection": "manager-provided-frozen-wheel-binary-inspection",
+      "native_cubins": [
+        "sm80",
+        "sm90"
+      ],
+      "ptx_present": false,
+      "source_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "version": "2.7.4.post1",
+      "wheel": "flash_attn-2.7.4.post1-cp312-cp312-linux_x86_64.whl",
+      "wheel_url": "https://github.com/evolutionaryscale/wheels/releases/download/py312-pt211-cu13-sm80-90/flash_attn-2.7.4.post1-cp312-cp312-linux_x86_64.whl"
+    },
+    "blackwell_state": "blocked",
+    "blackwell_unblock_requires_one_of": [
+      "qualified-sdpa-fallback-image",
+      "target-aware-blackwell-image"
+    ],
+    "consumers": [
+      "esmfold2",
+      "esmfold2-fast"
+    ],
+    "binary_compatibility": "candidate-hopper-sm90-cubin-no-ptx",
+    "candidate_accelerator_families": [
+      "Hopper"
+    ],
+    "candidate_cuda_architectures": [
+      "sm90"
+    ],
+    "external_immutable_artifacts": [
+      "esmc-6b",
+      "esmfold2-ccd"
+    ],
+    "qualification_state": "pending-exact-image-h100-semantic-test"
+  },
+  "limitations": [
+    "The flash-attn finding is manager-provided inspection of the frozen wheel; it supports a binary-compatible Hopper candidate only, not accelerator or CUDA-architecture qualification.",
+    "No Blackwell SDPA fallback or target-aware image is qualified by this evidence.",
+    "The AlphaFold3 identity and layout are a cross-plane private-delivery contract, not a public-cache receipt or runtime readiness claim.",
+    "No exact ESM image plus H100 semantic inference was performed by this offline contract update."
+  ],
+  "observed_at": "2026-09-02T23:06:49Z",
+  "schema": "fs2-serve.nebius.ai/external-runtime-contract-evidence/v1"
+}

@@ -1,0 +1,27 @@
+{
+  "content": {
+    "digest": "64cdf690708fbf7c2955c4113e1ba8bc7ac7c6bb5031ec1d15e909da1256e86b",
+    "expanded_bytes": 391401102,
+    "files": [
+      {
+        "bytes": 391401102,
+        "path": "mols.zip",
+        "sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53"
+      }
+    ]
+  },
+  "entitlement_state": "not-required",
+  "kind": "snapshot",
+  "license": {
+    "id": "MIT",
+    "state": "verified"
+  },
+  "model_id": "boltzgen-inference-molecules",
+  "owner": "cancer-immunotherapy",
+  "retention": "retained-platform",
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "source": {
+    "revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+    "uri": "hf://datasets/boltzgen/inference-data"
+  }
+}

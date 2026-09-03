@@ -1,0 +1,32 @@
+{
+  "schema": "fs2-serve.nebius.ai/public-archive-verification/v1",
+  "artifact_id": "boltzgen-inference-molecules",
+  "repository": "boltzgen/inference-data",
+  "revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+  "license": "MIT",
+  "object": {
+    "path": "mols.zip",
+    "bytes": 391401102,
+    "sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53"
+  },
+  "zip_central_directory": {
+    "http_range": "bytes=387915761-391401079",
+    "offset": 387915761,
+    "bytes": 3485319,
+    "entries": 45227,
+    "unique_entries": 45227,
+    "nested_entries": 0,
+    "non_pkl_entries": 0,
+    "path_pattern": "^[A-Z0-9]{3}\\.pkl$",
+    "expanded_bytes": 1820698819,
+    "expanded_inventory_format": "canonical-json-sorted-array-of-path-bytes-crc32-with-trailing-newline",
+    "expanded_inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
+  },
+  "runtime_localization": {
+    "transform": "safe-extract-zip",
+    "destination": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+    "runtime_argument": "--moldir=/opt/fs2/artifacts/boltzgen-inference-molecules",
+    "required_expanded_inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
+  },
+  "conclusion": "immutable-public-mit-archive-complete-for-safe-flat-root-localization"
+}

@@ -1,0 +1,27 @@
+{
+  "content": {
+    "digest": "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+    "expanded_bytes": 417306584,
+    "files": [
+      {
+        "bytes": 417306584,
+        "path": "ccd.pkl",
+        "sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5"
+      }
+    ]
+  },
+  "entitlement_state": "not-required",
+  "kind": "weights",
+  "license": {
+    "id": "MIT",
+    "state": "verified"
+  },
+  "model_id": "esmfold2-ccd",
+  "owner": "cancer-immunotherapy",
+  "retention": "retained-platform",
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "source": {
+    "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
+    "uri": "hf://biohub/ESMFold2"
+  }
+}

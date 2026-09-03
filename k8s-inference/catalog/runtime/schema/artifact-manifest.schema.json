@@ -14,7 +14,7 @@
       "additionalProperties": false,
       "required": ["uri", "revision"],
       "properties": {
-        "uri": {"type": "string", "pattern": "^(sfs|nvme|ngc|hf|oci)://"},
+        "uri": {"type": "string", "pattern": "^(sfs|pvc|nvme|ngc|hf|oci|https)://"},
         "revision": {"type": "string", "minLength": 1}
       }
     },

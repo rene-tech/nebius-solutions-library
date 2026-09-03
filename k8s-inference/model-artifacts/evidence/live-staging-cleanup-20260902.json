@@ -1,0 +1,84 @@
+{
+  "schema": "fs2-serve.nebius.ai/public-artifact-staging-cleanup/v1",
+  "observed_at": "2026-09-02T23:27:28Z",
+  "state": "cleaned-up-waiting-for-reference-plane-integration",
+  "target": {
+    "project_id": "redacted-private-project",
+    "region": "eu-north1",
+    "kubernetes_context": "k8s-inference-h100"
+  },
+  "stopped_wrong_target": {
+    "filesystem_scope": "legacy-shared-filesystem",
+    "filesystem_size_gib": 128,
+    "node_pool": "system",
+    "namespace": "fs2-models",
+    "pvc": {
+      "name": "cancer-public-artifacts-rwx-v1",
+      "uid": "4f538d6a-3f30-4872-a592-13e46d29144d"
+    },
+    "persistent_volume": "pvc-4f538d6a-3f30-4872-a592-13e46d29144d",
+    "config_map": {
+      "name": "public-artifacts-2b88ef45aae9",
+      "uid": "a0e7416b-de7e-4df9-bb98-b2e67a6e0a46"
+    },
+    "jobs": [
+      "artifact-alphafold2-params-76771a9d5ee4",
+      "artifact-boltz2-runtime-9f9caa9d15b2",
+      "artifact-boltzgen-checkpoints-297a9f11b8da",
+      "artifact-complexa-ame-4bc8b48892f8",
+      "artifact-complexa-ligand-4193440fea2e",
+      "artifact-complexa-protein-ebfd0ffe8b44",
+      "artifact-esm2-650m-890015ee244a",
+      "artifact-esmfold2-fast-trunk-d3027dfdd8bb",
+      "artifact-esmfold2-trunk-f21744d4e1c2",
+      "artifact-ligandmpnn-checkpoints-933123e913da",
+      "artifact-mosaic-components-8fe506eb7896",
+      "artifact-openfold3-checkpoints-1a7176079b00",
+      "artifact-proteinmpnn-checkpoints-e3407320aa91",
+      "artifact-protenix-v1-substitute-2e307cb364d4",
+      "artifact-rfdiffusion-checkpoints-389ce16d4935",
+      "artifact-rosettafold3-checkpoint-01a616219521"
+    ]
+  },
+  "cleanup": {
+    "manager_deleted_jobs": 16,
+    "task_config_map_deleted": true,
+    "task_pvc_deleted": true,
+    "dynamic_pv_absent": true,
+    "task_local_terraform_state_entries": 0,
+    "wrong_target_saved_plan_and_rendered_jobs_deleted": true,
+    "stale_terraform_state_backup_deleted": true,
+    "matching_task_jobs_pods_configmaps_pvcs": 0,
+    "source_discovery_bytes_retained_outside_git": true,
+    "source_discovery_storage_scope": "operator-local-state"
+  },
+  "required_resume_target": {
+    "filesystem_scope": "terraform-managed-reference-data-filesystem",
+    "minimum_filesystem_size_gib": 2048,
+    "filesystem_observed_state": "READY",
+    "filesystem_observed_size_bytes": 2199023255552,
+    "dedicated_namespace": "fs2-reference-data",
+    "dedicated_kueue_local_queue_required": true,
+    "dedicated_regular_cpu_preprocessing_pool_required": true,
+    "dedicated_cpu_pool_label": "reference-data",
+    "dedicated_cpu_pool_taint": "workload.fs2.nebius/reference-data=true:NoSchedule",
+    "shared_system_pool_forbidden": true,
+    "reference_data_plan_must_be_integrated_and_applied": true
+  },
+  "resume_gate_observation": {
+    "reference_data_branch_commit": "ae0621ef617845465a13614054b7d435a4903167",
+    "reference_data_contract_commit": "e543fdff4272953ee7c60b80fd07b78e96298e6c",
+    "origin_main_commit": "c83b97c6f18b09f13b0623d20f6436398337085f",
+    "branch_integrated_in_origin_main": false,
+    "dedicated_cpu_pool_plan_sha256": "6b36c4129627ccb50d4eb0040851b795e5d80c6ba166af1215cd2c43ada166aa",
+    "dedicated_cpu_pool_plan_actions": "one-create-zero-update-zero-delete",
+    "dedicated_cpu_pool_plan_applied": true,
+    "dedicated_namespace_observed": false,
+    "dedicated_local_queue_observed": false,
+    "dedicated_cpu_preprocessing_pool_observed": true,
+    "dedicated_cpu_pool_name": "k8s-inference-h100-reference-data-cpu",
+    "dedicated_cpu_node_ready": true,
+    "foundation_and_workloads_applied": false,
+    "staging_performed_after_intervention": false
+  }
+}

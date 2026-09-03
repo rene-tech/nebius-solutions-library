@@ -1,0 +1,228 @@
+{
+  "consumers": {
+    "alphafold3": {
+      "general_cache_parameters_allowed": false,
+      "private_parameters": {
+        "artifact_id": "alphafold3-private",
+        "bytes": 1020545840,
+        "cache_scope": "tenant-private",
+        "embed_in_image": false,
+        "evidence": "evidence/esm-af3-external-runtime-contract-20260902.json",
+        "file_path": "/models/af3.bin.zst",
+        "filename": "af3.bin.zst",
+        "general_shared_cache_allowed": false,
+        "generation": "1780568696389861",
+        "last_modified": "2026-06-04T10:24:56Z",
+        "mount_path": "/models",
+        "read_only": true,
+        "runtime_argument": "--model_dir=/models",
+        "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+        "source_plane": "academic-assets",
+        "source_revision": "gs://alphafold3/af3.bin.zst#1780568696389861",
+        "source_url": "https://storage.googleapis.com/alphafold3/af3.bin.zst"
+      },
+      "public_databases": {
+        "bundle_id": "alphafold3-public-databases-v3.0",
+        "bundle_revision": "v3.0-paper-snapshot-2022-09-28",
+        "mount_path": "/databases",
+        "read_only": true,
+        "runtime_argument": "--db_dir=/databases",
+        "source_plane": "reference-data",
+        "source_revision": "231efc9bb9c13b45cc59e43f7107869084ee9624"
+      }
+    },
+    "bindcraft": {
+      "artifacts": {
+        "alphafold2-params-bindcraft": {
+          "archive_sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+          "generated_manifest_sha256": "9d0b7e45378ed707cfc31585f3ae960282dc76f3e2c4f60b545b02dbc728423b",
+          "mount_path": "/models/alphafold2",
+          "source_content_digest_sha256": "b2fec032b5b9dab74dbeb7489d425b4fb4124742a3b368272bfa1555fe06650a",
+          "tree_entry_count": 17,
+          "tree_inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "tree_total_bytes": 5587959437
+        },
+        "colabdesign-mpnn-weights-soluble": {
+          "archive_sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+          "member_prefix": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72/colabdesign/mpnn/weights_soluble/",
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+          "source_content_digest_sha256": "78b4d59d6e4296883d4da50a5bca764fb9861feb75b2fa947f8003bab498bf9e",
+          "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+          "tree_entry_count": 5,
+          "tree_inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "tree_total_bytes": 26601241
+        },
+        "colabdesign-mpnn-weights-vanilla": {
+          "archive_sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+          "member_prefix": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72/colabdesign/mpnn/weights/",
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+          "source_content_digest_sha256": "78b4d59d6e4296883d4da50a5bca764fb9861feb75b2fa947f8003bab498bf9e",
+          "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+          "tree_entry_count": 5,
+          "tree_inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "tree_total_bytes": 26602793
+        }
+      },
+      "localization_contract": {
+        "ownership": "primary-artifact-localization-successor",
+        "schema": "fs2-serve.nebius.ai/scientific-artifact-localization/v1",
+        "state": "identity-coordinated-not-integrated"
+      },
+      "private_artifact": {
+        "artifact_id": "bindcraft-pyrosetta-installed-tree",
+        "cache_scope": "tenant-private",
+        "content_identity_kind": "tree-manifest",
+        "contract": "../academic-assets/contracts/academic-assets.json",
+        "embed_in_image": false,
+        "evidence": "../academic-assets/evidence/live-acceptance-state.json",
+        "files_installed": 8697,
+        "general_shared_cache_allowed": false,
+        "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+        "pythonpath": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+        "read_only": true,
+        "source_archive_bytes": 1667097173,
+        "source_archive_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+        "source_artifact_id": "bindcraft-pyrosetta",
+        "source_plane": "academic-assets",
+        "source_sub_path": "pyrosetta-bindcraft/site-packages",
+        "tree_manifest_algorithm": "fs2-tree-manifest/v1",
+        "tree_manifest_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+        "tree_total_bytes": 3287122494
+      }
+    },
+    "boltzgen": {
+      "archive": {
+        "bytes": 391401102,
+        "central_directory": {
+          "bytes": 3485319,
+          "offset": 387915761
+        },
+        "entry_count": 45227,
+        "expanded_bytes": 1820698819,
+        "expanded_inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "path": "mols.zip",
+        "path_contract": "45227-flat-root-pkl-files",
+        "revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+        "sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53"
+      },
+      "artifact_id": "boltzgen-inference-molecules",
+      "content_digest_sha256": "64cdf690708fbf7c2955c4113e1ba8bc7ac7c6bb5031ec1d15e909da1256e86b",
+      "localization": {
+        "destination": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+        "receipt_must_bind_expanded_inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "receipt_must_bind_source_content_digest": true,
+        "runtime_argument": "--moldir=/opt/fs2/artifacts/boltzgen-inference-molecules",
+        "transform": "safe-extract-zip"
+      }
+    },
+    "esmfold2": {
+      "accelerator_compatibility": "binary-compatible-hopper-candidate-sm90-no-ptx",
+      "artifacts": {
+        "esmc-6b": {
+          "content_digest_sha256": "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "mount_path": "/models/esmc-6b"
+        },
+        "esmfold2-ccd": {
+          "content_digest_sha256": "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+          "mount_path": "/databases/esmfold2"
+        },
+        "esmfold2-trunk": {
+          "content_digest_sha256": "136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c",
+          "mount_path": "/models/esmfold2"
+        }
+      },
+      "qualification_state": "pending-exact-image-h100-semantic-test",
+      "runtime_paths": {
+        "ccd_path": "/databases/esmfold2/ccd.pkl",
+        "esmc_dir": "/models/esmc-6b",
+        "model_dir": "/models/esmfold2"
+      }
+    },
+    "esmfold2-fast": {
+      "accelerator_compatibility": "binary-compatible-hopper-candidate-sm90-no-ptx",
+      "artifacts": {
+        "esmc-6b": {
+          "content_digest_sha256": "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "mount_path": "/models/esmc-6b"
+        },
+        "esmfold2-ccd": {
+          "content_digest_sha256": "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+          "mount_path": "/databases/esmfold2"
+        },
+        "esmfold2-fast-trunk": {
+          "content_digest_sha256": "19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63",
+          "mount_path": "/models/esmfold2-fast"
+        }
+      },
+      "qualification_state": "pending-exact-image-h100-semantic-test",
+      "runtime_paths": {
+        "ccd_path": "/databases/esmfold2/ccd.pkl",
+        "esmc_dir": "/models/esmc-6b",
+        "model_dir": "/models/esmfold2-fast"
+      }
+    },
+    "openfold3": {
+      "artifacts": {
+        "openfold3-components-bcif": {
+          "content_digest_sha256": "ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+          "file_sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c",
+          "mount_path": "/databases/openfold3"
+        },
+        "openfold3-openbind-0": {
+          "content_digest_sha256": "f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+          "file_sha256": "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8e29e4",
+          "mount_path": "/models/openfold3"
+        }
+      },
+      "runtime_paths": {
+        "checkpoint": "/models/openfold3/of3-ob-2025-06-30-174k.pt",
+        "components_bcif": "/databases/openfold3/components.bcif"
+      }
+    },
+    "proteina-complexa": {
+      "archive": {
+        "bytes": 5587968000,
+        "path": "alphafold_params_2022-12-06.tar",
+        "revision": "gcs-generation-1670353726160664",
+        "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3"
+      },
+      "artifact_id": "alphafold2-params",
+      "localization": {
+        "destination": "/opt/fs2/artifacts/alphafold2-params",
+        "receipt_must_bind_source_content_digest": true,
+        "runtime_binding": "AF2_DIR=/opt/fs2/artifacts/alphafold2-params",
+        "transform": "safe-extract-tar",
+        "tree_entry_count": 16,
+        "tree_entry_pattern": "^(LICENSE|params_model_[1-5](_ptm|_multimer_v3)?\\.npz)$",
+        "tree_inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "tree_inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+        "tree_total_bytes": 5587956571
+      },
+      "source_content_digest_sha256": "b2fec032b5b9dab74dbeb7489d425b4fb4124742a3b368272bfa1555fe06650a"
+    },
+    "protenix-v2": {
+      "artifact_id": "protenix-v2",
+      "checkpoint_path": "/models/protenix-v2/checkpoint/protenix-v2.pt",
+      "forbidden_legacy_artifacts": [
+        "protenix-v1-substitute",
+        "protenix-v2-inference-data-2026-01-29"
+      ],
+      "localization_command": "python3 model-artifacts/public_artifacts.py materialize --artifact protenix-v2 --catalog <catalog> --cache-root <cache-root> --destination /models/protenix-v2",
+      "localization_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+      "localized_content_digest_sha256": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+      "mount_path": "/models/protenix-v2",
+      "required_files": [
+        ".fs2-manifest-sha256",
+        "checkpoint/protenix-v2.pt",
+        "common/clusters-by-entity-40.txt",
+        "common/components.cif",
+        "common/components.cif.rdkit_mol.pkl",
+        "common/obsolete_release_date.csv",
+        "manifest.json"
+      ],
+      "source_content_digest_sha256": "8e14bb809d37db806159b7d277577abc692aec81d8899fbc84915d23ebe12eca"
+    }
+  },
+  "generated_at": "2026-09-02T00:00:00Z",
+  "schema": "fs2-serve.nebius.ai/public-artifact-runtime-integration/v1"
+}

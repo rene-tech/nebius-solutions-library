@@ -29,7 +29,7 @@ each has a stated default.
 | RFdiffusion | The original RosettaCommons backbone diffusion model | Confirm generation |
 | ESMFold2 | Biohub all-atom complex structure predictor | Resolved |
 | ESMFold2-Fast | Biohub single-sequence inference-optimized sibling | Resolved |
-| Protenix v2 | ByteDance `protenix-v2`, a real tagged release | Resolved, weights withheld |
+| Protenix v2 | ByteDance `protenix-v2`, a real tagged release | Resolved; exact third-party mirror candidate verified, publisher-byte comparison unavailable |
 | AlphaFold3 | Google DeepMind AlphaFold 3 | Resolved |
 
 Four further models are recorded because the workload cannot run without them:
@@ -63,30 +63,31 @@ is entirely determined by which components a given job loads.
 
 ## 2. Licensing and the exact one-time access steps
 
-Because this is an academic proof of concept, free academic PyRosetta terms and
-AlphaFold3 non-commercial terms are both in scope. That materially widens what
-can be onboarded. Three lanes still need a human action before any code runs.
+Because this is an academic proof of concept, the platform owner has recorded
+operational PoC authorization for the academic PyRosetta and AlphaFold3 lanes.
+The exact PyRosetta 2026.29 CPython 3.10 wheel is installed on the tenant-private
+academic volume and has passed an offline import plus real pose-scoring test.
+The exact Google AlphaFold3 parameter generation is installed on that separate
+private plane and passed real H100 inference with the accepted r6 runtime image,
+digest `sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e`.
+Neither result says native BindCraft itself is deployed or ready.
 
-**BindCraft needs two free academic licences before it can start at all.**
-PyRosetta is an unconditional import in the pipeline and there is no upstream
-flag to disable it. The University of Washington CoMotion express licensing
-portal issues PyRosetta licences free of charge to academic, non-profit and
-government entities, and a PyRosetta licence additionally requires a Rosetta
-licence, so both must be requested. Until they are issued, run the FreeBindCraft
-lane instead. That alternative is pinned to its published `v1.0.5` tag at
-commit `28c43fc48942eebd7918f504e9812c5c17bb3411`; it is never presented as the
-native BindCraft implementation.
+**BindCraft's PyRosetta prerequisite is operationally available for this PoC.**
+PyRosetta remains an unconditional import in the native pipeline, but its exact
+installed tree has been integrity-checked and tested offline. Its wheel and
+installed files remain licensed bytes owned by `academic-assets`; they are not
+embedded in an image or copied into the public artifact cache. Formal Rosetta
+and PyRosetta institutional acceptance remains a non-PoC advisory for
+commercial or broader organizational use. FreeBindCraft stays
+a separately named scientific comparison lane, never the native implementation.
 
-**AlphaFold3 needs the institution to accept the parameter terms itself.**
-DeepMind removed the approval form in July 2026, and this task confirmed the
-parameter file now downloads directly and unauthenticated. The legal gate did
-not move with the technical one. Use remains restricted to non-commercial
-organisations, which this proof of concept satisfies, and the terms state the
-parameters may only be used if received directly from Google. So the academic
-institution's authorised representative accepts the terms and downloads the
-file; Nebius may then operate that institution's own copy under the agents and
-contractors provision. The parameters are also designated confidential
-information, which means they must not sit in a shared multi-tenant model cache.
+**AlphaFold3's private parameters are operationally available for this PoC.**
+The exact object was received directly from Google, privately installed, loaded,
+and semantically tested on H100 with the digest-pinned r6 runtime. The parameters
+remain restricted to the tenant-private academic volume and excluded from every
+general multi-tenant cache and image. Formal institutional acceptance remains
+pending as a later non-PoC advisory and must be completed by an authorized
+representative before use outside the explicitly authorized PoC scope.
 
 **The NVIDIA microservice route needs a registry key and the right entitlement
 tier.** NVIDIA's product terms allow these microservices without a subscription
@@ -106,16 +107,21 @@ the models are commercially usable.
 
 ## 3. Blockers, ranked by how much they change the plan
 
-**Protenix v2 weights are not obtainable.** This is the hardest blocker and it
-was verified directly rather than inferred. The v2 checkpoint returns HTTP 403
-AccessDenied while the two v1 checkpoints on the same bucket return HTTP 206.
-The maintainers said in April 2026 that release is under internal review with no
-timeline, and the tracking issue was still open at the end of August. There is
-no form or credential that unlocks it. The recommended substitute is the v1 base
-checkpoint with the mid-2025 training cutoff, which is actually later than v2's
-own cutoff, labelled explicitly as a substitute. Unaffiliated re-uploads of the
-v2 checkpoint exist and must not be used: their provenance cannot be verified
-against any publisher checksum.
+**Protenix v2 is obtainable only through an explicitly limited mirror path.**
+The canonical ByteDance checkpoint still returns HTTP 403 from the operator
+region and the publisher exposes no checksum, so publisher byte equivalence is
+not knowable. The public `TMF001/protenix-v2-weights` repository is therefore
+recorded as a third-party mirror at immutable commit
+`653edab28103133512575365130916e3fd23ecc3`, never as the canonical source. Its
+1,859,785,497-byte object hashes to SHA-256
+`8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599` and
+MD5 `49016ebf4775bf6b629bc4dc77b6673e`. Safe offline PyTorch inspection found
+the top-level `model` mapping and matched all 4,174 keys, tensor shapes, and
+464,442,431 parameters against exact v2 source revision
+`2475421477ab414b571149ad4a875c390ff8a35d`. Its provenance state is precisely
+`mirror-verified-not-publisher-byte-compared`; this is artifact qualification,
+not an H100 semantic-readiness claim. The v1 checkpoint remains a separately
+named comparison lane, not the implementation of v2.
 
 **BindCraft's release tag is diverged and would ship the wrong code.** Comparing
 the published tag to the default branch returns status diverged, twelve commits
@@ -378,9 +384,10 @@ API, published package indexes, model hub metadata endpoints, and vendor
 documentation. Search results were used only to locate primary sources, never as
 evidence.
 
-Four claims consequential enough to change a recommendation were verified a
+Five claims consequential enough to change a recommendation were verified a
 second time by direct probe rather than taken from any single report: the
-Protenix v2 checkpoint returning 403 against its siblings returning 206, the
+Protenix v2 publisher checkpoint returning 403 against its siblings returning
+206, the exact mirror byte identity and source-architecture match, the
 AlphaFold3 parameter file now being directly reachable, the BindCraft tag being
 diverged from its branch, and the OpenFold3 checkpoints being reachable
 unauthenticated while the withdrawn legacy checkpoint returns 404.

@@ -1,0 +1,90 @@
+{
+  "artifact_id": "protenix-v2",
+  "byte_verification": {
+    "all_expected_values_match": true,
+    "bytes": 1859785497,
+    "expected_md5": "49016ebf4775bf6b629bc4dc77b6673e",
+    "md5": "49016ebf4775bf6b629bc4dc77b6673e",
+    "sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
+  },
+  "canonical_source": {
+    "model_name": "protenix-v2",
+    "official_uri": "https://protenix.tos-cn-beijing.volces.com/checkpoint/protenix-v2.pt",
+    "official_uri_observation": "HTTP 403 from eu-north1 operator region",
+    "publisher": "ByteDance",
+    "publisher_byte_compared": false,
+    "publisher_digest_available": false,
+    "source_repository": "https://github.com/bytedance/Protenix",
+    "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d"
+  },
+  "checkpoint_inspection": {
+    "ddp_module_prefix_stripped": true,
+    "element_count": 464442431,
+    "first_key": "confidence_head.input_strunk_ln.bias",
+    "key_shape_inventory_sha256": "11f1ac80197fe095aa25dba49d6e772076402a744ace1853e3338a9f27c2946b",
+    "last_key": "template_embedder.pairformer_stack.blocks.1.tri_mul_out.linear_z.weight",
+    "load_mode": "weights-only-mmap-cpu",
+    "parameter_count": 464442431,
+    "root_type": "dict",
+    "state_key": "model",
+    "state_key_count": 4174,
+    "state_type": "OrderedDict",
+    "tensor_count": 4174,
+    "tensor_dtype_counts": {
+      "torch.float32": 4174
+    },
+    "top_level_keys": [
+      "model"
+    ],
+    "torch_version": "2.7.1+cu126"
+  },
+  "comparison": {
+    "missing_key_count": 0,
+    "shape_mismatch_count": 0,
+    "strict_key_shape_match": true,
+    "unexpected_key_count": 0
+  },
+  "conclusion": "mirror-verified-not-publisher-byte-compared",
+  "limitations": [
+    "The publisher object was inaccessible and no publisher digest was available, so publisher byte equivalence was not tested.",
+    "The pinned image digest is an offline inspection environment only and is explicitly not deployable or H100-qualified.",
+    "This is an offline checkpoint architecture inspection, not an H100 semantic inference qualification."
+  ],
+  "mirror": {
+    "lfs_oid_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+    "lfs_size": 1859785497,
+    "relationship": "third-party-mirror",
+    "repository": "TMF001/protenix-v2-weights",
+    "repository_revision": "653edab28103133512575365130916e3fd23ecc3",
+    "url": "https://huggingface.co/TMF001/protenix-v2-weights/resolve/653edab28103133512575365130916e3fd23ecc3/protenix-v2.pt"
+  },
+  "observed_at": "2026-09-02T23:22:37Z",
+  "pinned_runtime_image_inspection": {
+    "element_count": 464442431,
+    "image_digest": "sha256:ad2a55f1740f49296ec730e9ff4f1d06ad391a87354f03b2921f960fe0f6d240",
+    "image_qualification_state": "unqualified-inspection-only",
+    "image_reference": "redacted-private-registry/protenix-v2@sha256:ad2a55f1740f49296ec730e9ff4f1d06ad391a87354f03b2921f960fe0f6d240",
+    "load_mode": "weights-only-mmap-cpu",
+    "network_mode": "none",
+    "observation_source": "manager-finalized-plus-operator-network-none-recheck",
+    "root_type": "dict",
+    "state_type": "OrderedDict",
+    "tensor_count": 4174,
+    "tensor_dtype_counts": {
+      "torch.float32": 4174
+    },
+    "top_level_keys": [
+      "model"
+    ],
+    "torch_version": "2.7.1+cu126"
+  },
+  "schema": "fs2-serve.nebius.ai/third-party-model-mirror-verification/v1",
+  "source_architecture": {
+    "c_z": 256,
+    "key_shape_inventory_sha256": "11f1ac80197fe095aa25dba49d6e772076402a744ace1853e3338a9f27c2946b",
+    "pairformer_c_z": 256,
+    "parameter_count": 464442431,
+    "relative_position_c_z": 256,
+    "state_key_count": 4174
+  }
+}

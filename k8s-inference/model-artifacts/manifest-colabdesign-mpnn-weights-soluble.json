@@ -1,0 +1,27 @@
+{
+  "content": {
+    "digest": "78b4d59d6e4296883d4da50a5bca764fb9861feb75b2fa947f8003bab498bf9e",
+    "expanded_bytes": 50276715,
+    "files": [
+      {
+        "bytes": 50276715,
+        "path": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+        "sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f"
+      }
+    ]
+  },
+  "entitlement_state": "not-required",
+  "kind": "snapshot",
+  "license": {
+    "id": "Apache-2.0",
+    "state": "verified"
+  },
+  "model_id": "colabdesign-mpnn-weights",
+  "owner": "cancer-immunotherapy",
+  "retention": "retained-platform",
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "source": {
+    "revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+    "uri": "https://github.com/sokrypton/ColabDesign"
+  }
+}

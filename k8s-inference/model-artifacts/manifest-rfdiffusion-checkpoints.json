@@ -1,0 +1,62 @@
+{
+  "content": {
+    "digest": "a6f25ea4df457270825f01fd0477bf2b9dcc17f817b59ab06ad9d640de8e1540",
+    "expanded_bytes": 3868721590,
+    "files": [
+      {
+        "bytes": 483616107,
+        "path": "ActiveSite_ckpt.pt",
+        "sha256": "beca1f672049161df0bc6a2d2523828f19fd9c8a2b449988e246dde42e7ea986"
+      },
+      {
+        "bytes": 483616107,
+        "path": "Base_ckpt.pt",
+        "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca"
+      },
+      {
+        "bytes": 483616427,
+        "path": "Base_epoch8_ckpt.pt",
+        "sha256": "b8e5d57f0b8a8f8cb30779c106b75210b46a914a4d19fb180676ae647f5ae23d"
+      },
+      {
+        "bytes": 483626923,
+        "path": "Complex_Fold_base_ckpt.pt",
+        "sha256": "0ac3b4024aea811078cec41482528291d6d7d7084bf8190ec118f54642fb81a1"
+      },
+      {
+        "bytes": 483619179,
+        "path": "Complex_base_ckpt.pt",
+        "sha256": "76e4e260aefee3b582bd76b77ab95d2592e64f00c51bf344968ab9239f3250bc"
+      },
+      {
+        "bytes": 483380617,
+        "path": "Complex_beta_ckpt.pt",
+        "sha256": "5a0b1cafc23c60b1aabcec1e49391986ac4fd02cc1b6b4cc41714ca9fe882e9e"
+      },
+      {
+        "bytes": 483626987,
+        "path": "InpaintSeq_Fold_ckpt.pt",
+        "sha256": "51849c9fe64c16a38fe41c75db76abe044e4d3493926f6cfd29a5bde0331b7cc"
+      },
+      {
+        "bytes": 483619243,
+        "path": "InpaintSeq_ckpt.pt",
+        "sha256": "3b71b2b954e87d46b75a88ba64e0420fbf27f592604b10b6c3561b8c8ab70ab6"
+      }
+    ]
+  },
+  "entitlement_state": "not-required",
+  "kind": "weights",
+  "license": {
+    "id": "BSD-3-Clause",
+    "state": "verified"
+  },
+  "model_id": "rfdiffusion",
+  "owner": "cancer-immunotherapy",
+  "retention": "retained-platform",
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "source": {
+    "revision": "9273ef67335acaf91df0150473a274759229cdf6",
+    "uri": "https://github.com/RosettaCommons/RFdiffusion"
+  }
+}
