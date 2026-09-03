@@ -1,0 +1,67 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-adapter-identity/v1",
+  "model_id": "protenix-v2",
+  "variant_id": "upstream-v2-0-0",
+  "module": "fs2_serve.scientific_batch.adapters.protenix_v2",
+  "source": {
+    "repository": "bytedance/Protenix",
+    "revision": "2475421477ab414b571149ad4a875c390ff8a35d"
+  },
+  "runtime_image": {
+    "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2",
+    "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r4",
+    "digest": "sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644",
+    "state": "build-only-not-semantic-qualified"
+  },
+  "activation": {
+    "profile_state": "candidate-unqualified",
+    "route_exposed": false,
+    "semantic_h100_qualified": false
+  },
+  "interface": {
+    "parameter_schema": "fs2-serve.nebius.ai/protenix-v2-upstream-v2-0-0-parameters/v1",
+    "operations": ["predict-complex-structure"],
+    "entrypoint": "/usr/local/bin/fs2-run-protenix",
+    "subcommands": ["prep", "pred"]
+  },
+  "stages": [
+    {
+      "stage_id": "prepare-data",
+      "resource_class": "cpu",
+      "collector_id": "protenix-v2-prep-collector-v1",
+      "validator_id": "protenix-v2-prep-validator-v1",
+      "max_parallelism": 64,
+      "runtime_artifacts": ["protenix-v2"]
+    },
+    {
+      "stage_id": "sample-structure",
+      "resource_class": "gpu",
+      "collector_id": "protenix-v2-result-collector-v1",
+      "validator_id": "protenix-v2-upstream-v2-0-0",
+      "max_parallelism": 32,
+      "runtime_artifacts": ["protenix-v2"]
+    }
+  ],
+  "runtime_artifacts": [
+    {
+      "artifact_id": "protenix-v2",
+      "mount_path": "/models/protenix-v2",
+      "content_sha256": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+      "localization_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+      "checkpoint_path": "/models/protenix-v2/checkpoint/protenix-v2.pt",
+      "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
+    }
+  ],
+  "runtime_cache": {
+    "mount_path": "/cache/protenix",
+    "qualified_level": "Off",
+    "role": "auxiliary-compiler-jit-l1-plus",
+    "environment": {
+      "TRITON_CACHE_DIR": "/cache/protenix/triton",
+      "CUEQ_TRITON_CACHE_DIR": "/cache/protenix/cueq-triton",
+      "TORCH_EXTENSIONS_DIR": "/cache/protenix/torch-extensions",
+      "XDG_CACHE_HOME": "/cache/protenix/xdg"
+    }
+  },
+  "seam": "CPU preparation commits a zstd handoff before the GPU stage. Model-owned adapter and explicit allow-list branch only; cache provisioning, scheduler, Terraform, and activation remain external."
+}

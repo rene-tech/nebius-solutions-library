@@ -7,7 +7,16 @@ from datetime import datetime
 from pathlib import Path
 
 from ..models import AdapterExecutionPlan, RuntimeTreeBinding, StageInvocation
-from . import bindcraft, boltzgen, localization, proteina_complexa
+from . import (
+    bindcraft,
+    boltzgen,
+    esmfold2,
+    esmfold2_fast,
+    localization,
+    openfold3,
+    proteina_complexa,
+    protenix_v2,
+)
 from .common import ScientificAdapterError, load_json_request, profile_from_catalog
 from .localization import (
     ArtifactLocalizationError,
@@ -99,6 +108,22 @@ def compile_adapter_run(
         if variant_id is not None and variant_id != bindcraft.VARIANT_ID:
             raise ScientificAdapterError("route variant_id does not match the BindCraft adapter")
         return bindcraft.compile_run(profile, request_value, operation_id=operation_id)
+    if model_id == esmfold2.MODEL_ID:
+        if variant_id is not None and variant_id != esmfold2.VARIANT_ID:
+            raise ScientificAdapterError("route variant_id does not match the ESMFold2 adapter")
+        return esmfold2.compile_run(profile, request_value, operation_id=operation_id)
+    if model_id == esmfold2_fast.MODEL_ID:
+        if variant_id is not None and variant_id != esmfold2_fast.VARIANT_ID:
+            raise ScientificAdapterError("route variant_id does not match the ESMFold2-Fast adapter")
+        return esmfold2_fast.compile_run(profile, request_value, operation_id=operation_id)
+    if model_id == protenix_v2.MODEL_ID:
+        if variant_id is not None and variant_id != protenix_v2.VARIANT_ID:
+            raise ScientificAdapterError("route variant_id does not match the Protenix v2 adapter")
+        return protenix_v2.compile_run(profile, request_value, operation_id=operation_id)
+    if model_id == openfold3.MODEL_ID:
+        if variant_id is not None and variant_id != openfold3.VARIANT_ID:
+            raise ScientificAdapterError("route variant_id does not match the OpenFold3 adapter")
+        return openfold3.compile_run(profile, request_value, operation_id=operation_id)
     raise ScientificAdapterError(f"no scientific adapter is registered for {model_id}")
 
 
@@ -111,11 +136,15 @@ __all__ = [
     "bindcraft",
     "boltzgen",
     "compile_adapter_run",
+    "esmfold2",
+    "esmfold2_fast",
     "load_json_request",
     "load_localization_contracts",
     "load_localization_contracts_from_path",
     "localization",
+    "openfold3",
     "preflight_stage_trees",
     "profile_from_catalog",
     "proteina_complexa",
+    "protenix_v2",
 ]
