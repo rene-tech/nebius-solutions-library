@@ -66,6 +66,7 @@ from .postgresql_release import render_postgresql_release_contract
 from .registry import Registry
 from .route_revalidation import RouteRevalidator
 from .runtime import RuntimeClient
+from .scientific_admin_postgres import postgres_scientific_admin_read_service
 from .scientific_artifacts import (
     PostgresArtifactRepository,
     ScientificArtifactService,
@@ -453,6 +454,14 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         source_max_age_seconds=settings.admin_source_max_age_seconds,
         adapter_timeout_seconds=settings.admin_adapter_timeout_seconds,
     )
+    scientific_admin = postgres_scientific_admin_read_service(
+        pool=store.pool,
+        registry=registry,
+        catalog_dir=settings.catalog_dir,
+        artifact_service=artifact_service,
+        source_max_age_seconds=settings.admin_source_max_age_seconds,
+        adapter_timeout_seconds=settings.admin_adapter_timeout_seconds,
+    )
     configure_tracing(settings.otlp_endpoint)
     configuration_service: ConfigurationService | None = None
     if initial_configuration is not None:
@@ -487,6 +496,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         ),
         route_revalidator=route_revalidator,
         admin_read=admin_read,
+        scientific_admin=scientific_admin,
         configuration=configuration_service,
         model_deployment_preview=model_deployment_preview,
         model_deployment_read=model_deployment_read,

@@ -195,6 +195,13 @@ artifact-pointer JSON schemas.
   submit path additionally requires the profile's canonical `mcp.invocable`
   gate; all tools reuse the HTTP service and never create Kubernetes objects
   directly.
+- `build_runtime` always constructs the authenticated scientific admin read
+  service over the durable Operation/controller rows, canonical catalog
+  receipts, and optional artifact result port. The admin BFF routes expose
+  bounded run lists/details and model readiness without signed handles,
+  payloads, storage keys, or guessed GPU time. Per-attempt Kueue Workload, Job,
+  Pod, pool, ResourceFlavor, accelerator, and admission evidence is projected
+  only when it exists in the durable controller/result records.
 
 The controller core depends only on `ScientificBatchArtifactLifecycle` and
 `ScientificBatchResultPublisher`; the replaceable `ArtifactServiceBridge`
