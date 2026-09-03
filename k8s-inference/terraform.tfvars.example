@@ -463,6 +463,15 @@ deployment = {
   #   enabled        = false
   #   writes_enabled = false
   #   namespace      = "fs2-models"
+  #   execution_map = {
+  #     schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
+  #     models = [] # Generated model/stage bindings; required when enabled.
+  #   }
+  #   workers                  = 2
+  #   poll_seconds             = "0.25"
+  #   lease_seconds            = "30"
+  #   api_timeout_seconds      = "5"
+  #   token_expiration_seconds = 600
   # }
 
   # By default the wrapper copies every selected digest-pinned application and

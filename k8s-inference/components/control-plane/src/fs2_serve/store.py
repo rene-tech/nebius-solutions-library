@@ -292,6 +292,14 @@ class Store(Protocol):
         dynamic_fence: DynamicAdmissionFence | None = None,
     ) -> OperationView: ...
 
+    async def complete_scientific_artifact_upload(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        principal_id: str,
+    ) -> OperationView: ...
+
     async def get_operation(self, operation_id: UUID, *, tenant_id: str | None = None) -> OperationView: ...
 
     async def get_operation_result(self, operation_id: UUID, *, tenant_id: str) -> OperationResult: ...

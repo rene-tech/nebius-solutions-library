@@ -502,7 +502,11 @@ run "batch_execution_without_the_store_is_refused" {
     }
   }
 
-  expect_failures = [terraform_data.scientific_artifacts_contract]
+  # The controller surface now rejects this before resource evaluation because
+  # an enabled batch also needs a non-empty immutable execution map. Keeping
+  # the guard on the variable makes the failed plan deterministic whichever
+  # of the two required dependencies is absent.
+  expect_failures = [var.scientific_batch]
 }
 
 run "kubernetes_writes_without_the_batch_gate_are_refused" {

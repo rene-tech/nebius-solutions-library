@@ -1555,6 +1555,7 @@ class MemoryStore:
             ):
                 if (
                     row.view.status != OperationStatus.QUEUED
+                    or row.view.protocol in {"scientific-batch-v1", "scientific-artifact-upload-v1"}
                     or row.view.available_at > now
                     or row.view.attempt >= row.view.max_attempts
                 ):
@@ -1602,6 +1603,50 @@ class MemoryStore:
                     worker_id=worker_id,
                 )
             return None
+
+    async def complete_scientific_artifact_upload(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        principal_id: str,
+    ) -> OperationView:
+        """Close one verified customer upload without exposing a worker lease."""
+
+        async with self._lock:
+            row = self.operations.get(operation_id)
+            if (
+                row is None
+                or row.view.tenant_id != tenant_id
+                or row.view.principal_id != principal_id
+                or row.view.protocol != "scientific-artifact-upload-v1"
+            ):
+                raise NotFoundError("scientific artifact upload operation not found")
+            if row.view.status is OperationStatus.SUCCEEDED:
+                return self._metadata(row, reused=True)
+            if row.view.status is not OperationStatus.QUEUED:
+                raise ConflictError("scientific artifact upload operation is not writable")
+            now = datetime.now(UTC)
+            row.view = row.view.model_copy(
+                update={
+                    "status": OperationStatus.SUCCEEDED,
+                    "completed_at": now,
+                    "outcome": "artifact_uploaded",
+                    "semantic_outcome": "verified",
+                    "http_status": 201,
+                    "reserved_gpu_seconds": 0,
+                }
+            )
+            self._audit(
+                actor=principal_id,
+                tenant_id=tenant_id,
+                token_id=row.view.token_id,
+                action="scientific_artifact.upload.complete",
+                target_type="operation",
+                target_id=str(operation_id),
+                outcome="succeeded",
+            )
+            return self._metadata(row)
 
     def _require_activation_claim(
         self,

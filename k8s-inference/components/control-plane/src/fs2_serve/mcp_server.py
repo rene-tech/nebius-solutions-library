@@ -35,6 +35,7 @@ from .models import (
     Scope,
 )
 from .registry import OperationalModel
+from .scientific_input_uploads import ScientificInputUploadRequest
 from .store import NotFoundError
 
 CORE_TOOLS = {
@@ -44,6 +45,15 @@ CORE_TOOLS = {
     "get_operation_result",
     "cancel_operation",
     "acknowledge_operation",
+    "submit_scientific_run",
+    "get_scientific_status",
+    "cancel_scientific_run",
+    "list_scientific_events",
+    "get_scientific_artifact",
+    "get_scientific_result",
+    "begin_scientific_artifact_upload",
+    "finalize_scientific_artifact_upload",
+    "download_scientific_artifact",
 }
 MCP_HTTP_PATH = "/mcp"
 MCP_CHILD_MOUNT_PATH = "/"
@@ -322,10 +332,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         principal.require(Scope.CATALOG_READ)
         return {
             "object": "list",
-            "data": [
-                _model_view(model)
-                for model in runtime.registry.allowed_for_principal(principal, surface="mcp")
-            ],
+            "data": [_model_view(model) for model in runtime.registry.allowed_for_principal(principal, surface="mcp")],
         }
 
     async def invoke_model(
@@ -378,12 +385,16 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     async def get_operation_result(operation_id: UUID) -> dict[str, Any]:
         principal = _principal()
         operation = await _metadata(runtime, principal, operation_id)
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            return dict(await runtime.scientific_batches.result(operation.id, principal=principal))
         result = await runtime.store.get_operation_result(operation.id, tenant_id=principal.tenant_id)
         return result.model_dump(mode="json")
 
     async def cancel_operation(operation_id: UUID) -> dict[str, Any]:
         principal = _principal()
         operation = await _metadata(runtime, principal, operation_id)
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            return await runtime.scientific_batches.cancel(operation.id, principal=principal)
         cancelled = await runtime.store.cancel_operation(
             operation.id, tenant_id=principal.tenant_id, actor=principal.principal_id
         )
@@ -397,6 +408,128 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         await runtime.store.purge_operation_payload(operation.id, tenant_id=principal.tenant_id)
         return (await runtime.store.get_operation(operation.id, tenant_id=principal.tenant_id)).model_dump(mode="json")
 
+    async def submit_scientific_run(
+        model_id: str,
+        request: dict[str, Any],
+        ctx: Context,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Submit a canonical scientific-run-request to a qualified profile."""
+
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific batch submission is unavailable")
+        principal = _principal()
+        if idempotency_key is not None and not (
+            MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH
+        ):
+            raise MCPError(code=INVALID_PARAMS, message="idempotency_key length is invalid")
+        try:
+            traceparent = (ctx.headers or {}).get("traceparent")
+        except ValueError:
+            traceparent = None
+        return await runtime.scientific_batches.submit(
+            principal=principal,
+            model_id=model_id,
+            request=request,
+            idempotency_key=idempotency_key or f"mcp-scientific-{uuid4()}",
+            traceparent=traceparent,
+            require_mcp_invocable=True,
+        )
+
+    async def get_scientific_status(operation_id: UUID) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
+        return await runtime.scientific_batches.status(operation_id, principal=_principal())
+
+    async def cancel_scientific_run(operation_id: UUID) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
+        return await runtime.scientific_batches.cancel(operation_id, principal=_principal())
+
+    async def list_scientific_events(operation_id: UUID, after_sequence: int = 0, limit: int = 1000) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
+        return await runtime.scientific_batches.events(
+            operation_id,
+            principal=_principal(),
+            after_sequence=after_sequence,
+            limit=limit,
+        )
+
+    async def get_scientific_artifact(artifact_id: UUID) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
+        return dict(await runtime.scientific_batches.artifact(artifact_id, principal=_principal()))
+
+    async def get_scientific_result(operation_id: UUID) -> dict[str, Any]:
+        if runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific result service is unavailable")
+        return dict(await runtime.scientific_batches.result(operation_id, principal=_principal()))
+
+    async def begin_scientific_artifact_upload(
+        model_id: str,
+        sha256: str,
+        size_bytes: int,
+        media_type: str,
+        compression: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a write-once customer upload handle for a scientific input."""
+
+        if runtime.scientific_input_uploads is None or runtime.scientific_batches is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific input upload is unavailable")
+        if idempotency_key is not None and not (
+            MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH
+        ):
+            raise MCPError(code=INVALID_PARAMS, message="idempotency_key length is invalid")
+        runtime.scientific_batches.profiles.get(model_id)
+        request = ScientificInputUploadRequest.model_validate(
+            {
+                "model_id": model_id,
+                "sha256": sha256,
+                "size_bytes": size_bytes,
+                "media_type": media_type,
+                "compression": compression,
+            }
+        )
+        result = await runtime.scientific_input_uploads.begin(
+            principal=_principal(),
+            request=request,
+            idempotency_key=idempotency_key or f"mcp-scientific-upload-{uuid4()}",
+        )
+        return result.model_dump(mode="json")
+
+    async def finalize_scientific_artifact_upload(operation_id: UUID, upload_id: UUID) -> dict[str, Any]:
+        """Verify uploaded bytes and publish their immutable artifact pointer."""
+
+        if runtime.scientific_input_uploads is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific input upload is unavailable")
+        result = await runtime.scientific_input_uploads.finalize(
+            principal=_principal(),
+            operation_id=operation_id,
+            upload_id=upload_id,
+        )
+        return result.model_dump(mode="json", exclude_none=True)
+
+    async def download_scientific_artifact(artifact_id: UUID) -> dict[str, Any]:
+        """Issue a short-lived tenant-authorized result or input download handle."""
+
+        principal = _principal()
+        principal.require(Scope.OPERATIONS_RESULT)
+        if runtime.artifact_service is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
+        result = await runtime.artifact_service.download(artifact_id, tenant_id=principal.tenant_id)
+        return {
+            "artifact": result.artifact.to_public_ref().model_dump(mode="json", exclude_none=True),
+            "handle": {
+                "method": result.handle.method,
+                "url": result.handle.url,
+                "expires_at": result.handle.expires_at.isoformat(),
+                "write_once": result.handle.write_once,
+                "headers": dict(result.handle.headers),
+            },
+        }
+
     for function in (
         list_models,
         invoke_model,
@@ -404,6 +537,15 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         get_operation_result,
         cancel_operation,
         acknowledge_operation,
+        submit_scientific_run,
+        get_scientific_status,
+        cancel_scientific_run,
+        list_scientific_events,
+        get_scientific_artifact,
+        get_scientific_result,
+        begin_scientific_artifact_upload,
+        finalize_scientific_artifact_upload,
+        download_scientific_artifact,
     ):
         server.add_tool(function, name=function.__name__, meta={"fs2_core": True})
 

@@ -826,9 +826,18 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(
             stage,
             {
+                "api_timeout_seconds": "5",
                 "enabled": True,
+                "execution_map": {
+                    "models": [],
+                    "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+                },
+                "lease_seconds": "30",
                 "writes_enabled": False,
                 "namespace": "fs2-scientific",
+                "poll_seconds": "0.25",
+                "token_expiration_seconds": 600,
+                "workers": 2,
             },
         )
         effective = outputs["effective_configuration"]["scientific_batch"]

@@ -82,11 +82,25 @@
       "retentionSeconds",
       "verifyTls"
     ],
-    "scientificBatch": [
-      "enabled",
-      "namespace",
-      "writesEnabled"
-    ],
+  "scientificBatch": [
+    "apiTimeoutSeconds",
+    "enabled",
+    "executionMap",
+    "executionMapConfigMapName",
+    "executionMapKey",
+    "kubernetesApiUrl",
+    "leaseSeconds",
+    "namespace",
+    "pollSeconds",
+    "schedulingContractConfigMapName",
+    "schedulingContractKey",
+    "schedulingContractNamespace",
+    "schedulingContractSchema",
+    "schedulingContractSha256",
+    "tokenExpirationSeconds",
+    "workers",
+    "writesEnabled"
+  ],
     "secrets.artifactStore": [
       "key",
       "name"

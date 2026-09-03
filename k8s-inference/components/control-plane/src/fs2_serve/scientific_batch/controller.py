@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from datetime import UTC, datetime
-from uuid import UUID
+from datetime import UTC, datetime, timedelta
+from typing import cast
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from .models import (
+    LEGACY_ADMISSION_FAILURE_CODE,
+    PUBLIC_ARTIFACT_ACCESS_CONTEXT,
     AdapterExecutionPlan,
+    ArtifactAccessContext,
+    AttemptArtifactCommit,
     AttemptOutcome,
     BatchClaim,
     BatchEventDraft,
@@ -17,6 +22,10 @@ from .models import (
     ExecutionMode,
     FailureKind,
     LifecyclePhase,
+    ResolvedArtifactMaterialization,
+    ResourceClass,
+    RuntimeArtifactLocalization,
+    SchedulingAdmission,
     SchedulingSnapshot,
     ScientificAttemptState,
     ScientificBatchPlan,
@@ -24,21 +33,37 @@ from .models import (
     ScientificStagePlan,
     ScientificStageState,
     StageStatus,
+    VerifiedInputManifest,
     WorkloadKind,
     WorkloadObservation,
+    WorkloadRef,
     WorkloadResource,
     WorkloadState,
     attempt_identity,
     workload_name,
 )
-from .protocols import ScientificBatchCluster, ScientificBatchRepository
+from .protocols import (
+    LegacyArtifactCommitReader,
+    ScientificBatchArtifactLifecycle,
+    ScientificBatchCluster,
+    ScientificBatchRepository,
+    ScientificBatchResultPublisher,
+)
+
+# A terminal cascade advances one persisted cleanup step per attempt, so it
+# needs at most a delete-request step and an absence step per attempt round.
+# The bound keeps a slow cluster from holding the claim: an unfinished cascade
+# resumes on the next poll from its own durable state.
+CASCADE_STEP_BOUND = 8
 
 
 class ScientificBatchController:
-    """Reconcile at most one durable batch transition per claim.
+    """Reconcile a claimed batch through fenced durable transitions.
 
     Workload names and attempt IDs are deterministic. Kubernetes apply/delete
-    calls are idempotent, while every durable transition is a fenced CAS.
+    calls are idempotent, while every durable transition is a fenced CAS. Stage
+    start first reserves attempt identities, then binds the applied workload
+    UIDs, so a fast admission or controller crash cannot outrun durable state.
     """
 
     def __init__(
@@ -48,6 +73,8 @@ class ScientificBatchController:
         cluster: ScientificBatchCluster,
         controller_id: str,
         namespace: str,
+        result_publisher: ScientificBatchResultPublisher | None = None,
+        artifact_lifecycle: ScientificBatchArtifactLifecycle | None = None,
         lease_seconds: float = 30,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
@@ -59,6 +86,8 @@ class ScientificBatchController:
         self.cluster = cluster
         self.controller_id = controller_id
         self.namespace = namespace
+        self.result_publisher = result_publisher
+        self.artifact_lifecycle = artifact_lifecycle
         self.lease_seconds = lease_seconds
         self.clock = clock or (lambda: datetime.now(UTC))
 
@@ -67,52 +96,38 @@ class ScientificBatchController:
         *,
         operation_id: UUID,
         tenant_id: str,
+        model_id: str,
         plan: ScientificBatchPlan,
         scheduling: SchedulingSnapshot,
+        variant_id: str = "canonical-runtime",
+        input_artifact_id: UUID | None = None,
         execution_plan: AdapterExecutionPlan | None = None,
+        access_context: ArtifactAccessContext = PUBLIC_ARTIFACT_ACCESS_CONTEXT,
+        input_manifest: VerifiedInputManifest | None = None,
+        runtime_artifacts: tuple[RuntimeArtifactLocalization, ...] = (),
     ) -> ScientificBatchState:
         """Bind a frozen admission snapshot to an existing durable Operation."""
 
+        if any(
+            (stage.workload_namespace or scheduling.workload_namespace)
+            != (stage.route_namespace or scheduling.route_namespace)
+            for stage in scheduling.stages
+        ):
+            raise ValueError("workload namespace differs from the routed Kueue LocalQueue namespace")
+        if execution_plan is not None:
+            execution_plan.assert_controller_bound()
         return await self.repository.create(
             operation_id=operation_id,
             tenant_id=tenant_id,
+            model_id=model_id,
+            variant_id=variant_id,
+            input_artifact_id=input_artifact_id or uuid5(NAMESPACE_URL, f"fs2-input:{operation_id}"),
             plan=plan,
             scheduling=scheduling,
             execution_plan=execution_plan,
-        )
-
-    async def admit_adapter_run(
-        self,
-        *,
-        operation_id: UUID,
-        tenant_id: str,
-        model_id: str,
-        variant_id: str,
-        profile: Mapping[str, object],
-        request: object,
-        scheduling: SchedulingSnapshot,
-    ) -> ScientificBatchState:
-        """Compile an allow-listed model request before freezing admission.
-
-        The adapter can only select bounded catalog expansions and exact argv;
-        scheduling remains an independently resolved, controller-owned input.
-        """
-
-        from .adapters import compile_adapter_run
-
-        execution = compile_adapter_run(
-            model_id,
-            profile,
-            request,
-            operation_id=str(operation_id),
-            variant_id=variant_id,
-        )
-        return await self.admit(
-            operation_id=operation_id,
-            tenant_id=tenant_id,
-            plan=execution.controller_plan,
-            scheduling=scheduling,
-            execution_plan=execution,
+            access_context=access_context,
+            input_manifest=input_manifest,
+            runtime_artifacts=runtime_artifacts,
         )
 
     async def reconcile_once(self) -> UUID | None:
@@ -133,9 +148,23 @@ class ScientificBatchController:
 
     async def _reconcile(self, claim: BatchClaim, record: ScientificBatchState, *, now: datetime) -> None:
         if record.status.terminal:
+            if not record.result_published:
+                if self.result_publisher is None:
+                    raise RuntimeError("terminal scientific batch has no result publisher")
+                await self.result_publisher.publish_terminal(record)
+                await self._write(
+                    claim,
+                    record,
+                    replace(record, result_published=True),
+                    (),
+                    now=now,
+                )
             return
         if record.cancel_requested:
             await self._cancel(claim, record, now=now)
+            return
+        if record.legacy_admission:
+            await self._retire_legacy_admission(claim, record, now=now)
             return
 
         active = next((stage for stage in record.stages if stage.status is StageStatus.ACTIVE), None)
@@ -145,12 +174,22 @@ class ScientificBatchController:
 
         if all(stage.status is StageStatus.SUCCEEDED for stage in record.stages):
             events = (self._event(record, BatchEventKind.BATCH_SUCCEEDED),)
-            await self._write(claim, record, replace(record, status=BatchStatus.SUCCEEDED), events, now=now)
+            await self._write(
+                claim,
+                record,
+                replace(
+                    record,
+                    status=BatchStatus.SUCCEEDED,
+                    result_published=self.result_publisher is None,
+                ),
+                events,
+                now=now,
+            )
             return
 
-        stage = await self._next_ready_stage(claim, record)
-        if stage is not None:
-            await self._start_stage(claim, record, stage, now=now)
+        ready_spec = await self._next_ready_stage(claim, record)
+        if ready_spec is not None:
+            await self._start_stage(claim, record, ready_spec, now=now)
 
     async def _next_ready_stage(self, claim: BatchClaim, record: ScientificBatchState) -> ScientificStagePlan | None:
         """Return one deterministic frontier stage after reopening predecessor commits."""
@@ -165,8 +204,8 @@ class ScientificBatchController:
                 if predecessor.status is not StageStatus.SUCCEEDED:
                     ready = False
                     break
-                commit = await self.repository.artifact_commit(claim, stage_id=predecessor_id)
-                if not self._commit_matches(record, predecessor, commit):
+                commits = await self._artifact_commits(claim, record, stage_id=predecessor_id)
+                if not self._commits_match(record, predecessor, commits):
                     ready = False
                     break
             if ready:
@@ -182,89 +221,159 @@ class ScientificBatchController:
         now: datetime,
     ) -> None:
         stage = record.stage(spec.stage_id)
+        stage_scheduling = record.scheduling.stage(spec.stage_id)
+        workload_namespace = stage_scheduling.workload_namespace or record.scheduling.workload_namespace
+        route_namespace = stage_scheduling.route_namespace or record.scheduling.route_namespace
         attempts: list[ScientificAttemptState] = []
-        applied = []
         events: list[BatchEventDraft] = []
-        try:
-            for shard_id in spec.workload_units:
-                prior = stage.latest_attempt(shard_id)
-                if prior is not None and prior.outcome is AttemptOutcome.SUCCEEDED:
-                    continue
-                attempt_number = 1 if prior is None else prior.attempt_number + 1
-                attempt_id = attempt_identity(record.operation_id, spec.stage_id, shard_id, attempt_number)
-                kind = WorkloadKind.JOB if spec.mode is ExecutionMode.FANOUT else WorkloadKind.JOB_SET
-                resource = WorkloadResource(
-                    operation_id=record.operation_id,
-                    batch_id=record.batch_id,
-                    workload_id=record.workload_id,
+        for shard_id in spec.workload_units:
+            prior = stage.latest_attempt(shard_id)
+            if prior is not None and prior.outcome is AttemptOutcome.SUCCEEDED:
+                continue
+            attempt_number = 1 if prior is None else prior.attempt_number + 1
+            attempt_id = attempt_identity(record.operation_id, spec.stage_id, shard_id, attempt_number)
+            kind = WorkloadKind.JOB if spec.mode is ExecutionMode.FANOUT else WorkloadKind.JOB_SET
+            attempts.append(
+                ScientificAttemptState(
                     attempt_id=attempt_id,
                     stage_id=spec.stage_id,
                     shard_id=shard_id,
                     attempt_number=attempt_number,
-                    namespace=self.namespace,
-                    name=workload_name(record.operation_id, spec.stage_id, shard_id, attempt_number),
-                    kind=kind,
-                    scheduling=record.scheduling.stage(spec.stage_id),
-                    gang_size=spec.gang_size,
-                    invocation=(
-                        record.execution_plan.invocation(spec.stage_id, shard_id)
-                        if record.execution_plan is not None
-                        else None
+                    workload=WorkloadRef(
+                        namespace=workload_namespace,
+                        name=workload_name(record.operation_id, spec.stage_id, shard_id, attempt_number),
+                        kind=kind,
+                        route_namespace=route_namespace,
                     ),
-                    model_id=record.model_id,
-                    variant_id=record.variant_id,
+                    started_at=now,
                 )
-                ref = await self.cluster.apply(resource, controller_fence=claim.fencing_token)
-                if (ref.namespace, ref.name, ref.kind) != (resource.namespace, resource.name, resource.kind):
-                    raise RuntimeError("cluster apply returned a different workload identity")
-                applied.append(ref)
-                attempts.append(
-                    ScientificAttemptState(
-                        attempt_id=attempt_id,
+            )
+            events.extend(
+                (
+                    self._event(
+                        record,
+                        BatchEventKind.LIFECYCLE,
                         stage_id=spec.stage_id,
                         shard_id=shard_id,
-                        attempt_number=attempt_number,
-                        workload=ref,
+                        attempt_id=attempt_id,
+                        phase=LifecyclePhase.QUEUED,
+                    ),
+                    self._event(
+                        record,
+                        BatchEventKind.LIFECYCLE,
+                        stage_id=spec.stage_id,
+                        shard_id=shard_id,
+                        attempt_id=attempt_id,
+                        phase=LifecyclePhase.SCHEDULING,
+                    ),
+                )
+            )
+            if attempt_number > 1:
+                events.append(
+                    self._event(
+                        record,
+                        BatchEventKind.RETRY_SCHEDULED,
+                        stage_id=spec.stage_id,
+                        shard_id=shard_id,
+                        attempt_id=attempt_id,
                     )
                 )
-                events.extend(
-                    (
-                        self._event(
-                            record,
-                            BatchEventKind.LIFECYCLE,
-                            stage_id=spec.stage_id,
-                            shard_id=shard_id,
-                            attempt_id=attempt_id,
-                            phase=LifecyclePhase.QUEUED,
-                        ),
-                        self._event(
-                            record,
-                            BatchEventKind.LIFECYCLE,
-                            stage_id=spec.stage_id,
-                            shard_id=shard_id,
-                            attempt_id=attempt_id,
-                            phase=LifecyclePhase.SCHEDULING,
-                        ),
-                    )
+
+        replacement = replace(stage, status=StageStatus.ACTIVE, attempts=stage.attempts + tuple(attempts))
+        next_record = self._replace_stage(record, replacement, status=BatchStatus.RUNNING)
+        reserved = await self._write(claim, record, next_record, tuple(events), now=now)
+        await self._apply_pending_attempts(claim, reserved, reserved.stage(spec.stage_id), now=now)
+
+    async def _apply_pending_attempts(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        stage: ScientificStageState,
+        *,
+        now: datetime,
+    ) -> None:
+        spec = record.plan.stage(stage.stage_id)
+        pending = [
+            attempt
+            for shard_id in spec.workload_units
+            if (attempt := stage.latest_attempt(shard_id)) is not None
+            and attempt.outcome is AttemptOutcome.ACTIVE
+            and attempt.workload.uid is None
+        ]
+        if not pending:
+            return
+        attempts = list(stage.attempts)
+        applied: list[WorkloadRef] = []
+        try:
+            for attempt in pending:
+                invocation = (
+                    record.execution_plan.invocation(spec.stage_id, attempt.shard_id)
+                    if record.execution_plan is not None
+                    else None
                 )
-                if attempt_number > 1:
-                    events.append(
-                        self._event(
-                            record,
-                            BatchEventKind.RETRY_SCHEDULED,
-                            stage_id=spec.stage_id,
-                            shard_id=shard_id,
-                            attempt_id=attempt_id,
-                        )
-                    )
+                materializations = (
+                    await self._resolve_materializations(claim, record, invocation) if invocation is not None else ()
+                )
+                resource = WorkloadResource(
+                    operation_id=record.operation_id,
+                    batch_id=record.batch_id,
+                    workload_id=record.workload_id,
+                    attempt_id=attempt.attempt_id,
+                    stage_id=spec.stage_id,
+                    shard_id=attempt.shard_id,
+                    attempt_number=attempt.attempt_number,
+                    tenant_id=record.tenant_id,
+                    model_id=record.model_id,
+                    variant_id=record.variant_id,
+                    input_artifact_id=record.input_artifact_id,
+                    service_class=record.scheduling.service_class,
+                    scheduling_snapshot_digest=record.scheduling.digest,
+                    namespace=attempt.workload.namespace,
+                    name=attempt.workload.name,
+                    kind=attempt.workload.kind,
+                    scheduling=record.scheduling.stage(spec.stage_id),
+                    route_namespace=attempt.workload.route_namespace,
+                    gang_size=spec.gang_size,
+                    invocation=invocation,
+                    materializations=materializations,
+                    access_context=record.access_context,
+                    runtime_artifacts=tuple(
+                        item
+                        for item in record.runtime_artifacts
+                        if invocation is not None and item.logical_artifact_id in invocation.runtime_artifacts
+                    ),
+                    execution_map_sha256=(
+                        None if record.execution_plan is None else record.execution_plan.execution_map_sha256
+                    ),
+                    execution_binding=(
+                        None
+                        if record.execution_plan is None
+                        else record.execution_plan.execution_binding(spec.stage_id)
+                    ),
+                )
+                ref = await self.cluster.apply(resource, controller_fence=claim.fencing_token)
+                if (ref.namespace, ref.name, ref.kind) != (
+                    resource.namespace,
+                    resource.name,
+                    resource.kind,
+                ) or ref.uid is None:
+                    raise RuntimeError("cluster apply returned an incomplete workload identity")
+                applied.append(ref)
+                if self.artifact_lifecycle is not None:
+                    await self.artifact_lifecycle.open_attempt(resource, started_at=attempt.started_at or now)
+                attempts[attempts.index(attempt)] = replace(attempt, workload=ref)
         except Exception:
             for ref in applied:
                 await self.cluster.delete(ref, controller_fence=claim.fencing_token)
             raise
-
-        replacement = replace(stage, status=StageStatus.ACTIVE, attempts=stage.attempts + tuple(attempts))
-        next_record = self._replace_stage(record, replacement, status=BatchStatus.RUNNING)
-        await self._write(claim, record, next_record, tuple(events), now=now)
+        applied_stage = replace(stage, attempts=tuple(attempts))
+        await self._write(
+            claim,
+            record,
+            self._replace_stage(record, applied_stage),
+            (),
+            now=now,
+        )
 
     async def _reconcile_active_stage(
         self,
@@ -279,16 +388,133 @@ class ScientificBatchController:
         if any(attempt is None for attempt in latest):
             raise RuntimeError("active stage has no attempt for every workload unit")
         current = tuple(attempt for attempt in latest if attempt is not None)
+        if any(attempt.outcome is AttemptOutcome.ACTIVE and attempt.workload.uid is None for attempt in current):
+            await self._apply_pending_attempts(claim, record, stage, now=now)
+            return
+
+        if stage.failure_code is not None:
+            failed_attempt = next(
+                (attempt for attempt in current if attempt.failure_kind is not None),
+                None,
+            )
+            failure_kind = (
+                failed_attempt.failure_kind
+                if failed_attempt is not None and failed_attempt.failure_kind is not None
+                else FailureKind.INFRASTRUCTURE
+            )
+            await self._fail_batch(
+                claim,
+                record,
+                stage,
+                failure_kind,
+                stage.failure_code,
+                [],
+                now=now,
+            )
+            return
+
+        fatal_attempt = next(
+            (
+                attempt
+                for attempt in current
+                if attempt.outcome in {AttemptOutcome.FAILED, AttemptOutcome.PREEMPTED}
+                and (
+                    attempt.failure_kind is None
+                    or not attempt.failure_kind.retryable
+                    or attempt.attempt_number >= spec.max_attempts
+                )
+            ),
+            None,
+        )
+        if fatal_attempt is not None:
+            failure_kind = fatal_attempt.failure_kind or FailureKind.INFRASTRUCTURE
+            await self._fail_batch(
+                claim,
+                record,
+                stage,
+                failure_kind,
+                fatal_attempt.failure_code or str(failure_kind),
+                [],
+                now=now,
+            )
+            return
+
+        # A successful DELETE is only an accepted foreground-deletion request.
+        # Persist that boundary, then poll this exact UID on a later reconcile;
+        # quota/GPU accounting ends only after Kubernetes confirms absence.
+        unreleased = [
+            attempt
+            for attempt in current
+            if attempt.outcome is not AttemptOutcome.ACTIVE and not attempt.resource_released
+        ]
+        if unreleased:
+            attempts = list(stage.attempts)
+            cleanup_events: list[BatchEventDraft] = []
+            for attempt in unreleased:
+                cleaned_attempt, attempt_events = await self._advance_cleanup(
+                    claim,
+                    record,
+                    attempt,
+                    graceful=False,
+                )
+                cleanup_events.extend(attempt_events)
+                attempts[attempts.index(attempt)] = cleaned_attempt
+            cleaned = replace(stage, attempts=tuple(attempts))
+            if cleaned != stage or cleanup_events:
+                await self._write(
+                    claim,
+                    record,
+                    self._replace_stage(record, cleaned),
+                    tuple(cleanup_events),
+                    now=now,
+                )
+            return
+
         active_attempts = [attempt for attempt in current if attempt.outcome is AttemptOutcome.ACTIVE]
+        retryable_pending = any(
+            attempt.outcome in {AttemptOutcome.FAILED, AttemptOutcome.PREEMPTED}
+            and attempt.failure_kind is not None
+            and attempt.failure_kind.retryable
+            and attempt.attempt_number < spec.max_attempts
+            for attempt in current
+        )
+        if retryable_pending and not active_attempts:
+            pending = replace(stage, status=StageStatus.PENDING)
+            await self._write(claim, record, self._replace_stage(record, pending), (), now=now)
+            return
+
+        all_succeeded = all(attempt.outcome is AttemptOutcome.SUCCEEDED for attempt in current)
+        if all_succeeded:
+            if self.artifact_lifecycle is not None:
+                await self.artifact_lifecycle.ensure_stage_commit(record, stage_id=stage.stage_id)
+            commits = await self._artifact_commits(claim, record, stage_id=stage.stage_id)
+            if not commits:
+                return
+            if not self._commits_match(record, stage, commits):
+                await self._fail_batch(
+                    claim,
+                    record,
+                    stage,
+                    FailureKind.SCIENTIFIC_VALIDATION,
+                    "artifact_commit_fenced_or_invalid",
+                    [],
+                    now=now,
+                )
+                return
+            succeeded = replace(stage, status=StageStatus.SUCCEEDED)
+            success_events = (self._event(record, BatchEventKind.STAGE_SUCCEEDED, stage_id=stage.stage_id),)
+            await self._write(claim, record, self._replace_stage(record, succeeded), success_events, now=now)
+            return
 
         changed = False
         updated = list(stage.attempts)
         events: list[BatchEventDraft] = []
-        fatal: tuple[FailureKind, str] | None = None
-        retry_needed = False
 
         for attempt in active_attempts:
-            observation = await self.cluster.observe(attempt.workload)
+            observation = await self.cluster.observe(
+                attempt.workload,
+                scheduling=record.scheduling.stage(attempt.stage_id),
+            )
             if observation.ref != attempt.workload or observation.attempt_id != attempt.attempt_id:
                 events.append(
                     self._event(
@@ -302,18 +528,32 @@ class ScientificBatchController:
                 )
                 continue
 
+            observation = self._fence_same_workload_requeue(attempt, observation)
             next_attempt, phase_events = self._ingest_observation(record, attempt, observation)
             events.extend(phase_events)
             if next_attempt != attempt:
                 changed = True
 
-            if observation.state.terminal:
-                await self.cluster.delete(attempt.workload, controller_fence=claim.fencing_token)
-                if next_attempt.last_phase is not LifecyclePhase.TEARDOWN:
-                    next_attempt = replace(next_attempt, last_phase=LifecyclePhase.TEARDOWN)
-                    events.append(self._lifecycle(record, next_attempt, LifecyclePhase.TEARDOWN))
+            max_queue_seconds = record.scheduling.stage(stage.stage_id).max_queue_seconds
+            queue_expired = (
+                max_queue_seconds is not None
+                and attempt.started_at is not None
+                and next_attempt.last_phase.rank < LifecyclePhase.ADMITTED.rank
+                and now >= attempt.started_at + timedelta(seconds=max_queue_seconds)
+            )
+            if queue_expired:
+                next_attempt = replace(
+                    next_attempt,
+                    outcome=AttemptOutcome.FAILED,
+                    completed_at=now,
+                    failure_kind=FailureKind.APPLICATION,
+                    failure_code="queue_deadline_exceeded",
+                )
+                changed = True
+
+            elif observation.state.terminal:
                 if observation.state is WorkloadState.SUCCEEDED:
-                    next_attempt = replace(next_attempt, outcome=AttemptOutcome.SUCCEEDED)
+                    next_attempt = replace(next_attempt, outcome=AttemptOutcome.SUCCEEDED, completed_at=now)
                 else:
                     failure_kind = observation.failure_kind or FailureKind.INFRASTRUCTURE
                     outcome = (
@@ -324,71 +564,88 @@ class ScientificBatchController:
                     next_attempt = replace(
                         next_attempt,
                         outcome=outcome,
+                        completed_at=now,
                         failure_kind=failure_kind,
                         failure_code=observation.failure_code or str(failure_kind),
                     )
-                    if failure_kind.retryable and attempt.attempt_number < spec.max_attempts:
-                        retry_needed = True
-                    else:
-                        fatal = (failure_kind, observation.failure_code or str(failure_kind))
                 changed = True
             updated[updated.index(attempt)] = next_attempt
 
         next_stage = replace(stage, attempts=tuple(updated))
-        if fatal is not None:
-            await self._fail_batch(claim, record, next_stage, fatal[0], fatal[1], events, now=now)
-            return
-
-        latest_after = tuple(next_stage.latest_attempt(shard_id) for shard_id in spec.workload_units)
-        all_succeeded = all(
-            attempt is not None and attempt.outcome is AttemptOutcome.SUCCEEDED for attempt in latest_after
-        )
-        if all_succeeded:
-            commit = await self.repository.artifact_commit(claim, stage_id=stage.stage_id)
-            if commit is None:
-                await self._fail_batch(
-                    claim,
-                    record,
-                    next_stage,
-                    FailureKind.SCIENTIFIC_VALIDATION,
-                    "artifact_commit_missing",
-                    events,
-                    now=now,
-                )
-                return
-            if not self._commit_matches(record, next_stage, commit):
-                await self._fail_batch(
-                    claim,
-                    record,
-                    next_stage,
-                    FailureKind.SCIENTIFIC_VALIDATION,
-                    "artifact_commit_fenced_or_invalid",
-                    events,
-                    now=now,
-                )
-                return
-            succeeded = replace(next_stage, status=StageStatus.SUCCEEDED)
-            events.append(self._event(record, BatchEventKind.STAGE_SUCCEEDED, stage_id=stage.stage_id))
-            await self._write(claim, record, self._replace_stage(record, succeeded), tuple(events), now=now)
-            return
-
-        retryable_pending = retry_needed or any(
-            attempt is not None
-            and attempt.outcome in {AttemptOutcome.FAILED, AttemptOutcome.PREEMPTED}
-            and attempt.failure_kind is not None
-            and attempt.failure_kind.retryable
-            and attempt.attempt_number < spec.max_attempts
-            for attempt in latest_after
-        )
-        if retryable_pending and not any(
-            attempt is not None and attempt.outcome is AttemptOutcome.ACTIVE for attempt in latest_after
-        ):
-            pending = replace(next_stage, status=StageStatus.PENDING)
-            await self._write(claim, record, self._replace_stage(record, pending), tuple(events), now=now)
-            return
-
         if changed or events:
             await self._write(claim, record, self._replace_stage(record, next_stage), tuple(events), now=now)
+
+    @staticmethod
+    def _fence_same_workload_requeue(
+        attempt: ScientificAttemptState,
+        observation: WorkloadObservation,
+    ) -> WorkloadObservation:
+        """Turn reservation loss/reassignment into delete-and-new-attempt retry.
+
+        Kueue clears ``status.admission`` while evicting and may reserve the
+        same Workload again. A controller attempt is immutable, so accepting
+        that second reservation would lose the first assignment evidence and
+        retain the original queue deadline. Once a reservation is durable,
+        any pending loss, reassignment, or Workload recreation is therefore a
+        preemption boundary. The first assignment remains on the attempt; its
+        Job or JobSet is deleted before retry creates a fresh attempt.
+        """
+
+        if attempt.scheduling_admission is None:
+            return observation
+        failure_code: str | None = None
+        if attempt.kueue_workload_uid is not None and observation.kueue_workload_uid not in {
+            None,
+            attempt.kueue_workload_uid,
+        }:
+            failure_code = "kueue_workload_recreated"
+        elif observation.scheduling_admission is not None and not ScientificBatchController._same_reservation(
+            attempt.scheduling_admission, observation.scheduling_admission
+        ):
+            failure_code = "kueue_same_workload_rereserved"
+        elif observation.state is WorkloadState.PENDING and observation.scheduling_admission is None:
+            failure_code = "kueue_reservation_lost"
+        if failure_code is None:
+            return observation
+        return replace(
+            observation,
+            state=WorkloadState.PREEMPTED,
+            phases=(LifecyclePhase.PREEMPTED,),
+            scheduling_admission=None,
+            kueue_workload_uid=None,
+            pod_uids=(),
+            failure_kind=FailureKind.PREEMPTION,
+            failure_code=failure_code,
+        )
+
+    @staticmethod
+    def _same_reservation(first: SchedulingAdmission, second: SchedulingAdmission) -> bool:
+        return all(
+            getattr(first, field) == getattr(second, field)
+            for field in (
+                "resolved_pool_id",
+                "admitted_resource_flavor",
+                "accelerator_resource_name",
+                "accelerator_count",
+                "quota_reserved_at",
+                "cpu_millis",
+                "memory_bytes",
+            )
+        )
+
+    @classmethod
+    def _merge_reservation(
+        cls,
+        current: SchedulingAdmission,
+        observed: SchedulingAdmission,
+    ) -> SchedulingAdmission:
+        if not cls._same_reservation(current, observed):
+            raise RuntimeError("Kueue scheduling admission changed for an immutable attempt")
+        current_admitted = current.admitted_at
+        observed_admitted = observed.admitted_at
+        if current_admitted is not None and observed_admitted not in {None, current_admitted}:
+            raise RuntimeError("Kueue admitted timestamp changed for an immutable attempt")
+        return replace(current, admitted_at=current_admitted or observed_admitted)
 
     def _ingest_observation(
         self,
@@ -406,7 +663,54 @@ class ScientificBatchController:
         if observation.state is WorkloadState.PREEMPTED and last.rank < LifecyclePhase.PREEMPTED.rank:
             events.append(self._lifecycle(record, attempt, LifecyclePhase.PREEMPTED))
             last = LifecyclePhase.PREEMPTED
-        return replace(attempt, last_phase=last), tuple(events)
+        admission = observation.scheduling_admission or attempt.scheduling_admission
+        if attempt.scheduling_admission is not None and observation.scheduling_admission is not None:
+            admission = self._merge_reservation(attempt.scheduling_admission, observation.scheduling_admission)
+        if LifecyclePhase.ADMITTED in observation.phases and admission is None:
+            raise RuntimeError("Kueue admitted lifecycle phase has no resolved scheduling admission")
+        if (
+            observation.state is WorkloadState.SUCCEEDED
+            or observation.state is WorkloadState.PREEMPTED
+            or LifecyclePhase.ACTIVE_COMPUTE in observation.phases
+        ) and admission is None:
+            raise RuntimeError("Kueue-backed workload progressed without a resolved scheduling admission")
+        if admission is not None:
+            decision = record.scheduling.stage(attempt.stage_id)
+            if (
+                admission.accelerator_count != decision.accelerator_count
+                or admission.accelerator_resource_name != decision.accelerator_resource_name
+                or (
+                    decision.resource_class is ResourceClass.GPU
+                    and admission.resolved_pool_id not in decision.resolved_pool_preference
+                )
+                or (
+                    decision.resource_class is ResourceClass.CPU
+                    and decision.requested_resource_flavor is not None
+                    and (
+                        admission.admitted_resource_flavor != decision.requested_resource_flavor
+                        or admission.resolved_pool_id not in decision.resolved_pool_preference
+                        or admission.cpu_millis < 1
+                        or admission.memory_bytes < 1
+                    )
+                )
+                or (admission.quota_reserved_at or admission.admitted_at) is None
+                or cast(datetime, admission.quota_reserved_at or admission.admitted_at) < record.scheduling.captured_at
+            ):
+                raise RuntimeError("Kueue scheduling admission differs from the frozen stage request")
+        kueue_uid = observation.kueue_workload_uid or attempt.kueue_workload_uid
+        if attempt.kueue_workload_uid is not None and observation.kueue_workload_uid not in {
+            None,
+            attempt.kueue_workload_uid,
+        }:
+            raise RuntimeError("Kueue Workload UID changed for an immutable attempt")
+        pod_uids = tuple(dict.fromkeys((*attempt.pod_uids, *observation.pod_uids)))
+        return replace(
+            attempt,
+            last_phase=last,
+            scheduling_admission=admission,
+            kueue_workload_uid=kueue_uid,
+            pod_uids=pod_uids,
+        ), tuple(events)
 
     async def _fail_batch(
         self,
@@ -419,22 +723,33 @@ class ScientificBatchController:
         *,
         now: datetime,
     ) -> None:
-        attempts = list(stage.attempts)
-        for index, attempt in enumerate(attempts):
-            if attempt.outcome is not AttemptOutcome.ACTIVE:
-                continue
-            await self.cluster.delete(attempt.workload, controller_fence=claim.fencing_token)
-            if attempt.last_phase.rank < LifecyclePhase.GRACE_DRAIN.rank:
-                events.append(self._lifecycle(record, attempt, LifecyclePhase.GRACE_DRAIN))
-            events.append(self._lifecycle(record, attempt, LifecyclePhase.TEARDOWN))
-            attempts[index] = replace(
-                attempt,
-                outcome=AttemptOutcome.CANCELLED,
-                last_phase=LifecyclePhase.TEARDOWN,
-                failure_kind=failure_kind,
-                failure_code="peer_failed",
+        retired, retirement_events = await self._retire_attempts(
+            claim,
+            record,
+            stage,
+            failure_kind=failure_kind,
+            failure_code="peer_failed",
+            now=now,
+        )
+        attempts = list(retired)
+        events.extend(retirement_events)
+
+        deletion_pending = any(not attempt.resource_released for attempt in attempts)
+        failed = replace(
+            stage,
+            status=StageStatus.ACTIVE if deletion_pending else StageStatus.FAILED,
+            attempts=tuple(attempts),
+            failure_code=code,
+        )
+        if deletion_pending:
+            next_record = replace(
+                self._replace_stage(record, failed, status=BatchStatus.RUNNING),
+                failure_code=code,
             )
-        failed = replace(stage, status=StageStatus.FAILED, attempts=tuple(attempts), failure_code=code)
+            if next_record != record or events:
+                await self._write(claim, record, next_record, tuple(events), now=now)
+            return
+
         stages = tuple(
             failed
             if item.stage_id == stage.stage_id
@@ -449,50 +764,356 @@ class ScientificBatchController:
                 self._event(record, BatchEventKind.BATCH_FAILED, code=code),
             )
         )
-        next_record = replace(record, stages=stages, status=BatchStatus.FAILED, failure_code=code)
+        next_record = replace(
+            record,
+            stages=stages,
+            status=BatchStatus.FAILED,
+            failure_code=code,
+            result_published=self.result_publisher is None,
+        )
         await self._write(claim, record, next_record, tuple(events), now=now)
+
+    async def _retire_attempts(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        stage: ScientificStageState,
+        *,
+        failure_kind: FailureKind | None,
+        failure_code: str,
+        now: datetime,
+    ) -> tuple[tuple[ScientificAttemptState, ...], tuple[BatchEventDraft, ...]]:
+        """Move one stage's attempts toward a released terminal outcome.
+
+        Only an attempt that is still running is reclassified; an attempt that
+        already reached its own outcome keeps it. Each returned attempt has
+        advanced exactly one persisted step of UID-fenced cleanup, so the
+        caller must check ``resource_released`` before it treats the stage or
+        the batch as terminal.
+        """
+
+        attempts: list[ScientificAttemptState] = []
+        events: list[BatchEventDraft] = []
+        for attempt in stage.attempts:
+            active = attempt.outcome is AttemptOutcome.ACTIVE
+            terminal_attempt = replace(
+                attempt,
+                outcome=AttemptOutcome.CANCELLED if active else attempt.outcome,
+                completed_at=now if active else attempt.completed_at,
+                failure_kind=failure_kind if active else attempt.failure_kind,
+                failure_code=failure_code if active else attempt.failure_code,
+            )
+            cleaned_attempt, cleanup_events = await self._advance_cleanup(
+                claim,
+                record,
+                terminal_attempt,
+                graceful=active,
+            )
+            events.extend(cleanup_events)
+            attempts.append(cleaned_attempt)
+        return tuple(attempts), tuple(events)
+
+    async def _settle_cascade(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        step: Callable[[BatchClaim, ScientificBatchState, datetime], Awaitable[ScientificBatchState | None]],
+        *,
+        now: datetime,
+    ) -> None:
+        """Repeat one terminal cascade step until the batch stops moving.
+
+        Cleanup advances exactly one persisted step per attempt: a delete is
+        requested and recorded, and only a later step may conclude that
+        Kubernetes has released the resource. Handing control back between
+        those steps would leave a cancelled or retired batch reported as
+        running, and its public Operation row running with it, until an
+        unrelated later poll. Each step here is still its own fenced durable
+        write, so a crash mid-cascade resumes from what was committed.
+        """
+
+        for _ in range(CASCADE_STEP_BOUND):
+            written = await step(claim, record, now)
+            if written is None or written.status.terminal:
+                return
+            record = written
 
     async def _cancel(self, claim: BatchClaim, record: ScientificBatchState, *, now: datetime) -> None:
+        await self._settle_cascade(claim, record, self._cancel_step, now=now)
+
+    async def _cancel_step(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        now: datetime,
+    ) -> ScientificBatchState | None:
         stages: list[ScientificStageState] = []
         events: list[BatchEventDraft] = []
+        deletion_pending = False
         for stage in record.stages:
-            attempts: list[ScientificAttemptState] = []
-            for attempt in stage.attempts:
-                if attempt.outcome is AttemptOutcome.ACTIVE:
-                    await self.cluster.delete(attempt.workload, controller_fence=claim.fencing_token)
-                    if attempt.last_phase.rank < LifecyclePhase.GRACE_DRAIN.rank:
-                        events.append(self._lifecycle(record, attempt, LifecyclePhase.GRACE_DRAIN))
-                    events.append(self._lifecycle(record, attempt, LifecyclePhase.TEARDOWN))
-                    attempt = replace(
-                        attempt,
-                        outcome=AttemptOutcome.CANCELLED,
-                        last_phase=LifecyclePhase.TEARDOWN,
-                        failure_code="cancelled",
-                    )
-                attempts.append(attempt)
-            status = stage.status if stage.status is StageStatus.SUCCEEDED else StageStatus.CANCELLED
-            stages.append(replace(stage, status=status, attempts=tuple(attempts)))
+            attempts, cleanup_events = await self._retire_attempts(
+                claim,
+                record,
+                stage,
+                failure_kind=None,
+                failure_code="cancelled",
+                now=now,
+            )
+            events.extend(cleanup_events)
+            stage_deletion_pending = any(not attempt.resource_released for attempt in attempts)
+            deletion_pending = deletion_pending or stage_deletion_pending
+            status = (
+                stage.status
+                if stage_deletion_pending or stage.status is StageStatus.SUCCEEDED
+                else StageStatus.CANCELLED
+            )
+            stages.append(replace(stage, status=status, attempts=attempts))
+        if deletion_pending:
+            next_record = replace(
+                record,
+                stages=tuple(stages),
+                status=BatchStatus.RUNNING,
+                failure_code="cancelled",
+            )
+            if next_record == record and not events:
+                return None
+            return await self._write(claim, record, next_record, tuple(events), now=now)
+
         events.append(self._event(record, BatchEventKind.BATCH_CANCELLED, code="cancelled"))
-        next_record = replace(record, stages=tuple(stages), status=BatchStatus.CANCELLED, failure_code="cancelled")
-        await self._write(claim, record, next_record, tuple(events), now=now)
+        next_record = replace(
+            record,
+            stages=tuple(stages),
+            status=BatchStatus.CANCELLED,
+            failure_code="cancelled",
+            result_published=self.result_publisher is None,
+        )
+        return await self._write(claim, record, next_record, tuple(events), now=now)
+
+    async def _retire_legacy_admission(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        *,
+        now: datetime,
+    ) -> None:
+        """Fail a still-open pre-v8 batch instead of executing its admission.
+
+        A row frozen before the current state schema has no placement class, no
+        raw scheduling contract digest, and no execution-map or stage bindings,
+        so this controller cannot render its workloads or prove what it was
+        admitted against. Resuming one would either abort mid-stage or leave it
+        reported as running forever. Scientific batch has never been enabled on
+        a live cluster, so no such row can own real GPU capacity; the truthful
+        outcome is a terminal infrastructure failure the caller can resubmit
+        against the current schema. Any workload identity the row does carry is
+        still deleted through the same UID-fenced cleanup, so a resource that
+        somehow exists is released rather than orphaned.
+        """
+
+        await self._settle_cascade(claim, record, self._retire_legacy_step, now=now)
+
+    async def _retire_legacy_step(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        now: datetime,
+    ) -> ScientificBatchState | None:
+        stages: list[ScientificStageState] = []
+        events: list[BatchEventDraft] = []
+        deletion_pending = False
+        for stage in record.stages:
+            attempts, cleanup_events = await self._retire_attempts(
+                claim,
+                record,
+                stage,
+                failure_kind=FailureKind.INFRASTRUCTURE,
+                failure_code=LEGACY_ADMISSION_FAILURE_CODE,
+                now=now,
+            )
+            events.extend(cleanup_events)
+            stage_deletion_pending = any(not attempt.resource_released for attempt in attempts)
+            deletion_pending = deletion_pending or stage_deletion_pending
+            if stage.status.terminal:
+                status, failure_code = stage.status, stage.failure_code
+            elif stage.status is StageStatus.ACTIVE:
+                # The first write upgrades the row to the current schema, so a
+                # restart no longer sees a legacy admission. Carrying the code
+                # on the stage keeps the half-retired batch recoverable through
+                # the ordinary failure cascade instead of stalling as running.
+                status = StageStatus.ACTIVE if stage_deletion_pending else StageStatus.FAILED
+                failure_code = LEGACY_ADMISSION_FAILURE_CODE
+            else:
+                status, failure_code = StageStatus.CANCELLED, stage.failure_code
+            stages.append(replace(stage, status=status, failure_code=failure_code, attempts=attempts))
+        if deletion_pending:
+            next_record = replace(
+                record,
+                stages=tuple(stages),
+                status=BatchStatus.RUNNING,
+                failure_code=LEGACY_ADMISSION_FAILURE_CODE,
+            )
+            if next_record == record and not events:
+                return None
+            return await self._write(claim, record, next_record, tuple(events), now=now)
+
+        events.append(self._event(record, BatchEventKind.BATCH_FAILED, code=LEGACY_ADMISSION_FAILURE_CODE))
+        next_record = replace(
+            record,
+            stages=tuple(stages),
+            status=BatchStatus.FAILED,
+            failure_code=LEGACY_ADMISSION_FAILURE_CODE,
+            result_published=self.result_publisher is None,
+        )
+        return await self._write(claim, record, next_record, tuple(events), now=now)
+
+    async def _advance_cleanup(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        attempt: ScientificAttemptState,
+        *,
+        graceful: bool,
+    ) -> tuple[ScientificAttemptState, tuple[BatchEventDraft, ...]]:
+        """Advance exactly one persisted step of UID-fenced workload cleanup."""
+
+        if attempt.outcome is AttemptOutcome.ACTIVE:
+            raise RuntimeError("cannot clean up an active scientific attempt")
+        if attempt.resource_released:
+            return attempt, ()
+        events: list[BatchEventDraft] = []
+        if attempt.workload.uid is None:
+            if attempt.last_phase is not LifecyclePhase.TEARDOWN:
+                events.append(self._lifecycle(record, attempt, LifecyclePhase.TEARDOWN))
+            return replace(attempt, last_phase=LifecyclePhase.TEARDOWN, resource_released=True), tuple(events)
+        if not attempt.deletion_requested:
+            if self.artifact_lifecycle is not None:
+                await self.artifact_lifecycle.close_attempt(record, attempt)
+            await self.cluster.delete(attempt.workload, controller_fence=claim.fencing_token)
+            last_phase = attempt.last_phase
+            if graceful and last_phase.rank < LifecyclePhase.GRACE_DRAIN.rank:
+                events.append(self._lifecycle(record, attempt, LifecyclePhase.GRACE_DRAIN))
+                last_phase = LifecyclePhase.GRACE_DRAIN
+            return replace(attempt, deletion_requested=True, last_phase=last_phase), tuple(events)
+        if not await self.cluster.absent(attempt.workload):
+            return attempt, ()
+        if attempt.last_phase is not LifecyclePhase.TEARDOWN:
+            events.append(self._lifecycle(record, attempt, LifecyclePhase.TEARDOWN))
+        return replace(attempt, last_phase=LifecyclePhase.TEARDOWN, resource_released=True), tuple(events)
+
+    async def _resolve_materializations(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        invocation: object,
+    ) -> tuple[ResolvedArtifactMaterialization, ...]:
+        from .models import StageInvocation
+
+        if not isinstance(invocation, StageInvocation):
+            raise RuntimeError("scientific workload has no canonical stage invocation")
+        resolved: list[ResolvedArtifactMaterialization] = []
+        for item in invocation.materializations:
+            if record.input_manifest is not None:
+                try:
+                    source = record.input_manifest.artifact(item.artifact_id)
+                except ValueError:
+                    source = None
+            else:
+                source = None
+            if source is not None:
+                resolved.append(
+                    ResolvedArtifactMaterialization.resolve(
+                        item,
+                        artifact_id=source.artifact_id,
+                        digest=source.digest,
+                        size_bytes=source.size_bytes,
+                        media_type=source.media_type,
+                        compression=source.compression,
+                    )
+                )
+            else:
+                if record.execution_plan is None:
+                    raise RuntimeError("logical artifact handoff has no adapter execution plan")
+                producer = record.execution_plan.producer(item.artifact_id)
+                if producer is None:
+                    raise RuntimeError("logical artifact has no producer")
+                commits = await self._artifact_commits(claim, record, stage_id=producer.stage_id)
+                matches = [commit for commit in commits if commit.logical_artifact_id == item.artifact_id]
+                if len(matches) != 1:
+                    raise RuntimeError("logical predecessor artifact has no unique fenced commit")
+                commit = matches[0]
+                resolved.append(
+                    ResolvedArtifactMaterialization.resolve(
+                        item,
+                        artifact_id=commit.handoff_artifact_id,
+                        digest=commit.handoff_digest,
+                        size_bytes=commit.handoff_size_bytes,
+                        media_type=commit.handoff_media_type,
+                        compression=commit.handoff_compression,
+                    )
+                )
+        return tuple(resolved)
+
+    async def _artifact_commits(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        *,
+        stage_id: str,
+    ) -> tuple[AttemptArtifactCommit, ...]:
+        if self.artifact_lifecycle is not None:
+            return await self.artifact_lifecycle.artifact_commits(record, stage_id=stage_id)
+        # Core-only tests deliberately keep the fake commit ledger on the fake
+        # repository. Production always uses the artifact-service lifecycle.
+        legacy = cast(LegacyArtifactCommitReader, self.repository)
+        return await legacy.artifact_commits(claim, stage_id=stage_id)
 
     @staticmethod
-    def _commit_matches(record: ScientificBatchState, stage: ScientificStageState, commit: object | None) -> bool:
-        from .models import ArtifactCommit
+    def _commits_match(
+        record: ScientificBatchState,
+        stage: ScientificStageState,
+        commits: tuple[object, ...],
+    ) -> bool:
+        from .models import AttemptArtifactCommit
 
-        if not isinstance(commit, ArtifactCommit) or not commit.semantic_valid:
+        if not commits or any(
+            not isinstance(commit, AttemptArtifactCommit) or not commit.semantic_valid for commit in commits
+        ):
             return False
-        successful = tuple(
-            sorted(
-                (attempt.attempt_id for attempt in stage.attempts if attempt.outcome is AttemptOutcome.SUCCEEDED),
-                key=str,
-            )
+        successful = {attempt.attempt_id for attempt in stage.attempts if attempt.outcome is AttemptOutcome.SUCCEEDED}
+        committed = {commit.attempt_ids[0] for commit in commits if isinstance(commit, AttemptArtifactCommit)}
+        if successful != committed or len(commits) != len(successful):
+            return False
+        expected_logical = None
+        if record.execution_plan is not None:
+            expected_logical = {
+                record.execution_plan.invocation(stage.stage_id, attempt.shard_id).produces
+                for attempt in stage.attempts
+                if attempt.outcome is AttemptOutcome.SUCCEEDED
+            }
+        actual_logical = {commit.logical_artifact_id for commit in commits if isinstance(commit, AttemptArtifactCommit)}
+        expected_bindings = (
+            {}
+            if record.execution_plan is None
+            else {
+                attempt.attempt_id: record.execution_plan.invocation(stage.stage_id, attempt.shard_id)
+                for attempt in stage.attempts
+                if attempt.outcome is AttemptOutcome.SUCCEEDED
+            }
         )
-        return (
-            commit.operation_id == record.operation_id
+        return all(
+            isinstance(commit, AttemptArtifactCommit)
+            and commit.operation_id == record.operation_id
             and commit.stage_id == stage.stage_id
-            and tuple(sorted(commit.attempt_ids, key=str)) == successful
-        )
+            and (
+                record.execution_plan is None
+                or (
+                    commit.attempt_ids[0] in expected_bindings
+                    and commit.collector_id == expected_bindings[commit.attempt_ids[0]].collector_id
+                    and commit.validator_id == expected_bindings[commit.attempt_ids[0]].validator_id
+                )
+            )
+            for commit in commits
+        ) and (expected_logical is None or actual_logical == expected_logical)
 
     async def _write(
         self,
@@ -542,8 +1163,6 @@ class ScientificBatchController:
             attempt_id=attempt_id,
             phase=phase,
             code=code,
-            model_id=record.model_id,
-            variant_id=record.variant_id,
         )
 
     def _lifecycle(

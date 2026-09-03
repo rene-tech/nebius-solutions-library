@@ -1,0 +1,69 @@
+{{- if .Values.scientificBatch.enabled }}
+{{- $root := . }}
+{{- $serviceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
+{{- $workloadNamespaces := include "fs2-serve.scientificWorkloadNamespaces" . | fromJsonArray }}
+{{- range $workloadNamespace := $workloadNamespaces }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fs2-serve.fullname" $root }}-scientific-batch
+  namespace: {{ $workloadNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" $root | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "create", "delete"]
+  - apiGroups: ["jobset.x-k8s.io"]
+    resources: ["jobsets"]
+    verbs: ["get", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources: ["workloads"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" $root }}-scientific-batch
+  namespace: {{ $workloadNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" $root | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $serviceAccount }}
+    namespace: {{ $root.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fs2-serve.fullname" $root }}-scientific-batch
+---
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-scientific-batch-flavors
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources: ["resourceflavors"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-scientific-batch-flavors
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $serviceAccount }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "fs2-serve.fullname" . }}-scientific-batch-flavors
+{{- end }}

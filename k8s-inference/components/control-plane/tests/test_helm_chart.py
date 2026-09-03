@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 from types import MappingProxyType
@@ -826,8 +827,7 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
         "verbs": ["get", "list", "watch"],
     } in model_role["rules"]
     assert not any(
-        document["kind"] in {"ClusterRole", "ClusterRoleBinding"}
-        and "model-controller" in document["metadata"]["name"]
+        document["kind"] in {"ClusterRole", "ClusterRoleBinding"} and "model-controller" in document["metadata"]["name"]
         for document in documents
     )
     leader_role = named[("Role", "fs2-serve-control-plane-model-controller-leader")]
@@ -842,11 +842,382 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert next(rule for rule in egress if rule["ports"] == [{"port": 443, "protocol": "TCP"}])["to"] == [
         {"ipBlock": {"cidr": "10.0.0.1/32"}}
     ]
-    assert any(
-        rule["ports"] == [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}]
-        for rule in egress
-    )
+    assert any(rule["ports"] == [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}] for rule in egress)
     assert any(rule["ports"] == [{"port": 9090, "protocol": "TCP"}] for rule in egress)
+
+
+def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() -> None:
+    academic_model = {
+        "model_id": "alphafold3",
+        "workload_namespace": "fs2-academic-poc",
+        "access_profile": "academic",
+        "stages": [
+            {
+                "service_account_name": "fs2-academic-runner",
+                "mounts": [
+                    {
+                        "kind": "private",
+                        "claim_name": "academic-assets-runtime-rwx",
+                        "mount_path": "/models/af3.bin.zst",
+                        "sub_path": "alphafold3/af3.bin.zst",
+                    }
+                ],
+            }
+        ],
+    }
+    academic_binding = {
+        "alphafold3": {
+            "modelId": "alphafold3",
+            "artifactId": "alphafold3-parameters",
+            "sourceSubPath": "alphafold3/af3.bin.zst",
+            "consumerPath": "/models/af3.bin.zst",
+            "mechanism": "subpath-file-mount",
+            "contentIdentityKind": "file-digest",
+            "contentManifestAlgorithm": None,
+            "contentDigestSha256": "a" * 64,
+            "sizeBytes": 1020545840,
+            "sourceArtifact": {"filename": "af3.bin.zst", "sha256": "a" * 64, "size_bytes": 1020545840},
+            "readOnly": True,
+        }
+    }
+    documents = render(
+        "--set",
+        "scientificBatch.enabled=true",
+        "--set",
+        "scientificBatch.writesEnabled=true",
+        "--set",
+        "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+        "--set",
+        "scientificBatch.schedulingContractNamespace=fs2-system",
+        "--set",
+        "scientificBatch.schedulingContractSha256=" + "c" * 64,
+        "--set",
+        "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
+        "--set-json",
+        "scientificBatch.executionMap.models="
+        + json.dumps(
+            [
+                {"model_id": "protein-design", "workload_namespace": "fs2-models", "access_profile": "public"},
+                academic_model,
+            ]
+        ),
+        "--set",
+        "academicAssets.enabled=true",
+        "--set",
+        "academicAssets.execution.enabled=true",
+        "--set",
+        "academicAssets.readinessManifestSha256=" + "b" * 64,
+        "--set",
+        "academicAssets.execution.referenceDataLocalQueue=academic-scientific-cpu",
+        "--set",
+        "academicAssets.execution.referenceDataClusterQueue=reference-data-cpu",
+        "--set-json",
+        "academicAssets.runtimeBindings=" + json.dumps(academic_binding),
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set-string",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+        "--set-string",
+        "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
+    )
+    named = {(document["kind"], document["metadata"]["name"]): document for document in documents}
+    namespaced = {
+        (document["kind"], document["metadata"]["name"], document["metadata"].get("namespace")): document
+        for document in documents
+    }
+    pod = gateway_deployment(documents)["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    environment = {item["name"]: item for item in container["env"]}
+    assert pod["automountServiceAccountToken"] is False
+    assert environment["FS2_SCIENTIFIC_BATCH_ENABLED"]["value"] == "true"
+    assert environment["FS2_SCIENTIFIC_BATCH_WRITES_ENABLED"]["value"] == "true"
+    assert environment["FS2_SCIENTIFIC_BATCH_CONTROLLER_ID"]["valueFrom"]["fieldRef"] == {"fieldPath": "metadata.uid"}
+    assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_FILE"]["value"].endswith("/kueue-scheduling.json")
+    assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_SCHEMA"]["value"] == (
+        "fs2-serve.nebius.ai/kueue-scheduling/v1"
+    )
+    assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_SHA256"]["value"] == "c" * 64
+    assert environment["FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE"]["value"].endswith("/execution-map.json")
+    assert environment["FS2_SCIENTIFIC_ARTIFACTS_ENABLED"]["value"] == "true"
+    assert environment["FS2_ARTIFACT_STORE_CREDENTIALS_FILE"]["value"] == (
+        "/var/run/secrets/fs2-serve/artifact-store/credentials.json"
+    )
+    assert "FS2_ARTIFACT_STORE_ACCESS_KEY" not in environment
+    assert "FS2_ARTIFACT_STORE_SECRET_KEY" not in environment
+    volumes = {item["name"]: item for item in pod["volumes"]}
+    token = volumes["scientific-batch-kubernetes"]["projected"]["sources"]
+    assert token[0]["serviceAccountToken"] == {
+        "audience": "kubernetes.default.svc",
+        "expirationSeconds": 600,
+        "path": "token",
+    }
+    assert volumes["scientific-batch-scheduling"]["configMap"]["name"] == "scientific-scheduling-a1"
+
+    role = namespaced[("Role", "fs2-serve-control-plane-scientific-batch", "fs2-models")]
+    binding = namespaced[("RoleBinding", "fs2-serve-control-plane-scientific-batch", "fs2-models")]
+    assert role["metadata"]["namespace"] == "fs2-models"
+    assert role["rules"] == [
+        {"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["get", "create", "delete"]},
+        {
+            "apiGroups": ["jobset.x-k8s.io"],
+            "resources": ["jobsets"],
+            "verbs": ["get", "create", "delete"],
+        },
+        {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]},
+        {"apiGroups": ["kueue.x-k8s.io"], "resources": ["workloads"], "verbs": ["get", "list"]},
+    ]
+    assert binding["subjects"] == [
+        {"kind": "ServiceAccount", "name": "fs2-serve-control-plane-runtime", "namespace": "fs2-system"}
+    ]
+    academic_role = namespaced[("Role", "fs2-serve-control-plane-scientific-batch", "fs2-academic-poc")]
+    academic_binding = namespaced[("RoleBinding", "fs2-serve-control-plane-scientific-batch", "fs2-academic-poc")]
+    assert academic_role["rules"] == role["rules"]
+    assert academic_binding["subjects"] == binding["subjects"]
+    execution_map = next(
+        document
+        for document in documents
+        if document["kind"] == "ConfigMap"
+        and document.get("metadata", {}).get("labels", {}).get("app.kubernetes.io/component")
+        == "scientific-execution-map"
+    )
+    assert execution_map["immutable"] is True
+    rendered_map_json = execution_map["data"]["execution-map.json"]
+    rendered_map = json.loads(rendered_map_json)
+    assert rendered_map["schema"] == "fs2-serve.nebius.ai/scientific-execution-map/v3"
+    execution_map_sha256 = hashlib.sha256(rendered_map_json.encode()).hexdigest()
+    execution_map_name = f"scientific-execution-b2-{execution_map_sha256[:12]}"
+    assert execution_map["metadata"]["name"] == execution_map_name
+    assert volumes["scientific-batch-execution"]["configMap"]["name"] == execution_map_name
+    assert execution_map["metadata"]["annotations"] == {
+        "fs2-serve.nebius.ai/resource-owner": "helm/fs2-serve-control-plane",
+        "fs2-serve.nebius.ai/execution-map-schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+        "fs2-serve.nebius.ai/execution-map-sha256": execution_map_sha256,
+    }
+    assert {model["workload_namespace"] for model in rendered_map["models"]} == {
+        "fs2-models",
+        "fs2-academic-poc",
+    }
+    dependency_map = next(
+        document
+        for document in documents
+        if document["kind"] == "ConfigMap" and document["metadata"]["name"].endswith("-dependency-contract")
+    )
+    dependency_contract = json.loads(dependency_map["data"]["dependency-contract.json"])
+    assert dependency_contract["scientific_batch"]["execution_map"] == {
+        "name": execution_map_name,
+        "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+        "sha256": execution_map_sha256,
+    }
+    assert dependency_contract["scientific_batch"]["scheduling_contract"] == {
+        "config_map_name": "scientific-scheduling-a1",
+        "namespace": "fs2-system",
+        "key": "kueue-scheduling.json",
+        "schema": "fs2-serve.nebius.ai/kueue-scheduling/v1",
+        "sha256": "c" * 64,
+    }
+    for workload_namespace in ("fs2-models", "fs2-academic-poc"):
+        workload_network = namespaced[
+            ("NetworkPolicy", "fs2-serve-control-plane-scientific-workloads", workload_namespace)
+        ]
+        assert workload_network["spec"]["podSelector"]["matchExpressions"] == [
+            {"key": "fs2.nebius.ai/workload-id", "operator": "Exists"}
+        ]
+    flavor_role = named[("ClusterRole", "fs2-serve-control-plane-scientific-batch-flavors")]
+    assert flavor_role["rules"] == [
+        {"apiGroups": ["kueue.x-k8s.io"], "resources": ["resourceflavors"], "verbs": ["get"]}
+    ]
+    assert named[("ClusterRoleBinding", "fs2-serve-control-plane-scientific-batch-flavors")]["subjects"] == [
+        {"kind": "ServiceAccount", "name": "fs2-serve-control-plane-runtime", "namespace": "fs2-system"}
+    ]
+    tls_egress = [
+        rule
+        for rule in named[("NetworkPolicy", "fs2-serve-control-plane-runtime")]["spec"]["egress"]
+        if rule["ports"] == [{"port": 443, "protocol": "TCP"}]
+    ]
+    assert {rule["to"][0]["ipBlock"]["cidr"] for rule in tls_egress} >= {
+        "192.0.2.10/32",
+        "192.0.2.20/32",
+    }
+
+
+def test_scientific_execution_map_has_one_helm_owner_and_no_terraform_writer() -> None:
+    templates = CHART / "templates"
+    helm_owners = [
+        path.relative_to(SOLUTION_ROOT).as_posix()
+        for path in templates.glob("*.yaml")
+        if "kind: ConfigMap" in path.read_text()
+        and 'include "fs2-serve.scientificExecutionMapName" .' in path.read_text()
+        and "fs2-serve.nebius.ai/resource-owner: helm/fs2-serve-control-plane" in path.read_text()
+    ]
+    assert helm_owners == ["charts/control-plane/fs2-serve-control-plane/templates/scientific-execution-map.yaml"]
+
+    resource_pattern = re.compile(
+        r'^resource\s+"(?:kubernetes_config_map(?:_v1)?|kubernetes_manifest)"\s+"[^"]+"\s*\{.*?^\}',
+        re.MULTILINE | re.DOTALL,
+    )
+    terraform_writers: list[str] = []
+    legacy_contracts: list[str] = []
+    for path in SOLUTION_ROOT.rglob("*.tf"):
+        if ".terraform" in path.parts:
+            continue
+        source = path.read_text()
+        relative = path.relative_to(SOLUTION_ROOT).as_posix()
+        if "fs2-serve.nebius.ai/scientific-execution-map/v1" in source:
+            legacy_contracts.append(relative)
+        for resource in resource_pattern.findall(source):
+            if any(
+                marker in resource
+                for marker in ("scientific_execution_map", "scientific-execution-map", "execution-map.json")
+            ):
+                terraform_writers.append(relative)
+    assert legacy_contracts == []
+    assert terraform_writers == []
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        (),
+        ("--set", "academicAssets.enabled=true"),
+        (
+            "--set",
+            "academicAssets.enabled=true",
+            "--set",
+            "academicAssets.execution.enabled=true",
+            "--set",
+            "academicAssets.execution.namespace=fs2-models",
+        ),
+    ],
+)
+def test_academic_scientific_execution_requires_the_exact_namespace_local_contract(
+    extra: tuple[str, ...],
+) -> None:
+    result = subprocess.run(  # noqa: S603 - fixed argv, no shell, test-only Helm validation
+        [
+            *render_command(),
+            "--set",
+            "scientificBatch.enabled=true",
+            "--set",
+            "scientificBatch.writesEnabled=true",
+            "--set",
+            "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+            "--set",
+            "scientificBatch.schedulingContractNamespace=fs2-system",
+            "--set",
+            "scientificBatch.schedulingContractSha256=" + "c" * 64,
+            "--set",
+            "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
+            "--set-json",
+            'scientificBatch.executionMap.models=[{"model_id":"alphafold3","workload_namespace":"fs2-academic-poc","access_profile":"academic"}]',
+            "--set",
+            "scientificArtifacts.enabled=true",
+            "--set-string",
+            "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+            "--set-string",
+            "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
+            *extra,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "academic scientific" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        (
+            ("--set", "scientificBatch.schedulingContractNamespace=another-namespace"),
+            "scheduling-contract ConfigMap must be in the control-plane release namespace",
+        ),
+        (
+            ("--set", "scientificBatch.schedulingContractSchema=fs2-serve.nebius.ai/kueue-scheduling/v2"),
+            "value must be 'fs2-serve.nebius.ai/kueue-scheduling/v1'",
+        ),
+    ],
+)
+def test_scientific_batch_rejects_scheduling_ref_identity_drift(
+    extra: tuple[str, ...], expected: str
+) -> None:
+    arguments = [
+        "--set",
+        "scientificBatch.enabled=true",
+        "--set",
+        "scientificBatch.writesEnabled=true",
+        "--set",
+        "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+        "--set",
+        "scientificBatch.schedulingContractNamespace=fs2-system",
+        "--set",
+        "scientificBatch.schedulingContractSha256=" + "c" * 64,
+        "--set",
+        "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
+        "--set-json",
+        'scientificBatch.executionMap.models=[{"model_id":"protein-design","workload_namespace":"fs2-models","access_profile":"public"}]',
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set-string",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+        "--set-string",
+        "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
+    ]
+    arguments.extend(extra)
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and bounded adversarial values
+        render_command(*arguments),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert expected in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        (("--set", "scientificBatch.enabled=true"), "independent writesEnabled gate"),
+        (("--set", "scientificBatch.writesEnabled=true"), "requires scientificBatch.enabled"),
+        (
+            (
+                "--set",
+                "scientificBatch.enabled=true",
+                "--set",
+                "scientificBatch.writesEnabled=true",
+                "--set",
+                "scientificArtifacts.enabled=true",
+                "--set-string",
+                "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
+            ),
+            "immutable scheduling-contract and execution-map ConfigMaps",
+        ),
+        (
+            (
+                "--set",
+                "scientificBatch.enabled=true",
+                "--set",
+                "scientificBatch.writesEnabled=true",
+                "--set",
+                "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+                "--set",
+                "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
+                "--set-string",
+                "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+            ),
+            "requires scientificArtifacts.enabled",
+        ),
+    ],
+)
+def test_scientific_batch_consumer_rejects_partial_enablement(extra: tuple[str, ...], expected: str) -> None:
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and bounded adversarial values
+        render_command(*extra),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert expected in result.stderr
 
 
 def test_dynamic_model_writer_requires_delete_admission_gate() -> None:
@@ -1235,6 +1606,8 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
         "Fs2ServeQueueDepthHigh",
         "Fs2ServeSyncWaitSaturation",
         "Fs2ServeAuthenticationFailureSpike",
+        "Fs2ServeLifecycleReconciliationFailed",
+        "Fs2ServeLifecycleOccupancyUnclassified",
         "Fs2ServePublicCertificateNotReady",
         "Fs2ServePublicCertificateRenewalOverdue",
         "Fs2ServePublicCertificateExpiresSoon",
@@ -1245,6 +1618,8 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
     assert 'fs2_serve_operations{state=\\"queued\\"}' in rendered
     assert "fs2_serve_sync_wait_saturated_total" in rendered
     assert "fs2_serve_authentication_failures_total" in rendered
+    assert "fs2_serve_lifecycle_workloads_total" in rendered
+    assert "fs2_serve_lifecycle_unclassified_gpu_seconds_total" in rendered
     assert "kube_deployment_status_replicas_available" in rendered
     assert "certmanager_certificate_ready_status" in rendered
     assert "certmanager_certificate_renewal_timestamp_seconds" in rendered
@@ -1269,7 +1644,11 @@ def test_grafana_dashboard_is_discoverable_in_the_foundation_watch_namespace() -
     ]
     assert postgres_panels
     assert {panel["datasource"]["uid"] for panel in postgres_panels} == {"fs2-serve-reporting"}
-    assert {variable["name"] for variable in dashboard_json["templating"]["list"]} == {"prometheus"}
+    assert {variable["name"] for variable in dashboard_json["templating"]["list"]} == {
+        "prometheus",
+        "tenant",
+        "model",
+    }
 
 
 def test_value_suppressed_dependency_contract_binds_catalog_database_roles_and_reporting_datasource() -> None:
@@ -1325,7 +1704,12 @@ def test_value_suppressed_dependency_contract_binds_catalog_database_roles_and_r
         "datasource_secret_key": "datasource.yaml",
         "datasource_label": "grafana_datasource",
         "datasource_label_value": "1",
-        "allowed_relations": ["fs2_reporting_model_usage", "fs2_reporting_principal_usage"],
+        "allowed_relations": [
+            "fs2_reporting_model_usage",
+            "fs2_reporting_principal_usage",
+            "fs2_reporting_gpu_phase_usage",
+            "fs2_reporting_lifecycle_workloads",
+        ],
     }
     assert not any(document["kind"] == "Secret" for document in documents)
 
@@ -2308,6 +2692,11 @@ def test_grafana_dashboard_is_valid_and_separates_estimate_dcgm_and_principal_le
     assert "DCGM_FI_DEV_GPU_UTIL" in rendered
     assert "principal_id" in rendered and "fs2_reporting_principal_usage" in rendered
     assert "fs2_reporting_model_usage" in rendered and "FROM fs2_operations" not in rendered
+    assert "fs2_serve_lifecycle_gpu_seconds_total" in rendered
+    assert "fs2_serve_lifecycle_clock_gpu_seconds_total" in rendered
+    assert "fs2_serve_lifecycle_reconciliation_delta_seconds_total" in rendered
+    assert "fs2_reporting_lifecycle_workloads" in rendered
+    assert "occupied idle" in rendered.lower()
     assert '"uid": "fs2-serve-reporting"' in rendered
     assert "$postgres" not in rendered
     assert "request_ciphertext" not in rendered and "response_ciphertext" not in rendered
@@ -2608,8 +2997,7 @@ def test_observability_adapter_accepts_installed_tempo_from_workloads_values_mer
     config_map = next(
         item
         for item in documents
-        if item["kind"] == "ConfigMap"
-        and item["metadata"]["name"] == "fs2-serve-control-plane-admin-observability"
+        if item["kind"] == "ConfigMap" and item["metadata"]["name"] == "fs2-serve-control-plane-admin-observability"
     )
     config = json.loads(config_map["data"]["config.json"])
     assert config["installed"] == {"alertmanager": False, "tempo": True}
@@ -2642,3 +3030,87 @@ def test_observability_link_requires_verified_allowlisted_https_route() -> None:
         )
         assert result.returncode != 0
         assert expected in result.stderr
+
+
+def _deployment(documents: list[dict]) -> dict:
+    return next(item for item in documents if item["kind"] == "Deployment")
+
+
+def test_scientific_artifact_routes_are_absent_until_object_storage_is_configured() -> None:
+    deployment = _deployment(render())
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    names = {item["name"] for item in container["env"]}
+    assert not [name for name in names if name.startswith("FS2_ARTIFACT_")]
+    assert "FS2_SCIENTIFIC_ARTIFACTS_ENABLED" not in names
+    mounts = {item["name"] for item in container["volumeMounts"]}
+    assert "artifact-store" not in mounts
+    volumes = {item["name"] for item in deployment["spec"]["template"]["spec"]["volumes"]}
+    assert "artifact-store" not in volumes
+
+
+def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> None:
+    documents = render(
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set",
+        "scientificArtifacts.egressCidrs[0]=203.0.113.0/24",
+    )
+    deployment = _deployment(documents)
+    pod = deployment["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    environment = {item["name"]: item.get("value") for item in container["env"]}
+
+    # Every artifact value must survive Helm's float64 number handling.
+    assert environment["FS2_ARTIFACT_MAX_BYTES"] == "1099511627776"
+    assert environment["FS2_ARTIFACT_RETENTION_SECONDS"] == "7776000"
+    assert environment["FS2_ARTIFACT_HANDLE_TTL_SECONDS"] == "600"
+    assert "e+" not in "".join(value or "" for value in environment.values())
+
+    # Credentials arrive as a read-only projected file, never as an env value.
+    assert "FS2_ARTIFACT_STORE_ACCESS_KEY" not in environment
+    assert "FS2_ARTIFACT_STORE_SECRET_KEY" not in environment
+    assert environment["FS2_ARTIFACT_STORE_CREDENTIALS_FILE"] == (
+        "/var/run/secrets/fs2-serve/artifact-store/credentials.json"
+    )
+    volume = next(item for item in pod["volumes"] if item["name"] == "artifact-store")
+    assert volume["secret"]["defaultMode"] == 0o400
+    mount = next(item for item in container["volumeMounts"] if item["name"] == "artifact-store")
+    assert mount["readOnly"] is True
+    assert mount["mountPath"] == "/var/run/secrets/fs2-serve/artifact-store"
+
+    # The rendered environment must construct the real Settings object.
+    from fs2_serve.settings import Settings
+
+    settings = Settings(
+        **{
+            key.removeprefix("FS2_").lower(): value
+            for key, value in environment.items()
+            if key.startswith("FS2_ARTIFACT") or key == "FS2_SCIENTIFIC_ARTIFACTS_ENABLED"
+        }
+    )
+    assert settings.scientific_artifacts_enabled is True
+    assert settings.artifact_max_bytes == 1099511627776
+    assert "chemical/x-pdb" in settings.artifact_media_types_set()
+
+
+def test_object_storage_egress_is_opt_in_and_scoped_to_tls() -> None:
+    without = render("--set", "scientificArtifacts.enabled=true")
+    policies = [item for item in without if item["kind"] == "NetworkPolicy"]
+    assert policies, "the chart must still render its default-deny policies"
+    assert "203.0.113.0/24" not in json.dumps(without)
+
+    with_egress = render(
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set",
+        "scientificArtifacts.egressCidrs[0]=203.0.113.0/24",
+    )
+    rules = [
+        rule
+        for item in with_egress
+        if item["kind"] == "NetworkPolicy"
+        for rule in item["spec"].get("egress", [])
+        if any(peer.get("ipBlock", {}).get("cidr") == "203.0.113.0/24" for peer in rule.get("to", []))
+    ]
+    assert len(rules) == 1
+    assert rules[0]["ports"] == [{"port": 443, "protocol": "TCP"}]

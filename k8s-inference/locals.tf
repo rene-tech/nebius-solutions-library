@@ -1034,9 +1034,15 @@ locals {
       credential_generation = var.deployment.storage.scientific_artifacts.credential_generation
     }
     scientific_batch = {
-      enabled        = var.deployment.scientific_batch.enabled
-      writes_enabled = var.deployment.scientific_batch.writes_enabled
-      namespace      = var.deployment.scientific_batch.namespace
+      enabled                  = var.deployment.scientific_batch.enabled
+      writes_enabled           = var.deployment.scientific_batch.writes_enabled
+      namespace                = var.deployment.scientific_batch.namespace
+      execution_map            = var.deployment.scientific_batch.execution_map
+      workers                  = var.deployment.scientific_batch.workers
+      poll_seconds             = var.deployment.scientific_batch.poll_seconds
+      lease_seconds            = var.deployment.scientific_batch.lease_seconds
+      api_timeout_seconds      = var.deployment.scientific_batch.api_timeout_seconds
+      token_expiration_seconds = var.deployment.scientific_batch.token_expiration_seconds
     }
     academic_assets = local.academic_assets_contract
     model_express = {

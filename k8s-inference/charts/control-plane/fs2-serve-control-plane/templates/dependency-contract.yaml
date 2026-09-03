@@ -40,6 +40,20 @@ data:
           "reporting": {"namespace": {{ .Values.grafanaDashboard.namespace | quote }}, "name": "fs2-serve-database-reporting", "key": "url"}
         }
       },
+      "scientific_batch": {
+        "scheduling_contract": {{- if .Values.scientificBatch.enabled }} {
+          "config_map_name": {{ .Values.scientificBatch.schedulingContractConfigMapName | quote }},
+          "namespace": {{ .Values.scientificBatch.schedulingContractNamespace | quote }},
+          "key": {{ .Values.scientificBatch.schedulingContractKey | quote }},
+          "schema": {{ .Values.scientificBatch.schedulingContractSchema | quote }},
+          "sha256": {{ .Values.scientificBatch.schedulingContractSha256 | quote }}
+        }{{- else }} null{{- end }},
+        "execution_map": {{- if .Values.scientificBatch.enabled }} {
+          "name": {{ include "fs2-serve.scientificExecutionMapName" . | quote }},
+          "schema": {{ .Values.scientificBatch.executionMap.schema | quote }},
+          "sha256": {{ .Values.scientificBatch.executionMap | toJson | sha256sum | quote }}
+        }{{- else }} null{{- end }}
+      },
       "grafana": {
         "resource_owner": "fs2-observability",
         "namespace": {{ .Values.grafanaDashboard.namespace | quote }},
@@ -48,6 +62,11 @@ data:
         "datasource_secret_key": {{ .Values.grafanaDashboard.reportingDatasourceSecretKey | quote }},
         "datasource_label": {{ .Values.grafanaDashboard.reportingDatasourceLabel | quote }},
         "datasource_label_value": {{ .Values.grafanaDashboard.reportingDatasourceLabelValue | quote }},
-        "allowed_relations": ["fs2_reporting_model_usage", "fs2_reporting_principal_usage"]
+        "allowed_relations": [
+          "fs2_reporting_model_usage",
+          "fs2_reporting_principal_usage",
+          "fs2_reporting_gpu_phase_usage",
+          "fs2_reporting_lifecycle_workloads"
+        ]
       }
     }

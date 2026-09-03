@@ -6,8 +6,14 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import SpanKind
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from fs2_serve.admission import AdmissionService
+from fs2_serve.lifecycle import MemoryLifecycleRepository
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.models import (
     AdmissionRequest,
@@ -176,6 +182,71 @@ async def test_one_worker_completes_success_then_processes_second_claim(registry
         assert second_done.completed_at >= first_done.completed_at
     finally:
         await admission.close()
+
+
+@pytest.mark.asyncio
+async def test_worker_continues_inbound_trace_with_payload_free_operation_and_runtime_spans(
+    registry, cipher, hasher
+) -> None:
+    store = MemoryStore(cipher, hasher)
+    principal = await setup_principal(store)
+    admission = service(registry, store, StubRuntimeClient())
+    admission.lifecycle = MemoryLifecycleRepository()
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    admission._tracer = provider.get_tracer("fs2-lifecycle-worker-test")
+    trace_id = "1" * 32
+    parent_span_id = "2" * 16
+    await admission.start()
+    try:
+        remote_context = TraceContextTextMapPropagator().extract(
+            carrier={"traceparent": f"00-{trace_id}-{parent_span_id}-01"}
+        )
+        with admission._tracer.start_as_current_span(
+            "fs2.test.request",
+            context=remote_context,
+            kind=SpanKind.SERVER,
+        ) as request_span:
+            assert request_span.context is not None
+            request_span_id = request_span.context.span_id
+            operation = await admission.admit(
+                principal,
+                request("continued-worker-trace-0001").model_copy(
+                    update={"traceparent": f"00-{trace_id}-{parent_span_id}-01"}
+                ),
+            )
+        await wait_status(store, operation.id, {OperationStatus.SUCCEEDED})
+        async with asyncio.timeout(1):
+            while not any(span.name == "fs2.operation" for span in exporter.get_finished_spans()):
+                await asyncio.sleep(0.01)
+    finally:
+        await admission.close()
+        provider.shutdown()
+
+    spans = exporter.get_finished_spans()
+    request_span = next(span for span in spans if span.name == "fs2.test.request")
+    operation_span = next(span for span in spans if span.name == "fs2.operation")
+    runtime_span = next(span for span in spans if span.name == "fs2.runtime.invoke")
+    assert operation_span.kind is SpanKind.CONSUMER
+    assert operation_span.context is not None
+    assert f"{operation_span.context.trace_id:032x}" == trace_id
+    assert operation_span.parent is not None
+    assert operation_span.parent.span_id == request_span_id
+    assert request_span.parent is not None
+    assert f"{request_span.parent.span_id:016x}" == parent_span_id
+    assert runtime_span.parent is not None
+    assert runtime_span.parent.span_id == operation_span.context.span_id
+    assert runtime_span.attributes is not None
+    assert runtime_span.attributes["fs2.workload.id"] == str(operation.id)
+    assert runtime_span.attributes["fs2.api_key.id_hash"] == operation_span.attributes["fs2.api_key.id_hash"]
+    assert operation_span.attributes is not None
+    assert operation_span.attributes["fs2.operation.id"] == str(operation.id)
+    assert operation_span.attributes["fs2.tenant.id"] == principal.tenant_id
+    assert operation_span.attributes["fs2.model.revision"] == operation.model_revision
+    rendered = repr(spans)
+    assert "private" not in rendered
+    assert bytes(principal.token_prefix, "utf-8").decode() not in rendered
 
 
 @pytest.mark.asyncio

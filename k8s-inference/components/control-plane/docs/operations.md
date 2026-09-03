@@ -177,6 +177,14 @@ Public routes are:
 MCP calls use the same authorization and durable admission path and receive no
 Kubernetes, GPU, database, artifact, or activation credential.
 
+Scientific model adapters additionally use `/internal/scientific-artifacts/*`,
+which is mounted only when `scientificArtifacts.enabled` is set and object
+storage is fully configured. Writes there require the `artifacts.write` scope
+and reads require `operations.result`; the tenant always comes from the bearer
+principal. Callers receive short-lived presigned handles and never a stored
+credential. See `docs/scientific-artifact-results.md` for the storage,
+retention and fencing contract.
+
 ### Operator session and API-key workflow
 
 The SPA owns `/admin/login`; the FastAPI control plane owns only the versioned
@@ -338,7 +346,7 @@ fs2-serve postgresql-release-contract
 ```
 
 The emitter verifies that the migration directory contains exactly the ordered
-`0001` through `0013` set, no missing/extra/renamed/symlinked file, and the
+`0001` through `0015` set, no missing/extra/renamed/symlinked file, and the
 contracted SHA-256 for every file. The migrator and `wait-schema` use the same
 validator. They also require the applied migration ledger to be an exact
 ordered prefix while an upgrade is running and the exact full set before a
@@ -346,13 +354,13 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`081ae3ea6ddc3a0efd8b86151352d7b2f2ebc8de4d07a1e078bcb24b1c0f66cf`,
-count `13`, first version `0001_initial.sql`, last version
-`0013_durable_dynamic_dispatch.sql`,
+`6926de8f73092cd53e0397a8b6f44e2a9e9a64e73ad4b273e08cc96b2a5c25dd`,
+count `15`, first version `0001_initial.sql`, last version
+`0015_scientific_batch_controller.sql`,
 and namespace/role ownership SHA-256
 `47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca`.
 The whole logical contract payload is SHA-256
-`3a977a1c29f338233eb017454ee3d07bf505c31db909bccc05a2524388ad3da2`.
+`3e9cb0cf59dd28c74f94594ef20aa5aeaa87170f79d7f498b820fdf4a8c784af`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not

@@ -876,9 +876,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--models",
-        help=(
-            "comma-separated deployed model IDs to accept; omit to require the complete retained catalog"
-        ),
+        help=("comma-separated deployed model IDs to accept; omit to require the complete retained catalog"),
     )
     parser.add_argument("--timeout-seconds", type=float, default=7200)
     parser.add_argument("--concurrency", type=int, default=4)

@@ -57,7 +57,7 @@
 {{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "3a977a1c29f338233eb017454ee3d07bf505c31db909bccc05a2524388ad3da2") (ne .Values.migration.releaseContract.migrationSetSha256 "081ae3ea6ddc3a0efd8b86151352d7b2f2ebc8de4d07a1e078bcb24b1c0f66cf") (ne (int .Values.migration.releaseContract.migrationCount) 13) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0013_durable_dynamic_dispatch.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "e0bba052fa4b04e93a7d944444a9de155c82db6ff62ab188ad28af6db6b62cfc") (ne .Values.migration.releaseContract.migrationSetSha256 "97d71b58d235015eb5e58901caa696f8e09c863682d5c3c48a3874bfec2520d7") (ne (int .Values.migration.releaseContract.migrationCount) 19) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0019_scientific_deployment_authorization.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}
@@ -122,6 +122,85 @@
 {{- end }}
 {{- if and .Values.modelController.writesEnabled (not .Values.adminReadAdapters.capacity.enabled) }}
 {{- fail "modelController.writesEnabled requires adminReadAdapters.capacity for the runtime Kubernetes credential" }}
+{{- end }}
+{{- if and .Values.scientificBatch.enabled (not .Values.scientificBatch.writesEnabled) }}
+{{- fail "scientificBatch.enabled requires its independent writesEnabled gate" }}
+{{- end }}
+{{- if and .Values.scientificBatch.writesEnabled (not .Values.scientificBatch.enabled) }}
+{{- fail "scientificBatch.writesEnabled requires scientificBatch.enabled" }}
+{{- end }}
+{{- if .Values.scientificBatch.enabled }}
+{{- if not .Values.scientificArtifacts.enabled }}
+{{- fail "scientificBatch requires scientificArtifacts.enabled" }}
+{{- end }}
+{{- if or (not (regexMatch "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" .Values.scientificBatch.schedulingContractConfigMapName)) (not (regexMatch "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" .Values.scientificBatch.executionMapConfigMapName)) }}
+{{- fail "scientificBatch requires immutable scheduling-contract and execution-map ConfigMaps" }}
+{{- end }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" .Values.scientificBatch.schedulingContractSha256) }}
+{{- fail "scientificBatch requires the exact Terraform scheduling-contract raw-byte SHA-256" }}
+{{- end }}
+{{- if ne .Values.scientificBatch.schedulingContractNamespace .Release.Namespace }}
+{{- fail "scientificBatch scheduling-contract ConfigMap must be in the control-plane release namespace" }}
+{{- end }}
+{{- if ne .Values.scientificBatch.schedulingContractSchema "fs2-serve.nebius.ai/kueue-scheduling/v1" }}
+{{- fail "scientificBatch requires the canonical Terraform scheduling-contract schema" }}
+{{- end }}
+{{- if eq (len .Values.scientificBatch.executionMap.models) 0 }}
+{{- fail "scientificBatch requires a generated schema-v3 execution map" }}
+{{- end }}
+{{- $academicAssets := .Values.academicAssets }}
+{{- $academicModels := 0 }}
+{{- range $model := .Values.scientificBatch.executionMap.models }}
+{{- if eq $model.access_profile "academic" }}
+{{- $academicModels = add1 $academicModels }}
+{{- if not (and $academicAssets.enabled $academicAssets.execution.enabled) }}
+{{- fail "academic scientific models require the academic execution contract" }}
+{{- end }}
+{{- if or (ne $model.workload_namespace $academicAssets.namespace) (ne $model.workload_namespace $academicAssets.execution.namespace) }}
+{{- fail "academic scientific workload namespace must equal the licensed PVC namespace" }}
+{{- end }}
+{{- $privateMounts := 0 }}
+{{- range $stage := $model.stages }}
+{{- if ne $stage.service_account_name $academicAssets.execution.serviceAccount }}
+{{- fail "academic scientific stage ServiceAccount differs from the Terraform handoff" }}
+{{- end }}
+{{- range $mount := $stage.mounts }}
+{{- if eq $mount.kind "private" }}
+{{- $privateMounts = add1 $privateMounts }}
+{{- if ne $mount.claim_name $academicAssets.claim }}
+{{- fail "academic scientific private mount claim differs from the Terraform handoff" }}
+{{- end }}
+{{- $bindingMatches := 0 }}
+{{- range $binding := $academicAssets.runtimeBindings }}
+{{- if and (eq $binding.modelId $model.model_id) (eq $binding.sourceSubPath $mount.sub_path) (eq $binding.consumerPath $mount.mount_path) }}
+{{- $bindingMatches = add1 $bindingMatches }}
+{{- if or (not $binding.contentDigestSha256) (not $binding.sizeBytes) (not $binding.sourceArtifact) }}
+{{- fail "academic scientific runtime binding lacks its full content/source identity" }}
+{{- end }}
+{{- if and (eq $binding.contentIdentityKind "tree-manifest") (not $binding.contentManifestAlgorithm) }}
+{{- fail "academic scientific runtime tree binding lacks its manifest algorithm" }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if ne $bindingMatches 1 }}
+{{- fail "academic scientific private mount must match exactly one Terraform runtime binding" }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if eq $privateMounts 0 }}
+{{- fail "academic scientific model has no tenant-private runtime binding" }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if gt $academicModels 0 }}
+{{- if or (not (regexMatch "^[a-f0-9]{64}$" ($academicAssets.readinessManifestSha256 | default ""))) (not $academicAssets.tenantId) (not $academicAssets.execution.localQueue) (not $academicAssets.execution.clusterQueue) (not $academicAssets.execution.referenceDataLocalQueue) (not $academicAssets.execution.referenceDataClusterQueue) }}
+{{- fail "academic scientific execution requires the exact Terraform readiness, tenant, GPU queue, and reference-data queue handoff" }}
+{{- end }}
+{{- end }}
+{{- if or (not .Values.networkPolicy.enabled) (eq (len .Values.networkPolicy.kubernetesApiCidrs) 0) }}
+{{- fail "scientificBatch requires bounded Kubernetes API egress" }}
+{{- end }}
 {{- end }}
 {{- if or (lt (.Values.adminReadAdapters.adapterTimeoutSeconds | float64) 0.1) (gt (.Values.adminReadAdapters.adapterTimeoutSeconds | float64) 10.0) }}
 {{- fail "adminReadAdapters.adapterTimeoutSeconds must be between 0.1 and 10 seconds" }}

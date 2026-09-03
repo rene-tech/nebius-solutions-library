@@ -1,0 +1,19 @@
+{{- if .Values.scientificBatch.enabled }}
+{{- $executionMapJson := .Values.scientificBatch.executionMap | toJson }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fs2-serve.scientificExecutionMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scientific-execution-map
+  annotations:
+    fs2-serve.nebius.ai/resource-owner: helm/fs2-serve-control-plane
+    fs2-serve.nebius.ai/execution-map-schema: {{ .Values.scientificBatch.executionMap.schema | quote }}
+    fs2-serve.nebius.ai/execution-map-sha256: {{ $executionMapJson | sha256sum | quote }}
+immutable: true
+data:
+  {{ .Values.scientificBatch.executionMapKey }}: |-
+    {{- $executionMapJson | nindent 4 }}
+{{- end }}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import shutil
 from dataclasses import replace
@@ -15,6 +16,8 @@ import pytest
 import pytest_asyncio
 from conftest import CONTROL_ROOT
 from fastapi import FastAPI
+from scientific_batch_fakes import FakeScientificBatchCluster
+from test_scientific_artifacts import ALLOWED_MEDIA_TYPES, FakeObjectStore, digest
 
 from fs2_serve.access import AdminAccessService
 from fs2_serve.access_models import (
@@ -39,6 +42,18 @@ from fs2_serve.configuration import (
 )
 from fs2_serve.configuration_models import ConfigurationProposal, ReconciliationPhase, TerraformApplyReceipt
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
+from fs2_serve.lifecycle import (
+    LifecycleClock,
+    LifecycleCorrelation,
+    LifecycleEdge,
+    LifecyclePhase,
+    LifecycleSignal,
+    LifecycleSource,
+    LifecycleSubject,
+    MeasurementQuality,
+    PostgresLifecycleRepository,
+    WorkloadTelemetryKind,
+)
 from fs2_serve.model_deployment_admin import (
     ModelDeploymentReadService,
     StoreModelDeploymentRepository,
@@ -64,6 +79,21 @@ from fs2_serve.models import (
 from fs2_serve.postgres import PostgresMaintenanceStore, PostgresStore, _decode_audit_detail
 from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS
 from fs2_serve.runtime import ActivationError, StubRuntimeClient
+from fs2_serve.scientific_artifacts import FinalizeArtifactUpload, PostgresArtifactRepository, ScientificArtifactService
+from fs2_serve.scientific_batch.controller import ScientificBatchController
+from fs2_serve.scientific_batch.models import (
+    CheckpointMode,
+    PreemptionMode,
+    ResourceClass,
+    SchedulingSnapshot,
+    ScientificBatchPlan,
+    ScientificStagePlan,
+    ServiceClass,
+    StageSchedulingDecision,
+)
+from fs2_serve.scientific_batch.postgres_repository import PostgresScientificBatchRepository
+from fs2_serve.scientific_batch.protocols import BatchFenceLostError
+from fs2_serve.scientific_input_uploads import ScientificInputUploadRequest, ScientificInputUploadService
 from fs2_serve.settings import Settings
 from fs2_serve.store import (
     ConcurrencyExceededError,
@@ -158,7 +188,8 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
     await asyncio.gather(store.migrate(), store.migrate())
     async with store.pool.acquire() as connection:
         await connection.execute(
-            "TRUNCATE fs2_model_deployment_status_events,fs2_model_deployment_idempotency,"
+            "TRUNCATE fs2_lifecycle_rollups,fs2_lifecycle_signals,fs2_telemetry_correlations,"
+            "fs2_telemetry_subjects,fs2_model_deployment_status_events,fs2_model_deployment_idempotency,"
             "fs2_model_deployments,fs2_model_deployment_revisions,"
             "fs2_configuration_reconciliation_events,fs2_configuration_plans,"
             "fs2_configuration_revisions,fs2_activation_controller_status,fs2_activation_target_state,"
@@ -173,7 +204,8 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
     finally:
         async with store.pool.acquire() as connection:
             await connection.execute(
-                "TRUNCATE fs2_model_deployment_status_events,fs2_model_deployment_idempotency,"
+                "TRUNCATE fs2_lifecycle_rollups,fs2_lifecycle_signals,fs2_telemetry_correlations,"
+                "fs2_telemetry_subjects,fs2_model_deployment_status_events,fs2_model_deployment_idempotency,"
                 "fs2_model_deployments,fs2_model_deployment_revisions,"
                 "fs2_configuration_reconciliation_events,fs2_configuration_plans,"
                 "fs2_configuration_revisions,fs2_activation_controller_status,fs2_activation_target_state,"
@@ -186,6 +218,193 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
                 "DELETE FROM fs2_operator_principals WHERE id<>$1", BOOTSTRAP_OPERATOR_PRINCIPAL_ID
             )
         await store.close()
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_real_postgres_lifecycle_ledger_is_append_only_and_reconciles_exact_gpu_ranks(
+    postgres_store: PostgresStore,
+) -> None:
+    repository = PostgresLifecycleRepository(postgres_store.pool)
+    accepted_at = datetime(2026, 9, 2, 20, 0, tzinfo=UTC)
+    subject_id = uuid4()
+    attempt_id = uuid4()
+    subject = LifecycleSubject(
+        subject_id=subject_id,
+        workload_kind=WorkloadTelemetryKind.SCIENTIFIC_BATCH,
+        operation_id=uuid4(),
+        request_id=uuid4(),
+        batch_id=uuid4(),
+        workload_id=uuid4(),
+        attempt_id=attempt_id,
+        tenant_id="oncology-a",
+        principal_id="batch-controller",
+        model_id="rfdiffusion",
+        model_revision="sha256:" + "a" * 64,
+        protocol="scientific-batch",
+        trace_id="1" * 32,
+        parent_span_id="2" * 16,
+        accepted_at=accepted_at,
+    )
+    assert await repository.register_subject(subject) == subject
+    assert await repository.register_subject(subject) == subject
+
+    correlation = LifecycleCorrelation(
+        correlation_key=f"attempt:{attempt_id}:pod:pod-uid-1:gpu:0",
+        subject_id=subject_id,
+        observed_at=accepted_at,
+        source=LifecycleSource.DCGM,
+        attempt=1,
+        cluster="k8s-inference-h100",
+        namespace="fs2-scientific",
+        queue_name="scientific-standard",
+        kueue_workload_name="rfdiffusion-attempt-1",
+        kueue_workload_uid="kueue-uid-1",
+        job_name="rfdiffusion-attempt-1",
+        job_uid="job-uid-1",
+        pod_name="rfdiffusion-attempt-1-abcde",
+        pod_uid="pod-uid-1",
+        node_name="h100-node-1",
+        node_uid="node-uid-1",
+        gpu_uuid="GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        gpu_rank=0,
+    )
+    await repository.append_correlations([correlation, correlation])
+
+    def edges(
+        key: str,
+        start: int,
+        end: int,
+        clock: LifecycleClock,
+        phase: LifecyclePhase,
+        *,
+        gpu_count: int,
+        gpu_uuid: str | None = None,
+        gpu_rank: int | None = None,
+    ) -> list[LifecycleSignal]:
+        return [
+            LifecycleSignal(
+                event_key=f"{subject_id}:{key}:{edge.value}",
+                subject_id=subject_id,
+                occurred_at=accepted_at + timedelta(seconds=offset),
+                observed_at=accepted_at + timedelta(seconds=end),
+                source=(
+                    LifecycleSource.DCGM if clock is LifecycleClock.DEVICE_ALLOCATED else LifecycleSource.KUBERNETES
+                ),
+                source_resolution_seconds=5,
+                quality=MeasurementQuality.MEASURED,
+                phase=phase,
+                edge=edge,
+                clock=clock,
+                interval_key=f"{subject_id}:{key}",
+                attempt=1,
+                gpu_count=gpu_count,
+                pod_uid="pod-uid-1",
+                kueue_workload_uid=("kueue-uid-1" if clock is LifecycleClock.QUOTA_RESERVED else None),
+                gpu_uuid=gpu_uuid,
+                gpu_rank=gpu_rank,
+            )
+            for edge, offset in ((LifecycleEdge.START, start), (LifecycleEdge.END, end))
+        ]
+
+    signals = [
+        *edges("quota", 0, 11, LifecycleClock.QUOTA_RESERVED, LifecyclePhase.ADMIT, gpu_count=2),
+        *edges(
+            "scheduler",
+            0,
+            10,
+            LifecycleClock.SCHEDULER_OCCUPIED,
+            LifecyclePhase.GPU_ALLOCATION,
+            gpu_count=2,
+        ),
+        *edges(
+            "device-0",
+            0,
+            10,
+            LifecycleClock.DEVICE_ALLOCATED,
+            LifecyclePhase.GPU_ALLOCATION,
+            gpu_count=1,
+            gpu_uuid="GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            gpu_rank=0,
+        ),
+        *edges(
+            "device-1",
+            0,
+            10,
+            LifecycleClock.DEVICE_ALLOCATED,
+            LifecyclePhase.GPU_ALLOCATION,
+            gpu_count=1,
+            gpu_uuid="GPU-bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
+            gpu_rank=1,
+        ),
+        *edges("image", 0, 2, LifecycleClock.PHASE, LifecyclePhase.IMAGE_PULL, gpu_count=0),
+        *edges("active", 2, 8, LifecycleClock.PHASE, LifecyclePhase.ACTIVE_COMPUTE, gpu_count=0),
+        *edges("grace", 8, 10, LifecycleClock.PHASE, LifecyclePhase.COOLDOWN_GRACE, gpu_count=0),
+        LifecycleSignal(
+            event_key=f"{subject_id}:release",
+            subject_id=subject_id,
+            occurred_at=accepted_at + timedelta(seconds=10),
+            observed_at=accepted_at + timedelta(seconds=10),
+            source=LifecycleSource.KUBERNETES,
+            source_resolution_seconds=5,
+            quality=MeasurementQuality.MEASURED,
+            phase=LifecyclePhase.RELEASE,
+            edge=LifecycleEdge.INSTANT,
+            clock=LifecycleClock.LIFECYCLE,
+            attempt=1,
+            pod_uid="pod-uid-1",
+        ),
+    ]
+    await repository.append_signals(signals)
+    await repository.append_signals(signals)
+    rollup = await repository.reconcile(subject_id, terminal=True, outcome="succeeded")
+    assert rollup is not None
+    assert rollup.quota_reserved_gpu_seconds == 22
+    assert rollup.scheduler_occupied_gpu_seconds == 20
+    assert rollup.device_allocated_gpu_seconds == 20
+    assert rollup.active_gpu_seconds == 12
+    assert rollup.occupied_idle_gpu_seconds == 8
+    assert rollup.phase_gpu_seconds["active_compute"] == 12
+    assert rollup.phase_gpu_seconds["cooldown_grace"] == 4
+    assert rollup.phase_gpu_seconds["image_pull"] == 4
+    assert sum(rollup.phase_gpu_seconds.values()) == 20
+    assert rollup.reconciled is True
+
+    detail = await repository.get_workload(subject_id, tenant_id="oncology-a")
+    assert detail is not None
+    assert detail.correlations == [correlation]
+    assert detail.rollup == rollup
+    assert await repository.get_workload(subject_id, tenant_id="oncology-b") is None
+    assert (await repository.metric_rows())[0].tenant_id == "oncology-a"
+    assert (await repository.rollup_metric_rows())[0].workloads == 1
+
+    async with postgres_store.pool.acquire() as connection:
+        with pytest.raises(asyncpg.PostgresError) as raised:
+            await connection.execute(
+                "UPDATE fs2_lifecycle_signals SET detail='{}'::jsonb WHERE subject_id=$1",
+                subject_id,
+            )
+        assert raised.value.sqlstate == "55000"
+        privileges = await connection.fetchrow(
+            """
+            SELECT
+              has_table_privilege('fs2_serve_runtime','fs2_lifecycle_signals','SELECT,INSERT')
+                AS runtime_write,
+              has_table_privilege('fs2_serve_runtime','fs2_lifecycle_signals','UPDATE,DELETE')
+                AS runtime_mutate,
+              has_table_privilege('fs2_serve_reporting','fs2_reporting_lifecycle_workloads','SELECT')
+                AS reporting_read,
+              has_table_privilege('fs2_serve_reporting','fs2_lifecycle_signals','SELECT')
+                AS reporting_raw
+            """
+        )
+    assert privileges is not None
+    assert dict(privileges) == {
+        "runtime_write": True,
+        "runtime_mutate": False,
+        "reporting_read": True,
+        "reporting_raw": False,
+    }
 
 
 @pytest.mark.postgres
@@ -634,17 +853,35 @@ async def test_real_postgres_rejects_extra_or_reordered_applied_migration_ledger
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
-async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0013(
+@pytest.mark.parametrize(
+    "legacy_fixture_name",
+    [
+        "scientific-batch-state-v6-ec3440a2.json",
+        "scientific-batch-state-v7-545d71d9.json",
+    ],
+)
+async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_pending_migrations(
     postgres_store: PostgresStore,
     tmp_path: Path,
+    legacy_fixture_name: str,
 ) -> None:
     del postgres_store
     database_url = os.environ["FS2_TEST_DATABASE_URL"]
     admin_url, _ = database_url.rsplit("/", 1)
-    database_name = f"fs2_activation_upgrade_{uuid4().hex[:10]}"
+    database_name = f"fs2_scientific_batch_upgrade_{uuid4().hex[:10]}"
     prior_dir = tmp_path / "prior-migrations"
     prior_dir.mkdir()
-    for version, _ in EXPECTED_MIGRATIONS[:-1]:
+    legacy_fixture = json.loads((CONTROL_ROOT / "tests/fixtures" / legacy_fixture_name).read_text())
+    legacy_operation_id = UUID(legacy_fixture["operation_id"])
+    legacy_input_artifact_id = UUID(legacy_fixture["input_artifact_id"])
+    legacy_input_attempt_id = UUID("44444444-4444-4444-8444-444444444444")
+    legacy_token_id = UUID("33333333-3333-4333-8333-333333333333")
+    # Freeze the database immediately before the telemetry and deployment-
+    # authorization successors. Later migrations may be appended without
+    # silently moving this upgrade boundary past the tables asserted below.
+    for version, _ in EXPECTED_MIGRATIONS:
+        if version == "0018_workload_lifecycle_telemetry.sql":
+            break
         migration = CONTROL_ROOT / "migrations" / version
         shutil.copy2(migration, prior_dir / migration.name)
     admin = await asyncpg.connect(database_url)
@@ -694,11 +931,86 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 await before_connection.fetchval("SELECT to_regclass('public.fs2_model_deployments')")
                 == "fs2_model_deployments"
             )
-            assert not await before_connection.fetchval(
+            assert await before_connection.fetchval(
                 "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
                 "WHERE table_schema='public' AND table_name='fs2_operations' "
                 "AND column_name='dispatch_snapshot')"
             )
+            assert (
+                await before_connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')")
+                == "fs2_scientific_artifacts"
+            )
+            assert (
+                await before_connection.fetchval("SELECT to_regclass('public.fs2_scientific_batches')")
+                == "fs2_scientific_batches"
+            )
+            await before_connection.execute(
+                """
+                INSERT INTO fs2_tokens(
+                    id,prefix,pepper_key_id,digest,principal_id,tenant_id,scopes,models,
+                    max_concurrency,created_by
+                ) VALUES($1,'fs2_pat_legacyv6','pepper-v1','test-digest','legacy-principal',
+                    'tenant-a',ARRAY['inference.invoke'],ARRAY['bindcraft'],1,'migration-test')
+                """,
+                legacy_token_id,
+            )
+            await before_connection.execute(
+                """
+                INSERT INTO fs2_operations(
+                    id,tenant_id,principal_id,token_id,model_id,model_revision,protocol,operation,
+                    idempotency_key,request_hmac_key_id,request_hmac,request_content_type,
+                    payload_expires_at,max_attempts
+                ) VALUES($1,'tenant-a','legacy-principal',$2,'bindcraft','7cd4ace1',
+                    'scientific-batch-v1','design','legacy-v6-fixture','hmac-v1',$3,
+                    'application/json',clock_timestamp()+interval '1 day',2)
+                """,
+                legacy_operation_id,
+                legacy_token_id,
+                "8" * 64,
+            )
+            await before_connection.execute(
+                """
+                INSERT INTO fs2_scientific_stage_attempts(
+                    attempt_id,operation_id,tenant_id,stage_id,shard_id,attempt_number,status,
+                    started_at,retention_expires_at
+                ) VALUES($1,$2,'tenant-a','input','-',1,'running',clock_timestamp(),
+                    clock_timestamp()+interval '1 day')
+                """,
+                legacy_input_attempt_id,
+                legacy_operation_id,
+            )
+            input_digest = "sha256:" + "6" * 64
+            await before_connection.execute(
+                """
+                INSERT INTO fs2_scientific_artifacts(
+                    id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,
+                    size_bytes,media_type,storage_key,access_profile,retention_expires_at
+                ) VALUES($1,$2,$3,'tenant-a','input','-','input',$4,128,'application/json',$5,
+                    'public',clock_timestamp()+interval '1 day')
+                """,
+                legacy_input_artifact_id,
+                legacy_input_attempt_id,
+                legacy_operation_id,
+                input_digest,
+                f"scientific/v1/tenants/tenant-a/operations/{legacy_operation_id}/stages/input/shards/-/"
+                f"attempts/{legacy_input_attempt_id}/input/sha256/{input_digest.removeprefix('sha256:')}",
+            )
+            await before_connection.execute(
+                """
+                INSERT INTO fs2_scientific_batches(
+                    operation_id,batch_id,workload_id,tenant_id,model_id,variant_id,
+                    input_artifact_id,scheduling_digest,status,revision,cancel_requested,state
+                ) VALUES($1,$2,$3,'tenant-a','bindcraft','upstream-pyrosetta',$4,$5,
+                    'queued',0,false,$6::jsonb)
+                """,
+                legacy_operation_id,
+                UUID(legacy_fixture["batch_id"]),
+                UUID(legacy_fixture["workload_id"]),
+                legacy_input_artifact_id,
+                "sha256:" + "0" * 64,
+                json.dumps(legacy_fixture, sort_keys=True, separators=(",", ":")),
+            )
+            assert await before_connection.fetchval("SELECT to_regclass('public.fs2_telemetry_subjects')") is None
         finally:
             await before_connection.close()
 
@@ -712,7 +1024,7 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 )
             }
             assert {version: after[version] for version in before} == before
-            assert list(after)[-1] == "0013_durable_dynamic_dispatch.sql"
+            assert list(after)[-1] == EXPECTED_MIGRATIONS[-1][0]
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_activation_model_fences')")
                 == "fs2_activation_model_fences"
@@ -735,8 +1047,93 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 "WHERE table_schema='public' AND table_name='fs2_operations' "
                 "AND column_name='dispatch_snapshot')"
             )
+            assert (
+                await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_scientific_artifacts')")
+                == "fs2_scientific_artifacts"
+            )
+            assert (
+                await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_scientific_batches')")
+                == "fs2_scientific_batches"
+            )
+            assert (
+                await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_telemetry_subjects')")
+                == "fs2_telemetry_subjects"
+            )
         finally:
             await upgraded_connection.close()
+
+        pool = await asyncpg.create_pool(upgrade_url, min_size=1, max_size=2)
+        try:
+            repository = PostgresScientificBatchRepository(pool)
+            claim = await repository.claim_next(
+                controller_id="legacy-state-upgrader",
+                lease_seconds=30,
+                now=datetime.now(UTC),
+            )
+            assert claim is not None and claim.operation_id == legacy_operation_id
+            legacy_state = await repository.load(claim)
+            assert legacy_state.scheduling.stages[0].resource_class is ResourceClass.GPU
+            assert legacy_state.execution_plan is not None
+            assert legacy_state.execution_plan.invocations[0].runtime_mounts[0].expected_manifest_sha256 is None
+            upgraded_state = await repository.replace(
+                claim,
+                expected_revision=0,
+                record=replace(legacy_state, revision=1),
+                events=(),
+                now=datetime.now(UTC),
+            )
+            assert upgraded_state.revision == 1
+            await repository.release(claim)
+            cancelled = await repository.request_cancel(
+                legacy_operation_id,
+                tenant_id="tenant-a",
+                actor="migration-test",
+            )
+            assert cancelled.cancel_requested is True
+            async with pool.acquire() as connection:
+                stored = await connection.fetchrow(
+                    "SELECT scheduling_digest,state FROM fs2_scientific_batches WHERE operation_id=$1",
+                    legacy_operation_id,
+                )
+                assert stored is not None
+                stored_state = json.loads(stored["state"])
+                assert stored_state["schema_version"] == "fs2-serve.nebius.ai/scientific-batch-state/v8"
+                assert stored["scheduling_digest"] == cancelled.scheduling.digest
+                assert stored_state["plan"]["stages"][0]["placement_class"] is None
+                assert stored_state["plan"]["stages"][0]["resources"] is None
+                assert stored_state["scheduling"]["raw_contract_sha256"] is None
+                assert stored_state["scheduling"]["stages"][0]["resource_class"] == "gpu"
+                assert "admitted_resource_flavor" not in stored_state["scheduling"]["stages"][0]
+                assert (
+                    stored_state["adapter_execution"]["invocations"][0]["runtime_mounts"][0]["expected_manifest_sha256"]
+                    is None
+                )
+                assert stored_state["adapter_execution"]["execution_map_sha256"] is None
+                assert stored_state["adapter_execution"]["stage_bindings"] == []
+                assert stored_state["runtime_artifacts"][0]["aggregate_tree"] is None
+                with pytest.raises(asyncpg.PostgresError, match="scientific batch admission is immutable"):
+                    await connection.execute(
+                        """
+                        UPDATE fs2_scientific_batches
+                        SET state=jsonb_set(state,'{scheduling,stages,0,resolved_local_queue}',
+                            '"tampered-queue"'::jsonb)
+                        WHERE operation_id=$1
+                        """,
+                        legacy_operation_id,
+                    )
+                with pytest.raises(asyncpg.PostgresError, match="scientific batch admission is immutable"):
+                    await connection.execute(
+                        """
+                        UPDATE fs2_scientific_batches
+                        SET state=jsonb_set(state,
+                            '{adapter_execution,invocations,0,runtime_mounts,0,expected_manifest_sha256}',
+                            '"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'::jsonb)
+                        WHERE operation_id=$1
+                        """,
+                        legacy_operation_id,
+                    )
+        finally:
+            await pool.close()
     finally:
         await admin.execute(f'DROP DATABASE IF EXISTS "{database_name}" WITH (FORCE)')
         await admin.close()
@@ -2744,3 +3141,255 @@ async def test_admin_reporting_queries_are_bounded_paginated_and_payload_free(
     assert usage.latency_p50_seconds is not None
     assert usage.latency_p95_seconds is not None
     assert usage.latency_p99_seconds is not None
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_customer_input_upload_is_verified_and_terminal_in_postgres(
+    postgres_store: PostgresStore,
+) -> None:
+    principal = await add_token(postgres_store)
+    repository = PostgresArtifactRepository(postgres_store.pool)
+    object_store = FakeObjectStore(clock=lambda: datetime.now(UTC))
+    artifact_service = ScientificArtifactService(
+        repository=repository,
+        object_store=object_store,
+        allowed_media_types=ALLOWED_MEDIA_TYPES,
+        clock=lambda: datetime.now(UTC),
+    )
+    uploads = ScientificInputUploadService(store=postgres_store, artifacts=artifact_service)
+    payload = b">target\nMKT"
+    begun = await uploads.begin(
+        principal=principal,
+        request=ScientificInputUploadRequest(
+            model_id="qwen3-8b",
+            sha256=digest(payload).removeprefix("sha256:"),
+            size_bytes=len(payload),
+            media_type="text/x-fasta",
+        ),
+        idempotency_key="postgres-input-upload-0001",
+    )
+    assert await postgres_store.claim_operation("generic-worker", lease_seconds=30) is None
+    intent = await repository.get_upload(
+        FinalizeArtifactUpload(
+            upload_id=begun.upload_id,
+            operation_id=begun.operation_id,
+            tenant_id=principal.tenant_id,
+        )
+    )
+    object_store.put(intent.storage_key, payload, "text/x-fasta")
+    pointer = await uploads.finalize(
+        principal=principal,
+        operation_id=begun.operation_id,
+        upload_id=begun.upload_id,
+    )
+    replay = await uploads.finalize(
+        principal=principal,
+        operation_id=begun.operation_id,
+        upload_id=begun.upload_id,
+    )
+    operation = await postgres_store.get_operation(begun.operation_id, tenant_id=principal.tenant_id)
+    assert replay == pointer
+    assert operation.status is OperationStatus.SUCCEEDED
+    assert operation.outcome == "artifact_uploaded"
+    async with postgres_store.pool.acquire() as connection:
+        assert await connection.fetchval(
+            "SELECT count(*) FROM fs2_scientific_artifacts WHERE operation_id=$1",
+            begun.operation_id,
+        ) == 1
+        assert await connection.fetchval(
+            "SELECT count(*) FROM fs2_operation_events WHERE operation_id=$1 AND event='artifact_uploaded'",
+            begun.operation_id,
+        ) == 1
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_generic_claims(
+    postgres_store: PostgresStore,
+) -> None:
+    principal = await add_token(postgres_store)
+    operation = await postgres_store.append_operation(
+        principal=principal,
+        admission=AdmissionRequest(
+            model_id="qwen3-8b",
+            operation="design",
+            protocol="scientific-batch-v1",
+            idempotency_key="postgres-scientific-batch-0001",
+            request_body=b'{"schema":"fs2-serve.nebius.ai/scientific-run-request/v1"}',
+        ),
+        model_revision="b968826d",
+        reserved_gpu_seconds=0,
+        max_attempts=1,
+    )
+    assert await postgres_store.claim_operation("generic-worker", lease_seconds=30) is None
+
+    plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="design", max_attempts=2),))
+    scheduling = SchedulingSnapshot(
+        policy_revision=hashlib.sha256(b"postgres-scientific-policy").hexdigest(),
+        captured_at=operation.accepted_at,
+        service_class=ServiceClass.CUSTOMER_BATCH,
+        tenant_queue="scientific",
+        model_lane="qwen3-8b",
+        workload_namespace="fs2-models",
+        route_namespace="fs2-models",
+        stages=(
+            StageSchedulingDecision(
+                stage_id="design",
+                resource_class=ResourceClass.GPU,
+                resolved_cluster_queue="inference-accelerators",
+                resolved_local_queue="scientific",
+                workload_priority_class="customer-batch",
+                workload_priority_value=100,
+                resolved_pool_preference=("h100-preemptible",),
+                accelerator_resource_name="nvidia.com/gpu",
+                accelerator_count=1,
+                max_queue_seconds=None,
+                max_execution_seconds=None,
+                checkpoint_mode=CheckpointMode.RESTART,
+                preemption_mode=PreemptionMode.RESTARTABLE,
+            ),
+        ),
+    )
+    batches = PostgresScientificBatchRepository(postgres_store.pool)
+    input_artifact_id = uuid4()
+    input_attempt_id = uuid4()
+    input_digest = "sha256:" + "1" * 64
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            """
+            INSERT INTO fs2_scientific_stage_attempts(
+                attempt_id,operation_id,tenant_id,stage_id,shard_id,attempt_number,
+                status,started_at,retention_expires_at
+            ) VALUES($1,$2,$3,'input','-',1,'running',clock_timestamp(),clock_timestamp()+interval '1 day')
+            """,
+            input_attempt_id,
+            operation.id,
+            principal.tenant_id,
+        )
+        await connection.execute(
+            """
+            INSERT INTO fs2_scientific_artifacts(
+                id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
+                media_type,storage_key,access_profile,retention_expires_at
+            ) VALUES($1,$2,$3,$4,'input','-','input',$5,1,'application/json',$6,'public',
+                clock_timestamp()+interval '1 day')
+            """,
+            input_artifact_id,
+            input_attempt_id,
+            operation.id,
+            principal.tenant_id,
+            input_digest,
+            f"scientific/v1/tenants/{principal.tenant_id}/operations/{operation.id}/stages/input/shards/-/"
+            f"attempts/{input_attempt_id}/"
+            f"input/sha256/{input_digest.removeprefix('sha256:')}",
+        )
+        assert await connection.fetchval(
+            "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_batches','SELECT,INSERT')"
+        )
+        assert not await connection.fetchval(
+            "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_batches','UPDATE')"
+        )
+        assert await connection.fetchval(
+            "SELECT has_column_privilege('fs2_serve_runtime','fs2_scientific_batches','status','UPDATE')"
+        )
+        assert not await connection.fetchval(
+            "SELECT has_column_privilege('fs2_serve_runtime','fs2_scientific_batches','tenant_id','UPDATE')"
+        )
+        assert await connection.fetchval(
+            "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_batch_events','SELECT,INSERT')"
+        )
+        assert not await connection.fetchval(
+            "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_batch_events','UPDATE,DELETE')"
+        )
+    admitted = await batches.create(
+        operation_id=operation.id,
+        tenant_id=principal.tenant_id,
+        model_id="qwen3-8b",
+        variant_id="qwen3-8b-h100",
+        input_artifact_id=input_artifact_id,
+        plan=plan,
+        scheduling=scheduling,
+    )
+    assert (
+        await batches.create(
+            operation_id=operation.id,
+            tenant_id=principal.tenant_id,
+            model_id="qwen3-8b",
+            variant_id="qwen3-8b-h100",
+            input_artifact_id=input_artifact_id,
+            plan=plan,
+            scheduling=scheduling,
+        )
+        == admitted
+    )
+
+    first_claim = await batches.claim_next(
+        controller_id="controller-a",
+        lease_seconds=30,
+        now=datetime.now(UTC),
+    )
+    assert first_claim is not None and await batches.load(first_claim) == admitted
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            "UPDATE fs2_scientific_batches SET lease_expires_at=clock_timestamp()-interval '1 second' "
+            "WHERE operation_id=$1",
+            operation.id,
+        )
+    second_claim = await batches.claim_next(
+        controller_id="controller-b",
+        lease_seconds=30,
+        now=datetime.now(UTC),
+    )
+    assert second_claim is not None and second_claim.fencing_token == first_claim.fencing_token + 1
+    with pytest.raises(BatchFenceLostError):
+        await batches.load(first_claim)
+    await batches.release(second_claim)
+
+    cluster = FakeScientificBatchCluster()
+    controller = ScientificBatchController(
+        repository=batches,
+        cluster=cluster,
+        controller_id="controller-b",
+        namespace="fs2-models",
+        lease_seconds=30,
+    )
+    assert await controller.reconcile_once() == operation.id
+    running = await batches.get(operation.id, tenant_id=principal.tenant_id)
+    assert running.status.value == "running"
+    projected_running = await postgres_store.get_operation(operation.id, tenant_id=principal.tenant_id)
+    assert projected_running.status is OperationStatus.RUNNING
+    async with postgres_store.pool.acquire() as connection:
+        operation_events = await connection.fetch(
+            "SELECT event,status FROM fs2_operation_events WHERE operation_id=$1 ORDER BY id",
+            operation.id,
+        )
+    assert [(row["event"], row["status"]) for row in operation_events][-1] == (
+        "scientific_batch_running",
+        "running",
+    )
+    events = await batches.list_events(operation.id, tenant_id=principal.tenant_id)
+    assert [event.sequence for event in events] == sorted(event.sequence for event in events)
+    assert [event.draft.phase.value for event in events] == ["queued", "scheduling"]
+
+    revision = running.revision
+    cancellation = await batches.request_cancel(
+        operation.id,
+        tenant_id=principal.tenant_id,
+        actor=principal.principal_id,
+    )
+    assert cancellation.cancel_requested is True and cancellation.revision == revision
+    assert await controller.reconcile_once() == operation.id
+    terminal = await batches.get(operation.id, tenant_id=principal.tenant_id)
+    assert terminal.status.value == "cancelled"
+    projected = await postgres_store.get_operation(operation.id, tenant_id=principal.tenant_id)
+    assert projected.status is OperationStatus.CANCELLED and projected.error_code == "cancelled"
+    async with postgres_store.pool.acquire() as connection:
+        operation_events = await connection.fetch(
+            "SELECT event,status FROM fs2_operation_events WHERE operation_id=$1 ORDER BY id",
+            operation.id,
+        )
+    assert [(row["event"], row["status"]) for row in operation_events][-1] == (
+        "scientific_batch_cancelled",
+        "cancelled",
+    )
