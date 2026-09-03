@@ -54,6 +54,11 @@ class SchedulingContractResolver:
         self.service_classes = _object(self.contract.get("service_classes"), "Kueue service classes")
         self.local_queues = _object(self.contract.get("local_queues"), "Kueue local queues")
         self.cluster_queues = _object(self.contract.get("cluster_queues"), "Kueue cluster queues")
+        self.priority_classes = _object(
+            self.contract.get("workload_priority_classes"), "Kueue workload priority classes"
+        )
+        self.local_queue_routes = _object(self.contract.get("local_queue_routes"), "Kueue local queue routes")
+        self.pools = _object(self.contract.get("pools"), "Kueue accelerator pools")
 
     @classmethod
     def load(cls, path: Path) -> SchedulingContractResolver:
@@ -64,6 +69,7 @@ class SchedulingContractResolver:
         *,
         service_class: str,
         model_id: str,
+        tenant_id: str,
         profile: Mapping[str, Any],
         plan: ScientificBatchPlan,
         captured_at: datetime | None = None,
@@ -73,6 +79,8 @@ class SchedulingContractResolver:
         except ValueError as error:
             raise SchedulingContractError("service class is outside the controller contract") from error
         policy = _object(self.service_classes.get(service_class), "Kueue service class")
+        if policy.get("caller_selectable") is not True:
+            raise SchedulingContractError("Kueue service class is not caller-selectable")
         local_queue_name = policy.get("default_local_queue")
         priority_name = policy.get("workload_priority_class")
         priority = policy.get("priority")
@@ -95,21 +103,31 @@ class SchedulingContractResolver:
         cluster_queue_name = local_spec.get("clusterQueue")
         if resolved_local != local_queue_name or not isinstance(cluster_queue_name, str):
             raise SchedulingContractError("Kueue LocalQueue identity is inconsistent")
+        route = _object(self.local_queue_routes.get(local_queue_name), "Kueue LocalQueue route")
+        route_models = route.get("model_ids")
+        route_tenants = route.get("tenant_ids")
+        if (
+            route.get("namespace") != local_metadata.get("namespace")
+            or route.get("cluster_queue") != cluster_queue_name
+            or not isinstance(route_models, list)
+            or not all(isinstance(item, str) for item in route_models)
+            or not isinstance(route_tenants, list)
+            or not all(isinstance(item, str) for item in route_tenants)
+        ):
+            raise SchedulingContractError("Kueue LocalQueue route is inconsistent")
+        if route_models and model_id not in route_models:
+            raise SchedulingContractError("model is not routed to the selected Kueue LocalQueue")
+        if route_tenants and tenant_id not in route_tenants:
+            raise SchedulingContractError("tenant is not routed to the selected Kueue LocalQueue")
         cluster_queue = _object(self.cluster_queues.get(cluster_queue_name), "Kueue ClusterQueue")
         cluster_metadata = _object(cluster_queue.get("metadata"), "Kueue ClusterQueue metadata")
         cluster_spec = _object(cluster_queue.get("spec"), "Kueue ClusterQueue spec")
         if cluster_metadata.get("name") != cluster_queue_name:
             raise SchedulingContractError("Kueue ClusterQueue identity is inconsistent")
 
-        resources: list[str] = []
-        for raw_group in cluster_spec.get("resourceGroups", []):
-            group = _object(raw_group, "Kueue resource group")
-            covered = group.get("coveredResources")
-            if isinstance(covered, list):
-                resources.extend(item for item in covered if isinstance(item, str))
-        accelerator_resources = sorted(set(item for item in resources if "/" in item))
-        if len(accelerator_resources) != 1:
-            raise SchedulingContractError("selected Kueue queue must expose one accelerator resource")
+        priority_class = _object(self.priority_classes.get(priority_name), "Kueue WorkloadPriorityClass")
+        if priority_class.get("value") != priority:
+            raise SchedulingContractError("Kueue WorkloadPriorityClass value is inconsistent")
 
         profile_resources = _object(profile.get("resources"), "scientific profile resources")
         compatible_pools = profile_resources.get("compatible_pool_ids")
@@ -124,6 +142,40 @@ class SchedulingContractResolver:
         resolved_pools = tuple(item for item in pool_preference if item in compatible_pools)
         if not resolved_pools:
             raise SchedulingContractError("profile has no compatible pool in the Kueue service class")
+        accelerator_resources: set[str] = set()
+        resource_groups = cluster_spec.get("resourceGroups")
+        if not isinstance(resource_groups, list):
+            raise SchedulingContractError("selected Kueue ClusterQueue has no resource groups")
+        for pool_id in resolved_pools:
+            pool = _object(self.pools.get(pool_id), f"Kueue pool {pool_id}")
+            resource_name = pool.get("accelerator_resource_name")
+            resource_flavor = pool.get("resource_flavor")
+            if not isinstance(resource_name, str) or "/" not in resource_name or not isinstance(resource_flavor, str):
+                raise SchedulingContractError("Kueue pool accelerator mapping is invalid")
+            available = any(
+                isinstance(raw_group, Mapping)
+                and resource_name in raw_group.get("coveredResources", [])
+                and any(
+                    isinstance(raw_flavor, Mapping) and raw_flavor.get("name") == resource_flavor
+                    for raw_flavor in raw_group.get("flavors", [])
+                )
+                for raw_group in resource_groups
+            )
+            if not available:
+                raise SchedulingContractError("compatible pool is unavailable from the selected ClusterQueue")
+            accelerator_resources.add(resource_name)
+        if len(accelerator_resources) != 1:
+            raise SchedulingContractError("compatible Kueue pools use ambiguous accelerator resources")
+        accelerator_resource = next(iter(accelerator_resources))
+
+        max_queue_seconds = policy.get("max_queue_seconds")
+        max_execution_seconds = policy.get("max_execution_seconds")
+        for value, label in (
+            (max_queue_seconds, "maximum queue seconds"),
+            (max_execution_seconds, "maximum execution seconds"),
+        ):
+            if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 1):
+                raise SchedulingContractError(f"Kueue {label} is invalid")
         try:
             preemption = PreemptionMode(str(policy.get("preemption_mode")))
         except ValueError as error:
@@ -140,10 +192,10 @@ class SchedulingContractResolver:
                 # Kueue writes the admitted ResourceFlavor later. Submission
                 # must never guess it from a pool preference.
                 admitted_resource_flavor=None,
-                accelerator_resource_name=accelerator_resources[0],
+                accelerator_resource_name=accelerator_resource,
                 accelerator_count=0 if stage.resource_class is ResourceClass.CPU else gpu_count,
-                max_queue_seconds=None,
-                max_execution_seconds=None,
+                max_queue_seconds=max_queue_seconds,
+                max_execution_seconds=max_execution_seconds,
                 checkpoint_mode=stage.checkpoint_mode,
                 preemption_mode=preemption,
             )

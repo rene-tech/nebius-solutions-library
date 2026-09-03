@@ -2820,20 +2820,35 @@ async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_g
     )
     batches = PostgresScientificBatchRepository(postgres_store.pool)
     input_artifact_id = uuid4()
+    input_attempt_id = uuid4()
     input_digest = "sha256:" + "1" * 64
     async with postgres_store.pool.acquire() as connection:
         await connection.execute(
             """
+            INSERT INTO fs2_scientific_stage_attempts(
+                attempt_id,operation_id,tenant_id,stage_id,shard_id,attempt_number,
+                status,started_at,retention_expires_at
+            ) VALUES($1,$2,$3,'input','-',1,'running',clock_timestamp(),clock_timestamp()+interval '1 day')
+            """,
+            input_attempt_id,
+            operation.id,
+            principal.tenant_id,
+        )
+        await connection.execute(
+            """
             INSERT INTO fs2_scientific_artifacts(
-                id,operation_id,tenant_id,attempt,direction,digest,size_bytes,
-                media_type,storage_key,access_profile
-            ) VALUES($1,$2,$3,0,'input',$4,1,'application/json',$5,'public')
+                id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
+                media_type,storage_key,access_profile,retention_expires_at
+            ) VALUES($1,$2,$3,$4,'input','-','input',$5,1,'application/json',$6,'public',
+                clock_timestamp()+interval '1 day')
             """,
             input_artifact_id,
+            input_attempt_id,
             operation.id,
             principal.tenant_id,
             input_digest,
-            f"scientific/v1/tenants/{principal.tenant_id}/operations/{operation.id}/attempts/0/"
+            f"scientific/v1/tenants/{principal.tenant_id}/operations/{operation.id}/stages/input/shards/-/"
+            f"attempts/{input_attempt_id}/"
             f"input/sha256/{input_digest.removeprefix('sha256:')}",
         )
         assert await connection.fetchval(
@@ -2863,15 +2878,18 @@ async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_g
         plan=plan,
         scheduling=scheduling,
     )
-    assert await batches.create(
-        operation_id=operation.id,
-        tenant_id=principal.tenant_id,
-        model_id="qwen3-8b",
-        variant_id="qwen3-8b-h100",
-        input_artifact_id=input_artifact_id,
-        plan=plan,
-        scheduling=scheduling,
-    ) == admitted
+    assert (
+        await batches.create(
+            operation_id=operation.id,
+            tenant_id=principal.tenant_id,
+            model_id="qwen3-8b",
+            variant_id="qwen3-8b-h100",
+            input_artifact_id=input_artifact_id,
+            plan=plan,
+            scheduling=scheduling,
+        )
+        == admitted
+    )
 
     first_claim = await batches.claim_next(
         controller_id="controller-a",

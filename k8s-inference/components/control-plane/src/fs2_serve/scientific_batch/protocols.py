@@ -10,11 +10,12 @@ from .models import (
     PUBLIC_ARTIFACT_ACCESS_CONTEXT,
     AdapterExecutionPlan,
     ArtifactAccessContext,
-    ArtifactCommit,
+    AttemptArtifactCommit,
     BatchClaim,
     BatchEventDraft,
     RuntimeArtifactLocalization,
     SchedulingSnapshot,
+    ScientificAttemptState,
     ScientificBatchPlan,
     ScientificBatchState,
     VerifiedInputManifest,
@@ -77,9 +78,27 @@ class ScientificBatchRepository(Protocol):
         now: datetime,
     ) -> ScientificBatchState: ...
 
-    async def artifact_commits(self, claim: BatchClaim, *, stage_id: str) -> tuple[ArtifactCommit, ...]: ...
-
     async def release(self, claim: BatchClaim) -> None: ...
+
+
+class ScientificBatchArtifactLifecycle(Protocol):
+    """Canonical artifact-service integration; it owns all artifact persistence."""
+
+    async def open_attempt(self, resource: WorkloadResource, *, started_at: datetime) -> None: ...
+
+    async def close_attempt(self, state: ScientificBatchState, attempt: ScientificAttemptState) -> None: ...
+
+    async def ensure_stage_commit(self, state: ScientificBatchState, *, stage_id: str) -> None: ...
+
+    async def artifact_commits(
+        self, state: ScientificBatchState, *, stage_id: str
+    ) -> tuple[AttemptArtifactCommit, ...]: ...
+
+
+class LegacyArtifactCommitReader(Protocol):
+    """In-memory core-test seam retained without a second production table."""
+
+    async def artifact_commits(self, claim: BatchClaim, *, stage_id: str) -> tuple[AttemptArtifactCommit, ...]: ...
 
 
 class ScientificBatchCluster(Protocol):

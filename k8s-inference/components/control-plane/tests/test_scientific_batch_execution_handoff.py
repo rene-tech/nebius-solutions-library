@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import tarfile
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
@@ -27,18 +30,20 @@ from fs2_serve.scientific_batch.adapters import (
 )
 from fs2_serve.scientific_batch.artifact_bridge import ArtifactServiceBridge
 from fs2_serve.scientific_batch.capability import ScientificWorkloadCapabilityAuthority
+from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer, ScientificExecutionMapError
 from fs2_serve.scientific_batch.models import (
     AdapterExecutionPlan,
     ArtifactAccessContext,
-    ArtifactCommit,
     ArtifactMaterialization,
+    AttemptArtifactCommit,
     LifecyclePhase,
     MaterializationMode,
     ResourceClass,
     RuntimeArtifactFile,
     RuntimeArtifactLocalization,
+    RuntimeArtifactMount,
     SchedulingSnapshot,
     ScientificBatchPlan,
     ScientificInputArtifact,
@@ -47,7 +52,9 @@ from fs2_serve.scientific_batch.models import (
     StageInvocation,
     StageSchedulingDecision,
     VerifiedInputManifest,
+    WorkloadKind,
     WorkloadObservation,
+    WorkloadResource,
     WorkloadState,
 )
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificWorkloadProfile
@@ -90,11 +97,14 @@ def artifact(
     access: ArtifactAccess,
 ) -> ArtifactRecord:
     digest = sha(value)
+    attempt_id = uuid4()
     return ArtifactRecord(
         artifact_id=artifact_id,
+        attempt_id=attempt_id,
         operation_id=operation_id,
         tenant_id="academic-poc",
-        attempt=0,
+        stage_id="input",
+        shard_id=None,
         direction=ArtifactDirection.INPUT,
         digest=digest,
         size_bytes=len(value),
@@ -102,11 +112,14 @@ def artifact(
         storage_key=artifact_storage_key(
             tenant_id="academic-poc",
             operation_id=operation_id,
-            attempt=0,
+            stage_id="input",
+            shard_id=None,
+            attempt_id=attempt_id,
             direction=ArtifactDirection.INPUT,
             digest=digest,
         ),
         access=access,
+        retention_expires_at=NOW.replace(year=2027),
         created_at=NOW,
     )
 
@@ -168,7 +181,14 @@ async def test_input_manifest_resolves_and_verifies_contained_logical_artifacts(
 def runtime_profile() -> ScientificWorkloadProfile:
     files = [
         {"path": name, "sha256": hashlib.sha256(name.encode()).hexdigest(), "size_bytes": index + 1}
-        for index, name in enumerate(("ccd.pkl", "components.cif", "model.pt", "tokens.json"))
+        for index, name in enumerate(
+            (
+                "components.cif",
+                "components.cif.rdkit_mol.pkl",
+                "clusters-by-entity-40.txt",
+                "obsolete_release_date.csv",
+            )
+        )
     ]
     return ScientificWorkloadProfile(
         MappingProxyType(
@@ -197,8 +217,11 @@ def runtime_profile() -> ScientificWorkloadProfile:
                 "workload": {
                     "stages": [
                         {
+                            "id": "prepare",
+                        },
+                        {
                             "id": "inference",
-                        }
+                        },
                     ]
                 },
             }
@@ -208,7 +231,12 @@ def runtime_profile() -> ScientificWorkloadProfile:
 
 def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileScientificManifestRenderer:
     profile = runtime_profile()
-    file_names = ("ccd.pkl", "components.cif", "model.pt", "tokens.json")
+    file_names = (
+        "components.cif",
+        "components.cif.rdkit_mol.pkl",
+        "clusters-by-entity-40.txt",
+        "obsolete_release_date.csv",
+    )
     files = [
         {"path": name, "sha256": hashlib.sha256(name.encode()).hexdigest(), "size_bytes": index + 1}
         for index, name in enumerate(file_names[:-1] if omit_file else file_names)
@@ -227,13 +255,42 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                 "runtime_artifacts": [
                     {
                         "artifact_id": "protenix-common",
-                        "mount_path": "/opt/fs2/artifacts/protenix-common",
+                        "mount_path": "/models/protenix-v2/common",
                         "content_digest": "sha256:" + "c" * 64,
                         "file_manifest": files,
                         "localization_receipt_digest": sha("localized-protenix-common"),
                     }
                 ],
                 "stages": [
+                    {
+                        "stage_id": "prepare",
+                        "image": "registry.test/protenix@sha256:" + "a" * 64,
+                        "collector_id": "protenix-prepared-v1",
+                        "validator_id": "protenix-prepared-validator-v1",
+                        "mounts": [
+                            {
+                                "name": "artifact-workspace",
+                                "kind": "artifact-workspace",
+                                "claim_name": None,
+                                "mount_path": "/mnt/fs2-scientific",
+                                "sub_path": None,
+                                "read_only": False,
+                            },
+                            {
+                                "name": "model-artifacts",
+                                "kind": "reference",
+                                "claim_name": "scientific-model-artifacts",
+                                "mount_path": "/models",
+                                "sub_path": None,
+                                "read_only": True,
+                            },
+                        ],
+                        "service_account_name": "scientific-runner",
+                        "resources": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
+                        "active_deadline_seconds": 3600,
+                        "termination_grace_seconds": 60,
+                        "environment": {},
+                    },
                     {
                         "stage_id": "inference",
                         "image": "registry.test/protenix@sha256:" + "a" * 64,
@@ -252,7 +309,7 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                                 "name": "model-artifacts",
                                 "kind": "reference",
                                 "claim_name": "scientific-model-artifacts",
-                                "mount_path": "/opt/fs2/artifacts",
+                                "mount_path": "/models",
                                 "sub_path": None,
                                 "read_only": True,
                             },
@@ -262,7 +319,7 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
                         "environment": {},
-                    }
+                    },
                 ],
             }
         ],
@@ -285,19 +342,68 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
 
 
 def runtime_plan() -> AdapterExecutionPlan:
-    controller_plan = ScientificBatchPlan((ScientificStagePlan("inference"),))
-    invocation = StageInvocation(
+    controller_plan = ScientificBatchPlan(
+        (
+            ScientificStagePlan("prepare", resource_class=ResourceClass.CPU),
+            ScientificStagePlan("inference", depends_on=("prepare",)),
+        )
+    )
+    mount = RuntimeArtifactMount(
+        artifact_id="protenix-common",
+        mount_path="/models/protenix-v2/common",
+        sub_path="protenix-v2/common",
+        expected_content_sha256="c" * 64,
+        readiness_receipt_sha256=sha("localized-protenix-common").removeprefix("sha256:"),
+        supplemental_groups=(10001,),
+    )
+    prepare = StageInvocation(
+        stage_id="prepare",
+        shard_id="main",
+        argv=(
+            "protenix-wrapper",
+            "prep",
+            "--common",
+            "/models/protenix-v2/common",
+            "--runtime-localization-marker",
+            "/mnt/fs2-scientific/work/prepare/main/.fs2/runtime-localization.json",
+        ),
+        environment=(),
+        working_directory="/mnt/fs2-scientific/work/prepare/main",
+        consumes=(),
+        produces="processed-input",
+        collector_id="protenix-prepared-v1",
+        validator_id="protenix-prepared-validator-v1",
+        handoff_name="processed-envelope",
+        runtime_artifacts=("protenix-common",),
+        runtime_mounts=(mount,),
+    )
+    inference = StageInvocation(
         stage_id="inference",
         shard_id="main",
-        argv=("protenix", "pred", "--model", "/opt/fs2/artifacts/protenix-common/model.pt"),
+        argv=(
+            "protenix-wrapper",
+            "pred",
+            "--common",
+            "/models/protenix-v2/common",
+            "--runtime-localization-marker",
+            "/mnt/fs2-scientific/work/inference/main/.fs2/runtime-localization.json",
+        ),
         environment=(),
         working_directory="/mnt/fs2-scientific/work/inference/main",
-        consumes=(),
+        consumes=("processed-input",),
         produces="result-manifest",
         collector_id="protenix-results-v1",
         validator_id="protenix-validator-v1",
         handoff_name=None,
+        materializations=(
+            ArtifactMaterialization(
+                "processed-input",
+                "/mnt/fs2-scientific/work/inference/main/prepared",
+                MaterializationMode.EXTRACT_TAR,
+            ),
+        ),
         runtime_artifacts=("protenix-common",),
+        runtime_mounts=(mount,),
     )
     return AdapterExecutionPlan(
         model_id="protenix-v2",
@@ -305,7 +411,7 @@ def runtime_plan() -> AdapterExecutionPlan:
         source_revision="b" * 40,
         request_sha256="d" * 64,
         controller_plan=controller_plan,
-        invocations=(invocation,),
+        invocations=(prepare, inference),
         required_model_artifacts=("protenix-common",),
     )
 
@@ -313,15 +419,52 @@ def runtime_plan() -> AdapterExecutionPlan:
 def test_runtime_artifact_file_manifest_is_hard_admission_gate(tmp_path: Path) -> None:
     plan = runtime_plan()
     complete = runtime_execution_map(tmp_path)
-    localized = complete.verify_runtime_artifacts(runtime_profile(), plan)
+    access = ArtifactAccessContext(profile="public", receipt_digest=None)
+    localized = complete.verify_runtime_artifacts(runtime_profile(), plan, access)
     assert tuple(item.path for item in localized[0].files) == (
-        "ccd.pkl",
         "components.cif",
-        "model.pt",
-        "tokens.json",
+        "components.cif.rdkit_mol.pkl",
+        "clusters-by-entity-40.txt",
+        "obsolete_release_date.csv",
     )
     with pytest.raises(ScientificExecutionMapError, match="localization evidence differs"):
-        runtime_execution_map(tmp_path, omit_file=True).verify_runtime_artifacts(runtime_profile(), plan)
+        runtime_execution_map(tmp_path, omit_file=True).verify_runtime_artifacts(runtime_profile(), plan, access)
+
+
+def test_disabled_profile_runtime_artifact_may_be_unused_but_not_undeclared(tmp_path: Path) -> None:
+    base = runtime_profile()
+    value = dict(base.value)
+    requirements = list(value["artifact_requirements"])  # type: ignore[arg-type]
+    requirements.append(
+        {
+            "artifact_id": "disabled-reference-databases",
+            "content_digest_sha256": "e" * 64,
+            "required_files": ["disabled.db"],
+            "file_manifest": [{"path": "disabled.db", "sha256": "f" * 64, "size_bytes": 1}],
+        }
+    )
+    value["artifact_requirements"] = requirements
+    enriched_profile = ScientificWorkloadProfile(MappingProxyType(value))
+    renderer = runtime_execution_map(tmp_path)
+    access = ArtifactAccessContext(profile="public", receipt_digest=None)
+    assert renderer.verify_runtime_artifacts(enriched_profile, runtime_plan(), access)
+
+    base_plan = runtime_plan()
+    undeclared_invocations = tuple(
+        replace(
+            invocation,
+            runtime_artifacts=("unknown-artifact",),
+            runtime_mounts=(replace(invocation.runtime_mounts[0], artifact_id="unknown-artifact"),),
+        )
+        for invocation in base_plan.invocations
+    )
+    undeclared = replace(
+        base_plan,
+        invocations=undeclared_invocations,
+        required_model_artifacts=("unknown-artifact",),
+    )
+    with pytest.raises(ScientificExecutionMapError, match="no verified localization"):
+        renderer.verify_runtime_artifacts(enriched_profile, undeclared, access)
 
 
 def scheduling(plan: ScientificBatchPlan) -> SchedulingSnapshot:
@@ -350,6 +493,68 @@ def scheduling(plan: ScientificBatchPlan) -> SchedulingSnapshot:
             for stage in plan.stages
         ),
     )
+
+
+def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chown(tmp_path: Path) -> None:
+    plan = runtime_plan()
+    renderer = runtime_execution_map(tmp_path)
+    access = ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id="tenant-a")
+    localized = renderer.verify_runtime_artifacts(runtime_profile(), plan, access)
+    snapshot = scheduling(plan.controller_plan)
+    invocation = plan.invocation("prepare", "main")
+    resource = WorkloadResource(
+        operation_id=uuid4(),
+        batch_id=uuid4(),
+        workload_id=uuid4(),
+        attempt_id=uuid4(),
+        stage_id="prepare",
+        shard_id="main",
+        attempt_number=1,
+        tenant_id="tenant-a",
+        model_id="protenix-v2",
+        variant_id="upstream-v2-0-0",
+        input_artifact_id=uuid4(),
+        service_class=ServiceClass.CUSTOMER_BATCH,
+        scheduling_snapshot_digest=snapshot.digest,
+        namespace="fs2-models",
+        name="protenix-prepare",
+        kind=WorkloadKind.JOB,
+        scheduling=snapshot.stage("prepare"),
+        invocation=invocation,
+        access_context=access,
+        runtime_artifacts=localized,
+    )
+    manifest = renderer.render(resource)
+    pod = manifest["spec"]["template"]["spec"]  # type: ignore[index]
+    model = pod["containers"][0]
+    assert {item["mountPath"] for item in model["volumeMounts"]} == {
+        "/mnt/fs2-scientific",
+        "/models/protenix-v2/common",
+    }
+    runtime_mount = next(item for item in model["volumeMounts"] if item["name"] == "model-artifacts")
+    assert runtime_mount["subPath"] == "protenix-v2/common"
+    assert runtime_mount["readOnly"] is True
+    assert pod["securityContext"]["supplementalGroups"] == [10001]
+    assert pod["securityContext"]["fsGroupChangePolicy"] == "OnRootMismatch"
+    assert "fsGroup" not in pod["securityContext"]
+    runtime_env = next(item["value"] for item in model["env"] if item["name"] == "FS2_RUNTIME_ARTIFACTS_JSON")
+    marker = json.loads(runtime_env)
+    assert marker["schema"] == companion.RUNTIME_LOCALIZATION_SCHEMA
+    assert marker["attempt_id"] == str(resource.attempt_id)
+    assert marker["artifacts"][0]["readiness_receipt_sha256"] == sha("localized-protenix-common").removeprefix(
+        "sha256:"
+    )
+    assert marker["artifacts"][0]["sub_path"] == "protenix-v2/common"
+    model_environment = {item["name"]: item["value"] for item in model["env"]}
+    assert model_environment["FS2_RUNTIME_LOCALIZATION_MARKER"] == (
+        "/mnt/fs2-scientific/work/prepare/main/.fs2/runtime-localization.json"
+    )
+    prepare = pod["initContainers"][0]
+    assert prepare["env"] == [{"name": "FS2_RUNTIME_ARTIFACTS_JSON", "value": runtime_env}]
+
+    tampered = replace(resource, runtime_artifacts=(replace(localized[0], mount_path="/models/changed"),))
+    with pytest.raises(ScientificExecutionMapError, match="lost its verified localization"):
+        renderer.render(tampered)
 
 
 @pytest.mark.asyncio
@@ -391,7 +596,13 @@ async def test_af3_gpu_stage_materializes_only_validated_cpu_handoff() -> None:
     gpu = StageInvocation(
         stage_id="inference",
         shard_id="main",
-        argv=("run_alphafold.py", "--run_data_pipeline=false", "--run_inference=true"),
+        argv=(
+            "run_alphafold.py",
+            "--run_data_pipeline=false",
+            "--run_inference=true",
+            "--runtime-localization-marker",
+            "/mnt/fs2-scientific/work/inference/main/.fs2/runtime-localization.json",
+        ),
         environment=(),
         working_directory="/mnt/fs2-scientific/work/inference/main",
         consumes=("processed-input",),
@@ -402,11 +613,20 @@ async def test_af3_gpu_stage_materializes_only_validated_cpu_handoff() -> None:
         materializations=(
             ArtifactMaterialization(
                 "processed-input",
-                "/mnt/fs2-scientific/work/inference/main/processed.json",
-                MaterializationMode.COPY_FILE,
+                "/mnt/fs2-scientific/work/inference/main/prepared",
+                MaterializationMode.EXTRACT_TAR,
             ),
         ),
         runtime_artifacts=("af3-parameters",),
+        runtime_mounts=(
+            RuntimeArtifactMount(
+                artifact_id="af3-parameters",
+                mount_path="/opt/fs2/artifacts/af3-parameters",
+                expected_content_sha256=sha("af3-parameters").removeprefix("sha256:"),
+                authorization_receipt_sha256=sha("af3-access").removeprefix("sha256:"),
+                readiness_receipt_sha256=sha("af3-localized").removeprefix("sha256:"),
+            ),
+        ),
     )
     execution = AdapterExecutionPlan(
         model_id="alphafold3",
@@ -461,6 +681,7 @@ async def test_af3_gpu_stage_materializes_only_validated_cpu_handoff() -> None:
     )
     assert not cluster.apply_history
     assert repository.records[operation_id].runtime_artifacts == (localized,)
+    assert state_from_value(state_to_value(repository.records[operation_id])) == repository.records[operation_id]
     await controller.reconcile_once()
     cpu_attempt = repository.records[operation_id].stage("data-pipeline").attempts[0]
     cluster.set_observation(
@@ -474,7 +695,7 @@ async def test_af3_gpu_stage_materializes_only_validated_cpu_handoff() -> None:
     )
     processed_id = uuid4()
     repository.put_commit(
-        ArtifactCommit(
+        AttemptArtifactCommit(
             operation_id=operation_id,
             stage_id="data-pipeline",
             attempt_ids=(cpu_attempt.attempt_id,),
@@ -482,7 +703,7 @@ async def test_af3_gpu_stage_materializes_only_validated_cpu_handoff() -> None:
             handoff_artifact_id=processed_id,
             handoff_digest=sha("processed"),
             handoff_size_bytes=9,
-            handoff_media_type="application/json",
+            handoff_media_type="application/x-tar",
             handoff_compression=None,
             manifest_artifact_id=uuid4(),
             validation_artifact_id=uuid4(),
@@ -503,6 +724,63 @@ async def test_af3_gpu_stage_materializes_only_validated_cpu_handoff() -> None:
     assert raw_id not in {item.artifact_id for item in gpu_resource.materializations}
     assert gpu_resource.access_context == access
     assert gpu_resource.runtime_artifacts == (localized,)
+
+
+@pytest.mark.parametrize("model", ["alphafold3", "protenix-v2"])
+def test_processed_envelope_relocates_with_relative_marker_contract(
+    model: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "scientific"
+    root.mkdir()
+    monkeypatch.setattr(companion, "_ROOT", root)
+    processed = b'{"dialect":"alphafold3","sequences":[]}'
+    marker = {
+        "schema": f"fs2-serve.nebius.ai/{model}-processed-envelope/v1",
+        "logical_artifact_id": "processed-input",
+        "member": "processed.json",
+        "sha256": hashlib.sha256(processed).hexdigest(),
+    }
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as archive:
+        for name, content in (
+            ("processed.json", processed),
+            ("provenance.json", json.dumps(marker, sort_keys=True, separators=(",", ":")).encode()),
+        ):
+            member = tarfile.TarInfo(name)
+            member.size = len(content)
+            member.mode = 0o400
+            archive.addfile(member, io.BytesIO(content))
+    envelope = buffer.getvalue()
+
+    class Client:
+        def download(self, artifact_id, *, expected_digest, expected_size_bytes, expected_media_type):
+            assert artifact_id == envelope_id
+            assert expected_digest == sha(envelope)
+            assert expected_size_bytes == len(envelope)
+            assert expected_media_type == "application/x-tar"
+            return envelope
+
+    envelope_id = uuid4()
+    for attempt in ("attempt-one", "attempt-two"):
+        destination = root / "work" / model / attempt / "prepared"
+        companion.materialize_artifact(
+            client=Client(),  # type: ignore[arg-type]
+            artifact_id=envelope_id,
+            destination=destination,
+            mode=MaterializationMode.EXTRACT_TAR,
+            compression=None,
+            yaml_name=None,
+            reuse_prefix=None,
+            expected_digest=sha(envelope),
+            expected_size_bytes=len(envelope),
+            expected_media_type="application/x-tar",
+        )
+        assert (destination / "processed.json").read_bytes() == processed
+        relocated = json.loads((destination / "provenance.json").read_bytes())
+        assert relocated == marker
+        assert not any(key.endswith("path") for key in relocated)
 
 
 @pytest.mark.asyncio
@@ -557,7 +835,21 @@ def test_companion_materializes_collects_validates_and_commits_exact_handoff(
     root.mkdir()
     monkeypatch.setattr(companion, "_ROOT", root)
     workspace = root / "work" / "fold" / "main"
-    companion.prepare_workspace(workspace)
+    runtime_marker = {
+        "schema": companion.RUNTIME_LOCALIZATION_SCHEMA,
+        "operation_id": str(uuid4()),
+        "attempt_id": str(uuid4()),
+        "tenant_id": "tenant-a",
+        "model_id": "fold-model",
+        "variant_id": "fold-model-h100",
+        "stage_id": "fold",
+        "artifacts": [],
+    }
+    companion.prepare_workspace(
+        workspace,
+        runtime_localization_json=json.dumps(runtime_marker),
+    )
+    assert json.loads((workspace / ".fs2/runtime-localization.json").read_text()) == runtime_marker
     input_bytes = b">target\nACDE\n"
 
     class Client:
@@ -675,6 +967,7 @@ def test_companion_materializes_collects_validates_and_commits_exact_handoff(
                     }
                 ],
                 "runtime_artifacts": [],
+                "runtime_mounts": [],
             }
         ),
         workspace=workspace,
@@ -683,10 +976,10 @@ def test_companion_materializes_collects_validates_and_commits_exact_handoff(
         max_output_bytes=invocation.max_output_bytes,
         poll_seconds=0.001,
     )
-    assert client.committed is not None
     structure_ref = client.uploads["fold-result:structure"][1]
-    assert client.committed["handoff_artifact_id"] == structure_ref["artifact_id"]
     manifest_bytes = client.uploads["fold-result:manifest"][0]
     manifest = json.loads(manifest_bytes)
     assert manifest["entries"][0]["artifact"] == structure_ref
-    assert client.committed["semantic_valid"] is True
+    validation = json.loads(client.uploads["fold-result:validation"][0])
+    assert validation["status"] == "passed"
+    assert validation["logical_output_id"] == "fold-result"

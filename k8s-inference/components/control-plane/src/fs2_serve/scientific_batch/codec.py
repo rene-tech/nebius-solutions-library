@@ -28,6 +28,7 @@ from .models import (
     ResourceClass,
     RuntimeArtifactFile,
     RuntimeArtifactLocalization,
+    RuntimeArtifactMount,
     SchedulingAdmission,
     SchedulingSnapshot,
     ScientificAttemptState,
@@ -45,7 +46,7 @@ from .models import (
     WorkloadRef,
 )
 
-STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v5"
+STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v6"
 MAX_STATE_BYTES = 4 * 1024 * 1024
 
 
@@ -180,6 +181,19 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                         "max_output_artifacts": invocation.max_output_artifacts,
                         "max_output_bytes": invocation.max_output_bytes,
                         "runtime_artifacts": list(invocation.runtime_artifacts),
+                        "runtime_mounts": [
+                            {
+                                "artifact_id": item.artifact_id,
+                                "mount_path": item.mount_path,
+                                "sub_path": item.sub_path,
+                                "read_only": item.read_only,
+                                "expected_content_sha256": item.expected_content_sha256,
+                                "authorization_receipt_sha256": item.authorization_receipt_sha256,
+                                "readiness_receipt_sha256": item.readiness_receipt_sha256,
+                                "supplemental_groups": list(item.supplemental_groups),
+                            }
+                            for item in invocation.runtime_mounts
+                        ],
                         "materializations": [
                             {
                                 "artifact_id": item.artifact_id,
@@ -250,6 +264,8 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                         "stage_id": attempt.stage_id,
                         "shard_id": attempt.shard_id,
                         "attempt_number": attempt.attempt_number,
+                        "started_at": attempt.started_at.isoformat() if attempt.started_at is not None else None,
+                        "completed_at": attempt.completed_at.isoformat() if attempt.completed_at is not None else None,
                         "workload": {
                             "namespace": attempt.workload.namespace,
                             "name": attempt.workload.name,
@@ -481,6 +497,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     "max_output_artifacts",
                     "max_output_bytes",
                     "runtime_artifacts",
+                    "runtime_mounts",
                     "materializations",
                 },
                 "adapter invocation",
@@ -508,6 +525,45 @@ def state_from_value(raw: object) -> ScientificBatchState:
                         reuse_prefix=_optional_string(materialization["reuse_prefix"], "BoltzGen reuse prefix"),
                     )
                 )
+            runtime_mounts: list[RuntimeArtifactMount] = []
+            for raw_mount in _items(invocation["runtime_mounts"], "runtime artifact mounts", maximum=64):
+                mount = _object(
+                    raw_mount,
+                    {
+                        "artifact_id",
+                        "mount_path",
+                        "sub_path",
+                        "read_only",
+                        "expected_content_sha256",
+                        "authorization_receipt_sha256",
+                        "readiness_receipt_sha256",
+                        "supplemental_groups",
+                    },
+                    "runtime artifact mount",
+                )
+                runtime_mounts.append(
+                    RuntimeArtifactMount(
+                        artifact_id=_string(mount["artifact_id"], "runtime mount artifact ID"),
+                        mount_path=_string(mount["mount_path"], "runtime mount path"),
+                        sub_path=_optional_string(mount["sub_path"], "runtime mount sub-path"),
+                        read_only=_boolean(mount["read_only"], "runtime mount read-only"),
+                        expected_content_sha256=_optional_string(
+                            mount["expected_content_sha256"], "runtime mount content digest"
+                        ),
+                        authorization_receipt_sha256=_optional_string(
+                            mount["authorization_receipt_sha256"], "runtime mount authorization receipt"
+                        ),
+                        readiness_receipt_sha256=_optional_string(
+                            mount["readiness_receipt_sha256"], "runtime mount readiness receipt"
+                        ),
+                        supplemental_groups=tuple(
+                            _integer(item, "runtime mount supplemental group")
+                            for item in _items(
+                                mount["supplemental_groups"], "runtime mount supplemental groups", maximum=32
+                            )
+                        ),
+                    )
+                )
             invocations.append(
                 StageInvocation(
                     stage_id=_string(invocation["stage_id"], "invocation stage ID"),
@@ -524,6 +580,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     max_output_bytes=_integer(invocation["max_output_bytes"], "maximum output bytes"),
                     materializations=tuple(materializations),
                     runtime_artifacts=_string_items(invocation["runtime_artifacts"], "runtime artifact", maximum=64),
+                    runtime_mounts=tuple(runtime_mounts),
                 )
             )
         adapter_execution = AdapterExecutionPlan(
@@ -605,6 +662,8 @@ def state_from_value(raw: object) -> ScientificBatchState:
         "stage_id",
         "shard_id",
         "attempt_number",
+        "started_at",
+        "completed_at",
         "workload",
         "outcome",
         "last_phase",
@@ -653,6 +712,14 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     stage_id=_string(attempt["stage_id"], "attempt stage ID"),
                     shard_id=_optional_string(attempt["shard_id"], "attempt shard ID"),
                     attempt_number=_integer(attempt["attempt_number"], "attempt number"),
+                    started_at=(
+                        None if attempt["started_at"] is None else _datetime(attempt["started_at"], "attempt start")
+                    ),
+                    completed_at=(
+                        None
+                        if attempt["completed_at"] is None
+                        else _datetime(attempt["completed_at"], "attempt completion")
+                    ),
                     workload=WorkloadRef(
                         namespace=_string(workload["namespace"], "workload namespace"),
                         name=_string(workload["name"], "workload name"),

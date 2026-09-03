@@ -62,6 +62,7 @@ class ScientificExecutionBinding(Protocol):
         self,
         profile: ScientificWorkloadProfile,
         execution_plan: AdapterExecutionPlan,
+        access_context: ArtifactAccessContext,
     ) -> tuple[RuntimeArtifactLocalization, ...]: ...
 
 
@@ -242,7 +243,7 @@ class ScientificBatchService:
             raise ScientificProfileError("scientific workload profile cannot form an execution plan") from error
         plan = preflight.controller_plan if isinstance(preflight, AdapterExecutionPlan) else preflight
         runtime_artifacts = (
-            self.execution_binding.verify_runtime_artifacts(profile, preflight)
+            self.execution_binding.verify_runtime_artifacts(profile, preflight, access_context)
             if isinstance(preflight, AdapterExecutionPlan)
             else ()
         )
@@ -256,6 +257,7 @@ class ScientificBatchService:
             self.scheduling.freeze(
                 service_class=validated["service_class"],
                 model_id=model_id,
+                tenant_id=principal.tenant_id,
                 profile=profile.value,
                 plan=plan,
                 captured_at=datetime(1970, 1, 1, tzinfo=UTC),
@@ -284,6 +286,7 @@ class ScientificBatchService:
             snapshot = self.scheduling.freeze(
                 service_class=validated["service_class"],
                 model_id=model_id,
+                tenant_id=principal.tenant_id,
                 profile=profile.value,
                 plan=plan,
                 captured_at=operation.accepted_at,

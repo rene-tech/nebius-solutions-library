@@ -59,8 +59,6 @@ from fs2_serve.scientific_artifacts import (
     VerifiedStoredObject,
     artifact_storage_key,
 )
-from fs2_serve.scientific_batch.controller import ScientificBatchController
-from fs2_serve.scientific_batch.models import AttemptOutcome, ScientificAttemptState, WorkloadKind, WorkloadRef
 
 SCHEMA_ROOT = CONTROL_ROOT.parents[1] / "catalog/runtime/schema"
 NOW = datetime(2026, 9, 2, 20, 0, tzinfo=UTC)
@@ -488,40 +486,11 @@ async def test_stage_commit_satisfies_the_batch_controller_identity_check() -> N
             validated_at=NOW + timedelta(minutes=6),
         )
     )
-    commit = await service.artifact_commit(operation_id, stage_id="design", tenant_id=TENANT)
+    commit = await service.stage_commit(operation_id, stage_id="design", tenant_id=TENANT)
     assert commit is not None
-
-    stage_state = _stage_state("design", attempts, shards)
-    record = _batch_record(operation_id)
-    assert ScientificBatchController._commit_matches(record, stage_state, commit)
-
-
-def _stage_state(stage_id: str, attempts: list[UUID], shards: tuple[str, ...]) -> Any:
-    from fs2_serve.scientific_batch.models import ScientificStageState
-
-    return ScientificStageState(
-        stage_id=stage_id,
-        attempts=tuple(
-            ScientificAttemptState(
-                attempt_id=attempt_id,
-                stage_id=stage_id,
-                shard_id=shard,
-                attempt_number=1,
-                workload=WorkloadRef(namespace="fs2-system", name=f"fs2-{shard}", kind=WorkloadKind.JOB),
-                outcome=AttemptOutcome.SUCCEEDED,
-            )
-            for attempt_id, shard in zip(attempts, shards, strict=True)
-        ),
-    )
-
-
-def _batch_record(operation_id: UUID) -> Any:
-    class _Record:
-        pass
-
-    record = _Record()
-    record.operation_id = operation_id  # type: ignore[attr-defined]
-    return record
+    assert set(commit.attempt_ids) == set(attempts)
+    assert tuple(entry.name for entry in commit.manifest.entries) == ("design-0", "design-1")
+    assert commit.semantic_valid is True
 
 
 async def test_a_commit_that_omits_a_succeeded_attempt_is_rejected() -> None:
@@ -1467,19 +1436,7 @@ async def test_a_zero_byte_artifact_round_trips_without_relaxing_the_ceiling() -
     POINTER_SCHEMA.validate(record.to_public_ref().model_dump(mode="json"))
 
 
-async def test_the_batch_bridge_satisfies_the_repository_commit_signature() -> None:
-    """The bridge must be droppable into ``ScientificBatchRepository`` as-is."""
-
-    import inspect
-
-    from fs2_serve.scientific_artifacts import ScientificArtifactBatchBridge
-    from fs2_serve.scientific_batch.models import BatchClaim
-    from fs2_serve.scientific_batch.protocols import ScientificBatchRepository
-
-    assert inspect.signature(ScientificArtifactBatchBridge.artifact_commit) == inspect.signature(
-        ScientificBatchRepository.artifact_commit
-    )
-
+async def test_controller_port_lists_attempt_artifacts_and_canonical_stage_commit() -> None:
     repository = MemoryArtifactRepository()
     operation_id = uuid4()
     await repository.register_operation(operation_id, tenant_id=TENANT)
@@ -1513,14 +1470,12 @@ async def test_the_batch_bridge_satisfies_the_repository_commit_signature() -> N
             validated_at=NOW,
         )
     )
-    bridge = ScientificArtifactBatchBridge(service)
-    claim = BatchClaim(
-        operation_id=operation_id,
-        controller_id="controller-a",
-        fencing_token=1,
-        lease_expires_at=NOW + timedelta(minutes=5),
+    records = await service.list_artifacts(
+        operation_id,
+        tenant_id=TENANT,
+        stage_id="design",
+        attempt_id=attempt_id,
     )
-    commit = await bridge.artifact_commit(claim, stage_id="design")
-    assert commit is not None
-    assert commit.manifest_digest == published.manifest_digest
-    assert await bridge.artifact_commit(claim, stage_id="score") is None
+    assert records == [record]
+    assert await service.stage_commit(operation_id, stage_id="design", tenant_id=TENANT) == published
+    assert await service.stage_commit(operation_id, stage_id="score", tenant_id=TENANT) is None

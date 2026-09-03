@@ -10,7 +10,7 @@ from fs2_serve.scientific_batch.models import (
     PUBLIC_ARTIFACT_ACCESS_CONTEXT,
     AdapterExecutionPlan,
     ArtifactAccessContext,
-    ArtifactCommit,
+    AttemptArtifactCommit,
     BatchClaim,
     BatchEvent,
     BatchEventDraft,
@@ -32,7 +32,7 @@ class FakeScientificBatchRepository:
     def __init__(self) -> None:
         self.records: dict[UUID, ScientificBatchState] = {}
         self.events: dict[UUID, list[BatchEvent]] = {}
-        self.commits: dict[tuple[UUID, str, UUID], ArtifactCommit] = {}
+        self.commits: dict[tuple[UUID, str, UUID], AttemptArtifactCommit] = {}
         self._claims: dict[UUID, BatchClaim] = {}
         self._fences: dict[UUID, int] = {}
         self.fail_next_replace = False
@@ -153,7 +153,7 @@ class FakeScientificBatchRepository:
         self.records[claim.operation_id] = record
         return record
 
-    async def artifact_commits(self, claim: BatchClaim, *, stage_id: str) -> tuple[ArtifactCommit, ...]:
+    async def artifact_commits(self, claim: BatchClaim, *, stage_id: str) -> tuple[AttemptArtifactCommit, ...]:
         self._assert_claim(claim)
         return tuple(
             value
@@ -161,7 +161,7 @@ class FakeScientificBatchRepository:
             if operation_id == claim.operation_id and stored_stage == stage_id
         )
 
-    async def list_artifact_commits(self, operation_id: UUID, *, tenant_id: str) -> tuple[ArtifactCommit, ...]:
+    async def list_artifact_commits(self, operation_id: UUID, *, tenant_id: str) -> tuple[AttemptArtifactCommit, ...]:
         await self.get(operation_id, tenant_id=tenant_id)
         return tuple(
             value for (stored_operation, _, _), value in self.commits.items() if stored_operation == operation_id
@@ -169,12 +169,12 @@ class FakeScientificBatchRepository:
 
     async def record_artifact_commit(
         self,
-        commit: ArtifactCommit,
+        commit: AttemptArtifactCommit,
         *,
         tenant_id: str,
         manifest_artifact_id: UUID,
         validation_artifact_id: UUID,
-    ) -> ArtifactCommit:
+    ) -> AttemptArtifactCommit:
         if (manifest_artifact_id, validation_artifact_id) != (
             commit.manifest_artifact_id,
             commit.validation_artifact_id,
@@ -223,7 +223,7 @@ class FakeScientificBatchRepository:
         current = self.records[operation_id]
         self.records[operation_id] = replace(current, cancel_requested=True, revision=current.revision + 1)
 
-    def put_commit(self, commit: ArtifactCommit) -> None:
+    def put_commit(self, commit: AttemptArtifactCommit) -> None:
         self.commits[(commit.operation_id, commit.stage_id, commit.attempt_ids[0])] = commit
 
 

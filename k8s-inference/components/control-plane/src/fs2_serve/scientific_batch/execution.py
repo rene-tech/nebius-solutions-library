@@ -20,6 +20,7 @@ from uuid import UUID
 
 from .capability import ScientificWorkloadCapabilityAuthority
 from .catalog_adapter import CatalogProfileAdapterError
+from .companion import RUNTIME_LOCALIZATION_SCHEMA
 from .models import (
     AdapterExecutionPlan,
     ArtifactAccessContext,
@@ -116,6 +117,19 @@ def _invocation_json(invocation: StageInvocation) -> str:
             "max_output_artifacts": invocation.max_output_artifacts,
             "max_output_bytes": invocation.max_output_bytes,
             "runtime_artifacts": list(invocation.runtime_artifacts),
+            "runtime_mounts": [
+                {
+                    "artifact_id": item.artifact_id,
+                    "mount_path": item.mount_path,
+                    "sub_path": item.sub_path,
+                    "read_only": item.read_only,
+                    "expected_content_sha256": item.expected_content_sha256,
+                    "authorization_receipt_sha256": item.authorization_receipt_sha256,
+                    "readiness_receipt_sha256": item.readiness_receipt_sha256,
+                    "supplemental_groups": list(item.supplemental_groups),
+                }
+                for item in invocation.runtime_mounts
+            ],
             "materializations": [
                 {
                     "artifact_id": item.artifact_id,
@@ -475,6 +489,7 @@ class FileScientificManifestRenderer:
         self,
         profile: ScientificWorkloadProfile,
         execution_plan: AdapterExecutionPlan,
+        access_context: ArtifactAccessContext,
     ) -> tuple[RuntimeArtifactLocalization, ...]:
         """Resolve exact attested files before the batch row can be admitted."""
 
@@ -514,22 +529,40 @@ class FileScientificManifestRenderer:
             for invocation in execution_plan.invocations:
                 if artifact_id not in invocation.runtime_artifacts:
                     continue
+                binding = next(item for item in invocation.runtime_mounts if item.artifact_id == artifact_id)
+                if (
+                    binding.mount_path != localization.mount_path
+                    or binding.expected_content_sha256 != localization.content_digest.removeprefix("sha256:")
+                    or binding.readiness_receipt_sha256
+                    != localization.localization_receipt_digest.removeprefix("sha256:")
+                    or binding.authorization_receipt_sha256
+                    != (
+                        None
+                        if access_context.receipt_digest is None
+                        else access_context.receipt_digest.removeprefix("sha256:")
+                    )
+                ):
+                    raise ScientificExecutionMapError(
+                        f"runtime artifact {artifact_id} invocation mount differs from verified localization"
+                    )
                 mounts = self.executions[(profile.model_id, invocation.stage_id)].mounts
                 artifact_path = PurePosixPath(localization.mount_path)
-                if not any(
-                    mount.kind in {"reference", "private"}
+                candidates = [
+                    source
+                    for source in mounts
+                    if source.kind in {"reference", "private"}
                     and (
-                        artifact_path == PurePosixPath(mount.mount_path)
-                        or PurePosixPath(mount.mount_path) in artifact_path.parents
+                        artifact_path == PurePosixPath(source.mount_path)
+                        or PurePosixPath(source.mount_path) in artifact_path.parents
                     )
-                    for mount in mounts
-                ):
+                ]
+                if not candidates:
                     raise ScientificExecutionMapError(
                         f"runtime artifact {artifact_id} is not covered by the stage's read-only mounts"
                     )
             result.append(localization)
-        if set(by_id) != set(execution_plan.required_model_artifacts):
-            raise ScientificExecutionMapError("adapter runtime artifacts do not exactly match the profile")
+        if not set(execution_plan.required_model_artifacts).issubset(by_id):
+            raise ScientificExecutionMapError("adapter requires an undeclared profile runtime artifact")
         return tuple(result)
 
     def _pod(self, resource: WorkloadResource, execution: StageExecution) -> dict[str, Any]:
@@ -538,6 +571,26 @@ class FileScientificManifestRenderer:
             raise ScientificExecutionMapError("scientific workload has no canonical stage invocation")
         if invocation.collector_id != execution.collector_id or invocation.validator_id != execution.validator_id:
             raise ScientificExecutionMapError("scientific workload collector or validator binding changed")
+        localized = {item.logical_artifact_id: item for item in resource.runtime_artifacts}
+        bindings = {item.artifact_id: item for item in invocation.runtime_mounts}
+        if set(localized) != set(invocation.runtime_artifacts) or set(bindings) != set(invocation.runtime_artifacts):
+            raise ScientificExecutionMapError("runtime artifact localization is incomplete at workload apply")
+        for artifact_id, binding in bindings.items():
+            artifact = localized[artifact_id]
+            if (
+                artifact.mount_path != binding.mount_path
+                or artifact.content_digest.removeprefix("sha256:") != binding.expected_content_sha256
+                or artifact.localization_receipt_digest.removeprefix("sha256:") != binding.readiness_receipt_sha256
+                or binding.authorization_receipt_sha256
+                != (
+                    None
+                    if resource.access_context.receipt_digest is None
+                    else resource.access_context.receipt_digest.removeprefix("sha256:")
+                )
+            ):
+                raise ScientificExecutionMapError(
+                    f"runtime artifact {artifact_id} lost its verified localization binding before apply"
+                )
         gpu_count = resource.scheduling.accelerator_count
         limits = {
             "cpu": execution.cpu,
@@ -546,6 +599,31 @@ class FileScientificManifestRenderer:
         }
         if gpu_count:
             limits[resource.scheduling.accelerator_resource_name] = str(gpu_count)
+        runtime_marker = {
+            "schema": RUNTIME_LOCALIZATION_SCHEMA,
+            "operation_id": str(resource.operation_id),
+            "attempt_id": str(resource.attempt_id),
+            "tenant_id": resource.tenant_id,
+            "model_id": resource.model_id,
+            "variant_id": resource.variant_id,
+            "stage_id": resource.stage_id,
+            "artifacts": [
+                {
+                    "artifact_id": item.logical_artifact_id,
+                    "mount_path": item.mount_path,
+                    "content_digest": item.content_digest,
+                    "localization_receipt_digest": item.localization_receipt_digest,
+                    "sub_path": binding.sub_path,
+                    "readiness_receipt_sha256": binding.readiness_receipt_sha256,
+                    "authorization_receipt_sha256": binding.authorization_receipt_sha256,
+                }
+                for item in resource.runtime_artifacts
+                for binding in invocation.runtime_mounts
+                if binding.artifact_id == item.logical_artifact_id
+            ],
+        }
+        runtime_marker_json = json.dumps(runtime_marker, sort_keys=True, separators=(",", ":"))
+        runtime_marker_path = f"{invocation.working_directory}/.fs2/runtime-localization.json"
         env = [
             {"name": key, "value": value}
             for key, value in sorted(
@@ -567,39 +645,63 @@ class FileScientificManifestRenderer:
                     "FS2_VALIDATOR_ID": invocation.validator_id,
                     "FS2_RUN_ROOT": "/mnt/fs2-scientific",
                     "FS2_LOGICAL_OUTPUT_ID": invocation.produces,
-                    "FS2_RUNTIME_ARTIFACTS_JSON": json.dumps(
-                        [
-                            {
-                                "artifact_id": item.logical_artifact_id,
-                                "mount_path": item.mount_path,
-                                "content_digest": item.content_digest,
-                                "localization_receipt_digest": item.localization_receipt_digest,
-                            }
-                            for item in resource.runtime_artifacts
-                        ],
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    ),
+                    "FS2_RUNTIME_ARTIFACTS_JSON": runtime_marker_json,
+                    "FS2_RUNTIME_LOCALIZATION_MARKER": runtime_marker_path,
                 }.items()
             )
         ]
-        volume_mounts = []
-        volumes = []
-        for mount in execution.mounts:
-            volume_mount = {"name": mount.name, "mountPath": mount.mount_path, "readOnly": mount.read_only}
-            if mount.sub_path is not None:
-                volume_mount["subPath"] = mount.sub_path
+        workspace = next((mount for mount in execution.mounts if mount.kind == "artifact-workspace"), None)
+        if workspace is None:
+            raise ScientificExecutionMapError("scientific stage has no attempt-local artifact workspace")
+        volume_mounts: list[dict[str, Any]] = [
+            {"name": workspace.name, "mountPath": workspace.mount_path, "readOnly": False}
+        ]
+        volumes: list[dict[str, Any]] = [{"name": workspace.name, "emptyDir": {}}]
+        volume_names = {workspace.name}
+        used_sources: set[str] = set()
+        for binding in invocation.runtime_mounts:
+            artifact_path = PurePosixPath(binding.mount_path)
+            candidates = [
+                source
+                for source in execution.mounts
+                if source.kind in {"reference", "private"}
+                and (
+                    artifact_path == PurePosixPath(source.mount_path)
+                    or PurePosixPath(source.mount_path) in artifact_path.parents
+                )
+            ]
+            if not candidates:
+                raise ScientificExecutionMapError(
+                    f"runtime artifact {binding.artifact_id} has no physical read-only volume source"
+                )
+            source = max(candidates, key=lambda item: len(PurePosixPath(item.mount_path).parts))
+            used_sources.add(source.name)
+            volume_mount: dict[str, Any] = {
+                "name": source.name,
+                "mountPath": binding.mount_path,
+                "readOnly": True,
+            }
+            sub_parts = tuple(
+                part
+                for value in (source.sub_path, binding.sub_path)
+                if value is not None
+                for part in PurePosixPath(value).parts
+            )
+            if sub_parts:
+                volume_mount["subPath"] = PurePosixPath(*sub_parts).as_posix()
             volume_mounts.append(volume_mount)
-            if mount.kind == "artifact-workspace":
-                volumes.append({"name": mount.name, "emptyDir": {}})
-            else:
-                assert mount.claim_name is not None
+            if source.name not in volume_names:
+                assert source.claim_name is not None
                 volumes.append(
                     {
-                        "name": mount.name,
-                        "persistentVolumeClaim": {"claimName": mount.claim_name, "readOnly": True},
+                        "name": source.name,
+                        "persistentVolumeClaim": {"claimName": source.claim_name, "readOnly": True},
                     }
                 )
+                volume_names.add(source.name)
+        declared_sources = {mount.name for mount in execution.mounts if mount.kind in {"reference", "private"}}
+        if declared_sources != used_sources:
+            raise ScientificExecutionMapError("stage declares an unbound broad runtime artifact volume")
         if self.tools_image is None or self.internal_api_url is None or self.capability_authority is None:
             raise ScientificExecutionMapError("scientific artifact companion runtime is not configured")
         capability = self.capability_authority.issue(resource)
@@ -625,6 +727,7 @@ class FileScientificManifestRenderer:
                     "--workspace",
                     invocation.working_directory,
                 ],
+                "env": [{"name": "FS2_RUNTIME_ARTIFACTS_JSON", "value": runtime_marker_json}],
                 "volumeMounts": [workspace_mount],
                 "resources": {
                     "requests": {"cpu": "50m", "memory": "64Mi"},
@@ -701,6 +804,23 @@ class FileScientificManifestRenderer:
             },
             "securityContext": companion_security,
         }
+        supplemental_groups = sorted(
+            {group for mount in invocation.runtime_mounts for group in mount.supplemental_groups}
+        )
+        pod_security: dict[str, Any] = {
+            "runAsNonRoot": True,
+            "seccompProfile": {"type": "RuntimeDefault"},
+        }
+        if supplemental_groups:
+            pod_security.update(
+                {
+                    "supplementalGroups": supplemental_groups,
+                    # No fsGroup is set, so Kubernetes does not recursively
+                    # mutate the immutable multi-GB artifact tree. Keep the
+                    # safe policy explicit if a platform later supplies one.
+                    "fsGroupChangePolicy": "OnRootMismatch",
+                }
+            )
         return {
             "metadata": {},
             "spec": {
@@ -709,7 +829,7 @@ class FileScientificManifestRenderer:
                 "enableServiceLinks": False,
                 "restartPolicy": "Never",
                 "terminationGracePeriodSeconds": execution.termination_grace_seconds,
-                "securityContext": {"runAsNonRoot": True, "seccompProfile": {"type": "RuntimeDefault"}},
+                "securityContext": pod_security,
                 "initContainers": init_containers,
                 "containers": [
                     {
