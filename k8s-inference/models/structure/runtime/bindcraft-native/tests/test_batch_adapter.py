@@ -91,6 +91,9 @@ def output_for(envelope: dict[str, Any], *, scoring_engine: str = "pyrosetta") -
         "mean_plddt": 0.89,
         "interface_dg": -31.2,
         "shape_complementarity": 0.71,
+        "interface_residue_count": 8,
+        "buried_surface_area": 1200.0,
+        "hotspot_geometry_validated": True,
     }
     entries.extend([
         {

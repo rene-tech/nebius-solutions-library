@@ -512,7 +512,7 @@ def validate_output_manifest(
             raise CatalogError("native BindCraft candidate entries have wrong semantic types")
         candidate = _exact(
             _json_entry(metric_entry, artifact_loader, f"native BindCraft {prefix}"),
-            {"candidate_id", "shard_index", "seed", "sequence", "scoring_engine", "iptm", "mean_plddt", "interface_dg", "shape_complementarity"},
+            {"candidate_id", "shard_index", "seed", "sequence", "scoring_engine", "iptm", "mean_plddt", "interface_dg", "shape_complementarity", "interface_residue_count", "buried_surface_area", "hotspot_geometry_validated"},
             f"native BindCraft {prefix}",
         )
         if candidate["scoring_engine"] != "pyrosetta" or not isinstance(candidate["candidate_id"], str) or OPAQUE.fullmatch(candidate["candidate_id"]) is None or candidate["candidate_id"] in seen:
@@ -529,8 +529,12 @@ def validate_output_manifest(
             raise CatalogError("native BindCraft binder-only PDB differs from candidate sequence")
         _number(candidate["iptm"], 0.0, 1.0, "native BindCraft iPTM")
         _number(candidate["mean_plddt"], 0.0, 1.0, "native BindCraft mean pLDDT")
-        _number(candidate["interface_dg"], -1_000_000.0, 1_000_000.0, "native BindCraft interface dG")
-        _number(candidate["shape_complementarity"], 0.0, 1.0, "native BindCraft shape complementarity")
+        if _number(candidate["interface_dg"], -1_000_000.0, 0.0, "native BindCraft interface dG") == 0.0 or _number(candidate["shape_complementarity"], 0.0, 1.0, "native BindCraft shape complementarity") == 0.0:
+            raise CatalogError("native BindCraft interface scores must be nonzero")
+        if _integer(candidate["interface_residue_count"], 1, 10000, "native BindCraft interface residue count") < 1 or _number(candidate["buried_surface_area"], 0.001, 1_000_000.0, "native BindCraft buried surface area") <= 0:
+            raise CatalogError("native BindCraft interface geometry is empty")
+        if candidate["hotspot_geometry_validated"] is not True:
+            raise CatalogError("native BindCraft hotspot geometry was not validated")
     return {
         "validator_id": ADAPTER_ID, "status": "passed",
         "request_sha256": request_digest(request),
