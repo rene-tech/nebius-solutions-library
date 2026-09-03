@@ -1,0 +1,118 @@
+{
+  "accelerator": {
+    "cuda_execution_confirmed": true,
+    "devices": [
+      "NVIDIA H100 80GB HBM3"
+    ],
+    "evidence": "upstream .trb run metadata records torch.cuda.get_device_name()"
+  },
+  "cache_level": {
+    "declared": "artifact-local",
+    "gpu_snapshot_used": false,
+    "note": "Declared by the submitting plan from observed image/artifact residency. This is an image and filesystem cache level only. No GPU memory snapshot or CRIU restore is used by this runtime.",
+    "source": "submitter-declared"
+  },
+  "checkpoint": {
+    "artifact_id": "artifact.rfdiffusion.base-ckpt",
+    "digest_verified": true,
+    "path": "/opt/fs2/artifacts/public/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab/Base_ckpt.pt",
+    "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+    "size_bytes": 483616107
+  },
+  "designs": [
+    {
+      "design_index": 9100,
+      "motif": {
+        "positions": 12,
+        "recomputed_independently_from_exported_structures": true,
+        "rigid_body_rotation_degrees": 0.978,
+        "rigid_body_translation_angstrom": 47.9561,
+        "rmsd_angstrom": 0.1129,
+        "rmsd_unaligned_angstrom": 47.9563,
+        "superposition": "horn-quaternion-optimal-superposition"
+      },
+      "run_metadata": {
+        "device": "NVIDIA H100 80GB HBM3",
+        "motif_positions": 12,
+        "seconds": 19.611,
+        "sha256": "578ed892be99d11aeabfa3548595d8cfcd098185af997d2b9c8e475d5bdf398c"
+      },
+      "seed": 9100,
+      "structure": {
+        "atoms": 128,
+        "bytes": 8576,
+        "chains": [
+          "A"
+        ],
+        "glycine_fraction": 0.625,
+        "max_ca_ca_deviation_angstrom": 0.137,
+        "max_extent_angstrom": 38.36,
+        "residue_counts": {
+          "ALA": 1,
+          "ASN": 1,
+          "ASP": 1,
+          "GLN": 1,
+          "GLU": 2,
+          "GLY": 20,
+          "ILE": 2,
+          "LYS": 3,
+          "VAL": 1
+        },
+        "residues": 32,
+        "sha256": "ed7d8d33ae73d2e6ffdfd86703e6569e18353fe9985f824973153b4270c520d4"
+      },
+      "trajectory_files": [
+        "designs/traj/design_9100_Xt-1_traj.pdb",
+        "designs/traj/design_9100_pX0_traj.pdb"
+      ]
+    }
+  ],
+  "operation": "scaffold-motif",
+  "phases_seconds": {
+    "resolve_checkpoint": 0.381,
+    "resolve_inputs": 0.004,
+    "upstream_execute": 32.473,
+    "validate_request": 0.003,
+    "verify_artifacts": 0.061,
+    "write_envelope": 0.002
+  },
+  "request": {
+    "contigs": [
+      "10-10/A23-34/10-10"
+    ],
+    "diffuser_T": 50,
+    "hotspot_residues": [],
+    "length": null,
+    "num_designs": 1,
+    "operation": "scaffold-motif",
+    "requested_residues": {
+      "maximum": 32,
+      "minimum": 32
+    },
+    "seed": 9100
+  },
+  "runtime_image_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+  "schema": "fs2.nebius.ai/rfdiffusion-h100-semantic-qualification/v1",
+  "status": "passed",
+  "total_seconds": 32.924,
+  "upstream": {
+    "log_path": "/workspace/fs2-rfd-r12-scaffold-motif/upstream.log",
+    "model_ready_seconds": 11.983,
+    "returncode": 0
+  },
+  "upstream_argv": [
+    "/opt/conda/bin/python",
+    "/opt/rfdiffusion/scripts/run_inference.py",
+    "inference.output_prefix=/workspace/fs2-rfd-r12-scaffold-motif/designs/design",
+    "inference.ckpt_override_path=/opt/fs2/artifacts/public/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab/Base_ckpt.pt",
+    "inference.num_designs=1",
+    "inference.design_startnum=9100",
+    "inference.deterministic=True",
+    "diffuser.T=50",
+    "contigmap.contigs=[10-10/A23-34/10-10]",
+    "inference.schedule_directory_path=/tmp/fs2-rfdiffusion/schedules",
+    "hydra.run.dir=/tmp/fs2-rfdiffusion/hydra",
+    "hydra.output_subdir=null",
+    "inference.input_pdb=/opt/fs2/artifacts/public/targets/1UBQ.pdb"
+  ]
+}

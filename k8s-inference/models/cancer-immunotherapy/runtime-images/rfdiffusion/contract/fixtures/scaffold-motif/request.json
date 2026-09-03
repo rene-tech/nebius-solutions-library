@@ -1,0 +1,15 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "scaffold-motif",
+  "service_class": "customer-batch",
+  "parameters": {
+    "schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+    "operation": "scaffold-motif",
+    "contigs": ["10-10/A23-34/10-10"],
+    "num_designs": 1,
+    "seed": 9100,
+    "diffuser_T": 50,
+    "input_pdb_artifact_id": "artifact.rfdiffusion.target.1ubq",
+    "motif_ca_rmsd_limit": 1.5
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "adapter_id": "rfdiffusion-v1-1-0-base-v1",
+  "design_indices": [
+    8100
+  ],
+  "expected_markers": [
+    "designs/design_8100.pdb",
+    "designs/design_8100.trb"
+  ],
+  "fixture": "design-backbone",
+  "image_invocation": [
+    "python",
+    "/opt/fs2/runtime_entrypoint.py",
+    "run",
+    "--request",
+    "/var/run/fs2/request.json",
+    "--input-manifest",
+    "/var/run/fs2/input-manifest.json",
+    "--artifact-root",
+    "/opt/fs2/artifacts",
+    "--checkpoint-artifact-id",
+    "artifact.rfdiffusion.base-ckpt",
+    "--output",
+    "/workspace/run",
+    "--scratch",
+    "/tmp/fs2-rfdiffusion"
+  ],
+  "operation": "design-backbone",
+  "parameters_schema": "fs2-serve.nebius.ai/rfdiffusion-parameters/v1",
+  "requested_residues": {
+    "maximum": 76,
+    "minimum": 76
+  },
+  "required_artifacts": [
+    {
+      "artifact_id": "artifact.rfdiffusion.base-ckpt",
+      "relative_path": "public/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab/Base_ckpt.pt",
+      "resolved_container_path": "/opt/fs2/artifacts/public/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab/Base_ckpt.pt",
+      "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+      "size_bytes": 483616107
+    }
+  ],
+  "schema": "fs2.nebius.ai/rfdiffusion-adapter-to-image-golden/v1",
+  "upstream_argv": [
+    "python",
+    "/opt/rfdiffusion/scripts/run_inference.py",
+    "inference.output_prefix=/workspace/run/designs/design",
+    "inference.ckpt_override_path=/opt/fs2/artifacts/public/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab/Base_ckpt.pt",
+    "inference.num_designs=1",
+    "inference.design_startnum=8100",
+    "inference.deterministic=True",
+    "diffuser.T=50",
+    "contigmap.contigs=[76-76]",
+    "inference.schedule_directory_path=/tmp/fs2-rfdiffusion/schedules",
+    "hydra.run.dir=/tmp/fs2-rfdiffusion/hydra",
+    "hydra.output_subdir=null"
+  ]
+}
