@@ -2,8 +2,8 @@
   "schema": "fs2.nebius.ai/proteina-complexa-semantic-qualification/v1",
   "owner_task": "fs2-complexa-final-h100-qualification-r20260903",
   "model_id": "proteina-complexa",
-  "collected_at": "2026-09-03T06:29:10Z",
-  "image_digest": "sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+  "collected_at": "2026-09-03T13:53:21Z",
+  "image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
   "source_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
   "gate": {
     "judged_by": "qualification/validate_result.py, which never imports the runtime entrypoint. Re-derived from the raw artifacts: the CUDA marker read out of upstream.log, and every structural fact -- chain lengths, residue diversity, backbone geometry and ligand presence -- parsed from the produced PDB files. Read back from result.json, which the runtime entrypoint authors about itself: the exit code, terminal state, argv, the artifact-verification markers with their digest flags, and every phase number. Those read-back fields are checked for internal consistency and are failed closed when absent or negative, but this gate cannot independently re-measure them.",
@@ -19,9 +19,7 @@
       "chains of 20+ standard residues carry at least five distinct amino-acid types",
       "the designed binder falls inside the target's declared binder-length envelope, including the single-valued envelope that ligand and AME declare",
       "the expected ligand residue is present for ligand and AME"
-    ],
-    "reverified_at": "2026-09-03",
-    "reverification": "The published gate was independently re-audited by fs2-complexa-h100-independent-fable-review-r20260903 and found to under-enforce what this list claimed: a 162-byte two-atom PDB passed the whole ligand gate. The gate was corrected and the requirement list rewritten to match the code. The three H100 runs below are unchanged; their raw outputs were already reclaimed with the task PVC, so the corrected gate could not be re-run against the original artifacts. It is instead proven against fixtures reconstructed from this receipt in tests/test_validate_result_gate.py, which also proves the counterexample now fails."
+    ]
   },
   "all_variants_passed": true,
   "variants": [
@@ -35,24 +33,24 @@
       "content_digests_verified": true,
       "cuda_marker_in_log": true,
       "phases": {
-        "interpreter_and_import_seconds": 12.466,
-        "model_load_seconds": 8.232,
-        "sampling_seconds": 12.328,
-        "compute_seconds": 12.328,
-        "upstream_reported_generation_seconds": 20.56,
-        "upstream_process_seconds": 34.632,
+        "interpreter_and_import_seconds": 12.49,
+        "model_load_seconds": 8.743,
+        "sampling_seconds": 12.407,
+        "compute_seconds": 12.407,
+        "upstream_reported_generation_seconds": 21.15,
+        "upstream_process_seconds": 35.223,
         "lora_reapplied": false
       },
       "chain_lengths": {
-        "job_0_n_243_id_0_single_orig0.pdb": {
+        "job_0_n_217_id_0_single_orig0.pdb": {
           "A": 115,
-          "B": 128
+          "B": 102
         }
       },
       "chain_distinct_residues": {
-        "job_0_n_243_id_0_single_orig0.pdb": {
+        "job_0_n_217_id_0_single_orig0.pdb": {
           "A": 20,
-          "B": 16
+          "B": 19
         }
       },
       "binder_length_envelope": [
@@ -75,12 +73,12 @@
       "content_digests_verified": true,
       "cuda_marker_in_log": true,
       "phases": {
-        "interpreter_and_import_seconds": 12.177,
-        "model_load_seconds": 12.768,
-        "sampling_seconds": 12.332,
-        "compute_seconds": 12.332,
-        "upstream_reported_generation_seconds": 25.1,
-        "upstream_process_seconds": 38.687,
+        "interpreter_and_import_seconds": 12.388,
+        "model_load_seconds": 12.829,
+        "sampling_seconds": 14.121,
+        "compute_seconds": 14.121,
+        "upstream_reported_generation_seconds": 26.95,
+        "upstream_process_seconds": 41.268,
         "lora_reapplied": true
       },
       "chain_lengths": {
@@ -94,10 +92,10 @@
       },
       "chain_distinct_residues": {
         "job_0_n_100_id_0_single_orig0.pdb": {
-          "B": 18
+          "B": 20
         },
         "job_0_n_100_id_0_single_orig0_binder.pdb": {
-          "B": 18
+          "B": 20
         }
       },
       "binder_length_envelope": [
@@ -123,12 +121,12 @@
       "content_digests_verified": true,
       "cuda_marker_in_log": true,
       "phases": {
-        "interpreter_and_import_seconds": 12.527,
-        "model_load_seconds": 11.686,
-        "sampling_seconds": 12.894,
-        "compute_seconds": 12.894,
-        "upstream_reported_generation_seconds": 24.58,
-        "upstream_process_seconds": 38.707,
+        "interpreter_and_import_seconds": 12.541,
+        "model_load_seconds": 11.914,
+        "sampling_seconds": 13.586,
+        "compute_seconds": 13.586,
+        "upstream_reported_generation_seconds": 25.5,
+        "upstream_process_seconds": 39.522,
         "lora_reapplied": true
       },
       "chain_lengths": {
@@ -142,10 +140,10 @@
       },
       "chain_distinct_residues": {
         "job_0_n_180_id_0_single_orig0.pdb": {
-          "B": 17
+          "B": 19
         },
         "job_0_n_180_id_0_single_orig0_binder.pdb": {
-          "B": 17
+          "B": 19
         }
       },
       "binder_length_envelope": [

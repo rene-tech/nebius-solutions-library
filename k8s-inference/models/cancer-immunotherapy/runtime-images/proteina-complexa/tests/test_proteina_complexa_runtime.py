@@ -119,22 +119,23 @@ class PinnedIdentityTests(unittest.TestCase):
         )
         self.assertEqual(pinned["source"]["revision"], ENTRY.SOURCE_REVISION)
 
-    def test_registry_attestation_matches_the_accepted_image_and_build_commit(self) -> None:
+    def test_registry_identity_matches_the_accepted_image_and_source_revision(self) -> None:
         provenance = json.loads(
             (ROOT / "evidence/registry-provenance.json").read_text(encoding="utf-8")
         )
         self.assertEqual(
-            LOCK["image"]["published_digest"], provenance["image"]["index_digest"]
+            LOCK["image"]["published_digest"], provenance["image"]["digest"]
         )
         self.assertEqual(
             LOCK["image"]["provenance"]["vcs_revision"],
-            provenance["slsa"]["vcs"]["revision"],
+            provenance["oci_config"]["labels"]["org.opencontainers.image.revision"],
         )
         self.assertEqual(
             LOCK["source"]["archive_sha256"],
-            provenance["slsa"]["source"]["archive_sha256"],
+            provenance["source_equivalence"]["archive_sha256"],
         )
-        self.assertTrue(provenance["verification"]["attestation_is_attached_to_platform_manifest"])
+        self.assertEqual([], provenance["registry_referrers"])
+        self.assertFalse(provenance["verification"]["slsa_attestation_claimed"])
 
     def test_lock_never_claims_a_gpu_snapshot(self) -> None:
         snapshot = ENTRY.describe()["gpu_snapshot"]
@@ -157,9 +158,9 @@ class PinnedIdentityTests(unittest.TestCase):
             self.assertTrue(item["reason"].strip())
         digests = {item["digest"] for item in superseded}
         self.assertIn(
-            "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+            "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
             digests,
-            "the AlphaFold2-loader-only predecessor must be recorded as superseded",
+            "the ptxas-free catalog predecessor must be recorded as superseded",
         )
 
     def test_no_checkpoint_is_embedded_in_the_image(self) -> None:
@@ -958,7 +959,7 @@ class QualificationEvidenceTests(unittest.TestCase):
                 item["kubernetes_timings"]["container_runtime_seconds"],
                 name,
             )
-            self.assertEqual("cold", item["image_phase"]["observed_cache_level"], name)
+            self.assertEqual("image-local", item["image_phase"]["observed_cache_level"], name)
             self.assertTrue(item["rosettafold3"]["bound"], name)
             self.assertFalse(item["rosettafold3"]["exercised"], name)
             artifact_paths = {artifact["path"] for artifact in item["output_artifacts"]}

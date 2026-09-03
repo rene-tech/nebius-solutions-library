@@ -215,28 +215,39 @@ Run the offline suite with `./run_checks.sh`. Live evidence lands in
 ### Accepted H100 result
 
 The accepted image is
-`proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23`.
-Its attached BuildKit SLSA statement names clean repository revision
-`cb8d6bea1bd15ae4cd68f588e718c14333acbac2`; the tag, index, platform
-manifest and attestation-manifest digests are recorded in
-`evidence/registry-provenance.json`.
+`proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca`
+(`54058860d43444c7289873f77d3e50b5b02348cd-ptxas-v1`). Its immutable
+registry digest and OCI source-revision label are recorded in
+`evidence/registry-provenance.json`; the registry has no OCI referrer for this
+digest, so this tree makes no SLSA claim. The source tree remains byte-equivalent
+to the pinned upstream archive.
 
-The predecessor submitted all three Jobs together on the existing
-`k8s-inference-h100` capacity-block pool. This successor collected their
-persisted artifacts and independently re-ran `validate_result.py`; it did not
-repeat the GPU work.
+The superseded catalog digest `d3f3c9bc...aaa91d8` contains no `ptxas`. The
+accepted digest carries CUDA 12.6 `ptxas` at both the canonical and versioned
+paths. A real H100 JAX 0.4.29 XLA kernel compile resolved
+`/usr/local/cuda-12.6/bin/ptxas` and completed successfully; see
+`evidence/ptxas-v1-promotion.json`.
+
+The earlier `fs2-complexa-forward-ptxas-v1-20260903d` failure was also
+understood rather than assumed fixed: its retained log says `.env_example not
+found` and `Make sure you are in the project root directory`. It failed before
+inference because the harness launched the upstream console script from the
+wrong directory. The accepted shell-free entrypoint invokes
+`python -m proteinfoundation.generate` and binds the source assets through a
+scratch working directory.
 
 | Variant | Target | Model load | Sampling | Container runtime | Schedule to semantic complete | Observed image cache |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| protein | PD-L1 / `02_PDL1` | 8.232 s | 12.328 s | 47 s | 152 s | cold pull |
-| ligand | 7V11 / OQO | 12.768 s | 12.332 s | 51 s | 153 s | cold pull |
-| AME | 1nzy / BCA | 11.686 s | 12.894 s | 51 s | 156 s | cold pull |
+| protein | PD-L1 / `02_PDL1` | 8.743 s | 12.407 s | 48 s | 53 s | image-local |
+| ligand | 7V11 / OQO | 12.829 s | 14.121 s | 53 s | 57 s | image-local |
+| AME | 1nzy / BCA | 11.914 s | 13.586 s | 51 s | 55 s | image-local |
 
 Every run used CUDA on an H100 SXM5 80 GB device, exited zero, selected its
 exact score-model/autoencoder pair, completed the upstream default 400 sampling
 steps, and produced a structure that passed the independent geometry,
-sequence-diversity and ligand checks. The roughly 102-105 s before container
-start was the observed 4.37 GB image pull, not model compute.
+sequence-diversity and ligand checks. The image was already present on the
+selected node, so these are image-local measurements and no cold-pull claim is
+made.
 
 The binder-length envelope is a later addition: as published, the gate skipped
 it for ligand and AME. It is enforced for all three variants now, and the

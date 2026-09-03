@@ -118,7 +118,14 @@ def collect(namespace: str, job_name: str, variant: str) -> dict[str, Any]:
         "--field-selector", f"involvedObject.name={pod['metadata']['name']}",
     ).get("items", [])
     image_events = [
-        {"reason": item["reason"], "message": item["message"]}
+        {
+            "reason": item["reason"],
+            # Scheduled event messages include the opaque Nebius instance ID.
+            # Keep the correlation value without publishing that identifier.
+            "message": item["message"].replace(node_name, _hashed(node_name))
+            if node_name
+            else item["message"],
+        }
         for item in events
         if item["reason"] in ("Pulling", "Pulled", "Scheduled", "Created", "Started")
     ]

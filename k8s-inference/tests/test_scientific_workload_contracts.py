@@ -250,7 +250,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 self.assertEqual(
                     {
                         "boltzgen": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
-                        "proteina-complexa": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+                        "proteina-complexa": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
                     }[profile["model_id"]],
                     profile["execution_identity"]["runtime_image_digest"],
                 )

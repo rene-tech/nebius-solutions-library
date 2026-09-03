@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 EVIDENCE = HERE.parent / "evidence"
 LOCK = HERE.parent / "image-lock.json"
+OPAQUE_NODE = re.compile(r"\bcomputeinstance-[a-z0-9]+\b")
 
 
 def _hashed(value: str) -> str:
@@ -73,6 +75,21 @@ def _output_inventory(root: Path | None) -> list[dict[str, Any]]:
             }
         )
     return inventory
+
+
+def _image_phase(run: dict[str, Any]) -> dict[str, Any]:
+    """Keep scheduler evidence while redacting cloud resource IDs."""
+
+    phase = dict(run["image_phase"])
+    replacement = (run.get("node") or {}).get("name_sha256", "redacted-node")
+    phase["events"] = [
+        {
+            **event,
+            "message": OPAQUE_NODE.sub(replacement, event["message"]),
+        }
+        for event in phase.get("events", [])
+    ]
+    return phase
 
 
 def build_run_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
@@ -132,7 +149,7 @@ def build_run_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
                 "artifact_verification_seconds": verification.get("seconds"),
                 "phases": envelope.get("phases"),
                 "kubernetes_timings": run["timings"],
-                "image_phase": run["image_phase"],
+                "image_phase": _image_phase(run),
                 "cache_level": envelope.get("cache_level"),
                 "asset_link": envelope.get("asset_link"),
                 "produced": {
@@ -180,13 +197,17 @@ def build_run_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
                 "the plain resource names are recorded in the task card, not in "
                 "the public export; see tests/test_public_export.py"
             ),
-            "capacity_choice": "existing capacity-block H100 nodes; no new or "
-            "preemptible capacity was created because the predecessor Jobs were "
-            "already complete and this successor only collected their evidence",
+            "capacity_choice": "existing capacity-block H100 node; no preemptible "
+            "capacity was created because an otherwise-free task-safe H100 allocation "
+            "was already available",
         },
         "execution_plan": {
             "path": "qualification/generated-plan.json",
-            "sha256": runs["plan_sha256"],
+            "sha256": hashlib.sha256((HERE / "generated-plan.json").read_bytes()).hexdigest(),
+            "submission_input_sha256": runs["plan_sha256"],
+            "reconciliation": "the checked-in plan includes the shell-free scratch-workdir "
+            "binding proven by the live Job objects; the submission input was rendered before "
+            "that live-discovered path requirement was folded back into render_plan.py",
             "shell_free": True,
         },
         "artifact_delivery": lock["artifact_delivery"],
