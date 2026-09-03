@@ -84,6 +84,12 @@
     "hot_replica": {
       "state": "not-applicable",
       "reason": "these scientific runtimes are batch stages with no long-lived Service endpoint in this campaign"
+    },
+    "fsgroup_recursive_ownership": {
+      "startup_cost": "153-305 s per Pod start on a 128 GiB shared claim under the default fsGroupChangePolicy Always",
+      "remediation": "fsGroupChangePolicy OnRootMismatch reduces it to 1-2 s",
+      "second_failure_mode": "the same recursive pass rewrites ownership on the claim it walks. On the tenant-private academic claim it replaced the contract group 65532 with 10001 and made licensed bytes group-writable, leaving the parameter object unreadable to every contract-conforming Pod. The cost is a performance problem; the ownership rewrite is a correctness and licensing problem.",
+      "guidance": "a Pod that only reads a shared claim should use supplementalGroups and set no fsGroup at all"
     }
   },
   "models": {
@@ -621,7 +627,32 @@
         "cross_checked": "The successor's 405 parameter arrays, 368,384,602 elements and 329 scopes match this campaign's academic lane exactly, so both lanes load the same official parameter object.",
         "speedup_attribution": "The owning task's faster repeat inferences within one Pod are a warm JAX compilation cache, the same mechanism this campaign measures for Mosaic. Neither task claims a snapshot level from it."
       },
-      "measured_lane_note": "The lane measured in this campaign is the stock upstream v3.0.4 academic image that carries the retained H100 semantic evidence, not the clean runtime wrapper."
+      "measured_lane_note": "The lane measured in this campaign is the stock upstream v3.0.4 academic image that carries the retained H100 semantic evidence, not the clean runtime wrapper.",
+      "claim_health": {
+        "state": "broken-after-this-campaign-measured",
+        "observed_at": "2026-09-03T05:0Z, by task-owned audit Pod fsc-af3-perm-audit in fs2-academic-poc",
+        "audit_identity": "runAsUser 12345, supplementalGroups [65532], no fsGroup, claim mounted read-only",
+        "contract_requires": {
+          "group": 65532,
+          "directory_mode": "0550",
+          "file_mode": "0440",
+          "consumer_access": "supplemental-group"
+        },
+        "observed": {
+          "alphafold3_directory": "drwxrws--- owner uid 65532 group 10001 (2770)",
+          "parameter_object": "unreadable; a contract-conforming Pod gets EACCES and cannot list the directory",
+          "pyrosetta_bindcraft_directory": "drwxrws--- owner uid 65532 group 10001 (2770), damaged the same way",
+          "scientific_localization": "drwxrwsr-x group 10001; group changed but still world-traversable, so the localized public trees stay readable",
+          "note": "the group is now 10001 while 65532 became the owning uid, so membership of supplemental group 65532 grants nothing"
+        },
+        "additional_finding": "The owning runtime task reported only the AlphaFold 3 tree. This campaign's audit found the PyRosetta BindCraft tree damaged identically, which the original report did not cover.",
+        "reported_cause": "The owning runtime task attributes it to Pods fs2-cxq-p-fsg and fs2-cxq-perm2 mounting the claim with fsGroup 10001 under the default fsGroupChangePolicy, which recursively chowned it.",
+        "campaign_not_a_contributor": "All three academic-lane trial Pods set supplementalGroups [65532] and no fsGroup; verified from the committed raw Pod specs in raw/alphafold3-baseline-t0*.objects.json. The audit Pod also set no fsGroup, deliberately, so auditing could not worsen the damage.",
+        "effect_on_this_campaign": "None on the recorded results. The three academic-lane trials ran earlier and succeeded, which is itself evidence the permissions conformed at that time. A rerun now would fail with EACCES; that is a claim-permission fault, not a regression in either runtime.",
+        "digest_reverification": "not possible while the object is unreadable; the owning task reports size and mtime unchanged, consistent with a chown and chmod rather than a rewrite",
+        "not_repaired_here": "The claim and its Terraform module modules/academic-assets belong to the academic-assets task. Changing ownership or mode on another task's licensed, non-redistributable asset is out of scope for a benchmark campaign and was deliberately not attempted.",
+        "unblocks": "an owner restoring group 65532 with directory mode 0550 and file mode 0440, and stopping any Pod from mounting this claim with fsGroup"
+      }
     }
   }
 }
