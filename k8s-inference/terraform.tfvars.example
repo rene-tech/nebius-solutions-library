@@ -352,7 +352,8 @@ academic_assets = {
     enabled         = true
     local_queue     = "academic-scientific"
     cluster_queue   = "inference-accelerators"
-    service_account = "fs2-academic-runner"
+    service_account            = "fs2-academic-runner"
+    controller_service_account = "fs2-serve-control-plane-runtime"
   }
 
   # Optional qualification-only isolation; ordinary inference never depends on it.

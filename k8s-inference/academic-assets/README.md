@@ -177,9 +177,11 @@ and objects that are not live are left for `apply` to create.
 A PersistentVolumeClaim can only be mounted by pods in its own namespace, so
 academic scientific Jobs run in the namespace that holds the claim rather than the
 default model namespace. Terraform provisions the Kueue LocalQueue, the runner
-service account and the namespace-scoped RBAC there, and the chart renders an
-executable Job template into that namespace with the real subPath mounts. Nothing
-claims that a claim can be mounted across namespaces, because it cannot.
+service account and the namespace-scoped RBAC there. The chart publishes the
+trusted namespace, queue, service-account and subPath mount contract; the
+scientific controller uses that contract when it renders the image- and
+argument-specific Job or JobSet. Nothing claims that a claim can be mounted across
+namespaces, because it cannot.
 
 The alternative, a per-tenant execution namespace, would mean a second copy of the
 licensed bytes, so it is not used for this proof of concept.

@@ -65,7 +65,7 @@ variables {
         install_relative_path = "pyrosetta-bindcraft/site-packages"
         read_only             = true
         runtime_binding = {
-          artifact_id                = "bindcraft-pyrosetta"
+          artifact_id                = "bindcraft-pyrosetta-installed-tree"
           source_sub_path            = "pyrosetta-bindcraft/site-packages"
           consumer_path              = "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
           mechanism                  = "subpath-directory-mount"
@@ -173,8 +173,8 @@ run "pyrosetta_binding_points_at_the_installed_tree_not_the_wheel" {
   }
 
   assert {
-    condition     = output.academic_assets.runtime_bindings["pyrosetta-bindcraft"].artifact_id == "bindcraft-pyrosetta"
-    error_message = "BindCraft's prerequisite must be advertised under the artifact ID onboarding uses."
+    condition     = output.academic_assets.runtime_bindings["pyrosetta-bindcraft"].artifact_id == "bindcraft-pyrosetta-installed-tree"
+    error_message = "BindCraft's mounted installed tree must use its own artifact ID, not the source wheel's ID."
   }
 }
 
@@ -281,7 +281,8 @@ run "execution_is_bound_to_the_namespace_that_holds_the_claim" {
     condition = (
       length(kubernetes_service_account_v1.academic_runner) == 1 &&
       length(kubernetes_role_v1.academic_execution) == 1 &&
-      length(kubernetes_role_binding_v1.academic_execution) == 1
+      length(kubernetes_role_binding_v1.academic_execution) == 1 &&
+      length(kubernetes_manifest.academic_local_queue) == 1
     )
     error_message = "Execution needs a runner identity and permissions in the claim's namespace."
   }
@@ -289,6 +290,30 @@ run "execution_is_bound_to_the_namespace_that_holds_the_claim" {
   assert {
     condition     = kubernetes_role_v1.academic_execution[0].metadata[0].namespace == var.academic_assets.namespace
     error_message = "The execution Role must be namespaced to the claim's namespace."
+  }
+
+  assert {
+    condition = one([
+      for subject in kubernetes_role_binding_v1.academic_execution[0].subject : subject.name
+      if subject.namespace == "fs2-system"
+    ]) == "fs2-serve-control-plane-runtime"
+    error_message = "The default cross-namespace binding must name the controller's actual runtime service account."
+  }
+
+  assert {
+    condition = (
+      kubernetes_manifest.academic_local_queue["academic-scientific"].manifest.metadata.namespace ==
+      var.academic_assets.namespace
+    )
+    error_message = "Enabling academic execution must create its LocalQueue in the claim namespace."
+  }
+
+  assert {
+    condition = (
+      contains(flatten(kubernetes_role_v1.academic_execution[0].rule[*].resources), "jobsets") &&
+      contains(flatten(kubernetes_role_v1.academic_execution[0].rule[*].resources), "workloads")
+    )
+    error_message = "The controller Role must cover JobSet execution and Kueue admission observation."
   }
 }
 
@@ -303,7 +328,7 @@ run "execution_can_be_switched_off_without_removing_the_assets" {
         cluster_queue              = "inference-accelerators"
         service_account            = "fs2-academic-runner"
         controller_namespace       = "fs2-system"
-        controller_service_account = "fs2-serve-control-plane"
+        controller_service_account = "fs2-serve-control-plane-runtime"
       }
     })
   }
@@ -312,6 +337,7 @@ run "execution_can_be_switched_off_without_removing_the_assets" {
     condition = (
       length(kubernetes_service_account_v1.academic_runner) == 0 &&
       length(kubernetes_role_v1.academic_execution) == 0 &&
+      length(kubernetes_manifest.academic_local_queue) == 0 &&
       output.academic_assets.execution.enabled == false
     )
     error_message = "Disabling execution must remove only the execution objects."

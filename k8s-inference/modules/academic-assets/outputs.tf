@@ -122,6 +122,7 @@ output "managed_addresses" {
     runtime_claim  = local.runtime_address
     legacy_claim   = local.legacy_address
     network_policy = length(kubernetes_network_policy_v1.academic_offline_validation) > 0 ? "kubernetes_network_policy_v1.academic_offline_validation[0]" : null
+    local_queue    = local.execution_enabled ? "kubernetes_manifest.academic_local_queue[\"${var.academic_assets.execution.local_queue}\"]" : null
     module_prefix  = "module.academic_assets"
   }
 }

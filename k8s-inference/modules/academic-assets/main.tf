@@ -273,6 +273,25 @@ locals {
   } : null
 }
 
+# The execution contract is useful only if its namespace-local queue actually
+# exists.  Keep this beside the academic namespace and claim so enabling the
+# feature from tfvars creates the complete admission lane rather than merely
+# returning a manifest for some later manual apply.
+resource "kubernetes_manifest" "academic_local_queue" {
+  for_each = local.execution_enabled ? {
+    (var.academic_assets.execution.local_queue) = local.academic_local_queue_manifest
+  } : {}
+
+  manifest = each.value
+
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-academic-assets"
+  }
+
+  depends_on = [kubernetes_namespace_v1.academic_assets]
+}
+
 resource "kubernetes_service_account_v1" "academic_runner" {
   count = local.execution_enabled ? 1 : 0
 
@@ -303,6 +322,12 @@ resource "kubernetes_role_v1" "academic_execution" {
   }
 
   rule {
+    api_groups = ["jobset.x-k8s.io"]
+    resources  = ["jobsets"]
+    verbs      = ["create", "get", "list", "watch", "delete"]
+  }
+
+  rule {
     api_groups = [""]
     resources  = ["pods", "pods/log"]
     verbs      = ["get", "list", "watch"]
@@ -312,6 +337,15 @@ resource "kubernetes_role_v1" "academic_execution" {
   rule {
     api_groups = [""]
     resources  = ["persistentvolumeclaims"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  # The controller reopens Kueue admission from the namespaced Workload after
+  # creating a Job or JobSet. Without this read path successful admission is
+  # indistinguishable from a permanently pending academic run.
+  rule {
+    api_groups = ["kueue.x-k8s.io"]
+    resources  = ["workloads"]
     verbs      = ["get", "list", "watch"]
   }
 

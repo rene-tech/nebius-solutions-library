@@ -56,7 +56,7 @@ variable "academic_assets" {
       cluster_queue              = optional(string, "inference-accelerators")
       service_account            = optional(string, "fs2-academic-runner")
       controller_namespace       = optional(string, "fs2-system")
-      controller_service_account = optional(string, "fs2-serve-control-plane")
+      controller_service_account = optional(string, "fs2-serve-control-plane-runtime")
     }), {})
 
     assets = map(object({
