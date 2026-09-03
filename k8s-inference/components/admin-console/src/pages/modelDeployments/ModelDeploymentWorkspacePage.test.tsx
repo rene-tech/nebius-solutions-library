@@ -423,6 +423,83 @@ describe("ModelDeployment workspace", () => {
     expect(screen.getAllByText("L2 · Ready within 2 minutes").length).toBeGreaterThan(0);
   });
 
+  it("shows a configured cold-start mechanism and its price without implying a level", async () => {
+    mockReadSurface();
+    const configured = structuredClone(modelDeploymentStatusFixture);
+    const observed = configured.observation!.status.fastStart!;
+    observed.qualifiedLevel = "Off";
+    observed.effectiveLevel = null;
+    observed.cacheMechanisms = {
+      "regional-cache": {
+        state: "Configured",
+        selected: true,
+        availability: "Available",
+        reason: "MechanismRenderConverged",
+        configDigest: `sha256:${"a".repeat(64)}`,
+        retainedCompileCacheAbi: "driver-580.159.04-sm90",
+        poolRefs: ["reserved-h100"],
+        pools: { "reserved-h100": { availability: "Available", reason: "RegionalRetainedCacheSupported" } },
+      },
+      "host-memory-residency": {
+        state: "Configured",
+        selected: false,
+        availability: "Available",
+        reason: "MechanismRenderConverged",
+        configDigest: `sha256:${"b".repeat(64)}`,
+        residencyMode: "mapped-payload-residency",
+        reservedHostMemoryBytes: 19327352832,
+        reservedHostMemoryFraction: 0.0117,
+        poolRefs: ["reserved-h100"],
+        pools: { "reserved-h100": { availability: "Available", reason: "HostMemoryResidencySupported" } },
+      },
+      "gpu-resident": {
+        state: "Configured",
+        selected: false,
+        availability: "Available",
+        reason: "MechanismRenderConverged",
+        configDigest: `sha256:${"c".repeat(64)}`,
+        standbyReplicas: 1,
+        reservedAccelerators: 1,
+        minimumHotReplicas: 1,
+        configuredHotReplicas: 1,
+        poolRefs: ["reserved-h100"],
+        pools: { "reserved-h100": { availability: "Available", reason: "StandbyAcceleratorPromotionSupported" } },
+      },
+      "node-local-restore": {
+        state: "Unavailable",
+        selected: false,
+        availability: "Unavailable",
+        reason: "NoNodeLocalNvme",
+        poolRefs: ["reserved-h100"],
+        pools: {
+          "reserved-h100": {
+            availability: "Unavailable",
+            reason: "NoNodeLocalNvme",
+            evidenceSelector: { "local-nvme.fs2.nebius/eligible": "false" },
+          },
+        },
+      },
+    };
+    vi.mocked(adminApi.modelDeploymentStatus).mockResolvedValue(testEnvelope(configured));
+    renderPage();
+
+    const fastStart = (await screen.findByRole("heading", { name: "Fast start" })).closest("section")!;
+    fireEvent.click(within(fastStart).getByText("Operator mechanism details"));
+
+    // The selected mechanism is named, with the price it charges while idle.
+    expect(screen.getByText(/regional-cache: Configured · selected/)).toBeInTheDocument();
+    expect(screen.getByText(/compile cache driver-580.159.04-sm90/)).toBeInTheDocument();
+    expect(screen.getByText(/host RAM 18.0 GiB \(19327352832 bytes\) · 1.17% of node/)).toBeInTheDocument();
+    expect(screen.getByText(/1 standby replica\(s\) holding 1 accelerator\(s\)/)).toBeInTheDocument();
+    expect(screen.getByText(/hot floor 1 of minimum 1/)).toBeInTheDocument();
+
+    // The path this cluster has no hardware for is reported, not hidden.
+    expect(screen.getByText(/node-local-restore: Unavailable · NoNodeLocalNvme/)).toBeInTheDocument();
+
+    // And none of that raises the customer level.
+    expect(within(fastStart).getAllByText("Off · Standard loading").length).toBeGreaterThan(0);
+  });
+
   it("shows unavailable observations explicitly and never turns absent replica values into zero", async () => {
     mockReadSurface();
     vi.spyOn(adminApi, "modelDeploymentStatus").mockResolvedValue(testEnvelope({
