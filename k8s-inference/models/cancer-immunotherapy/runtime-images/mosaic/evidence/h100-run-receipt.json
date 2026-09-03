@@ -1,0 +1,245 @@
+{
+  "schema": "fs2.nebius.ai/mosaic-h100-qualification-receipt/v1",
+  "status": "passed",
+  "owner_task": "fs2-cancer-images-mosaic-runtime-qualification-r20260903",
+  "observed_at": "2026-09-03T00:16:00Z",
+  "claim": "one bounded representative Mosaic Boltz-2/ProteinMPNN minibinder design workflow executed end to end on a real H100 and its committed result was accepted by the canonical adapter output validator",
+  "not_claimed": [
+    "no throughput, fast-start, snapshot, elasticity, preemption-recovery or multi-shard contention measurement was made",
+    "no service route, model registration or catalog activation was created",
+    "artifact delivery is transitional and task-scoped, not canonical-plane delivery"
+  ],
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "kube_system_namespace_uid": "5e8135da-4a78-4669-863d-455840d0700b",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "namespace": "fs2-models",
+    "local_queue": "inference-models",
+    "cluster_queue": "inference-accelerators"
+  },
+  "accelerator": {
+    "node": "computeinstance-e00phxdecf401f6rq5",
+    "node_uid": "0a2a9c6d-c5fe-4194-93b9-510281c6732b",
+    "instance_type": "gpu-h100-sxm",
+    "class": "nvidia-h100-sxm5-80gb",
+    "pool_id": "h100-1x",
+    "capacity_type": "preemptible",
+    "gpus_requested": 1,
+    "device_kind_reported_by_jax": "NVIDIA H100 80GB HBM3"
+  },
+  "image": {
+    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "tag": "70fec525423f5f87156a1a957b4a4048f9f8e676-adapter-v5",
+    "digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "resolved_image_id_on_node": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "embedded_weights": [],
+    "source_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676"
+  },
+  "plan": {
+    "rendered_by": "canonical batch_adapter.render_plan at commit 6551d8708c829fe99d229d1f547b8bd8cab0231e",
+    "tenant_id": "cancer-immunotherapy",
+    "operation_id": "op.mosaic.h100.r20260903",
+    "workload_id": "mosaic-qualification-r20260903",
+    "attempt_id": "attempt-4",
+    "run_token": "b0e973476007f483",
+    "request_sha256": "24154c23d916f411ff687bc426771ff1fa6dd1cbcb75ad55d6d5a81472c246ff",
+    "service_class": "customer-batch"
+  },
+  "inputs": {
+    "request": {
+      "operation": "design-binder",
+      "shard_count": 1,
+      "base_seed": 7300,
+      "hotspots": [3, 7],
+      "binder_length": 40,
+      "optimizer_steps": 20
+    },
+    "input_manifest": {
+      "manifest_id": "manifest.mosaic.minibinder.01",
+      "sha256": "23d109248070644bbe72f68a9d82ed7e8b4ff763913030ea6206366947795ca7",
+      "size_bytes": 398
+    },
+    "target_sequence_artifact": {
+      "artifact_id": "artifact.mosaic.target.minibinder",
+      "sha256": "7ed5501be9de5478ba1e86ee23edb0f08bc650a10b83671e01f1b383ef51b1bc",
+      "size_bytes": 44,
+      "sequence": "MKTIIALSYIFCLVFADYKDDDDK",
+      "residues": 24
+    },
+    "external_artifacts_verified_by_digest_at_runtime": [
+      {
+        "path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt",
+        "sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+        "bytes": 2286561469
+      },
+      {
+        "path": "/opt/fs2/artifacts/mosaic/proteinmpnn/v_48_020.pt",
+        "sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+        "bytes": 6681301
+      },
+      {
+        "path": "/opt/fs2/artifacts/mosaic/boltz/mols",
+        "state": "extracted directory presence checked; source mols.tar sha256 39e076d96dbec6b4e86982bbda16f3a53a2a60c9bdc17828d88f6f9a0c7d1fd7"
+      }
+    ],
+    "artifact_delivery": "transitional-task-scoped on claim fs2-runtime-qualification-artifacts-r20260902; the canonical regional artifact plane publishes no Mosaic root yet"
+  },
+  "stages": [
+    {
+      "id": "design-000",
+      "job": "mosaic-b0e973476007f483-s000",
+      "job_uid": "7e1fbf2e-6bef-41b6-bc4d-2eeb0ba37835",
+      "pod": "mosaic-b0e973476007f483-s000-wfhdk",
+      "pod_uid": "4b92dece-75ba-4a7d-b8ac-710ddfd61fe4",
+      "node": "computeinstance-e00phxdecf401f6rq5",
+      "argv": [
+        "/opt/fs2/bin/mosaic-batch", "run-shard",
+        "--request", "/var/run/fs2/request.json",
+        "--input-manifest", "/var/run/fs2/input-manifest.json",
+        "--recipe", "/opt/fs2/mosaic/recipe.json",
+        "--recipe-sha256", "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+        "--shard-index", "0",
+        "--seed", "7300",
+        "--output", "/workspace/runs/b0e973476007f483/shards/000"
+      ],
+      "resources": {
+        "requests": {"cpu": "8", "memory": "64Gi", "nvidia.com/gpu": 1},
+        "limits": {"cpu": "16", "memory": "128Gi", "nvidia.com/gpu": 1}
+      },
+      "job_admitted_at": "2026-09-03T00:03:04Z",
+      "container_started_at": "2026-09-03T00:06:12Z",
+      "container_finished_at": "2026-09-03T00:09:56Z",
+      "container_seconds": 224,
+      "queue_and_image_pull_seconds": 188,
+      "exit_code": 0,
+      "container_id": "containerd://ba6840947014381337ae0deec670028a0e8f6ee1b6dc7ef7b7581d8c860c82df"
+    },
+    {
+      "id": "aggregate",
+      "job": "mosaic-b0e973476007f483-aggregate",
+      "job_uid": "afd701a7-7d90-437b-b8ac-2ad9dc94a41c",
+      "pod": "mosaic-b0e973476007f483-aggregate-hbsdz",
+      "pod_uid": "43e69e4a-03df-43c2-8ba1-8132c2fc9299",
+      "node": "computeinstance-e00yq05c7pmqsy2grw",
+      "argv": [
+        "/opt/fs2/bin/mosaic-batch", "aggregate",
+        "--request", "/var/run/fs2/request.json",
+        "--input-manifest", "/var/run/fs2/input-manifest.json",
+        "--shards", "/workspace/runs/b0e973476007f483/shards",
+        "--expected-shards", "1",
+        "--staging-manifest", "/workspace/runs/b0e973476007f483/output-manifest.json.tmp",
+        "--output-manifest", "/workspace/runs/b0e973476007f483/output-manifest.json",
+        "--atomic-rename"
+      ],
+      "resources": {
+        "requests": {"cpu": "1", "memory": "2Gi"},
+        "limits": {"cpu": "2", "memory": "4Gi"}
+      },
+      "job_admitted_at": "2026-09-03T00:10:14Z",
+      "container_started_at": "2026-09-03T00:13:05Z",
+      "container_finished_at": "2026-09-03T00:13:05Z",
+      "exit_code": 0,
+      "note": "CPU stage; ran on a system pool node, not on the accelerator"
+    }
+  ],
+  "measured": {
+    "optimizer_steps": 20,
+    "first_step_seconds_including_jax_compilation": 92.75,
+    "steady_step_seconds_mean": 0.2521,
+    "steady_step_seconds_max": 0.29,
+    "loss_first_step": 15.48,
+    "loss_last_step": 12.36,
+    "gpu_memory_preallocation": "disabled by the image default XLA_PYTHON_CLIENT_PREALLOCATE is not set; JAX allocated on demand within the single 80 GB H100",
+    "host_memory_limit_gib": 128
+  },
+  "outputs": {
+    "output_manifest_sha256": "e5016dce6061de52ed3c4bf54329e48d5dadea6a81b5d7dcc7b36fe5ebf819f1",
+    "entries": ["shard-000", "aggregate", "candidate-000-metrics", "candidate-000-structure"],
+    "candidate": {
+      "candidate_id": "design-000",
+      "sequence": "VGLALYCLWPELFDGDAEEHHDEEALSEGKLPNEAFLAIG",
+      "binder_length": 40,
+      "iptm": 0.8496159315109253,
+      "mean_plddt": 0.9294729232788086,
+      "objective": 12.291522026062012
+    },
+    "binder_structure": {
+      "artifact_id": "artifact.mosaic.candidate.000.pdb",
+      "sha256": "1a418b2d5a59a3969a1fa94d01f73af9950813c7441653ee9980e2edca8d376a",
+      "bytes": 16204,
+      "residues": 40,
+      "atoms": 200,
+      "distinct_residue_types": 16,
+      "dominant_residue_fraction": 0.175,
+      "max_extent_angstrom": 30.117,
+      "placeholder_unk_residues": 0
+    }
+  },
+  "validation": {
+    "canonical_adapter_validator": {
+      "commit": "6551d8708c829fe99d229d1f547b8bd8cab0231e",
+      "function": "validate_output_manifest",
+      "status": "passed",
+      "validator_id": "mosaic-boltz2-proteinmpnn-v1",
+      "candidate_count": 1,
+      "shard_count": 1,
+      "request_sha256": "24154c23d916f411ff687bc426771ff1fa6dd1cbcb75ad55d6d5a81472c246ff"
+    },
+    "structural_gate": {
+      "status": "passed",
+      "checks": [
+        "at least 20 residues",
+        "every residue carries a complete N/CA/C backbone",
+        "no placeholder UNK residue name",
+        "finite coordinates with a maximum extent of at least 5 angstrom",
+        "no single residue type exceeds half the chain"
+      ]
+    },
+    "receipt": "h100-semantic-qualification.json"
+  },
+  "failed_attempts_retained_as_evidence": [
+    {
+      "attempt": "attempt-1",
+      "image_tag": "adapter-v3",
+      "job": "mosaic-4d5fd258d1ceec2c-s000",
+      "outcome": "exit 1 at import",
+      "cause": "the canonical Job runs readOnlyRootFilesystem and the image cached numba compilation next to its site-packages: 'cannot cache function _prepare_msa_arrays_inner: no locator available'"
+    },
+    {
+      "attempt": "attempt-2",
+      "image_tag": "adapter-v4",
+      "job": "mosaic-9c5aed468128118a-s000",
+      "outcome": "GPU design loop completed, then exit 1 writing results",
+      "cause": "the artifact plane and the workspace were two mounts of one claim and readOnly was set on the claim, which marks the whole CSI attachment read-only; readOnly now applies to the mount only"
+    },
+    {
+      "attempt": "attempt-3",
+      "image_tag": "adapter-v4",
+      "job": "mosaic-c6c29f2e26681811-s000",
+      "outcome": "cancelled after the design loop completed",
+      "cause": "the imported entrypoint was the pre-fix revision that serialises the binder chain straight from Gemmi, so its structure would still have carried UNK residue names. Cancelled rather than validated."
+    }
+  ],
+  "superseded_publications_confirmed_undeployable": [
+    {"tag": "adapter-v1", "digest": "sha256:dc4dfa564eaa56507a598d9f3527e468be9f6466ca453f1d704ce5fc29f3378d"},
+    {"tag": "adapter-v2", "digest": "sha256:4d17ec790bc5962b095b97b298c9f65832a51d9ea4590b51d532e46db48df1ca"},
+    {"tag": "adapter-v3", "digest": "sha256:8f80fe0aef493f17ed11cca682f2ccafc4689c088edea00654f4317a3b064992"},
+    {"tag": "adapter-v4", "digest": "sha256:f6f06b1976d5357553ef2f7017461ef0677ab948234631fb05412e0667f051e6"}
+  ],
+  "shared_service_impact": {
+    "mutated": "none",
+    "detail": "No Deployment, Service, route, catalog entry, Terraform state or shared control-plane object was created, patched or deleted. Only task-owned Jobs and one task-owned ConfigMap were applied in fs2-models, and the pre-existing qwen3-8b and cosmos3-nano workloads were left untouched.",
+    "verified_after_run": "qwen3-8b-b300-hot-h100-reserved-8x remained 1/1 Ready and both burst Deployments remained at their zero floors"
+  },
+  "cleanup": {
+    "policy": "task-owned Jobs carry ttlSecondsAfterFinished and the qualification ConfigMap plus the transitional claim are retained until the canonical artifact plane publishes a Mosaic root",
+    "retained_for_review": [
+      "mosaic-b0e973476007f483-s000",
+      "mosaic-b0e973476007f483-aggregate",
+      "fs2-run-b0e973476007f483",
+      "fs2-runtime-qualification-artifacts-r20260902"
+    ]
+  }
+}

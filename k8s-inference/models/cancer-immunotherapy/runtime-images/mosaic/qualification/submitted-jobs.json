@@ -1,0 +1,40 @@
+{
+  "applied": [
+    {
+      "gpu": true,
+      "job": "mosaic-b0e973476007f483-s000",
+      "node": "design-000"
+    },
+    {
+      "gpu": false,
+      "job": "mosaic-b0e973476007f483-aggregate",
+      "node": "aggregate"
+    }
+  ],
+  "context": "k8s-inference-h100",
+  "deviations_from_canonical_job": [
+    {
+      "detail": "The canonical _job renderer mounts only the request ConfigMap, /workspace and /tmp. The runtime resolves every external checkpoint under FS2_ARTIFACT_ROOT, which stays inside the read-only root filesystem, so a strictly canonical Job can never see Boltz-2 or ProteinMPNN. One read-only artifact-plane mount is added.",
+      "id": "artifact-plane-mount-absent-from-canonical-job",
+      "kind": "contract-defect"
+    },
+    {
+      "detail": "validate_output_manifest requires aggregate.runtime_image_digest to equal the admitted image digest, but the canonical Job carries no env and no argv flag that could supply it. FS2_RUNTIME_IMAGE_DIGEST is injected on the aggregate stage.",
+      "id": "aggregate-image-digest-env-absent-from-canonical-job",
+      "kind": "contract-defect"
+    },
+    {
+      "detail": "serviceAccount fs2-batch, imagePullSecret fs2-runtime-registry, PVC fs2-cache and LocalQueue fs2-models-async do not exist on this cluster. The service account and pull secret are dropped (the pod already disables token automount and the registry is reachable without a secret), the workspace claim is redirected to the preserved qualification PVC, and the plan was rendered against the live LocalQueue.",
+      "id": "batch-plane-not-deployed",
+      "kind": "environment-gap"
+    },
+    {
+      "detail": "The canonical plan carries no nodeSelector or toleration, so the GPU stage would not land on the H100 pool. The live accelerator selector and taint toleration are added.",
+      "id": "accelerator-placement-not-rendered",
+      "kind": "environment-gap"
+    }
+  ],
+  "namespace": "fs2-models",
+  "runtime_image_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+  "workspace_claim": "fs2-runtime-qualification-artifacts-r20260902"
+}

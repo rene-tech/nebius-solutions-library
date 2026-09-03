@@ -1,0 +1,24 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design-binder",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "manifest.mosaic.minibinder.01",
+    "sha256": "23d109248070644bbe72f68a9d82ed7e8b4ff763913030ea6206366947795ca7",
+    "size_bytes": 398,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "parameters": {
+    "schema": "fs2-serve.nebius.ai/mosaic-boltz2-proteinmpnn-parameters/v1",
+    "shard_count": 1,
+    "base_seed": 7300,
+    "hotspots": [3, 7],
+    "binder_length": 40,
+    "optimizer_steps": 20
+  },
+  "client_context": {
+    "batch_id": "batch.mosaic.h100.01",
+    "display_name": "minimal external-artifact H100 qualification"
+  }
+}

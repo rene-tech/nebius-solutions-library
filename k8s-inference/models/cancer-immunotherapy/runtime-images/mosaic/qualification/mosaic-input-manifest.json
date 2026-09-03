@@ -1,0 +1,17 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+  "manifest_id": "manifest.mosaic.minibinder.01",
+  "entries": [
+    {
+      "name": "target_sequence",
+      "semantic_type": "protein-sequence-fasta/v1",
+      "artifact": {
+        "artifact_id": "artifact.mosaic.target.minibinder",
+        "sha256": "7ed5501be9de5478ba1e86ee23edb0f08bc650a10b83671e01f1b383ef51b1bc",
+        "size_bytes": 44,
+        "media_type": "text/x-fasta",
+        "compression": "none"
+      }
+    }
+  ]
+}

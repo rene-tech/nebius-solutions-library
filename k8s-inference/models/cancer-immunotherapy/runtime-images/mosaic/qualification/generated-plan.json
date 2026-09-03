@@ -1,0 +1,381 @@
+{
+  "adapter_commit": "6551d8708c829fe99d229d1f547b8bd8cab0231e",
+  "adapter_module_sha256": "bb2b67dcc2de70e6322b54c57812a3b42dde5575ecf374e681c1f5c25254e895",
+  "argv": {
+    "aggregate": [
+      "/opt/fs2/bin/mosaic-batch",
+      "aggregate",
+      "--request",
+      "/var/run/fs2/request.json",
+      "--input-manifest",
+      "/var/run/fs2/input-manifest.json",
+      "--shards",
+      "/workspace/runs/b0e973476007f483/shards",
+      "--expected-shards",
+      "1",
+      "--staging-manifest",
+      "/workspace/runs/b0e973476007f483/output-manifest.json.tmp",
+      "--output-manifest",
+      "/workspace/runs/b0e973476007f483/output-manifest.json",
+      "--atomic-rename"
+    ],
+    "design-000": [
+      "/opt/fs2/bin/mosaic-batch",
+      "run-shard",
+      "--request",
+      "/var/run/fs2/request.json",
+      "--input-manifest",
+      "/var/run/fs2/input-manifest.json",
+      "--recipe",
+      "/opt/fs2/mosaic/recipe.json",
+      "--recipe-sha256",
+      "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+      "--shard-index",
+      "0",
+      "--seed",
+      "7300",
+      "--output",
+      "/workspace/runs/b0e973476007f483/shards/000"
+    ]
+  },
+  "plan": {
+    "attempt_id": "attempt-4",
+    "backend_id": "mosaic-boltz2-proteinmpnn-v1",
+    "model_id": "mosaic",
+    "nodes": [
+      {
+        "depends_on": [],
+        "id": "design-000",
+        "job": {
+          "apiVersion": "batch/v1",
+          "kind": "Job",
+          "metadata": {
+            "annotations": {
+              "fs2.nebius.ai/backend-id": "mosaic-boltz2-proteinmpnn-v1",
+              "fs2.nebius.ai/operation-id": "op.mosaic.h100.r20260903",
+              "fs2.nebius.ai/recipe-sha256": "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+              "fs2.nebius.ai/request-sha256": "24154c23d916f411ff687bc426771ff1fa6dd1cbcb75ad55d6d5a81472c246ff",
+              "fs2.nebius.ai/source-revision": "70fec525423f5f87156a1a957b4a4048f9f8e676"
+            },
+            "labels": {
+              "app.kubernetes.io/managed-by": "fs2-serve-models",
+              "app.kubernetes.io/name": "fs2-batch",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2.nebius.ai/attempt-id": "attempt-4",
+              "fs2.nebius.ai/local-queue": "inference-models",
+              "fs2.nebius.ai/model-id": "mosaic",
+              "fs2.nebius.ai/service-class": "customer-batch",
+              "fs2.nebius.ai/tenant-id": "cancer-immunotherapy",
+              "fs2.nebius.ai/workload-id": "mosaic-qualification-r20260903",
+              "kueue.x-k8s.io/queue-name": "inference-models"
+            },
+            "name": "mosaic-b0e973476007f483-s000",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "activeDeadlineSeconds": 43200,
+            "backoffLimit": 0,
+            "suspend": true,
+            "template": {
+              "metadata": {
+                "annotations": {
+                  "fs2.nebius.ai/backend-id": "mosaic-boltz2-proteinmpnn-v1",
+                  "fs2.nebius.ai/operation-id": "op.mosaic.h100.r20260903",
+                  "fs2.nebius.ai/recipe-sha256": "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+                  "fs2.nebius.ai/request-sha256": "24154c23d916f411ff687bc426771ff1fa6dd1cbcb75ad55d6d5a81472c246ff",
+                  "fs2.nebius.ai/source-revision": "70fec525423f5f87156a1a957b4a4048f9f8e676"
+                },
+                "labels": {
+                  "app.kubernetes.io/managed-by": "fs2-serve-models",
+                  "app.kubernetes.io/name": "fs2-batch",
+                  "app.kubernetes.io/part-of": "fs2-serve",
+                  "fs2.nebius.ai/attempt-id": "attempt-4",
+                  "fs2.nebius.ai/local-queue": "inference-models",
+                  "fs2.nebius.ai/model-id": "mosaic",
+                  "fs2.nebius.ai/service-class": "customer-batch",
+                  "fs2.nebius.ai/tenant-id": "cancer-immunotherapy",
+                  "fs2.nebius.ai/workload-id": "mosaic-qualification-r20260903",
+                  "kueue.x-k8s.io/queue-name": "inference-models"
+                }
+              },
+              "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                  {
+                    "command": [
+                      "/opt/fs2/bin/mosaic-batch",
+                      "run-shard",
+                      "--request",
+                      "/var/run/fs2/request.json",
+                      "--input-manifest",
+                      "/var/run/fs2/input-manifest.json",
+                      "--recipe",
+                      "/opt/fs2/mosaic/recipe.json",
+                      "--recipe-sha256",
+                      "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+                      "--shard-index",
+                      "0",
+                      "--seed",
+                      "7300",
+                      "--output",
+                      "/workspace/runs/b0e973476007f483/shards/000"
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+                    "imagePullPolicy": "IfNotPresent",
+                    "name": "batch",
+                    "resources": {
+                      "limits": {
+                        "cpu": "16",
+                        "memory": "128Gi",
+                        "nvidia.com/gpu": 1
+                      },
+                      "requests": {
+                        "cpu": "8",
+                        "memory": "64Gi",
+                        "nvidia.com/gpu": 1
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "readOnlyRootFilesystem": true
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/var/run/fs2",
+                        "name": "request",
+                        "readOnly": true
+                      },
+                      {
+                        "mountPath": "/workspace",
+                        "name": "workspace"
+                      },
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      }
+                    ]
+                  }
+                ],
+                "enableServiceLinks": false,
+                "imagePullSecrets": [
+                  {
+                    "name": "fs2-runtime-registry"
+                  }
+                ],
+                "restartPolicy": "Never",
+                "securityContext": {
+                  "fsGroup": 10001,
+                  "runAsGroup": 10001,
+                  "runAsNonRoot": true,
+                  "runAsUser": 10001,
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "serviceAccountName": "fs2-batch",
+                "terminationGracePeriodSeconds": 90,
+                "volumes": [
+                  {
+                    "configMap": {
+                      "name": "fs2-run-b0e973476007f483"
+                    },
+                    "name": "request"
+                  },
+                  {
+                    "name": "workspace",
+                    "persistentVolumeClaim": {
+                      "claimName": "fs2-cache"
+                    }
+                  },
+                  {
+                    "emptyDir": {
+                      "sizeLimit": "16Gi"
+                    },
+                    "name": "tmp"
+                  }
+                ]
+              }
+            },
+            "ttlSecondsAfterFinished": 86400
+          }
+        },
+        "seed": 7300,
+        "stage_id": "design"
+      },
+      {
+        "depends_on": [
+          "design-000"
+        ],
+        "id": "aggregate",
+        "job": {
+          "apiVersion": "batch/v1",
+          "kind": "Job",
+          "metadata": {
+            "annotations": {
+              "fs2.nebius.ai/backend-id": "mosaic-boltz2-proteinmpnn-v1",
+              "fs2.nebius.ai/operation-id": "op.mosaic.h100.r20260903",
+              "fs2.nebius.ai/recipe-sha256": "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+              "fs2.nebius.ai/request-sha256": "24154c23d916f411ff687bc426771ff1fa6dd1cbcb75ad55d6d5a81472c246ff",
+              "fs2.nebius.ai/source-revision": "70fec525423f5f87156a1a957b4a4048f9f8e676"
+            },
+            "labels": {
+              "app.kubernetes.io/managed-by": "fs2-serve-models",
+              "app.kubernetes.io/name": "fs2-batch",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2.nebius.ai/attempt-id": "attempt-4",
+              "fs2.nebius.ai/local-queue": "inference-models",
+              "fs2.nebius.ai/model-id": "mosaic",
+              "fs2.nebius.ai/service-class": "customer-batch",
+              "fs2.nebius.ai/tenant-id": "cancer-immunotherapy",
+              "fs2.nebius.ai/workload-id": "mosaic-qualification-r20260903",
+              "kueue.x-k8s.io/queue-name": "inference-models"
+            },
+            "name": "mosaic-b0e973476007f483-aggregate",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "activeDeadlineSeconds": 43200,
+            "backoffLimit": 0,
+            "suspend": true,
+            "template": {
+              "metadata": {
+                "annotations": {
+                  "fs2.nebius.ai/backend-id": "mosaic-boltz2-proteinmpnn-v1",
+                  "fs2.nebius.ai/operation-id": "op.mosaic.h100.r20260903",
+                  "fs2.nebius.ai/recipe-sha256": "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+                  "fs2.nebius.ai/request-sha256": "24154c23d916f411ff687bc426771ff1fa6dd1cbcb75ad55d6d5a81472c246ff",
+                  "fs2.nebius.ai/source-revision": "70fec525423f5f87156a1a957b4a4048f9f8e676"
+                },
+                "labels": {
+                  "app.kubernetes.io/managed-by": "fs2-serve-models",
+                  "app.kubernetes.io/name": "fs2-batch",
+                  "app.kubernetes.io/part-of": "fs2-serve",
+                  "fs2.nebius.ai/attempt-id": "attempt-4",
+                  "fs2.nebius.ai/local-queue": "inference-models",
+                  "fs2.nebius.ai/model-id": "mosaic",
+                  "fs2.nebius.ai/service-class": "customer-batch",
+                  "fs2.nebius.ai/tenant-id": "cancer-immunotherapy",
+                  "fs2.nebius.ai/workload-id": "mosaic-qualification-r20260903",
+                  "kueue.x-k8s.io/queue-name": "inference-models"
+                }
+              },
+              "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                  {
+                    "command": [
+                      "/opt/fs2/bin/mosaic-batch",
+                      "aggregate",
+                      "--request",
+                      "/var/run/fs2/request.json",
+                      "--input-manifest",
+                      "/var/run/fs2/input-manifest.json",
+                      "--shards",
+                      "/workspace/runs/b0e973476007f483/shards",
+                      "--expected-shards",
+                      "1",
+                      "--staging-manifest",
+                      "/workspace/runs/b0e973476007f483/output-manifest.json.tmp",
+                      "--output-manifest",
+                      "/workspace/runs/b0e973476007f483/output-manifest.json",
+                      "--atomic-rename"
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+                    "imagePullPolicy": "IfNotPresent",
+                    "name": "batch",
+                    "resources": {
+                      "limits": {
+                        "cpu": "2",
+                        "memory": "4Gi"
+                      },
+                      "requests": {
+                        "cpu": "1",
+                        "memory": "2Gi"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "readOnlyRootFilesystem": true
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/var/run/fs2",
+                        "name": "request",
+                        "readOnly": true
+                      },
+                      {
+                        "mountPath": "/workspace",
+                        "name": "workspace"
+                      },
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      }
+                    ]
+                  }
+                ],
+                "enableServiceLinks": false,
+                "imagePullSecrets": [
+                  {
+                    "name": "fs2-runtime-registry"
+                  }
+                ],
+                "restartPolicy": "Never",
+                "securityContext": {
+                  "fsGroup": 10001,
+                  "runAsGroup": 10001,
+                  "runAsNonRoot": true,
+                  "runAsUser": 10001,
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "serviceAccountName": "fs2-batch",
+                "terminationGracePeriodSeconds": 90,
+                "volumes": [
+                  {
+                    "configMap": {
+                      "name": "fs2-run-b0e973476007f483"
+                    },
+                    "name": "request"
+                  },
+                  {
+                    "name": "workspace",
+                    "persistentVolumeClaim": {
+                      "claimName": "fs2-cache"
+                    }
+                  },
+                  {
+                    "emptyDir": {
+                      "sizeLimit": "16Gi"
+                    },
+                    "name": "tmp"
+                  }
+                ]
+              }
+            },
+            "ttlSecondsAfterFinished": 86400
+          }
+        },
+        "seed": null,
+        "stage_id": "aggregate"
+      }
+    ],
+    "operation_id": "op.mosaic.h100.r20260903",
+    "recipe_sha256": "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+    "request_sha256": "24154c23d916f411ff687bc426771ff1fa6dd1cbcb75ad55d6d5a81472c246ff",
+    "runtime_image_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "schema": "fs2-serve.nebius.ai/mosaic-batch-plan/v1",
+    "workload_id": "mosaic-qualification-r20260903"
+  }
+}
