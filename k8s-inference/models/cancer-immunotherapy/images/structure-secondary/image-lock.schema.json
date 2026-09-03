@@ -10,7 +10,7 @@
     "schema": {"const": "fs2.nebius.ai/structure-secondary-image-lock/v2"},
     "platform": {"const": "linux/amd64"},
     "registry_default": {"$ref": "#/$defs/registryRoot"},
-    "publication_policy": {"const": "explicit-non-overwriting-build-qualified-tags"},
+    "publication_policy": {"const": "explicit-non-overwriting-build-checked-tags"},
     "superseded_publications": {
       "type": "array",
       "items": {
@@ -90,7 +90,7 @@
         "localization_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "manifest_layout": {"type": "string", "minLength": 1},
         "tree_ready_marker": {"type": "string", "pattern": "^/"},
-        "manifest_digest_state": {"const": "required-from-qualified-localization"},
+        "manifest_digest_state": {"const": "required-from-accepted-localization-receipt"},
         "bytes": {"type": "integer", "minimum": 1},
         "manifest": {"type": "string", "pattern": "^/"},
         "ready_marker": {"type": "string", "pattern": "^/"},

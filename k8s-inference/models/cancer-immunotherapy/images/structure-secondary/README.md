@@ -7,7 +7,7 @@ CCDs, MSAs, and reference databases are never copied into an image.
 
 Native AlphaFold3 is intentionally not built here. Its clean image, wrapper,
 academic parameter binding, public-database binding, persistent JAX cache, and
-H100 qualification are owned by the dedicated AlphaFold3 successor under
+H100 acceptance evidence are owned by the dedicated AlphaFold3 successor under
 `models/cancer-immunotherapy/images/alphafold3/`. Current main records the
 authorized academic-only parameter object as `alphafold3-parameters`, source
 subpath `alphafold3/af3.bin.zst`, consumer path `/models/af3.bin.zst`, size
@@ -23,7 +23,7 @@ claims its final database/runtime readiness.
 |---|---|---|
 | ESMFold2 | Biohub ESM `827ec128e4cdaf80f7d6f95fb367a08980b34918` (`v3.4.0`) | trunk `8fc3ff471022fdce52c77030685eb775de0c00a3`, ESMC-6B `45b0fa5d7fb06faefbd5e3b89bdcef35d564e79a`, and CCD SHA-256 `9ff44b19…38fc5` |
 | ESMFold2-Fast | same code, distinct runtime/model/tag | Fast trunk `c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6`, the same exact ESMC-6B, and the same exact CCD |
-| Protenix v2 | `2475421477ab414b571149ad4a875c390ff8a35d` (`v2.0.0`) | one composite artifact `protenix-v2` at `/models/protenix-v2`, containing the canonical checkpoint, four common files, `manifest.json`, and `.fs2-manifest-sha256` |
+| Protenix v2 | `2475421477ab414b571149ad4a875c390ff8a35d` (`v2.0.0`) | one composite artifact candidate `protenix-v2` at `/models/protenix-v2`, containing the required mirror-verified checkpoint candidate, four common files, `manifest.json`, and `.fs2-manifest-sha256` |
 | OpenFold3 | `c4771653c5d0a3ebb0b3af71b05efd64bc44ee86` (`v0.5.0`) | OpenBind-0 checkpoint SHA-256 `bd43301c…e29e4` and `components.bcif` SHA-256 `473d845c…fcc0c` |
 
 OpenFold3 is an independent, non-equivalent backend; it is never reported as
@@ -55,11 +55,11 @@ five payload files once, writes their path-independent identities to
 `manifest.json`, then atomically promotes the tree with one
 `.fs2-manifest-sha256` ready marker. Both stages validate that one marker and
 cheap file-size guards rather than rehashing the 1.86 GB checkpoint per run.
-The admitted localized-tree content digest is
+The required candidate localized-tree content digest is
 `5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48`;
-the canonical composite-manifest/ready-marker digest is
+the required composite-manifest/ready-marker acceptance digest is
 `a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7`.
-That identity hashes the artifact worker's canonical compact JSON encoding plus
+That identity hashes the artifact worker's deterministic compact JSON encoding plus
 one trailing newline; omitting the newline produces a different, invalid identity.
 The image validates the latter cheaply on every invocation, while the
 controller-owned localizer must bind both immutable identities in its runtime
@@ -181,7 +181,7 @@ mount `/cache/protenix` persistently to retain a warmed shape cache. Exact H100
 first-call versus warm-call measurements remain pending the semantic run. That
 one prebuilt extension does not make the whole CUDA 12.6 image
 Blackwell-portable. Blackwell requires a separate CUDA 13 target build and its
-own semantic qualification.
+own semantic acceptance evidence.
 
 ## Build and publication
 
@@ -210,15 +210,16 @@ the audited one-block Protenix patch to an exact
 those tagged sources when verified local checkouts are not supplied. It also
 creates a separate depth-one object store, fetches the currently reachable
 artifact-worker ref, requires exact commit
-`58e84e517c927b1be231597963251b55faf73960`, and verifies generator SHA-256
-`b8b1b7dc3be7192452685773c8602a2d326ad894b6b52ae673b355681fd9b9b5`.
-That revision is an interface draft only. Immutable promotion receipts from its
-successor remain a publication and H100 qualification gate.
+`372391764b7c514d015f9b33cd3dcba9f3119f73`, and verifies generator SHA-256
+`e7ec850a96daaf7d9463d953490d263069406ff4f1b125d400d75390372994b8`.
+That revision is the clean pushed catalog contract; it deliberately leaves
+localization pending. Immutable promotion receipts remain a publication and
+H100 acceptance gate.
 The clean store must not contain superseded unreachable commit `80d3b940...`.
 Tests pin the exact generated `runtime-integration.json` and Protenix manifest
 bytes before checking their mount/content/manifest identities against this
 image contract. The build runner invokes this check first, so these pinned
-parser/source/output checks are not an optional skipped qualification path.
+parser/source/output checks are not an optional skipped acceptance path.
 
 Before review freeze, execute the actual adapter compiler output—not copied argv
 fixtures—through these parsers:

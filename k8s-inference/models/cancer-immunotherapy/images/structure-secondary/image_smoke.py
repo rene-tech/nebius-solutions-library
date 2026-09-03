@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build qualification or exact-artifact H100 semantic image smoke."""
+"""Build-only validation or exact-artifact H100 semantic acceptance smoke."""
 
 from __future__ import annotations
 

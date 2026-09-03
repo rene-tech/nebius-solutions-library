@@ -90,12 +90,12 @@ def write_runtime_localization_marker(
 class StructureSecondaryImageContractTests(unittest.TestCase):
     @unittest.skipUnless(
         os.environ.get("FS2_ARTIFACT_GENERATOR"),
-        "set FS2_ARTIFACT_GENERATOR to the exact 58e84e51 interface-draft generator",
+        "set FS2_ARTIFACT_GENERATOR to the exact 37239176 catalog generator",
     )
     def test_lock_mounts_match_exact_artifact_worker_runtime_integration(self) -> None:
         generator_path = Path(os.environ["FS2_ARTIFACT_GENERATOR"]).resolve()
         spec = importlib.util.spec_from_file_location(
-            "artifact_worker_mounts_58e84e51", generator_path
+            "artifact_worker_mounts_37239176", generator_path
         )
         assert spec is not None and spec.loader is not None
         worker = importlib.util.module_from_spec(spec)
@@ -105,6 +105,16 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             for path, value in worker.documents().items()
             if path.name == "runtime-integration.json"
         )["consumers"]
+        for model_id in ("esmfold2", "esmfold2-fast"):
+            with self.subTest(model_id=model_id, contract="candidate-only"):
+                self.assertEqual(
+                    integration[model_id]["accelerator_compatibility"],
+                    "binary-compatible-hopper-candidate-sm90-no-ptx",
+                )
+                self.assertEqual(
+                    integration[model_id]["qualification_state"],
+                    "pending-exact-image-h100-semantic-test",
+                )
         images = {image["id"]: image for image in LOCK["images"]}
         runtime_path_keys = {
             "esmfold2": {"esmfold2-ccd": "ccd_path"},
@@ -133,16 +143,16 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
 
     @unittest.skipUnless(
         os.environ.get("FS2_ARTIFACT_GENERATOR"),
-        "set FS2_ARTIFACT_GENERATOR to the exact 58e84e51 interface-draft generator",
+        "set FS2_ARTIFACT_GENERATOR to the exact 37239176 catalog generator",
     )
     def test_exact_artifact_worker_manifest_is_accepted_with_newline_hash(self) -> None:
         generator_path = Path(os.environ["FS2_ARTIFACT_GENERATOR"]).resolve()
         self.assertEqual(
             hashlib.sha256(generator_path.read_bytes()).hexdigest(),
-            "b8b1b7dc3be7192452685773c8602a2d326ad894b6b52ae673b355681fd9b9b5",
+            "e7ec850a96daaf7d9463d953490d263069406ff4f1b125d400d75390372994b8",
         )
         spec = importlib.util.spec_from_file_location(
-            "artifact_worker_58e84e51", generator_path
+            "artifact_worker_37239176", generator_path
         )
         self.assertIsNotNone(spec)
         self.assertIsNotNone(spec.loader if spec is not None else None)
@@ -160,7 +170,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             generated_output_sha256,
             {
                 "manifest-protenix-v2.json": "8c48d5c50b14dfa1fff0e55614ce85c79750e672db8904bea843e36ccedcc19f",
-                "runtime-integration.json": "bdc578c395b54ff38be3aea3002b88c50990ae568ee76ecb7cb8cc9b81353568",
+                "runtime-integration.json": "ebc007e94c60154e34b8d87d877d25e5d0bdbfb1b97a17c411be236cbc5a7f0b",
             },
         )
         source_manifest = next(
@@ -496,14 +506,61 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 for base in image["base_images"]:
                     self.assertRegex(base, r"@sha256:[0-9a-f]{64}$")
 
+    def test_candidate_contract_does_not_claim_unearned_qualification(self) -> None:
+        reviewed_text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                ROOT / "README.md",
+                ROOT / "run_protenix.py",
+                ROOT / "run_openfold3.py",
+                ROOT / "patch_protenix_source.py",
+                ROOT / "protenix-torch-ext-compile.py",
+            )
+        ).lower()
+        for phrase in (
+            "canonical checkpoint",
+            "currently qualified",
+            "qualified lane",
+            "qualified semantic boundary",
+            "qualified localization identity",
+            "specifically qualified",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(phrase, reviewed_text)
+
+        self.assertEqual(
+            LOCK["publication_policy"],
+            "explicit-non-overwriting-build-checked-tags",
+        )
+        expected_h100_states = {
+            "esmfold2": "pending-exact-artifact-semantic-test",
+            "esmfold2-fast": "pending-exact-artifact-semantic-test",
+            "protenix-v2": "pending-exact-checkpoint-semantic-test",
+            "openfold3": "pending-exact-artifact-semantic-test",
+        }
+        for image in LOCK["images"]:
+            with self.subTest(image=image["id"]):
+                self.assertIsNone(image["published_digest"])
+                self.assertEqual(
+                    image["accelerator_support"]["h100"]["status"],
+                    expected_h100_states[image["id"]],
+                )
+
+        protenix = next(image for image in LOCK["images"] if image["id"] == "protenix-v2")
+        checkpoint_artifact = protenix["external_artifacts"][0]
+        self.assertEqual(
+            checkpoint_artifact["state"],
+            "third-party-mirror-verified-not-publisher-byte-compared",
+        )
+
     def test_mandatory_check_uses_reachable_generator_in_fresh_object_store(self) -> None:
         source = (ROOT / "check.sh").read_text(encoding="utf-8")
         self.assertIn(
-            "artifact_worker_revision=58e84e517c927b1be231597963251b55faf73960",
+            "artifact_worker_revision=372391764b7c514d015f9b33cd3dcba9f3119f73",
             source,
         )
         self.assertIn(
-            "artifact_generator_sha256=b8b1b7dc3be7192452685773c8602a2d326ad894b6b52ae673b355681fd9b9b5",
+            "artifact_generator_sha256=e7ec850a96daaf7d9463d953490d263069406ff4f1b125d400d75390372994b8",
             source,
         )
         self.assertIn(
@@ -883,7 +940,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
                 ready_path.write_text(
                     canonical_sha256(substituted) + "\n", encoding="utf-8"
                 )
-                with self.assertRaisesRegex(SystemExit, "exact common file|qualified localization"):
+                with self.assertRaisesRegex(SystemExit, "exact common file|localization acceptance"):
                     module._validate_artifact()
 
     def test_generated_protenix_argv_is_fixed_and_canonical(self) -> None:

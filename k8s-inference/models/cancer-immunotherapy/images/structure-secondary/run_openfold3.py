@@ -362,7 +362,7 @@ def _predict(args: argparse.Namespace) -> None:
     if args.num_model_seeds != len(seeds):
         raise SystemExit("num-model-seeds must equal the exact model-seeds cardinality")
     if args.num_diffusion_samples != 1:
-        raise SystemExit("the qualified OpenFold3 lane requires num-diffusion-samples=1")
+        raise SystemExit("the required OpenFold3 acceptance boundary requires num-diffusion-samples=1")
     try:
         marker = json.loads(provenance_marker.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:

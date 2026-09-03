@@ -26,7 +26,7 @@ def compile(
     extra_include_paths: list[str],
     build_directory: Optional[str] = None,
 ) -> Any:
-    # This image is specifically qualified for Hopper. Keep both an SM90 cubin
+    # This image is built as a Hopper acceptance candidate. Keep both an SM90 cubin
     # and compute_90 PTX in this one extension. The rest of pinned PyTorch 2.7.1
     # + CUDA 12.6 is not Blackwell-capable, so this does not imply whole-image
     # forward compatibility.

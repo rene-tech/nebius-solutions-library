@@ -3,7 +3,7 @@
   "schema": "fs2.nebius.ai/structure-secondary-image-lock/v2",
   "platform": "linux/amd64",
   "registry_default": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
-  "publication_policy": "explicit-non-overwriting-build-qualified-tags",
+  "publication_policy": "explicit-non-overwriting-build-checked-tags",
   "superseded_publications": [
     {
       "id": "esmfold2",

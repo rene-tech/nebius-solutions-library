@@ -173,7 +173,7 @@ def _validate_installed_runtime() -> None:
 
 def _validate_artifact() -> str:
     """Validate one localized composite artifact without rehashing 1.86 GB/run."""
-    _directory(PROTENIX_ROOT, "canonical Protenix v2 artifact root")
+    _directory(PROTENIX_ROOT, "required Protenix v2 candidate artifact root")
     manifest = _load_object(
         _file(ARTIFACT_MANIFEST, "Protenix v2 composite manifest"),
         "Protenix v2 composite manifest",
@@ -249,18 +249,18 @@ def _validate_artifact() -> str:
             raise SystemExit(f"localized Protenix v2 file size changed after promotion: {relative}")
     manifest_sha256 = _canonical_json_sha256(manifest)
     if manifest_sha256 != LOCALIZATION_MANIFEST_SHA256:
-        raise SystemExit("Protenix v2 composite manifest digest is not the qualified localization identity")
+        raise SystemExit("Protenix v2 composite manifest digest does not match the required localization acceptance identity")
     ready = _file(ARTIFACT_READY, "Protenix v2 composite ready marker")
     if ready.read_text(encoding="utf-8").strip() != LOCALIZATION_MANIFEST_SHA256:
         raise SystemExit("Protenix v2 ready marker does not match the composite manifest")
     return LOCALIZATION_MANIFEST_SHA256
 
 
-def _require_canonical_artifact_args(args: argparse.Namespace) -> None:
+def _require_artifact_boundary_args(args: argparse.Namespace) -> None:
     if hasattr(args, "reference_root") and Path(args.reference_root) != PROTENIX_ROOT:
-        raise SystemExit("reference-root must be the canonical /models/protenix-v2 tree")
+        raise SystemExit("reference-root must be the required /models/protenix-v2 candidate tree")
     if hasattr(args, "reference_manifest") and Path(args.reference_manifest) != ARTIFACT_MANIFEST:
-        raise SystemExit("reference-manifest must be the canonical composite manifest")
+        raise SystemExit("reference-manifest must be the required composite acceptance manifest")
     if hasattr(args, "checkpoint") and Path(args.checkpoint) != CHECKPOINT:
         raise SystemExit("checkpoint must be /models/protenix-v2/checkpoint/protenix-v2.pt")
     if hasattr(args, "common_dir") and Path(args.common_dir) != COMMON_DIR:
@@ -369,7 +369,7 @@ def _write_confidence(
 
 def _prep(args: argparse.Namespace) -> None:
     _validate_runtime_localization_args("prep", args)
-    _require_canonical_artifact_args(args)
+    _require_artifact_boundary_args(args)
     artifact_manifest_sha256 = _validate_artifact()
     _logical_id(args.output_artifact_id)
     input_path = _file(args.input, "input")
@@ -441,7 +441,7 @@ def _prep(args: argparse.Namespace) -> None:
 
 def _pred(args: argparse.Namespace) -> None:
     _validate_runtime_localization_args("pred", args)
-    _require_canonical_artifact_args(args)
+    _require_artifact_boundary_args(args)
     artifact_manifest_sha256 = _validate_artifact()
     input_path = _file(args.input, "enriched input")
     input_marker = _file(args.input_marker, "input-marker")
@@ -483,7 +483,7 @@ def _pred(args: argparse.Namespace) -> None:
     import torch
 
     if not torch.cuda.is_available() or tuple(torch.cuda.get_device_capability(0)) != (9, 0):
-        raise SystemExit("the qualified Protenix v2 semantic boundary requires an H100 (SM90)")
+        raise SystemExit("the required Protenix v2 semantic acceptance boundary requires an H100 (SM90)")
     cache_paths = {
         "TRITON_CACHE_DIR": Path(os.environ.get("TRITON_CACHE_DIR", "")),
         "CUEQ_TRITON_CACHE_DIR": Path(os.environ.get("CUEQ_TRITON_CACHE_DIR", "")),

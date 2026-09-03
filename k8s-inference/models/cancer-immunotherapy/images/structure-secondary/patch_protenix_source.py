@@ -13,7 +13,7 @@ old = """    return preprocess_input(
         use_template=True,
         use_rna_msa=True,
 """
-new = """    # FS2's currently qualified Protenix lane is no-MSA only. It may
+new = """    # FS2's current Protenix acceptance candidate is no-MSA only. It may
     # not submit sequences externally or consume unrelocated chain MSA paths.
     fs2_msa_mode = os.environ.get("FS2_MSA_MODE")
     if fs2_msa_mode != "none":
