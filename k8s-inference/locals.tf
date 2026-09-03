@@ -1000,7 +1000,15 @@ locals {
     keda_cooldown_period_seconds    = var.deployment.models.scaling.cooldown_period_seconds
     enable_cold_start_keepers       = var.deployment.models.cold_start_keepers
     enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
-    scheduling                      = var.deployment.scheduling
+    # core_pool_capacity is declared inside the workloads stage's scheduling
+    # object and read as var.scheduling.core_pool_capacity, so it must travel
+    # inside that object. Emitted as a sibling it was an undeclared variable:
+    # Terraform warns and drops it, the stage sees an empty map, and its
+    # core-admission precondition fails while the facade believes it supplied
+    # the capacity.
+    scheduling = merge(var.deployment.scheduling, {
+      core_pool_capacity = local.root_core_pool_capacity
+    })
     general_cpu_lane = merge(local.general_cpu_lane, {
       namespace = local.general_cpu_namespace
     })
@@ -1012,9 +1020,6 @@ locals {
     # facade refuses an enabled general CPU lane without core_capacity, so the
     # two can never disagree.
     budget_core_resources = local.root_core_admission_enabled
-    # Derived per pool, so the stage renders the same coupling the facade
-    # validated.
-    core_pool_capacity = local.root_core_pool_capacity
     reference_data = {
       enabled    = var.deployment.storage.reference_data.enabled
       namespace  = var.deployment.storage.reference_data.namespace

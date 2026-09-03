@@ -179,9 +179,12 @@ resource "terraform_data" "general_cpu_contract" {
     enabled            = local.general_cpu_enabled
     cpu_classes_schema = local.general_cpu_contract.cpu_classes_schema
     cpu_classes        = local.general_cpu_contract.cpu_classes
-    capacity           = local.general_cpu_contract.capacity
-    pool_ids           = local.general_cpu_contract.pool_ids
-    namespace          = local.general_cpu_contract.execution_namespace
+    # The rendered Kueue objects, so their policy is reviewable and assertable
+    # without standing up the stage.
+    manifests = local.general_cpu_contract.manifests
+    capacity  = local.general_cpu_contract.capacity
+    pool_ids  = local.general_cpu_contract.pool_ids
+    namespace = local.general_cpu_contract.execution_namespace
     elasticity = {
       elastic         = local.general_cpu_contract.elastic
       scale_from_zero = local.general_cpu_contract.scale_from_zero

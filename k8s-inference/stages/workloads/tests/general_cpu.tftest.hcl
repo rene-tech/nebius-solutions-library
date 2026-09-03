@@ -367,6 +367,28 @@ run "a_general_pool_yields_a_real_cpu_admission_tuple" {
   }
 }
 
+run "the_cpu_cluster_queue_preempts_lower_priority_work_in_queue" {
+  command = plan
+
+  plan_options {
+    # The lane contract carries the same rendered manifests, and targeting it
+    # keeps this run on the dependency set the other runs already resolve.
+    target = [terraform_data.general_cpu_contract]
+  }
+
+  # Kueue defaults withinClusterQueue to Never. Without this an interactive or
+  # presentation CPU stage waits behind admitted bulk work on the only lane
+  # that can run it, whatever WorkloadPriorityClass it carries, and because
+  # this queue joins no cohort in-queue displacement is its only mechanism.
+  assert {
+    condition = (
+      terraform_data.general_cpu_contract.input.manifests.cluster_queue.spec.preemption.withinClusterQueue == "LowerPriority" &&
+      terraform_data.general_cpu_contract.input.manifests.cluster_queue.spec.preemption.reclaimWithinCohort == "Never"
+    )
+    error_message = "The general CPU ClusterQueue must preempt lower-priority work within the queue and never reclaim across a cohort it does not join."
+  }
+}
+
 run "only_the_general_cpu_class_is_contributed" {
   command = plan
 
