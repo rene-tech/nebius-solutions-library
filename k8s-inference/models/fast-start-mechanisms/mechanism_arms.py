@@ -429,7 +429,14 @@ def render_arm(
         "mechanism_config_digest": expected_mechanism_config_digest(spec, arm),
         "residency_mode": getattr(declaration, "residency_mode", None),
         "reserved_host_memory_bytes": getattr(declaration, "reserved_bytes", None),
-        "reserved_accelerators": getattr(declaration, "reserved_accelerators", None),
+        # A parked replica holds its accelerator for as long as it waits, and a
+        # sleeping engine is still a parked replica: sleep level 1 releases the
+        # weights from device memory but the Pod keeps its accelerator. Record
+        # that, so a promotion arm never looks free.
+        "reserved_accelerators": (
+            getattr(declaration, "reserved_accelerators", None)
+            or (spec["accelerators_per_replica"] if arm in PROMOTION_ARMS else None)
+        ),
         "pod": pod,
         "service": service,
         "holders": holders,
@@ -448,9 +455,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target", default="qwen3-8b")
     parser.add_argument("--arm", choices=ARMS)
     parser.add_argument("--campaign-id", default="preview")
+    parser.add_argument("--node", default="h100-node-a", help="the node the arms would run on")
     parser.add_argument("--attempt", type=int, default=0)
     arguments = parser.parse_args(argv)
     spec = target(load_contract(), arguments.target)
+    spec["node_name"] = arguments.node
     if arguments.arm:
         rendered: Any = render_arm(spec, arm=arguments.arm, attempt=arguments.attempt, campaign_id=arguments.campaign_id)
     else:

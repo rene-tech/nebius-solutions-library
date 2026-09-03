@@ -416,14 +416,18 @@ class Campaign:
         rendered = self.park(arm)
         name = rendered["name"]
         pod = self._cluster.get("pod", name) or {}
-        host = pod.get("status", {}).get("podIP")
-        if not host:
+        address = pod.get("status", {}).get("podIP")
+        if not address:
             raise CampaignError(f"{arm} parked replica has no address")
+        # The semantic probe goes through the Service, because for gpu-resident
+        # the promotion being measured is the endpoint becoming routable. Going
+        # straight to the Pod IP would bypass the very transition under test.
+        service_host = f"{name}.{self._spec['namespace']}.svc.cluster.local"
         trigger = ""
         if arm == "host-memory-residency-sleep-offload":
-            self._sleep_engine(host)
-            trigger = f"http://{host}:{self._spec['service_port']}/wake_up"
-        process = self._probe(host, trigger=trigger)
+            self._sleep_engine(address)
+            trigger = f"http://{address}:{self._spec['service_port']}/wake_up"
+        process = self._probe(service_host, trigger=trigger)
         queue: Queue[dict[str, Any]] = Queue()
         reader = threading.Thread(target=self._read_events, args=(process, queue), daemon=True)
         reader.start()
@@ -490,9 +494,11 @@ class Campaign:
                 ]
             }
         }
-        self._cluster.run(
-            "patch", "pod", name, "--subresource=status", "--type=merge", "-p", json.dumps(patch)
-        )
+        # A strategic merge patch honours the conditions list's `type` merge
+        # key. A JSON merge patch would replace the whole list and transiently
+        # drop the kubelet's own conditions, which would add noise to exactly
+        # the endpoint transition this arm measures.
+        self._cluster.run("patch", "pod", name, "--subresource=status", "-p", json.dumps(patch))
 
     def _collect(self, queue: Queue[dict[str, Any]], process: subprocess.Popen[str]) -> dict[str, Any]:
         deadline = time.monotonic() + self._timeout + 120
