@@ -1,0 +1,49 @@
+{
+  "cache": {
+    "cache_level": "auxiliary-compiler-cache",
+    "degraded_reason": null,
+    "is_gpu_snapshot": false,
+    "jax_compilation_cache_dir": "/cache/alphafold3/jax",
+    "kind": "xla-and-triton-compilation-cache",
+    "note": "Compilation artefacts only. This is not a GPU memory snapshot and must not be reported as one. Image-local content is the L1 level; no higher level is claimed without measured evidence.",
+    "root": "/cache/alphafold3",
+    "triton_cache_dir": "/cache/alphafold3/triton",
+    "writable": true,
+    "xdg_cache_dir": "/cache/alphafold3/xdg"
+  },
+  "mode": "inference",
+  "model_dir": {
+    "candidates": [
+      "af3.bin.zst"
+    ],
+    "path": "/models"
+  },
+  "parameters": {
+    "artifact_id": "alphafold3-parameters",
+    "deep_verified": false,
+    "identity_kind": "file-digest",
+    "path": "/models/af3.bin.zst",
+    "read_only_mount": true,
+    "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+    "size_bytes": 1020545840
+  },
+  "plan": {
+    "argv": [
+      "/alphafold3_venv/bin/python3",
+      "/app/alphafold/run_alphafold.py",
+      "--json_path=/handoff/fold_input_data.json",
+      "--output_dir=/output",
+      "--model_dir=/models",
+      "--norun_data_pipeline",
+      "--flash_attention_implementation=triton",
+      "--jax_compilation_cache_dir=/cache/alphafold3/jax"
+    ],
+    "environment_additions": {
+      "TRITON_CACHE_DIR": "/cache/alphafold3/triton",
+      "XDG_CACHE_HOME": "/cache/alphafold3/xdg"
+    },
+    "stage": "inference"
+  },
+  "schema": "fs2-serve.nebius.ai/alphafold3-runtime-receipt/v1",
+  "status": "PLANNED"
+}

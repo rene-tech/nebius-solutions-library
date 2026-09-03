@@ -1,0 +1,828 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2.nebius.ai/schemas/alphafold3-runtime-receipt-v1.json",
+  "title": "AlphaFold 3 runtime receipt",
+  "description": "What the fs2 AlphaFold 3 runtime entrypoint emits for every execution. The scientific controller, artifact/result service and admin surface consume this document.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "mode",
+    "status"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/alphafold3-runtime-receipt/v1"
+    },
+    "mode": {
+      "enum": [
+        "verify",
+        "smoke",
+        "params-load",
+        "data",
+        "inference",
+        "plan"
+      ]
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "PLANNED",
+        "FAIL"
+      ]
+    },
+    "error": {
+      "type": "string",
+      "minLength": 1
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_id",
+        "upstream_version",
+        "upstream_commit",
+        "parameters_embedded",
+        "reference_databases_embedded"
+      ],
+      "properties": {
+        "runtime_id": {
+          "const": "alphafold3"
+        },
+        "upstream_version": {
+          "const": "3.0.4"
+        },
+        "upstream_commit": {
+          "const": "85c4d20505fd5cef05eac22b534d4e793971ae69"
+        },
+        "upstream_tree": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "upstream_release_tag": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_license": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parameters_embedded": {
+          "const": false
+        },
+        "reference_databases_embedded": {
+          "const": false
+        }
+      }
+    },
+    "hygiene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "searched_roots",
+        "embedded_payload_found"
+      ],
+      "properties": {
+        "searched_roots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "embedded_payload_found": {
+          "const": false
+        }
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "required": [
+            "artifact_id",
+            "path",
+            "size_bytes",
+            "sha256",
+            "identity_kind",
+            "deep_verified"
+          ],
+          "properties": {
+            "artifact_id": {
+              "const": "alphafold3-parameters"
+            },
+            "path": {
+              "type": "string"
+            },
+            "size_bytes": {
+              "const": 1020545840
+            },
+            "sha256": {
+              "const": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff"
+            },
+            "identity_kind": {
+              "const": "file-digest"
+            },
+            "read_only_mount": {
+              "type": "boolean"
+            },
+            "deep_verified": {
+              "type": "boolean"
+            },
+            "decompressed_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "decompressed_size_bytes": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": [
+            "bound",
+            "expected_path"
+          ],
+          "properties": {
+            "bound": {
+              "const": false
+            },
+            "expected_path": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "model_dir": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "candidates"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1
+        }
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distribution_version",
+        "params_module",
+        "params_entrypoint",
+        "entrypoint_present"
+      ],
+      "properties": {
+        "distribution_version": {
+          "const": "3.0.4"
+        },
+        "params_module": {
+          "const": "alphafold3.model.params"
+        },
+        "params_entrypoint": {
+          "const": "get_model_haiku_params"
+        },
+        "entrypoint_present": {
+          "const": true
+        }
+      }
+    },
+    "devices": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "device_count",
+        "devices",
+        "gpu_present"
+      ],
+      "properties": {
+        "jax_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "device_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "devices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "device_kind": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "gpu_present": {
+          "type": "boolean"
+        }
+      }
+    },
+    "semantic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_files",
+        "compressed",
+        "loaded_scopes",
+        "loaded_parameter_arrays",
+        "loaded_parameter_elements"
+      ],
+      "properties": {
+        "selected_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "compressed": {
+          "const": true
+        },
+        "loaded_scopes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "loaded_parameter_arrays": {
+          "type": "integer",
+          "minimum": 100
+        },
+        "loaded_parameter_elements": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "parameter_devices": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "reference_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundle_id",
+        "revision",
+        "content_tree_sha256",
+        "manifest_sha256",
+        "inventory_sha256",
+        "identities_are_independent",
+        "bound_by",
+        "marker_matched_receipt",
+        "manifest_document_verified",
+        "database_root",
+        "host_root",
+        "mount_path",
+        "dataset_sub_path",
+        "file_count",
+        "expanded_bytes",
+        "manifest_path",
+        "single_root_mount"
+      ],
+      "properties": {
+        "bundle_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "content_tree_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "inventory_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "identities_are_independent": {
+          "const": true
+        },
+        "bound_by": {
+          "const": "mounted-tree-name-and-marker",
+          "description": "The binding rests on the mounted filesystem: the directory's full name equals the aggregate tree digest and the readiness marker equals the receipt's manifest digest."
+        },
+        "marker_matched_receipt": {
+          "const": true
+        },
+        "manifest_document_verified": {
+          "type": "boolean"
+        },
+        "database_root": {
+          "type": "string",
+          "pattern": "^/reference-data/datasets/[a-z0-9][a-z0-9._-]{0,127}/.+/sha256/[0-9a-f]{64}$"
+        },
+        "host_root": {
+          "const": "/mnt/fs2-reference-data/data"
+        },
+        "mount_path": {
+          "const": "/reference-data"
+        },
+        "dataset_sub_path": {
+          "type": "string",
+          "pattern": "^datasets/[a-z0-9][a-z0-9._-]{0,127}/.+/sha256/[0-9a-f]{64}$"
+        },
+        "file_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expanded_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "manifest_path": {
+          "type": "string",
+          "pattern": "^/reference-data/manifests/sha256/[0-9a-f]{64}\\.json$",
+          "description": "The sibling manifest resolved from the same single read-only root as the dataset."
+        },
+        "single_root_mount": {
+          "const": true,
+          "description": "Both the dataset sub-path and the manifest resolved from one read-only reference root. Mounting only the dataset is not supported."
+        }
+      }
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "writable",
+        "kind",
+        "is_gpu_snapshot",
+        "cache_level",
+        "note"
+      ],
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "jax_compilation_cache_dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "triton_cache_dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "xdg_cache_dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "writable": {
+          "type": "boolean"
+        },
+        "degraded_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "const": "xla-and-triton-compilation-cache"
+        },
+        "is_gpu_snapshot": {
+          "const": false
+        },
+        "cache_level": {
+          "const": "auxiliary-compiler-cache"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage",
+        "argv",
+        "environment_additions"
+      ],
+      "properties": {
+        "stage": {
+          "enum": [
+            "data",
+            "inference"
+          ]
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 4
+        },
+        "environment_additions": {
+          "type": "object"
+        }
+      }
+    },
+    "preprocess_reference_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundle_id",
+        "revision",
+        "manifest_uri",
+        "manifest_sha256"
+      ],
+      "description": "The controller preprocess-request reference_data object, derived from the publisher receipt and the mounted tree by this runtime's owned transform.",
+      "properties": {
+        "bundle_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_uri": {
+          "type": "string",
+          "pattern": "^(file|s3)://.+\\.json$"
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "cpu_envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "msa_threads",
+        "jackhmmer_n_cpu",
+        "nhmmer_n_cpu",
+        "upstream_default_overridden"
+      ],
+      "description": "Proves the MSA thread count was frozen by the controller rather than derived from the node by upstream's min(cpu_count, 8) default.",
+      "properties": {
+        "msa_threads": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "cpu_request": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "jackhmmer_n_cpu": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "nhmmer_n_cpu": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "upstream_default_overridden": {
+          "const": true
+        },
+        "upstream_default": {
+          "type": "string"
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "upstream",
+        "exit_code",
+        "terminal_state"
+      ],
+      "description": "Present only after run_alphafold.py has exited. A PASS receipt is never written before this block exists.",
+      "properties": {
+        "upstream": {
+          "type": "string"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "terminal_state": {
+          "enum": [
+            "succeeded",
+            "failed"
+          ]
+        }
+      }
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "count",
+        "fold_jobs",
+        "entries",
+        "handoff_dirname",
+        "index_sha256"
+      ],
+      "description": "The packaged, relocatable handoff the data stage wrote. Paths are relative to the handoff directory so a GPU pod can mount it anywhere.",
+      "properties": {
+        "schema": {
+          "const": "fs2-serve.nebius.ai/alphafold3-data-handoff/v1"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fold_jobs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "fold_job",
+              "relative_path",
+              "bytes",
+              "sha256"
+            ],
+            "properties": {
+              "fold_job": {
+                "type": "string",
+                "minLength": 1
+              },
+              "relative_path": {
+                "type": "string",
+                "pattern": "^(?!/)(?!.*\\.\\.).*_data\\.json$",
+                "description": "Relative to the handoff directory. An absolute producer path is never recorded."
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "paths_are_relative_to": {
+          "type": "string"
+        },
+        "handoff_dirname": {
+          "const": "fs2-af3-handoff"
+        },
+        "index_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "handoff_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fold_job",
+        "relative_path",
+        "sha256",
+        "bytes",
+        "resolved_under_mount",
+        "reconstructed_locally"
+      ],
+      "description": "Which packaged fold job the GPU stage selected, resolved under its own mount.",
+      "properties": {
+        "fold_job": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relative_path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*\\.\\.).*_data\\.json$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "available_fold_jobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resolved_under_mount": {
+          "type": "string"
+        },
+        "reconstructed_locally": {
+          "const": true
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "FAIL"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "error"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "PASS"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "error"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "params-load"
+          },
+          "status": {
+            "const": "PASS"
+          }
+        },
+        "required": [
+          "mode",
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "parameters",
+          "model_dir",
+          "distribution",
+          "devices",
+          "semantic"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "data"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "allOf": [
+          {
+            "required": [
+              "reference_data",
+              "cpu_envelope"
+            ]
+          },
+          {
+            "not": {
+              "required": [
+                "semantic"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "data",
+              "inference"
+            ]
+          },
+          "status": {
+            "const": "PASS"
+          }
+        },
+        "required": [
+          "mode",
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "execution",
+          "plan"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "data"
+          },
+          "status": {
+            "const": "PASS"
+          }
+        },
+        "required": [
+          "mode",
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "handoff"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "contract": "fs2.cancer-immunotherapy.alphafold3.parameter-binding",
+  "contract_version": "1.0.0",
+  "runtime_id": "alphafold3",
+  "source_of_truth": {
+    "document": "k8s-inference/academic-assets/contracts/academic-assets.json",
+    "record": "assets[] where asset_id == \"alphafold3\"",
+    "relationship": "This runtime consumes that contract. It does not redefine it. Every identity value below is a restatement that the runtime enforces at execution time, and the runtime tests assert the restatement still equals the source of truth."
+  },
+  "access_class": "academic-restricted-operator-obtained",
+  "license": {
+    "id": "AlphaFold-3-Model-Parameters-Terms-of-Use-2024-11-09",
+    "weights_terms_sha256": "41adf62ff5eabc58831c828793988537948663c139f8b87d8d413851b150b6e5",
+    "prohibited_use_policy_sha256": "4992aebdc29bc7a9260bed6373bad05bb5a7e1b783451cd170163dd259f46c45",
+    "required_entitlement": "google-af3-organization-parameter-access",
+    "redistribution": "prohibited",
+    "embed_in_image": false,
+    "world_readable": false,
+    "general_shared_cache_allowed": false
+  },
+  "artifact": {
+    "artifact_id": "alphafold3-parameters",
+    "filename": "af3.bin.zst",
+    "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+    "size_bytes": 1020545840,
+    "magic_hex": "28b52ffd",
+    "content_identity_kind": "file-digest",
+    "content_manifest_algorithm": null,
+    "identity_note": "A single object, so the file digest is the whole content identity. There is no tree manifest for this artifact and the runtime must not invent one.",
+    "decompressed": {
+      "sha256": "df8bbf2621f17dd3ee21c2a921e84a50bc2b80cdc0c7971cb915c2826fee1f9b",
+      "size_bytes": 1146811260,
+      "verification": "optional-deep",
+      "note": "Independently observed decompressed identity. It is a second, distinct identity and is never substituted for the compressed digest."
+    }
+  },
+  "delivery": {
+    "claim": "academic-assets-runtime-rwx",
+    "claim_namespace": "fs2-academic-poc",
+    "storage_class": "csi-mounted-fs-path-sc",
+    "access_mode": "ReadWriteMany",
+    "runtime_mount_allowed": true,
+    "forbidden_claims": [
+      {
+        "claim": "cancer-immunotherapy-academic-assets-rwx-v1",
+        "namespace": "fs2-models",
+        "reason": "quarantine claim, runtime_mount_allowed is false"
+      }
+    ],
+    "supported_modes": [
+      {
+        "mode": "subpath-file-mount",
+        "preferred": true,
+        "source_sub_path": "alphafold3/af3.bin.zst",
+        "consumer_path": "/models/af3.bin.zst",
+        "model_dir": "/models",
+        "read_only": true,
+        "duplicates_bytes": false,
+        "embeds_bytes": false,
+        "note": "The canonical binding enforced by the academic-assets Helm chart and Terraform module. Exactly one parameter object is exposed, so the AlphaFold 3 model selector cannot match a second model."
+      },
+      {
+        "mode": "claim-root-mount",
+        "preferred": false,
+        "source_sub_path": null,
+        "consumer_path": "/opt/fs2/academic/alphafold3/af3.bin.zst",
+        "model_dir": "/opt/fs2/academic/alphafold3",
+        "read_only": true,
+        "note": "The shape used by the retained H100 semantic evidence Jobs, which mounted the whole claim read-only at /opt/fs2/academic. Supported so existing evidence stays reproducible."
+      }
+    ],
+    "permissions": {
+      "asset_gid": 65532,
+      "file_mode": "0440",
+      "directory_mode": "0550",
+      "consumer_access": "supplemental-group",
+      "pod_requirement": "securityContext.supplementalGroups must contain 65532",
+      "fs_group_forbidden": true,
+      "fs_group_reason": "fsGroup rewrites the delivered modes to 0660/2775 and would make licensed bytes group writable and broadly readable."
+    }
+  },
+  "runtime_enforcement": {
+    "verify_before_execution": true,
+    "fail_closed": true,
+    "checks": [
+      "the configured parameter path exists and is a regular file",
+      "its size equals the declared size_bytes exactly",
+      "its zstd magic equals the declared magic_hex",
+      "its SHA-256 equals the declared sha256 exactly",
+      "the resolved model directory contains exactly one AlphaFold 3 parameter object",
+      "no parameter byte is copied, decompressed to disk, cached or exported outside the read-only mount"
+    ],
+    "deep_check": "decompressed SHA-256 and size, streamed without writing plaintext to disk, enabled explicitly and off by default because it reads 1.1 GB",
+    "on_failure": "exit non-zero before any AlphaFold 3 code that touches parameters is invoked, and never emit the path or any byte of the artifact into logs"
+  },
+  "invocation": {
+    "model_dir_flag": "--model_dir",
+    "run_script": "/app/alphafold/run_alphafold.py",
+    "interpreter": "/alphafold3_venv/bin/python3",
+    "expect_module": "alphafold3.model.params",
+    "expect_entrypoint": "get_model_haiku_params",
+    "expect_distribution_version": "3.0.4",
+    "expect_min_parameter_arrays": 100,
+    "observed_reference": {
+      "loaded_scopes": 329,
+      "loaded_parameter_arrays": 405,
+      "loaded_parameter_elements": 368384602,
+      "source": "academic-assets/evidence/live-acceptance-state.json semantic_evidence.alphafold3",
+      "note": "Retained evidence from the historical semantic image. Treated as an expected-value cross-check, not as evidence for this image."
+    }
+  }
+}

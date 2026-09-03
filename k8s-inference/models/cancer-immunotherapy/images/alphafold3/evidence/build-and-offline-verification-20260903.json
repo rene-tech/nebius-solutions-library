@@ -1,0 +1,189 @@
+{
+  "schema": "fs2-serve.nebius.ai/alphafold3-runtime-evidence/v1",
+  "recorded_at": "2026-09-03T04:12:00Z",
+  "task": "fs2-af3-runtime-clean-successor-r20260903",
+  "runtime_id": "alphafold3",
+  "summary": "The AlphaFold 3 v3.0.4 academic runtime is built with SPDX and SLSA provenance, proven by a layer walk to embed no licensed parameters and no reference-database bytes, published to the eu-north1 project registry by immutable digest, and semantically qualified on a real H100 against that exact digest.",
+  "correction_to_earlier_evidence": "An earlier revision of this file claimed the H100 kubeconfig was absent and that no GPU was reachable. That was wrong. The authorized kubeconfig exists, context k8s-inference-h100 in project-e00rene/eu-north1 resolves, and the runs below were executed on it. The claim is retracted.",
+  "published_image": {
+    "role": "final-runtime-wrapper",
+    "repository": "withheld",
+    "region": "eu-north1",
+    "platform": "linux/amd64",
+    "tag": "3.0.4-85c4d205-r5",
+    "digest": "sha256:d8cf266e972e4eea9ef63723be834550b669431ef618a8975354100146fa0440",
+    "published_at": "2026-09-03T04:08:03Z",
+    "overwrote_existing_tag": false,
+    "local_manifest_digest": "sha256:a7eb61b4515d1759c6a0ab030ce6d91cfb3c327606a9bd2c9a96ba63030b4827",
+    "attestation_predicates": [
+      "https://slsa.dev/provenance/v1",
+      "https://spdx.dev/Document"
+    ]
+  },
+  "superseded_publications": [
+    {
+      "tag": "3.0.4-85c4d205",
+      "digest": "sha256:74962d653e8deca287a753d61e3e5162d602de2031945dfaf3b1e8e6e38007ae",
+      "reason": "Consumed an invented reference receipt shape; never run on GPU."
+    },
+    {
+      "tag": "3.0.4-85c4d205-r3",
+      "digest": "sha256:2c357d97309bf5691ac67a7465672580d16af4431577732361dc2ad9c5dbd72c",
+      "reason": "PASS receipt written before upstream exited; whole-root reference mount not detected; --extra-arg could reach stage-critical flags. Never run on GPU."
+    },
+    {
+      "tag": "3.0.4-85c4d205-r4",
+      "digest": "sha256:561ce3b70fbb6e5d397b320ee013c85671fc01bbc03772bf8f845d7b02a464cf",
+      "reason": "Denylist for extra arguments, bypassable through Abseil --flagfile, and a handoff index carrying absolute producer paths. Passed H100 semantics but is superseded.",
+      "h100_result": "passed: 405 arrays on cuda:0, inference exit 0, 6 CIF files"
+    }
+  ],
+  "h100_semantic_acceptance": {
+    "verdict": "PASSED",
+    "digest_under_test": "sha256:d8cf266e972e4eea9ef63723be834550b669431ef618a8975354100146fa0440",
+    "digest_pinned": true,
+    "cluster": {
+      "context": "k8s-inference-h100",
+      "project": "project-e00rene",
+      "region": "eu-north1"
+    },
+    "namespace": "fs2-academic-poc",
+    "job": "fs2-af3cs-semantic-r5",
+    "pod": "fs2-af3cs-semantic-r5-fqt5w",
+    "gpu": {
+      "model": "NVIDIA H100 80GB HBM3",
+      "memory_mib": 81559,
+      "driver": "580.159.04",
+      "compute_capability": "9.0",
+      "count": 1,
+      "capacity_type": "regular capacity-block, not preemptible"
+    },
+    "pod_security": {
+      "runAsUser": 12345,
+      "runAsGroup": 12345,
+      "supplementalGroups": [
+        65532
+      ],
+      "fsGroup": "not set",
+      "runAsNonRoot": true,
+      "readOnlyRootFilesystem": true,
+      "seccompProfile": "RuntimeDefault",
+      "note": "readOnlyRootFilesystem true is now proven, not just claimed."
+    },
+    "parameter_binding": {
+      "claim": "academic-assets-runtime-rwx",
+      "namespace": "fs2-academic-poc",
+      "source_sub_path": "alphafold3/af3.bin.zst",
+      "mount_path": "/models/af3.bin.zst",
+      "read_only": true,
+      "verified_sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+      "verified_size_bytes": 1020545840,
+      "model_dir": "/models",
+      "selectable_candidates": [
+        "af3.bin.zst"
+      ]
+    },
+    "params_load": {
+      "status": "PASS",
+      "loaded_scopes": 329,
+      "loaded_parameter_arrays": 405,
+      "loaded_parameter_elements": 368384602,
+      "parameter_devices": [
+        "cuda:0"
+      ],
+      "jax_version": "0.10.2",
+      "seconds": 6.91,
+      "matches_retained_reference": true
+    },
+    "inference_direct": {
+      "status": "PASS",
+      "exit_code": 0,
+      "terminal_state": "succeeded",
+      "flash_attention": "triton",
+      "seconds": 58.02,
+      "argv": "--json_path=/var/run/fs2/fold_input.json --output_dir=/output --model_dir=/models --norun_data_pipeline --flash_attention_implementation=triton --jax_compilation_cache_dir=/cache/alphafold3/jax",
+      "outputs": {
+        "cif_files": 6,
+        "json_files": 13,
+        "model_cif_atoms": 128,
+        "model_cif_bytes": 16846,
+        "model_cif_sha256": "23655586ce7b06e2023c546d2831d13e726782c9d3411d37052387d5a735af67"
+      },
+      "upstream_timings": {
+        "featurisation_seconds": 4.84,
+        "model_inference_seconds": 38.69,
+        "samples_extracted": 5
+      }
+    },
+    "handoff_portability": {
+      "status": "PASS",
+      "packaged_fold_jobs": [
+        "relocation_probe",
+        "second_job"
+      ],
+      "index_contains_absolute_producer_path": false,
+      "ambiguous_selection_refused": true,
+      "refusal_names_fold_job_flag": true,
+      "producing_output_tree_deleted_before_resolution": true,
+      "resolved_under_gpu_mount": "/scratch/gpu-artifacts/handoff/relocation_probe/relocation_probe_data.json",
+      "payload_sha256_verified": "ca5d0aa10f10ac283dc4b82abb04f5a6d105f85d91525f98ab7f87afb9f856df"
+    },
+    "inference_from_handoff": {
+      "status": "PASS",
+      "exit_code": 0,
+      "terminal_state": "succeeded",
+      "fold_job": "relocation_probe",
+      "seconds": 32.97,
+      "outputs": {
+        "cif_files": 6
+      },
+      "note": "Faster than the direct run because the persistent JAX compilation cache was warm from the first inference in the same pod. This is a compiler cache, not a GPU snapshot."
+    },
+    "container_total_seconds": 98.0,
+    "cleanup": "Both task-owned Jobs and both task-owned ConfigMaps were deleted. The academic claim, sibling Jobs and every other task's resources were left untouched and verified present afterwards.",
+    "node": {
+      "pool": "h100-reserved-8x",
+      "accelerator_class": "nvidia-h100-sxm5-80gb",
+      "name_sha256": "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+      "name_withheld_reason": "The compute instance name is an opaque cloud resource identifier and is withheld from the repository under the same rule as the registry account path. Its SHA-256 is recorded so an operator with cluster access can match the exact node."
+    }
+  },
+  "layer_hygiene": {
+    "method": "OCI archive layer tar walk over every filesystem layer",
+    "layers_inspected": 15,
+    "entries_inspected": 22385,
+    "offenders": [],
+    "parameters_embedded": false,
+    "reference_databases_embedded": false
+  },
+  "test_evidence": {
+    "command": "./run_checks.sh",
+    "total_tests": 168,
+    "skipped": 0,
+    "result": "PASS",
+    "note": "Includes producer-generated reference receipts from the reference-data implementation now on main, the extra-argument allowlist, and the one-and-many fold-job handoff freeze."
+  },
+  "blocked": [
+    {
+      "gate": "real CPU data stage against the published reference bundle",
+      "blocker": "The reference-data worker has not published the AlphaFold 3 v3.0 bundle.",
+      "needed_from_operator": "None. This is a handoff from the reference-data task."
+    },
+    {
+      "gate": "controller route and submission wiring",
+      "blocker": "Owned by the controller and adapter tasks, which consume the published contract.",
+      "needed_from_operator": "None."
+    }
+  ],
+  "readiness": {
+    "state": "runtime-qualified",
+    "reason": "The runtime is semantically qualified on H100 against its exact published digest. AlphaFold 3 as a platform model is not yet servable: the reference bundle and the controller route are open."
+  },
+  "resources_touched": {
+    "cluster_mutations": "two task-owned Jobs and two ConfigMaps, both deleted",
+    "shared_service_deploys": "none",
+    "b300": "not touched",
+    "gpu_seconds": "approximately 216 across two H100 runs on one GPU",
+    "registry_writes": "four new non-overwriting tags in fs2-models/alphafold3"
+  }
+}

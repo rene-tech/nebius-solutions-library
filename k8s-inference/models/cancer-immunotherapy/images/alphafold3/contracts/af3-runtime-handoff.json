@@ -1,0 +1,283 @@
+{
+  "contract": "fs2.cancer-immunotherapy.alphafold3.runtime-handoff",
+  "contract_version": "1.0.0",
+  "runtime_id": "alphafold3",
+  "purpose": "The stable interface between this runtime image and the tasks that own submission, adapters, the scientific controller, Kueue queues, Terraform and the admin surface. Those tasks consume this document. This task does not edit their files.",
+  "image": {
+    "role": "final-runtime-wrapper",
+    "repository": "withheld",
+    "repository_note": "The concrete registry account path is a deployment binding supplied at deploy time and is deliberately not committed. The immutable digest is the authoritative identity.",
+    "region": "eu-north1",
+    "platform": "linux/amd64",
+    "tag": null,
+    "digest": null,
+    "digest_state": "unpublished",
+    "digest_note": "This is the authoritative identity; consume the image by digest. Do not substitute sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887 or sha256:bead2e68627c1aa7d5fa80243b1164a18160f48cf3a1867090d72ff2b9270e37, which are stock upstream images retained only as historical semantic evidence and are not this runtime.",
+    "gpu_family": "agnostic",
+    "gpu_requirement": "Any NVIDIA GPU of compute capability 8.0 or later. Compute capability 8.0+ is required by the default Triton and cuDNN flash-attention kernels; --flash-attention xla removes that requirement. No node name, GPU model or H100-specific selector is baked into the image or into any reusable contract.",
+    "published_at": null,
+    "superseded": [
+      {
+        "tag": "3.0.4-85c4d205",
+        "digest": "sha256:74962d653e8deca287a753d61e3e5162d602de2031945dfaf3b1e8e6e38007ae",
+        "reason": "Consumed an invented reference receipt shape. Must not be deployed."
+      },
+      {
+        "tag": "3.0.4-85c4d205-r3",
+        "digest": "sha256:2c357d97309bf5691ac67a7465672580d16af4431577732361dc2ad9c5dbd72c",
+        "reason": "Emitted a PASS receipt before upstream exited, missed a whole-root reference mount, and allowed stage-critical flags through --extra-arg. Must not be deployed."
+      },
+      {
+        "tag": "3.0.4-85c4d205-r4",
+        "digest": "sha256:561ce3b70fbb6e5d397b320ee013c85671fc01bbc03772bf8f845d7b02a464cf",
+        "reason": "Used a denylist for extra arguments, which Abseil --flagfile can bypass, and a handoff index carrying absolute producer paths. Passed H100 semantics but must not be deployed."
+      }
+    ]
+  },
+  "entrypoint": {
+    "command": [
+      "/alphafold3_venv/bin/python3",
+      "/opt/fs2/af3_runtime.py"
+    ],
+    "default_args": [
+      "verify"
+    ],
+    "interpreter": "/alphafold3_venv/bin/python3",
+    "upstream_script": "/app/alphafold/run_alphafold.py",
+    "workdir": "/app/alphafold",
+    "modes": {
+      "verify": "Identity and hygiene only. No GPU, no parameters required. Safe as an init container or a readiness gate.",
+      "smoke": "Imports the installed distribution, asserts version 3.0.4, and reports visible JAX devices. No parameters required.",
+      "params-load": "Verifies the parameter identity then loads it through the upstream official loader. This is the GPU semantic check.",
+      "data": "CPU preprocessing stage. Requires the publisher receipt, the mounted published tree and the frozen thread count. Adds --norun_inference plus both MSA thread flags.",
+      "inference": "GPU inference stage. Requires verified parameters and the CPU handoff JSON. Adds --norun_data_pipeline.",
+      "plan": "Composes and prints a stage's argv without executing it. Requires --stage."
+    },
+    "receipt_schema": "fs2-serve.nebius.ai/alphafold3-runtime-receipt/v1",
+    "exit_codes": {
+      "0": "the requested mode succeeded",
+      "2": "a binding, identity or stage-separation requirement was not met; a FAIL receipt is emitted",
+      "other": "the exit code of run_alphafold.py, passed through unchanged"
+    }
+  },
+  "stages": [
+    {
+      "stage": "data",
+      "role": "cpu",
+      "queue_class": "cpu-preprocessing",
+      "gpu": 0,
+      "args": [
+        "data",
+        "--json-path",
+        "<input.json>",
+        "--output-dir",
+        "<out>",
+        "--reference-receipt",
+        "<terminal-receipt.json>",
+        "--threads",
+        "<frozen>",
+        "--cpu-request",
+        "<stage cpu>"
+      ],
+      "composed_flags": [
+        "--json_path",
+        "--output_dir",
+        "--db_dir",
+        "--norun_inference",
+        "--jackhmmer_n_cpu",
+        "--nhmmer_n_cpu"
+      ],
+      "mounts": [
+        {
+          "name": "reference-data",
+          "source": "shared reference filesystem rooted at /mnt/fs2-reference-data/data",
+          "source_sub_path": null,
+          "mount_path": "/reference-data",
+          "read_only": true,
+          "required": true,
+          "mount_path_rule": "The reference root is mounted read-only at /reference-data and the per-revision database_root is derived from the receipt, so no snapshot identity is ever hand-assembled.",
+          "database_root": "/reference-data/datasets/<bundle>/<revision>/sha256/<content_tree_sha256>"
+        },
+        {
+          "name": "output",
+          "mount_path": "/output",
+          "read_only": false,
+          "required": true,
+          "note": "Holds the immutable handoff JSON the GPU stage consumes."
+        },
+        {
+          "name": "scratch",
+          "mount_path": "/scratch",
+          "read_only": false,
+          "required": true,
+          "note": "HOME and TMPDIR. Per-pod, not shared."
+        }
+      ],
+      "forbidden_mounts": [
+        "the academic parameter claim"
+      ],
+      "produces": "AlphaFold 3 data-pipeline output JSON plus the reference manifest digests recorded in the receipt",
+      "reference_receipt": {
+        "role": "producer-generated terminal reference-data receipt",
+        "schema": "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1",
+        "exact_fields": [
+          "schema",
+          "bundle_id",
+          "revision",
+          "created_at",
+          "storage",
+          "content",
+          "placement"
+        ],
+        "database_root": "derived as <mount_path>/<dataset_sub_path> from the receipt",
+        "binding": "the mounted directory's full name equals content.tree_sha256 and the tree's .fs2-manifest-sha256 marker equals content.manifest_sha256",
+        "transform_output": "reference_data {bundle_id, revision, manifest_uri, manifest_sha256}, with the manifest URI supplied by the caller"
+      },
+      "cpu_envelope": {
+        "msa_thread_flags": [
+          "--jackhmmer_n_cpu",
+          "--nhmmer_n_cpu"
+        ],
+        "driven_by": "the controller-frozen thread count, matching backend.threads",
+        "validated_against": "the stage CPU request",
+        "upstream_default_never_used": "min(cpu_count, 8)"
+      }
+    },
+    {
+      "stage": "inference",
+      "role": "gpu",
+      "queue_class": "gpu-inference",
+      "gpu": 1,
+      "args": [
+        "inference",
+        "--json-path",
+        "<handoff.json>",
+        "--output-dir",
+        "<out>"
+      ],
+      "composed_flags": [
+        "--json_path",
+        "--output_dir",
+        "--model_dir",
+        "--norun_data_pipeline",
+        "--flash_attention_implementation",
+        "--jax_compilation_cache_dir"
+      ],
+      "mounts": [
+        {
+          "name": "academic-parameters",
+          "claim": "academic-assets-runtime-rwx",
+          "claim_namespace": "fs2-academic-poc",
+          "source_sub_path": "alphafold3/af3.bin.zst",
+          "mount_path": "/models/af3.bin.zst",
+          "read_only": true,
+          "required": true,
+          "owner": "Terraform module modules/academic-assets"
+        },
+        {
+          "name": "handoff",
+          "mount_path": "/handoff",
+          "read_only": true,
+          "required": true,
+          "note": "The immutable output of the CPU data stage."
+        },
+        {
+          "name": "compiler-cache",
+          "mount_path": "/cache/alphafold3",
+          "read_only": false,
+          "required": false,
+          "note": "Persistent auxiliary XLA and Triton compilation cache. Optional: an unwritable or absent cache degrades to an uncached run, reported truthfully in the receipt."
+        },
+        {
+          "name": "output",
+          "mount_path": "/output",
+          "read_only": false,
+          "required": true
+        },
+        {
+          "name": "scratch",
+          "mount_path": "/scratch",
+          "read_only": false,
+          "required": true
+        }
+      ],
+      "forbidden_mounts": [
+        "the reference database tree"
+      ],
+      "produces": "structure and confidence outputs under the output mount"
+    }
+  ],
+  "pod_security": {
+    "runAsNonRoot": true,
+    "image_default_user": "1001:1001",
+    "runAsUser": "operator chosen; the image does not require its own default",
+    "supplementalGroups": [
+      65532
+    ],
+    "supplemental_groups_reason": "The academic claim delivers the parameter object as mode 0440 group 65532, and access is by supplemental group.",
+    "fsGroup": "must not be set",
+    "fs_group_reason": "fsGroup rewrites the delivered modes to 0660/2775, which would make licensed bytes group writable and broadly readable.",
+    "seccompProfile": "RuntimeDefault",
+    "allowPrivilegeEscalation": false,
+    "readOnlyRootFilesystem": "supported; every writable path the runtime needs is a mount",
+    "automountServiceAccountToken": false
+  },
+  "environment": {
+    "FS2_AF3_PARAMETER_PATH": "/models/af3.bin.zst",
+    "FS2_AF3_OUTPUT_DIR": "/output",
+    "FS2_AF3_CACHE_ROOT": "/cache/alphafold3",
+    "FS2_AF3_JAX_CACHE_DIR": "/cache/alphafold3/jax",
+    "FS2_AF3_TRITON_CACHE_DIR": "/cache/alphafold3/triton",
+    "FS2_AF3_XDG_CACHE_DIR": "/cache/alphafold3/xdg",
+    "FS2_AF3_FLASH_ATTENTION": "triton by default; xla for portability across GPU families",
+    "HOME": "/scratch",
+    "TMPDIR": "/scratch",
+    "XLA_FLAGS": "--xla_gpu_enable_triton_gemm=false",
+    "override_rule": "Environment variables move paths only. Expected digests, sizes and versions come from the contracts baked into the image and cannot be weakened by pod configuration.",
+    "FS2_AF3_REFERENCE_RECEIPT": "path to the producer-generated terminal receipt",
+    "FS2_AF3_THREADS": "controller-frozen MSA thread count for the CPU stage",
+    "FS2_AF3_CPU_REQUEST": "the CPU stage's CPU request, used to reject oversubscription",
+    "FS2_AF3_REFERENCE_MOUNT": "/reference-data",
+    "FS2_AF3_REFERENCE_MANIFEST": "optional localized manifest document, whose canonical digest is recomputed when given"
+  },
+  "semantic_gate": {
+    "check": "params-load",
+    "asserts": [
+      "installed alphafold3 distribution version equals 3.0.4",
+      "the mounted object's SHA-256 and size equal the authorized parameter identity",
+      "the model directory exposes exactly one selectable parameter object",
+      "alphafold3.model.params.get_model_haiku_params returns at least 100 parameter arrays"
+    ],
+    "expected_reference_values": {
+      "loaded_scopes": 329,
+      "loaded_parameter_arrays": 405,
+      "loaded_parameter_elements": 368384602,
+      "provenance": "Retained evidence from the historical stock upstream image. A cross-check, not evidence for this image."
+    }
+  },
+  "cache_levels": {
+    "L1": "image-local: AlphaFold 3 source, python environment, HMMER, Chemical Component Dictionary derived data",
+    "auxiliary_compiler_cache": "/cache/alphafold3 holds XLA and Triton compilation artefacts only",
+    "is_gpu_snapshot": false,
+    "claimed_levels_above_L1": [],
+    "rule": "No L2 or higher level and no GPU snapshot may be claimed for this runtime without measured evidence produced by the fast-start qualification task."
+  },
+  "readiness": {
+    "state": "not-ready",
+    "blocking": [
+      "runtime image published for this exact source revision",
+      "real H100 semantic acceptance recorded against that published digest",
+      "reference-data worker publishes the AlphaFold 3 bundle and its terminal receipt",
+      "controller route and submission wiring landed by their owning tasks"
+    ],
+    "rule": "This model is not servable. The runtime image for this revision has not been published yet; its digest, lock and hardware acceptance are recorded in the evidence commit that follows this source commit.",
+    "completed": []
+  },
+  "command_io_contract": {
+    "document": "contracts/af3-command-io-contract.json",
+    "schema": "fs2-serve.nebius.ai/alphafold3-command-io/v1",
+    "generated_from": "runtime/af3_runtime.py argv composers",
+    "fixtures": "fixtures/",
+    "note": "The single supported command surface for data and inference. There is no fs2-run-alphafold3 entrypoint; an adapter targeting it cannot invoke this image."
+  }
+}

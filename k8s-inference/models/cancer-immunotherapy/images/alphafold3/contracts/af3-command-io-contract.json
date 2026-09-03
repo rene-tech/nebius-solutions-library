@@ -1,0 +1,372 @@
+{
+  "contract": "fs2.cancer-immunotherapy.alphafold3.command-io",
+  "contract_version": "1.0.0",
+  "entrypoint": {
+    "cli_name": "af3-runtime",
+    "command": [
+      "/alphafold3_venv/bin/python3",
+      "/opt/fs2/af3_runtime.py"
+    ],
+    "default_args": [
+      "verify"
+    ],
+    "interpreter": "/alphafold3_venv/bin/python3",
+    "modes": [
+      "data",
+      "inference",
+      "params-load",
+      "plan",
+      "smoke",
+      "verify"
+    ],
+    "upstream_script": "/app/alphafold/run_alphafold.py",
+    "workdir": "/app/alphafold"
+  },
+  "generated_by": "models/cancer-immunotherapy/images/alphafold3/build.py contract",
+  "generated_from": "runtime/af3_runtime.py compose_data_argv and compose_inference_argv, so these templates are the argv the image actually runs",
+  "legacy_aliases": {
+    "fs2-run-alphafold3": {
+      "action": "The adapter must target this contract's runtime_args. Coordinate the change with the adapter task rather than adding an alias here.",
+      "reason": "No such entrypoint or flag set exists in this runtime. The adapter that targets it cannot invoke this image. Supporting an undocumented alias would create a second, untested command surface for the same runtime.",
+      "supported": false
+    },
+    "policy": "This contract is the only supported command surface. No undocumented alias is accepted without an explicit, recorded justification."
+  },
+  "result_envelope": {
+    "also_written_to": "--receipt <path>",
+    "execution_block": [
+      "upstream",
+      "exit_code",
+      "terminal_state"
+    ],
+    "exit_codes": {
+      "0": "the requested mode succeeded",
+      "2": "a binding, identity or stage-separation requirement was not met",
+      "other": "the exit code of run_alphafold.py, passed through unchanged"
+    },
+    "failure_field": "error",
+    "json_schema": "schemas/af3-runtime-receipt.schema.json",
+    "required_fields": [
+      "schema",
+      "mode",
+      "status"
+    ],
+    "schema": "fs2-serve.nebius.ai/alphafold3-runtime-receipt/v1",
+    "status_values": [
+      "PASS",
+      "PLANNED",
+      "FAIL"
+    ],
+    "stream": "stdout",
+    "terminal_rule": "For the data and inference stages the receipt is written only after run_alphafold.py exits, and it carries an execution block with that exit code and a terminal_state of succeeded or failed. A failed run never leaves a PASS receipt behind."
+  },
+  "root_layout": {
+    "cache": {
+      "is_gpu_snapshot": false,
+      "jax": "/cache/alphafold3/jax",
+      "kind": "xla-and-triton-compilation-cache",
+      "optional": true,
+      "root": "/cache/alphafold3",
+      "triton": "/cache/alphafold3/triton",
+      "xdg": "/cache/alphafold3/xdg"
+    },
+    "output": {
+      "path": "/output",
+      "writable": true
+    },
+    "parameters": {
+      "model_dir": "/models",
+      "mount_path": "/models/af3.bin.zst"
+    },
+    "reference_root": {
+      "dataset_sub_path_template": "datasets/<bundle_id>/<revision>/sha256/<content_tree_sha256>",
+      "host_root": "/mnt/fs2-reference-data/data",
+      "mount_path": "/reference-data",
+      "note": "Mounting only the dataset is not a supported shape, because the manifest could then not be verified against the tree it describes.",
+      "read_only": true,
+      "readiness_marker": ".fs2-manifest-sha256",
+      "resolves": [
+        "{mount_path}/{dataset_sub_path}",
+        "{mount_path}/manifests/sha256/{manifest_sha256}.json"
+      ],
+      "single_mount": true
+    },
+    "scratch": {
+      "path": "/scratch",
+      "per_pod": true,
+      "writable": true
+    }
+  },
+  "runtime_id": "alphafold3",
+  "schema": "fs2-serve.nebius.ai/alphafold3-command-io/v1",
+  "stages": {
+    "data": {
+      "composed_upstream_argv": [
+        "/alphafold3_venv/bin/python3",
+        "/app/alphafold/run_alphafold.py",
+        "--json_path={json_path}",
+        "--output_dir={output_dir}",
+        "--db_dir={database_root}",
+        "--norun_inference",
+        "--jackhmmer_n_cpu={msa_threads}",
+        "--nhmmer_n_cpu={msa_threads}"
+      ],
+      "extra_arg_policy": {
+        "allowed_flags": [
+          "buckets",
+          "compress_large_output_files",
+          "conformer_max_iterations",
+          "fix_standalone_glycans",
+          "gpu_device",
+          "jackhmmer_max_parallel_shards",
+          "max_template_date",
+          "nhmmer_max_parallel_shards",
+          "num_diffusion_samples",
+          "num_recycles",
+          "num_seeds",
+          "resolve_msa_overlaps",
+          "save_distogram",
+          "save_embeddings",
+          "save_terms_of_use"
+        ],
+        "denies_duplicates": true,
+        "mode": "positive-allowlist",
+        "reason": "Anything not on the allowlist is refused. A denylist cannot be complete, because Abseil resolves --flagfile by reading further flags out of a file, so a denied flag could be smuggled back in through one indirection and every new upstream flag would default to allowed. absl's --no<flag> negation is normalised before the check.",
+        "rejected_parser_directives": [
+          "flagfile",
+          "help",
+          "helpfull",
+          "helpshort",
+          "helpxml",
+          "only_check_args",
+          "pdb",
+          "pdb_post_mortem",
+          "profile_file",
+          "run_with_pdb",
+          "run_with_profiling",
+          "undefok",
+          "use_cprofile_for_profiling"
+        ],
+        "stage_critical_flags": [
+          "db_dir",
+          "flash_attention_implementation",
+          "input_dir",
+          "jackhmmer_n_cpu",
+          "jax_compilation_cache_dir",
+          "json_path",
+          "model_dir",
+          "nhmmer_n_cpu",
+          "output_dir",
+          "run_data_pipeline",
+          "run_inference"
+        ]
+      },
+      "forbidden": [
+        "the licensed parameter binding",
+        "any GPU request or GPU node selector",
+        "relying on the upstream MSA thread defaults"
+      ],
+      "gpu": 0,
+      "inputs": [
+        {
+          "description": "AlphaFold 3 fold input JSON",
+          "media_type": "application/json",
+          "name": "fold_input",
+          "placeholder": "{json_path}",
+          "read_only": true,
+          "required": true
+        },
+        {
+          "description": "producer-generated terminal reference-data receipt",
+          "media_type": "application/json",
+          "name": "reference_receipt",
+          "placeholder": "{reference_receipt}",
+          "read_only": true,
+          "required": true,
+          "schema": "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1"
+        },
+        {
+          "description": "the single read-only reference root; both the receipt's dataset_sub_path and manifests/sha256/<manifest>.json resolve beneath it",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "mount_path": "/reference-data",
+          "name": "reference_root",
+          "read_only": true,
+          "required": true
+        }
+      ],
+      "optional_runtime_args": [
+        "--database-root",
+        "--reference-manifest",
+        "--manifest-uri",
+        "--emit-preprocess-reference",
+        "--receipt",
+        "--dry-run",
+        "--extra-arg"
+      ],
+      "outputs": [
+        {
+          "description": "AlphaFold 3 writes one directory per fold job, <output_dir>/<sanitized_name>/<sanitized_name>_data.json, and processes one entry per input, so an input directory yields several outputs whose names depend on upstream's own sanitization of the job name.",
+          "name": "data_pipeline_output",
+          "placeholder": "{output_dir}",
+          "writable": true
+        },
+        {
+          "description": "A packaged, relocatable handoff the wrapper writes after a successful data stage. Every produced *_data.json is copied under it as <fold_job>/<fold_job>_data.json, and index.json records one entry per fold job with a path relative to the handoff directory, a byte count and a SHA-256.",
+          "index": "index.json",
+          "multiplicity": "one entry per fold job the stage processed, at least one; duplicate sanitized names are refused",
+          "name": "data_handoff",
+          "path": "{output_dir}/fs2-af3-handoff",
+          "portability": "Mount this directory into the GPU stage and pass --handoff-dir. Paths are relative, so the GPU pod reconstructs them under its own artifact mount. No absolute path from the CPU pod is recorded or reused.",
+          "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v1",
+          "writable": true
+        },
+        {
+          "description": "the stage receipt, also written to --receipt when given",
+          "name": "runtime_receipt",
+          "schema": "fs2-serve.nebius.ai/alphafold3-runtime-receipt/v1",
+          "stream": "stdout"
+        }
+      ],
+      "required_env": {},
+      "role": "cpu",
+      "runtime_args": [
+        "data",
+        "--json-path",
+        "{json_path}",
+        "--output-dir",
+        "{output_dir}",
+        "--reference-receipt",
+        "{reference_receipt}",
+        "--threads",
+        "{msa_threads}",
+        "--cpu-request",
+        "{cpu_request}"
+      ]
+    },
+    "inference": {
+      "composed_upstream_argv": [
+        "/alphafold3_venv/bin/python3",
+        "/app/alphafold/run_alphafold.py",
+        "--json_path={json_path}",
+        "--output_dir={output_dir}",
+        "--model_dir={model_dir}",
+        "--norun_data_pipeline",
+        "--flash_attention_implementation=triton",
+        "--jax_compilation_cache_dir={jax_compilation_cache_dir}"
+      ],
+      "extra_arg_policy": {
+        "allowed_flags": [
+          "buckets",
+          "compress_large_output_files",
+          "conformer_max_iterations",
+          "fix_standalone_glycans",
+          "gpu_device",
+          "jackhmmer_max_parallel_shards",
+          "max_template_date",
+          "nhmmer_max_parallel_shards",
+          "num_diffusion_samples",
+          "num_recycles",
+          "num_seeds",
+          "resolve_msa_overlaps",
+          "save_distogram",
+          "save_embeddings",
+          "save_terms_of_use"
+        ],
+        "denies_duplicates": true,
+        "mode": "positive-allowlist",
+        "reason": "Anything not on the allowlist is refused. A denylist cannot be complete, because Abseil resolves --flagfile by reading further flags out of a file, so a denied flag could be smuggled back in through one indirection and every new upstream flag would default to allowed. absl's --no<flag> negation is normalised before the check.",
+        "rejected_parser_directives": [
+          "flagfile",
+          "help",
+          "helpfull",
+          "helpshort",
+          "helpxml",
+          "only_check_args",
+          "pdb",
+          "pdb_post_mortem",
+          "profile_file",
+          "run_with_pdb",
+          "run_with_profiling",
+          "undefok",
+          "use_cprofile_for_profiling"
+        ],
+        "stage_critical_flags": [
+          "db_dir",
+          "flash_attention_implementation",
+          "input_dir",
+          "jackhmmer_n_cpu",
+          "jax_compilation_cache_dir",
+          "json_path",
+          "model_dir",
+          "nhmmer_n_cpu",
+          "output_dir",
+          "run_data_pipeline",
+          "run_inference"
+        ]
+      },
+      "forbidden": [
+        "the reference database tree, whether mounted as the whole reference root or as a single dataset",
+        "running the data pipeline"
+      ],
+      "gpu": 1,
+      "input_selection": "Exactly one of --handoff-dir, the directory the data stage packaged, or --json-path for a fold input that already carries its MSAs. --fold-job is required when the handoff holds more than one job and is rejected as ambiguous otherwise.",
+      "inputs": [
+        {
+          "alternative": "--json-path for a direct fold input",
+          "description": "The directory the CPU stage packaged, mounted read-only. The stage reconstructs each payload path under this mount and verifies its SHA-256 before AlphaFold 3 sees it.",
+          "index": "index.json",
+          "name": "handoff",
+          "placeholder": "{handoff_dir}",
+          "read_only": true,
+          "required": true,
+          "schema": "fs2-serve.nebius.ai/alphafold3-data-handoff/v1"
+        },
+        {
+          "claim": "academic-assets-runtime-rwx",
+          "claim_namespace": "fs2-academic-poc",
+          "mount_path": "/models/af3.bin.zst",
+          "name": "parameters",
+          "read_only": true,
+          "required": true,
+          "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+          "size_bytes": 1020545840,
+          "source_sub_path": "alphafold3/af3.bin.zst",
+          "supplemental_group": 65532
+        }
+      ],
+      "optional_runtime_args": [
+        "--fold-job",
+        "--json-path",
+        "--parameter-path",
+        "--flash-attention",
+        "--deep-verify",
+        "--receipt",
+        "--dry-run",
+        "--extra-arg"
+      ],
+      "outputs": [
+        {
+          "description": "structure and confidence outputs",
+          "name": "structures",
+          "placeholder": "{output_dir}",
+          "writable": true
+        },
+        {
+          "description": "the stage receipt, also written to --receipt when given",
+          "name": "runtime_receipt",
+          "schema": "fs2-serve.nebius.ai/alphafold3-runtime-receipt/v1",
+          "stream": "stdout"
+        }
+      ],
+      "required_env": {},
+      "role": "gpu",
+      "runtime_args": [
+        "inference",
+        "--handoff-dir",
+        "{handoff_dir}",
+        "--output-dir",
+        "{output_dir}"
+      ]
+    }
+  }
+}
