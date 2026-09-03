@@ -38,10 +38,15 @@ SERVICE_CLASS_LABEL = "fs2.nebius.ai/service-class"
 LOCAL_QUEUE_LABEL = "fs2.nebius.ai/local-queue"
 QUEUE_LABEL = "kueue.x-k8s.io/queue-name"
 PRIORITY_LABEL = "kueue.x-k8s.io/priority-class"
+MAX_EXECUTION_LABEL = "kueue.x-k8s.io/max-exec-time-seconds"
 FENCE_ANNOTATION = "fs2.nebius.ai/scientific-controller-fence"
 SNAPSHOT_ANNOTATION = "fs2.nebius.ai/scheduling-snapshot-digest"
 VARIANT_ANNOTATION = "fs2.nebius.ai/variant-id"
 MANIFEST_ANNOTATION = "fs2.nebius.ai/scientific-manifest-sha256"
+CLUSTER_QUEUE_ANNOTATION = "fs2.nebius.ai/cluster-queue"
+POOL_PREFERENCE_ANNOTATION = "fs2.nebius.ai/pool-preference"
+PREEMPTION_ANNOTATION = "fs2.nebius.ai/preemption-mode"
+MAX_QUEUE_ANNOTATION = "fs2.nebius.ai/max-queue-seconds"
 KUEUE_JOB_UID_LABEL = "kueue.x-k8s.io/job-uid"
 POOL_LABEL = "fs2.nebius.ai/pool-id"
 
@@ -130,6 +135,21 @@ def _template_metadata(manifest: dict[str, Any], kind: WorkloadKind) -> list[dic
         pod = _object(_object(job_spec.get("spec"), "JobSet Job spec").get("template"), "JobSet Pod template")
         result.append(_object(pod.setdefault("metadata", {}), "JobSet Pod metadata"))
     return result
+
+
+def _set_active_deadline(manifest: dict[str, Any], kind: WorkloadKind, seconds: int) -> None:
+    spec = _object(manifest.get("spec"), "Kubernetes workload spec")
+    if kind is WorkloadKind.JOB:
+        spec["activeDeadlineSeconds"] = seconds
+        return
+    jobs = spec.get("replicatedJobs")
+    if not isinstance(jobs, list) or not jobs:
+        raise ScientificKubernetesError("JobSet must contain replicatedJobs")
+    for raw_job in jobs:
+        job = _object(raw_job, "JobSet replicated job")
+        template = _object(job.get("template"), "JobSet Job template")
+        job_spec = _object(template.get("spec"), "JobSet Job spec")
+        job_spec["activeDeadlineSeconds"] = seconds
 
 
 class HttpScientificBatchCluster:
@@ -225,12 +245,19 @@ class HttpScientificBatchCluster:
                 PRIORITY_LABEL: resource.scheduling.workload_priority_class,
             }
         )
+        if resource.scheduling.max_execution_seconds is not None:
+            labels[MAX_EXECUTION_LABEL] = str(resource.scheduling.max_execution_seconds)
         if resource.shard_id is not None:
             labels[SHARD_LABEL] = resource.shard_id
         annotations = _object(metadata.setdefault("annotations", {}), "Kubernetes annotations")
         annotations[FENCE_ANNOTATION] = f"{self.controller_id}:{controller_fence}"
         annotations[SNAPSHOT_ANNOTATION] = resource.scheduling_snapshot_digest
         annotations[VARIANT_ANNOTATION] = resource.variant_id
+        annotations[CLUSTER_QUEUE_ANNOTATION] = resource.scheduling.resolved_cluster_queue
+        annotations[POOL_PREFERENCE_ANNOTATION] = ",".join(resource.scheduling.resolved_pool_preference)
+        annotations[PREEMPTION_ANNOTATION] = str(resource.scheduling.preemption_mode)
+        if resource.scheduling.max_queue_seconds is not None:
+            annotations[MAX_QUEUE_ANNOTATION] = str(resource.scheduling.max_queue_seconds)
         for pod_metadata in _template_metadata(manifest, resource.kind):
             pod_labels = _object(pod_metadata.setdefault("labels", {}), "Pod template labels")
             pod_labels.update(labels)
@@ -238,6 +265,8 @@ class HttpScientificBatchCluster:
         spec["suspend"] = True
         if resource.kind is WorkloadKind.JOB:
             spec["backoffLimit"] = 0
+        if resource.scheduling.max_execution_seconds is not None:
+            _set_active_deadline(manifest, resource.kind, resource.scheduling.max_execution_seconds)
         annotations[MANIFEST_ANNOTATION] = _manifest_digest(manifest)
         return manifest
 

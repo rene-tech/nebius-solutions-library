@@ -25,6 +25,9 @@ _ARTIFACT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _SENSITIVE_KEY_RE = re.compile(r"(?:token|secret|password|credential|private[_-]?key)", re.IGNORECASE)
 _CONTROLLER_MOUNT_ROOT = PurePosixPath("/mnt/fs2-scientific")
+_RUNTIME_MOUNT_ROOTS = tuple(
+    PurePosixPath(value) for value in ("/models", "/databases", "/opt/fs2/artifacts", "/opt/fs2/academic")
+)
 
 
 class BatchStatus(StrEnum):
@@ -402,6 +405,46 @@ class RuntimeArtifactLocalization:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeArtifactMount:
+    """Exact adapter binding from a logical runtime artifact to an approved image path."""
+
+    artifact_id: str
+    mount_path: str
+    sub_path: str | None = None
+    read_only: bool = True
+    expected_content_sha256: str | None = None
+    authorization_receipt_sha256: str | None = None
+    readiness_receipt_sha256: str | None = None
+    supplemental_groups: tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        if _ARTIFACT_ID_RE.fullmatch(self.artifact_id) is None:
+            raise ValueError("runtime mount artifact_id must be a logical artifact ID")
+        mount = PurePosixPath(self.mount_path)
+        if not mount.is_absolute() or not any(root == mount or root in mount.parents for root in _RUNTIME_MOUNT_ROOTS):
+            raise ValueError("runtime artifact mount must use an approved image root")
+        if any(part in {"", ".", ".."} for part in mount.parts[1:]):
+            raise ValueError("runtime artifact mount path is not canonical")
+        if not self.read_only:
+            raise ValueError("model and licensed runtime artifacts must be mounted read-only")
+        if self.sub_path is not None:
+            relative = PurePosixPath(self.sub_path)
+            if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+                raise ValueError("runtime artifact sub_path must be a safe relative path")
+        for value, label in (
+            (self.expected_content_sha256, "expected content digest"),
+            (self.authorization_receipt_sha256, "authorization receipt digest"),
+            (self.readiness_receipt_sha256, "readiness receipt digest"),
+        ):
+            if value is not None and _RAW_SHA256_RE.fullmatch(value) is None:
+                raise ValueError(f"runtime artifact {label} must be a lowercase SHA-256")
+        if len(self.supplemental_groups) != len(set(self.supplemental_groups)) or any(
+            group < 1 or group > 2**31 - 1 for group in self.supplemental_groups
+        ):
+            raise ValueError("runtime artifact supplemental groups are invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class StageInvocation:
     """Immutable, shell-free workload payload attached to one attempt unit."""
 
@@ -419,6 +462,7 @@ class StageInvocation:
     max_output_bytes: int = 128 * 1024 * 1024 * 1024
     materializations: tuple[ArtifactMaterialization, ...] = ()
     runtime_artifacts: tuple[str, ...] = ()
+    runtime_mounts: tuple[RuntimeArtifactMount, ...] = ()
 
     def __post_init__(self) -> None:
         _check_name(self.stage_id, "stage_id")
@@ -440,6 +484,12 @@ class StageInvocation:
             raise ValueError("stage consumed artifact IDs must be unique")
         if len(set(self.runtime_artifacts)) != len(self.runtime_artifacts):
             raise ValueError("stage runtime artifact IDs must be unique")
+        mounted = tuple(item.artifact_id for item in self.runtime_mounts)
+        if len(set(mounted)) != len(mounted) or set(mounted) != set(self.runtime_artifacts):
+            raise ValueError("runtime mounts must exactly bind every stage runtime artifact")
+        marker_path = f"{self.working_directory}/.fs2/runtime-localization.json"
+        if self.runtime_artifacts and marker_path not in self.argv:
+            raise ValueError("runtime artifact stages must pass the canonical localization marker to argv")
         materialized = tuple(item.artifact_id for item in self.materializations)
         if len(set(materialized)) != len(materialized) or set(materialized) != set(self.consumes):
             raise ValueError("materializations must cover every consumed logical artifact exactly once")
@@ -756,6 +806,8 @@ class ScientificAttemptState:
     shard_id: str | None
     attempt_number: int
     workload: WorkloadRef
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
     outcome: AttemptOutcome = AttemptOutcome.ACTIVE
     last_phase: LifecyclePhase = LifecyclePhase.SCHEDULING
     resource_released: bool = False
@@ -771,6 +823,14 @@ class ScientificAttemptState:
             _check_name(self.shard_id, "shard_id")
         if not 1 <= self.attempt_number <= 10:
             raise ValueError("attempt_number must be between 1 and 10")
+        if self.started_at is not None and self.started_at.tzinfo is None:
+            raise ValueError("attempt started_at must be timezone-aware")
+        if self.completed_at is not None and self.completed_at.tzinfo is None:
+            raise ValueError("attempt completed_at must be timezone-aware")
+        if self.completed_at is not None and (self.started_at is None or self.completed_at < self.started_at):
+            raise ValueError("attempt completion cannot precede its start")
+        if self.started_at is not None and ((self.outcome is AttemptOutcome.ACTIVE) != (self.completed_at is None)):
+            raise ValueError("only terminal attempts carry completed_at")
         if self.resource_released and self.outcome is AttemptOutcome.ACTIVE:
             raise ValueError("an active attempt cannot have released its workload resource")
         for values, label in ((self.pod_uids, "Pod UID"),):
@@ -913,6 +973,30 @@ class ArtifactCommit:
     operation_id: UUID
     stage_id: str
     attempt_ids: tuple[UUID, ...]
+    manifest_digest: str
+    validation_digest: str
+    committed_at: datetime
+    validated_at: datetime
+    semantic_valid: bool
+
+    def __post_init__(self) -> None:
+        _check_digest(self.manifest_digest, "manifest_digest")
+        _check_digest(self.validation_digest, "validation_digest")
+        if not self.attempt_ids or len(self.attempt_ids) != len(set(self.attempt_ids)):
+            raise ValueError("artifact commit attempt IDs must be non-empty and unique")
+        if self.committed_at.tzinfo is None or self.validated_at.tzinfo is None:
+            raise ValueError("artifact commit timestamps must be timezone-aware")
+        if self.validated_at < self.committed_at:
+            raise ValueError("semantic validation cannot precede the atomic commit")
+
+
+@dataclass(frozen=True, slots=True)
+class AttemptArtifactCommit:
+    """Validated logical output from exactly one fenced stage attempt."""
+
+    operation_id: UUID
+    stage_id: str
+    attempt_ids: tuple[UUID, ...]
     logical_artifact_id: str
     handoff_artifact_id: UUID
     handoff_digest: str
@@ -940,9 +1024,9 @@ class ArtifactCommit:
         if self.handoff_compression not in {None, "none", "gzip", "zstd"}:
             raise ValueError("handoff compression is unsupported")
         if not self.attempt_ids or len(self.attempt_ids) != len(set(self.attempt_ids)):
-            raise ValueError("artifact commit attempt IDs must be non-empty and unique")
+            raise ValueError("attempt artifact commit IDs must be non-empty and unique")
         if len(self.attempt_ids) != 1:
-            raise ValueError("each artifact commit must fence exactly one attempt")
+            raise ValueError("each attempt artifact commit must fence exactly one attempt")
         if _ARTIFACT_ID_RE.fullmatch(self.logical_artifact_id) is None:
             raise ValueError("artifact commit logical ID is invalid")
         if self.manifest_artifact_id == self.validation_artifact_id:

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
 from scientific_batch_fakes import FakeScientificBatchCluster, FakeScientificBatchRepository
 
 from fs2_serve.scientific_batch import (
-    ArtifactCommit,
+    AttemptArtifactCommit,
     AttemptOutcome,
     BatchStatus,
     ExecutionMode,
@@ -108,7 +108,7 @@ def controller(repository, cluster) -> ScientificBatchController:
 
 def commit(operation_id: UUID, stage_id: str, attempt_id: UUID, *, valid: bool = True):
     handoff_id, manifest_id, validation_id = uuid4(), uuid4(), uuid4()
-    return ArtifactCommit(
+    return AttemptArtifactCommit(
         operation_id=operation_id,
         stage_id=stage_id,
         attempt_ids=(attempt_id,),
@@ -290,6 +290,50 @@ async def test_terminal_result_publication_is_durable_and_retried_idempotently()
 
 
 @pytest.mark.asyncio
+async def test_attempt_identity_is_durable_before_apply_and_recovered_after_crash() -> None:
+    repository = FakeScientificBatchRepository()
+
+    class FailFirstApplyCluster(FakeScientificBatchCluster):
+        def __init__(self) -> None:
+            super().__init__()
+            self.failed = False
+
+        async def apply(self, resource, *, controller_fence: int):
+            reserved = repository.records[resource.operation_id].stage(resource.stage_id)
+            attempt = reserved.latest_attempt(resource.shard_id)
+            assert attempt is not None
+            assert attempt.attempt_id == resource.attempt_id
+            assert attempt.workload.uid is None
+            if not self.failed:
+                self.failed = True
+                raise RuntimeError("injected apply crash")
+            return await super().apply(resource, controller_fence=controller_fence)
+
+    cluster = FailFirstApplyCluster()
+    reconciler = controller(repository, cluster)
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="fold"),))
+    await reconciler.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        plan=batch_plan,
+        scheduling=snapshot(batch_plan),
+    )
+
+    with pytest.raises(RuntimeError, match="injected apply crash"):
+        await reconciler.reconcile_once()
+    reserved = repository.records[operation_id].stage("fold").attempts[0]
+    assert reserved.workload.uid is None
+
+    await reconciler.reconcile_once()
+    recovered = repository.records[operation_id].stage("fold").attempts[0]
+    assert recovered.attempt_id == reserved.attempt_id
+    assert recovered.workload.uid is not None
+    assert len(cluster.apply_history) == 1
+
+
+@pytest.mark.asyncio
 async def test_preemption_retries_with_new_attempt_and_stale_observation_is_fenced() -> None:
     repository = FakeScientificBatchRepository()
     cluster = FakeScientificBatchCluster()
@@ -355,6 +399,41 @@ async def test_preemption_retries_with_new_attempt_and_stale_observation_is_fenc
     assert repository.records[operation_id].status is BatchStatus.SUCCEEDED
     assert len(cluster.apply_history) == 2
     assert any(event.draft.kind is BatchEventKind.RETRY_SCHEDULED for event in repository.events[operation_id])
+
+
+@pytest.mark.asyncio
+async def test_frozen_queue_deadline_fails_without_retry_before_admission() -> None:
+    repository = FakeScientificBatchRepository()
+    cluster = FakeScientificBatchCluster()
+    timestamps = iter((NOW, NOW + timedelta(seconds=601), NOW + timedelta(seconds=602)))
+    reconciler = ScientificBatchController(
+        repository=repository,
+        cluster=cluster,
+        controller_id="controller-pod:uid-1",
+        namespace="fs2-scientific",
+        clock=lambda: next(timestamps),
+    )
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="fold", max_attempts=3),))
+    await reconciler.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        plan=batch_plan,
+        scheduling=snapshot(batch_plan),
+    )
+
+    await reconciler.reconcile_once()
+    await reconciler.reconcile_once()
+    expired = repository.records[operation_id].stage("fold").attempts[0]
+    assert expired.outcome is AttemptOutcome.FAILED
+    assert expired.failure_kind is FailureKind.APPLICATION
+    assert expired.failure_code == "queue_deadline_exceeded"
+
+    await reconciler.reconcile_once()
+    assert repository.records[operation_id].status is BatchStatus.FAILED
+    assert len(cluster.apply_history) == 1
+    assert cluster.delete_history == [expired.workload]
 
 
 @pytest.mark.asyncio

@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from .models import (
     PUBLIC_ARTIFACT_ACCESS_CONTEXT,
     AdapterExecutionPlan,
     ArtifactAccessContext,
+    AttemptArtifactCommit,
     AttemptOutcome,
     BatchClaim,
     BatchEventDraft,
@@ -31,19 +33,28 @@ from .models import (
     VerifiedInputManifest,
     WorkloadKind,
     WorkloadObservation,
+    WorkloadRef,
     WorkloadResource,
     WorkloadState,
     attempt_identity,
     workload_name,
 )
-from .protocols import ScientificBatchCluster, ScientificBatchRepository, ScientificBatchResultPublisher
+from .protocols import (
+    LegacyArtifactCommitReader,
+    ScientificBatchArtifactLifecycle,
+    ScientificBatchCluster,
+    ScientificBatchRepository,
+    ScientificBatchResultPublisher,
+)
 
 
 class ScientificBatchController:
-    """Reconcile at most one durable batch transition per claim.
+    """Reconcile a claimed batch through fenced durable transitions.
 
     Workload names and attempt IDs are deterministic. Kubernetes apply/delete
-    calls are idempotent, while every durable transition is a fenced CAS.
+    calls are idempotent, while every durable transition is a fenced CAS. Stage
+    start first reserves attempt identities, then binds the applied workload
+    UIDs, so a fast admission or controller crash cannot outrun durable state.
     """
 
     def __init__(
@@ -54,6 +65,7 @@ class ScientificBatchController:
         controller_id: str,
         namespace: str,
         result_publisher: ScientificBatchResultPublisher | None = None,
+        artifact_lifecycle: ScientificBatchArtifactLifecycle | None = None,
         lease_seconds: float = 30,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
@@ -66,6 +78,7 @@ class ScientificBatchController:
         self.controller_id = controller_id
         self.namespace = namespace
         self.result_publisher = result_publisher
+        self.artifact_lifecycle = artifact_lifecycle
         self.lease_seconds = lease_seconds
         self.clock = clock or (lambda: datetime.now(UTC))
 
@@ -171,7 +184,7 @@ class ScientificBatchController:
                 if predecessor.status is not StageStatus.SUCCEEDED:
                     ready = False
                     break
-                commits = await self.repository.artifact_commits(claim, stage_id=predecessor_id)
+                commits = await self._artifact_commits(claim, record, stage_id=predecessor_id)
                 if not self._commits_match(record, predecessor, commits):
                     ready = False
                     break
@@ -189,18 +202,88 @@ class ScientificBatchController:
     ) -> None:
         stage = record.stage(spec.stage_id)
         attempts: list[ScientificAttemptState] = []
-        applied = []
         events: list[BatchEventDraft] = []
+        for shard_id in spec.workload_units:
+            prior = stage.latest_attempt(shard_id)
+            if prior is not None and prior.outcome is AttemptOutcome.SUCCEEDED:
+                continue
+            attempt_number = 1 if prior is None else prior.attempt_number + 1
+            attempt_id = attempt_identity(record.operation_id, spec.stage_id, shard_id, attempt_number)
+            kind = WorkloadKind.JOB if spec.mode is ExecutionMode.FANOUT else WorkloadKind.JOB_SET
+            attempts.append(
+                ScientificAttemptState(
+                    attempt_id=attempt_id,
+                    stage_id=spec.stage_id,
+                    shard_id=shard_id,
+                    attempt_number=attempt_number,
+                    workload=WorkloadRef(
+                        namespace=self.namespace,
+                        name=workload_name(record.operation_id, spec.stage_id, shard_id, attempt_number),
+                        kind=kind,
+                    ),
+                    started_at=now,
+                )
+            )
+            events.extend(
+                (
+                    self._event(
+                        record,
+                        BatchEventKind.LIFECYCLE,
+                        stage_id=spec.stage_id,
+                        shard_id=shard_id,
+                        attempt_id=attempt_id,
+                        phase=LifecyclePhase.QUEUED,
+                    ),
+                    self._event(
+                        record,
+                        BatchEventKind.LIFECYCLE,
+                        stage_id=spec.stage_id,
+                        shard_id=shard_id,
+                        attempt_id=attempt_id,
+                        phase=LifecyclePhase.SCHEDULING,
+                    ),
+                )
+            )
+            if attempt_number > 1:
+                events.append(
+                    self._event(
+                        record,
+                        BatchEventKind.RETRY_SCHEDULED,
+                        stage_id=spec.stage_id,
+                        shard_id=shard_id,
+                        attempt_id=attempt_id,
+                    )
+                )
+
+        replacement = replace(stage, status=StageStatus.ACTIVE, attempts=stage.attempts + tuple(attempts))
+        next_record = self._replace_stage(record, replacement, status=BatchStatus.RUNNING)
+        reserved = await self._write(claim, record, next_record, tuple(events), now=now)
+        await self._apply_pending_attempts(claim, reserved, reserved.stage(spec.stage_id), now=now)
+
+    async def _apply_pending_attempts(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        stage: ScientificStageState,
+        *,
+        now: datetime,
+    ) -> None:
+        spec = record.plan.stage(stage.stage_id)
+        pending = [
+            attempt
+            for shard_id in spec.workload_units
+            if (attempt := stage.latest_attempt(shard_id)) is not None
+            and attempt.outcome is AttemptOutcome.ACTIVE
+            and attempt.workload.uid is None
+        ]
+        if not pending:
+            return
+        attempts = list(stage.attempts)
+        applied: list[WorkloadRef] = []
         try:
-            for shard_id in spec.workload_units:
-                prior = stage.latest_attempt(shard_id)
-                if prior is not None and prior.outcome is AttemptOutcome.SUCCEEDED:
-                    continue
-                attempt_number = 1 if prior is None else prior.attempt_number + 1
-                attempt_id = attempt_identity(record.operation_id, spec.stage_id, shard_id, attempt_number)
-                kind = WorkloadKind.JOB if spec.mode is ExecutionMode.FANOUT else WorkloadKind.JOB_SET
+            for attempt in pending:
                 invocation = (
-                    record.execution_plan.invocation(spec.stage_id, shard_id)
+                    record.execution_plan.invocation(spec.stage_id, attempt.shard_id)
                     if record.execution_plan is not None
                     else None
                 )
@@ -211,19 +294,19 @@ class ScientificBatchController:
                     operation_id=record.operation_id,
                     batch_id=record.batch_id,
                     workload_id=record.workload_id,
-                    attempt_id=attempt_id,
+                    attempt_id=attempt.attempt_id,
                     stage_id=spec.stage_id,
-                    shard_id=shard_id,
-                    attempt_number=attempt_number,
+                    shard_id=attempt.shard_id,
+                    attempt_number=attempt.attempt_number,
                     tenant_id=record.tenant_id,
                     model_id=record.model_id,
                     variant_id=record.variant_id,
                     input_artifact_id=record.input_artifact_id,
                     service_class=record.scheduling.service_class,
                     scheduling_snapshot_digest=record.scheduling.digest,
-                    namespace=self.namespace,
-                    name=workload_name(record.operation_id, spec.stage_id, shard_id, attempt_number),
-                    kind=kind,
+                    namespace=attempt.workload.namespace,
+                    name=attempt.workload.name,
+                    kind=attempt.workload.kind,
                     scheduling=record.scheduling.stage(spec.stage_id),
                     gang_size=spec.gang_size,
                     invocation=invocation,
@@ -236,56 +319,28 @@ class ScientificBatchController:
                     ),
                 )
                 ref = await self.cluster.apply(resource, controller_fence=claim.fencing_token)
-                if (ref.namespace, ref.name, ref.kind) != (resource.namespace, resource.name, resource.kind):
-                    raise RuntimeError("cluster apply returned a different workload identity")
+                if (ref.namespace, ref.name, ref.kind) != (
+                    resource.namespace,
+                    resource.name,
+                    resource.kind,
+                ) or ref.uid is None:
+                    raise RuntimeError("cluster apply returned an incomplete workload identity")
                 applied.append(ref)
-                attempts.append(
-                    ScientificAttemptState(
-                        attempt_id=attempt_id,
-                        stage_id=spec.stage_id,
-                        shard_id=shard_id,
-                        attempt_number=attempt_number,
-                        workload=ref,
-                    )
-                )
-                events.extend(
-                    (
-                        self._event(
-                            record,
-                            BatchEventKind.LIFECYCLE,
-                            stage_id=spec.stage_id,
-                            shard_id=shard_id,
-                            attempt_id=attempt_id,
-                            phase=LifecyclePhase.QUEUED,
-                        ),
-                        self._event(
-                            record,
-                            BatchEventKind.LIFECYCLE,
-                            stage_id=spec.stage_id,
-                            shard_id=shard_id,
-                            attempt_id=attempt_id,
-                            phase=LifecyclePhase.SCHEDULING,
-                        ),
-                    )
-                )
-                if attempt_number > 1:
-                    events.append(
-                        self._event(
-                            record,
-                            BatchEventKind.RETRY_SCHEDULED,
-                            stage_id=spec.stage_id,
-                            shard_id=shard_id,
-                            attempt_id=attempt_id,
-                        )
-                    )
+                if self.artifact_lifecycle is not None:
+                    await self.artifact_lifecycle.open_attempt(resource, started_at=attempt.started_at or now)
+                attempts[attempts.index(attempt)] = replace(attempt, workload=ref)
         except Exception:
             for ref in applied:
                 await self.cluster.delete(ref, controller_fence=claim.fencing_token)
             raise
-
-        replacement = replace(stage, status=StageStatus.ACTIVE, attempts=stage.attempts + tuple(attempts))
-        next_record = self._replace_stage(record, replacement, status=BatchStatus.RUNNING)
-        await self._write(claim, record, next_record, tuple(events), now=now)
+        applied_stage = replace(stage, attempts=tuple(attempts))
+        await self._write(
+            claim,
+            record,
+            self._replace_stage(record, applied_stage),
+            (),
+            now=now,
+        )
 
     async def _reconcile_active_stage(
         self,
@@ -300,6 +355,9 @@ class ScientificBatchController:
         if any(attempt is None for attempt in latest):
             raise RuntimeError("active stage has no attempt for every workload unit")
         current = tuple(attempt for attempt in latest if attempt is not None)
+        if any(attempt.outcome is AttemptOutcome.ACTIVE and attempt.workload.uid is None for attempt in current):
+            await self._apply_pending_attempts(claim, record, stage, now=now)
+            return
 
         # Terminal observations are persisted before deleting their workload.
         # Deletion is idempotent, so a crash between the external mutation and
@@ -314,6 +372,8 @@ class ScientificBatchController:
             attempts = list(stage.attempts)
             cleanup_events: list[BatchEventDraft] = []
             for attempt in unreleased:
+                if self.artifact_lifecycle is not None:
+                    await self.artifact_lifecycle.close_attempt(record, attempt)
                 await self.cluster.delete(attempt.workload, controller_fence=claim.fencing_token)
                 if attempt.last_phase is not LifecyclePhase.TEARDOWN:
                     cleanup_events.append(self._lifecycle(record, attempt, LifecyclePhase.TEARDOWN))
@@ -365,7 +425,10 @@ class ScientificBatchController:
                 )
                 return
             if all(attempt.outcome is AttemptOutcome.SUCCEEDED for attempt in cleaned_attempts):
-                commits = await self.repository.artifact_commits(claim, stage_id=stage.stage_id)
+                cleaned_record = self._replace_stage(record, cleaned)
+                if self.artifact_lifecycle is not None:
+                    await self.artifact_lifecycle.ensure_stage_commit(cleaned_record, stage_id=stage.stage_id)
+                commits = await self._artifact_commits(claim, cleaned_record, stage_id=stage.stage_id)
                 if commits and not self._commits_match(record, cleaned, commits):
                     await self._fail_batch(
                         claim,
@@ -438,7 +501,7 @@ class ScientificBatchController:
 
         all_succeeded = all(attempt.outcome is AttemptOutcome.SUCCEEDED for attempt in current)
         if all_succeeded:
-            commits = await self.repository.artifact_commits(claim, stage_id=stage.stage_id)
+            commits = await self._artifact_commits(claim, record, stage_id=stage.stage_id)
             if not commits:
                 return
             if not self._commits_match(record, stage, commits):
@@ -481,9 +544,27 @@ class ScientificBatchController:
             if next_attempt != attempt:
                 changed = True
 
-            if observation.state.terminal:
+            max_queue_seconds = record.scheduling.stage(stage.stage_id).max_queue_seconds
+            queue_expired = (
+                max_queue_seconds is not None
+                and attempt.started_at is not None
+                and next_attempt.scheduling_admission is None
+                and next_attempt.last_phase.rank < LifecyclePhase.ADMITTED.rank
+                and now >= attempt.started_at + timedelta(seconds=max_queue_seconds)
+            )
+            if queue_expired:
+                next_attempt = replace(
+                    next_attempt,
+                    outcome=AttemptOutcome.FAILED,
+                    completed_at=now,
+                    failure_kind=FailureKind.APPLICATION,
+                    failure_code="queue_deadline_exceeded",
+                )
+                changed = True
+
+            elif observation.state.terminal:
                 if observation.state is WorkloadState.SUCCEEDED:
-                    next_attempt = replace(next_attempt, outcome=AttemptOutcome.SUCCEEDED)
+                    next_attempt = replace(next_attempt, outcome=AttemptOutcome.SUCCEEDED, completed_at=now)
                 else:
                     failure_kind = observation.failure_kind or FailureKind.INFRASTRUCTURE
                     outcome = (
@@ -494,6 +575,7 @@ class ScientificBatchController:
                     next_attempt = replace(
                         next_attempt,
                         outcome=outcome,
+                        completed_at=now,
                         failure_kind=failure_kind,
                         failure_code=observation.failure_code or str(failure_kind),
                     )
@@ -554,7 +636,21 @@ class ScientificBatchController:
     ) -> None:
         attempts = list(stage.attempts)
         for index, attempt in enumerate(attempts):
-            if not attempt.resource_released:
+            active = attempt.outcome is AttemptOutcome.ACTIVE
+            terminal_attempt = replace(
+                attempt,
+                outcome=AttemptOutcome.CANCELLED if active else attempt.outcome,
+                completed_at=now if active else attempt.completed_at,
+                failure_kind=failure_kind if active else attempt.failure_kind,
+                failure_code="peer_failed" if active else attempt.failure_code,
+            )
+            if (
+                self.artifact_lifecycle is not None
+                and not attempt.resource_released
+                and attempt.workload.uid is not None
+            ):
+                await self.artifact_lifecycle.close_attempt(record, terminal_attempt)
+            if not attempt.resource_released and attempt.workload.uid is not None:
                 await self.cluster.delete(attempt.workload, controller_fence=claim.fencing_token)
                 if (
                     attempt.outcome is AttemptOutcome.ACTIVE
@@ -563,14 +659,10 @@ class ScientificBatchController:
                     events.append(self._lifecycle(record, attempt, LifecyclePhase.GRACE_DRAIN))
                 if attempt.last_phase is not LifecyclePhase.TEARDOWN:
                     events.append(self._lifecycle(record, attempt, LifecyclePhase.TEARDOWN))
-            active = attempt.outcome is AttemptOutcome.ACTIVE
             attempt = replace(
-                attempt,
-                outcome=AttemptOutcome.CANCELLED if active else attempt.outcome,
+                terminal_attempt,
                 last_phase=LifecyclePhase.TEARDOWN if not attempt.resource_released else attempt.last_phase,
                 resource_released=True,
-                failure_kind=failure_kind if active else attempt.failure_kind,
-                failure_code="peer_failed" if active else attempt.failure_code,
             )
             attempts[index] = attempt
         failed = replace(stage, status=StageStatus.FAILED, attempts=tuple(attempts), failure_code=code)
@@ -603,7 +695,20 @@ class ScientificBatchController:
         for stage in record.stages:
             attempts: list[ScientificAttemptState] = []
             for attempt in stage.attempts:
-                if not attempt.resource_released:
+                active = attempt.outcome is AttemptOutcome.ACTIVE
+                terminal_attempt = replace(
+                    attempt,
+                    outcome=AttemptOutcome.CANCELLED if active else attempt.outcome,
+                    completed_at=now if active else attempt.completed_at,
+                    failure_code="cancelled" if active else attempt.failure_code,
+                )
+                if (
+                    self.artifact_lifecycle is not None
+                    and not attempt.resource_released
+                    and attempt.workload.uid is not None
+                ):
+                    await self.artifact_lifecycle.close_attempt(record, terminal_attempt)
+                if not attempt.resource_released and attempt.workload.uid is not None:
                     await self.cluster.delete(attempt.workload, controller_fence=claim.fencing_token)
                     if (
                         attempt.outcome is AttemptOutcome.ACTIVE
@@ -612,13 +717,10 @@ class ScientificBatchController:
                         events.append(self._lifecycle(record, attempt, LifecyclePhase.GRACE_DRAIN))
                     if attempt.last_phase is not LifecyclePhase.TEARDOWN:
                         events.append(self._lifecycle(record, attempt, LifecyclePhase.TEARDOWN))
-                active = attempt.outcome is AttemptOutcome.ACTIVE
                 attempt = replace(
-                    attempt,
-                    outcome=AttemptOutcome.CANCELLED if active else attempt.outcome,
+                    terminal_attempt,
                     last_phase=LifecyclePhase.TEARDOWN if not attempt.resource_released else attempt.last_phase,
                     resource_released=True,
-                    failure_code="cancelled" if active else attempt.failure_code,
                 )
                 attempts.append(attempt)
             status = stage.status if stage.status is StageStatus.SUCCEEDED else StageStatus.CANCELLED
@@ -669,7 +771,7 @@ class ScientificBatchController:
                 producer = record.execution_plan.producer(item.artifact_id)
                 if producer is None:
                     raise RuntimeError("logical artifact has no producer")
-                commits = await self.repository.artifact_commits(claim, stage_id=producer.stage_id)
+                commits = await self._artifact_commits(claim, record, stage_id=producer.stage_id)
                 matches = [commit for commit in commits if commit.logical_artifact_id == item.artifact_id]
                 if len(matches) != 1:
                     raise RuntimeError("logical predecessor artifact has no unique fenced commit")
@@ -686,20 +788,34 @@ class ScientificBatchController:
                 )
         return tuple(resolved)
 
+    async def _artifact_commits(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        *,
+        stage_id: str,
+    ) -> tuple[AttemptArtifactCommit, ...]:
+        if self.artifact_lifecycle is not None:
+            return await self.artifact_lifecycle.artifact_commits(record, stage_id=stage_id)
+        # Core-only tests deliberately keep the fake commit ledger on the fake
+        # repository. Production always uses the artifact-service lifecycle.
+        legacy = cast(LegacyArtifactCommitReader, self.repository)
+        return await legacy.artifact_commits(claim, stage_id=stage_id)
+
     @staticmethod
     def _commits_match(
         record: ScientificBatchState,
         stage: ScientificStageState,
         commits: tuple[object, ...],
     ) -> bool:
-        from .models import ArtifactCommit
+        from .models import AttemptArtifactCommit
 
         if not commits or any(
-            not isinstance(commit, ArtifactCommit) or not commit.semantic_valid for commit in commits
+            not isinstance(commit, AttemptArtifactCommit) or not commit.semantic_valid for commit in commits
         ):
             return False
         successful = {attempt.attempt_id for attempt in stage.attempts if attempt.outcome is AttemptOutcome.SUCCEEDED}
-        committed = {commit.attempt_ids[0] for commit in commits if isinstance(commit, ArtifactCommit)}
+        committed = {commit.attempt_ids[0] for commit in commits if isinstance(commit, AttemptArtifactCommit)}
         if successful != committed or len(commits) != len(successful):
             return False
         expected_logical = None
@@ -709,7 +825,7 @@ class ScientificBatchController:
                 for attempt in stage.attempts
                 if attempt.outcome is AttemptOutcome.SUCCEEDED
             }
-        actual_logical = {commit.logical_artifact_id for commit in commits if isinstance(commit, ArtifactCommit)}
+        actual_logical = {commit.logical_artifact_id for commit in commits if isinstance(commit, AttemptArtifactCommit)}
         expected_bindings = (
             {}
             if record.execution_plan is None
@@ -720,7 +836,7 @@ class ScientificBatchController:
             }
         )
         return all(
-            isinstance(commit, ArtifactCommit)
+            isinstance(commit, AttemptArtifactCommit)
             and commit.operation_id == record.operation_id
             and commit.stage_id == stage.stage_id
             and (

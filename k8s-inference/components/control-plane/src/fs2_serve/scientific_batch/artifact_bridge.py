@@ -12,30 +12,35 @@ from uuid import UUID
 import httpx
 
 from ..scientific_artifacts import (
-    ArtifactDirection,
+    ArtifactAccess,
+    ArtifactAccessProfile,
     ArtifactNotFoundError,
-    ArtifactRecord,
     ArtifactRepository,
-    ExecutionProvenance,
+    CloseStageAttempt,
+    CommitStageResult,
+    KueueAdmission,
+    ManifestEntryDraft,
+    OpenStageAttempt,
+    RunResultDraft,
     ScientificArtifactControllerPort,
-    SemanticValidation,
-    SemanticValidationStatus,
-    TerminalResultDraft,
-    TerminalResultManifest,
-    TerminalResultStatus,
+)
+from ..scientific_artifacts import (
+    AttemptStatus as ArtifactAttemptStatus,
 )
 from ..store import ConflictError, Store
 from .models import (
     ArtifactAccessContext,
-    ArtifactCommit,
+    AttemptArtifactCommit,
     AttemptOutcome,
     BatchEvent,
     BatchEventKind,
     BatchStatus,
+    ScientificAttemptState,
     ScientificBatchState,
     ScientificInputAdmission,
     ScientificInputArtifact,
     VerifiedInputManifest,
+    WorkloadResource,
 )
 from .profile_catalog import ScientificProfileCatalog, ScientificProfileError
 
@@ -51,14 +56,22 @@ def _public_artifact(record: Any) -> dict[str, Any]:
     return cast(dict[str, Any], record.to_public_ref().model_dump(mode="json", exclude_none=True))
 
 
+def _pointer_matches(record: Any, pointer: Mapping[str, Any]) -> bool:
+    actual = _public_artifact(record)
+    expected = dict(pointer)
+    if expected.get("compression") == "none":
+        expected.pop("compression")
+    if actual.get("compression") == "none" and "compression" not in expected:
+        actual.pop("compression")
+    return actual == expected
+
+
 class ScientificBatchResultRepository(Protocol):
     async def get(self, operation_id: UUID, *, tenant_id: str) -> ScientificBatchState: ...
 
     async def list_events(
         self, operation_id: UUID, *, tenant_id: str, after_sequence: int = 0, limit: int = 1000
     ) -> list[BatchEvent]: ...
-
-    async def list_artifact_commits(self, operation_id: UUID, *, tenant_id: str) -> tuple[ArtifactCommit, ...]: ...
 
 
 class ArtifactContentReader(Protocol):
@@ -125,11 +138,7 @@ class ArtifactServiceBridge:
         except (KeyError, ValueError):
             raise ArtifactNotFoundError("input artifact does not exist") from None
         artifact = await self.artifacts.get_artifact(artifact_id, tenant_id=tenant_id)
-        actual = _public_artifact(artifact)
-        expected = dict(pointer)
-        if expected.get("compression") == "none":
-            expected.pop("compression")
-        if actual != expected:
+        if not _pointer_matches(artifact, pointer):
             raise ArtifactNotFoundError("input artifact metadata does not match")
         if artifact.media_type != "application/vnd.fs2.scientific-manifest+json":
             raise ArtifactNotFoundError("input_manifest must point to a scientific artifact manifest")
@@ -156,10 +165,7 @@ class ArtifactServiceBridge:
             except ValueError:
                 raise ArtifactNotFoundError("input manifest entry artifact ID is not canonical") from None
             entry = await self.artifacts.get_artifact(entry_id, tenant_id=tenant_id)
-            expected_ref = dict(ref)
-            if expected_ref.get("compression") == "none":
-                expected_ref.pop("compression")
-            if _public_artifact(entry) != expected_ref or entry.access != artifact.access:
+            if not _pointer_matches(entry, ref) or entry.access != artifact.access:
                 raise ArtifactNotFoundError("input manifest entry metadata or access admission differs")
             entries.append(
                 ScientificInputArtifact(
@@ -194,22 +200,257 @@ class ArtifactServiceBridge:
         # service and are never persisted in controller state.
         return _public_artifact(artifact)
 
+    def _require_service(self) -> ScientificArtifactControllerPort:
+        if self.service is None:
+            raise ScientificProfileError("scientific artifact controller port is unavailable")
+        return self.service
+
+    async def open_attempt(self, resource: WorkloadResource, *, started_at: Any) -> None:
+        await self._require_service().open_attempt(
+            OpenStageAttempt(
+                attempt_id=resource.attempt_id,
+                operation_id=resource.operation_id,
+                tenant_id=resource.tenant_id,
+                stage_id=resource.stage_id,
+                shard_id=resource.shard_id,
+                attempt_number=resource.attempt_number,
+                started_at=started_at,
+            )
+        )
+
+    async def close_attempt(self, state: ScientificBatchState, attempt: ScientificAttemptState) -> None:
+        if attempt.outcome is AttemptOutcome.ACTIVE or attempt.completed_at is None:
+            raise ScientificProfileError("only a durable terminal attempt can close artifact publication")
+        admission = attempt.scheduling_admission
+        await self._require_service().close_attempt(
+            CloseStageAttempt(
+                attempt_id=attempt.attempt_id,
+                operation_id=state.operation_id,
+                tenant_id=state.tenant_id,
+                status=ArtifactAttemptStatus(attempt.outcome.value),
+                completed_at=attempt.completed_at,
+                admission=(
+                    None
+                    if admission is None
+                    else KueueAdmission(
+                        resolved_pool_id=admission.resolved_pool_id,
+                        admitted_resource_flavor=admission.admitted_resource_flavor,
+                        accelerator_resource_name=admission.accelerator_resource_name,
+                        accelerator_count=admission.accelerator_count,
+                        admitted_at=admission.admitted_at,
+                    )
+                ),
+                kueue_workload_uid=attempt.kueue_workload_uid,
+                k8s_job_uid=attempt.workload.uid,
+                pod_uids=attempt.pod_uids,
+            )
+        )
+
+    async def _attempt_output(
+        self,
+        state: ScientificBatchState,
+        attempt: ScientificAttemptState,
+    ) -> tuple[AttemptArtifactCommit, str]:
+        if self.content_reader is None or state.execution_plan is None:
+            raise ScientificProfileError("scientific collection reader or execution plan is unavailable")
+        records = await self._require_service().list_artifacts(
+            state.operation_id,
+            tenant_id=state.tenant_id,
+            stage_id=attempt.stage_id,
+            attempt_id=attempt.attempt_id,
+        )
+        manifests = [item for item in records if item.media_type == "application/vnd.fs2.scientific-manifest+json"]
+        evidence = [item for item in records if item.media_type == "application/vnd.fs2.scientific-validation+json"]
+        if len(manifests) != 1 or len(evidence) != 1:
+            raise ScientificProfileError("successful attempt lacks one canonical manifest and validation receipt")
+        manifest_record, evidence_record = manifests[0], evidence[0]
+        manifest = self.profiles.validate_artifact_manifest(
+            json.loads(
+                await self.content_reader.read(
+                    manifest_record.artifact_id,
+                    tenant_id=state.tenant_id,
+                    maximum_bytes=_MAX_MANIFEST_BYTES,
+                )
+            )
+        )
+        validation = json.loads(
+            await self.content_reader.read(
+                evidence_record.artifact_id,
+                tenant_id=state.tenant_id,
+                maximum_bytes=_MAX_MANIFEST_BYTES,
+            )
+        )
+        invocation = state.execution_plan.invocation(attempt.stage_id, attempt.shard_id)
+        if not isinstance(validation, Mapping) or any(
+            validation.get(key) != expected
+            for key, expected in {
+                "status": "passed",
+                "collector_id": invocation.collector_id,
+                "validator_id": invocation.validator_id,
+                "stage_id": invocation.stage_id,
+                "shard_id": invocation.shard_id,
+                "logical_output_id": invocation.produces,
+            }.items()
+        ):
+            raise ScientificProfileError("validation receipt differs from the frozen invocation")
+        by_id = {item.artifact_id: item for item in records}
+        entries = cast(list[Mapping[str, Any]], manifest["entries"])
+        for entry in entries:
+            artifact_id = UUID(str(cast(Mapping[str, Any], entry["artifact"])["artifact_id"]))
+            record = by_id.get(artifact_id)
+            if record is None or _public_artifact(record) != dict(cast(Mapping[str, Any], entry["artifact"])):
+                raise ScientificProfileError("collected manifest references another or changed artifact")
+        if invocation.handoff_name is None:
+            handoff = manifest_record
+            semantic_type = "scientific-artifact-manifest/v1"
+        else:
+            selected = [item for item in entries if item["name"] == invocation.handoff_name]
+            if len(selected) != 1:
+                raise ScientificProfileError("collected manifest omits the exact handoff entry")
+            handoff = by_id[UUID(str(cast(Mapping[str, Any], selected[0]["artifact"])["artifact_id"]))]
+            semantic_type = str(selected[0]["semantic_type"])
+        return (
+            AttemptArtifactCommit(
+                operation_id=state.operation_id,
+                stage_id=attempt.stage_id,
+                attempt_ids=(attempt.attempt_id,),
+                logical_artifact_id=invocation.produces,
+                handoff_artifact_id=handoff.artifact_id,
+                handoff_digest=handoff.digest,
+                handoff_size_bytes=handoff.size_bytes,
+                handoff_media_type=handoff.media_type,
+                handoff_compression=None if handoff.compression is None else handoff.compression.value,
+                manifest_artifact_id=manifest_record.artifact_id,
+                validation_artifact_id=evidence_record.artifact_id,
+                manifest_digest=manifest_record.digest,
+                validation_digest=evidence_record.digest,
+                committed_at=attempt.completed_at or state.scheduling.captured_at,
+                validated_at=attempt.completed_at or state.scheduling.captured_at,
+                semantic_valid=True,
+                collector_id=invocation.collector_id,
+                validator_id=invocation.validator_id,
+            ),
+            semantic_type,
+        )
+
     @staticmethod
-    def _profile_digest(value: object, label: str) -> str:
-        if not isinstance(value, str):
-            raise ScientificProfileError(f"scientific profile {label} is invalid")
-        digest = value if value.startswith("sha256:") else f"sha256:{value}"
-        if re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
-            raise ScientificProfileError(f"scientific profile {label} is invalid")
-        return digest
+    def _validation_digest(commits: tuple[AttemptArtifactCommit, ...]) -> str:
+        if len(commits) == 1:
+            return commits[0].validation_digest
+        payload = json.dumps(
+            [item.validation_digest for item in commits], sort_keys=True, separators=(",", ":")
+        ).encode()
+        return f"sha256:{hashlib.sha256(payload).hexdigest()}"
+
+    async def ensure_stage_commit(self, state: ScientificBatchState, *, stage_id: str) -> None:
+        service = self._require_service()
+        if await service.stage_commit(state.operation_id, stage_id=stage_id, tenant_id=state.tenant_id) is not None:
+            return
+        stage = state.stage(stage_id)
+        spec = state.plan.stage(stage_id)
+        attempts = tuple(stage.latest_attempt(shard) for shard in spec.workload_units)
+        if any(
+            item is None or item.outcome is not AttemptOutcome.SUCCEEDED or not item.resource_released
+            for item in attempts
+        ):
+            raise ScientificProfileError("stage artifacts cannot commit before every successful workload is released")
+        outputs = tuple([await self._attempt_output(state, cast(ScientificAttemptState, item)) for item in attempts])
+        commits = tuple(item[0] for item in outputs)
+        completed_at = max(item.validated_at for item in commits)
+        await service.commit_stage(
+            CommitStageResult(
+                operation_id=state.operation_id,
+                tenant_id=state.tenant_id,
+                stage_id=stage_id,
+                attempt_ids=tuple(item.attempt_ids[0] for item in commits),
+                entries=tuple(
+                    ManifestEntryDraft(
+                        name=commit.logical_artifact_id,
+                        semantic_type=semantic_type,
+                        artifact_id=commit.handoff_artifact_id,
+                    )
+                    for commit, semantic_type in outputs
+                ),
+                validation_digest=self._validation_digest(commits),
+                semantic_valid=True,
+                committed_at=completed_at,
+                validated_at=completed_at,
+            )
+        )
+
+    async def artifact_commits(
+        self, state: ScientificBatchState, *, stage_id: str
+    ) -> tuple[AttemptArtifactCommit, ...]:
+        record = await self._require_service().stage_commit(
+            state.operation_id,
+            stage_id=stage_id,
+            tenant_id=state.tenant_id,
+        )
+        if record is None:
+            return ()
+        stage = state.stage(stage_id)
+        spec = state.plan.stage(stage_id)
+        attempts = tuple(stage.latest_attempt(shard) for shard in spec.workload_units)
+        if any(item is None for item in attempts):
+            raise ScientificProfileError("stage commit has no matching controller attempts")
+        outputs = tuple([await self._attempt_output(state, cast(ScientificAttemptState, item)) for item in attempts])
+        commits = tuple(item[0] for item in outputs)
+        entries = {item.name: item for item in record.manifest.entries}
+        if (
+            set(record.attempt_ids) != {item.attempt_ids[0] for item in commits}
+            or not record.semantic_valid
+            or record.validation_digest != self._validation_digest(commits)
+            or set(entries) != {item.logical_artifact_id for item in commits}
+            or any(
+                entries[item.logical_artifact_id].artifact.artifact_id != str(item.handoff_artifact_id)
+                or entries[item.logical_artifact_id].artifact.sha256 != item.handoff_digest.removeprefix("sha256:")
+                for item in commits
+            )
+        ):
+            raise ScientificProfileError("canonical stage commit differs from collected attempts")
+        return commits
+
+    @staticmethod
+    def _scheduling_snapshot(state: ScientificBatchState) -> dict[str, Any]:
+        return {
+            "policy_revision": state.scheduling.policy_revision,
+            "captured_at": state.scheduling.captured_at,
+            "service_class": state.scheduling.service_class.value,
+            "tenant_queue": state.scheduling.tenant_queue,
+            "model_lane": state.scheduling.model_lane,
+            "stages": [
+                {
+                    "stage_id": item.stage_id,
+                    "resource_class": state.plan.stage(item.stage_id).resource_class.value,
+                    "resolved_cluster_queue": item.resolved_cluster_queue,
+                    "resolved_local_queue": item.resolved_local_queue,
+                    "workload_priority_class": item.workload_priority_class,
+                    "workload_priority_value": item.workload_priority_value,
+                    "resolved_pool_preference": (
+                        list(item.resolved_pool_preference)
+                        if state.plan.stage(item.stage_id).resource_class.value == "gpu"
+                        else []
+                    ),
+                    "accelerator_resource_name": (
+                        item.accelerator_resource_name
+                        if state.plan.stage(item.stage_id).resource_class.value == "gpu"
+                        else None
+                    ),
+                    "accelerator_count": item.accelerator_count,
+                    "max_queue_seconds": item.max_queue_seconds,
+                    "max_execution_seconds": item.max_execution_seconds,
+                    "checkpoint_mode": item.checkpoint_mode.value,
+                    "preemption_mode": item.preemption_mode.value,
+                }
+                for item in state.scheduling.stages
+            ],
+        }
 
     async def publish_terminal(self, state: ScientificBatchState) -> None:
-        """Idempotently publish the artifact-service-owned terminal record."""
+        """Idempotently publish the artifact-service-owned terminal result."""
 
-        if not state.status.terminal or state.result_published:
+        if not state.status.terminal or state.result_published or state.input_manifest is None:
             raise ScientificProfileError("scientific batch is not awaiting terminal publication")
-        if self.service is None:
-            raise ScientificProfileError("scientific artifact result publisher is unavailable")
         operation = await self.store.get_operation(state.operation_id, tenant_id=state.tenant_id)
         profile = self.profiles.get(state.model_id, runnable=False)
         identity = profile.value.get("execution_identity")
@@ -222,268 +463,74 @@ class ArtifactServiceBridge:
             BatchStatus.FAILED: BatchEventKind.BATCH_FAILED,
             BatchStatus.CANCELLED: BatchEventKind.BATCH_CANCELLED,
         }[state.status]
-        terminal_events = [event for event in events if event.draft.kind is terminal_kind]
-        if len(terminal_events) != 1:
+        terminal = [event for event in events if event.draft.kind is terminal_kind]
+        if len(terminal) != 1:
             raise ScientificProfileError("scientific batch terminal event is absent or ambiguous")
-        completed_at = terminal_events[0].occurred_at
-        lifecycle = [event for event in events if event.draft.kind is BatchEventKind.LIFECYCLE]
-        started_at = lifecycle[0].occurred_at if lifecycle else operation.accepted_at
-
-        output_artifacts: tuple[ArtifactRecord, ...] = ()
-        evidence: ArtifactRecord | None = None
+        output_manifest_id: UUID | None = None
         validator_id = semantic.get("validator_id")
+        validation_receipt: str | None = None
         if not isinstance(validator_id, str):
             raise ScientificProfileError("scientific profile validator identity is invalid")
-        validation_status = (
-            SemanticValidationStatus.PASSED
-            if state.status is BatchStatus.SUCCEEDED
-            else SemanticValidationStatus.FAILED
-            if state.status is BatchStatus.FAILED
-            else SemanticValidationStatus.NOT_RUN
-        )
         if state.status is BatchStatus.SUCCEEDED:
             dependent = {dependency for stage in state.plan.stages for dependency in stage.depends_on}
-            sinks = {stage.stage_id for stage in state.plan.stages if stage.stage_id not in dependent}
-            commits = await self.batches.list_artifact_commits(state.operation_id, tenant_id=state.tenant_id)
-            sink_commits = [commit for commit in commits if commit.stage_id in sinks and commit.semantic_valid]
-            if len(sinks) != 1 or len(sink_commits) != 1:
-                raise ScientificProfileError("successful scientific batch has no unique terminal artifact commit")
-            commit = sink_commits[0]
-            output_manifest = await self.artifacts.get_artifact(
-                commit.manifest_artifact_id,
-                tenant_id=state.tenant_id,
-            )
-            evidence = await self.artifacts.get_artifact(
-                commit.validation_artifact_id,
-                tenant_id=state.tenant_id,
-            )
-            if (
-                output_manifest.operation_id != state.operation_id
-                or output_manifest.attempt != operation.attempt
-                or output_manifest.direction is not ArtifactDirection.OUTPUT
-                or output_manifest.media_type != "application/vnd.fs2.scientific-manifest+json"
-                or output_manifest.digest != commit.manifest_digest
-                or evidence.operation_id != state.operation_id
-                or evidence.attempt != operation.attempt
-                or evidence.direction is not ArtifactDirection.OUTPUT
-                or evidence.digest != commit.validation_digest
-                or commit.validator_id != validator_id
-            ):
-                raise ScientificProfileError("terminal artifact commit differs from the frozen execution")
-            output_artifacts = (output_manifest, evidence)
-
-        workload_uids = [
-            attempt.workload.uid
-            for stage in state.stages
-            for attempt in stage.attempts
-            if attempt.workload.uid is not None
-        ]
-        pod_uids = tuple(
-            dict.fromkeys(
-                pod_uid for stage in state.stages for attempt in stage.attempts for pod_uid in attempt.pod_uids
-            )
+            sinks = [stage.stage_id for stage in state.plan.stages if stage.stage_id not in dependent]
+            if len(sinks) != 1:
+                raise ScientificProfileError("successful scientific batch has no unique terminal stage")
+            commits = await self.artifact_commits(state, stage_id=sinks[0])
+            if len(commits) != 1:
+                raise ScientificProfileError("terminal stage has no unique canonical output manifest")
+            output_manifest_id = commits[0].manifest_artifact_id
+            validator_id = commits[0].validator_id
+            validation_receipt = commits[0].validation_digest
+        access = ArtifactAccess(
+            profile=ArtifactAccessProfile(state.access_context.profile),
+            receipt_digest=state.access_context.receipt_digest,
         )
-        await self.service.commit_terminal_result(
-            TerminalResultDraft(
+        error_code = None
+        if state.status is BatchStatus.FAILED:
+            error_code = _ERROR.sub("_", (state.failure_code or "SCIENTIFIC_RUN_FAILED").upper()).strip("_")
+        await self._require_service().commit_run_result(
+            RunResultDraft(
                 operation_id=state.operation_id,
                 tenant_id=state.tenant_id,
-                attempt=operation.attempt,
-                status=TerminalResultStatus(state.status.value),
-                # The submitted input manifest is an immutable artifact from
-                # the caller's preparation Operation, so it is projected from
-                # frozen controller state instead of being falsely re-owned.
-                input_artifacts=(),
-                output_artifacts=output_artifacts,
-                provenance=ExecutionProvenance(
-                    model_id=state.model_id,
-                    model_revision=str(identity["model_revision"]),
-                    runtime_image_digest=self._profile_digest(identity["runtime_image_digest"], "runtime image digest"),
-                    workload_spec_digest=self._profile_digest(
-                        identity["workload_recipe_sha256"], "workload recipe digest"
-                    ),
-                    scheduling_snapshot_digest=state.scheduling.digest,
-                    job_uid=workload_uids[-1] if workload_uids else None,
-                    pod_uids=pod_uids,
-                    started_at=started_at,
-                    completed_at=completed_at,
+                terminal_status=cast(Any, state.status.value),
+                submitted_at=operation.accepted_at,
+                completed_at=terminal[0].occurred_at,
+                execution_identity={
+                    "model_id": state.model_id,
+                    "model_revision": identity["model_revision"],
+                    "runtime_image_digest": identity["runtime_image_digest"],
+                    "runtime_recipe_sha256": _raw_digest(cast(str, identity["runtime_recipe_sha256"])),
+                    "workload_recipe_sha256": _raw_digest(cast(str, identity["workload_recipe_sha256"])),
+                    "model_artifact_manifest_digest": _raw_digest(cast(str, identity["artifact_manifest_digest"])),
+                    "execution_identity_sha256": _raw_digest(cast(str, identity["execution_identity_sha256"])),
+                },
+                access=access,
+                scheduling_snapshot=self._scheduling_snapshot(state),
+                input_manifest_artifact_id=state.input_manifest.manifest_artifact_id,
+                output_manifest_artifact_id=output_manifest_id,
+                validator_id=validator_id,
+                validation_status=(
+                    "passed"
+                    if state.status is BatchStatus.SUCCEEDED
+                    else "failed"
+                    if state.status is BatchStatus.FAILED
+                    else "not-run"
                 ),
-                validation=SemanticValidation(
-                    validator_id=validator_id,
-                    validator_revision=self._profile_digest(
-                        identity["workload_recipe_sha256"], "validator-bound workload recipe digest"
-                    ),
-                    status=validation_status,
-                    evidence_artifact=evidence,
-                ),
-                completed_at=completed_at,
+                validation_receipt_digest=validation_receipt,
+                error_code=error_code,
+                error_message="scientific run did not succeed" if error_code is not None else None,
+                error_retryable=False if error_code is not None else None,
             )
         )
 
-    @staticmethod
-    def _manifest_artifact(manifest: TerminalResultManifest, *, output: bool) -> Any | None:
-        artifacts = list(manifest.output_artifacts if output else manifest.input_artifacts)
-        if output and manifest.validation.evidence_artifact is not None:
-            artifacts = [
-                item for item in artifacts if item.artifact_id != manifest.validation.evidence_artifact.artifact_id
-            ]
-        candidates = [item for item in artifacts if item.media_type == "application/vnd.fs2.scientific-manifest+json"]
-        if len(candidates) != 1:
-            return None
-        return candidates[0]
-
     async def result_response(self, operation_id: UUID, *, tenant_id: str) -> Mapping[str, Any]:
-        operation = await self.store.get_operation(operation_id, tenant_id=tenant_id)
         state = await self.batches.get(operation_id, tenant_id=tenant_id)
         if not state.status.terminal or not state.result_published:
             raise ConflictError("scientific batch result is not committed")
-        manifest = await self.artifacts.get_terminal_result(operation_id, tenant_id=tenant_id)
-        if manifest.status.value != state.status.value:
+        record = await self._require_service().get_run_result(operation_id, tenant_id=tenant_id)
+        result = record.result.to_document()
+        if result["terminal_status"] != state.status.value:
             raise ScientificProfileError("artifact result and controller terminal status differ")
-        profile = self.profiles.get(state.model_id, runnable=False)
-        identity = profile.value["execution_identity"]
-        access = profile.value["access"]
-        semantic = profile.value["semantic_validation"]
-        if not isinstance(identity, Mapping) or not isinstance(access, Mapping) or not isinstance(semantic, Mapping):
-            raise ScientificProfileError("scientific profile result identity is invalid")
-
-        events = await self.batches.list_events(operation_id, tenant_id=tenant_id, limit=1000)
-        attempts: list[dict[str, Any]] = []
-        for stage in state.stages:
-            for attempt in stage.attempts:
-                related = [
-                    event
-                    for event in events
-                    if event.draft.kind is BatchEventKind.LIFECYCLE and event.draft.attempt_id == attempt.attempt_id
-                ]
-                if not related:
-                    raise ScientificProfileError("scientific attempt lifecycle evidence is absent")
-                status = {
-                    AttemptOutcome.ACTIVE: "cancelled",
-                    AttemptOutcome.SUCCEEDED: "succeeded",
-                    AttemptOutcome.FAILED: "failed",
-                    AttemptOutcome.PREEMPTED: "preempted",
-                    AttemptOutcome.CANCELLED: "cancelled",
-                }[attempt.outcome]
-                admission = attempt.scheduling_admission
-                if status in {"succeeded", "preempted"} and admission is None:
-                    raise ScientificProfileError("terminal scientific attempt lacks exact Kueue admission evidence")
-                attempts.append(
-                    {
-                        "attempt_id": str(attempt.attempt_id),
-                        "stage_id": attempt.stage_id,
-                        "shard_id": attempt.shard_id,
-                        "attempt_number": attempt.attempt_number,
-                        "status": status,
-                        "started_at": related[0].occurred_at.isoformat(),
-                        "completed_at": related[-1].occurred_at.isoformat(),
-                        "scheduling_admission": (
-                            None
-                            if admission is None
-                            else {
-                                "resolved_pool_id": admission.resolved_pool_id,
-                                "admitted_resource_flavor": admission.admitted_resource_flavor,
-                                "accelerator_resource_name": admission.accelerator_resource_name,
-                                "accelerator_count": admission.accelerator_count,
-                                "admitted_at": admission.admitted_at.isoformat(),
-                            }
-                        ),
-                        "kueue_workload_uid": attempt.kueue_workload_uid,
-                        "k8s_job_uid": attempt.workload.uid,
-                        "pod_uids": list(attempt.pod_uids),
-                        "node_uids": [],
-                        "gpu_uuids": [],
-                        "checkpoint_input": None,
-                        "checkpoint_output": None,
-                    }
-                )
-        if len(attempts) > self.profiles.max_result_attempts:
-            raise ScientificProfileError("public result attempt bound is exceeded")
-
-        if state.input_manifest is None:
-            raise ScientificProfileError("terminal result has no frozen input manifest")
-        input_manifest = await self.artifacts.get_artifact(
-            state.input_manifest.manifest_artifact_id,
-            tenant_id=tenant_id,
-        )
-        output_manifest = self._manifest_artifact(manifest, output=True)
-        if (
-            input_manifest.digest != state.input_manifest.manifest_digest
-            or input_manifest.media_type != "application/vnd.fs2.scientific-manifest+json"
-        ):
-            raise ScientificProfileError("terminal result input manifest differs from frozen admission")
-        if state.status is BatchStatus.SUCCEEDED and output_manifest is None:
-            raise ScientificProfileError("successful result has no unique public output manifest")
-        evidence = manifest.validation.evidence_artifact
-        validation_status = manifest.validation.status.value.replace("_", "-")
-        code = state.failure_code or "SCIENTIFIC_RUN_FAILED"
-        public_error = None
-        if state.status is not BatchStatus.SUCCEEDED:
-            normalized = _ERROR.sub("_", code.upper()).strip("_") or "SCIENTIFIC_RUN_FAILED"
-            public_error = {"code": normalized[:64], "message": "scientific run did not succeed", "retryable": False}
-        result = {
-            "schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
-            "operation_id": str(operation_id),
-            "batch_id": str(state.batch_id),
-            "workload_id": str(state.workload_id),
-            "terminal_status": state.status.value,
-            "submitted_at": operation.accepted_at.isoformat(),
-            "completed_at": manifest.completed_at.isoformat(),
-            "execution_identity": {
-                "model_id": state.model_id,
-                "model_revision": identity["model_revision"],
-                "runtime_image_digest": identity["runtime_image_digest"],
-                "runtime_recipe_sha256": _raw_digest(identity["runtime_recipe_sha256"]),
-                "workload_recipe_sha256": _raw_digest(identity["workload_recipe_sha256"]),
-                "model_artifact_manifest_digest": _raw_digest(identity["artifact_manifest_digest"]),
-                "execution_identity_sha256": _raw_digest(identity["execution_identity_sha256"]),
-            },
-            "access_admission": {
-                "profile": access["profile"],
-                "state": access["state"],
-                "receipt_digest": _raw_digest(access["receipt_digest"]),
-            },
-            "scheduling_snapshot": {
-                "policy_revision": state.scheduling.policy_revision,
-                "captured_at": state.scheduling.captured_at.isoformat(),
-                "service_class": state.scheduling.service_class.value,
-                "tenant_queue": state.scheduling.tenant_queue,
-                "model_lane": state.scheduling.model_lane,
-                "stages": [
-                    {
-                        "stage_id": scheduling.stage_id,
-                        "resource_class": state.plan.stage(scheduling.stage_id).resource_class.value,
-                        "resolved_cluster_queue": scheduling.resolved_cluster_queue,
-                        "resolved_local_queue": scheduling.resolved_local_queue,
-                        "workload_priority_class": scheduling.workload_priority_class,
-                        "workload_priority_value": scheduling.workload_priority_value,
-                        "resolved_pool_preference": (
-                            list(scheduling.resolved_pool_preference)
-                            if state.plan.stage(scheduling.stage_id).resource_class.value == "gpu"
-                            else []
-                        ),
-                        "accelerator_resource_name": (
-                            scheduling.accelerator_resource_name
-                            if state.plan.stage(scheduling.stage_id).resource_class.value == "gpu"
-                            else None
-                        ),
-                        "accelerator_count": scheduling.accelerator_count,
-                        "max_queue_seconds": scheduling.max_queue_seconds,
-                        "max_execution_seconds": scheduling.max_execution_seconds,
-                        "checkpoint_mode": scheduling.checkpoint_mode.value,
-                        "preemption_mode": scheduling.preemption_mode.value,
-                    }
-                    for scheduling in state.scheduling.stages
-                ],
-            },
-            "input_manifest": _public_artifact(input_manifest),
-            "output_manifest": None if output_manifest is None else _public_artifact(output_manifest),
-            "attempts": attempts,
-            "semantic_validation": {
-                "validator_id": semantic["validator_id"],
-                "status": validation_status,
-                "receipt_digest": None if evidence is None else _raw_digest(evidence.digest),
-            },
-            "error": public_error,
-        }
         self.profiles.validate_result(result)
         return result

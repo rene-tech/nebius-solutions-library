@@ -13,7 +13,7 @@ CREATE TABLE fs2_scientific_batches (
     state jsonb NOT NULL CHECK (
         pg_column_size(state) <= 4194304
         AND jsonb_typeof(state) = 'object'
-        AND state->>'schema_version' = 'fs2-serve.nebius.ai/scientific-batch-state/v5'
+        AND state->>'schema_version' = 'fs2-serve.nebius.ai/scientific-batch-state/v6'
         AND state->>'operation_id' = operation_id::text
         AND state->>'batch_id' = batch_id::text
         AND state->>'workload_id' = workload_id::text
@@ -72,40 +72,6 @@ CREATE TABLE fs2_scientific_batch_events (
 CREATE INDEX fs2_scientific_batch_events_operation_idx
     ON fs2_scientific_batch_events(operation_id, sequence);
 
--- Artifact metadata and immutable public manifests remain owned by migration
--- 0014. This table only records the controller's stage-level commit barrier.
-CREATE TABLE fs2_scientific_attempt_commits (
-    operation_id uuid NOT NULL REFERENCES fs2_scientific_batches(operation_id) ON DELETE CASCADE,
-    stage_id text NOT NULL CHECK (stage_id ~ '^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$' AND length(stage_id) <= 63),
-    attempt_id uuid NOT NULL,
-    logical_artifact_id text NOT NULL CHECK (
-        logical_artifact_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
-    ),
-    handoff_artifact_id uuid NOT NULL REFERENCES fs2_scientific_artifacts(id),
-    handoff_digest char(71) NOT NULL CHECK (handoff_digest ~ '^sha256:[0-9a-f]{64}$'),
-    handoff_size_bytes bigint NOT NULL CHECK (handoff_size_bytes BETWEEN 0 AND 137438953472),
-    handoff_media_type text NOT NULL CHECK (length(handoff_media_type) BETWEEN 3 AND 128),
-    handoff_compression text CHECK (handoff_compression IS NULL OR handoff_compression IN ('gzip','zstd')),
-    manifest_artifact_id uuid NOT NULL REFERENCES fs2_scientific_artifacts(id),
-    validation_artifact_id uuid NOT NULL REFERENCES fs2_scientific_artifacts(id),
-    manifest_digest char(71) NOT NULL CHECK (manifest_digest ~ '^sha256:[0-9a-f]{64}$'),
-    validation_digest char(71) NOT NULL CHECK (validation_digest ~ '^sha256:[0-9a-f]{64}$'),
-    collector_id text NOT NULL CHECK (
-        collector_id ~ '^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$' AND length(collector_id) <= 128
-    ),
-    validator_id text NOT NULL CHECK (
-        validator_id ~ '^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$' AND length(validator_id) <= 128
-    ),
-    committed_at timestamptz NOT NULL,
-    validated_at timestamptz NOT NULL,
-    semantic_valid boolean NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-    PRIMARY KEY(operation_id, stage_id, attempt_id),
-    UNIQUE(operation_id, logical_artifact_id),
-    CHECK (manifest_artifact_id <> validation_artifact_id),
-    CHECK (validated_at >= committed_at)
-);
-
 CREATE FUNCTION fs2_scientific_batch_state_immutable()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -143,12 +109,7 @@ CREATE TRIGGER fs2_scientific_batch_events_append_only_trigger
 BEFORE UPDATE OR DELETE ON fs2_scientific_batch_events
 FOR EACH ROW EXECUTE FUNCTION fs2_scientific_batch_append_only();
 
-CREATE TRIGGER fs2_scientific_attempt_commits_append_only_trigger
-BEFORE UPDATE OR DELETE ON fs2_scientific_attempt_commits
-FOR EACH ROW EXECUTE FUNCTION fs2_scientific_batch_append_only();
-
-REVOKE ALL ON fs2_scientific_batches,fs2_scientific_batch_events,
-    fs2_scientific_attempt_commits FROM PUBLIC;
+REVOKE ALL ON fs2_scientific_batches,fs2_scientific_batch_events FROM PUBLIC;
 REVOKE ALL ON SEQUENCE fs2_scientific_batch_events_sequence_seq FROM PUBLIC;
 REVOKE ALL ON FUNCTION fs2_scientific_batch_state_immutable(),
     fs2_scientific_batch_append_only() FROM PUBLIC;

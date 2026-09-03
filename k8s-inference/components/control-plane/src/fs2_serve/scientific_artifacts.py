@@ -32,7 +32,7 @@ import asyncpg
 from pydantic import AwareDatetime, ConfigDict, Field, StringConstraints, model_validator
 
 from .models import StrictModel
-from .scientific_batch.models import ArtifactCommit, BatchClaim, batch_identity, workload_identity
+from .scientific_batch.models import ArtifactCommit, batch_identity, workload_identity
 from .scientific_run_result import (
     SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA,
     SCIENTIFIC_RUN_RESULT_SCHEMA,
@@ -477,7 +477,7 @@ class StageCommitRecord(ScientificArtifactModel):
         return self
 
     def to_controller_commit(self) -> ArtifactCommit:
-        """Return the exact value ``ScientificBatchRepository`` must hand back."""
+        """Project the canonical stage commit onto the controller aggregate."""
 
         return ArtifactCommit(
             operation_id=self.operation_id,
@@ -761,6 +761,15 @@ class ArtifactRepository(Protocol):
 
     async def get_artifact(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactRecord: ...
 
+    async def list_artifacts(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        stage_id: str | None = None,
+        attempt_id: UUID | None = None,
+    ) -> list[ArtifactRecord]: ...
+
     async def commit_stage(self, request: CommitStageResult) -> StageCommitRecord: ...
 
     async def stage_commit(
@@ -798,6 +807,15 @@ class ScientificArtifactControllerPort(Protocol):
     async def download(
         self, artifact_id: UUID, *, tenant_id: str, handle_ttl: timedelta | None = None
     ) -> ArtifactDownload: ...
+
+    async def list_artifacts(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        stage_id: str | None = None,
+        attempt_id: UUID | None = None,
+    ) -> list[ArtifactRecord]: ...
 
     async def commit_stage(self, request: CommitStageResult) -> StageCommitRecord: ...
 
@@ -964,6 +982,23 @@ class ScientificArtifactService:
         _validate_handle(handle, method="GET", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
         return ArtifactDownload(artifact=record, handle=handle)
 
+    async def list_artifacts(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        stage_id: str | None = None,
+        attempt_id: UUID | None = None,
+    ) -> list[ArtifactRecord]:
+        """Return bounded internal metadata for controller-owned aggregation."""
+
+        return await self._repository.list_artifacts(
+            operation_id,
+            tenant_id=tenant_id,
+            stage_id=stage_id,
+            attempt_id=attempt_id,
+        )
+
     async def commit_stage(self, request: CommitStageResult) -> StageCommitRecord:
         """Publish exactly one immutable manifest commit for a completed stage."""
 
@@ -979,7 +1014,7 @@ class ScientificArtifactService:
     async def artifact_commit(
         self, operation_id: UUID, *, stage_id: str, tenant_id: str | None = None
     ) -> ArtifactCommit | None:
-        """Return the batch controller's ``ArtifactCommit`` for one stage."""
+        """Return the canonical controller aggregate for one committed stage."""
 
         record = await self.stage_commit(operation_id, stage_id=stage_id, tenant_id=tenant_id)
         return record.to_controller_commit() if record is not None else None
@@ -1001,8 +1036,9 @@ class ScientificArtifactService:
             )
             if output_manifest.operation_id != draft.operation_id:
                 raise ArtifactConflictError("the output manifest belongs to another operation")
-        if input_manifest.operation_id != draft.operation_id:
-            raise ArtifactConflictError("the input manifest belongs to another operation")
+        # Input manifests are immutable tenant-scoped artifacts prepared before
+        # submission and can therefore belong to an earlier durable Operation.
+        # ``get_artifact`` already enforced the exact tenant boundary.
         error = None
         if draft.error_code is not None:
             error = {
@@ -1083,26 +1119,6 @@ class ScientificArtifactService:
                 # delete. Its purge is authoritative, so skip rather than fail.
                 continue
         return purges
-
-
-class ScientificArtifactBatchBridge:
-    """Adapts the artifact service onto the batch repository's commit contract.
-
-    ``ScientificBatchRepository.artifact_commit`` is delegated here so the batch
-    controller reads exactly the manifest this service committed, rather than a
-    second, independently maintained copy of the same state. The signature
-    matches that protocol member exactly, so a production batch repository can
-    forward to it without adapting anything.
-
-    The claim already authorizes the operation and stage commits are
-    operation-scoped, so no further tenant predicate is applied here.
-    """
-
-    def __init__(self, service: ScientificArtifactControllerPort) -> None:
-        self._service = service
-
-    async def artifact_commit(self, claim: BatchClaim, *, stage_id: str) -> ArtifactCommit | None:
-        return await self._service.artifact_commit(claim.operation_id, stage_id=stage_id)
 
 
 @dataclass
@@ -1395,6 +1411,32 @@ class MemoryArtifactRepository:
             if record is None or record.tenant_id != tenant_id:
                 raise ArtifactNotFoundError("artifact not found")
             return record
+
+    async def list_artifacts(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        stage_id: str | None = None,
+        attempt_id: UUID | None = None,
+    ) -> list[ArtifactRecord]:
+        async with self._lock:
+            return sorted(
+                (
+                    record
+                    for record in self._artifacts.values()
+                    if record.operation_id == operation_id
+                    and record.tenant_id == tenant_id
+                    and (stage_id is None or record.stage_id == stage_id)
+                    and (attempt_id is None or record.attempt_id == attempt_id)
+                ),
+                key=lambda record: (
+                    record.stage_id,
+                    record.shard_id or "",
+                    str(record.attempt_id),
+                    str(record.artifact_id),
+                ),
+            )
 
     def _validate_commit(self, request: CommitStageResult) -> ScientificArtifactManifest:
         """Prove the commit names exactly the stage's succeeded attempts."""
@@ -2027,6 +2069,29 @@ class PostgresArtifactRepository:
         if row is None:
             raise ArtifactNotFoundError("artifact not found")
         return _artifact_from_row(row)
+
+    async def list_artifacts(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        stage_id: str | None = None,
+        attempt_id: UUID | None = None,
+    ) -> list[ArtifactRecord]:
+        rows = await self.pool.fetch(
+            f"""
+            SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts
+            WHERE operation_id=$1 AND tenant_id=$2
+              AND ($3::text IS NULL OR stage_id=$3)
+              AND ($4::uuid IS NULL OR attempt_id=$4)
+            ORDER BY stage_id,shard_id,attempt_id,id
+            """,  # noqa: S608
+            operation_id,
+            tenant_id,
+            stage_id,
+            attempt_id,
+        )
+        return [_artifact_from_row(row) for row in rows]
 
     async def commit_stage(self, request: CommitStageResult) -> StageCommitRecord:
         try:

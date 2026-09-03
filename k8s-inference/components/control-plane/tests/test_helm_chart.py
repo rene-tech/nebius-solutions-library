@@ -856,13 +856,11 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "--set",
         "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
         "--set",
-        "artifactService.enabled=true",
-        "--set",
-        "artifactService.credentialsSecretName=scientific-artifact-credentials",
+        "scientificArtifacts.enabled=true",
         "--set-string",
         "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
         "--set-string",
-        "networkPolicy.artifactStoreCidrs[0]=192.0.2.20/32",
+        "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
     )
     named = {(document["kind"], document["metadata"]["name"]): document for document in documents}
     pod = gateway_deployment(documents)["spec"]["template"]["spec"]
@@ -874,15 +872,12 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     assert environment["FS2_SCIENTIFIC_BATCH_CONTROLLER_ID"]["valueFrom"]["fieldRef"] == {"fieldPath": "metadata.uid"}
     assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_FILE"]["value"].endswith("/kueue-scheduling.json")
     assert environment["FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE"]["value"].endswith("/execution-map.json")
-    assert environment["FS2_ARTIFACT_SERVICE_ENABLED"]["value"] == "true"
-    assert environment["FS2_ARTIFACT_STORE_ACCESS_KEY"]["valueFrom"]["secretKeyRef"] == {
-        "name": "scientific-artifact-credentials",
-        "key": "access-key",
-    }
-    assert environment["FS2_ARTIFACT_STORE_SECRET_KEY"]["valueFrom"]["secretKeyRef"] == {
-        "name": "scientific-artifact-credentials",
-        "key": "secret-key",
-    }
+    assert environment["FS2_SCIENTIFIC_ARTIFACTS_ENABLED"]["value"] == "true"
+    assert environment["FS2_ARTIFACT_STORE_CREDENTIALS_FILE"]["value"] == (
+        "/var/run/secrets/fs2-serve/artifact-store/credentials.json"
+    )
+    assert "FS2_ARTIFACT_STORE_ACCESS_KEY" not in environment
+    assert "FS2_ARTIFACT_STORE_SECRET_KEY" not in environment
     volumes = {item["name"]: item for item in pod["volumes"]}
     token = volumes["scientific-batch-kubernetes"]["projected"]["sources"]
     assert token[0]["serviceAccountToken"] == {
@@ -939,15 +934,27 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
                 "--set",
                 "scientificBatch.writesEnabled=true",
                 "--set",
-                "artifactService.enabled=true",
-                "--set",
-                "artifactService.credentialsSecretName=artifact-credentials",
+                "scientificArtifacts.enabled=true",
                 "--set-string",
-                "networkPolicy.artifactStoreCidrs[0]=192.0.2.20/32",
+                "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
             ),
             "immutable scheduling-contract and execution-map ConfigMaps",
         ),
-        (("--set", "artifactService.enabled=true"), "existing credentials Secret"),
+        (
+            (
+                "--set",
+                "scientificBatch.enabled=true",
+                "--set",
+                "scientificBatch.writesEnabled=true",
+                "--set",
+                "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+                "--set",
+                "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
+                "--set-string",
+                "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+            ),
+            "requires scientificArtifacts.enabled",
+        ),
     ],
 )
 def test_scientific_batch_consumer_rejects_partial_enablement(extra: tuple[str, ...], expected: str) -> None:
