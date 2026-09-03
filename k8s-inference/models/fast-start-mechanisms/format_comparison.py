@@ -81,6 +81,8 @@ def main(argv: list[str] | None = None) -> int:
         p50 = statistics.median(values) if values else None
         if arm == "conventional" or control_p95 is None or p95 is None:
             comparison = "control" if arm == "conventional" else "unavailable"
+        elif p95 > control_p95:
+            comparison = f"{p95 - control_p95:.1f} s slower"
         else:
             comparison = f"{control_p95 - p95:.1f} s faster, {control_p95 / p95:.1f}x"
         held = []
