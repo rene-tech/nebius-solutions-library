@@ -44,10 +44,52 @@ boundary. These digests are retained only as superseded evidence:
 | Protenix v2 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:beeaa5173f102656437724376bad858de54232ef7ad1e342b8c2534428775494` |
 | OpenFold3 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:ca05bb15341045bb2876153faccb0d029a27b0050350d6b86a83a76b4fa73bb4` |
 
-The corrected `-h100-r4` targets remain unpublished until their direct
-nonroot/network-disabled build smokes pass. Neither the superseded manifests nor
-the corrected build work qualify semantic H100 readiness, Blackwell
-portability, or any numbered fast-start level.
+The corrected `-h100-r4` build candidates were published from clean source
+`e6d20c7cb3abf5e172852f17a20c7e100daa1245` after each passed its direct
+nonroot/network-disabled build smoke and direct CLI invocation:
+
+| Runtime | Immutable regional image |
+|---|---|
+| ESMFold2 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d` |
+| ESMFold2-Fast | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577` |
+| Protenix v2 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644` |
+| OpenFold3 | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b` |
+
+Publication alone does not qualify semantic H100 readiness, Blackwell
+portability, or any numbered fast-start level. Those states remain pending
+exact artifact-backed H100 evidence below.
+
+### H100 image-start evidence
+
+Temporary task-owned Jobs used context `k8s-inference-h100` in project
+`project-e00rene`, region `eu-north1`, and requested one H100 SXM5 80 GB GPU
+each. No shared route or model Deployment was changed.
+
+The first concurrent prepared-node run on reserved node
+`computeinstance-e00m0hsph76ajt9sdb` measured exact-digest pull times of
+101.470 s (ESMFold2), 99.729 s (Fast), 0.306 s (Protenix; its layers were
+already resident), and 194.623 s (OpenFold3). A second concurrent run on the
+same prepared node measured warm digest checks of 55 ms, 59 ms, 57 ms, and
+52 ms respectively. Approximate container-start-to-final-JSON times were
+10.4 s, 10.4 s, 6.6 s, and 20.4 s. Every final JSON reported the exact package
+and source revision, `cuda_available=true`, and `status=passed`.
+
+A separate preemptible campaign used the stable `h100-1x` pool selector and
+two nodes created at `2026-09-03T05:30:46Z`. Task-owned topology anchors kept
+unrelated images on opposite nodes without hostname pinning. Exact-image cold
+pulls where that target's layers were absent were 66.133 s for ESMFold2 on
+`computeinstance-e00rb3a26wtq7cjf88`, 152.868 s for OpenFold3 on
+`computeinstance-e00pwgcqf990qy867k`, 63.756 s for Fast on the latter node,
+and 105.434 s for Protenix on the former. Approximate
+container-start-to-final-JSON times were 11.5 s, 21.5 s, 11.2 s, and 5.8 s.
+All task Jobs and topology anchors were deleted after evidence capture.
+
+These were build-only GPU runtime tests. Their smokes deliberately proved that
+`/models` and `/databases` were empty and therefore did not run inference.
+Semantic qualification remains blocked on live source-cache and localization
+receipts from the operator-owned reference-data plane, plus the declared
+Protenix and OpenFold writable cache claims. The required catalog candidate
+identities must not be replaced with synthetic mounts or receipts.
 
 OpenFold3 is an independent, non-equivalent backend; it is never reported as
 native AlphaFold3. The Protenix v2 checkpoint was recovered from the immutable
@@ -231,13 +273,15 @@ pre-infrastructure base.
 the audited one-block Protenix patch to an exact
 `2475421477ab414b571149ad4a875c390ff8a35d` (`v2.0.0`) checkout. It fetches
 those tagged sources when verified local checkouts are not supplied. It also
-creates a separate depth-one object store, fetches the accepted mainline
-artifact catalog, requires exact commit
-`9d48fe0ef380ec736e113a89215f3730534693ad`, and verifies generator SHA-256
+creates a separate depth-one object store, fetches the pinned catalog contract
+directly by immutable revision rather than through a moving branch ref, and
+requires exact commit
+`a1ecc219f5e319be87cfa20d5a79af1e3674c6f0`, and verifies generator SHA-256
 `e7ec850a96daaf7d9463d953490d263069406ff4f1b125d400d75390372994b8`.
-That revision is the integrated catalog contract; it deliberately leaves
-localization pending. Immutable promotion receipts remain a publication and
-H100 acceptance gate.
+That revision preserves the integrated catalog bytes and adds the scientific
+localization foundation; it deliberately does not manufacture missing
+secondary-model live receipts. Immutable promotion receipts remain an H100
+semantic-acceptance gate.
 The clean store must not contain superseded unreachable commit `80d3b940...`.
 Tests pin the exact generated `runtime-integration.json` and Protenix manifest
 bytes before checking their mount/content/manifest identities against this
@@ -267,6 +311,13 @@ AlphaFold3's separate clean successor retains its own generated-argv,
 database-promotion, stable-selector storage, academic namespace, and nonroot
 persistent-cache gates; passing this four-image publisher never substitutes for
 those independent gates.
+
+The post-publication cross-contract gate passed against exact clean pushed
+adapter successor `6ab3d2e362ee69b70c1a3ca70df186076fc4adc2`, based on frozen
+main `a1ecc219f5e319be87cfa20d5a79af1e3674c6f0`. It executed every generated
+ESMFold2, ESMFold2-Fast, Protenix v2, and OpenFold3 argv through the actual
+image parsers and returned `failures=[]`; no image bytes or public CLI changed,
+so the existing r4 digests remain the immutable candidates.
 
 The build script consumes lock v2 `repository` and `tag` fields. Those
 repositories exactly match the runtime catalog: `cancer-immunotherapy/esmfold2`,
@@ -343,6 +394,7 @@ Seven task-owned historical or rejected manifests are retained under
 `superseded_publications`; all have `deployable: false`. The final four entries
 are the `-h100-r3` manifests rejected by direct-command H100 testing. The
 historical AF3 image evidence is owned by the dedicated AF3 successor and is not
-repeated here. Corrected `-h100-r4` tags must not be published until the direct
-executable, build, no-runtime-nvcc, artifact-closure, generated-argv, offline
-semantic-smoke, and layer-history gates pass.
+repeated here. The corrected `-h100-r4` publication passed the direct-executable,
+build, no-runtime-nvcc, and layer-history gates. These immutable digests remain
+non-deployable candidates pending the final current-main adapter gate, live
+localization/cache receipts, and exact-artifact offline semantic H100 runs.

@@ -33,7 +33,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "dockerfile", "repository", "tag", "source", "base_images", "build_args", "external_artifacts", "runtime_contract", "fast_start", "accelerator_support", "smoke", "published_digest"],
+        "required": ["id", "dockerfile", "repository", "tag", "source", "base_images", "build_args", "external_artifacts", "runtime_contract", "fast_start", "accelerator_support", "smoke", "published_digest", "deployable"],
         "properties": {
           "id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
           "dockerfile": {"type": "string", "pattern": "^Dockerfile\\."},
@@ -57,7 +57,8 @@
           "fast_start": {"$ref": "#/$defs/fastStart"},
           "accelerator_support": {"$ref": "#/$defs/acceleratorSupport"},
           "smoke": {"type": "string", "pattern": "^/"},
-          "published_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}
+          "published_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+          "deployable": {"const": false}
         }
       }
     }
@@ -171,13 +172,13 @@
       "properties": {
         "maximum_candidate_level": {"const": "L1"},
         "qualified_level": {"type": "null"},
-        "qualification_state": {"const": "pending-regional-image-cache-evidence"},
+        "qualification_state": {"const": "evidence-collected-pending-independent-acceptance"},
         "level_states": {
           "type": "object",
           "additionalProperties": false,
           "required": ["L1", "L2", "L3", "L4"],
           "properties": {
-            "L1": {"const": "candidate-pending-regional-image-cache-evidence"},
+            "L1": {"const": "candidate-evidence-collected-pending-independent-acceptance"},
             "L2": {"const": "unavailable-no-shared-storage-gpu-process-snapshot"},
             "L3": {"const": "unavailable-no-local-disk-cached-snapshot"},
             "L4": {"const": "unavailable-no-system-ram-retained-model"}

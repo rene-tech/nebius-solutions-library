@@ -90,12 +90,12 @@ def write_runtime_localization_marker(
 class StructureSecondaryImageContractTests(unittest.TestCase):
     @unittest.skipUnless(
         os.environ.get("FS2_ARTIFACT_GENERATOR"),
-        "set FS2_ARTIFACT_GENERATOR to the exact 9d48fe0e catalog generator",
+        "set FS2_ARTIFACT_GENERATOR to the exact a1ecc219 catalog generator",
     )
     def test_lock_mounts_match_exact_artifact_worker_runtime_integration(self) -> None:
         generator_path = Path(os.environ["FS2_ARTIFACT_GENERATOR"]).resolve()
         spec = importlib.util.spec_from_file_location(
-            "artifact_worker_mounts_9d48fe0e", generator_path
+            "artifact_worker_mounts_a1ecc219", generator_path
         )
         assert spec is not None and spec.loader is not None
         worker = importlib.util.module_from_spec(spec)
@@ -143,7 +143,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
 
     @unittest.skipUnless(
         os.environ.get("FS2_ARTIFACT_GENERATOR"),
-        "set FS2_ARTIFACT_GENERATOR to the exact 9d48fe0e catalog generator",
+        "set FS2_ARTIFACT_GENERATOR to the exact a1ecc219 catalog generator",
     )
     def test_exact_artifact_worker_manifest_is_accepted_with_newline_hash(self) -> None:
         generator_path = Path(os.environ["FS2_ARTIFACT_GENERATOR"]).resolve()
@@ -152,7 +152,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             "e7ec850a96daaf7d9463d953490d263069406ff4f1b125d400d75390372994b8",
         )
         spec = importlib.util.spec_from_file_location(
-            "artifact_worker_9d48fe0e", generator_path
+            "artifact_worker_a1ecc219", generator_path
         )
         self.assertIsNotNone(spec)
         self.assertIsNotNone(spec.loader if spec is not None else None)
@@ -528,6 +528,19 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertNotIn(phrase, reviewed_text)
 
+    def test_current_publication_digests_are_immutable_candidates(self) -> None:
+        expected = {
+            "esmfold2": "sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d",
+            "esmfold2-fast": "sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577",
+            "protenix-v2": "sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644",
+            "openfold3": "sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b",
+        }
+        self.assertEqual(
+            {image["id"]: image["published_digest"] for image in LOCK["images"]},
+            expected,
+        )
+        self.assertTrue(all(image["deployable"] is False for image in LOCK["images"]))
+
         self.assertEqual(
             LOCK["publication_policy"],
             "explicit-non-overwriting-build-checked-tags",
@@ -540,7 +553,6 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
         }
         for image in LOCK["images"]:
             with self.subTest(image=image["id"]):
-                self.assertIsNone(image["published_digest"])
                 self.assertEqual(
                     image["accelerator_support"]["h100"]["status"],
                     expected_h100_states[image["id"]],
@@ -556,19 +568,18 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
     def test_mandatory_check_uses_reachable_generator_in_fresh_object_store(self) -> None:
         source = (ROOT / "check.sh").read_text(encoding="utf-8")
         self.assertIn(
-            "artifact_worker_revision=9d48fe0ef380ec736e113a89215f3730534693ad",
+            "artifact_worker_revision=a1ecc219f5e319be87cfa20d5a79af1e3674c6f0",
             source,
         )
         self.assertIn(
             "artifact_generator_sha256=e7ec850a96daaf7d9463d953490d263069406ff4f1b125d400d75390372994b8",
             source,
         )
-        self.assertIn(
-            "artifact_worker_ref=refs/heads/main",
-            source,
-        )
-        self.assertIn("checkout_exact_ref", source)
+        self.assertNotIn("refs/heads/main", source)
+        self.assertIn("checkout_exact_revision", source)
         self.assertIn("--no-tags --depth=1", source)
+        self.assertIn('origin "$revision"', source)
+        self.assertNotIn('origin "$ref"', source)
         self.assertIn('artifact_worker_source="${temporary_root}/artifact-worker"', source)
         self.assertIn('"${superseded_unreachable_revision}^{commit}"', source)
         self.assertNotIn('git -C "$runtime_dir" show', source)
@@ -619,7 +630,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
     def test_fast_start_cache_contracts_are_auxiliary_and_numbered_level_is_l1(self) -> None:
         images = {image["id"]: image for image in LOCK["images"]}
         expected_level_states = {
-            "L1": "candidate-pending-regional-image-cache-evidence",
+            "L1": "candidate-evidence-collected-pending-independent-acceptance",
             "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
             "L3": "unavailable-no-local-disk-cached-snapshot",
             "L4": "unavailable-no-system-ram-retained-model",
@@ -630,7 +641,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             self.assertIsNone(fast_start["qualified_level"])
             self.assertEqual(
                 fast_start["qualification_state"],
-                "pending-regional-image-cache-evidence",
+                "evidence-collected-pending-independent-acceptance",
             )
             self.assertEqual(fast_start["level_states"], expected_level_states)
 

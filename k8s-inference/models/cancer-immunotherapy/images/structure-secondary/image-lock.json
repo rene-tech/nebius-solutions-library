@@ -118,9 +118,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "pending-regional-image-cache-evidence",
+        "qualification_state": "evidence-collected-pending-independent-acceptance",
         "level_states": {
-          "L1": "candidate-pending-regional-image-cache-evidence",
+          "L1": "candidate-evidence-collected-pending-independent-acceptance",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -132,7 +132,8 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null
+      "published_digest": "sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d",
+      "deployable": false
     },
     {
       "id": "esmfold2-fast",
@@ -196,9 +197,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "pending-regional-image-cache-evidence",
+        "qualification_state": "evidence-collected-pending-independent-acceptance",
         "level_states": {
-          "L1": "candidate-pending-regional-image-cache-evidence",
+          "L1": "candidate-evidence-collected-pending-independent-acceptance",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -210,7 +211,8 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-only-sdpa-dispatch", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null
+      "published_digest": "sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577",
+      "deployable": false
     },
     {
       "id": "protenix-v2",
@@ -286,9 +288,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "pending-regional-image-cache-evidence",
+        "qualification_state": "evidence-collected-pending-independent-acceptance",
         "level_states": {
-          "L1": "candidate-pending-regional-image-cache-evidence",
+          "L1": "candidate-evidence-collected-pending-independent-acceptance",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -300,7 +302,8 @@
         "blackwell": {"status": "unsupported", "scope": "pinned-pytorch-2.7.1-cu126-libtorch-has-no-blackwell-cubin-or-ptx", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null
+      "published_digest": "sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644",
+      "deployable": false
     },
     {
       "id": "openfold3",
@@ -362,9 +365,9 @@
       "fast_start": {
         "maximum_candidate_level": "L1",
         "qualified_level": null,
-        "qualification_state": "pending-regional-image-cache-evidence",
+        "qualification_state": "evidence-collected-pending-independent-acceptance",
         "level_states": {
-          "L1": "candidate-pending-regional-image-cache-evidence",
+          "L1": "candidate-evidence-collected-pending-independent-acceptance",
           "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
           "L3": "unavailable-no-local-disk-cached-snapshot",
           "L4": "unavailable-no-system-ram-retained-model"
@@ -376,7 +379,8 @@
         "blackwell": {"status": "not-qualified", "scope": "portability-not-readiness", "native_targets": []}
       },
       "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null
+      "published_digest": "sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b",
+      "deployable": false
     }
   ]
 }
