@@ -6,9 +6,11 @@
 # weights: the Base checkpoint is mounted from the artifact plane at run time, so the
 # published image stays redistributable and the checkpoint stays content-addressed.
 #
-# GPU-family agnostic by construction. Nothing here compiles for an architecture and
-# nothing selects a device by name: torch and the prebuilt DGL wheel discover whatever
-# CUDA device is present. H100 is the current validation target, not a build input.
+# Qualified for H100 (sm90) only. torch 2.3.0/cu121 and the prebuilt DGL cu121 wheel
+# ship a fixed, unaudited set of compiled kernels, so this image makes no claim about
+# any other GPU family. Nothing here hard-codes a device selector, so supporting
+# another family is a matter of producing per-family evidence rather than editing
+# this file -- but until that evidence exists every non-H100 family is unqualified.
 
 ARG BASE_IMAGE=pytorch/pytorch@sha256:0279f7aa29974bf64e61d0ff6e979b41a249b3662a46e30778dbf80b8c99c361
 FROM ${BASE_IMAGE}
@@ -103,7 +105,8 @@ LABEL org.opencontainers.image.title="fs2 RFdiffusion scientific runtime" \
       ai.nebius.fs2.upstream.revision="${UPSTREAM_REVISION}" \
       ai.nebius.fs2.upstream.archive.sha256="${UPSTREAM_ARCHIVE_SHA256}" \
       ai.nebius.fs2.runtime.weights="external-artifact-plane" \
-      ai.nebius.fs2.runtime.accelerator="gpu-family-agnostic" \
+      ai.nebius.fs2.runtime.accelerator.qualified="nvidia-h100-sm90" \
+      ai.nebius.fs2.runtime.accelerator.other-families="unqualified-pending-evidence" \
       ai.nebius.fs2.runtime.cuda="12.1" \
       ai.nebius.fs2.runtime.torch="2.3.0"
 

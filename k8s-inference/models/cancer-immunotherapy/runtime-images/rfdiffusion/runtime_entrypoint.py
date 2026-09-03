@@ -548,6 +548,7 @@ def build_argv(
     checkpoint: Path,
     output_prefix: Path,
     hydra_run_dir: Path,
+    schedule_directory: Path,
     input_pdb: Path | None,
     upstream_home: Path,
     python_executable: str = sys.executable,
@@ -563,6 +564,11 @@ def build_argv(
         "inference.deterministic=True",
         f"diffuser.T={parameters.diffuser_T}",
         f"contigmap.contigs={parameters.contig_literal}",
+        # Upstream caches its IGSO3 schedules beside its own package when this is
+        # left unset, which is read-only here by design. Redirecting it to scratch
+        # is the supported override; without it the run dies after loading the
+        # checkpoint, before any diffusion.
+        f"inference.schedule_directory_path={schedule_directory}",
         f"hydra.run.dir={hydra_run_dir}",
         "hydra.output_subdir=null",
     ]
@@ -1017,6 +1023,8 @@ def command_run(args: argparse.Namespace) -> int:
         scratch.mkdir(parents=True, exist_ok=True)
         hydra_run_dir = scratch / "hydra"
         hydra_run_dir.mkdir(parents=True, exist_ok=True)
+        schedule_directory = scratch / "schedules"
+        schedule_directory.mkdir(parents=True, exist_ok=True)
         designs_dir = output_dir / "designs"
         designs_dir.mkdir(parents=True, exist_ok=True)
         output_prefix = designs_dir / "design"
@@ -1026,6 +1034,7 @@ def command_run(args: argparse.Namespace) -> int:
             checkpoint=checkpoint.path,
             output_prefix=output_prefix,
             hydra_run_dir=hydra_run_dir,
+            schedule_directory=schedule_directory,
             input_pdb=input_pdb,
             upstream_home=upstream_home,
         )

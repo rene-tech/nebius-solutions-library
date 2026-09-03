@@ -24,8 +24,8 @@
     "platform": "linux/amd64",
     "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
     "repository": "rfdiffusion",
-    "tag_suffix": "-cuda121-r8",
-    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r8",
+    "tag_suffix": "-cuda121-r9",
+    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r9",
     "dockerfile": "Dockerfile",
     "build_context": ".",
     "python": "3.10.14",
@@ -41,9 +41,9 @@
       "bytes": 309277501
     },
     "runtime_inputs": {
-      "Dockerfile": "5fd7f054889233fa21f66dea0d2b61d84f07c08d4b841f65a43a39b3b9ced0ac",
+      "Dockerfile": "1126ee31a234fa6424ee0396120df5de5c9618a7db1a7005e4ceacae67bcb034",
       "requirements.lock": "11c21670e7d55838dda6eb41ed18deb325e8f996938cf8b03959ecda10307ff6",
-      "runtime_entrypoint.py": "170192e379ca1d7f05c58b0276147fa37a9098ac67132a7514ee4272fb81d83f",
+      "runtime_entrypoint.py": "05dd555abc3a5740a6b9b57e83e2227262ad9066ff4968c05969a4e79e96dfd0",
       "fetch_verified.py": "a13a92f56907bf8d6f3b2301f2aea420a3a82c1a7eacaab5a0b4a40ce7a0ee96"
     },
     "runtime_input_policy": "Every file that enters the image is sha256-pinned here and re-verified by build_rfdiffusion.py before the build starts, so the published layers can be tied back to the checked-in runtime.",
@@ -52,12 +52,22 @@
       "framework_version": "2.3.0",
       "cuda_abi": "12.1",
       "dgl_version": "2.3.0+cu121",
-      "architecture_policy": "GPU-family agnostic. No kernel is compiled for an architecture, no TORCH_CUDA_ARCH_LIST is pinned, and nothing admits or rejects on a device name. torch and the prebuilt DGL wheel discover whatever CUDA device is present. H100 is the current validation target, not a build or admission input."
+      "qualified_families": [
+        "nvidia-h100-sm90"
+      ],
+      "other_families": "unqualified-pending-per-family-evidence",
+      "architecture_policy": "Qualified on H100 (sm90) only. torch 2.3.0/cu121 and the prebuilt DGL cu121 wheel ship a fixed set of compiled kernels and this runtime has audited neither the cubin nor the PTX they carry, so no portability claim is made for any other GPU family. Nothing in the image hard-codes a device selector, so another family needs per-family evidence rather than a code change; until that evidence exists it is unqualified. Accelerator breadth belongs in the Terraform resource profiles, not in a binary property of this image."
     },
     "published_digest": null,
     "published_reference": null,
     "attestation_predicate_types": null,
     "supersedes": [
+      {
+        "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r8",
+        "digest": "sha256:9aae23f0465c77e47a07d6afc820a1173bd5d2474c818423356e06efb799c0f6",
+        "deployable": false,
+        "reason": "First image of this successor. Correctly attested: its SLSA provenance names clean commit 267cce4950e020238bd6aace3621a4efc8ccbe6a. Superseded on a real defect found by its own exact-digest H100 run: the adapter did not set inference.schedule_directory_path, so upstream tried to mkdir its IGSO3 schedule cache inside the read-only /opt/rfdiffusion and died after loading the checkpoint, before any diffusion. No semantic evidence exists for this digest."
+      },
       {
         "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r7",
         "digest": "sha256:df6cb154363036ca5f1c424fd3d94fe0ea045e369e92d41c263dc5bbdabb4445",
@@ -170,7 +180,10 @@
     "state": "pending-live-h100-run",
     "evidence": [],
     "route_exposed": false,
-    "scope": "one bounded unconditional monomer design plus one motif-scaffolding design; no throughput, snapshot, elasticity or contention measurement"
+    "qualified_accelerator": "nvidia-h100-sm90",
+    "other_accelerators": "not-qualified",
+    "evidence_transfer_policy": "Evidence is bound to an exact image digest. No receipt from r6, r7 or r8 transfers to this image; qualification stays pending until this digest itself completes a live H100 semantic run.",
+    "scope": "one bounded unconditional monomer design; no throughput, snapshot, elasticity or contention measurement"
   },
   "upstream_contract_defects": [
     {
@@ -188,6 +201,14 @@
       "observed": "a design whose .pdb already exists is skipped with a log line and no error",
       "impact": "a re-run over a dirty output directory can exit 0 having produced nothing, and a stale file would be verified as if it were fresh",
       "resolution": "the adapter refuses to start unless the output directory is empty"
+    },
+    {
+      "id": "schedule-cache-written-into-the-package-tree",
+      "severity": "blocking-under-read-only-root",
+      "location": "upstream 9273ef67 rfdiffusion/inference/model_runners.py:129",
+      "observed": "when inference.schedule_directory_path is unset, the schedule cache directory defaults to <package>/../../schedules and is created with os.mkdir",
+      "impact": "under readOnlyRootFilesystem, or any image that seals its own upstream tree, the run dies with OSError EROFS after the checkpoint loads and before any diffusion step",
+      "resolution": "the adapter always passes inference.schedule_directory_path under its writable scratch directory and creates it first. Observed live on H100 Job fs2-rfd-semantic-r8-cold; fixed for r9."
     }
   ]
 }

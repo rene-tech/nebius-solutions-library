@@ -1,7 +1,12 @@
 # RFdiffusion scientific runtime
 
 A source-attested, digest-pinned RFdiffusion v1.1.0 runtime for the shared H100
-cluster, with a production adapter contract and real H100 semantic evidence.
+cluster, with a production adapter contract.
+
+**Qualification state is authoritative in `image-lock.json` under `qualification`,
+not in this file.** Evidence is bound to an exact image digest and never transfers
+between digests: no receipt from r6, r7 or r8 says anything about the current image.
+A digest is qualified only once `evidence/` holds a receipt naming that digest.
 
 This is an independent successor. It starts from `main` and inherits no image, no
 lock and no evidence from the mixed BindCraft/RFdiffusion branch. Where that work
@@ -19,7 +24,7 @@ sources; where it was not, the reasons are recorded in `image-lock.json` under
 | DGL | `2.3.0+cu121`, wheel `sha256:0423c4e8…` |
 | Checkpoint | `Base_ckpt.pt`, `sha256:0fcf7d7c…`, 483,616,107 bytes, BSD-3-Clause |
 | Registry | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion` |
-| Tag | `9273ef67…-cuda121-r8` |
+| Tag | `9273ef67…-cuda121-r9` |
 
 `v1.1.0` was resolved from the GitHub tags API rather than copied forward. The
 superseded runtime at `models/structure/runtime/rfdiffusion` pins `86507b65`, which
@@ -28,7 +33,7 @@ is upstream main as of 2026-07-15 and not a release at all.
 `ActiveSite_ckpt.pt` is byte-for-byte the same *size* as `Base_ckpt.pt`. The
 checkpoint is therefore always matched on sha256 and never on size.
 
-## Why r8 and not r6 or r7
+## Why r9, and what each predecessor got wrong
 
 Both prior images are refused as a basis, for provenance rather than for behaviour:
 
@@ -41,9 +46,18 @@ Both prior images are refused as a basis, for provenance rather than for behavio
   `3475ce0e…`, which is a dangling object reachable from no branch or remote ref.
   An identity nobody can check out is not provenance.
 
-`build_rfdiffusion.py` makes both failures structurally impossible: it refuses a
-dirty tree, and after pushing it reads the SLSA provenance back out of the registry
-and fails unless the recorded VCS revision equals the commit the build ran from.
+- **r8** (`sha256:9aae23f0…`) was this successor's first image and *is* correctly
+  attested — its SLSA provenance names clean commit `267cce49…`. It is superseded on
+  a real defect its own exact-digest H100 run found: the adapter left
+  `inference.schedule_directory_path` unset, so upstream tried to create its IGSO3
+  schedule cache inside the read-only `/opt/rfdiffusion` and died after loading the
+  checkpoint, before any diffusion. r9 passes the override and the end-to-end
+  `main()` argv tests now pin it.
+
+`build_rfdiffusion.py` makes the r6/r7 provenance failures structurally impossible:
+it refuses a dirty tree, and after pushing it reads the SLSA provenance back out of
+the registry and fails unless the recorded VCS revision equals the commit the build
+ran from. It already refused one image on exactly that gate.
 
 ## Layout
 
@@ -114,14 +128,23 @@ degraded one.
 `.pdb` already exists. The adapter refuses to start unless the output directory is
 empty, so a stale file can never be verified as a fresh design.
 
-## GPU-family agnostic
+## Accelerator scope
 
-Nothing compiles for an architecture, no `TORCH_CUDA_ARCH_LIST` is pinned, and no
-code admits or rejects on a device name — torch and the prebuilt DGL wheel discover
-whatever CUDA device is present. `render_job.py` selects hardware through one
-parameterised label, `accelerator.fs2.nebius/class`, with no pool id and no
-capacity-source pin. H100 is the default value of `--accelerator-class`, not a
-requirement of the runtime.
+**Qualified on H100 (sm90) only. Every other GPU family is unqualified.**
+
+This runtime pins torch 2.3.0/cu121 and a prebuilt DGL cu121 wheel. Those ship a
+fixed set of compiled kernels, and neither the cubins nor the PTX they carry have
+been audited here, so there is no basis for claiming the image runs on another
+family — "it does not hard-code a device name" is not evidence that it works. The
+predecessor NIM lane is the cautionary case: it is recorded as
+`incompatible-sm103` precisely because a family assumption went untested.
+
+What is true: nothing in the image hard-codes a device selector, and
+`render_job.py` selects hardware through one parameterised label,
+`accelerator.fs2.nebius/class`, with no pool id and no capacity-source pin. So
+adding a family is a matter of running it and recording per-family evidence, not
+of editing this runtime. Accelerator breadth belongs in the Terraform resource
+profiles; it is not a property this image asserts.
 
 ## Weights and the artifact plane
 

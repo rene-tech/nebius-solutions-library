@@ -7,6 +7,7 @@ enforced or proves a defect the adapter is meant to catch.
 from __future__ import annotations
 
 import json
+import os
 import pickle
 import sys
 import tempfile
@@ -207,6 +208,7 @@ class SeedContractTests(unittest.TestCase):
             checkpoint=Path("/artifacts/rfdiffusion/Base_ckpt.pt"),
             output_prefix=Path("/out/designs/design"),
             hydra_run_dir=Path("/tmp/hydra"),
+            schedule_directory=Path("/tmp/fs2-rfdiffusion/schedules"),
             input_pdb=None,
             upstream_home=Path("/opt/rfdiffusion"),
             python_executable="/usr/bin/python",
@@ -223,6 +225,7 @@ class SeedContractTests(unittest.TestCase):
             checkpoint=Path("/artifacts/Base_ckpt.pt"),
             output_prefix=Path("/out/design"),
             hydra_run_dir=Path("/tmp/hydra"),
+            schedule_directory=Path("/tmp/fs2-rfdiffusion/schedules"),
             input_pdb=None,
             upstream_home=Path("/opt/rfdiffusion"),
             python_executable="/usr/bin/python",
@@ -240,6 +243,7 @@ class SeedContractTests(unittest.TestCase):
             checkpoint=Path("/artifacts/Base_ckpt.pt"),
             output_prefix=Path("/out/design"),
             hydra_run_dir=Path("/tmp/hydra"),
+            schedule_directory=Path("/tmp/fs2-rfdiffusion/schedules"),
             input_pdb=None,
             upstream_home=Path("/opt/rfdiffusion"),
         )
@@ -539,6 +543,148 @@ class ArtifactResolutionTests(unittest.TestCase):
             with self.assertRaises(rt.RequestError) as ctx:
                 rt.resolve_artifact("artifact.absent", {}, Path(tmp), verify_digest=False)
             self.assertIn("not present in the input manifest", str(ctx.exception))
+
+
+class EndToEndArgvTests(unittest.TestCase):
+    """Drive the real main() against a stub upstream.
+
+    Testing build_argv alone is not enough: the r8 image shipped a correct
+    build_argv while main() never passed a schedule directory, and the defect only
+    surfaced on a live H100 run. These tests assert on the argv that main()
+    actually executes, and on the directories it prepares before executing it.
+    """
+
+    STUB = '''import json, os, pickle, sys
+argv = sys.argv[1:]
+overrides = dict(a.split("=", 1) for a in argv if "=" in a)
+record = {"argv": sys.argv, "overrides": overrides}
+prefix = overrides["inference.output_prefix"]
+start = int(overrides["inference.design_startnum"])
+count = int(overrides["inference.num_designs"])
+schedules = overrides["inference.schedule_directory_path"]
+record["schedule_directory_exists"] = os.path.isdir(schedules)
+record["schedule_directory_writable"] = os.access(schedules, os.W_OK)
+os.makedirs(os.path.dirname(prefix), exist_ok=True)
+with open(os.environ["FS2_TEST_ARGV_RECORD"], "w") as handle:
+    json.dump(record, handle)
+print("Making design %s_%d" % (prefix, start))
+for index in range(start, start + count):
+    with open("%s_%d.pdb" % (prefix, index), "w") as handle:
+        for residue in range(76):
+            for atom, off in (("N", -1.2), ("CA", 0.0), ("C", 1.2)):
+                handle.write(
+                    "ATOM  %5d %-4s %3s %s%4d    %8.3f%8.3f%8.3f  1.00  0.00\\n"
+                    % (residue * 3, atom, "GLY", "A", residue + 1,
+                       residue * 3.8 + off, 0.0, 0.0)
+                )
+    with open("%s_%d.trb" % (prefix, index), "wb") as handle:
+        pickle.dump({"device": "NVIDIA H100 80GB HBM3", "time": 1.0}, handle)
+print("Finished design in 0.01 minutes")
+'''
+
+    def _stub_upstream(self, root: Path) -> Path:
+        home = root / "upstream"
+        (home / "scripts").mkdir(parents=True)
+        (home / "scripts" / "run_inference.py").write_text(self.STUB, encoding="utf-8")
+        return home
+
+    def _run(self, tmp: Path, *, seed: int = 8100) -> tuple[int, dict, dict]:
+        artifact_root = tmp / "artifacts"
+        artifact_root.mkdir()
+        checkpoint = artifact_root / "Base_ckpt.pt"
+        checkpoint.write_bytes(b"checkpoint bytes")
+        sha = rt.sha256_file(checkpoint)
+
+        request = tmp / "request.json"
+        request.write_text(
+            json.dumps(
+                {
+                    "schema": rt.SCHEMA_REQUEST,
+                    "operation": "design-backbone",
+                    "parameters": parameters(seed=seed),
+                }
+            ),
+            encoding="utf-8",
+        )
+        manifest = tmp / "manifest.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "schema": rt.SCHEMA_MANIFEST,
+                    "entries": [
+                        {
+                            "name": "base_checkpoint",
+                            "artifact": {
+                                "artifact_id": "artifact.rfdiffusion.base-ckpt",
+                                "path": "Base_ckpt.pt",
+                                "sha256": sha,
+                                "size_bytes": checkpoint.stat().st_size,
+                            },
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        record_path = tmp / "argv-record.json"
+        output = tmp / "out"
+        os.environ["FS2_TEST_ARGV_RECORD"] = str(record_path)
+        try:
+            code = rt.main(
+                [
+                    "run",
+                    "--request", str(request),
+                    "--input-manifest", str(manifest),
+                    "--output", str(output),
+                    "--artifact-root", str(artifact_root),
+                    "--upstream-home", str(self._stub_upstream(tmp)),
+                    "--scratch", str(tmp / "scratch"),
+                    "--cache-level", "artifact-local",
+                ]
+            )
+        finally:
+            os.environ.pop("FS2_TEST_ARGV_RECORD", None)
+        envelope = json.loads((output / "result.json").read_text(encoding="utf-8"))
+        record = json.loads(record_path.read_text(encoding="utf-8")) if record_path.exists() else {}
+        return code, envelope, record
+
+    def test_main_emits_a_writable_schedule_directory(self) -> None:
+        """The exact r8 live failure: upstream must never be left to create its
+        schedule cache inside its own read-only package tree."""
+        with tempfile.TemporaryDirectory() as tmp:
+            code, envelope, record = self._run(Path(tmp))
+            self.assertEqual(code, 0, envelope.get("error"))
+            override = record["overrides"].get("inference.schedule_directory_path")
+            self.assertIsNotNone(override, "main() emitted no schedule_directory_path")
+            self.assertTrue(record["schedule_directory_exists"])
+            self.assertTrue(record["schedule_directory_writable"])
+            self.assertNotIn("/opt/rfdiffusion", override)
+            self.assertTrue(override.startswith(str(Path(tmp) / "scratch")))
+
+    def test_main_emits_the_full_override_set(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _, _, record = self._run(Path(tmp), seed=4242)
+            overrides = record["overrides"]
+            self.assertEqual(overrides["inference.design_startnum"], "4242")
+            self.assertEqual(overrides["inference.deterministic"], "True")
+            self.assertEqual(overrides["contigmap.contigs"], "[76-76]")
+            self.assertEqual(overrides["diffuser.T"], "50")
+            self.assertEqual(overrides["hydra.output_subdir"], "null")
+            self.assertNotIn("inference.seed", overrides)
+
+    def test_main_succeeds_only_after_verifying_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            code, envelope, _ = self._run(Path(tmp))
+            self.assertEqual(code, 0)
+            self.assertEqual(envelope["status"], "succeeded")
+            self.assertEqual(len(envelope["designs"]), 1)
+            self.assertEqual(envelope["designs"][0]["residue_count"], 76)
+            self.assertEqual(envelope["designs"][0]["seed"], 8100)
+            self.assertTrue(envelope["checkpoint"]["digest_verified"])
+            self.assertTrue(envelope["accelerator"]["cuda_execution_confirmed"])
+            self.assertIn("upstream_execute", envelope["phases_seconds"])
+            self.assertFalse(envelope["cache_level"]["gpu_snapshot_used"])
 
 
 class EnvelopeTests(unittest.TestCase):

@@ -201,39 +201,48 @@ def attestation_predicates(target: str) -> dict[str, dict[str, Any]]:
     return predicates
 
 
+def _walk_for_keys(node: Any, keys: tuple[str, ...]) -> list[str]:
+    """Collect commit-shaped values stored under any of ``keys``, at any depth.
+
+    BuildKit nests the git metadata it captures for a local context several levels
+    down, under ``externalParameters.request.root.request.args``, and the exact
+    path has moved between BuildKit versions. Searching by key rather than by path
+    keeps this working across them.
+    """
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in keys and isinstance(value, str) and COMMIT_RE.match(value):
+                found.append(value)
+            else:
+                found.extend(_walk_for_keys(value, keys))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_walk_for_keys(item, keys))
+    return found
+
+
 def provenance_vcs_revision(predicate: dict[str, Any]) -> str | None:
     """Find the source revision BuildKit recorded, across predicate shapes."""
     body = predicate.get("predicate", predicate)
 
+    candidates = _walk_for_keys(body, ("vcs:revision", "source_revision"))
+    if candidates:
+        unique = sorted(set(candidates))
+        if len(unique) > 1:
+            raise BuildError(
+                f"the provenance records conflicting source revisions: {unique}"
+            )
+        return unique[0]
+
     definition = body.get("buildDefinition") or {}
-    external = definition.get("externalParameters") or {}
-    for key in ("source_revision", "vcs:revision"):
-        value = external.get(key)
-        if isinstance(value, str) and COMMIT_RE.match(value):
-            return value
-
-    metadata = body.get("metadata") or {}
-    for container in (external, metadata, body):
-        for key, value in (container or {}).items():
-            if key.endswith("vcs:revision") and isinstance(value, str) and COMMIT_RE.match(value):
-                return value
-
     for dependency in definition.get("resolvedDependencies", []) or []:
-        digest = dependency.get("digest") or {}
-        commit = digest.get("gitCommit")
+        commit = (dependency.get("digest") or {}).get("gitCommit")
         if isinstance(commit, str) and COMMIT_RE.match(commit):
             return commit
 
-    # BuildKit also stashes the git metadata under a nested buildkit_ key.
-    for value in (metadata or {}).values():
-        if isinstance(value, dict):
-            candidate = value.get("vcs:revision") or value.get("revision")
-            if isinstance(candidate, str) and COMMIT_RE.match(candidate):
-                return candidate
-
     invocation = body.get("invocation") or {}
-    config_source = invocation.get("configSource") or {}
-    sha1 = (config_source.get("digest") or {}).get("sha1")
+    sha1 = ((invocation.get("configSource") or {}).get("digest") or {}).get("sha1")
     if isinstance(sha1, str) and COMMIT_RE.match(sha1):
         return sha1
     return None
@@ -356,6 +365,12 @@ def main() -> int:
     parser.add_argument("--no-push", action="store_true", help="build and load locally only")
     parser.add_argument("--record", action="store_true", help="write the digest into image-lock.json")
     parser.add_argument("--check", action="store_true", help="validate the lock and inputs, build nothing")
+    parser.add_argument(
+        "--verify-published",
+        metavar="COMMIT",
+        help="re-run the attestation gate against the already-published target tag, "
+             "asserting its provenance names COMMIT. Builds and pushes nothing.",
+    )
     args = parser.parse_args()
 
     document = lock()
@@ -375,6 +390,34 @@ def main() -> int:
     for tool in ("docker", "crane", "skopeo"):
         if shutil.which(tool) is None:
             raise BuildError(f"{tool} is required")
+
+    if args.verify_published:
+        expected = args.verify_published
+        if not COMMIT_RE.match(expected):
+            raise BuildError(f"--verify-published needs a 40-hex commit, got {expected!r}")
+        verify_runtime_inputs(document)
+        target = document["image"]["target_tag"]
+        digest = inspect_target(target)
+        if digest is None:
+            raise BuildError(f"{target} is not published")
+        repository = target.split(":")[0]
+        attestations = verify_attestations(f"{repository}@{digest}", expected)
+        result = {
+            "status": "verified",
+            "published": True,
+            "target_tag": target,
+            "digest": digest,
+            "reference": f"{repository}@{digest}",
+            "source_commit": expected,
+            "source_branch": capture(
+                ["git", "-C", str(args.repo), "rev-parse", "--abbrev-ref", "HEAD"]
+            ),
+            **attestations,
+        }
+        print(json.dumps(result, indent=2, sort_keys=True))
+        if args.record:
+            record(document, result)
+        return 0
 
     result = build(document, push=not args.no_push, repo=args.repo)
     print(json.dumps(result, indent=2, sort_keys=True))
