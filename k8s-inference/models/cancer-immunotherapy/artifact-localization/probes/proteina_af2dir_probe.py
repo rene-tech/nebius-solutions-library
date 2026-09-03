@@ -21,6 +21,7 @@ from pathlib import Path
 # ColabDesign builds the binder model with use_multimer=True, so these are the
 # parameter sets an evaluate stage actually opens.
 PROBE_MODELS = ("model_1_multimer_v3", "model_1_ptm")
+RUNTIME_MARKER_NAME = ".fs2-runtime-tree.json"
 
 
 def node_digest() -> str:
@@ -62,7 +63,7 @@ def main() -> int:
         _emit(report, options.report)
         return 1
 
-    entries = sorted(item.name for item in root.iterdir())
+    entries = sorted(item.name for item in root.iterdir() if item.name != RUNTIME_MARKER_NAME)
     archives = [name for name in entries if name.endswith((".tar", ".tar.gz", ".tgz", ".zip"))]
     report["entries"] = entries
     report["archives_present"] = archives

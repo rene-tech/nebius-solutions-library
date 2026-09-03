@@ -1,0 +1,535 @@
+{
+  "schema": "fs2-serve.nebius.ai/public-generation-node-qualification/v1",
+  "scope": "poc",
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "project": "scientific-ai-platform1",
+    "region": "eu-north1",
+    "namespace": "fs2-academic-poc",
+    "storage_plane": {
+      "kind": "host-path",
+      "host_root": "/mnt/fs2-reference-data/data",
+      "tree_prefix": "scientific-localization/public",
+      "node_selector": {
+        "storage.fs2.nebius/reference-data": "true"
+      }
+    }
+  },
+  "implementation": {
+    "repository_base_commit": "0d5343c7cda15f1e3cdbdd7bc2c5bebfa32fd659",
+    "localization_sha256": "9ce5663d316f1fe18a71dd2f634602277c145dbe20753ca35b0ff9c9252e9c36",
+    "contract_sha256": "a8df9df869a15d963760a1ac6c848a18e84639068235a5459f220a5cb1e00912",
+    "runtime_probe_sha256": {
+      "bindcraft-mount": "4ea61c1245530190baaaa48290f67d4a2886e0d2fc6c41d765f02503103245cd",
+      "boltzgen-moldir": "984ced157c2d1a4c4ca5d2f6061e3d69707a7ea8a16292c9b104f78cbe116624",
+      "proteina-af2dir": "59ddcfcd3fc640f194f04068fd55914560f4dfdda910d8c31ea64cebc8b25412"
+    }
+  },
+  "jobs": [
+    {
+      "kind": "all-public-marker-admission",
+      "model_id": "public-generations",
+      "job": "fs2-localize-qualify-public-generations-r20260903pub-m0",
+      "job_uid": "9fe7c25e-61ef-4819-8e8e-632fa1a05266",
+      "pod": "fs2-localize-qualify-public-generations-r20260903pub-m0-mfxww",
+      "pod_uid": "af27cd3b-d6ae-4b54-90af-1686f7206408",
+      "started_at": "2026-09-03T06:18:07Z",
+      "completed_at": "2026-09-03T06:18:17Z",
+      "node_digest": "5e3ad019c6df4d8b",
+      "node_class": "nvidia-h100-sxm5-80gb",
+      "capacity": "existing-reserved-capacity-block",
+      "gpu_requested": 0,
+      "image_digests": [
+        "docker.io/library/python@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "marker_admissions": [
+        {
+          "state": "admitted",
+          "artifact_id": "alphafold2-params",
+          "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "manifest_digest": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+          "entry_count": 16,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 5587956571,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        },
+        {
+          "state": "admitted",
+          "artifact_id": "alphafold2-params-bindcraft",
+          "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "manifest_digest": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+          "entry_count": 17,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 5587959437,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        },
+        {
+          "state": "admitted",
+          "artifact_id": "boltzgen-inference-molecules",
+          "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "manifest_digest": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+          "entry_count": 45227,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 1820698819,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        },
+        {
+          "state": "admitted",
+          "artifact_id": "colabdesign-mpnn-weights-soluble",
+          "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "manifest_digest": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
+          "entry_count": 5,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 26601241,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        },
+        {
+          "state": "admitted",
+          "artifact_id": "colabdesign-mpnn-weights-vanilla",
+          "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "manifest_digest": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
+          "entry_count": 5,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 26602793,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        }
+      ],
+      "result": {
+        "state": "passed",
+        "scope": "five-public-generations"
+      }
+    },
+    {
+      "kind": "all-public-marker-admission",
+      "model_id": "public-generations",
+      "job": "fs2-localize-qualify-public-generations-r20260903pub-p3",
+      "job_uid": "aaa4871d-0a4a-4ada-bc5f-dc96a8fa1836",
+      "pod": "fs2-localize-qualify-public-generations-r20260903pub-p3-6tbkd",
+      "pod_uid": "7d772eb3-f514-473c-a6c9-9d325513b955",
+      "started_at": "2026-09-03T06:18:07Z",
+      "completed_at": "2026-09-03T06:18:17Z",
+      "node_digest": "ba03959da8c5832d",
+      "node_class": "nvidia-h100-sxm5-80gb",
+      "capacity": "existing-reserved-capacity-block",
+      "gpu_requested": 0,
+      "image_digests": [
+        "docker.io/library/python@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "marker_admissions": [
+        {
+          "state": "admitted",
+          "artifact_id": "alphafold2-params",
+          "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "manifest_digest": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+          "entry_count": 16,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 5587956571,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        },
+        {
+          "state": "admitted",
+          "artifact_id": "alphafold2-params-bindcraft",
+          "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "manifest_digest": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+          "entry_count": 17,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 5587959437,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        },
+        {
+          "state": "admitted",
+          "artifact_id": "boltzgen-inference-molecules",
+          "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "manifest_digest": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+          "entry_count": 45227,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 1820698819,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        },
+        {
+          "state": "admitted",
+          "artifact_id": "colabdesign-mpnn-weights-soluble",
+          "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "manifest_digest": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
+          "entry_count": 5,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 26601241,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        },
+        {
+          "state": "admitted",
+          "artifact_id": "colabdesign-mpnn-weights-vanilla",
+          "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "manifest_digest": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
+          "entry_count": 5,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 26602793,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        }
+      ],
+      "result": {
+        "state": "passed",
+        "scope": "five-public-generations"
+      }
+    },
+    {
+      "kind": "model-native-loader",
+      "model_id": "proteina-complexa",
+      "job": "fs2-localize-qualify-proteina-complexa-r20260903pub2-proteina",
+      "job_uid": "9a85a004-44ca-4c8f-9afe-bdac8114cb85",
+      "pod": "fs2-localize-qualify-proteina-complexa-r20260903pub2-proterzbmk",
+      "pod_uid": "cfd0da61-c8d5-484c-9bc9-dd93f4373546",
+      "started_at": "2026-09-03T06:22:09Z",
+      "completed_at": "2026-09-03T06:22:24Z",
+      "node_digest": "5e3ad019c6df4d8b",
+      "node_class": "nvidia-h100-sxm5-80gb",
+      "capacity": "existing-reserved-capacity-block",
+      "gpu_requested": 0,
+      "image_digests": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "marker_admissions": [
+        {
+          "state": "admitted",
+          "artifact_id": "alphafold2-params",
+          "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "manifest_digest": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+          "entry_count": 16,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 5587956571,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        }
+      ],
+      "result": {
+        "af2_dir": "/opt/fs2/artifacts/alphafold2-params",
+        "archives_present": [],
+        "duration_seconds": 7.929,
+        "entries": [
+          "LICENSE",
+          "params_model_1.npz",
+          "params_model_1_multimer_v3.npz",
+          "params_model_1_ptm.npz",
+          "params_model_2.npz",
+          "params_model_2_multimer_v3.npz",
+          "params_model_2_ptm.npz",
+          "params_model_3.npz",
+          "params_model_3_multimer_v3.npz",
+          "params_model_3_ptm.npz",
+          "params_model_4.npz",
+          "params_model_4_multimer_v3.npz",
+          "params_model_4_ptm.npz",
+          "params_model_5.npz",
+          "params_model_5_multimer_v3.npz",
+          "params_model_5_ptm.npz"
+        ],
+        "loaded_models": [
+          {
+            "load_seconds": 5.931,
+            "model_name": "model_1_multimer_v3",
+            "module_count": 146,
+            "parameter_count": 93223705
+          },
+          {
+            "load_seconds": 0.691,
+            "model_name": "model_1_ptm",
+            "module_count": 135,
+            "parameter_count": 93237338
+          }
+        ],
+        "node_digest": "5e3ad019c6df4d8b",
+        "schema": "fs2-serve.nebius.ai/proteina-af2dir-probe/v1",
+        "state": "passed"
+      }
+    },
+    {
+      "kind": "model-native-loader",
+      "model_id": "bindcraft-public-artifacts",
+      "job": "fs2-localize-qualify-bindcraft-public-r20260903pub2-bindcraft",
+      "job_uid": "98b87ac4-ff0c-466f-98cd-0732f59c4650",
+      "pod": "fs2-localize-qualify-bindcraft-public-r20260903pub2-bindcrzskg5",
+      "pod_uid": "a532720c-aae0-449b-968a-027fffc087c2",
+      "started_at": "2026-09-03T06:22:09Z",
+      "completed_at": "2026-09-03T06:22:30Z",
+      "node_digest": "ba03959da8c5832d",
+      "node_class": "nvidia-h100-sxm5-80gb",
+      "capacity": "existing-reserved-capacity-block",
+      "gpu_requested": 0,
+      "image_digests": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "marker_admissions": [
+        {
+          "state": "admitted",
+          "artifact_id": "alphafold2-params-bindcraft",
+          "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "manifest_digest": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+          "entry_count": 17,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 5587959437,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        },
+        {
+          "state": "admitted",
+          "artifact_id": "colabdesign-mpnn-weights-soluble",
+          "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "manifest_digest": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
+          "entry_count": 5,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 26601241,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        },
+        {
+          "state": "admitted",
+          "artifact_id": "colabdesign-mpnn-weights-vanilla",
+          "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "manifest_digest": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
+          "entry_count": 5,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 26602793,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        }
+      ],
+      "result": {
+        "alphafold2_gate": {
+          "bytes": 5587956571,
+          "files": 16,
+          "manifest_sha256": "9d0b7e45378ed707cfc31585f3ae960282dc76f3e2c4f60b545b02dbc728423b"
+        },
+        "duration_seconds": 9.496,
+        "mpnn_directories_are_distinct": true,
+        "mpnn_weights": {
+          "original": {
+            "bytes": 6650698,
+            "checkpoint": "v_48_020.pkl",
+            "directory": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+            "entries": [
+              "__init__.py",
+              "v_48_002.pkl",
+              "v_48_010.pkl",
+              "v_48_020.pkl",
+              "v_48_030.pkl"
+            ],
+            "model_type": "mk_mpnn_model",
+            "sha256": "993194d9cbe9334f6c2c81bddeb1404ea831711bca8e38b591b4116060484ac3"
+          },
+          "soluble": {
+            "bytes": 6650310,
+            "checkpoint": "v_48_020.pkl",
+            "directory": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+            "entries": [
+              "__init__.py",
+              "v_48_002.pkl",
+              "v_48_010.pkl",
+              "v_48_020.pkl",
+              "v_48_030.pkl"
+            ],
+            "model_type": "mk_mpnn_model",
+            "sha256": "f3f705752e625a173ac5ea4d2b2e46bd10ff13905a73bcc1ca2ecd3420b361e1"
+          }
+        },
+        "node_digest": "ba03959da8c5832d",
+        "runtime_environment": {
+          "FS2_ARTIFACT_KIND": "bindcraft-af2-params",
+          "FS2_ARTIFACT_MANIFEST": "/models/alphafold2/manifest.json",
+          "FS2_ARTIFACT_ROOT": "/models/alphafold2",
+          "FS2_SOURCE_REVISION": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
+        },
+        "schema": "fs2-serve.nebius.ai/bindcraft-mount-probe/v1",
+        "state": "passed"
+      }
+    },
+    {
+      "kind": "model-native-loader",
+      "model_id": "boltzgen",
+      "job": "fs2-localize-qualify-boltzgen-r20260903pub2-boltzgen",
+      "job_uid": "895a50a2-26aa-4ab2-9958-c45c2512658c",
+      "pod": "fs2-localize-qualify-boltzgen-r20260903pub2-boltzgen-j4wf5",
+      "pod_uid": "3beb6db2-4de5-4d04-844e-d62cba2718ba",
+      "started_at": "2026-09-03T06:22:09Z",
+      "completed_at": "2026-09-03T06:22:16Z",
+      "node_digest": "ba03959da8c5832d",
+      "node_class": "nvidia-h100-sxm5-80gb",
+      "capacity": "existing-reserved-capacity-block",
+      "gpu_requested": 0,
+      "image_digests": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e"
+      ],
+      "exit_codes": [
+        0
+      ],
+      "marker_admissions": [
+        {
+          "state": "admitted",
+          "artifact_id": "boltzgen-inference-molecules",
+          "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "manifest_digest": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+          "entry_count": 45227,
+          "directory_count": 0,
+          "symlink_count": null,
+          "total_bytes": 1820698819,
+          "volume_kind": "host-path",
+          "host_root": "/mnt/fs2-reference-data/data",
+          "visibility": "public"
+        }
+      ],
+      "result": {
+        "archives_present": [],
+        "boltzgen_import": "ok",
+        "duration_seconds": 0.324,
+        "entry_count": 45227,
+        "moldir": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+        "node_digest": "ba03959da8c5832d",
+        "probed_molecules": [
+          {
+            "atom_count": 23,
+            "bytes": 28635,
+            "code": "I",
+            "type": "Mol"
+          },
+          {
+            "atom_count": 1,
+            "bytes": 432,
+            "code": "CL",
+            "type": "Mol"
+          },
+          {
+            "atom_count": 1,
+            "bytes": 433,
+            "code": "ZN",
+            "type": "Mol"
+          },
+          {
+            "atom_count": 1,
+            "bytes": 433,
+            "code": "MG",
+            "type": "Mol"
+          },
+          {
+            "atom_count": 43,
+            "bytes": 78274,
+            "code": "HEM",
+            "type": "Mol"
+          },
+          {
+            "atom_count": 31,
+            "bytes": 45746,
+            "code": "ATP",
+            "type": "Mol"
+          },
+          {
+            "atom_count": 44,
+            "bytes": 82211,
+            "code": "NAD",
+            "type": "Mol"
+          },
+          {
+            "atom_count": 12,
+            "bytes": 13060,
+            "code": "GLC",
+            "type": "Mol"
+          },
+          {
+            "atom_count": 1,
+            "bytes": 5125,
+            "code": "HOH",
+            "type": "Mol"
+          },
+          {
+            "atom_count": 30,
+            "bytes": 41933,
+            "code": "A1LV8",
+            "type": "Mol"
+          }
+        ],
+        "schema": "fs2-serve.nebius.ai/boltzgen-moldir-probe/v1",
+        "state": "passed"
+      }
+    }
+  ],
+  "cleanup": {
+    "completed_at": "2026-09-03T06:29:31Z",
+    "deleted_config_maps": [
+      "fs2-loc-public-m0-r20260903",
+      "fs2-loc-public-p3-r20260903",
+      "fs2-loc-proteina-r20260903",
+      "fs2-loc-bindcraft-r20260903",
+      "fs2-loc-boltzgen-r20260903",
+      "fs2-loc-proteina-v2-r20260903",
+      "fs2-loc-bindcraft-v2-r20260903",
+      "fs2-loc-boltzgen-v2-r20260903"
+    ],
+    "deleted_jobs": [
+      "fs2-localize-qualify-public-generations-r20260903pub-m0",
+      "fs2-localize-qualify-public-generations-r20260903pub-p3",
+      "fs2-localize-qualify-proteina-complexa-r20260903pub-proteina",
+      "fs2-localize-qualify-bindcraft-public-r20260903pub-bindcraft",
+      "fs2-localize-qualify-boltzgen-r20260903pub-boltzgen",
+      "fs2-localize-qualify-proteina-complexa-r20260903pub2-proteina",
+      "fs2-localize-qualify-bindcraft-public-r20260903pub2-bindcraft",
+      "fs2-localize-qualify-boltzgen-r20260903pub2-boltzgen"
+    ],
+    "exact_name_absence_verified": true,
+    "immutable_generations_retained": true
+  },
+  "outcome": {
+    "state": "qualified",
+    "public_artifact_count": 5,
+    "h100_nodes_admitted": 2,
+    "model_native_probes_passed": 3,
+    "gpu_allocations_created": 0
+  }
+}

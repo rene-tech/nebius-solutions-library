@@ -9,7 +9,6 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = ROOT / "catalog/runtime/schema"
 CONTRACT_ROOT = ROOT / "catalog/runtime/contracts"
@@ -545,6 +544,15 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 self.assertNotIn("node", report)
                 self.assertRegex(report["node_digest"], r"^[0-9a-f]{16}$")
 
+    def test_runtime_probes_exclude_the_generation_marker_from_model_entries(self) -> None:
+        """The admission marker is metadata, never an input owned by a model."""
+
+        localization = ROOT / "models/cancer-immunotherapy/artifact-localization"
+        for probe in sorted((localization / "probes").glob("*_probe.py")):
+            with self.subTest(probe=probe.name):
+                source = probe.read_text(encoding="utf-8")
+                self.assertIn('RUNTIME_MARKER_NAME = ".fs2-runtime-tree.json"', source)
+                self.assertIn("item.name != RUNTIME_MARKER_NAME", source)
 
     def test_the_bindcraft_handoff_joins_exactly_four_immutable_trees(self) -> None:
         """BindCraft needs AF2, both MPNN weight sets, and PyRosetta.
@@ -639,18 +647,18 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertEqual("true", public["node_selector"]["storage.fs2.nebius/reference-data"])
         self.assertEqual("persistent-volume-claim", private["kind"])
         self.assertEqual("academic-assets-runtime-rwx", private["claim"])
-        # The volumes exist. The generations do not, and the handoff says so
-        # rather than implying that rendering a path published one.
+        # Both planes exist. The five public generations are qualified, while
+        # the licensed generation remains a rendered interface only.
         self.assertEqual("provisioned", public["plane_state"])
         self.assertEqual("provisioned", private["plane_state"])
-        self.assertEqual("rendered", public["binding_state"])
+        self.assertEqual("qualified", public["binding_state"])
         self.assertEqual("rendered", private["binding_state"])
 
         for entry in handoff["artifacts"]:
             with self.subTest(artifact=entry["artifact_id"]):
                 volume = entry["volume"]
-                self.assertEqual("rendered", volume["binding_state"])
                 if entry["visibility"] == "public":
+                    self.assertEqual("qualified", volume["binding_state"])
                     # A host plane is addressed by host root and node label, and
                     # carries no claim that a reader could try to mount.
                     self.assertEqual("host-path", volume["kind"])
@@ -658,6 +666,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                     self.assertEqual(f"{public['host_root']}/{volume['sub_path']}", volume["host_path"])
                     self.assertEqual(public["node_selector"], volume["node_selector"])
                 else:
+                    self.assertEqual("rendered", volume["binding_state"])
                     self.assertEqual("persistent-volume-claim", volume["kind"])
                     self.assertEqual(private["claim"], volume["claim"])
                     self.assertEqual(private["namespace"], volume["namespace"])
@@ -704,37 +713,123 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertEqual(artifact["size_bytes"], tree["archive"]["bytes"])
         self.assertNotEqual(tree["archive"]["sha256"], tree["tree"]["inventory_sha256"])
 
+    def test_public_qualified_bindings_have_exact_receipts_and_node_probes(self) -> None:
+        """Qualified is evidence-backed; the pending licensed tree stays rendered."""
 
-    def test_the_handoff_never_claims_bytes_it_has_not_published(self) -> None:
-        """A rendered path is an interface, not a report that anything exists.
-
-        Every identity here is derived from the contract. Calling that state
-        "live" told a reader the generations were in place when no promotion had
-        ever run, which is the difference between a plan and evidence.
-        """
-
-        handoff = self.load(
-            ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
+        evidence_root = ROOT / "models/cancer-immunotherapy/artifact-localization/evidence"
+        handoff = self.load(evidence_root / "binding-handoff.json")
+        publication = self.load(
+            evidence_root / "public-generation-publication-20260903.json"
+        )
+        qualification = self.load(
+            evidence_root / "public-generation-node-qualification-20260903.json"
         )
         evidence = handoff["evidence"]
-        self.assertEqual("rendered", evidence["state"])
+        self.assertEqual("public-qualified-private-rendered", evidence["state"])
         self.assertFalse(evidence["generations_published"])
-        self.assertEqual([], evidence["promotion_receipts"])
-        self.assertEqual([], evidence["node_probes"])
-        # The installed PyRosetta tree predates this work and proves nothing
-        # about the generation named here.
-        self.assertIn("not an immutable generation", evidence["pyrosetta_note"])
+        self.assertTrue(evidence["public_generations_published"])
+        self.assertEqual("published", publication["outcome"]["state"])
+        self.assertEqual("qualified", qualification["outcome"]["state"])
+        self.assertEqual(2, qualification["outcome"]["h100_nodes_admitted"])
+        self.assertEqual(0, qualification["outcome"]["gpu_allocations_created"])
+        self.assertTrue(publication["cleanup"]["exact_name_absence_verified"])
+        self.assertTrue(qualification["cleanup"]["exact_name_absence_verified"])
+        self.assertTrue(publication["cleanup"]["immutable_generations_retained"])
+        self.assertTrue(qualification["cleanup"]["immutable_generations_retained"])
 
-        for entry in handoff["artifacts"]:
-            with self.subTest(artifact=entry["artifact_id"]):
-                volume = entry["volume"]
-                # A published state must be backed by a receipt this document lists.
-                if volume["binding_state"] != "rendered":
-                    self.assertTrue(
-                        evidence["promotion_receipts"],
-                        "a promoted binding requires a terminal promotion receipt",
+        public_ids = {
+            entry["artifact_id"]
+            for entry in handoff["artifacts"]
+            if entry["visibility"] == "public"
+        }
+        self.assertEqual(public_ids, set(evidence["qualified_artifacts"]))
+        self.assertEqual(
+            {"bindcraft-pyrosetta-installed-tree"}, set(evidence["pending_artifacts"])
+        )
+
+        receipts = {
+            item["receipt"]["artifact_id"]: item["receipt"]
+            for item in publication["artifacts"]
+        }
+        receipt_refs = {item["artifact_id"]: item for item in evidence["promotion_receipts"]}
+        probe_refs = {item["artifact_id"]: item for item in evidence["node_probes"]}
+        self.assertEqual(public_ids, set(receipts))
+        self.assertEqual(public_ids, set(receipt_refs))
+        self.assertEqual(public_ids, set(probe_refs))
+
+        admission_jobs = [
+            job for job in qualification["jobs"] if job["kind"] == "all-public-marker-admission"
+        ]
+        self.assertEqual(2, len(admission_jobs))
+        self.assertEqual(2, len({job["node_digest"] for job in admission_jobs}))
+        model_jobs = {
+            job["job"]: job
+            for job in qualification["jobs"]
+            if job["kind"] == "model-native-loader"
+        }
+        receipt_validator = self.validator(
+            "scientific-localization-receipt.schema.json"
+        )
+        by_id = {entry["artifact_id"]: entry for entry in handoff["artifacts"]}
+
+        for artifact_id in public_ids:
+            with self.subTest(artifact=artifact_id):
+                entry = by_id[artifact_id]
+                receipt = receipts[artifact_id]
+                self.assertFalse(list(receipt_validator.iter_errors(receipt)))
+                self.assertEqual("qualified", entry["volume"]["binding_state"])
+                self.assertEqual("verified", receipt["state"])
+                self.assertEqual(
+                    entry["generation"], receipt["tree_identity"]["inventory_sha256"]
+                )
+                self.assertEqual(entry["generation"], receipt["observation"]["generation"])
+                self.assertEqual(
+                    entry["volume"]["sub_path"],
+                    receipt["observation"]["generation_sub_path"],
+                )
+                self.assertEqual(
+                    entry["marker"]["manifest_digest"],
+                    receipt["observation"]["marker_sha256"],
+                )
+                self.assertFalse(receipt["archive_provenance"]["present_in_mount"])
+                self.assertEqual(entry["generation"], receipt_refs[artifact_id]["generation"])
+                self.assertEqual(
+                    entry["marker"]["manifest_digest"],
+                    receipt_refs[artifact_id]["marker_sha256"],
+                )
+
+                for job in admission_jobs:
+                    admitted = {
+                        item["artifact_id"]: item for item in job["marker_admissions"]
+                    }[artifact_id]
+                    self.assertEqual("admitted", admitted["state"])
+                    self.assertEqual(entry["generation"], admitted["generation"])
+                    self.assertEqual(
+                        entry["marker"]["manifest_digest"], admitted["manifest_digest"]
                     )
-                self.assertNotIn(volume["binding_state"], {"live", "fixture"})
+
+                model_job = model_jobs[probe_refs[artifact_id]["model_native_probe_job"]]
+                self.assertEqual("passed", model_job["result"]["state"])
+                self.assertEqual([0], model_job["exit_codes"])
+
+        private = by_id["bindcraft-pyrosetta-installed-tree"]
+        self.assertEqual("rendered", private["volume"]["binding_state"])
+        self.assertNotIn(private["artifact_id"], receipts)
+
+        proteina = model_jobs[
+            "fs2-localize-qualify-proteina-complexa-r20260903pub2-proteina"
+        ]
+        self.assertEqual(16, len(proteina["result"]["entries"]))
+        bindcraft = model_jobs[
+            "fs2-localize-qualify-bindcraft-public-r20260903pub2-bindcraft"
+        ]
+        for weight in bindcraft["result"]["mpnn_weights"].values():
+            self.assertEqual(5, len(weight["entries"]))
+            self.assertNotIn(".fs2-runtime-tree.json", weight["entries"])
+        boltzgen = model_jobs[
+            "fs2-localize-qualify-boltzgen-r20260903pub2-boltzgen"
+        ]
+        self.assertEqual(45227, boltzgen["result"]["entry_count"])
 
     def test_no_checked_in_localization_evidence_claims_an_unproven_live_state(self) -> None:
         """Catch the overclaim in any evidence file, not only the handoff."""
@@ -744,7 +839,11 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             with self.subTest(evidence=path.name):
                 text = path.read_text(encoding="utf-8")
                 self.assertNotIn('"binding_state": "live"', text)
-                self.assertNotIn('"generations_published": true', text)
+                document = self.load(path)
+                # This whole handoff remains false until the tenant-private
+                # PyRosetta generation is independently promoted and qualified.
+                if "evidence" in document:
+                    self.assertIsNot(document["evidence"].get("generations_published"), True)
 
 
 if __name__ == "__main__":
