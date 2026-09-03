@@ -10,6 +10,11 @@ fs2-serve-control-plane
 {{- keys $names | sortAlpha | toJson -}}
 {{- end -}}
 
+{{- define "fs2-serve.scientificExecutionMapName" -}}
+{{- $sha := .Values.scientificBatch.executionMap | toJson | sha256sum -}}
+{{- printf "%s-%s" (.Values.scientificBatch.executionMapConfigMapName | trunc 50 | trimSuffix "-") ($sha | trunc 12) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "fs2-serve.fullname" -}}
 {{- printf "%s" (include "fs2-serve.name" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
@@ -631,7 +636,7 @@ app.kubernetes.io/component: model-controller
         path: {{ .Values.scientificBatch.schedulingContractKey }}
 - name: scientific-batch-execution
   configMap:
-    name: {{ .Values.scientificBatch.executionMapConfigMapName }}
+    name: {{ include "fs2-serve.scientificExecutionMapName" . }}
     items:
       - key: {{ .Values.scientificBatch.executionMapKey }}
         path: {{ .Values.scientificBatch.executionMapKey }}
