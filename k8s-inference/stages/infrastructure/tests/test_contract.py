@@ -96,6 +96,19 @@ class DisposableTerraformContractTests(unittest.TestCase):
         self.assertIn("full-only-when-versioned-bucket-empty", outputs)
         self.assertIn("ids-exported-for-explicit-state-adoption", outputs)
 
+    def test_reference_access_handoff_maps_zero_based_provider_version_to_positive_revision(
+        self,
+    ) -> None:
+        outputs = (ROOT / "outputs.tf").read_text(encoding="utf-8")
+        handoff = outputs.split(
+            'output "reference_data_object_storage_access"', 1
+        )[1].split('output "gateway_allocation_id"', 1)[0]
+        self.assertIn(
+            "nebius_iam_v2_access_key.reference_data[0].resource_version + 1",
+            handoff,
+        )
+        self.assertIn("positive Kubernetes write-only-data revision", handoff)
+
     def test_reference_data_stage_defaults_to_disposable_and_deletable(self) -> None:
         variables = (ROOT / "variables.tf").read_text(encoding="utf-8")
         reference_default = variables.split(

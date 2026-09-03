@@ -215,12 +215,14 @@ output "reference_data_lifecycle" {
 }
 
 output "reference_data_object_storage_access" {
-  description = "Sensitive handoff containing only the S3 access-key ID and MysteryBox reference; the secret value never enters infrastructure state or generated tfvars."
+  description = "Sensitive handoff containing only the S3 access-key ID, MysteryBox reference and a positive Kubernetes write-only-data revision; the secret value never enters infrastructure state or generated tfvars."
   sensitive   = true
   value = var.reference_data.enabled ? {
     access_key_id       = nebius_iam_v2_access_key.reference_data[0].status.aws_access_key_id
     secret_reference_id = nebius_iam_v2_access_key.reference_data[0].status.secret_reference_id
-    revision            = nebius_iam_v2_access_key.reference_data[0].resource_version
+    # Nebius resource_version is zero-based, while kubernetes_secret_v1.data_wo_revision
+    # must be positive. Preserve one-to-one monotonicity without inventing mutable state.
+    revision = nebius_iam_v2_access_key.reference_data[0].resource_version + 1
   } : null
 }
 
