@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import re
 import unittest
@@ -296,6 +297,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 "alphafold2-params-bindcraft",
                 "colabdesign-mpnn-weights-vanilla",
                 "colabdesign-mpnn-weights-soluble",
+                "bindcraft-pyrosetta-installed-tree",
             },
             set(artifacts),
         )
@@ -359,6 +361,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                     "bindcraft",
                     "colabdesign.mpnn.weights_soluble",
                 ),
+                ("bindcraft-pyrosetta-installed-tree", "bindcraft", "PYTHONPATH"),
             },
             observed,
         )
@@ -431,6 +434,12 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             "boltzgen-inference-molecules": (
                 "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
                 "/opt/fs2/artifacts/boltzgen-inference-molecules",
+            ),
+            # Identified by the academic-assets plane, not by this one. The digest
+            # is that plane's fs2-tree-manifest/v1 value, reused verbatim.
+            "bindcraft-pyrosetta-installed-tree": (
+                "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+                "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
             ),
         }
         contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
@@ -535,6 +544,128 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 report = self.load(receipt_path)
                 self.assertNotIn("node", report)
                 self.assertRegex(report["node_digest"], r"^[0-9a-f]{16}$")
+
+
+    def test_the_bindcraft_handoff_joins_exactly_four_immutable_trees(self) -> None:
+        """BindCraft needs AF2, both MPNN weight sets, and PyRosetta.
+
+        The handoff is what an artifact-catalog consumer reads instead of
+        rediscovering these paths, so the join, the content-addressed paths and
+        the marker digests are pinned here rather than left to a renderer run.
+        """
+
+        handoff = self.load(
+            ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
+        )
+        self.assertEqual(
+            [
+                "alphafold2-params-bindcraft",
+                "bindcraft-pyrosetta-installed-tree",
+                "colabdesign-mpnn-weights-soluble",
+                "colabdesign-mpnn-weights-vanilla",
+            ],
+            handoff["models"]["bindcraft"],
+        )
+        by_id = {entry["artifact_id"]: entry for entry in handoff["artifacts"]}
+        for artifact_id in handoff["models"]["bindcraft"]:
+            with self.subTest(artifact=artifact_id):
+                entry = by_id[artifact_id]
+                marker = entry["marker"]
+                self.assertRegex(marker["manifest_digest"], r"^[0-9a-f]{64}$")
+                # The digest a consumer pins is the SHA-256 of exactly these bytes.
+                rendered = (json.dumps(marker["document"], indent=2, sort_keys=True) + "\n").encode()
+                self.assertEqual(hashlib.sha256(rendered).hexdigest(), marker["manifest_digest"])
+                # Identity, placement and provenance all agree.
+                document = marker["document"]
+                self.assertEqual(entry["generation"], document["generation"])
+                self.assertEqual(entry["generation"], document["inventory_sha256"])
+                self.assertEqual(entry["volume"]["sub_path"], document["sub_path"])
+                self.assertEqual(entry["tree_identity"]["inventory_algorithm"], document["inventory_algorithm"])
+                self.assertTrue(entry["volume"]["immutable"])
+                self.assertTrue(entry["volume"]["read_only"])
+                self.assertNotEqual(entry["archive_provenance"]["sha256"], entry["generation"])
+
+    def test_every_runtime_binding_is_content_addressed_and_never_a_mutable_path(self) -> None:
+        """A producer's install path says where bytes were built, not which bytes.
+
+        Binding a runtime to it would let the tree change underneath an already
+        admitted workload, so every binding, licensed trees included, is a
+        content-addressed generation and the install path is recorded only as a
+        non-bindable input.
+        """
+
+        handoff = self.load(
+            ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
+        )
+        for entry in handoff["artifacts"]:
+            with self.subTest(artifact=entry["artifact_id"]):
+                sub_path = entry["volume"]["sub_path"]
+                prefix = (
+                    "scientific-localization/private"
+                    if entry["visibility"] == "tenant-private"
+                    else "scientific-localization/public"
+                )
+                self.assertEqual(
+                    f"{prefix}/generations/{entry['artifact_id']}/sha256/{entry['generation']}",
+                    sub_path,
+                )
+                self.assertTrue(entry["volume"]["immutable"])
+                self.assertTrue(entry["marker"]["in_generation"])
+                self.assertEqual(f"{sub_path}/.fs2-runtime-tree.json", entry["marker"]["path"])
+                promoted = entry.get("promoted_from")
+                if promoted is not None:
+                    # The producer path is provenance, and is marked unusable as a binding.
+                    self.assertTrue(promoted["mutable"])
+                    self.assertFalse(promoted["runtime_bindable"])
+                    self.assertNotIn("/sha256/", promoted["sub_path"])
+                    self.assertNotEqual(promoted["sub_path"], sub_path)
+
+    def test_public_bytes_and_licensed_bytes_use_separate_storage_planes(self) -> None:
+        """The academic claim is licensed and tenant-scoped, not artifact storage.
+
+        Public artifacts landing there would freeze a volume that exists for one
+        licence chain into the role of a general cache, so storage authority is
+        chosen per artifact rather than per run.
+        """
+
+        handoff = self.load(
+            ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
+        )
+        public = handoff["volumes"]["public"]
+        private = handoff["volumes"]["tenant-private"]
+        self.assertNotEqual(public["claim"], private["claim"])
+        self.assertNotEqual(public["namespace"], private["namespace"])
+        self.assertEqual("academic-assets-runtime-rwx", private["claim"])
+        for entry in handoff["artifacts"]:
+            with self.subTest(artifact=entry["artifact_id"]):
+                volume = entry["volume"]
+                if entry["visibility"] == "public":
+                    self.assertEqual(public["claim"], volume["claim"])
+                    self.assertNotEqual("academic-assets-runtime-rwx", volume["claim"])
+                else:
+                    self.assertEqual(private["claim"], volume["claim"])
+                # A plane with no live claim receipt is declared, never implied.
+                self.assertIn(volume["binding_state"], {"fixture", "live"})
+
+    def test_pyrosetta_reuses_the_academic_plane_identity_verbatim(self) -> None:
+        """One tree, one identity. The producing plane's digest is authoritative."""
+
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        tree = next(
+            item for item in contract["artifacts"] if item["artifact_id"] == "bindcraft-pyrosetta-installed-tree"
+        )
+        state = self.load(ROOT / "academic-assets/evidence/live-acceptance-state.json")
+        installed = state["semantic_evidence"]["installed_tree"]
+        self.assertEqual(installed["tree_manifest_algorithm"], tree["tree"]["inventory_algorithm"])
+        self.assertEqual(installed["tree_manifest_sha256"], tree["tree"]["inventory_sha256"])
+        self.assertEqual(installed["files_installed"], tree["tree"]["entry_count"])
+        self.assertEqual(installed["tree_total_bytes"], tree["tree"]["total_bytes"])
+        # Provenance stays distinct from the tree it produced.
+        wheel = self.load(ROOT / "academic-assets/contracts/academic-assets.json")
+        artifact = wheel["assets"]["pyrosetta-bindcraft"]["artifact"]
+        self.assertEqual(artifact["sha256"], tree["archive"]["sha256"])
+        self.assertEqual(artifact["size_bytes"], tree["archive"]["bytes"])
+        self.assertNotEqual(tree["archive"]["sha256"], tree["tree"]["inventory_sha256"])
 
 
 if __name__ == "__main__":

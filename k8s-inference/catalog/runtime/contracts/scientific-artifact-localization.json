@@ -251,6 +251,43 @@
       "notes": "The published BindCraft image admits its AlphaFold2 mount only through artifact_gate.verify_manifest, which reads FS2_ARTIFACT_MANIFEST at /models/alphafold2/manifest.json and requires artifact_kind 'bindcraft-af2-params' and source_revision 7cd4ace1b7407adf66a50dfefa47de2270f5e4a9. Upstream ships no such document, so the sixteen-file upstream tree does not run that image as-is. This is a deliberately separate identity from alphafold2-params: same archive provenance, seventeen-entry tree, its own inventory digest, and a manifest bound by its own digest so a drifting generator fails closed. Proteina-Complexa must keep reading the sixteen-entry tree, because ColabDesign globs *.npz and an extra document there is not part of that contract. Materializing a second copy rather than overlaying the manifest onto the sixteen-entry tree costs one extra parameter set on disk, and buys a mount whose whole content is one verifiable identity."
     },
     {
+      "artifact_id": "bindcraft-pyrosetta-installed-tree",
+      "transform": "external-installed-tree",
+      "visibility": "tenant-private",
+      "artifact_kind": "bindcraft-pyrosetta",
+      "source_sub_path": "pyrosetta-bindcraft/site-packages",
+      "archive": {
+        "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+        "media_type": "application/zip",
+        "bytes": 1667097173,
+        "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+        "source_uri": "https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/pyrosetta-2026.29%2Breleasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+        "source_revision": "2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64",
+        "license_id": "Rosetta-and-PyRosetta-Non-Commercial-License-Chain"
+      },
+      "tree": {
+        "mount_paths": [
+          "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+        ],
+        "entry_count": 8697,
+        "directory_count": 796,
+        "total_bytes": 3287122494,
+        "entry_path_pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]*(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)*$",
+        "inventory_algorithm": "fs2-tree-manifest/v1",
+        "inventory_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+        "complete_entry_digests": true
+      },
+      "consumers": [
+        {
+          "model_id": "bindcraft",
+          "binding_kind": "environment-variable",
+          "binding_name": "PYTHONPATH",
+          "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+        }
+      ],
+      "notes": "Installed and owned by the academic-assets plane, which identifies it with fs2-tree-manifest/v1: every file by SHA-256 and every symlink by target. This contract reuses that identity unchanged rather than measuring a second, weaker one, and never stages, copies or moves the bytes. The tree stays tenant-private at its installed sub-path under the licence chain; it is never mirrored into the public generations layout and never embedded in an image. The wheel is provenance for how the tree came to be, and is a different digest from the tree itself."
+    },
+    {
       "artifact_id": "boltzgen-inference-molecules",
       "transform": "safe-extract-zip",
       "archive": {

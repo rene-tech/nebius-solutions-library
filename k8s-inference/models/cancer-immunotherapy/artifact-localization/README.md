@@ -44,15 +44,81 @@ Extraction refuses traversal, absolute and nested member names, duplicates,
 symlinks and non-regular members, and verifies the archive digest before writing
 anything. A destination that is not empty is refused rather than merged into.
 
+## A generation, not a path
+
+A verified tree at a mutable path can change after it was verified. Every
+runtime binding is therefore an **immutable generation**:
+
+```
+<prefix>/generations/<artifact_id>/sha256/<tree digest>
+```
+
+The digest names the directory, so different bytes are a different path and an
+existing generation is never rewritten. Publication is a `rename` within one
+filesystem, which is the commit point: a consumer sees either no generation or
+the whole verified one. Staging happens in a private `.staging-` directory under
+the same artifact root, so an interrupted run leaves a temporary directory the
+next run reclaims by age, never a partial final tree. Promoting a generation
+that already exists is a no-op, so restaging cannot destroy bytes a workload is
+already mounting.
+
+### One marker, sealed inside
+
+Each generation carries `.fs2-runtime-tree.json`, written **before** the rename
+so the same operation publishes the tree and its marker together. It is a single
+flat document; `manifest_digest` is the SHA-256 of exactly its bytes, so a
+consumer that hashes the file and a producer that computed the digest cannot
+disagree. It carries no timestamp, node, duration or run ID, so two promotions
+of one tree produce byte-identical markers and a handoff can pin the digest.
+When something happened is on the staging **receipt**, which is an event; the
+marker is an identity.
+
+Every inventory algorithm excludes that one reserved name at the root, so
+sealing the marker never moves a published digest. Admission reads the marker
+and cross-checks the mount with a recursive file and directory count, which
+walks the tree but reads no content: affordable on gigabytes, where rehashing is
+not.
+
+### Three identity algorithms
+
+| Algorithm | Covers | Used by |
+| --- | --- | --- |
+| `fs2-flat-tree-inventory/v1` | flat files, CRC-32 | the four public trees |
+| `fs2-tree-inventory/v2` | recursion and directories | a nested tree we stage |
+| `fs2-tree-manifest/v1` | every file by SHA-256, every symlink by target | PyRosetta |
+
+The third is not ours. The academic-assets plane already identifies its
+installed trees that way, so this module reproduces that algorithm exactly
+rather than publishing a second, weaker name for bytes that already have one; a
+cross-contract test runs both implementations over one fixture and requires the
+same digest. The marker always names which algorithm produced its digest.
+
 ## Where the trees live
 
-For the proof of concept the trees are staged into the Terraform-owned
-tenant-private claim `fs2-academic-poc/academic-assets-runtime-rwx`, alongside
-the PyRosetta and AlphaFold 3 assets, under the sub-path
-`scientific-localization/public/<artifact_id>`. The sub-path keeps these public
-artifacts separable from the tenant-private ones. **This is not a global cache.**
+Storage authority is chosen **per artifact**, not per run:
 
-Two properties of that claim decide how a staging job must be written:
+- **Public** artifacts (BoltzGen molecules, both AlphaFold2 parameter trees, both
+  ColabDesign MPNN weight sets) belong on the dedicated public reference plane.
+  Until that plane publishes a live claim receipt the handoff records it with
+  `binding_state: "fixture"`, which must not be read as a provisioned location.
+- **PyRosetta** is licensed and tenant-scoped, so its generation lives only on
+  `fs2-academic-poc/academic-assets-runtime-rwx` under
+  `scientific-localization/private`.
+
+Public bytes are deliberately kept off the academic claim: that volume exists
+for one licence chain, and filling it with general artifacts would freeze it
+into a role it was never provisioned for. **Neither is a global cache.**
+
+PyRosetta is promoted from the tree the academic plane installed, and that
+install path is recorded as `promoted_from` with `runtime_bindable: false`. It is
+where the bytes were built, not a name that can only ever mean those bytes.
+Promotion shares the data by hard link rather than copying it, because the claim
+has gigabytes of headroom and the tree is 3.2 GB; the receipt reports linked and
+copied bytes separately so the claim is provable rather than assumed. A hard
+link makes `chmod` follow the inode, so a writable source is refused at both the
+linking step and the sealing step instead of being silently rewritten.
+
+Two properties of the academic claim decide how a staging job must be written:
 
 - The `mounted-fs-path.csi.nebius.ai` driver is registered only on nodes
   labelled `storage.fs2.nebius/shared-cache=true`, which the reference-data pool
@@ -94,6 +160,27 @@ python render_localization_jobs.py qualify \
   --probe=/opt/fs2-localization/fs2_localization/boltzgen_moldir_probe.py \
   --probe=--moldir --probe=/opt/fs2/artifacts/boltzgen-inference-molecules | kubectl apply -f -
 ```
+
+A tree another plane installed is promoted rather than staged. This shares its
+bytes by hard link, verifies the result under the producer's own algorithm,
+seals the marker inside and publishes by rename:
+
+```bash
+python -m fs2_localization.localization promote \
+  --contract "${CONTRACT}" \
+  --artifact-id bindcraft-pyrosetta-installed-tree \
+  --promote-from /academic/pyrosetta-bindcraft/site-packages \
+  --artifact-root /trees/generations/bindcraft-pyrosetta-installed-tree \
+  --sub-path "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/${GENERATION}" \
+  --namespace fs2-academic-poc --claim academic-assets-runtime-rwx \
+  --visibility tenant-private \
+  --receipt /trees/.receipts/bindcraft-pyrosetta-installed-tree.promote.json
+```
+
+The receipt reports `bytes_linked` and `bytes_copied`, so "no second copy" is a
+measured claim. Promotion fails closed rather than publishing if the source is
+writable, if the linked tree does not reproduce the contracted digest, or if the
+staging directory is not on the filesystem it publishes into.
 
 No project, region, registry, cluster, storage class, or GPU pool is hardcoded.
 The renderer refuses an image reference that is not an immutable digest, and the

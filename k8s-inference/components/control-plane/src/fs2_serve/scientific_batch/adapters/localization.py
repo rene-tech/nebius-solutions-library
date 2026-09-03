@@ -16,18 +16,25 @@ tree, or when its identity digest does not match the contract.
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import hashlib
 import json
 import os
 import re
 import tarfile
+import tempfile
+import time
 import zipfile
 import zlib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    import argparse
 
 from .primitives import (
     ArtifactLocalizationError,
@@ -38,7 +45,39 @@ from .primitives import (
 
 LOCALIZATION_SCHEMA = "fs2-serve.nebius.ai/scientific-artifact-localization/v1"
 RECEIPT_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-receipt/v1"
+MARKER_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
 TREE_INVENTORY_ALGORITHM = "fs2-flat-tree-inventory/v1"
+# The same canonical serialization over relative POSIX paths, for an installed
+# tree that is legitimately nested. Flat trees keep v1 so their published
+# identities never move. v2 also carries directories, because an installed
+# package tree's empty directories are part of what makes it importable, and a
+# files-only digest would call two different trees the same tree.
+RECURSIVE_INVENTORY_ALGORITHM = "fs2-tree-inventory/v2"
+# The academic-assets plane already identifies its installed trees, per file by
+# SHA-256 and per symlink by target. That identity is authoritative for those
+# trees: re-measuring PyRosetta under a different algorithm would publish a
+# second, weaker name for bytes another plane has already named. This module
+# therefore reproduces the producer's algorithm exactly rather than replacing
+# it, and a cross-contract test holds the two implementations together.
+TREE_MANIFEST_ALGORITHM = "fs2-tree-manifest/v1"
+INVENTORY_ALGORITHMS = (TREE_INVENTORY_ALGORITHM, RECURSIVE_INVENTORY_ALGORITHM, TREE_MANIFEST_ALGORITHM)
+_GENERATION = re.compile(r"^[0-9a-f]{64}$")
+# A generation is published under <artifact_id>/sha256/<tree digest>, so the
+# algorithm that produced the name is part of the path and a future digest can
+# be introduced beside this one rather than over it.
+GENERATION_DIGEST_DIRECTORY = "sha256"
+# A partly written tree lives under this prefix until the rename that publishes
+# it. The prefix is reserved so an interrupted run is recognizable, and skipped
+# when a published generation is scanned.
+STAGING_PREFIX = ".staging-"
+# The marker lives inside the generation it describes, because a consumer that
+# mounts only the generation sub-path cannot see a sibling file, and because the
+# rename that publishes the tree then publishes the marker with it. It is
+# excluded from the tree inventory by this one reserved name, deterministically,
+# so the tree identity is exactly the contracted content and adding the marker
+# never moves a published digest. No other dotfile is admitted: _ENTRY_NAME
+# rejects a leading dot, so a marker at any other depth fails closed.
+RUNTIME_MARKER_NAME = ".fs2-runtime-tree.json"
 
 RUNTIME_ARTIFACT_ROOT = PurePosixPath("/opt/fs2/artifacts")
 
@@ -59,16 +98,26 @@ _SCAN_HEADROOM_BYTES = 1024 * 1024
 
 _ARTIFACT_ID = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
 _ENTRY_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,254}$")
+# An archive filename is a label recorded as provenance, never a member name this
+# tool writes into a tree, so it admits the "+" a PEP 440 local version puts in a
+# wheel name. Extracted entries keep the stricter name rule.
+_ARCHIVE_FILENAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._+-]{0,254}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _BINDING_NAME = re.compile(r"^(?:--[a-z][a-z0-9-]{0,62}|[A-Z][A-Z0-9_]{1,63})$")
 _ABSOLUTE_PATH = re.compile(r"^/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*$")
 _PACKAGE_PATH = re.compile(r"^[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*$")
 
-_TRANSFORMS = frozenset({"safe-extract-zip", "safe-extract-tar", "safe-extract-tar-gz"})
+# ``external-installed-tree`` is the one transform this tool never performs. The
+# tree already exists because another plane installed it, and it stays where that
+# plane put it; this contract only says how to recognize it and who reads it. Its
+# archive is provenance for how the tree came to be, never something we expand.
+EXTERNAL_TRANSFORM = "external-installed-tree"
+_TRANSFORMS = frozenset({"safe-extract-zip", "safe-extract-tar", "safe-extract-tar-gz", EXTERNAL_TRANSFORM})
 _MEDIA_TYPES = {
     "safe-extract-zip": "application/zip",
     "safe-extract-tar": "application/x-tar",
     "safe-extract-tar-gz": "application/gzip",
+    EXTERNAL_TRANSFORM: "application/zip",
 }
 _MEMBER_PREFIX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*/$")
 
@@ -82,17 +131,38 @@ _GENERATORS = frozenset({EXTERNAL_MANIFEST_GENERATOR})
 # ---------------------------------------------------------------------------
 
 
+def is_safe_relative_path(value: str) -> bool:
+    """A relative POSIX path whose every segment is a safe name.
+
+    One rule for flat and nested trees alike. It admits no absolute path, no
+    empty segment, no ``.`` or ``..``, and no leading dot, which is what keeps
+    the reserved marker name unforgeable at any depth.
+    """
+
+    if not value or value.startswith("/") or len(value) > 1024:
+        return False
+    return all(_ENTRY_NAME.fullmatch(segment) is not None for segment in value.split("/"))
+
+
 @dataclass(frozen=True, slots=True)
 class TreeEntry:
-    """One localized regular file, identified without its host path."""
+    """One localized regular file or directory, identified without its host path."""
 
     path: str
     size_bytes: int
     crc32: int
+    kind: str = "file"
 
     def __post_init__(self) -> None:
-        if _ENTRY_NAME.fullmatch(self.path) is None:
-            raise ArtifactLocalizationError("localized tree entries must be safe flat-root names")
+        # A path may be nested for an installed tree, but every segment is still
+        # a safe name and no segment may traverse. Flat trees keep single-segment
+        # paths, so their v1 inventory digest is unchanged by this.
+        if not is_safe_relative_path(self.path):
+            raise ArtifactLocalizationError("localized tree entries must be safe relative POSIX paths")
+        if self.kind not in {"file", "directory"}:
+            raise ArtifactLocalizationError("localized tree entry kind must be file or directory")
+        if self.kind == "directory" and (self.size_bytes or self.crc32):
+            raise ArtifactLocalizationError("a directory entry carries no size or CRC-32")
         if self.size_bytes < 0 or not 0 <= self.crc32 <= 0xFFFFFFFF:
             raise ArtifactLocalizationError("localized tree entry size or CRC-32 is invalid")
 
@@ -105,11 +175,18 @@ def tree_inventory_bytes(entries: Iterable[TreeEntry]) -> bytes:
     one trailing newline. It contains no host path, mount root, timestamp,
     ownership, or permission, so the same tree hashes identically wherever it is
     localized.
+
+    Directories are refused rather than skipped: v1 describes a flat tree, and
+    silently dropping a directory would let two different trees share a digest.
     """
 
     rows: list[dict[str, object]] = []
     seen: set[str] = set()
     for entry in entries:
+        if entry.kind != "file":
+            raise ArtifactLocalizationError(f"{TREE_INVENTORY_ALGORITHM} describes files only")
+        if "/" in entry.path:
+            raise ArtifactLocalizationError(f"{TREE_INVENTORY_ALGORITHM} describes a flat tree only")
         if entry.path in seen:
             raise ArtifactLocalizationError("localized tree contains a duplicate entry path")
         seen.add(entry.path)
@@ -118,8 +195,48 @@ def tree_inventory_bytes(entries: Iterable[TreeEntry]) -> bytes:
     return (json.dumps(rows, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
 
 
+def recursive_inventory_bytes(entries: Iterable[TreeEntry]) -> bytes:
+    """Serialize a recursive tree, directories included.
+
+    ``fs2-tree-inventory/v2`` is the same canonical serialization as v1 over
+    relative POSIX paths, with an explicit ``kind`` so a directory and a file can
+    never be confused, and with directories carried as their own rows. An
+    installed package tree depends on its directory structure, so a digest that
+    ignored empty directories would admit a tree the runtime cannot import.
+    """
+
+    rows: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for entry in entries:
+        if entry.path in seen:
+            raise ArtifactLocalizationError("localized tree contains a duplicate entry path")
+        seen.add(entry.path)
+        if entry.kind == "directory":
+            rows.append({"kind": "directory", "path": entry.path})
+        else:
+            rows.append({"bytes": entry.size_bytes, "crc32": f"{entry.crc32:08x}", "kind": "file", "path": entry.path})
+    rows.sort(key=lambda row: cast(str, row["path"]))
+    return (json.dumps(rows, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
+
+
+def inventory_bytes(entries: Iterable[TreeEntry], algorithm: str) -> bytes:
+    if algorithm == TREE_INVENTORY_ALGORITHM:
+        return tree_inventory_bytes(entries)
+    if algorithm == RECURSIVE_INVENTORY_ALGORITHM:
+        return recursive_inventory_bytes(entries)
+    raise ArtifactLocalizationError("tree inventory algorithm is unsupported")
+
+
 def tree_inventory_sha256(entries: Iterable[TreeEntry]) -> str:
     return hashlib.sha256(tree_inventory_bytes(entries)).hexdigest()
+
+
+def recursive_inventory_sha256(entries: Iterable[TreeEntry]) -> str:
+    return hashlib.sha256(recursive_inventory_bytes(entries)).hexdigest()
+
+
+def inventory_sha256(entries: Iterable[TreeEntry], algorithm: str) -> str:
+    return hashlib.sha256(inventory_bytes(entries, algorithm)).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +268,7 @@ class ArchiveProvenance:
             label="localization archive",
         )
         filename = item["filename"]
-        if not isinstance(filename, str) or _ENTRY_NAME.fullmatch(filename) is None:
+        if not isinstance(filename, str) or _ARCHIVE_FILENAME.fullmatch(filename) is None:
             raise ArtifactLocalizationError("archive filename must be a safe flat name")
         media_type = item["media_type"]
         if media_type not in set(_MEDIA_TYPES.values()):
@@ -272,6 +389,8 @@ class TreeIdentity:
     probe_entries: tuple[ProbeEntry, ...]
     complete_entry_digests: bool
     generated_entries: tuple[GeneratedEntry, ...] = ()
+    inventory_algorithm: str = TREE_INVENTORY_ALGORITHM
+    directory_count: int = 0
 
     @classmethod
     def parse(cls, value: object) -> TreeIdentity:
@@ -285,14 +404,20 @@ class TreeIdentity:
                     "entry_path_pattern",
                     "inventory_algorithm",
                     "inventory_sha256",
-                    "probe_entries",
                 }
             ),
-            optional=frozenset({"complete_entry_digests", "generated_entries"}),
+            optional=frozenset({"complete_entry_digests", "generated_entries", "directory_count", "probe_entries"}),
             label="localization tree",
         )
-        if item["inventory_algorithm"] != TREE_INVENTORY_ALGORITHM:
+        algorithm = item["inventory_algorithm"]
+        if algorithm not in INVENTORY_ALGORITHMS:
             raise ArtifactLocalizationError("tree inventory algorithm is unsupported")
+        algorithm = cast(str, algorithm)
+        directory_count = item.get("directory_count", 0)
+        if isinstance(directory_count, bool) or not isinstance(directory_count, int) or directory_count < 0:
+            raise ArtifactLocalizationError("tree directory_count must be a non-negative integer")
+        if directory_count and algorithm == TREE_INVENTORY_ALGORITHM:
+            raise ArtifactLocalizationError(f"{TREE_INVENTORY_ALGORITHM} describes a flat tree with no directories")
         raw_mounts = item["mount_paths"]
         if not isinstance(raw_mounts, list) or not 1 <= len(raw_mounts) <= 8:
             raise ArtifactLocalizationError("tree mount_paths must contain 1..8 absolute paths")
@@ -323,8 +448,16 @@ class TreeIdentity:
         digest = item["inventory_sha256"]
         if not isinstance(digest, str) or _SHA256.fullmatch(digest) is None:
             raise ArtifactLocalizationError("tree inventory_sha256 must be a lowercase SHA-256")
-        raw_probes = item["probe_entries"]
-        if not isinstance(raw_probes, list) or not 1 <= len(raw_probes) <= 64:
+        # A probe subset makes a cheap spot check possible for an algorithm whose
+        # digest is a CRC-32 inventory. fs2-tree-manifest/v1 already binds every
+        # file by SHA-256, so a subset of the same digests would add nothing and
+        # is not required.
+        fully_bound = algorithm == TREE_MANIFEST_ALGORITHM
+        if not fully_bound and "probe_entries" not in item:
+            raise ArtifactLocalizationError("tree probe_entries must contain 1..64 items")
+        raw_probes = item.get("probe_entries", [])
+        lower_bound = 0 if fully_bound else 1
+        if not isinstance(raw_probes, list) or not lower_bound <= len(raw_probes) <= 64:
             raise ArtifactLocalizationError("tree probe_entries must contain 1..64 items")
         probes: list[ProbeEntry] = []
         for index, raw in enumerate(raw_probes):
@@ -336,7 +469,7 @@ class TreeIdentity:
             probe_digest = probe["sha256"]
             if (
                 not isinstance(probe_path, str)
-                or _ENTRY_NAME.fullmatch(probe_path) is None
+                or not is_safe_relative_path(probe_path)
                 or isinstance(probe_bytes, bool)
                 or not isinstance(probe_bytes, int)
                 or probe_bytes < 0
@@ -358,7 +491,7 @@ class TreeIdentity:
         complete = item.get("complete_entry_digests", False)
         if not isinstance(complete, bool):
             raise ArtifactLocalizationError("tree complete_entry_digests must be a boolean")
-        if complete and len(probes) != entry_count:
+        if complete and not fully_bound and len(probes) != entry_count:
             raise ArtifactLocalizationError("a complete-digest tree must bind every entry")
         return cls(
             mount_paths=mount_paths,
@@ -369,7 +502,13 @@ class TreeIdentity:
             probe_entries=tuple(sorted(probes, key=lambda probe: probe.path)),
             complete_entry_digests=complete,
             generated_entries=tuple(sorted(generated, key=lambda entry: entry.path)),
+            inventory_algorithm=algorithm,
+            directory_count=directory_count,
         )
+
+    @property
+    def is_recursive(self) -> bool:
+        return self.inventory_algorithm == RECURSIVE_INVENTORY_ALGORITHM
 
     @property
     def entry_matcher(self) -> re.Pattern[str]:
@@ -439,6 +578,9 @@ class LocalizationContract:
     archive: ArchiveProvenance
     tree: TreeIdentity
     consumers: tuple[RuntimeBinding, ...]
+    visibility: str = "public"
+    artifact_kind: str = ""
+    source_sub_path: str = ""
 
     def __post_init__(self) -> None:
         if _ARTIFACT_ID.fullmatch(self.artifact_id) is None:
@@ -482,7 +624,7 @@ class LocalizationContract:
         item = strict_object(
             value,
             required=frozenset({"artifact_id", "transform", "archive", "tree", "consumers"}),
-            optional=frozenset({"notes"}),
+            optional=frozenset({"notes", "visibility", "artifact_kind", "source_sub_path"}),
             label="localization artifact",
         )
         raw_consumers = item["consumers"]
@@ -492,13 +634,38 @@ class LocalizationContract:
         transform = item["transform"]
         if not isinstance(artifact_id, str) or not isinstance(transform, str):
             raise ArtifactLocalizationError("localization artifact identity is invalid")
+        visibility = item.get("visibility", "public")
+        if visibility not in {"public", "tenant-private"}:
+            raise ArtifactLocalizationError("localization visibility is invalid")
+        visibility = cast(str, visibility)
+        artifact_kind = item.get("artifact_kind", "")
+        if not isinstance(artifact_kind, str) or len(artifact_kind) > 128:
+            raise ArtifactLocalizationError("localization artifact_kind is invalid")
+        source_sub_path = item.get("source_sub_path", "")
+        if not isinstance(source_sub_path, str):
+            raise ArtifactLocalizationError("localization source_sub_path must be a safe relative POSIX path")
+        if source_sub_path and not is_safe_relative_path(source_sub_path):
+            raise ArtifactLocalizationError("localization source_sub_path must be a safe relative POSIX path")
+        if transform == EXTERNAL_TRANSFORM and not source_sub_path:
+            raise ArtifactLocalizationError(f"a {EXTERNAL_TRANSFORM} artifact must declare its source_sub_path")
+        if transform != EXTERNAL_TRANSFORM and source_sub_path:
+            raise ArtifactLocalizationError("only an externally installed tree has a fixed source_sub_path")
         return cls(
             artifact_id=artifact_id,
             transform=transform,
             archive=ArchiveProvenance.parse(item["archive"]),
             tree=TreeIdentity.parse(item["tree"]),
             consumers=tuple(RuntimeBinding.parse(raw) for raw in raw_consumers),
+            visibility=visibility,
+            artifact_kind=artifact_kind or artifact_id,
+            source_sub_path=source_sub_path,
         )
+
+    @property
+    def externally_installed(self) -> bool:
+        """True when another plane owns these bytes and this tool only reads them."""
+
+        return self.transform == EXTERNAL_TRANSFORM
 
     def binding_for(self, model_id: str) -> RuntimeBinding:
         matches = [item for item in self.consumers if item.model_id == model_id]
@@ -572,6 +739,8 @@ class LocalizationReceipt:
     runtime_bindings: tuple[tuple[str, str, str, str], ...] = ()
     rejection_reason: str | None = None
     observation: Mapping[str, object] | None = None
+    inventory_algorithm: str = TREE_INVENTORY_ALGORITHM
+    directory_count: int = 0
 
     @property
     def archive_sha256(self) -> str:
@@ -592,11 +761,13 @@ class LocalizationReceipt:
             "tree_identity": {
                 "entry_count": self.entry_count,
                 "total_bytes": self.total_bytes,
-                "inventory_algorithm": TREE_INVENTORY_ALGORITHM,
+                "inventory_algorithm": self.inventory_algorithm,
                 "inventory_sha256": self.tree_inventory_sha256,
                 "probe_entries_verified": self.probe_entries_verified,
             },
         }
+        if self.directory_count:
+            cast(dict[str, object], value["tree_identity"])["directory_count"] = self.directory_count
         if self.runtime_bindings:
             value["runtime_bindings"] = [
                 {
@@ -645,6 +816,8 @@ def scan_localized_tree(
         for item in scan:
             if len(entries) >= maximum_entries:
                 raise TreeBoundExceededError("localized tree exceeds its declared entry bound")
+            if item.name == RUNTIME_MARKER_NAME:
+                continue
             if item.is_symlink():
                 raise ArtifactLocalizationError("localized tree contains a symbolic link")
             if item.is_dir(follow_symlinks=False):
@@ -711,6 +884,7 @@ def _rejected(
         probe_entries_verified=0,
         rejection_reason=reason,
         observation=observation,
+        inventory_algorithm=contract.tree.inventory_algorithm,
     )
 
 
@@ -748,19 +922,68 @@ def verify_localized_tree(
             observation=observation,
         )
 
+    if tree.inventory_algorithm == TREE_MANIFEST_ALGORITHM:
+        # An installed tree another plane already named. Reproduce that plane's
+        # identity rather than measuring a second, weaker one of our own.
+        try:
+            observed = tree_manifest_identity(resolved)
+        except (ArtifactLocalizationError, OSError) as error:
+            return _rejected(contract, f"unsafe-tree-entry: {error}", now=moment, observation=observation)
+        if observed.file_count != tree.entry_count or observed.total_bytes != tree.total_bytes:
+            return _rejected(
+                contract,
+                f"unexpected-tree-content: {observed.file_count} files and {observed.total_bytes} bytes do not "
+                f"match the contracted {tree.entry_count} files and {tree.total_bytes} bytes",
+                now=moment,
+                entry_count=observed.file_count,
+                total_bytes=observed.total_bytes,
+                observation=observation,
+            )
+        if observed.sha256 != tree.inventory_sha256:
+            return _rejected(
+                contract,
+                "tree-identity-mismatch: installed tree manifest digest does not match the contract",
+                now=moment,
+                entry_count=observed.file_count,
+                total_bytes=observed.total_bytes,
+                inventory=observed.sha256,
+                observation=observation,
+            )
+        return LocalizationReceipt(
+            artifact_id=contract.artifact_id,
+            mount_path=tree.canonical_mount_path,
+            state="verified",
+            observed_at=moment,
+            archive=contract.archive,
+            archive_present_in_mount=False,
+            entry_count=observed.file_count,
+            total_bytes=observed.total_bytes,
+            tree_inventory_sha256=observed.sha256,
+            probe_entries_verified=0,
+            runtime_bindings=tuple(
+                (item.model_id, item.binding_kind, item.binding_name, item.mount_path) for item in contract.consumers
+            ),
+            observation=observation,
+            inventory_algorithm=TREE_MANIFEST_ALGORITHM,
+            directory_count=tree.directory_count,
+        )
+
     try:
         # A little headroom so an over-full mount is diagnosed as the wrong tree
         # rather than as a scanning limit, while a mount holding arbitrarily
         # many entries or bytes still stops at the bound.
-        entries = scan_localized_tree(
+        scan = scan_recursive_tree if tree.is_recursive else scan_localized_tree
+        entries = scan(
             resolved,
-            maximum_entries=tree.entry_count + 1,
+            maximum_entries=tree.entry_count + tree.directory_count + 1,
             maximum_bytes=tree.total_bytes * 2 + _SCAN_HEADROOM_BYTES,
         )
     except TreeBoundExceededError as error:
         return _rejected(contract, f"unexpected-tree-content: {error}", now=moment, observation=observation)
     except ArtifactLocalizationError as error:
         return _rejected(contract, f"unsafe-tree-entry: {error}", now=moment, observation=observation)
+
+    observed_files, observed_directories, observed_bytes = tree_counts(entries)
 
     matcher = tree.entry_matcher
     offending = [entry.path for entry in entries if matcher.fullmatch(entry.path) is None]
@@ -769,38 +992,42 @@ def verify_localized_tree(
             contract,
             f"entry-path-pattern-violation: {len(offending)} entries including {offending[0]}",
             now=moment,
-            entry_count=len(entries),
+            entry_count=observed_files,
             observation=observation,
         )
 
-    observed_bytes = sum(entry.size_bytes for entry in entries)
-    if len(entries) < tree.entry_count:
+    if observed_files < tree.entry_count:
         return _rejected(
             contract,
-            f"partial-tree: {len(entries)} of {tree.entry_count} entries are present",
+            f"partial-tree: {observed_files} of {tree.entry_count} files are present",
             now=moment,
-            entry_count=len(entries),
+            entry_count=observed_files,
             total_bytes=observed_bytes,
             observation=observation,
         )
-    if len(entries) > tree.entry_count or observed_bytes != tree.total_bytes:
+    if (
+        observed_files > tree.entry_count
+        or observed_directories != tree.directory_count
+        or observed_bytes != tree.total_bytes
+    ):
         return _rejected(
             contract,
-            f"unexpected-tree-content: {len(entries)} entries and {observed_bytes} bytes "
-            f"do not match the contracted {tree.entry_count} entries and {tree.total_bytes} bytes",
+            f"unexpected-tree-content: {observed_files} files, {observed_directories} directories and "
+            f"{observed_bytes} bytes do not match the contracted {tree.entry_count} files, "
+            f"{tree.directory_count} directories and {tree.total_bytes} bytes",
             now=moment,
-            entry_count=len(entries),
+            entry_count=observed_files,
             total_bytes=observed_bytes,
             observation=observation,
         )
 
-    inventory = tree_inventory_sha256(entries)
+    inventory = inventory_sha256(entries, tree.inventory_algorithm)
     if inventory != tree.inventory_sha256:
         return _rejected(
             contract,
             "tree-identity-mismatch: localized inventory digest does not match the contract",
             now=moment,
-            entry_count=len(entries),
+            entry_count=observed_files,
             total_bytes=observed_bytes,
             inventory=inventory,
             observation=observation,
@@ -815,7 +1042,7 @@ def verify_localized_tree(
                     contract,
                     f"probe-entry-missing: {probe.path}",
                     now=moment,
-                    entry_count=len(entries),
+                    entry_count=observed_files,
                     total_bytes=observed_bytes,
                     inventory=inventory,
                     observation=observation,
@@ -825,7 +1052,7 @@ def verify_localized_tree(
                     contract,
                     f"probe-entry-digest-mismatch: {probe.path}",
                     now=moment,
-                    entry_count=len(entries),
+                    entry_count=observed_files,
                     total_bytes=observed_bytes,
                     inventory=inventory,
                     observation=observation,
@@ -839,7 +1066,7 @@ def verify_localized_tree(
         observed_at=moment,
         archive=contract.archive,
         archive_present_in_mount=False,
-        entry_count=len(entries),
+        entry_count=observed_files,
         total_bytes=observed_bytes,
         tree_inventory_sha256=inventory,
         probe_entries_verified=verified_probes,
@@ -847,6 +1074,8 @@ def verify_localized_tree(
             (item.model_id, item.binding_kind, item.binding_name, item.mount_path) for item in contract.consumers
         ),
         observation=observation,
+        inventory_algorithm=tree.inventory_algorithm,
+        directory_count=observed_directories,
     )
 
 
@@ -1153,10 +1382,34 @@ __all__ = [
     "TreeBoundExceededError",
     "TreeEntry",
     "TreeIdentity",
+    "GENERATION_DIGEST_DIRECTORY",
+    "INVENTORY_ALGORITHMS",
+    "MARKER_SCHEMA",
+    "RECURSIVE_INVENTORY_ALGORITHM",
+    "RUNTIME_MARKER_NAME",
+    "STAGING_PREFIX",
+    "count_generation",
+    "generation_directory",
+    "generation_marker",
+    "interrupted_staging_directories",
+    "inventory_bytes",
+    "inventory_sha256",
+    "is_safe_relative_path",
+    "load_generation_marker",
     "load_localization_contracts",
     "load_localization_contracts_from_path",
     "localize_archive",
+    "marker_bytes",
+    "marker_sha256",
+    "prepare_staging_directory",
+    "promote_generation",
+    "recursive_inventory_bytes",
+    "recursive_inventory_sha256",
     "scan_localized_tree",
+    "scan_recursive_tree",
+    "tree_counts",
+    "verify_generation_marker",
+    "write_generation_marker",
     "tree_inventory_bytes",
     "tree_inventory_sha256",
     "main",
@@ -1167,8 +1420,738 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
+# Immutable generations
+# ---------------------------------------------------------------------------
+
+
+def scan_recursive_tree(
+    root: Path,
+    *,
+    maximum_entries: int,
+    maximum_bytes: int,
+) -> tuple[TreeEntry, ...]:
+    """Read a nested tree, such as an installed package tree, the same way.
+
+    Directories are walked rather than rejected, and are also recorded, because
+    an installed tree's structure is part of what makes it importable. Every
+    other rule from the flat scan still holds: no symbolic links, no device
+    nodes, no unsafe names, and the reserved marker is skipped only at the root
+    where a promotion writes it.
+    """
+
+    resolved = _real_directory(root, "installed tree root")
+    entries: list[TreeEntry] = []
+    total = 0
+    stack: list[tuple[Path, str]] = [(resolved, "")]
+    while stack:
+        directory, prefix = stack.pop()
+        with os.scandir(directory) as scan:
+            for item in scan:
+                relative = f"{prefix}{item.name}"
+                if relative == RUNTIME_MARKER_NAME:
+                    continue
+                if item.name.startswith(STAGING_PREFIX) and not prefix:
+                    # An interrupted promotion beside a published tree, never
+                    # part of it.
+                    continue
+                if item.is_symlink():
+                    raise ArtifactLocalizationError(f"installed tree contains a symbolic link: {relative}")
+                if _ENTRY_NAME.fullmatch(item.name) is None:
+                    raise ArtifactLocalizationError(f"installed tree contains an unsafe entry name: {relative}")
+                if len(entries) >= maximum_entries:
+                    raise TreeBoundExceededError("installed tree exceeds its declared entry bound")
+                if item.is_dir(follow_symlinks=False):
+                    entries.append(TreeEntry(relative, 0, 0, kind="directory"))
+                    stack.append((Path(item.path), f"{relative}/"))
+                    continue
+                if not item.is_file(follow_symlinks=False):
+                    raise ArtifactLocalizationError(f"installed tree contains a non-regular entry: {relative}")
+                size = 0
+                crc = 0
+                flags = os.O_RDONLY
+                if hasattr(os, "O_NOFOLLOW"):
+                    flags |= os.O_NOFOLLOW
+                descriptor = os.open(item.path, flags)
+                try:
+                    with os.fdopen(descriptor, "rb", closefd=True) as handle:
+                        while True:
+                            chunk = handle.read(_READ_CHUNK)
+                            if not chunk:
+                                break
+                            size += len(chunk)
+                            crc = zlib.crc32(chunk, crc)
+                            total += len(chunk)
+                            if total > maximum_bytes:
+                                raise TreeBoundExceededError("installed tree exceeds its declared byte bound")
+                except OSError as error:
+                    raise ArtifactLocalizationError(
+                        f"installed tree entry could not be read safely: {relative}"
+                    ) from error
+                entries.append(TreeEntry(relative, size, crc & 0xFFFFFFFF))
+    return tuple(sorted(entries, key=lambda entry: entry.path))
+
+
+@dataclass(frozen=True, slots=True)
+class TreeManifestIdentity:
+    """What ``fs2-tree-manifest/v1`` says about one installed tree."""
+
+    algorithm: str
+    sha256: str
+    total_bytes: int
+    file_count: int
+    symlink_count: int
+
+
+def tree_manifest_identity(root: Path) -> TreeManifestIdentity:
+    """Identify an installed tree the way the academic-assets plane does.
+
+    This is a deliberate reimplementation of that plane's ``tree_manifest``, byte
+    for byte, so a tree it already named keeps exactly one identity. Every
+    regular file contributes its POSIX-relative path, byte size and SHA-256;
+    every symlink contributes its path and target; directories contribute
+    nothing. Entries are sorted by path and serialized as canonical JSON, and
+    the digest is the SHA-256 of those bytes.
+
+    Symlinks are described rather than refused here, unlike the flat and
+    recursive scans, because an installed package tree legitimately contains
+    them and the producer's identity already covers them by target.
+
+    The one reserved marker name at the root is skipped, so promoting a producer
+    tree into a content-addressed generation and sealing its marker inside still
+    yields the digest the producer published. A producer tree never contains that
+    name, so on the producing side the two implementations are identical.
+    """
+
+    resolved = _real_directory(root, "installed tree root")
+    entries: list[dict[str, object]] = []
+    total_bytes = 0
+    for path in sorted(resolved.rglob("*"), key=lambda item: item.relative_to(resolved).as_posix()):
+        relative = path.relative_to(resolved).as_posix()
+        if relative == RUNTIME_MARKER_NAME:
+            continue
+        if path.is_symlink():
+            entries.append({"path": relative, "kind": "symlink", "target": os.readlink(path)})
+            continue
+        if not path.is_file():
+            continue
+        digest = hashlib.sha256()
+        size = 0
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+                size += len(chunk)
+        entries.append({"path": relative, "kind": "file", "size_bytes": size, "sha256": digest.hexdigest()})
+        total_bytes += size
+    payload = {"algorithm": TREE_MANIFEST_ALGORITHM, "entries": entries}
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    return TreeManifestIdentity(
+        algorithm=TREE_MANIFEST_ALGORITHM,
+        sha256=hashlib.sha256(canonical).hexdigest(),
+        total_bytes=total_bytes,
+        file_count=sum(1 for entry in entries if entry["kind"] == "file"),
+        symlink_count=sum(1 for entry in entries if entry["kind"] == "symlink"),
+    )
+
+
+def tree_counts(entries: Iterable[TreeEntry]) -> tuple[int, int, int]:
+    """Files, directories, and total bytes, counted recursively."""
+
+    files = directories = total = 0
+    for entry in entries:
+        if entry.kind == "directory":
+            directories += 1
+        else:
+            files += 1
+            total += entry.size_bytes
+    return files, directories, total
+
+
+def generation_marker(
+    *,
+    artifact_id: str,
+    generation: str,
+    entry_count: int,
+    total_bytes: int,
+    inventory_algorithm: str,
+    sub_path: str,
+    namespace: str,
+    claim: str,
+    visibility: str,
+    artifact_kind: str = "",
+    directory_count: int = 0,
+    archive: ArchiveProvenance | None = None,
+    generated_entries: tuple[GeneratedEntry, ...] = (),
+    consumer_paths: tuple[str, ...] = (),
+    source: Mapping[str, object] | None = None,
+    generator_identity: Sequence[Mapping[str, object]] = (),
+) -> dict[str, object]:
+    """Describe one promoted generation cheaply enough to check at start-up.
+
+    A verified tree at a mutable path can change after it was verified. A
+    generation directory is named by the digest of its own content, so replacing
+    the bytes means writing a different path, and this marker is the small
+    document a consumer reads instead of rehashing gigabytes on every start.
+
+    The document carries no timestamp and no host identity: no node name, no
+    pod, no user, no duration, no run ID. Two promotions of the same tree, on
+    different machines and on different days, must produce byte-identical
+    markers, or the marker's own digest could not be pinned by a handoff and
+    re-promotion would silently change identity. When something happened, on
+    what, and for how long is recorded on the staging receipt, which is an
+    event; this is an identity.
+    """
+
+    if _GENERATION.fullmatch(generation) is None:
+        raise ArtifactLocalizationError("a generation must be named by a lowercase SHA-256")
+    if visibility not in {"public", "tenant-private"}:
+        raise ArtifactLocalizationError("generation visibility is invalid")
+    if inventory_algorithm not in INVENTORY_ALGORITHMS:
+        raise ArtifactLocalizationError("tree inventory algorithm is unsupported")
+    if not is_safe_relative_path(sub_path):
+        raise ArtifactLocalizationError("a generation sub-path must be a safe relative POSIX path")
+    document: dict[str, object] = {
+        "schema": MARKER_SCHEMA,
+        "artifact_id": artifact_id,
+        "artifact_kind": artifact_kind or artifact_id,
+        "generation": generation,
+        "inventory_algorithm": inventory_algorithm,
+        "inventory_sha256": generation,
+        "entry_count": entry_count,
+        "directory_count": directory_count,
+        "total_bytes": total_bytes,
+        "namespace": namespace,
+        "claim": claim,
+        "sub_path": sub_path,
+        "visibility": visibility,
+        "read_only": True,
+    }
+    if archive is not None:
+        document.update(
+            {
+                "source_filename": archive.filename,
+                "source_bytes": archive.size_bytes,
+                "source_sha256": archive.sha256,
+                "source_uri": archive.source_uri,
+                "source_revision": archive.source_revision,
+                "license_id": archive.license_id,
+            }
+        )
+    elif source is not None:
+        for key, value in source.items():
+            document[key if key.startswith(("source_", "license")) else f"source_{key}"] = value
+    identity: list[dict[str, object]] = [
+        {
+            "path": entry.path,
+            "sha256": entry.sha256,
+            "generator": entry.generator,
+            "generator_inputs": dict(entry.generator_inputs),
+        }
+        for entry in generated_entries
+    ]
+    identity.extend(dict(item) for item in generator_identity)
+    document["generator_identity"] = identity
+    document["consumer_paths"] = list(consumer_paths)
+    return document
+
+
+def marker_bytes(document: Mapping[str, object]) -> bytes:
+    """Serialize a marker deterministically, so its digest can be pinned.
+
+    The same serialization the runtime admission manifest already uses, because
+    a consumer that hashes exact bytes must get one answer for both documents.
+    """
+
+    return (json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def marker_sha256(document: Mapping[str, object]) -> str:
+    return hashlib.sha256(marker_bytes(document)).hexdigest()
+
+
+def write_generation_marker(path: Path, document: Mapping[str, object]) -> str:
+    """Write a marker once, and refuse to change one that already exists.
+
+    A marker names an immutable generation, so it is itself immutable. Rewriting
+    it, even with the same generation, would make marker identity mutable and a
+    pinned marker digest meaningless. Re-promoting the same tree therefore has to
+    produce the same bytes, and anything else fails closed.
+    """
+
+    payload = marker_bytes(document)
+    digest = hashlib.sha256(payload).hexdigest()
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_file():
+            raise ArtifactLocalizationError("generation marker path is not a regular file")
+        existing = path.read_bytes()
+        if existing != payload:
+            raise ArtifactLocalizationError(
+                "a generation marker already exists with different content; "
+                "marker identity is immutable and must not be rewritten"
+            )
+        return digest
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staging = path.parent / f".{path.name}.{os.getpid()}.partial"
+    handle = _open_for_write(staging)
+    try:
+        with os.fdopen(handle, "wb") as target:
+            target.write(payload)
+        os.link(staging, path)
+    except FileExistsError:
+        # Another writer won the race; its bytes must match ours.
+        if path.read_bytes() != payload:
+            raise ArtifactLocalizationError("a concurrent writer published a different marker") from None
+    except OSError:
+        staging.unlink(missing_ok=True)
+        raise
+    finally:
+        staging.unlink(missing_ok=True)
+    return digest
+
+
+@dataclass(frozen=True, slots=True)
+class LinkedTree:
+    """How a generation was materialized from a tree that already existed."""
+
+    files_linked: int
+    files_copied: int
+    bytes_linked: int
+    bytes_copied: int
+    directories: int
+    symlinks: int
+
+
+def link_tree_into(source: Path, destination: Path) -> LinkedTree:
+    """Materialize a generation from an existing tree without copying its bytes.
+
+    A hard link gives the generation its own immutable path into the very same
+    data, so promoting a 3 GB installed tree costs directory entries rather than
+    3 GB. That is only sound because these files are read-only and are replaced
+    by rename rather than rewritten in place; a plane that edited a file under
+    its own path would change both names at once, which is why this refuses a
+    writable source file rather than linking it.
+
+    Copying is the fallback for a source on another filesystem, and the counts
+    come back so a caller can prove which happened rather than assume.
+    """
+
+    resolved = _real_directory(source, "promotion source")
+    destination.mkdir(parents=True, exist_ok=True)
+    files_linked = files_copied = symlinks = directories = 0
+    bytes_linked = bytes_copied = 0
+    for path in sorted(resolved.rglob("*"), key=lambda item: item.relative_to(resolved).as_posix()):
+        relative = path.relative_to(resolved).as_posix()
+        if relative == RUNTIME_MARKER_NAME:
+            continue
+        target = destination / relative
+        if path.is_symlink():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.symlink(os.readlink(path), target)
+            symlinks += 1
+            continue
+        if path.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            directories += 1
+            continue
+        if not path.is_file():
+            raise ArtifactLocalizationError(f"promotion source contains a non-regular entry: {relative}")
+        status = path.stat()
+        if status.st_mode & 0o222:
+            raise ArtifactLocalizationError(
+                f"promotion source entry is writable and cannot be safely shared by link: {relative}"
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(path, target)
+            files_linked += 1
+            bytes_linked += status.st_size
+        except OSError as error:
+            if getattr(error, "errno", None) not in {errno.EXDEV, errno.EMLINK, errno.EPERM, errno.EOPNOTSUPP}:
+                raise ArtifactLocalizationError(f"could not link {relative} into the generation") from error
+            with path.open("rb") as handle, target.open("wb") as sink:
+                while True:
+                    chunk = handle.read(_READ_CHUNK)
+                    if not chunk:
+                        break
+                    sink.write(chunk)
+            files_copied += 1
+            bytes_copied += status.st_size
+    return LinkedTree(
+        files_linked=files_linked,
+        files_copied=files_copied,
+        bytes_linked=bytes_linked,
+        bytes_copied=bytes_copied,
+        directories=directories,
+        symlinks=symlinks,
+    )
+
+
+def load_generation_marker(path: Path) -> Mapping[str, object]:
+    if path.is_symlink() or not path.is_file():
+        raise ArtifactLocalizationError("generation marker is not a regular file")
+    payload = path.read_bytes()
+    if len(payload) > 1024 * 1024:
+        raise ArtifactLocalizationError("generation marker exceeds its byte bound")
+    try:
+        value = json.loads(payload)
+    except (json.JSONDecodeError, UnicodeError) as error:
+        raise ArtifactLocalizationError("generation marker is not valid UTF-8 JSON") from error
+    document = strict_object(
+        value,
+        required=frozenset(
+            {
+                "schema",
+                "artifact_id",
+                "artifact_kind",
+                "generation",
+                "inventory_algorithm",
+                "inventory_sha256",
+                "entry_count",
+                "directory_count",
+                "total_bytes",
+                "namespace",
+                "claim",
+                "sub_path",
+                "visibility",
+                "read_only",
+                "generator_identity",
+                "consumer_paths",
+            }
+        ),
+        optional=frozenset(
+            {
+                "source_filename",
+                "source_bytes",
+                "source_sha256",
+                "source_uri",
+                "source_revision",
+                "source_kind",
+                "source_name",
+                "source_version",
+                "source_note",
+                "license_id",
+                "cross_reference",
+            }
+        ),
+        label="generation marker",
+    )
+    if document["schema"] != MARKER_SCHEMA:
+        raise ArtifactLocalizationError("generation marker schema is unsupported")
+    return document
+
+
+def verify_generation_marker(
+    marker: Mapping[str, object],
+    *,
+    artifact_id: str,
+    expected_generation: str,
+    expected_sub_path: str,
+) -> Mapping[str, object]:
+    """Fail closed unless the marker describes exactly the mounted generation."""
+
+    if marker.get("schema") != MARKER_SCHEMA:
+        raise ArtifactLocalizationError("generation marker schema is unsupported")
+    if marker["artifact_id"] != artifact_id:
+        raise ArtifactLocalizationError("generation marker names a different artifact")
+    if marker["generation"] != expected_generation or marker["inventory_sha256"] != expected_generation:
+        raise ArtifactLocalizationError("generation marker does not describe the mounted generation")
+    if marker["sub_path"] != expected_sub_path:
+        raise ArtifactLocalizationError("generation marker sub-path does not match the mount")
+    if marker["read_only"] is not True:
+        raise ArtifactLocalizationError("generation marker does not assert a read-only mount")
+    return marker
+
+
+def generation_directory(artifact_root: Path, generation: str) -> Path:
+    """Where one generation is published: ``<artifact_root>/sha256/<digest>``.
+
+    The algorithm that produced the name is a path segment, so a future digest
+    can be introduced beside this one instead of over it.
+    """
+
+    if _GENERATION.fullmatch(generation) is None:
+        raise ArtifactLocalizationError("a generation must be named by a lowercase SHA-256")
+    return artifact_root / GENERATION_DIGEST_DIRECTORY / generation
+
+
+def interrupted_staging_directories(artifact_root: Path, *, older_than_seconds: float) -> list[Path]:
+    """Temporary generations an earlier run left behind.
+
+    Age is the discriminator, not existence, because a concurrent staging job
+    holds a temporary directory that is doing exactly what it should. Only one
+    old enough that no live run could still own it is treated as wreckage.
+    """
+
+    if not artifact_root.is_dir():
+        return []
+    cutoff = time.time() - older_than_seconds
+    stale: list[Path] = []
+    for candidate in sorted(artifact_root.iterdir()):
+        if not candidate.name.startswith(STAGING_PREFIX) or candidate.is_symlink() or not candidate.is_dir():
+            continue
+        try:
+            if candidate.stat().st_mtime < cutoff:
+                stale.append(candidate)
+        except OSError:  # pragma: no cover - vanished under us, which is the goal
+            continue
+    return stale
+
+
+def _remove_tree(root: Path) -> None:
+    """Delete a staged tree whose directories may already be read-only."""
+
+    for path in sorted(root.rglob("*"), reverse=True):
+        try:
+            if path.is_dir() and not path.is_symlink():
+                os.chmod(path, 0o700)  # noqa: S103 - reclaiming a sealed temporary
+                path.rmdir()
+            else:
+                path.unlink()
+        except OSError:  # pragma: no cover - best effort reclamation
+            continue
+    with contextlib.suppress(OSError):
+        os.chmod(root, 0o700)  # noqa: S103 - reclaiming a sealed temporary
+        root.rmdir()
+
+
+def prepare_staging_directory(artifact_root: Path, *, reclaim_after_seconds: float = 6 * 3600.0) -> Path:
+    """Open a private temporary generation beside where it will be published.
+
+    Staging under the artifact root is what lets publication be a rename within
+    one filesystem, and the reserved prefix is what lets an interrupted run be
+    recognized and reclaimed rather than mistaken for a tree.
+    """
+
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    for stale in interrupted_staging_directories(artifact_root, older_than_seconds=reclaim_after_seconds):
+        _remove_tree(stale)
+    return Path(tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=artifact_root))
+
+
+def promote_generation(staged: Path, artifact_root: Path, generation: str) -> Path:
+    """Make a verified tree read-only, then publish it under its own digest.
+
+    The rename is the commit point: a consumer either sees no generation or sees
+    the whole verified one, never a half-written directory. Promoting a
+    generation that already exists is a no-op rather than an overwrite, so
+    restaging can never destroy bytes another workload is already mounting, and
+    an interrupted run leaves only a temporary directory the next run reclaims.
+    """
+
+    target = generation_directory(artifact_root, generation)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        return target
+    resolved = _real_directory(staged, "staged generation")
+    # A generation is world-readable on purpose: several runtimes mount it under
+    # their own accounts. It is never writable, which is the property that keeps
+    # a content-addressed path honest.
+    for path in sorted(resolved.rglob("*"), reverse=True):
+        if path.is_symlink():
+            # A symlink inside a generation is only ever one this tool recreated
+            # from a source tree whose identity already covers it by target.
+            continue
+        if not path.is_file():
+            continue
+        status = path.stat()
+        if not status.st_mode & 0o222:
+            # Already read-only. A file shared by hard link with the tree it was
+            # promoted from arrives in this state, and leaving it alone is what
+            # keeps the owning plane's mode bits intact.
+            continue
+        if status.st_nlink > 1:
+            # chmod follows the inode, so sealing a shared writable file would
+            # rewrite every other name for it, including the producing plane's.
+            # Refuse rather than reach outside this generation.
+            raise ArtifactLocalizationError(
+                "a writable file shared by hard link cannot be sealed, because chmod follows "
+                "the inode and would rewrite the tree it was promoted from"
+            )
+        os.chmod(path, 0o444)
+    try:
+        # Renaming a directory rewrites its own parent link, so the directories
+        # can only be sealed once they are already in their final place.
+        os.rename(resolved, target)
+    except OSError as error:
+        if target.exists():
+            # Another writer promoted the identical generation first, which is
+            # the same bytes by construction.
+            return target
+        if getattr(error, "errno", None) == errno.EXDEV:
+            raise ArtifactLocalizationError(
+                "a generation must be staged on the same filesystem it is published to, "
+                "because the rename is what makes publication atomic"
+            ) from error
+        raise ArtifactLocalizationError("could not publish the verified generation") from error
+    for path in sorted(target.rglob("*"), reverse=True):
+        if path.is_dir():
+            os.chmod(path, 0o555)  # noqa: S103 - read-only for every reader
+    os.chmod(target, 0o555)  # noqa: S103 - read-only for every reader
+    return target
+
+
+# ---------------------------------------------------------------------------
 # Staging entry point
 # ---------------------------------------------------------------------------
+
+
+def count_generation(mount: Path, *, maximum_entries: int) -> tuple[int, int]:
+    """Count a mounted generation's files and directories, recursively.
+
+    This walks the tree but reads no file content, so a start-up gate can afford
+    it on gigabytes where rehashing would be unaffordable. It is a structural
+    cross-check that the mount is shaped like the generation the marker
+    describes, never a substitute for the digest that named the directory.
+    """
+
+    resolved = _real_directory(mount, "mounted generation")
+    files = directories = 0
+    stack = [resolved]
+    while stack:
+        with os.scandir(stack.pop()) as scan:
+            for item in scan:
+                if files + directories > maximum_entries:
+                    raise TreeBoundExceededError("mounted generation exceeds its declared entry bound")
+                if item.name == RUNTIME_MARKER_NAME:
+                    continue
+                if item.is_symlink():
+                    raise ArtifactLocalizationError("mounted generation contains a symbolic link")
+                if item.is_dir(follow_symlinks=False):
+                    directories += 1
+                    stack.append(Path(item.path))
+                else:
+                    files += 1
+    return files, directories
+
+
+def _verify_marker(options: argparse.Namespace) -> int:
+    """Admit a mounted generation from its own marker, without rehashing it."""
+
+    expected = options.expect_generation
+    mount = options.mount
+    if not expected:
+        raise SystemExit("marker requires --expect-generation")
+    # The marker lives inside the generation by default, so mounting the
+    # generation is enough to admit it; nothing else has to be mounted.
+    marker_path = options.marker or (mount / RUNTIME_MARKER_NAME if mount is not None else None)
+    if marker_path is None:
+        raise SystemExit("marker requires --marker or --mount")
+    try:
+        marker = load_generation_marker(marker_path)
+        identity = verify_generation_marker(
+            marker,
+            artifact_id=options.artifact_id,
+            expected_generation=expected,
+            expected_sub_path=options.sub_path,
+        )
+        if mount is not None:
+            files, directories = count_generation(mount, maximum_entries=options.maximum_entries)
+            declared_files = identity["entry_count"]
+            declared_directories = identity.get("directory_count", 0)
+            if files != declared_files or directories != declared_directories:
+                raise ArtifactLocalizationError(
+                    f"mount holds {files} files and {directories} directories, and the marker declares "
+                    f"{declared_files} files and {declared_directories} directories"
+                )
+    except (ArtifactLocalizationError, ScientificAdapterError) as error:
+        print(json.dumps({"state": "rejected", "reason": str(error)}, indent=2, sort_keys=True))
+        return 1
+    print(
+        json.dumps(
+            {
+                "state": "admitted",
+                "marker": dict(marker),
+                "marker_sha256": marker_sha256(marker),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _inventory(options: argparse.Namespace, started: float) -> int:
+    """Record an identity for a tree this tool did not stage, without touching it."""
+
+    mount = options.mount
+    if mount is None:
+        raise SystemExit("inventory requires --mount")
+    algorithm = options.algorithm
+    if algorithm == TREE_MANIFEST_ALGORITHM:
+        manifest = tree_manifest_identity(mount)
+        digest, files, total = manifest.sha256, manifest.file_count, manifest.total_bytes
+        directories = sum(1 for path in mount.rglob("*") if path.is_dir() and not path.is_symlink())
+    else:
+        entries = scan_recursive_tree(
+            mount,
+            maximum_entries=options.maximum_entries,
+            maximum_bytes=options.maximum_bytes,
+        )
+        digest = recursive_inventory_sha256(entries)
+        files, directories, total = tree_counts(entries)
+    expected_entries = options.expect_entries
+    expected_bytes = options.expect_bytes
+    if expected_entries is not None and files != expected_entries:
+        print(f"tree holds {files} files and {expected_entries} were expected")
+        return 1
+    if expected_bytes is not None and total != expected_bytes:
+        print(f"tree holds {total} bytes and {expected_bytes} were expected")
+        return 1
+    document = generation_marker(
+        artifact_id=options.artifact_id,
+        generation=digest,
+        entry_count=files,
+        directory_count=directories,
+        total_bytes=total,
+        inventory_algorithm=algorithm,
+        sub_path=options.sub_path,
+        namespace=options.namespace,
+        claim=options.claim,
+        visibility=options.visibility,
+        source=_cli_source(options.source),
+    )
+    if options.cross_reference:
+        # Another plane may already record an identity for this tree under its
+        # own scheme. Carry it as a reference, never as our measurement.
+        references: dict[str, str] = {}
+        for item in options.cross_reference:
+            key, separator, value = item.partition("=")
+            if not separator or not key or not value:
+                raise SystemExit("--cross-reference expects KEY=VALUE")
+            references[key] = value
+        document["cross_reference"] = references
+    marker_path = options.marker
+    digest_self = marker_sha256(document)
+    if marker_path is not None:
+        digest_self = write_generation_marker(marker_path, document)
+    # The identity is the document; when it was measured is reported beside it
+    # and never inside it, so re-running this produces the same marker bytes.
+    print(
+        json.dumps(
+            {
+                "marker": document,
+                "marker_sha256": digest_self,
+                "observation": {"duration_seconds": round(time.monotonic() - started, 3)},
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _cli_source(value: str | None) -> Mapping[str, object] | None:
+    """Describe where a tree this tool did not extract actually came from."""
+
+    if not value:
+        return None
+    parsed = json.loads(value)
+    if not isinstance(parsed, dict):
+        raise ArtifactLocalizationError("source must be a JSON object")
+    allowed = {"kind", "name", "version", "source_uri", "source_revision", "license_id", "sha256", "bytes", "note"}
+    unknown = sorted(set(parsed) - allowed)
+    if unknown:
+        raise ArtifactLocalizationError(f"source contains unknown fields {unknown}")
+    return parsed
 
 
 def _cli_observation(value: str | None) -> Mapping[str, object] | None:
@@ -1193,13 +2176,46 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
 
     import argparse
-    import time
 
     parser = argparse.ArgumentParser(prog="fs2-localize", description=__doc__)
-    parser.add_argument("mode", choices=("stage", "verify"))
-    parser.add_argument("--contract", required=True, type=Path)
+    parser.add_argument("mode", choices=("stage", "promote", "verify", "marker", "inventory"))
+    parser.add_argument("--contract", type=Path)
     parser.add_argument("--artifact-id", required=True)
-    parser.add_argument("--mount", required=True, type=Path)
+    parser.add_argument("--mount", type=Path)
+    parser.add_argument(
+        "--artifact-root",
+        type=Path,
+        help="stage: publish the verified tree at <artifact-root>/sha256/<tree digest>",
+    )
+    parser.add_argument("--source", help="inventory: JSON object describing where an unstaged tree came from")
+    parser.add_argument(
+        "--promote-from",
+        type=Path,
+        help="promote: an existing tree to publish as a generation, shared by link rather than copied",
+    )
+    parser.add_argument(
+        "--algorithm",
+        default=RECURSIVE_INVENTORY_ALGORITHM,
+        choices=INVENTORY_ALGORITHMS,
+        help="inventory: the identity algorithm to measure the tree with",
+    )
+    parser.add_argument("--marker", type=Path, help="the promotion marker to write or verify")
+    parser.add_argument("--sub-path", default="", help="the exact volume sub-path the generation is published at")
+    parser.add_argument("--namespace", default="")
+    parser.add_argument("--claim", default="")
+    parser.add_argument("--visibility", default="public", choices=("public", "tenant-private"))
+    parser.add_argument("--expect-generation", help="marker: the generation the caller believes it mounted")
+    parser.add_argument("--expect-entries", type=int, help="inventory: fail unless the tree holds exactly this many")
+    parser.add_argument("--expect-bytes", type=int, help="inventory: fail unless the tree holds exactly this many")
+    parser.add_argument(
+        "--cross-reference",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="inventory: another plane's recorded identity for the same tree, kept distinct from ours",
+    )
+    parser.add_argument("--maximum-entries", type=int, default=500_000)
+    parser.add_argument("--maximum-bytes", type=int, default=64 * 1024 * 1024 * 1024)
     parser.add_argument("--archive", type=Path, help="local source archive, for stage")
     parser.add_argument(
         "--fetch-archive-to",
@@ -1216,6 +2232,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     options = parser.parse_args(argv)
 
     started = time.monotonic()
+
+    if options.mode == "marker":
+        return _verify_marker(options)
+    if options.mode == "inventory":
+        return _inventory(options, started)
+
+    if options.contract is None:
+        raise SystemExit(f"{options.mode} requires --contract")
+    if options.mount is None and options.artifact_root is None:
+        raise SystemExit(f"{options.mode} requires --mount or --artifact-root")
+    if options.mode == "promote" and (options.promote_from is None or options.artifact_root is None):
+        raise SystemExit("promote requires --promote-from and --artifact-root")
     contracts = load_localization_contracts_from_path(options.contract)
     contract = contracts.get(options.artifact_id)
     if contract is None:
@@ -1229,7 +2257,34 @@ def main(argv: Sequence[str] | None = None) -> int:
                 archive = fetch_archive(options.fetch_archive_to, contract)
             if archive is None:
                 raise SystemExit("stage requires --archive or --fetch-archive-to")
+            if options.mount is None:
+                # Stage into a private temporary generation beside where it will
+                # be published, so the rename that commits it stays within one
+                # filesystem and an interrupted run leaves only a reclaimable
+                # temporary directory, never a partial final tree.
+                staging = prepare_staging_directory(options.artifact_root)
+                staging.rmdir()
+                options.mount = staging
             receipt = localize_archive(archive, options.mount, contract, observation=observation or None)
+        elif options.mode == "promote":
+            # The bytes already exist somewhere this tool does not own. Give them
+            # an immutable content-addressed name without a second copy, then
+            # verify the result before anything is published.
+            staging = prepare_staging_directory(options.artifact_root)
+            linked = link_tree_into(options.promote_from, staging)
+            options.mount = staging
+            observation["files_linked"] = linked.files_linked
+            observation["files_copied"] = linked.files_copied
+            observation["bytes_linked"] = linked.bytes_linked
+            observation["bytes_copied"] = linked.bytes_copied
+            receipt = verify_localized_tree(
+                staging,
+                contract,
+                verify_probes=not options.skip_probes,
+                observation=observation or None,
+            )
+            if not receipt.verified:
+                _remove_tree(staging)
         else:
             receipt = verify_localized_tree(
                 options.mount,
@@ -1241,6 +2296,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{options.artifact_id}: {error}")
         return 1
 
+    if options.mode in {"stage", "promote"} and options.artifact_root is not None and receipt.verified:
+        generation = receipt.tree_inventory_sha256
+        sub_path = options.sub_path or f"{GENERATION_DIGEST_DIRECTORY}/{generation}"
+        marker = generation_marker(
+            artifact_id=contract.artifact_id,
+            generation=generation,
+            entry_count=receipt.entry_count,
+            directory_count=receipt.directory_count,
+            total_bytes=receipt.total_bytes,
+            inventory_algorithm=contract.tree.inventory_algorithm,
+            sub_path=sub_path,
+            namespace=options.namespace,
+            claim=options.claim,
+            visibility=options.visibility,
+            archive=contract.archive,
+            generated_entries=contract.tree.generated_entries,
+            consumer_paths=contract.tree.mount_paths,
+        )
+        # Write the marker into the tree before sealing it, so the rename that
+        # publishes the generation publishes its marker with it and a consumer
+        # that mounts only the generation can still admit it.
+        marker_digest = write_generation_marker(options.mount / RUNTIME_MARKER_NAME, marker)
+        published = promote_generation(options.mount, options.artifact_root, generation)
+        observation["generation"] = published.name
+        observation["generation_sub_path"] = sub_path
+        observation["marker_sha256"] = marker_digest
     observation["duration_seconds"] = round(time.monotonic() - started, 3)
     document = LocalizationReceipt(
         artifact_id=receipt.artifact_id,
@@ -1256,6 +2337,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         runtime_bindings=receipt.runtime_bindings,
         rejection_reason=receipt.rejection_reason,
         observation=observation,
+        inventory_algorithm=receipt.inventory_algorithm,
+        directory_count=receipt.directory_count,
     ).to_dict()
     rendered = json.dumps(document, indent=2, sort_keys=True) + "\n"
     if options.receipt is not None:

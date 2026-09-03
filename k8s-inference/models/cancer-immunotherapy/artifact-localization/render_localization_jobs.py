@@ -21,6 +21,7 @@ from the checked-in localization contract.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -30,12 +31,40 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_ROOT = REPO_ROOT / "components/control-plane/src/fs2_serve/scientific_batch/adapters"
 DEFAULT_CONTRACT = REPO_ROOT / "catalog/runtime/contracts/scientific-artifact-localization.json"
 
+
+def _localization() -> Any:
+    """Load the very module the staged workloads run.
+
+    The handoff publishes the marker digest a consumer will pin, so it must be
+    produced by the same code that writes the marker into the generation. A
+    second implementation here could drift, and the drift would only show up as
+    a failed admission on a node.
+    """
+
+    spec = importlib.util.spec_from_file_location("fs2_localization_render", PACKAGE_ROOT / "localization.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("fs2_localization_render", module)
+    primitives = importlib.util.spec_from_file_location("fs2_localization_render_primitives", PACKAGE_ROOT / "primitives.py")
+    assert primitives is not None and primitives.loader is not None
+    primitives_module = importlib.util.module_from_spec(primitives)
+    primitives.loader.exec_module(primitives_module)
+    sys.modules["fs2_localization_render.primitives"] = primitives_module
+    module.__package__ = "fs2_localization_render"
+    spec.loader.exec_module(module)
+    return module
+
 # The verifier is mounted as a tiny package so the staging and qualification
 # workloads run the same code the control plane runs, not a copy of it.
 PACKAGE_NAME = "fs2_localization"
 PACKAGE_MOUNT = "/opt/fs2-localization"
 CONTRACT_MOUNT = f"{PACKAGE_MOUNT}/{PACKAGE_NAME}/localization-contract.json"
 TREE_ROOT = "/trees"
+GENERATIONS_DIR = "generations"
+DIGEST_DIR = "sha256"
+# The marker is written inside the generation and travels with it, so there is
+# exactly one authority for what a mount contains and no separate path to mount.
+RUNTIME_MARKER_NAME = ".fs2-runtime-tree.json"
 RECEIPT_DIR = f"{TREE_ROOT}/.receipts"
 # A qualification pod reads the shared volume and must not write to it: it runs
 # as the runtime image's own account, which is a guest in the claim's group, and
@@ -90,6 +119,24 @@ def selected_artifacts(document: dict[str, Any], artifact_ids: tuple[str, ...]) 
     if missing:
         raise SystemExit(f"contract does not declare {missing}")
     return [by_id[artifact_id] for artifact_id in artifact_ids]
+
+
+def artifact_root(tree_prefix: str, artifact_id: str) -> str:
+    """The per-artifact root a generation is published under."""
+
+    return "/".join(part for part in (tree_prefix, GENERATIONS_DIR, artifact_id) if part)
+
+
+def generation_sub_path(tree_prefix: str, artifact_id: str, generation: str) -> str:
+    """Where one immutable generation lives inside the claim.
+
+    ``<prefix>/generations/<artifact_id>/sha256/<tree digest>``. The digest is
+    part of the path, so a different tree is a different mount and an existing
+    generation is never rewritten in place; the algorithm is a path segment so a
+    future digest lands beside this one rather than over it.
+    """
+
+    return f"{artifact_root(tree_prefix, artifact_id)}/{DIGEST_DIR}/{generation}"
 
 
 def labels(run_id: str, role: str) -> dict[str, str]:
@@ -190,10 +237,17 @@ def stage_job(
     fetched: dict[str, str] = {}
     for artifact in artifacts:
         artifact_id = artifact["artifact_id"]
+        if artifact["transform"] == "external-installed-tree":
+            # Another plane installed and owns these bytes. Staging them here
+            # would duplicate a licensed tree and move the identity its owner
+            # published, so this tool only ever verifies it in place.
+            raise SystemExit(f"{artifact_id} is an externally installed tree and must not be staged")
         digest = artifact["archive"]["sha256"]
         scratch = f"/scratch/{digest}-{artifact['archive']['filename']}"
         source = ["--fetch-archive-to", scratch] if digest not in fetched else ["--archive", fetched[digest]]
         fetched.setdefault(digest, scratch)
+        generation = artifact["tree"]["inventory_sha256"]
+        sub_path = generation_sub_path(tree_prefix, artifact_id, generation)
         steps.append(
             {
                 "name": f"stage-{artifact_id}"[:63],
@@ -208,8 +262,21 @@ def stage_job(
                     "--artifact-id",
                     artifact_id,
                     *source,
-                    "--mount",
-                    f"{TREE_ROOT}/{artifact_id}",
+                    # The tool stages into a private temporary generation under
+                    # this root, so the rename that publishes the verified bytes
+                    # stays on one filesystem and the mounted path can never be
+                    # rewritten afterwards. The marker is written inside the
+                    # generation, so no second path is passed or mounted.
+                    "--artifact-root",
+                    f"{TREE_ROOT}/{GENERATIONS_DIR}/{artifact_id}",
+                    "--sub-path",
+                    sub_path,
+                    "--namespace",
+                    namespace,
+                    "--claim",
+                    claim,
+                    "--visibility",
+                    artifact.get("visibility", "public"),
                     "--receipt",
                     f"{RECEIPT_DIR}/{artifact_id}.stage.json",
                 ],
@@ -299,12 +366,13 @@ def qualify_job(
     volumes, mounts = _verifier_volumes(config_map, claim, tree_prefix)
     runtime_mounts = list(mounts)
     for artifact in artifacts:
+        generation = artifact["tree"]["inventory_sha256"]
         for mount_path in artifact["tree"]["mount_paths"]:
             runtime_mounts.append(
                 {
                     "name": "trees",
                     "mountPath": mount_path,
-                    "subPath": f"{tree_prefix}/{artifact['artifact_id']}".lstrip("/"),
+                    "subPath": generation_sub_path(tree_prefix, artifact["artifact_id"], generation),
                     "readOnly": True,
                 }
             )
@@ -312,19 +380,23 @@ def qualify_job(
         {
             "name": f"verify-{artifact['artifact_id']}"[:63],
             "image": image,
+            # Admit the mount from the marker inside it. The generation is named
+            # by the digest of its own content, so a start-up gate does not have
+            # to rehash gigabytes to know which bytes it received; the recursive
+            # count is the structural cross-check that the mount is that shape.
             "command": [
                 python,
                 "-m",
                 f"{PACKAGE_NAME}.localization",
-                "verify",
-                "--contract",
-                CONTRACT_MOUNT,
+                "marker",
                 "--artifact-id",
                 artifact["artifact_id"],
                 "--mount",
                 artifact["tree"]["mount_paths"][0],
-                "--receipt",
-                f"{QUALIFY_RECEIPT_DIR}/{artifact['artifact_id']}.{model_id}-node.json",
+                "--expect-generation",
+                artifact["tree"]["inventory_sha256"],
+                "--sub-path",
+                generation_sub_path(tree_prefix, artifact["artifact_id"], artifact["tree"]["inventory_sha256"]),
             ],
             "env": [
                 {"name": "PYTHONPATH", "value": PACKAGE_MOUNT},
@@ -385,9 +457,10 @@ def qualify_job(
 
 def binding_handoff(
     *,
-    namespace: str,
-    claim: str,
+    public_volume: dict[str, Any],
+    private_volume: dict[str, Any],
     tree_prefix: str,
+    private_tree_prefix: str,
     artifacts: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Describe exactly how a consumer mounts each localized tree.
@@ -395,55 +468,231 @@ def binding_handoff(
     Every value here is derived from the contract, so a consumer that follows
     this handoff and a control-plane preflight cannot disagree about what a
     mount is supposed to contain.
+
+    Storage authority is per artifact, not per run. Public bytes belong on the
+    dedicated public reference plane; a licensed tree belongs only on the
+    tenant-private academic claim. Putting public artifacts on the academic
+    claim would freeze a licensed, tenant-scoped volume into the role of general
+    artifact storage, which is exactly the separation this split protects.
     """
 
+    localization = _localization()
     entries = []
     for artifact in artifacts:
         tree = artifact["tree"]
-        sub_path = f"{tree_prefix}/{artifact['artifact_id']}".lstrip("/")
-        entries.append(
-            {
-                "artifact_id": artifact["artifact_id"],
-                "volume": {
-                    "namespace": namespace,
-                    "claim": claim,
-                    "sub_path": sub_path,
-                    "read_only": True,
-                },
-                "mounts": [
-                    {"mount_path": path, "read_only": True} for path in tree["mount_paths"]
-                ],
-                "consumers": artifact["consumers"],
-                "archive_provenance": {
-                    "filename": artifact["archive"]["filename"],
-                    "sha256": artifact["archive"]["sha256"],
-                    "bytes": artifact["archive"]["bytes"],
-                    "source_revision": artifact["archive"]["source_revision"],
-                    "license_id": artifact["archive"]["license_id"],
-                },
-                "tree_identity": {
-                    "entry_count": tree["entry_count"],
-                    "total_bytes": tree["total_bytes"],
-                    "inventory_algorithm": tree["inventory_algorithm"],
-                    "inventory_sha256": tree["inventory_sha256"],
-                },
-                "generated_entries": tree.get("generated_entries", []),
-            }
+        generation = tree["inventory_sha256"]
+        contract = localization.LocalizationContract.parse(artifact)
+        private = contract.visibility == "tenant-private"
+        volume = private_volume if private else public_volume
+        prefix = private_tree_prefix if private else tree_prefix
+        # Every runtime binding is content addressed, licensed trees included. A
+        # producer's install path is mutable: it is where the bytes were built,
+        # not a name that can only ever mean these bytes. Binding a runtime to it
+        # would let the tree change underneath an admitted workload.
+        sub_path = generation_sub_path(prefix, artifact["artifact_id"], generation)
+        marker = localization.generation_marker(
+            artifact_id=contract.artifact_id,
+            artifact_kind=contract.artifact_kind,
+            generation=generation,
+            entry_count=tree["entry_count"],
+            directory_count=tree.get("directory_count", 0),
+            total_bytes=tree["total_bytes"],
+            inventory_algorithm=tree["inventory_algorithm"],
+            sub_path=sub_path,
+            namespace=volume["namespace"],
+            claim=volume["claim"],
+            visibility=contract.visibility,
+            archive=contract.archive,
+            generated_entries=contract.tree.generated_entries,
+            consumer_paths=contract.tree.mount_paths,
         )
+        entry: dict[str, Any] = {
+            "artifact_id": artifact["artifact_id"],
+            "generation": generation,
+            "visibility": contract.visibility,
+            "externally_installed": contract.externally_installed,
+            "volume": {
+                "namespace": volume["namespace"],
+                "claim": volume["claim"],
+                "sub_path": sub_path,
+                "read_only": True,
+                "immutable": True,
+                "binding_state": volume["binding_state"],
+                "plane": volume["plane"],
+            },
+            "marker": {
+                # One authority, sealed inside the generation by the same rename
+                # that publishes it. The reserved name is excluded from every
+                # inventory algorithm, so sealing it cannot move the digest the
+                # producing plane published.
+                "in_generation": True,
+                "path": f"{sub_path}/{RUNTIME_MARKER_NAME}",
+                "relative_path": RUNTIME_MARKER_NAME,
+                "schema": marker["schema"],
+                "manifest_digest": localization.marker_sha256(marker),
+                "document": marker,
+            },
+            "mounts": [{"mount_path": path, "read_only": True} for path in tree["mount_paths"]],
+            "consumers": artifact["consumers"],
+            "archive_provenance": {
+                "filename": artifact["archive"]["filename"],
+                "sha256": artifact["archive"]["sha256"],
+                "bytes": artifact["archive"]["bytes"],
+                "source_revision": artifact["archive"]["source_revision"],
+                "license_id": artifact["archive"]["license_id"],
+            },
+            "tree_identity": {
+                "entry_count": tree["entry_count"],
+                "directory_count": tree.get("directory_count", 0),
+                "total_bytes": tree["total_bytes"],
+                "inventory_algorithm": tree["inventory_algorithm"],
+                "inventory_sha256": tree["inventory_sha256"],
+            },
+            "generated_entries": tree.get("generated_entries", []),
+        }
+        if contract.externally_installed:
+            # Where the producing plane built the bytes. It is an input to the
+            # promotion and a provenance record, never something a runtime binds.
+            entry["promoted_from"] = {
+                "namespace": private_volume["namespace"],
+                "claim": private_volume["claim"],
+                "sub_path": contract.source_sub_path,
+                "owner": "academic-assets",
+                "mutable": True,
+                "runtime_bindable": False,
+            }
+        entries.append(entry)
+    by_model: dict[str, list[str]] = {}
+    for entry in entries:
+        for consumer in entry["consumers"]:
+            by_model.setdefault(consumer["model_id"], []).append(entry["artifact_id"])
     return {
         "schema": "fs2-serve.nebius.ai/scientific-localization-binding-handoff/v1",
         "scope": "poc",
         "note": (
-            "These trees live under one sub-path of a claim that also holds tenant-private "
-            "academic assets. The sub-path keeps them separable; it is not a global cache."
+            "Every runtime binding is an immutable generation published read-only at "
+            "<prefix>/generations/<artifact_id>/sha256/<tree digest>, so a consumer binds "
+            "content rather than a mutable path. The marker named here lives inside that "
+            "generation and is its single admission authority; manifest_digest is the "
+            "SHA-256 of exactly the bytes of document. Storage authority is per artifact: "
+            "public bytes live on the dedicated public reference plane and a licensed tree "
+            "lives only on the tenant-private academic claim, so the academic claim is "
+            "never frozen into the role of general public artifact storage. An entry whose "
+            "volume binding_state is 'fixture' names a plane that has not yet published a "
+            "live claim receipt, and must not be treated as a provisioned location."
         ),
+        "volumes": {"public": public_volume, "tenant-private": private_volume},
+        "models": {model: sorted(ids) for model, ids in sorted(by_model.items())},
         "artifacts": entries,
+    }
+
+
+def inventory_job(
+    *,
+    name: str,
+    namespace: str,
+    run_id: str,
+    artifact_id: str,
+    image: str,
+    python: str,
+    config_map: str,
+    claim: str,
+    source_sub_path: str,
+    marker_prefix: str,
+    expect_bytes: int | None,
+    cross_references: list[str],
+    algorithm: str,
+    node_selector: dict[str, str],
+    tolerations: list[dict[str, Any]],
+    resources: dict[str, Any],
+    security_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Record an identity for a tree another plane staged, without touching it.
+
+    The source is mounted read-only at its canonical sub-path and nothing is
+    written into it: an installed tree that another plane already identifies by
+    its own digest must not gain files, or that identity moves. The marker is
+    written into this tool's own prefix instead.
+    """
+
+    generation = "$(FS2_GENERATION)"  # resolved by the container, not the renderer
+    del generation
+    volumes = [
+        {"name": "verifier", "configMap": {"name": config_map}},
+        {"name": "source", "persistentVolumeClaim": {"claimName": claim, "readOnly": True}},
+        {"name": "markers", "persistentVolumeClaim": {"claimName": claim}},
+    ]
+    mounts = [
+        {"name": "verifier", "mountPath": f"{PACKAGE_MOUNT}/{PACKAGE_NAME}", "readOnly": True},
+        {"name": "source", "mountPath": "/source", "subPath": source_sub_path, "readOnly": True},
+        {"name": "markers", "mountPath": "/markers", "subPath": marker_prefix},
+    ]
+    command = [
+        python,
+        "-m",
+        f"{PACKAGE_NAME}.localization",
+        "inventory",
+        "--artifact-id",
+        artifact_id,
+        "--mount",
+        "/source",
+        "--sub-path",
+        source_sub_path,
+        "--namespace",
+        namespace,
+        "--claim",
+        claim,
+        "--visibility",
+        "tenant-private",
+        "--algorithm",
+        algorithm,
+        "--marker",
+        f"/markers/{artifact_id}.json",
+    ]
+    if expect_bytes is not None:
+        command += ["--expect-bytes", str(expect_bytes)]
+    for reference in cross_references:
+        command += ["--cross-reference", reference]
+    return {
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {"name": name, "namespace": namespace, "labels": labels(run_id, "inventory")},
+        "spec": {
+            "backoffLimit": 0,
+            "ttlSecondsAfterFinished": 86400,
+            "template": {
+                "metadata": {"labels": labels(run_id, "inventory")},
+                "spec": {
+                    "restartPolicy": "Never",
+                    "enableServiceLinks": False,
+                    "automountServiceAccountToken": False,
+                    "nodeSelector": node_selector,
+                    "tolerations": tolerations,
+                    "securityContext": security_context,
+                    "containers": [
+                        {
+                            "name": "inventory",
+                            "image": image,
+                            "command": command,
+                            "env": [
+                                {"name": "PYTHONPATH", "value": PACKAGE_MOUNT},
+                                {"name": "PYTHONDONTWRITEBYTECODE", "value": "1"},
+                                {"name": "HOME", "value": "/tmp"},
+                            ],
+                            "volumeMounts": mounts,
+                            "resources": resources,
+                        }
+                    ],
+                    "volumes": volumes,
+                },
+            },
+        },
     }
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("stage", "qualify", "handoff"))
+    parser.add_argument("mode", choices=("stage", "qualify", "handoff", "inventory"))
     parser.add_argument("--contract", type=Path, default=DEFAULT_CONTRACT)
     parser.add_argument("--artifact-id", action="append", required=True)
     parser.add_argument("--namespace", required=True)
@@ -462,6 +711,33 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="subtree of the claim these trees live under, for a claim shared with other assets",
     )
+    parser.add_argument(
+        "--private-tree-prefix",
+        default="scientific-localization/private",
+        help="subtree of the tenant-private claim that licensed generations live under",
+    )
+    parser.add_argument(
+        "--public-namespace",
+        default="fs2-reference-data",
+        help="handoff: namespace of the dedicated public reference plane",
+    )
+    parser.add_argument(
+        "--public-claim",
+        default="fs2-scientific-artifact-store-rwx",
+        help="handoff: claim on the dedicated public reference plane; public bytes never land on the academic claim",
+    )
+    parser.add_argument(
+        "--public-binding-state",
+        default="fixture",
+        choices=("fixture", "live"),
+        help="handoff: 'live' only once the public plane has published a claim receipt",
+    )
+    parser.add_argument(
+        "--private-binding-state",
+        default="live",
+        choices=("fixture", "live"),
+        help="handoff: whether the tenant-private claim is provisioned",
+    )
     parser.add_argument("--model-id", help="qualify only: which runtime is being proven")
     parser.add_argument("--probe", action="append", help="qualify only: model-side probe argv")
     parser.add_argument(
@@ -479,6 +755,17 @@ def main(argv: list[str] | None = None) -> int:
         default=1,
         help="qualify only; 0 verifies a mount without holding an accelerator",
     )
+    parser.add_argument("--visibility", default="public", choices=("public", "tenant-private"))
+    parser.add_argument(
+        "--algorithm",
+        default="fs2-tree-manifest/v1",
+        choices=("fs2-tree-inventory/v2", "fs2-tree-manifest/v1"),
+        help="inventory: which identity algorithm measures the tree",
+    )
+    parser.add_argument("--source-sub-path", help="inventory: the tree's canonical sub-path in the claim")
+    parser.add_argument("--marker-prefix", default="", help="inventory: where this tool writes its marker")
+    parser.add_argument("--expect-bytes", type=int, help="inventory: fail unless the tree holds exactly this many")
+    parser.add_argument("--cross-reference", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--run-as-user", type=int, default=DEFAULT_RUNTIME_UID)
     parser.add_argument("--run-as-group", type=int, default=DEFAULT_RUNTIME_UID)
     parser.add_argument("--supplemental-group", action="append", type=int, default=[])
@@ -495,14 +782,73 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--toleration", action="append", default=[], metavar="KEY=VALUE:EFFECT")
     options = parser.parse_args(argv)
 
+    security_context_early = pod_security_context(
+        uid=options.run_as_user,
+        gid=options.run_as_group,
+        supplemental=tuple(options.supplemental_group),
+        fs_group=options.fs_group,
+    )
+    if options.mode == "inventory":
+        if not options.source_sub_path or not options.marker_prefix:
+            raise SystemExit("inventory requires --source-sub-path and --marker-prefix")
+        if "@sha256:" not in options.image:
+            raise SystemExit("--image must be an immutable digest reference")
+        json.dump(
+            {
+                "apiVersion": "v1",
+                "kind": "List",
+                "items": [
+                    verifier_config_map(options.config_map, options.namespace, options.run_id, options.contract),
+                    inventory_job(
+                        name=f"fs2-localize-inventory-{options.run_id}"[:63],
+                        namespace=options.namespace,
+                        run_id=options.run_id,
+                        artifact_id=options.artifact_id[0],
+                        image=options.image,
+                        python=options.python,
+                        config_map=options.config_map,
+                        claim=options.claim,
+                        source_sub_path=options.source_sub_path,
+                        marker_prefix=options.marker_prefix,
+                        expect_bytes=options.expect_bytes,
+                        cross_references=options.cross_reference,
+                        algorithm=options.algorithm,
+                        node_selector=dict(item.split("=", 1) for item in options.node_selector),
+                        tolerations=[],
+                        resources={
+                            "requests": {"cpu": options.cpu_request, "memory": options.memory_request},
+                            "limits": {"cpu": options.cpu_limit, "memory": options.memory_limit},
+                        },
+                        security_context=security_context_early,
+                    ),
+                ],
+            },
+            sys.stdout,
+            indent=2,
+            sort_keys=True,
+        )
+        sys.stdout.write("\n")
+        return 0
+
     document = load_contract(options.contract)
     artifacts = selected_artifacts(document, tuple(options.artifact_id))
     if options.mode == "handoff":
         json.dump(
             binding_handoff(
-                namespace=options.namespace,
-                claim=options.claim,
+                public_volume={
+                    "namespace": options.public_namespace,
+                    "claim": options.public_claim,
+                    "plane": "public-reference",
+                    "binding_state": options.public_binding_state,
+                },
+                private_volume={
+                    "namespace": options.namespace,
+                    "claim": options.claim,
+                    "plane": "tenant-private-academic",
+                    "binding_state": options.private_binding_state,
+                },
                 tree_prefix=options.tree_prefix,
+                private_tree_prefix=options.private_tree_prefix,
                 artifacts=artifacts,
             ),
             sys.stdout,

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -26,16 +27,38 @@ import pytest
 from fs2_serve.scientific_batch import ScientificAdapterError, profile_from_catalog
 from fs2_serve.scientific_batch.adapters import boltzgen, preflight_stage_trees, proteina_complexa
 from fs2_serve.scientific_batch.adapters.localization import (
+    RUNTIME_MARKER_NAME,
+    STAGING_PREFIX,
+    TREE_INVENTORY_ALGORITHM,
+    TREE_MANIFEST_ALGORITHM,
     ArtifactLocalizationError,
     LocalizationContract,
     TreeEntry,
+    count_generation,
+    generation_directory,
+    generation_marker,
+    interrupted_staging_directories,
+    link_tree_into,
+    load_generation_marker,
     load_localization_contracts,
     load_localization_contracts_from_path,
     localize_archive,
+    marker_bytes,
+    marker_sha256,
+    prepare_staging_directory,
+    promote_generation,
+    recursive_inventory_sha256,
+    scan_localized_tree,
+    scan_recursive_tree,
+    tree_counts,
     tree_inventory_sha256,
+    tree_manifest_identity,
     verify_archive,
+    verify_generation_marker,
     verify_localized_tree,
+    write_generation_marker,
 )
+from fs2_serve.scientific_batch.adapters.localization import main as localization_main
 from fs2_serve.scientific_batch.models import AdapterExecutionPlan, RuntimeTreeBinding, StageInvocation
 
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
@@ -44,6 +67,12 @@ PROFILE_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-workload-pr
 CONTRACT_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-artifact-localization.json"
 
 MOLECULES_ID = "boltzgen-inference-molecules"
+# The academic-assets plane's published identity for the installed PyRosetta
+# tree. Both planes must name these same bytes identically.
+PYROSETTA_ID = "bindcraft-pyrosetta-installed-tree"
+PYROSETTA_TREE_SHA256 = "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+PYROSETTA_FILE_COUNT = 8697
+PYROSETTA_TOTAL_BYTES = 3287122494
 BINDCRAFT_PARAMS_ID = "alphafold2-params-bindcraft"
 PARAMS_ID = "alphafold2-params"
 VANILLA_MPNN_ID = "colabdesign-mpnn-weights-vanilla"
@@ -219,7 +248,20 @@ def test_checked_in_contract_declares_both_primary_runtime_trees() -> None:
         BINDCRAFT_PARAMS_ID,
         VANILLA_MPNN_ID,
         SOLUBLE_MPNN_ID,
+        PYROSETTA_ID,
     }
+
+    # The one tree this plane verifies but never stages: another plane installed
+    # it, owns it, and already named it.
+    pyrosetta = contracts[PYROSETTA_ID]
+    assert pyrosetta.externally_installed
+    assert pyrosetta.visibility == "tenant-private"
+    assert pyrosetta.source_sub_path == "pyrosetta-bindcraft/site-packages"
+    assert pyrosetta.tree.inventory_algorithm == TREE_MANIFEST_ALGORITHM
+    assert pyrosetta.tree.inventory_sha256 == PYROSETTA_TREE_SHA256
+    assert pyrosetta.tree.entry_count == PYROSETTA_FILE_COUNT
+    assert pyrosetta.tree.directory_count == 796
+    assert pyrosetta.tree.total_bytes == PYROSETTA_TOTAL_BYTES
 
     molecules = contracts[MOLECULES_ID]
     assert molecules.tree.mount_paths == (f"/opt/fs2/artifacts/{MOLECULES_ID}",)
@@ -1223,3 +1265,656 @@ def test_the_delivered_verifier_imports_nothing_outside_the_standard_library() -
                 for alias in node.names:
                     root = alias.name.split(".")[0]
                     assert root in sys.stdlib_module_names, f"{name} imports {alias.name}"
+
+
+# ---------------------------------------------------------------------------
+# Immutable generations
+# ---------------------------------------------------------------------------
+
+
+def _marker(**overrides: Any) -> dict[str, Any]:
+    arguments: dict[str, Any] = {
+        "artifact_id": MOLECULES_ID,
+        "generation": "c" * 64,
+        "entry_count": 1,
+        "total_bytes": 1,
+        "inventory_algorithm": TREE_INVENTORY_ALGORITHM,
+        "sub_path": "scientific-localization/public/x/sha256/" + "c" * 64,
+        "namespace": "fs2-academic-poc",
+        "claim": "academic-assets-runtime-rwx",
+        "visibility": "public",
+    }
+    arguments.update(overrides)
+    return generation_marker(**arguments)
+
+
+def _promoted(tmp_path: Path, entries: Mapping[str, bytes]) -> tuple[Path, Path, str]:
+    staged = _materialize(tmp_path / "staged", entries)
+    generation = _inventory(entries)
+    root = tmp_path / "boltzgen-inference-molecules"
+    return root, promote_generation(staged, root, generation), generation
+
+
+def test_a_generation_is_published_under_its_own_digest(tmp_path: Path) -> None:
+    root, published, generation = _promoted(tmp_path, SYNTHETIC_ENTRIES)
+    # The algorithm is a path segment, so a future digest lands beside this one.
+    assert published == root / "sha256" / generation
+    assert published == generation_directory(root, generation)
+    assert sorted(item.name for item in published.iterdir()) == sorted(SYNTHETIC_ENTRIES)
+
+
+def test_a_promoted_generation_cannot_be_written_or_deleted(tmp_path: Path) -> None:
+    _root, published, _generation = _promoted(tmp_path, SYNTHETIC_ENTRIES)
+    assert not os.access(published, os.W_OK)
+    with pytest.raises(PermissionError):
+        (published / "HEM.pkl").write_bytes(b"tampered")
+    with pytest.raises(PermissionError):
+        (published / "new.pkl").write_bytes(b"added")
+
+
+def test_different_bytes_are_a_different_generation_not_an_overwrite(tmp_path: Path) -> None:
+    root, published, _generation = _promoted(tmp_path, SYNTHETIC_ENTRIES)
+    changed = {**SYNTHETIC_ENTRIES, "ZN.pkl": b"an extra molecule"}
+    other = promote_generation(_materialize(tmp_path / "other", changed), root, _inventory(changed))
+    assert other != published
+    assert published.is_dir() and other.is_dir()
+
+
+def test_promoting_the_same_generation_twice_keeps_the_first_bytes(tmp_path: Path) -> None:
+    """Restaging must never destroy bytes another workload is already mounting."""
+
+    root, published, generation = _promoted(tmp_path, SYNTHETIC_ENTRIES)
+    before = {item.name: item.read_bytes() for item in published.iterdir()}
+    again = promote_generation(_materialize(tmp_path / "again", SYNTHETIC_ENTRIES), root, generation)
+    assert again == published
+    assert {item.name: item.read_bytes() for item in published.iterdir()} == before
+
+
+def test_a_generation_must_be_named_by_a_digest(tmp_path: Path) -> None:
+    with pytest.raises(ArtifactLocalizationError, match="lowercase SHA-256"):
+        promote_generation(_materialize(tmp_path / "staged", SYNTHETIC_ENTRIES), tmp_path / "root", "latest")
+
+
+def test_an_interrupted_staging_directory_is_reclaimed_and_never_published(tmp_path: Path) -> None:
+    """A crashed run leaves a temporary directory, never a partial final tree."""
+
+    root = tmp_path / "artifact"
+    wreckage = prepare_staging_directory(root)
+    (wreckage / "half-written.pkl").write_bytes(b"partial")
+    os.utime(wreckage, (0, 0))  # as old as an abandoned run
+    assert interrupted_staging_directories(root, older_than_seconds=3600) == [wreckage]
+
+    fresh = prepare_staging_directory(root)
+    assert not wreckage.exists(), "an abandoned staging directory must be reclaimed"
+    assert fresh.exists() and fresh.name.startswith(STAGING_PREFIX)
+    # Nothing partial was ever published: only staging directories exist.
+    assert not (root / "sha256").exists()
+
+
+def test_a_live_staging_directory_is_not_reclaimed_by_a_concurrent_run(tmp_path: Path) -> None:
+    """Age is the discriminator, because a peer's temporary directory is in use."""
+
+    root = tmp_path / "artifact"
+    active = prepare_staging_directory(root)
+    assert interrupted_staging_directories(root, older_than_seconds=3600) == []
+    prepare_staging_directory(root)
+    assert active.exists()
+
+
+def test_a_marker_admits_only_the_generation_it_describes(tmp_path: Path) -> None:
+    generation = _inventory(SYNTHETIC_ENTRIES)
+    sub_path = f"scientific-localization/public/{MOLECULES_ID}/sha256/{generation}"
+    document = _marker(
+        generation=generation,
+        entry_count=len(SYNTHETIC_ENTRIES),
+        total_bytes=sum(map(len, SYNTHETIC_ENTRIES.values())),
+        sub_path=sub_path,
+    )
+    path = tmp_path / "marker.json"
+    assert write_generation_marker(path, document) == marker_sha256(document)
+    marker = load_generation_marker(path)
+    identity = verify_generation_marker(
+        marker, artifact_id=MOLECULES_ID, expected_generation=generation, expected_sub_path=sub_path
+    )
+    assert identity["entry_count"] == len(SYNTHETIC_ENTRIES)
+
+    for kwargs, message in (
+        ({"artifact_id": "somebody-else"}, "different artifact"),
+        ({"expected_generation": "b" * 64}, "does not describe"),
+        ({"expected_sub_path": "somewhere/else"}, "sub-path does not match"),
+    ):
+        arguments = {
+            "artifact_id": MOLECULES_ID,
+            "expected_generation": generation,
+            "expected_sub_path": sub_path,
+            **kwargs,
+        }
+        with pytest.raises(ArtifactLocalizationError, match=message):
+            verify_generation_marker(marker, **arguments)
+
+
+def test_a_marker_carries_no_timestamp_or_host_identity(tmp_path: Path) -> None:
+    """Two promotions of one tree must produce byte-identical markers.
+
+    A marker names an immutable generation, so a handoff can pin its digest.
+    Anything that varies by when or where it ran would break that pin and make
+    re-promotion silently change identity.
+    """
+
+    first = marker_bytes(_marker())
+    second = marker_bytes(_marker())
+    assert first == second
+    rendered = first.decode()
+    for leak in ("observed_at", "timestamp", "duration", "node", "hostname", "run_id", "2026"):
+        assert leak not in rendered, f"a marker must not carry {leak}"
+
+
+def test_a_marker_that_does_not_assert_a_read_only_mount_is_rejected() -> None:
+    mutable = json.loads(json.dumps(_marker()))
+    mutable["read_only"] = False
+    with pytest.raises(ArtifactLocalizationError, match="read-only"):
+        verify_generation_marker(
+            mutable,
+            artifact_id=MOLECULES_ID,
+            expected_generation="c" * 64,
+            expected_sub_path=mutable["sub_path"],
+        )
+
+
+def test_the_marker_is_one_flat_document_a_byte_hashing_consumer_can_read() -> None:
+    """One shared terminal contract, not two documents that share a filename.
+
+    A companion gate reads flat fields and pins the exact bytes, so a nested
+    identity object here would mean two incompatible readings of one file.
+    """
+
+    document = _marker()
+    assert all(not isinstance(value, dict) for value in document.values()), "the marker is flat"
+    for field in (
+        "schema",
+        "artifact_id",
+        "artifact_kind",
+        "generation",
+        "inventory_algorithm",
+        "inventory_sha256",
+        "entry_count",
+        "directory_count",
+        "total_bytes",
+        "namespace",
+        "claim",
+        "sub_path",
+        "visibility",
+        "read_only",
+        "generator_identity",
+        "consumer_paths",
+    ):
+        assert field in document, field
+    # The digest a consumer pins is the SHA-256 of exactly these bytes.
+    assert marker_sha256(document) == hashlib.sha256(marker_bytes(document)).hexdigest()
+    assert marker_bytes(document) == (json.dumps(document, indent=2, sort_keys=True) + "\n").encode()
+
+
+def test_a_marker_is_written_once_and_never_rewritten(tmp_path: Path) -> None:
+    path = tmp_path / "markers" / "artifact.json"
+    write_generation_marker(path, _marker())
+    assert sorted(item.name for item in path.parent.iterdir()) == ["artifact.json"]
+    # Re-promoting the identical tree is a no-op, not a rewrite.
+    write_generation_marker(path, _marker())
+    with pytest.raises(ArtifactLocalizationError, match="immutable"):
+        write_generation_marker(path, _marker(entry_count=99))
+
+
+def test_the_marker_travels_inside_the_generation_and_leaves_its_digest_alone(tmp_path: Path) -> None:
+    """A consumer that mounts only the generation must still be able to admit it.
+
+    The marker is written before the rename that publishes the tree, so the two
+    are sealed together, and the reserved name is excluded from the inventory so
+    adding it cannot move a published digest.
+    """
+
+    staged = _materialize(tmp_path / "staged", SYNTHETIC_ENTRIES)
+    generation = _inventory(SYNTHETIC_ENTRIES)
+    write_generation_marker(staged / RUNTIME_MARKER_NAME, _marker(generation=generation))
+    published = promote_generation(staged, tmp_path / "artifact", generation)
+
+    assert (published / RUNTIME_MARKER_NAME).is_file()
+    entries = scan_localized_tree(published, maximum_entries=100, maximum_bytes=1 << 20)
+    assert tree_inventory_sha256(entries) == generation, "the marker must not move the tree digest"
+    assert RUNTIME_MARKER_NAME not in {entry.path for entry in entries}
+
+
+def test_a_recursive_inventory_carries_directories_so_structure_is_identity(tmp_path: Path) -> None:
+    """An installed package tree depends on its directories, empty ones included."""
+
+    root = tmp_path / "site-packages"
+    (root / "pyrosetta" / "database").mkdir(parents=True)
+    (root / "pyrosetta" / "__init__.py").write_bytes(b"package marker\n")
+    (root / "pyrosetta" / "database" / "residues.txt").write_bytes(b"residue table" * 8)
+    (root / "top.txt").write_bytes(b"top level")
+
+    entries = scan_recursive_tree(root, maximum_entries=1000, maximum_bytes=1 << 20)
+    assert [(entry.kind, entry.path) for entry in entries] == [
+        ("directory", "pyrosetta"),
+        ("file", "pyrosetta/__init__.py"),
+        ("directory", "pyrosetta/database"),
+        ("file", "pyrosetta/database/residues.txt"),
+        ("file", "top.txt"),
+    ]
+    files, directories, total = tree_counts(entries)
+    assert (files, directories) == (3, 2)
+    assert total == len(b"package marker\n") + len(b"residue table" * 8) + len(b"top level")
+    before = recursive_inventory_sha256(entries)
+
+    # An added empty directory is a different tree, and v1 cannot say so at all.
+    (root / "pyrosetta" / "protocols").mkdir()
+    after = recursive_inventory_sha256(scan_recursive_tree(root, maximum_entries=1000, maximum_bytes=1 << 20))
+    assert after != before
+    with pytest.raises(ArtifactLocalizationError, match="files only"):
+        tree_inventory_sha256(scan_recursive_tree(root, maximum_entries=1000, maximum_bytes=1 << 20))
+
+
+def test_a_flat_scan_refuses_the_nested_tree_a_recursive_scan_accepts(tmp_path: Path) -> None:
+    root = tmp_path / "site-packages"
+    (root / "pyrosetta").mkdir(parents=True)
+    (root / "pyrosetta" / "__init__.py").write_bytes(b"code")
+    with pytest.raises(ArtifactLocalizationError, match="flat"):
+        scan_localized_tree(root, maximum_entries=1000, maximum_bytes=1 << 20)
+
+
+def test_a_symlink_or_unsafe_name_in_a_recursive_tree_is_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "site-packages"
+    (root / "pkg").mkdir(parents=True)
+    (root / "pkg" / "real.py").write_bytes(b"code")
+    os.symlink(tmp_path / "outside.py", root / "pkg" / "link.py")
+    with pytest.raises(ArtifactLocalizationError, match="symbolic link"):
+        scan_recursive_tree(root, maximum_entries=1000, maximum_bytes=1 << 20)
+
+    (root / "pkg" / "link.py").unlink()
+    # A forged marker below the root is an unsafe name, never a skipped entry.
+    (root / "pkg" / RUNTIME_MARKER_NAME).write_bytes(b"{}")
+    with pytest.raises(ArtifactLocalizationError, match="unsafe entry name"):
+        scan_recursive_tree(root, maximum_entries=1000, maximum_bytes=1 << 20)
+
+
+def test_counting_a_generation_matches_the_recursive_scan_without_reading_bytes(tmp_path: Path) -> None:
+    root = tmp_path / "tree"
+    (root / "a" / "b").mkdir(parents=True)
+    (root / "a" / "one.txt").write_bytes(b"one")
+    (root / "a" / "b" / "two.txt").write_bytes(b"two")
+    (root / "three.txt").write_bytes(b"three")
+    (root / RUNTIME_MARKER_NAME).write_bytes(b"{}")
+
+    entries = scan_recursive_tree(root, maximum_entries=100, maximum_bytes=1 << 20)
+    files, directories, _total = tree_counts(entries)
+    assert count_generation(root, maximum_entries=100) == (files, directories) == (3, 2)
+
+
+def test_a_mount_that_is_not_the_generation_the_marker_describes_is_refused(tmp_path: Path) -> None:
+    """The recursive count is what catches a swapped tree of the same shape."""
+
+    generation = _inventory(SYNTHETIC_ENTRIES)
+    sub_path = f"scientific-localization/public/{MOLECULES_ID}/sha256/{generation}"
+    staged = _materialize(tmp_path / "staged", SYNTHETIC_ENTRIES)
+    document = _marker(
+        generation=generation,
+        entry_count=len(SYNTHETIC_ENTRIES),
+        total_bytes=sum(map(len, SYNTHETIC_ENTRIES.values())),
+        sub_path=sub_path,
+    )
+    write_generation_marker(staged / RUNTIME_MARKER_NAME, document)
+    published = promote_generation(staged, tmp_path / "artifact", generation)
+
+    argv = [
+        "marker",
+        "--artifact-id",
+        MOLECULES_ID,
+        "--mount",
+        str(published),
+        "--expect-generation",
+        generation,
+        "--sub-path",
+        sub_path,
+    ]
+    assert localization_main(argv) == 0
+
+    # A tree with a different shape, carrying the same marker, is refused.
+    short = _materialize(tmp_path / "short", {"HEM.pkl": SYNTHETIC_ENTRIES["HEM.pkl"]})
+    write_generation_marker(short / RUNTIME_MARKER_NAME, document)
+    assert (
+        localization_main(
+            [
+                "marker",
+                "--artifact-id",
+                MOLECULES_ID,
+                "--mount",
+                str(short),
+                "--expect-generation",
+                generation,
+                "--sub-path",
+                sub_path,
+            ]
+        )
+        == 1
+    )
+
+
+def _academic_producer() -> Any:
+    """Load the academic-assets plane's own tree_manifest implementation."""
+
+    path = Path(__file__).resolve().parents[3] / "academic-assets/scripts/install_tree.py"
+    spec = importlib.util.spec_from_file_location("fs2_academic_install_tree", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_installed_tree_identity_matches_the_academic_assets_producer(tmp_path: Path) -> None:
+    """PyRosetta already has an identity; this must reproduce it, not replace it.
+
+    The academic-assets plane names its installed trees per file by SHA-256 and
+    per symlink by target. Measuring the same bytes under a different algorithm
+    would publish a second, weaker name for a tree that already has one, so the
+    two implementations are held together here on a tree that exercises exactly
+    the cases they disagree about: nested files, an empty directory, and a
+    symlink.
+    """
+
+    producer = _academic_producer()
+    root = tmp_path / "site-packages"
+    (root / "pyrosetta" / "database").mkdir(parents=True)
+    (root / "pyrosetta" / "empty").mkdir()
+    (root / "pyrosetta" / "__init__.py").write_bytes(b"package marker\n")
+    (root / "pyrosetta" / "database" / "residues.txt").write_bytes(b"residue table" * 8)
+    (root / "top.txt").write_bytes(b"top level")
+    os.symlink("pyrosetta/__init__.py", root / "alias.py")
+
+    expected = producer.tree_manifest(root)
+    observed = tree_manifest_identity(root)
+    assert observed.algorithm == expected["tree_manifest_algorithm"] == TREE_MANIFEST_ALGORITHM
+    assert observed.sha256 == expected["tree_manifest_sha256"]
+    assert observed.total_bytes == expected["tree_total_bytes"]
+    assert observed.file_count == expected["file_count"]
+    assert observed.symlink_count == expected["symlink_count"] == 1
+
+    # The generic recursive algorithm is a genuinely different identity, and it
+    # refuses this tree outright because of the symlink. That is precisely why
+    # the marker has to name which algorithm produced its digest.
+    with pytest.raises(ArtifactLocalizationError, match="symbolic link"):
+        scan_recursive_tree(root, maximum_entries=1000, maximum_bytes=1 << 20)
+
+
+def test_the_published_pyrosetta_identity_is_pinned_to_the_academic_record() -> None:
+    """The one identity both planes must agree on, pinned as an interface."""
+
+    state = json.loads(
+        (Path(__file__).resolve().parents[3] / "academic-assets/evidence/live-acceptance-state.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    installed = state["semantic_evidence"]["installed_tree"]
+    assert installed["tree_manifest_algorithm"] == TREE_MANIFEST_ALGORITHM
+    assert installed["tree_manifest_sha256"] == PYROSETTA_TREE_SHA256
+    assert installed["files_installed"] == PYROSETTA_FILE_COUNT
+    assert installed["tree_total_bytes"] == PYROSETTA_TOTAL_BYTES
+
+
+# ---------------------------------------------------------------------------
+# Rendered workloads must run the CLI they render
+# ---------------------------------------------------------------------------
+
+
+def _renderer() -> Any:
+    path = (
+        Path(__file__).resolve().parents[3]
+        / "models/cancer-immunotherapy/artifact-localization/render_localization_jobs.py"
+    )
+    spec = importlib.util.spec_from_file_location("fs2_render_localization_jobs", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _localize_argv(job: dict[str, Any], container: str) -> list[str]:
+    """The argv one rendered container actually executes."""
+
+    spec = job["spec"]["template"]["spec"]
+    for item in (*spec.get("initContainers", []), *spec["containers"]):
+        if item["name"].startswith(container):
+            command = item["command"]
+            # Drop the interpreter and -m module selector.
+            return [part for part in command[3:]]
+    raise AssertionError(f"no {container} container in the rendered job")
+
+
+def test_render_stage_and_qualify_round_trip_on_the_argv_they_render(tmp_path: Path) -> None:
+    """The rendered Jobs must run against the parser this module actually has.
+
+    A renderer that emits an option the CLI does not accept fails only in the
+    cluster, after an image pull and a volume mount, which is the most expensive
+    possible place to discover a typo. This runs the rendered argv here.
+    """
+
+    renderer = _renderer()
+    entries = SYNTHETIC_ENTRIES
+    payload = _zip_bytes(sorted(entries.items()))
+    artifact = _document(payload, entries)
+    contract_path = tmp_path / "localization-contract.json"
+    contract_path.write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/scientific-artifact-localization/v1",
+                "generated_at": "2026-09-03T00:00:00Z",
+                "artifacts": [artifact],
+            }
+        ),
+        encoding="utf-8",
+    )
+    archive = tmp_path / "mols.zip"
+    archive.write_bytes(payload)
+
+    generation = artifact["tree"]["inventory_sha256"]
+    prefix = "scientific-localization/public"
+    sub_path = renderer.generation_sub_path(prefix, MOLECULES_ID, generation)
+    trees = tmp_path / "trees"
+    trees.mkdir()
+
+    def localize(argv: list[str]) -> int:
+        rewritten = [
+            part.replace(renderer.CONTRACT_MOUNT, str(contract_path)).replace(renderer.TREE_ROOT, str(trees))
+            for part in argv
+        ]
+        return localization_main(rewritten)
+
+    stage = renderer.stage_job(
+        name="stage",
+        namespace="fs2-academic-poc",
+        run_id="r",
+        artifacts=[artifact],
+        image="registry.invalid/x@sha256:" + "0" * 64,
+        python="/usr/bin/python3",
+        config_map="c",
+        claim="academic-assets-runtime-rwx",
+        node_selector={},
+        tolerations=[],
+        resources={},
+        security_context={},
+        tree_prefix=prefix,
+    )
+    # The rendered init container creates the receipt directory on the claim.
+    init = stage["spec"]["template"]["spec"]["initContainers"][0]["command"][-1]
+    assert renderer.RECEIPT_DIR in init
+    (trees / ".receipts").mkdir()
+
+    argv = _localize_argv(stage, "stage-")
+    # The archive is already local here; the rendered job fetches it instead.
+    fetch = argv.index("--fetch-archive-to")
+    argv[fetch : fetch + 2] = ["--archive", str(archive)]
+    assert localize(argv) == 0, "the rendered stage argv must run against this CLI"
+
+    published = trees / "generations" / MOLECULES_ID / "sha256" / generation
+    assert published.is_dir(), f"the rendered stage must publish {published}"
+    assert str(published).endswith(sub_path.split(prefix, 1)[1].lstrip("/"))
+    marker = json.loads((published / RUNTIME_MARKER_NAME).read_text(encoding="utf-8"))
+    assert marker["sub_path"] == sub_path
+    assert marker["generation"] == generation
+    # Nothing partial and no external marker directory was left behind.
+    assert [item.name for item in (trees / "generations" / MOLECULES_ID).iterdir()] == ["sha256"]
+    assert not (trees / "markers").exists()
+
+    qualify = renderer.qualify_job(
+        name="qualify",
+        namespace="fs2-academic-poc",
+        run_id="r",
+        model_id="boltzgen",
+        artifacts=[artifact],
+        image="registry.invalid/x@sha256:" + "0" * 64,
+        python="/usr/bin/python3",
+        config_map="c",
+        claim="academic-assets-runtime-rwx",
+        queue="inference-models",
+        probe=[],
+        node_selector={},
+        tolerations=[],
+        gpu_resource="nvidia.com/gpu",
+        gpu_count=0,
+        security_context={},
+        resources={},
+        tree_prefix=prefix,
+    )
+    verify_argv = _localize_argv(qualify, f"verify-{MOLECULES_ID}"[:63])
+    # The qualification mounts the generation at the consumer path.
+    resolved = [part.replace(artifact["tree"]["mount_paths"][0], str(published)) for part in verify_argv]
+    assert localization_main(resolved) == 0, "the rendered qualification argv must admit the generation"
+
+    # And it refuses a mount that is not that generation.
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / RUNTIME_MARKER_NAME).write_bytes((published / RUNTIME_MARKER_NAME).read_bytes())
+    assert localization_main([part.replace(str(published), str(other)) for part in resolved]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Promoting a tree that already exists
+# ---------------------------------------------------------------------------
+
+
+def _installed_tree(root: Path) -> Path:
+    (root / "pkg" / "data").mkdir(parents=True)
+    (root / "pkg" / "__init__.py").write_bytes(b"code\n")
+    (root / "pkg" / "data" / "big.bin").write_bytes(b"x" * 100_000)
+    os.symlink("pkg/__init__.py", root / "alias.py")
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and not path.is_symlink():
+            os.chmod(path, 0o440)
+    return root
+
+
+def test_promoting_an_installed_tree_shares_its_bytes_instead_of_copying_them(tmp_path: Path) -> None:
+    """The academic claim has gigabytes of headroom, not tens of them.
+
+    A licensed tree still needs an immutable content-addressed name, but making
+    that name must not cost a second full copy of the tree. Hard links give the
+    generation its own path into the same data.
+    """
+
+    source = _installed_tree(tmp_path / "producer")
+    before = tree_manifest_identity(source)
+    staging = prepare_staging_directory(tmp_path / "artifact")
+    linked = link_tree_into(source, staging)
+
+    assert linked.files_copied == 0 and linked.bytes_copied == 0
+    assert linked.files_linked == 2 and linked.bytes_linked == before.total_bytes
+    assert linked.symlinks == 1
+    shared = staging / "pkg" / "data" / "big.bin"
+    assert shared.stat().st_ino == (source / "pkg" / "data" / "big.bin").stat().st_ino
+    # Same bytes, so the producing plane's identity is reproduced exactly.
+    assert tree_manifest_identity(staging).sha256 == before.sha256
+
+
+def test_promotion_seals_a_marker_without_moving_the_producer_identity(tmp_path: Path) -> None:
+    source = _installed_tree(tmp_path / "producer")
+    before = tree_manifest_identity(source)
+    root = tmp_path / "artifact"
+    staging = prepare_staging_directory(root)
+    link_tree_into(source, staging)
+    write_generation_marker(
+        staging / RUNTIME_MARKER_NAME,
+        _marker(generation=before.sha256, inventory_algorithm=TREE_MANIFEST_ALGORITHM),
+    )
+    published = promote_generation(staging, root, before.sha256)
+
+    assert published == root / "sha256" / before.sha256
+    assert (published / RUNTIME_MARKER_NAME).is_file()
+    # Sealing the marker inside must not move the digest the producer published.
+    assert tree_manifest_identity(published).sha256 == before.sha256
+    # And the producing plane's own files are untouched, mode bits included.
+    assert (source / "pkg" / "data" / "big.bin").stat().st_mode & 0o777 == 0o440
+    assert (source / RUNTIME_MARKER_NAME).exists() is False
+
+
+def _tree_state(root: Path) -> dict[str, tuple[int, int, bytes | str]]:
+    """Mode, mtime and content of every entry, for proving nothing moved."""
+
+    state: dict[str, tuple[int, int, bytes | str]] = {}
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix()
+        status = path.lstat()
+        content: bytes | str = (
+            os.readlink(path) if path.is_symlink() else (path.read_bytes() if path.is_file() else b"")
+        )
+        state[relative] = (status.st_mode, status.st_mtime_ns, content)
+    return state
+
+
+def test_a_writable_source_entry_is_never_shared_by_link(tmp_path: Path) -> None:
+    """A hard link follows the inode, so a writable source could change both."""
+
+    source = _installed_tree(tmp_path / "producer")
+    os.chmod(source / "pkg" / "__init__.py", 0o640)
+    before = _tree_state(source)
+
+    with pytest.raises(ArtifactLocalizationError, match="writable"):
+        link_tree_into(source, prepare_staging_directory(tmp_path / "artifact"))
+
+    # Failing closed means the producing tree is exactly as it was: no mode
+    # rewritten, no content touched, no mtime moved.
+    assert _tree_state(source) == before
+
+
+def test_sealing_refuses_to_reach_through_a_shared_writable_inode(tmp_path: Path) -> None:
+    """The invariant is enforced where the chmod happens, not only upstream.
+
+    link_tree_into already refuses a writable source, but promotion must not
+    depend on a distant guard: chmod follows the inode, so a shared writable file
+    reaching this point has to fail rather than rewrite the tree it came from.
+    """
+
+    source = _installed_tree(tmp_path / "producer")
+    root = tmp_path / "artifact"
+    staging = prepare_staging_directory(root)
+    # Link by hand, bypassing the guard, to reach the sealing step directly.
+    (staging / "pkg").mkdir(parents=True)
+    os.link(source / "pkg" / "__init__.py", staging / "pkg" / "__init__.py")
+    os.chmod(staging / "pkg" / "__init__.py", 0o640)
+    before = _tree_state(source)
+
+    with pytest.raises(ArtifactLocalizationError, match="shared by hard link"):
+        promote_generation(staging, root, "d" * 64)
+
+    assert _tree_state(source) == before
+    assert not (root / "sha256" / ("d" * 64)).exists()
+
+
+def test_a_promoted_symlink_keeps_the_target_the_producer_identity_records(tmp_path: Path) -> None:
+    """fs2-tree-manifest/v1 identifies a symlink by its target, so it must survive."""
+
+    source = _installed_tree(tmp_path / "producer")
+    staging = prepare_staging_directory(tmp_path / "artifact")
+    link_tree_into(source, staging)
+
+    assert (staging / "alias.py").is_symlink()
+    assert os.readlink(staging / "alias.py") == os.readlink(source / "alias.py") == "pkg/__init__.py"
+    assert tree_manifest_identity(staging).symlink_count == 1
+    assert tree_manifest_identity(staging).sha256 == tree_manifest_identity(source).sha256
