@@ -26,23 +26,11 @@ _MAX_ARCHIVE_FILES = 4096
 _MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
 _MAX_RUNTIME_MARKER_BYTES = 64 * 1024
 RUNTIME_LOCALIZATION_SCHEMA = "fs2-serve.nebius.ai/runtime-localization-marker/v1"
+RUNTIME_TREE_IDENTITY_SCHEMA = "fs2-serve.nebius.ai/runtime-tree-identity/v1"
+RUNTIME_TREE_IDENTITY_FILE = ".fs2-runtime-tree.json"
 
 
-def _contained(path: Path, *, root: Path | None = None) -> Path:
-    root = _ROOT if root is None else root
-    resolved_root = root.resolve(strict=True)
-    resolved = path.resolve(strict=False)
-    if resolved == resolved_root or resolved_root not in resolved.parents:
-        raise ValueError("scientific companion path escapes its workspace")
-    return resolved
-
-
-def prepare_workspace(workspace: Path, *, runtime_localization_json: str) -> None:
-    """Create the invocation directory and its trusted runtime receipt marker."""
-
-    target = _contained(workspace)
-    target.mkdir(parents=True, exist_ok=False)
-    target.chmod(0o700)
+def _runtime_marker(runtime_localization_json: str) -> dict[str, Any]:
     encoded = runtime_localization_json.encode()
     if len(encoded) > _MAX_RUNTIME_MARKER_BYTES:
         raise ValueError("runtime localization marker exceeds the bound")
@@ -65,8 +53,46 @@ def prepare_workspace(workspace: Path, *, runtime_localization_json: str) -> Non
             "artifacts",
         }
         or not isinstance(marker.get("artifacts"), list)
+        or len(marker["artifacts"]) > 64
     ):
         raise ValueError("runtime localization marker fields differ")
+    for artifact in marker["artifacts"]:
+        if not isinstance(artifact, dict) or set(artifact) != {
+            "artifact_id",
+            "mount_path",
+            "content_digest",
+            "artifact_manifest_sha256",
+            "localization_receipt_digest",
+            "sub_path",
+            "readiness_receipt_sha256",
+            "authorization_receipt_sha256",
+            "files",
+            "aggregate_tree",
+        }:
+            raise ValueError("runtime localization artifact fields differ")
+        if not isinstance(artifact["files"], list) or len(artifact["files"]) > 4096:
+            raise ValueError("runtime localization file evidence is not bounded")
+        if bool(artifact["files"]) == (artifact["aggregate_tree"] is not None):
+            raise ValueError("runtime localization requires one bounded identity mode")
+    return cast(dict[str, Any], marker)
+
+
+def _contained(path: Path, *, root: Path | None = None) -> Path:
+    root = _ROOT if root is None else root
+    resolved_root = root.resolve(strict=True)
+    resolved = path.resolve(strict=False)
+    if resolved == resolved_root or resolved_root not in resolved.parents:
+        raise ValueError("scientific companion path escapes its workspace")
+    return resolved
+
+
+def prepare_workspace(workspace: Path, *, runtime_localization_json: str) -> None:
+    """Create the invocation directory and its trusted runtime receipt marker."""
+
+    target = _contained(workspace)
+    target.mkdir(parents=True, exist_ok=False)
+    target.chmod(0o700)
+    marker = _runtime_marker(runtime_localization_json)
     canonical = json.dumps(marker, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     marker_directory = target / ".fs2"
     marker_directory.mkdir(mode=0o700)
@@ -87,6 +113,86 @@ def prepare_workspace(workspace: Path, *, runtime_localization_json: str) -> Non
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+def verify_runtime_artifacts(*, runtime_localization_json: str) -> None:
+    """Verify every mounted localization before a schedulable model container starts.
+
+    Small artifacts are checked byte-for-byte. Large immutable trees use a
+    bounded identity sidecar produced by the trusted localizer; this avoids
+    re-hashing multi-gigabyte model trees on every attempt while still proving
+    that the content-addressed/published mount selected by the frozen execution
+    map is the tree the localizer attested.
+    """
+
+    marker = _runtime_marker(runtime_localization_json)
+    for raw_artifact in marker["artifacts"]:
+        artifact = cast(dict[str, Any], raw_artifact)
+        mount = Path(cast(str, artifact["mount_path"]))
+        if not mount.is_absolute() or mount.is_symlink() or not mount.exists():
+            raise ValueError("runtime artifact mount is absent or unsafe")
+        raw_tree = artifact["aggregate_tree"]
+        if raw_tree is not None:
+            if (
+                not mount.is_dir()
+                or not isinstance(raw_tree, dict)
+                or set(raw_tree)
+                != {
+                    "tree_digest",
+                    "manifest_digest",
+                    "manifest_algorithm",
+                    "file_count",
+                    "expanded_bytes",
+                    "canonical_path",
+                }
+            ):
+                raise ValueError("runtime aggregate-tree evidence differs")
+            sidecar = mount / RUNTIME_TREE_IDENTITY_FILE
+            if sidecar.is_symlink() or not sidecar.is_file():
+                raise ValueError("runtime aggregate tree has no trusted identity sidecar")
+            sidecar_bytes = sidecar.read_bytes()
+            if len(sidecar_bytes) > _MAX_RUNTIME_MARKER_BYTES:
+                raise ValueError("runtime aggregate-tree identity exceeds the bound")
+            if f"sha256:{hashlib.sha256(sidecar_bytes).hexdigest()}" != raw_tree["manifest_digest"]:
+                raise ValueError("runtime aggregate-tree identity digest differs")
+            try:
+                identity = json.loads(sidecar_bytes)
+            except (UnicodeError, ValueError) as error:
+                raise ValueError("runtime aggregate-tree identity is invalid") from error
+            expected = {
+                "schema": RUNTIME_TREE_IDENTITY_SCHEMA,
+                "manifest_algorithm": raw_tree["manifest_algorithm"],
+                "tree_digest": raw_tree["tree_digest"],
+                "file_count": raw_tree["file_count"],
+                "expanded_bytes": raw_tree["expanded_bytes"],
+                "canonical_path": raw_tree["canonical_path"],
+            }
+            if identity != expected or artifact["content_digest"] != raw_tree["tree_digest"]:
+                raise ValueError("runtime aggregate-tree identity content differs")
+            continue
+
+        files = cast(list[dict[str, Any]], artifact["files"])
+        targets: tuple[tuple[Path, dict[str, Any]], ...]
+        if mount.is_file():
+            if len(files) != 1:
+                raise ValueError("runtime file mount has an ambiguous manifest")
+            targets = ((mount, files[0]),)
+        elif mount.is_dir():
+            targets = tuple((mount.joinpath(*_safe_relative(item["path"]).parts), item) for item in files)
+        else:
+            raise ValueError("runtime artifact mount is not a regular file or directory")
+        for target, expected in targets:
+            if target.is_symlink() or not target.is_file():
+                raise ValueError("runtime artifact file is absent or unsafe")
+            size = target.stat().st_size
+            if size != expected["size_bytes"]:
+                raise ValueError("runtime artifact file size differs")
+            digest = hashlib.sha256()
+            with target.open("rb") as source:
+                while chunk := source.read(1024 * 1024):
+                    digest.update(chunk)
+            if f"sha256:{digest.hexdigest()}" != expected["digest"]:
+                raise ValueError("runtime artifact file digest differs")
 
 
 def _safe_relative(value: str) -> PurePosixPath:
@@ -319,6 +425,7 @@ def _invocation(value: str) -> StageInvocation:
             sub_path=item["sub_path"],
             read_only=item["read_only"],
             expected_content_sha256=item["expected_content_sha256"],
+            expected_manifest_sha256=item["expected_manifest_sha256"],
             authorization_receipt_sha256=item["authorization_receipt_sha256"],
             readiness_receipt_sha256=item["readiness_receipt_sha256"],
             supplemental_groups=tuple(item["supplemental_groups"]),

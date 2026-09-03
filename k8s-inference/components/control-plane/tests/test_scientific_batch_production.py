@@ -84,7 +84,9 @@ from fs2_serve.scientific_batch.models import (
     ScientificInputArtifact,
     ScientificStagePlan,
     ServiceClass,
+    StageExecutionBinding,
     StageInvocation,
+    StageVolumeBinding,
     VerifiedInputManifest,
     WorkloadKind,
     WorkloadObservation,
@@ -177,6 +179,7 @@ def scheduling() -> SchedulingContractResolver:
     return SchedulingContractResolver(
         {
             "schema": "fs2-serve.nebius.ai/kueue-scheduling/v1",
+            "pool_node_label_key": "accelerator.fs2.nebius/pool-id",
             "service_classes": {
                 "customer-batch": {
                     "workload_priority_class": "standard",
@@ -218,8 +221,10 @@ def scheduling() -> SchedulingContractResolver:
                     "cluster_queue": "inference",
                     "model_ids": [],
                     "tenant_ids": [],
+                    "service_classes": [],
                 }
             },
+            "cpu_classes": {},
             "pools": {
                 "h100-hot": {
                     "resource_flavor": "h100-hot-flavor",
@@ -258,6 +263,7 @@ def scheduling_with_academic_route(*, shadow: bool = False) -> dict[str, object]
         "cluster_queue": cluster_queue,
         "model_ids": ["alphafold3", "bindcraft"],
         "tenant_ids": [ACADEMIC_TENANT_ID],
+        "service_classes": ["customer-batch"],
     }
     if shadow:
         contract["local_queues"]["academic-shadow"] = {
@@ -269,6 +275,7 @@ def scheduling_with_academic_route(*, shadow: bool = False) -> dict[str, object]
             "cluster_queue": cluster_queue,
             "model_ids": ["alphafold3"],
             "tenant_ids": [ACADEMIC_TENANT_ID],
+            "service_classes": ["customer-batch"],
         }
     return contract
 
@@ -332,8 +339,40 @@ class FakeExecutionBinding:
 
     def bind_runtime_artifacts(self, profile, execution_plan, access_context, localizations):
         del profile, access_context, localizations
-        execution_plan.assert_controller_bound()
-        return execution_plan
+        bound = replace(
+            execution_plan,
+            execution_map_sha256="sha256:" + "9" * 64,
+            stage_bindings=tuple(
+                StageExecutionBinding(
+                    stage_id=stage.stage_id,
+                    image="registry.example/protein@sha256:" + "a" * 64,
+                    collector_id=self.collector_id(execution_plan.model_id, stage.stage_id),
+                    validator_id="protein-design-v1",
+                    mounts=(
+                        StageVolumeBinding(
+                            name="artifact-workspace",
+                            kind="artifact-workspace",
+                            claim_name=None,
+                            host_path=None,
+                            mount_path="/mnt/fs2-scientific",
+                            sub_path=None,
+                            read_only=False,
+                        ),
+                    ),
+                    service_account_name="scientific-runner",
+                    cpu="4",
+                    memory="32Gi",
+                    ephemeral_storage="100Gi",
+                    active_deadline_seconds=3600,
+                    termination_grace_seconds=60,
+                    environment=(),
+                    required_node_labels=(),
+                )
+                for stage in execution_plan.controller_plan.stages
+            ),
+        )
+        bound.assert_controller_bound()
+        return bound
 
 
 class FakePlanFactory:
@@ -733,10 +772,19 @@ def test_internal_state_codec_round_trip_and_rejects_type_coercion() -> None:
         state_from_value(value)
 
 
-def test_internal_state_codec_reads_v6_and_every_write_upgrades_to_v7() -> None:
-    fixture_path = Path(__file__).parent / "fixtures/scientific-batch-state-v6-ec3440a2.json"
+@pytest.mark.parametrize(
+    ("fixture_name", "expected_sha256"),
+    [
+        ("scientific-batch-state-v6-ec3440a2.json", "06083938ee23816213b3d171fc5d7f4adfff262fd0e661515f12fa7f585605fe"),
+        ("scientific-batch-state-v7-545d71d9.json", "4c1b6cb1e6db219b4fcbf71d9c118e00ac4c885c2d7a0268936c11c6bf662715"),
+    ],
+)
+def test_internal_state_codec_reads_v6_and_v7_and_every_write_upgrades_to_v8(
+    fixture_name: str, expected_sha256: str
+) -> None:
+    fixture_path = Path(__file__).parent / "fixtures" / fixture_name
     encoded = fixture_path.read_bytes()
-    assert hashlib.sha256(encoded).hexdigest() == "06083938ee23816213b3d171fc5d7f4adfff262fd0e661515f12fa7f585605fe"
+    assert hashlib.sha256(encoded).hexdigest() == expected_sha256
     legacy = json.loads(encoded)
     decoded = state_from_value(legacy)
     assert decoded.scheduling.workload_namespace == "fs2-models"
@@ -745,7 +793,7 @@ def test_internal_state_codec_reads_v6_and_every_write_upgrades_to_v7() -> None:
     assert decoded.execution_plan is not None
     assert decoded.execution_plan.invocations[0].runtime_mounts[0].expected_manifest_sha256 is None
     upgraded = state_to_value(decoded)
-    assert upgraded["schema_version"] == "fs2-serve.nebius.ai/scientific-batch-state/v7"
+    assert upgraded["schema_version"] == "fs2-serve.nebius.ai/scientific-batch-state/v8"
     assert upgraded["scheduling"]["workload_namespace"] == "fs2-models"
     assert upgraded["scheduling"]["route_namespace"] == "fs2-models"
     assert upgraded["scheduling"]["stages"][0]["resource_class"] == "gpu"
@@ -779,7 +827,7 @@ def test_scheduling_resolver_enforces_canonical_tenant_route_and_priority() -> N
     tenant_route = tenant_resolver.local_queue_routes["scientific"]
     assert isinstance(tenant_route, dict)
     tenant_route["tenant_ids"] = ["tenant-b"]
-    with pytest.raises(SchedulingContractError, match="tenant is not routed"):
+    with pytest.raises(SchedulingContractError, match="fallback LocalQueue is not explicitly unrestricted"):
         tenant_resolver.freeze(
             service_class="customer-batch",
             model_id="protein-design",
@@ -831,7 +879,7 @@ def test_scheduling_resolver_freezes_academic_execution_and_localqueue_namespace
             workload_namespace="fs2-models",
         )
 
-    with pytest.raises(SchedulingContractError, match="tenant is not routed"):
+    with pytest.raises(SchedulingContractError, match="execution namespace differs"):
         resolver.freeze(
             service_class="customer-batch",
             model_id=model_id,
@@ -853,7 +901,7 @@ def test_scheduling_resolver_rejects_ambiguous_model_tenant_execution_namespaces
             model_id="alphafold3",
             tenant_id=ACADEMIC_TENANT_ID,
             profile=academic_profile,
-            plan=ScientificBatchPlan((ScientificStagePlan(stage_id="fold"),)),
+            plan=ScientificBatchPlan((ScientificStagePlan(stage_id="design"),)),
             workload_namespace="fs2-academic-poc",
         )
 
@@ -1000,7 +1048,7 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
         if request.url.path.endswith("/resourceflavors/inference-h100-1x"):
             return httpx.Response(
                 200,
-                json={"metadata": {"labels": {"fs2.nebius.ai/pool-id": "h100-preemptible"}}},
+                json={"metadata": {"labels": {"accelerator.fs2.nebius/pool-id": "h100-preemptible"}}},
             )
         return httpx.Response(200, json={"items": []})
 
@@ -1040,6 +1088,7 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
 async def test_academic_namespace_is_frozen_and_used_for_apply_observe_delete_and_result(tmp_path: Path) -> None:
     model_profile = profile_value()
     model_profile["model_id"] = "alphafold3"
+    model_profile["workload"]["stages"][0]["id"] = "inference"
     plan = ScientificBatchPlan((ScientificStagePlan(stage_id="inference"),))
     snapshot = SchedulingContractResolver(scheduling_with_academic_route()).freeze(
         service_class="customer-batch",
@@ -1128,7 +1177,7 @@ async def test_academic_namespace_is_frozen_and_used_for_apply_observe_delete_an
         if request.url.path.endswith("/resourceflavors/inference-h100-1x"):
             return httpx.Response(
                 200,
-                json={"metadata": {"labels": {"fs2.nebius.ai/pool-id": "h100-preemptible"}}},
+                json={"metadata": {"labels": {"accelerator.fs2.nebius/pool-id": "h100-preemptible"}}},
             )
         if request.url.path.endswith("/scientific-af3-inference"):
             body = json.loads(json.dumps(rendered))
@@ -1267,7 +1316,7 @@ async def test_kubernetes_observer_persists_quota_reservation_without_claiming_a
         if request.url.path.endswith("/resourceflavors/inference-h100-1x"):
             return httpx.Response(
                 200,
-                json={"metadata": {"labels": {"fs2.nebius.ai/pool-id": "h100-preemptible"}}},
+                json={"metadata": {"labels": {"accelerator.fs2.nebius/pool-id": "h100-preemptible"}}},
             )
         return httpx.Response(200, json={"items": []})
 
@@ -1595,7 +1644,7 @@ async def test_kubernetes_observer_counts_only_exact_gpu_podsets_in_mixed_jobset
         if request.url.path.endswith("/resourceflavors/inference-h100-1x"):
             return httpx.Response(
                 200,
-                json={"metadata": {"labels": {"fs2.nebius.ai/pool-id": "h100-preemptible"}}},
+                json={"metadata": {"labels": {"accelerator.fs2.nebius/pool-id": "h100-preemptible"}}},
             )
         return httpx.Response(200, json={"items": []})
 
@@ -1896,6 +1945,12 @@ async def test_workload_capability_materializes_and_commits_through_single_artif
         invocations=(invocation,),
         required_model_artifacts=(),
     )
+    execution = FakeExecutionBinding().bind_runtime_artifacts(
+        profile_catalog().get("protein-design"),
+        execution,
+        ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id="tenant-a"),
+        (),
+    )
     await reconciler.admit(
         operation_id=operation_id,
         tenant_id="tenant-a",
@@ -2171,15 +2226,15 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path,
         ),
     )
     assert renderer.variant_id("protein-design") == "protein-design-h100"
-    assert (
-        renderer.plan(
-            profile_catalog().get("protein-design"),
-            {},
-            access_context=ArtifactAccessContext(profile="public", receipt_digest=None),
-            input_artifacts=(),
-        )
-        == adapter_plan
+    bound_plan = renderer.plan(
+        profile_catalog().get("protein-design"),
+        {},
+        access_context=ArtifactAccessContext(profile="public", receipt_digest=None),
+        input_artifacts=(),
     )
+    assert replace(bound_plan, execution_map_sha256=None, stage_bindings=()) == adapter_plan
+    assert bound_plan.execution_map_sha256 == f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+    assert bound_plan.execution_binding("design").image == "registry.example/protein@sha256:" + "a" * 64
     snapshot = scheduling().freeze(
         service_class="customer-batch",
         model_id="protein-design",
@@ -2205,8 +2260,10 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path,
         name="scientific-design",
         kind=WorkloadKind.JOB,
         scheduling=snapshot.stages[0],
-        invocation=invocation,
+        invocation=bound_plan.invocation("design", "main"),
         access_context=ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id="tenant-a"),
+        execution_map_sha256=bound_plan.execution_map_sha256,
+        execution_binding=bound_plan.execution_binding("design"),
     )
     manifest = renderer.render(resource)
     container = manifest["spec"]["template"]["spec"]["containers"][0]  # type: ignore[index]

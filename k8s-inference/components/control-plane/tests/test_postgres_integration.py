@@ -649,9 +649,17 @@ async def test_real_postgres_rejects_extra_or_reordered_applied_migration_ledger
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
-async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0016(
+@pytest.mark.parametrize(
+    "legacy_fixture_name",
+    [
+        "scientific-batch-state-v6-ec3440a2.json",
+        "scientific-batch-state-v7-545d71d9.json",
+    ],
+)
+async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_0017(
     postgres_store: PostgresStore,
     tmp_path: Path,
+    legacy_fixture_name: str,
 ) -> None:
     del postgres_store
     database_url = os.environ["FS2_TEST_DATABASE_URL"]
@@ -659,7 +667,7 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
     database_name = f"fs2_scientific_batch_upgrade_{uuid4().hex[:10]}"
     prior_dir = tmp_path / "prior-migrations"
     prior_dir.mkdir()
-    legacy_fixture = json.loads((CONTROL_ROOT / "tests/fixtures/scientific-batch-state-v6-ec3440a2.json").read_text())
+    legacy_fixture = json.loads((CONTROL_ROOT / "tests/fixtures" / legacy_fixture_name).read_text())
     legacy_operation_id = UUID(legacy_fixture["operation_id"])
     legacy_input_artifact_id = UUID(legacy_fixture["input_artifact_id"])
     legacy_input_attempt_id = UUID("44444444-4444-4444-8444-444444444444")
@@ -806,7 +814,7 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 )
             }
             assert {version: after[version] for version in before} == before
-            assert list(after)[-1] == "0016_scientific_batch_state_v7.sql"
+            assert list(after)[-1] == "0017_scientific_batch_state_v8.sql"
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_activation_model_fences')")
                 == "fs2_activation_model_fences"
@@ -844,7 +852,7 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
         try:
             repository = PostgresScientificBatchRepository(pool)
             claim = await repository.claim_next(
-                controller_id="legacy-v6-upgrader",
+                controller_id="legacy-state-upgrader",
                 lease_seconds=30,
                 now=datetime.now(UTC),
             )
@@ -875,14 +883,20 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_only_001
                 )
                 assert stored is not None
                 stored_state = json.loads(stored["state"])
-                assert stored_state["schema_version"] == "fs2-serve.nebius.ai/scientific-batch-state/v7"
+                assert stored_state["schema_version"] == "fs2-serve.nebius.ai/scientific-batch-state/v8"
                 assert stored["scheduling_digest"] == cancelled.scheduling.digest
+                assert stored_state["plan"]["stages"][0]["placement_class"] is None
+                assert stored_state["plan"]["stages"][0]["resources"] is None
+                assert stored_state["scheduling"]["raw_contract_sha256"] is None
                 assert stored_state["scheduling"]["stages"][0]["resource_class"] == "gpu"
                 assert "admitted_resource_flavor" not in stored_state["scheduling"]["stages"][0]
                 assert (
                     stored_state["adapter_execution"]["invocations"][0]["runtime_mounts"][0]["expected_manifest_sha256"]
                     is None
                 )
+                assert stored_state["adapter_execution"]["execution_map_sha256"] is None
+                assert stored_state["adapter_execution"]["stage_bindings"] == []
+                assert stored_state["runtime_artifacts"][0]["aggregate_tree"] is None
                 with pytest.raises(asyncpg.PostgresError, match="scientific batch admission is immutable"):
                     await connection.execute(
                         """
