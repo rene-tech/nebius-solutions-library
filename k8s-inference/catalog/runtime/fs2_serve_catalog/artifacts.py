@@ -28,7 +28,7 @@ from .loader import (
 
 ARTIFACT_MANIFEST_SCHEMA = "fs2-serve.nebius.ai/artifact-manifest/v1"
 ARTIFACT_KINDS = {"weights", "nim-cache", "snapshot"}
-SAFE_URI_SCHEMES = {"sfs", "pvc", "nvme", "ngc", "hf", "oci"}
+SAFE_URI_SCHEMES = {"sfs", "pvc", "nvme", "ngc", "hf", "oci", "https"}
 OWNER = re.compile(r"^[a-z0-9](?:[-a-z0-9./]*[a-z0-9])?$")
 
 

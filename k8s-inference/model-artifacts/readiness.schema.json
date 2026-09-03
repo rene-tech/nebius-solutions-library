@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/public-artifact-readiness/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "catalog_digest", "generated_at", "consumers", "readiness_digest"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/public-artifact-readiness/v1"},
+    "catalog_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "consumers": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/consumer_readiness"}
+    },
+    "readiness_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  },
+  "$defs": {
+    "consumer_readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ready", "artifacts"],
+      "properties": {
+        "ready": {"type": "boolean"},
+        "artifacts": {"type": "array"},
+        "runtime_constraint": {"$ref": "#/$defs/runtime_constraint"},
+        "runtime_handoff": {
+          "type": "object",
+          "required": ["schema", "model_id", "variant_id", "source", "checkpoint", "localization", "image", "adapter", "semantic_smoke"]
+        },
+        "private_layout": {"$ref": "#/$defs/private_layout"},
+        "reference_layout": {"$ref": "#/$defs/reference_layout"}
+      }
+    },
+    "binary_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "version", "wheel", "wheel_url", "source_revision", "native_cubins", "ptx_present", "inspection"],
+      "properties": {
+        "component": {"const": "flash-attn"},
+        "version": {"const": "2.7.4.post1"},
+        "wheel": {"const": "flash_attn-2.7.4.post1-cp312-cp312-linux_x86_64.whl"},
+        "wheel_url": {"const": "https://github.com/evolutionaryscale/wheels/releases/download/py312-pt211-cu13-sm80-90/flash_attn-2.7.4.post1-cp312-cp312-linux_x86_64.whl"},
+        "source_revision": {"const": "827ec128e4cdaf80f7d6f95fb367a08980b34918"},
+        "native_cubins": {"const": ["sm80", "sm90"]},
+        "ptx_present": {"const": false},
+        "inspection": {"const": "manager-provided-frozen-wheel-binary-inspection"}
+      }
+    },
+    "runtime_constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["binary_compatibility", "candidate_accelerator_families", "candidate_cuda_architectures", "qualification_state", "blackwell_state", "blackwell_unblock_requires_one_of", "external_immutable_artifacts", "binary_evidence", "evidence"],
+      "properties": {
+        "binary_compatibility": {"const": "candidate-hopper-sm90-cubin-no-ptx"},
+        "candidate_accelerator_families": {"const": ["Hopper"]},
+        "candidate_cuda_architectures": {"const": ["sm90"]},
+        "qualification_state": {"const": "pending-exact-image-h100-semantic-test"},
+        "blackwell_state": {"const": "blocked"},
+        "blackwell_unblock_requires_one_of": {"const": ["qualified-sdpa-fallback-image", "target-aware-blackwell-image"]},
+        "external_immutable_artifacts": {"const": ["esmc-6b", "esmfold2-ccd"]},
+        "binary_evidence": {"$ref": "#/$defs/binary_evidence"},
+        "evidence": {"const": "evidence/esm-af3-external-runtime-contract-20260902.json"}
+      }
+    },
+    "private_layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "source_plane", "cache_scope", "general_shared_cache_allowed", "embed_in_image", "source_url", "source_revision", "generation", "last_modified", "filename", "bytes", "sha256", "mount_path", "file_path", "read_only", "runtime_argument", "evidence"],
+      "properties": {
+        "artifact_id": {"const": "alphafold3-private"},
+        "source_plane": {"const": "academic-assets"},
+        "cache_scope": {"const": "tenant-private"},
+        "general_shared_cache_allowed": {"const": false},
+        "embed_in_image": {"const": false},
+        "source_url": {"const": "https://storage.googleapis.com/alphafold3/af3.bin.zst"},
+        "source_revision": {"const": "gs://alphafold3/af3.bin.zst#1780568696389861"},
+        "generation": {"const": "1780568696389861"},
+        "last_modified": {"const": "2026-06-04T10:24:56Z"},
+        "filename": {"const": "af3.bin.zst"},
+        "bytes": {"const": 1020545840},
+        "sha256": {"const": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff"},
+        "mount_path": {"const": "/models"},
+        "file_path": {"const": "/models/af3.bin.zst"},
+        "read_only": {"const": true},
+        "runtime_argument": {"const": "--model_dir=/models"},
+        "evidence": {"const": "evidence/esm-af3-external-runtime-contract-20260902.json"}
+      }
+    },
+    "reference_layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle_id", "bundle_revision", "source_plane", "source_revision", "mount_path", "read_only", "runtime_argument"],
+      "properties": {
+        "bundle_id": {"type": "string", "pattern": "^[a-z0-9](?:[-.a-z0-9]*[a-z0-9])?$"},
+        "bundle_revision": {"type": "string", "minLength": 1},
+        "source_plane": {"const": "reference-data"},
+        "source_revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "mount_path": {"const": "/databases"},
+        "read_only": {"const": true},
+        "runtime_argument": {"const": "--db_dir=/databases"}
+      }
+    }
+  }
+}

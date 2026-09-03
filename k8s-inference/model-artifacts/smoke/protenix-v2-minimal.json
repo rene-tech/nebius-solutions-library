@@ -1,0 +1,13 @@
+[
+  {
+    "name": "fs2-protenix-v2-h100-smoke",
+    "sequences": [
+      {
+        "proteinChain": {
+          "count": 1,
+          "sequence": "MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP"
+        }
+      }
+    ]
+  }
+]

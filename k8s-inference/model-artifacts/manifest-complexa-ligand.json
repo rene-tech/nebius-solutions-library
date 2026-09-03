@@ -1,0 +1,32 @@
+{
+  "content": {
+    "digest": "543e963c407db556d3204da62e3c321c10428ebf1ae174df2370297ce62366c7",
+    "expanded_bytes": 5890739041,
+    "files": [
+      {
+        "bytes": 1790554392,
+        "path": "complexa_ligand.ckpt",
+        "sha256": "8175213eac5ec6433fed1756d055ce3f867129bfdb033040e1a0560ca558bfe5"
+      },
+      {
+        "bytes": 4100184649,
+        "path": "complexa_ligand_ae.ckpt",
+        "sha256": "898da17022cdeaaaea7caace41c8b6fe7bfcb78be4876b0113127eb9bb1527e6"
+      }
+    ]
+  },
+  "entitlement_state": "not-required",
+  "kind": "weights",
+  "license": {
+    "id": "NVIDIA-Open-Model-License-2024-06",
+    "state": "verified"
+  },
+  "model_id": "proteina-complexa-ligand-target-160m-v1",
+  "owner": "cancer-immunotherapy",
+  "retention": "retained-platform",
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "source": {
+    "revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+    "uri": "hf://nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1"
+  }
+}
