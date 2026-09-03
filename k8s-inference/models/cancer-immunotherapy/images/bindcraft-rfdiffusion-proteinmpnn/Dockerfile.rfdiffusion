@@ -1,0 +1,61 @@
+# syntax=docker/dockerfile:1.7
+FROM docker.io/pytorch/pytorch@sha256:0279f7aa29974bf64e61d0ff6e979b41a249b3662a46e30778dbf80b8c99c361
+
+ARG SOURCE_REVISION=9273ef67335acaf91df0150473a274759229cdf6
+ARG SOURCE_ARCHIVE_SHA256=b8a29d4d5bd7b60eba40d49da4dbb324685eb409bdbdc7d088c187514ef3f7b9
+ARG DGL_WHEEL_SHA256=0423c4e819482077aee0c8c70dec2bfc160ada86ea473313d03bf61045d6ae17
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY runtime/fetch_verified.py /opt/fs2/fetch_verified.py
+COPY requirements.rfdiffusion.txt /tmp/requirements.rfdiffusion.txt
+RUN --mount=type=cache,id=fs2-cancer-rfdiffusion-pip,target=/root/.cache/pip,sharing=locked \
+    set -eux; \
+    python -m pip install --timeout 300 --retries 10 -r /tmp/requirements.rfdiffusion.txt; \
+    ln -sfn /opt/conda/lib/python3.10/site-packages/nvidia/cuda_nvrtc/lib/libnvrtc.so.12 /opt/conda/lib/libnvrtc.so.12; \
+    python /opt/fs2/fetch_verified.py \
+      'https://data.dgl.ai/wheels/torch-2.3/cu121/dgl-2.3.0%2Bcu121-cp310-cp310-manylinux1_x86_64.whl' \
+      "${DGL_WHEEL_SHA256}" '/tmp/dgl-2.3.0+cu121-cp310-cp310-manylinux1_x86_64.whl'; \
+    python -m pip install --no-cache-dir --no-deps '/tmp/dgl-2.3.0+cu121-cp310-cp310-manylinux1_x86_64.whl'; \
+    python /opt/fs2/fetch_verified.py \
+      "https://github.com/RosettaCommons/RFdiffusion/archive/${SOURCE_REVISION}.tar.gz" \
+      "${SOURCE_ARCHIVE_SHA256}" /tmp/rfdiffusion.tar.gz; \
+    mkdir -p /opt/rfdiffusion; \
+    tar -xzf /tmp/rfdiffusion.tar.gz --strip-components=1 -C /opt/rfdiffusion; \
+    find /opt/rfdiffusion -type f \( -name '*.pt' -o -name '*.pth' -o -name '*.ckpt' \) -delete; \
+    rm -rf /opt/rfdiffusion/models; \
+    python -m pip install --no-cache-dir --no-deps /opt/rfdiffusion/env/SE3Transformer; \
+    python -m pip install --no-cache-dir --no-deps /opt/rfdiffusion; \
+    mkdir -p /opt/fs2/bin /opt/fs2/runtime; \
+    ln -s /opt/rfdiffusion /opt/fs2/rfdiffusion; \
+    rm -rf '/tmp/dgl-2.3.0+cu121-cp310-cp310-manylinux1_x86_64.whl' /tmp/rfdiffusion.tar.gz /tmp/requirements.rfdiffusion.txt; \
+    useradd --create-home --uid 10001 --shell /usr/sbin/nologin fs2; \
+    chown -R root:root /opt/rfdiffusion; \
+    chmod -R a-w /opt/rfdiffusion
+
+COPY --chown=root:root runtime/artifact_gate.py runtime/runtime_entrypoint.py /opt/fs2/
+COPY --chown=root:root runtime/rfdiffusion_run_upstream.py /opt/fs2/runtime/run_upstream.py
+COPY --from=fs2-adapters rfdiffusion/bin/rfdiffusion-batch /opt/fs2/bin/rfdiffusion-batch
+RUN chmod 0555 /opt/fs2/bin/rfdiffusion-batch /opt/fs2/runtime/run_upstream.py
+
+LABEL org.opencontainers.image.source="https://github.com/RosettaCommons/RFdiffusion" \
+      org.opencontainers.image.revision="9273ef67335acaf91df0150473a274759229cdf6" \
+      org.opencontainers.image.licenses="BSD-3-Clause" \
+      ai.nebius.fs2.runtime.relationship="canonical-open-runtime" \
+      ai.nebius.fs2.runtime.weights="external" \
+      ai.nebius.fs2.runtime.cuda="12.1" \
+      ai.nebius.fs2.runtime.adapter.commit="3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe"
+
+ENV FS2_RUNTIME_NAME=rfdiffusion \
+    FS2_SOURCE_REVISION=9273ef67335acaf91df0150473a274759229cdf6 \
+    FS2_ARTIFACT_KIND=rfdiffusion-checkpoints \
+    FS2_ARTIFACT_ROOT=/models/rfdiffusion \
+    FS2_ARTIFACT_MANIFEST=/models/rfdiffusion/manifest.json \
+    LD_LIBRARY_PATH=/opt/conda/lib/python3.10/site-packages/nvidia/cuda_nvrtc/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
+    PYTHONPATH=/opt/rfdiffusion \
+    DGLBACKEND=pytorch \
+    PYTHONUNBUFFERED=1
+
+USER 10001:10001
+WORKDIR /opt/rfdiffusion
+ENTRYPOINT ["python", "/opt/fs2/runtime_entrypoint.py"]
+CMD ["python", "/opt/rfdiffusion/scripts/run_inference.py"]

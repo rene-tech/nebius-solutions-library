@@ -1,0 +1,17 @@
+antlr4-python3-runtime==4.9.3
+colorama==0.4.6
+decorator==5.1.1
+e3nn==0.3.3
+hydra-core==1.3.2
+icecream==2.1.3
+nvidia-cuda-nvrtc-cu12 @ https://files.pythonhosted.org/packages/b6/9f/c64c03f49d6fbc56196664d05dba14e3a561038a81a638eeb47f4d4cfd48/nvidia_cuda_nvrtc_cu12-12.1.105-py3-none-manylinux1_x86_64.whl#sha256=339b385f50c309763ca65456ec75e17bbefcbbf2893f462cb8b90584cd27a1c2
+numpy==1.26.4
+omegaconf==2.3.0
+opt-einsum==3.3.0
+opt-einsum-fx==0.1.4
+pandas==2.2.3
+pydantic==2.9.2
+pyrsistent==0.20.0
+scipy==1.13.1
+torchdata==0.8.0
+tzdata==2026.3

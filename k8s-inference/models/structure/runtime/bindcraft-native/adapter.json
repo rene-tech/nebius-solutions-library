@@ -10,7 +10,12 @@
     "artifacts": "../../../../catalog/runtime/schema/scientific-artifact-manifest.schema.json",
     "result": "../../../../catalog/runtime/schema/scientific-run-result.schema.json",
     "workload": "workload.json",
-    "access_receipt_owner": "operator-admission"
+    "academic_asset_readiness": {
+      "path_after_integration": "../../../../catalog/runtime/contracts/academic-asset-readiness.json",
+      "schema": "fs2-serve.nebius.ai/academic-asset-readiness/v1",
+      "generation": "live-execution-20260903",
+      "sha256": "2b5a21f8eca6d8e465f29c508a6717915b84e73cb351d24811223a70228a3e36"
+    }
   },
   "source": {
     "repository": "https://github.com/martinpacesa/BindCraft",
@@ -20,16 +25,44 @@
     "composite_license_state": "academic-access-required"
   },
   "runtime_image": {
-    "repository": "cr.eu-north1.nebius.cloud/project-e00rene/k8s-inference/scientific/bindcraft-native-pyrosetta",
-    "state": "blocked-pending-private-academic-asset-ingestion",
-    "digest": null
+    "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft",
+    "state": "published-h100-semantic-qualified-not-deployed",
+    "digest": "sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1"
   },
   "access": {
     "profile": "academic",
-    "receipt_required": true,
+    "request_time_license_receipt_required": false,
     "component": "pyrosetta",
     "credentials_in_request": false,
-    "package_data_in_repository": false
+    "package_data_in_repository": false,
+    "runtime_binding": {
+      "materialization_kind": "ArtifactMaterialization",
+      "artifact_id": "bindcraft-pyrosetta-installed-tree",
+      "content_digest_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+      "content_bytes": 3287122494,
+      "content_identity_kind": "tree-manifest",
+      "content_manifest_algorithm": "fs2-tree-manifest/v1",
+      "claim": "academic-assets-runtime-rwx",
+      "source_sub_path": "pyrosetta-bindcraft/site-packages",
+      "consumer_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+      "supplemental_group": 65532,
+      "read_only": true,
+      "runtime_environment_digest": "sha256:fd76ade0c607f27677bc04be3c60749f400eedc941d9e72967e19a4cedff80c2",
+      "serving_admission": "AdmittedNoPerRequestLicenseReceipt",
+      "source_artifact": {
+        "artifact_id": "bindcraft-pyrosetta",
+        "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+        "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+        "size_bytes": 1667097173
+      }
+    },
+    "deployment_evidence": {
+      "authorization_receipt_sha256": "5e3967f7f11b54c99f6a0f15c20dfdcc1c1d9e39fab4096d67781be275dba5ad",
+      "install_receipt_sha256": "9807d5f3ee952621d318bca2e1b942234e90492f8e414ea4060c2607b131cae4",
+      "install_evidence_digest": "84092dc48020c9cef9bb7ae7a8d2c50004ae5aaee7598f6524852460652f6368",
+      "install_job_evidence_sha256": "e38daac05379bdde45cdba056449db44105e18f10b3c33d995c393ef4ee3716f",
+      "install_log_evidence_sha256": "63fabea52c82f14f166bd619ef29e930c5968e544c2eea5e1bc7dc0515879789"
+    }
   },
   "resource_profile": {
     "id": "single-gpu-80gb",
@@ -41,5 +74,9 @@
     "memory_limit": "128Gi",
     "shard_parallelism": "independent-trajectories"
   },
-  "qualification": {"h100": "not-run", "route_exposed": false}
+  "qualification": {
+    "h100": "passed-full-post-design-semantic-run",
+    "evidence": "../../../cancer-immunotherapy/images/bindcraft-rfdiffusion-proteinmpnn/evidence/h100-semantic-validation.json",
+    "route_exposed": false
+  }
 }

@@ -39,7 +39,6 @@
   },
   "admission": {
     "runtime_image": "registry.invalid/fs2/bindcraft-native@sha256:01309a97b66cdb0b5109324a95fd29fad4af8de560cf974dd286046641862c8d",
-    "access_receipt_digest": "1b8d69c63a6cb405f7695262cfcdfb579a99a3410b1d2ca7f850357f48d569fa",
     "operation_id": "operation.bindcraft.native.01",
     "workload_id": "bindcraft-native-workload-01",
     "attempt_id": "bindcraft-native-attempt-01",

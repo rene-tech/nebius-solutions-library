@@ -1,0 +1,187 @@
+{
+  "schema": "fs2.nebius.ai/cancer-runtime-h100-semantic-validation/v1",
+  "recorded_at": "2026-09-03T00:51:27Z",
+  "environment": {
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "kubeconfig": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+    "context": "k8s-inference-h100",
+    "namespace": "fs2-academic-poc",
+    "gpu": "NVIDIA H100 SXM5 80GB HBM3",
+    "capacity_source": "capacity-block",
+    "node": "computeinstance-e00m0hsph76ajt9sdb",
+    "node_gpu_capacity": 8
+  },
+  "adapter_commit": "3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe",
+  "qualification_scope": "offline task-owned semantic Pods only; no model service was deployed",
+  "runs": [
+    {
+      "model": "rfdiffusion",
+      "source_revision": "9273ef67335acaf91df0150473a274759229cdf6",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:e502a3267793bb19d1d1ff22b2210c65d05247b24e5460cfc5ef49d9a75750d7",
+      "pod_uid": "00900330-9bb9-4c66-9c8b-2f8486ba2af2",
+      "external_checkpoint": {
+        "name": "Base_ckpt.pt",
+        "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+        "size_bytes": 483616107,
+        "embedded_in_image": false
+      },
+      "interface": "corrected run-shard followed by aggregate",
+      "semantic_workflow": {
+        "diffusion_steps": 50,
+        "result": "passed",
+        "output": "76-residue C-alpha backbone PDB",
+        "output_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806"
+      },
+      "cleanup": "pod deleted after evidence capture"
+    },
+    {
+      "model": "proteinmpnn",
+      "source_revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteinmpnn@sha256:d115781382fc3644616dd480f9b06312f853f73ec6c03a6de4887757e125dfbd",
+      "pod_uid": "77fb7e95-0d70-424b-8861-9020ee1c2252",
+      "external_checkpoint": {
+        "name": "vanilla_model_weights/v_48_020.pt",
+        "sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+        "size_bytes": 6681301,
+        "embedded_in_image": false
+      },
+      "semantic_workflow": {
+        "command_class": "upstream protein_mpnn_run.py CLI",
+        "input_length_residues": 76,
+        "generated_sequences": 2,
+        "elapsed_seconds": 0.316,
+        "result": "passed",
+        "output_fasta_sha256": "c836be357673defd499ebf5070ffd6493c3af64154fd830a4b0269fb2ba50e40"
+      },
+      "cleanup": "pod deleted after evidence capture"
+    },
+    {
+      "model": "bindcraft-native-pyrosetta",
+      "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+      "image_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r11",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1",
+      "registry_digest_verified_after_push": true,
+      "attestations": [
+        "https://slsa.dev/provenance/v1",
+        "https://spdx.dev/Document"
+      ],
+      "pod": {
+        "name": "fs2-image-smoke-bindcraft",
+        "uid": "567b84d2-33c7-43ac-b018-22ca420dc2e8",
+        "pod_ip": "10.6.82.254",
+        "api_object_sha256": "f9f9dfee321bbca87f4b6d03f7039bdddaaed44dde30c0a2dbdee9028d0bfc22",
+        "manifest_sha256": "740fb0372fba44de3e00ee87882afc2149b6471b4afe0135a5389a551df59237",
+        "security_context": {
+          "run_as_user": 10001,
+          "run_as_group": 10001,
+          "supplemental_groups": [65532],
+          "fs_group": null
+        },
+        "resources": {
+          "cpu_request": "4",
+          "cpu_limit": "16",
+          "memory_request": "96Gi",
+          "memory_limit": "128Gi",
+          "gpu_request": 1,
+          "gpu_limit": 1
+        }
+      },
+      "private_pyrosetta": {
+        "artifact_materialization_id": "bindcraft-pyrosetta-installed-tree",
+        "source_wheel_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+        "source_wheel_size_bytes": 1667097173,
+        "tree_manifest_algorithm": "fs2-tree-manifest/v1",
+        "tree_manifest_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+        "tree_size_bytes": 3287122494,
+        "runtime_environment_digest": "sha256:fd76ade0c607f27677bc04be3c60749f400eedc941d9e72967e19a4cedff80c2",
+        "authorization_receipt_sha256": "5e3967f7f11b54c99f6a0f15c20dfdcc1c1d9e39fab4096d67781be275dba5ad",
+        "install_receipt_sha256": "9807d5f3ee952621d318bca2e1b942234e90492f8e414ea4060c2607b131cae4",
+        "claim": "academic-assets-runtime-rwx",
+        "claim_uid": "4d074d97-3391-46b9-9eea-ae57abc85d06",
+        "sub_path": "pyrosetta-bindcraft/site-packages",
+        "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+        "read_only_mount_verified": true,
+        "pythonpath_first": true,
+        "import_origin": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages/pyrosetta/__init__.py",
+        "per_request_receipt_gate": false,
+        "licensed_bytes_embedded_in_image": false
+      },
+      "external_model_artifacts": {
+        "alphafold2_parameters_archive_sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+        "alphafold2_parameters_archive_size_bytes": 5587968000,
+        "colabdesign_soluble_proteinmpnn_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+        "colabdesign_soluble_proteinmpnn_sha256": "f3f705752e625a173ac5ea4d2b2e46bd10ff13905a73bcc1ca2ecd3420b361e1",
+        "colabdesign_soluble_proteinmpnn_size_bytes": 6650310,
+        "target": "upstream BindCraft PDL1 example, chain A, hotspot A56",
+        "target_sha256": "d3c95434dcadf26d005340b15bd92be61e101ed921478c26f2a5550f198e61f6"
+      },
+      "request": {
+        "operation": "design-binder",
+        "service_class": "customer-batch",
+        "base_seed": 384856,
+        "shard_count": 1,
+        "binder_length": 65,
+        "accepted_designs_per_shard": 1,
+        "max_trajectories_per_shard": 1,
+        "canonical_sha256": "3c314a4a63d2b794ffd78ea4e0c54e76c25d97271f652bc5d638b994890daffb"
+      },
+      "semantic_workflow": {
+        "result": "passed",
+        "design_iterations": 140,
+        "trajectory_seconds": 138,
+        "post_design_seconds": 85,
+        "total_upstream_seconds": 254,
+        "proteinmpnn_candidates": 1,
+        "af2_models_per_candidate": 2,
+        "pyrosetta_relaxation_and_scoring": true,
+        "accepted_candidates": 1,
+        "filter_set": "no_filters",
+        "reranked": true,
+        "aggregate_atomic_rename": true,
+        "run_log_sha256": "90bc14c45829781d2ec3146b7ff77774766a437bdd608c095f2c8ed72c692ede",
+        "final_design_csv_sha256": "e6c338c4c1197a13bb6940274c2ddaf4e253dc8d26868c24f4689f75ecfc6274",
+        "accepted_complex_pdb_sha256": "873c019ee27b0bc82c24b9695310ddfd7f3fa9f5fc269bdac44b2507e6da0aa3",
+        "proteinmpnn_fasta_sha256": "32b3b7d2a9274278318dae8babc187fecced48e94fa6e1888f780efbc108374b"
+      },
+      "accepted_candidate": {
+        "sequence": "SEEIMYYRMRIMWLQTEVIRGARAGDRERVEEALRRLEELREEYLKLEGAPKDSGLFRPVLPPLP",
+        "mean_plddt": 0.79,
+        "iptm": 0.67,
+        "interface_dg": -44.25,
+        "shape_complementarity": 0.66,
+        "binder_only_pdb_sha256": "72c560d04cde8bb5c88e439b6d75a2d461809e5388685712908566b3424e059d",
+        "metrics_sha256": "85ffb51a5e85d471209fd80c81176dd0d16873e4a3d578f7d658e52a523275a1"
+      },
+      "aggregate": {
+        "shard_sha256": "93516170235a46d0f50d3c20b14af34726ee4aea2b4002d8ca3942123ec3a2bf",
+        "aggregate_sha256": "d0489c79a2baf42ce894445c46e40f467891897513119c04b96d09ea7431e9de",
+        "serialized_output_manifest_sha256": "d73d346e9f03ea388232d34c28a3d1d3afa905148f8adff7eab105ef9c4ed56a",
+        "canonical_output_manifest_sha256": "a50f05df1a9913a611f72a5e62cc31000452fec950cb073f634f33013f3d905d"
+      },
+      "independent_adapter_validation": {
+        "validator_id": "bindcraft-v1-5-3-pyrosetta-academic",
+        "status": "passed",
+        "candidate_count": 1,
+        "shard_count": 1,
+        "qualification_effect": "none-offline-validation-only"
+      },
+      "resource_measurements": {
+        "sampled_memory_current_peak_bytes": 8795152384,
+        "cgroup_memory_peak_bytes": 11520126976,
+        "sampled_gpu_memory_peak_mib": 7241,
+        "cgroup_memory_max_events": 0,
+        "cgroup_oom_events": 0,
+        "cgroup_oom_kill_events": 0,
+        "resource_samples_sha256": "f08cd15ab165e9c85fda1256d098da32480561554b2522d57a50a4ea7e7e01b2"
+      },
+      "cleanup": {
+        "pod_deleted": true,
+        "temporary_local_validation_directories_deleted": true,
+        "task_owned_pods_or_jobs_remaining": 0,
+        "private_academic_claim_deleted": false,
+        "note": "The shared tenant-private academic claim is an intentional dependency and was not task-owned."
+      }
+    }
+  ]
+}

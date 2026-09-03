@@ -1,0 +1,189 @@
+{
+  "base": {
+    "cuda": "12.1",
+    "python": "3.10.14",
+    "pytorch": "2.3.0",
+    "reference": "docker.io/pytorch/pytorch@sha256:0279f7aa29974bf64e61d0ff6e979b41a249b3662a46e30778dbf80b8c99c361"
+  },
+  "images": [
+    {
+      "attestation_manifests": 1,
+      "attestation_predicate_types": [
+        "https://slsa.dev/provenance/v1",
+        "https://spdx.dev/Document"
+      ],
+      "digest": "sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1",
+      "id": "bindcraft-academic",
+      "manifest_sha256": "9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1",
+      "pull_stdout_sha256": "768dff1d89a954725842d288a721af05bb0f5be4a0e3ddd3d9bbe9b8c74a0995",
+      "smoke": [
+        {
+          "command": [
+            "docker",
+            "run",
+            "--rm",
+            "--platform",
+            "linux/amd64",
+            "--network",
+            "none",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1",
+            "--fs2-image-smoke"
+          ],
+          "last_line": "{\"cuda_available\": false, \"cuda_build\": \"12.1\", \"embedded_model_artifacts\": false, \"embedded_pyrosetta\": false, \"gpu_evidence\": {}, \"gpu_required_imports_deferred\": [], \"imports\": {\"Bio\": \"1.85\", \"colabdesign\": \"imported\", \"jax\": \"0.4.28\", \"jaxlib\": \"0.4.28+cuda12.cudnn89\", \"torch\": \"2.3.0\"}, \"runtime\": \"bindcraft-academic\", \"schema\": \"fs2.nebius.ai/runtime-image-smoke/v1\", \"source_revision\": \"7cd4ace1b7407adf66a50dfefa47de2270f5e4a9\"}",
+          "stdout_sha256": "ee02e601ecafda6312e91624b4ded9012a02d2857ecd1ee446ea25feafc6e00a"
+        }
+      ],
+      "source": {
+        "archive_sha256": "cada0f51f221af568ad0ee84ada2e68317501adad233008d073d66839b1afb8d",
+        "repository": "https://github.com/martinpacesa/BindCraft",
+        "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
+      },
+      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r11"
+    },
+    {
+      "attestation_manifests": 1,
+      "attestation_predicate_types": [
+        "https://slsa.dev/provenance/v1",
+        "https://spdx.dev/Document"
+      ],
+      "digest": "sha256:38d0c34f9eace396c6d2787592d3f8c0be311a3b5d23d734842a12fd2561ac0d",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft@sha256:38d0c34f9eace396c6d2787592d3f8c0be311a3b5d23d734842a12fd2561ac0d",
+      "id": "freebindcraft-open-fallback",
+      "manifest_sha256": "38d0c34f9eace396c6d2787592d3f8c0be311a3b5d23d734842a12fd2561ac0d",
+      "pull_stdout_sha256": "53310d132d52b56c1b45d865c0f16035e6f5d234a41b159907c21fe28deaed29",
+      "smoke": [
+        {
+          "command": [
+            "docker",
+            "run",
+            "--rm",
+            "--platform",
+            "linux/amd64",
+            "--network",
+            "none",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft@sha256:38d0c34f9eace396c6d2787592d3f8c0be311a3b5d23d734842a12fd2561ac0d",
+            "--fs2-image-smoke"
+          ],
+          "last_line": "{\"cuda_available\": false, \"cuda_build\": \"12.1\", \"embedded_model_artifacts\": false, \"embedded_pyrosetta\": false, \"gpu_evidence\": {}, \"gpu_required_imports_deferred\": [], \"imports\": {\"colabdesign\": \"imported\", \"jax\": \"0.4.28\", \"jaxlib\": \"0.4.28+cuda12.cudnn89\", \"openmm\": \"8.2\", \"pdbfixer\": \"imported\", \"torch\": \"2.3.0\"}, \"runtime\": \"freebindcraft-open-fallback\", \"schema\": \"fs2.nebius.ai/runtime-image-smoke/v1\", \"source_revision\": \"28c43fc48942eebd7918f504e9812c5c17bb3411\"}",
+          "stdout_sha256": "b0efd9143c179447ce23f372723cfa9c082d7515f4652112b22da617c2e1d868"
+        },
+        {
+          "command": [
+            "docker",
+            "run",
+            "--rm",
+            "--platform",
+            "linux/amd64",
+            "--network",
+            "none",
+            "--entrypoint",
+            "python",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft@sha256:38d0c34f9eace396c6d2787592d3f8c0be311a3b5d23d734842a12fd2561ac0d",
+            "-c",
+            "compile(open('/opt/freebindcraft/docker_cli.py').read(), '/opt/freebindcraft/docker_cli.py', 'exec')"
+          ],
+          "last_line": "",
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "source": {
+        "archive_sha256": "a0e1123d4e7d65567d87bc93e7e803df57d7203e8652e38656d99ee7dd57bab6",
+        "repository": "https://github.com/cytokineking/FreeBindCraft",
+        "revision": "28c43fc48942eebd7918f504e9812c5c17bb3411"
+      },
+      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft:28c43fc48942eebd7918f504e9812c5c17bb3411-cuda121-r6"
+    },
+    {
+      "attestation_manifests": 1,
+      "attestation_predicate_types": [
+        "https://slsa.dev/provenance/v1",
+        "https://spdx.dev/Document"
+      ],
+      "digest": "sha256:e502a3267793bb19d1d1ff22b2210c65d05247b24e5460cfc5ef49d9a75750d7",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:e502a3267793bb19d1d1ff22b2210c65d05247b24e5460cfc5ef49d9a75750d7",
+      "id": "rfdiffusion",
+      "manifest_sha256": "e502a3267793bb19d1d1ff22b2210c65d05247b24e5460cfc5ef49d9a75750d7",
+      "pull_stdout_sha256": "c41a9af11cdc04b35ba8c035c877cd32ced81ada8e08ba2466806d7c5f46cc58",
+      "smoke": [
+        {
+          "command": [
+            "docker",
+            "run",
+            "--rm",
+            "--platform",
+            "linux/amd64",
+            "--network",
+            "none",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:e502a3267793bb19d1d1ff22b2210c65d05247b24e5460cfc5ef49d9a75750d7",
+            "--fs2-image-smoke"
+          ],
+          "last_line": "{\"cuda_available\": false, \"cuda_build\": \"12.1\", \"embedded_model_artifacts\": false, \"embedded_pyrosetta\": false, \"gpu_evidence\": {}, \"gpu_required_imports_deferred\": [\"dgl\", \"se3_transformer\", \"rfdiffusion.RoseTTAFoldModel\"], \"imports\": {\"dgl-distribution\": \"2.3.0+cu121\", \"rfdiffusion.chemical\": \"imported\", \"se3-transformer-distribution\": \"1.0.0\", \"torch\": \"2.3.0\"}, \"runtime\": \"rfdiffusion\", \"schema\": \"fs2.nebius.ai/runtime-image-smoke/v1\", \"source_revision\": \"9273ef67335acaf91df0150473a274759229cdf6\"}",
+          "stdout_sha256": "7ab8f2a719265bafe002ae0fc6fdf113b662b04a5c2bfca34090a583176fdfeb"
+        }
+      ],
+      "source": {
+        "archive_sha256": "b8a29d4d5bd7b60eba40d49da4dbb324685eb409bdbdc7d088c187514ef3f7b9",
+        "repository": "https://github.com/RosettaCommons/RFdiffusion",
+        "revision": "9273ef67335acaf91df0150473a274759229cdf6"
+      },
+      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r6"
+    },
+    {
+      "attestation_manifests": 1,
+      "attestation_predicate_types": [
+        "https://slsa.dev/provenance/v1",
+        "https://spdx.dev/Document"
+      ],
+      "digest": "sha256:d115781382fc3644616dd480f9b06312f853f73ec6c03a6de4887757e125dfbd",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteinmpnn@sha256:d115781382fc3644616dd480f9b06312f853f73ec6c03a6de4887757e125dfbd",
+      "id": "proteinmpnn",
+      "manifest_sha256": "d115781382fc3644616dd480f9b06312f853f73ec6c03a6de4887757e125dfbd",
+      "pull_stdout_sha256": "ddcc1567d8e854bd121924e88f9c959f2e0fa5459c558541fe7a161eb46d98ee",
+      "smoke": [
+        {
+          "command": [
+            "docker",
+            "run",
+            "--rm",
+            "--platform",
+            "linux/amd64",
+            "--network",
+            "none",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteinmpnn@sha256:d115781382fc3644616dd480f9b06312f853f73ec6c03a6de4887757e125dfbd",
+            "--fs2-image-smoke"
+          ],
+          "last_line": "{\"cuda_available\": false, \"cuda_build\": \"12.1\", \"embedded_model_artifacts\": false, \"embedded_pyrosetta\": false, \"gpu_evidence\": {}, \"gpu_required_imports_deferred\": [], \"imports\": {\"protein_mpnn_utils\": \"imported\", \"torch\": \"2.3.0\"}, \"runtime\": \"proteinmpnn\", \"schema\": \"fs2.nebius.ai/runtime-image-smoke/v1\", \"source_revision\": \"8907e6671bfbfc92303b5f79c4b5e6ce47cdef57\"}",
+          "stdout_sha256": "5444a0c612176a603967321f2a904ec882bedc1f20bdc3384ffc116caf6e55ea"
+        },
+        {
+          "command": [
+            "docker",
+            "run",
+            "--rm",
+            "--platform",
+            "linux/amd64",
+            "--network",
+            "none",
+            "--entrypoint",
+            "python",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteinmpnn@sha256:d115781382fc3644616dd480f9b06312f853f73ec6c03a6de4887757e125dfbd",
+            "/opt/proteinmpnn/protein_mpnn_run.py",
+            "--help"
+          ],
+          "last_line": "                        Path to a dictionary with tied positions (default: )",
+          "stdout_sha256": "edf1c7148fadb325d0916de86981a51e123b2194907b38b21769d1e469b96b83"
+        }
+      ],
+      "source": {
+        "archive_sha256": "2e11f385074facb06e12496acde80756b34504f0f70bf78714fb07fe9244f398",
+        "repository": "https://github.com/dauparas/ProteinMPNN",
+        "revision": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57"
+      },
+      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteinmpnn:8907e6671bfbfc92303b5f79c4b5e6ce47cdef57"
+    }
+  ],
+  "platform": "linux/amd64",
+  "recorded_at": "2026-09-03T00:56:28.262558Z",
+  "schema": "fs2.nebius.ai/cancer-runtime-image-publication/v1"
+}

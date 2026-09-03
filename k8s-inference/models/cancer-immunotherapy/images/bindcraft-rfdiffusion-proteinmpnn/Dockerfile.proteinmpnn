@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1.7
+FROM docker.io/pytorch/pytorch@sha256:0279f7aa29974bf64e61d0ff6e979b41a249b3662a46e30778dbf80b8c99c361
+
+ARG SOURCE_REVISION=8907e6671bfbfc92303b5f79c4b5e6ce47cdef57
+ARG SOURCE_ARCHIVE_SHA256=2e11f385074facb06e12496acde80756b34504f0f70bf78714fb07fe9244f398
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY runtime/fetch_verified.py /opt/fs2/fetch_verified.py
+RUN set -eux; \
+    python /opt/fs2/fetch_verified.py \
+      "https://github.com/dauparas/ProteinMPNN/archive/${SOURCE_REVISION}.tar.gz" \
+      "${SOURCE_ARCHIVE_SHA256}" /tmp/proteinmpnn.tar.gz; \
+    mkdir -p /opt/proteinmpnn; \
+    tar -xzf /tmp/proteinmpnn.tar.gz --strip-components=1 -C /opt/proteinmpnn; \
+    rm -rf \
+      /opt/proteinmpnn/vanilla_model_weights \
+      /opt/proteinmpnn/soluble_model_weights \
+      /opt/proteinmpnn/ca_model_weights \
+      /opt/proteinmpnn/inputs \
+      /opt/proteinmpnn/outputs \
+      /tmp/proteinmpnn.tar.gz; \
+    find /opt/proteinmpnn -type f \( -name '*.pt' -o -name '*.pth' -o -name '*.ckpt' \) -delete; \
+    useradd --create-home --uid 10001 --shell /usr/sbin/nologin fs2; \
+    chown -R root:root /opt/proteinmpnn; \
+    chmod -R a-w /opt/proteinmpnn
+
+COPY --chown=root:root runtime/artifact_gate.py runtime/runtime_entrypoint.py /opt/fs2/
+
+LABEL org.opencontainers.image.source="https://github.com/dauparas/ProteinMPNN" \
+      org.opencontainers.image.revision="8907e6671bfbfc92303b5f79c4b5e6ce47cdef57" \
+      org.opencontainers.image.licenses="MIT" \
+      ai.nebius.fs2.runtime.relationship="canonical-shared-component" \
+      ai.nebius.fs2.runtime.weights="external" \
+      ai.nebius.fs2.runtime.cuda="12.1"
+
+ENV FS2_RUNTIME_NAME=proteinmpnn \
+    FS2_SOURCE_REVISION=8907e6671bfbfc92303b5f79c4b5e6ce47cdef57 \
+    FS2_ARTIFACT_KIND=proteinmpnn-checkpoints \
+    FS2_ARTIFACT_ROOT=/models/proteinmpnn \
+    FS2_ARTIFACT_MANIFEST=/models/proteinmpnn/manifest.json \
+    PYTHONPATH=/opt/proteinmpnn \
+    PYTHONUNBUFFERED=1
+
+USER 10001:10001
+WORKDIR /opt/proteinmpnn
+ENTRYPOINT ["python", "/opt/fs2/runtime_entrypoint.py"]
+CMD ["python", "/opt/proteinmpnn/protein_mpnn_run.py"]
