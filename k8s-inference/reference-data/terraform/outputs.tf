@@ -18,7 +18,7 @@ output "storage_contract" {
 }
 
 output "object_storage_secret_name" {
-  description = "Non-secret, immutable credential Secret name derived from the current access-key identity."
+  description = "Non-secret, immutable credential Secret name derived from the current access-key identity and revision."
   value       = local.credentials_secret
 }
 

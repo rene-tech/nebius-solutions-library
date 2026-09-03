@@ -9,6 +9,7 @@ locals {
   credentials_identity = substr(sha256(jsonencode({
     access_key_id       = var.object_storage_access.access_key_id
     secret_reference_id = var.object_storage_access.secret_reference_id
+    revision            = var.object_storage_access.revision
   })), 0, 12)
   credentials_secret    = "fs2-reference-data-object-storage-${local.credentials_identity}"
   source_catalog        = jsondecode(file("${path.module}/../source-catalog.json"))
@@ -293,7 +294,11 @@ resource "kubernetes_secret_v1" "object_storage" {
     "access-key-id"     = var.object_storage_access.access_key_id
     "secret-access-key" = ephemeral.nebius_mysterybox_v1_secret_payload_entry.object_storage.data.string_value
   }
-  data_wo_revision = var.object_storage_access.revision
+  # Each credential revision has a content-addressed, immutable Secret name.
+  # The provider revision is therefore local to this newly created Secret;
+  # keeping it at 1 prevents a cloud-side metadata revision from turning into
+  # an illegal in-place patch of immutable Kubernetes Secret data.
+  data_wo_revision = 1
 }
 
 resource "kubernetes_config_map_v1" "tools" {

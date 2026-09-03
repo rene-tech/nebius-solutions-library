@@ -102,13 +102,47 @@ run "replacement_credential_identity_gets_a_new_immutable_secret_name" {
       terraform_data.region_contract.output.object_storage_secret == "fs2-reference-data-object-storage-${substr(sha256(jsonencode({
         access_key_id       = "replacement-access-key"
         secret_reference_id = "replacement-secret"
+        revision            = 1
       })), 0, 12)}" &&
       terraform_data.region_contract.output.object_storage_secret != "fs2-reference-data-object-storage-${substr(sha256(jsonencode({
         access_key_id       = "accesskey-test"
         secret_reference_id = "secret-test"
+        revision            = 1
       })), 0, 12)}"
     )
     error_message = "Replacing a zero-based Nebius access key must select a new immutable Kubernetes Secret even when both provider resource versions are zero."
+  }
+}
+
+run "same_credential_ids_with_a_new_revision_get_a_new_immutable_secret_name" {
+  command = apply
+
+  plan_options {
+    target = [terraform_data.region_contract]
+  }
+
+  variables {
+    object_storage_access = {
+      access_key_id       = "accesskey-test"
+      secret_reference_id = "secret-test"
+      revision            = 2
+    }
+  }
+
+  assert {
+    condition = (
+      terraform_data.region_contract.output.object_storage_secret == "fs2-reference-data-object-storage-${substr(sha256(jsonencode({
+        access_key_id       = "accesskey-test"
+        secret_reference_id = "secret-test"
+        revision            = 2
+      })), 0, 12)}" &&
+      terraform_data.region_contract.output.object_storage_secret != "fs2-reference-data-object-storage-${substr(sha256(jsonencode({
+        access_key_id       = "accesskey-test"
+        secret_reference_id = "secret-test"
+        revision            = 1
+      })), 0, 12)}"
+    )
+    error_message = "Incrementing the Nebius revision must replace the immutable Kubernetes Secret even when both cloud credential IDs remain unchanged."
   }
 }
 

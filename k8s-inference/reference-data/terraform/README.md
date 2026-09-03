@@ -23,7 +23,10 @@ CPU pool and eligible GPU nodes as uid/gid 1000.
 The module never creates cloud storage or broad IAM membership. It consumes the
 least-privilege access-key identity from infrastructure, fetches its secret
 ephemerally from MysteryBox and uses the Kubernetes provider's write-only
-Secret field so credential material is not persisted in Terraform state.
+Secret field so credential material is not persisted in Terraform state. Each
+access-key revision selects a new content-addressed immutable Kubernetes Secret
+and therefore a new staging Job identity; rotation never patches an immutable
+Secret in place.
 
 Private preprocessing has default-deny egress. Set exact
 `object_storage_egress_cidrs` for the private S3 endpoint/proxy. Public source
