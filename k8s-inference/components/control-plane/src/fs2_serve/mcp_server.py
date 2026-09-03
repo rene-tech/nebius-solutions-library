@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import math
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -35,6 +37,7 @@ from .models import (
     Scope,
 )
 from .registry import OperationalModel
+from .scientific_artifacts import ArtifactNotFoundError
 from .scientific_input_uploads import ScientificInputUploadRequest
 from .store import NotFoundError
 
@@ -53,8 +56,10 @@ CORE_TOOLS = {
     "get_scientific_artifact",
     "get_scientific_result",
     "begin_scientific_artifact_upload",
+    "put_scientific_artifact_bytes",
     "finalize_scientific_artifact_upload",
     "download_scientific_artifact",
+    "read_scientific_artifact_bytes",
 }
 MCP_HTTP_PATH = "/mcp"
 MCP_CHILD_MOUNT_PATH = "/"
@@ -486,13 +491,12 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     ) -> dict[str, Any]:
         """Create a write-once customer upload handle for a scientific input."""
 
-        if runtime.scientific_input_uploads is None or runtime.scientific_batches is None:
+        if runtime.scientific_input_uploads is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific input upload is unavailable")
         if idempotency_key is not None and not (
             MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH
         ):
             raise MCPError(code=INVALID_PARAMS, message="idempotency_key length is invalid")
-        runtime.scientific_batches.profiles.get(model_id)
         request = ScientificInputUploadRequest.model_validate(
             {
                 "model_id": model_id,
@@ -508,6 +512,39 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             idempotency_key=idempotency_key or f"mcp-scientific-upload-{uuid4()}",
         )
         return result.model_dump(mode="json")
+
+    async def put_scientific_artifact_bytes(
+        operation_id: UUID,
+        upload_id: UUID,
+        content_base64: str,
+    ) -> dict[str, Any]:
+        """Write the artifact bytes for a reserved upload without leaving MCP.
+
+        This is the MCP equivalent of the gateway's inline byte PUT: the bytes
+        are matched against the reserved digest, size and media type before any
+        object exists, so an MCP client needs no object-store access at all.
+        """
+
+        if runtime.scientific_input_uploads is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific input upload is unavailable")
+        ceiling = runtime.scientific_input_uploads.max_content_bytes
+        # Reject on the encoded length first: decoding a payload beyond the
+        # ceiling would allocate memory the inline path never accepts anyway.
+        if len(content_base64) > 4 * (ceiling // 3 + 1) + 4:
+            raise MCPError(code=INVALID_PARAMS, message="artifact exceeds the inline content ceiling")
+        try:
+            content = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError):
+            raise MCPError(code=INVALID_PARAMS, message="content_base64 is not valid base64") from None
+        if len(content) > ceiling:
+            raise MCPError(code=INVALID_PARAMS, message="artifact exceeds the inline content ceiling")
+        receipt = await runtime.scientific_input_uploads.store_content(
+            principal=_principal(),
+            operation_id=operation_id,
+            upload_id=upload_id,
+            content=content,
+        )
+        return receipt.model_dump(mode="json")
 
     async def finalize_scientific_artifact_upload(operation_id: UUID, upload_id: UUID) -> dict[str, Any]:
         """Verify uploaded bytes and publish their immutable artifact pointer."""
@@ -540,6 +577,33 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             },
         }
 
+    async def read_scientific_artifact_bytes(artifact_id: UUID) -> dict[str, Any]:
+        """Return one authorized artifact's exact bytes, base64 encoded.
+
+        The pointer travels with the bytes so the caller can verify the
+        SHA-256 it computes itself against the digest the platform published.
+        """
+
+        principal = _principal()
+        principal.require(Scope.OPERATIONS_RESULT)
+        if runtime.artifact_service is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific artifact service is unavailable")
+        ceiling = runtime.artifact_service.max_inline_content_bytes
+        stream = await runtime.artifact_service.open_content(artifact_id, tenant_id=principal.tenant_id)
+        if stream.artifact.size_bytes > ceiling:
+            raise MCPError(code=INVALID_PARAMS, message="artifact exceeds the inline content ceiling")
+        content = bytearray()
+        async for chunk in stream.chunks:
+            content.extend(chunk)
+            if len(content) > ceiling:
+                raise MCPError(code=INVALID_PARAMS, message="artifact exceeds the inline content ceiling")
+        if len(content) != stream.artifact.size_bytes:
+            raise ArtifactNotFoundError("stored object size differs from verified metadata")
+        return {
+            "artifact": stream.artifact.to_public_ref().model_dump(mode="json", exclude_none=True),
+            "content_base64": base64.b64encode(bytes(content)).decode("ascii"),
+        }
+
     for function in (
         list_models,
         list_scientific_models,
@@ -555,8 +619,10 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         get_scientific_artifact,
         get_scientific_result,
         begin_scientific_artifact_upload,
+        put_scientific_artifact_bytes,
         finalize_scientific_artifact_upload,
         download_scientific_artifact,
+        read_scientific_artifact_bytes,
     ):
         server.add_tool(function, name=function.__name__, meta={"fs2_core": True})
 

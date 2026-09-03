@@ -97,6 +97,10 @@ class FakeObjectStore:
     def __init__(self, *, clock=lambda: NOW) -> None:
         self.objects: dict[str, tuple[bytes, str, ArtifactCompression | None]] = {}
         self.deleted: list[str] = []
+        self.written: list[str] = []
+        # ``rewrite`` models a store that silently persists something other
+        # than the submitted body, which the service must still detect.
+        self.rewrite: bytes | None = None
         self.override: VerifiedStoredObject | None = None
         self.issued: list[EphemeralHandle] = []
         self._clock = clock
@@ -136,6 +140,29 @@ class FakeObjectStore:
 
     async def presign_download(self, *, storage_key: str, ttl: timedelta) -> EphemeralHandle:
         return self._handle("GET", storage_key, ttl, {})
+
+    async def put_object(
+        self,
+        *,
+        storage_key: str,
+        payload: bytes,
+        media_type: str,
+        compression: ArtifactCompression | None,
+    ) -> VerifiedStoredObject:
+        self.written.append(storage_key)
+        if self.rewrite is not None:
+            payload = self.rewrite
+        self.objects[storage_key] = (payload, media_type, compression)
+        return await self.inspect(storage_key, max_bytes=len(payload))
+
+    async def stream_object(self, storage_key: str, *, max_bytes: int | None = None):
+        if storage_key not in self.objects:
+            raise ArtifactNotFoundError("stored object is absent")
+        value = self.objects[storage_key][0]
+        for offset in range(0, max(len(value), 1), 4):
+            chunk = value[offset : offset + 4]
+            if chunk:
+                yield chunk
 
     async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject:
         if self.override is not None:

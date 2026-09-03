@@ -2,9 +2,13 @@
 
 Signing is delegated to the AWS SDK (``botocore``) so that presigned handles
 carry a genuine SigV4 ``X-Amz-Signature`` and are accepted by an unmodified
-S3-compatible gateway. The control plane never buffers a whole artifact: the
-digest is recomputed by streaming bounded chunks, and object bytes are
-discarded as soon as they are hashed.
+S3-compatible gateway. Verification and reads never buffer a whole artifact:
+the digest is recomputed by streaming bounded chunks, object bytes are
+discarded as soon as they are hashed, and ``stream_object`` hands bounded
+chunks straight to its caller. The one place a whole object is held in memory
+is ``put_object``, the inline write path for a customer who can reach only the
+public gateway; it is bounded by the configured inline ceiling, and anything
+above that ceiling must still use a presigned handle.
 
 Nothing in this module logs a URL, a signature, a credential, or object bytes.
 """
@@ -33,7 +37,7 @@ from .scientific_artifacts import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Iterator
+    from collections.abc import AsyncIterator, Iterator
 
 STREAM_CHUNK_BYTES = 8 * 1024 * 1024
 _CONTENT_ENCODING = {"gzip": ArtifactCompression.GZIP, "zstd": ArtifactCompression.ZSTD}
@@ -165,6 +169,79 @@ class S3ArtifactObjectStore:
         except (BotoCoreError, ClientError) as error:
             raise ArtifactStorageUnavailableError("artifact download handle could not be issued") from error
         return EphemeralHandle(method="GET", url=url, expires_at=expires_at, write_once=False, headers={})
+
+    def _put(
+        self,
+        storage_key: str,
+        payload: bytes,
+        media_type: str,
+        compression: ArtifactCompression | None,
+    ) -> None:
+        params: dict[str, Any] = {
+            "Bucket": self._config.bucket,
+            "Key": storage_key,
+            "Body": payload,
+            "ContentType": media_type,
+        }
+        if compression is not None:
+            params["ContentEncoding"] = compression.value
+        self._client.put_object(**params)
+
+    async def put_object(
+        self,
+        *,
+        storage_key: str,
+        payload: bytes,
+        media_type: str,
+        compression: ArtifactCompression | None,
+    ) -> VerifiedStoredObject:
+        """Persist one bounded object, then measure what was actually stored.
+
+        The measurement is a fresh read rather than an echo of the request, so
+        a store that rewrote or re-typed the body cannot be mistaken for one
+        that accepted it verbatim.
+        """
+
+        if len(payload) > self._config.max_stream_bytes:
+            raise ArtifactPolicyError("artifact exceeds the accepted object ceiling")
+        try:
+            await asyncio.to_thread(self._put, storage_key, payload, media_type, compression)
+        except (BotoCoreError, ClientError) as error:
+            raise ArtifactStorageUnavailableError("stored object could not be written") from error
+        return await self.inspect(storage_key, max_bytes=len(payload))
+
+    def _open(self, storage_key: str) -> Any:
+        response = self._client.get_object(Bucket=self._config.bucket, Key=storage_key)
+        return response["Body"]
+
+    async def stream_object(self, storage_key: str, *, max_bytes: int | None = None) -> AsyncIterator[bytes]:
+        """Yield the stored object in bounded chunks without ever buffering it."""
+
+        requested = self._config.max_stream_bytes if max_bytes is None else max_bytes
+        ceiling = min(requested, self._config.max_stream_bytes)
+        try:
+            body = await asyncio.to_thread(self._open, storage_key)
+        except ClientError as error:
+            if _is_missing(error):
+                raise ArtifactNotFoundError("stored object is absent") from None
+            raise ArtifactStorageUnavailableError("stored object could not be read") from error
+        except BotoCoreError as error:
+            raise ArtifactStorageUnavailableError("stored object could not be read") from error
+        total = 0
+        try:
+            while True:
+                try:
+                    chunk: bytes = await asyncio.to_thread(body.read, self._config.chunk_bytes)
+                except (BotoCoreError, ClientError) as error:
+                    raise ArtifactStorageUnavailableError("stored object could not be read") from error
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > ceiling:
+                    raise ArtifactVerificationError("stored object exceeds the accepted artifact ceiling")
+                yield chunk
+        finally:
+            await asyncio.to_thread(body.close)
 
     def _stream_digest(self, storage_key: str, ceiling: int) -> tuple[str, int, str, str | None]:
         """Hash the object in bounded chunks; bytes are never retained."""

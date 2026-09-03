@@ -232,6 +232,10 @@ class Settings(BaseSettings):
     artifact_store_credentials_file: Path = Path("/var/run/secrets/fs2-serve/artifact-store/credentials.json")
     artifact_handle_ttl_seconds: int = Field(default=600, ge=30, le=900)
     artifact_max_bytes: int = Field(default=1 << 40, ge=1024, le=1 << 40)
+    # The exact ceiling for artifact bytes carried through the public gateway
+    # itself. A larger object remains reachable only through a presigned
+    # handle, so this bound must never exceed what the edge will accept.
+    artifact_inline_content_max_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
     artifact_retention_seconds: int = Field(default=7776000, ge=86400, le=315360000)
     artifact_media_types: str = Field(
         default=(
@@ -319,6 +323,10 @@ class Settings(BaseSettings):
                 raise ValueError("artifact_store_endpoint must use HTTPS")
             if not self.artifact_media_types_set():
                 raise ValueError("artifact_media_types must list at least one exact media type")
+            if self.artifact_inline_content_max_bytes > self.max_request_bytes:
+                raise ValueError("artifact_inline_content_max_bytes cannot exceed max_request_bytes")
+            if self.artifact_inline_content_max_bytes > self.artifact_max_bytes:
+                raise ValueError("artifact_inline_content_max_bytes cannot exceed artifact_max_bytes")
         database_roles = {
             self.reporting_database_role,
             self.runtime_database_role,

@@ -12,14 +12,23 @@ Two invariants are enforced everywhere, including in SQL:
 * Object bytes, presigned URLs, signed headers and credentials are never
   persisted and never logged. Only content addresses and identities are stored.
 * A terminal result fences the operation. A superseded attempt cannot write.
+
+Bytes reach and leave this service by two exact paths. A presigned handle is
+the path for a caller that can reach the object store directly, and remains
+the only path for an object above the inline ceiling. The inline path carries
+bytes through the gateway itself so an external customer needs nothing but the
+public API: an inline write is measured and matched against the immutable
+upload intent *before* any object is created, and an inline read is streamed
+in bounded chunks so a large result is never buffered.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -54,6 +63,8 @@ from .scientific_run_result import (
 ARTIFACT_RECORD_SCHEMA: Final = "fs2-serve.nebius.ai/scientific-artifact-record/v1"
 SCIENTIFIC_ARTIFACT_MIGRATION = "0014_scientific_artifact_results.sql"
 MAX_ARTIFACT_BYTES = 1 << 40
+MAX_INLINE_CONTENT_BYTES = 256 * 1024 * 1024
+DEFAULT_INLINE_CONTENT_BYTES = 16 * 1024 * 1024
 MAX_HANDLE_TTL = timedelta(minutes=15)
 HANDLE_CLOCK_SKEW = timedelta(minutes=1)
 DEFAULT_HANDLE_TTL = timedelta(minutes=10)
@@ -110,6 +121,12 @@ class ArtifactVerificationError(ArtifactServiceError):
 
 class ArtifactPolicyError(ArtifactServiceError):
     code = "artifact_policy_rejected"
+
+
+class ArtifactContentTooLargeError(ArtifactServiceError):
+    """The object is larger than the inline gateway path accepts."""
+
+    code = "artifact_content_too_large"
 
 
 class ResultAlreadyTerminalError(ArtifactServiceError):
@@ -593,6 +610,22 @@ class ArtifactDownload:
 
 
 @dataclass(frozen=True, slots=True)
+class InlineUploadReceipt:
+    """Evidence that the stored object equals the immutable upload intent."""
+
+    upload: UploadIntent
+    stored: VerifiedStoredObject
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactContentStream:
+    """Verified metadata plus the exact bytes it addresses, never buffered."""
+
+    artifact: ArtifactRecord
+    chunks: AsyncIterator[bytes] = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
 class RetentionPurge:
     """One completed retention deletion, retained as durable evidence."""
 
@@ -730,6 +763,17 @@ class ArtifactObjectStorePort(Protocol):
 
     async def presign_download(self, *, storage_key: str, ttl: timedelta) -> EphemeralHandle: ...
 
+    async def put_object(
+        self,
+        *,
+        storage_key: str,
+        payload: bytes,
+        media_type: str,
+        compression: ArtifactCompression | None,
+    ) -> VerifiedStoredObject: ...
+
+    def stream_object(self, storage_key: str, *, max_bytes: int | None = None) -> AsyncIterator[bytes]: ...
+
     async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject: ...
 
     async def delete(self, storage_key: str) -> None: ...
@@ -799,11 +843,25 @@ class ScientificArtifactControllerPort(Protocol):
         self, request: BeginArtifactUpload, *, handle_ttl: timedelta | None = None
     ) -> BeginUploadResult: ...
 
+    async def store_upload_content(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        content: bytes,
+        declared_media_type: str | None = None,
+        declared_size_bytes: int | None = None,
+    ) -> InlineUploadReceipt: ...
+
     async def finalize_upload(self, request: FinalizeArtifactUpload) -> ArtifactRecord: ...
 
     async def download(
         self, artifact_id: UUID, *, tenant_id: str, handle_ttl: timedelta | None = None
     ) -> ArtifactDownload: ...
+
+    async def open_content(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactContentStream: ...
+
+    @property
+    def max_inline_content_bytes(self) -> int: ...
 
     async def list_artifacts(
         self,
@@ -875,6 +933,7 @@ class ScientificArtifactService:
         object_store: ArtifactObjectStorePort,
         allowed_media_types: Iterable[str],
         max_artifact_bytes: int = MAX_ARTIFACT_BYTES,
+        max_inline_content_bytes: int = DEFAULT_INLINE_CONTENT_BYTES,
         max_handle_ttl: timedelta = MAX_HANDLE_TTL,
         default_handle_ttl: timedelta = DEFAULT_HANDLE_TTL,
         retention: timedelta = DEFAULT_RETENTION,
@@ -886,6 +945,8 @@ class ScientificArtifactService:
             raise ValueError("allowed media types must be a non-empty exact allowlist")
         if not 0 < max_artifact_bytes <= MAX_ARTIFACT_BYTES:
             raise ValueError("the artifact ceiling is outside the supported range")
+        if not 0 < max_inline_content_bytes <= MAX_INLINE_CONTENT_BYTES:
+            raise ValueError("the inline content ceiling is outside the supported range")
         if not timedelta(0) < max_handle_ttl <= MAX_HANDLE_TTL:
             raise ValueError("handle lifetime must be positive and at most fifteen minutes")
         if not timedelta(0) < default_handle_ttl <= max_handle_ttl:
@@ -896,6 +957,7 @@ class ScientificArtifactService:
         self._store = object_store
         self._allowed_media_types = allowed
         self._max_artifact_bytes = max_artifact_bytes
+        self._max_inline_content_bytes = min(max_inline_content_bytes, max_artifact_bytes)
         self._max_handle_ttl = max_handle_ttl
         self._default_handle_ttl = default_handle_ttl
         self._retention = retention
@@ -905,6 +967,12 @@ class ScientificArtifactService:
     @property
     def retention(self) -> timedelta:
         return self._retention
+
+    @property
+    def max_inline_content_bytes(self) -> int:
+        """The exact ceiling the inline gateway byte path advertises."""
+
+        return self._max_inline_content_bytes
 
     def _check_policy(self, media_type: str, size_bytes: int) -> None:
         if media_type not in self._allowed_media_types:
@@ -956,6 +1024,69 @@ class ScientificArtifactService:
         )
         _validate_handle(handle, method="PUT", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
         return BeginUploadResult(upload=intent, handle=handle)
+
+    async def store_upload_content(
+        self,
+        request: FinalizeArtifactUpload,
+        *,
+        content: bytes,
+        declared_media_type: str | None = None,
+        declared_size_bytes: int | None = None,
+    ) -> InlineUploadReceipt:
+        """Write customer bytes to the reserved content address through the gateway.
+
+        The bytes are measured and matched against the immutable upload intent
+        before the object is created, so a body that disagrees with the declared
+        digest, size, media type or encoding never becomes a stored object and
+        can never be finalized. ``declared_*`` carry what the transport claimed;
+        a claim that contradicts the intent is rejected without reading further.
+        """
+
+        intent = await self._repository.get_upload(request)
+        if intent.artifact_id is not None:
+            raise ArtifactConflictError("a finalized upload cannot accept new bytes")
+        if len(content) > self._max_inline_content_bytes:
+            raise ArtifactContentTooLargeError("artifact exceeds the inline gateway ceiling")
+        if declared_media_type is not None:
+            declared = declared_media_type.split(";", 1)[0].strip().lower()
+            if declared != intent.media_type:
+                raise ArtifactVerificationError("declared media type differs from the upload intent")
+        if declared_size_bytes is not None and declared_size_bytes != intent.expected_size_bytes:
+            raise ArtifactVerificationError("declared size differs from the upload intent")
+        measured = VerifiedStoredObject(
+            storage_key=intent.storage_key,
+            digest=f"sha256:{hashlib.sha256(content).hexdigest()}",
+            size_bytes=len(content),
+            media_type=intent.media_type,
+            compression=intent.compression,
+        )
+        _verify_object(intent, measured)
+        self._check_policy(intent.media_type, measured.size_bytes)
+        stored = await self._store.put_object(
+            storage_key=intent.storage_key,
+            payload=content,
+            media_type=intent.media_type,
+            compression=intent.compression,
+        )
+        # The adapter measures the object it actually persisted. A store that
+        # rewrote, truncated or re-typed the body is caught here rather than
+        # surfacing later as an unexplained finalization failure.
+        _verify_object(intent, stored)
+        return InlineUploadReceipt(upload=intent, stored=stored)
+
+    async def open_content(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactContentStream:
+        """Stream one authorized artifact's exact bytes to its own tenant.
+
+        The repository enforces the tenant boundary before any object is read,
+        and the returned chunks are the addressed bytes themselves, so the
+        caller's own SHA-256 of the stream must equal the artifact digest.
+        """
+
+        record = await self._repository.get_artifact(artifact_id, tenant_id=tenant_id)
+        return ArtifactContentStream(
+            artifact=record,
+            chunks=self._store.stream_object(record.storage_key, max_bytes=record.size_bytes),
+        )
 
     async def finalize_upload(self, request: FinalizeArtifactUpload) -> ArtifactRecord:
         """Verify the stored bytes independently, then publish the content address."""

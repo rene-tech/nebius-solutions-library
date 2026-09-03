@@ -259,6 +259,7 @@ def _artifact_service(
         object_store=object_store,
         allowed_media_types=settings.artifact_media_types_set(),
         max_artifact_bytes=settings.artifact_max_bytes,
+        max_inline_content_bytes=settings.artifact_inline_content_max_bytes,
         default_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
         retention=timedelta(seconds=settings.artifact_retention_seconds),
         require_tls_handles=settings.artifact_store_verify_tls,
@@ -343,8 +344,19 @@ async def build_runtime(settings: Settings) -> AppRuntime:
                 namespace=settings.model_controller_namespace,
                 close_source=kubernetes_models.close,
             )
+    scientific_profiles: ScientificProfileCatalog | None = None
+    if artifact_service is not None:
+        # Customer input staging depends on the artifact plane and the declared
+        # profile set only. Requiring the batch controller here would leave the
+        # public upload surface dark until a model is GPU-qualified.
+        scientific_profiles = ScientificProfileCatalog.load(settings.catalog_dir)
+        scientific_input_uploads = ScientificInputUploadService(
+            store=store,
+            artifacts=artifact_service,
+            profiles=scientific_profiles,
+        )
     if settings.scientific_batch_enabled:
-        if artifact_service is None:
+        if artifact_service is None or scientific_profiles is None:
             raise RuntimeError("scientific batch requires the canonical artifact service")
         if settings.scientific_batch_scheduling_contract_sha256 is None:
             raise RuntimeError("scientific batch requires the Terraform scheduling-contract digest")
@@ -418,7 +430,6 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             poll_seconds=settings.scientific_batch_poll_seconds,
             admission_recovery=scientific_batches,
         )
-        scientific_input_uploads = ScientificInputUploadService(store=store, artifacts=artifact_service)
     # Canonical catalog metadata remains observable when promotion deliberately
     # leaves zero routable models. Request and queue series are still populated
     # only from durable admitted operations.

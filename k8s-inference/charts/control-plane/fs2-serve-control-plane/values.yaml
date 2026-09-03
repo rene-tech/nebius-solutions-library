@@ -629,6 +629,10 @@ scientificArtifacts:
   verifyTls: true
   handleTtlSeconds: 600
   maxBytes: 1099511627776
+  # Ceiling for artifact bytes carried through the public gateway itself, so a
+  # customer that can reach only the API can still complete an upload. Must not
+  # exceed maxRequestBytes; anything larger has to use a presigned handle.
+  inlineContentMaxBytes: 16777216
   retentionSeconds: 7776000
   mediaTypes:
     - application/octet-stream
