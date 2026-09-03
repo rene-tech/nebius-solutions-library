@@ -18,6 +18,8 @@ locals {
   kubernetes_minor  = "v${local.kubernetes_parts[0]}.${local.kubernetes_parts[1]}"
   compatibility_url = "https://github.com/kubernetes-sigs/jobset/releases/tag/v0.12.0"
   install_url       = "https://jobset.sigs.k8s.io/docs/installation/"
+  qualification_doc = "modules/jobset-controller/QUALIFICATION.md"
+  live_evidence     = "modules/jobset-controller/evidence/kubernetes-1.35-h100.json"
 }
 
 data "external" "chart" {
@@ -41,8 +43,12 @@ resource "terraform_data" "contract" {
     api_version                   = local.api_version
     configured_kubernetes_version = var.kubernetes_version
     kubernetes_minor              = local.kubernetes_minor
-    # Exactly the minors JobSet v0.12.0 itself tests end to end.
+    # Keep upstream and local evidence separate. JobSet v0.12.0's published
+    # table stops at 1.34; FS2 adds 1.35 only after the exact digest-pinned
+    # release completes on Kind 1.35 and the managed H100 1.35.6 cluster.
     upstream_tested_kubernetes_minors = ["v1.32", "v1.33", "v1.34"]
+    fs2_qualified_kubernetes_minors   = ["v1.35"]
+    supported_kubernetes_minors       = ["v1.32", "v1.33", "v1.34", "v1.35"]
     namespace                         = var.namespace
     release_name                      = local.release_name
     controller_name                   = local.controller_name
@@ -59,8 +65,10 @@ resource "terraform_data" "contract" {
       digest     = local.image_digest
     }
     sources = {
-      installation = local.install_url
-      release      = local.compatibility_url
+      installation  = local.install_url
+      release       = local.compatibility_url
+      qualification = local.qualification_doc
+      live_evidence = local.live_evidence
     }
   }
 
@@ -70,13 +78,13 @@ resource "terraform_data" "contract" {
         can(regex("^[a-z][a-z0-9]{5,11}$", var.run_id)) &&
         var.namespace == "jobset-system" &&
         tonumber(local.kubernetes_parts[0]) == 1 &&
-        contains([32, 33, 34], tonumber(local.kubernetes_parts[1])) &&
+        contains([32, 33, 34, 35], tonumber(local.kubernetes_parts[1])) &&
         local.api_version == "jobset.x-k8s.io/v1alpha2" &&
         can(regex("^sha256:[a-f0-9]{64}$", local.chart_digest)) &&
         can(regex("^[a-f0-9]{64}$", local.chart_archive_sha)) &&
         can(regex("^sha256:[a-f0-9]{64}$", local.image_digest))
       )
-      error_message = "JobSet must retain the pinned v0.12.0 chart/image identities, v1alpha2 API, jobset-system namespace, and a Kubernetes 1.32-1.34 deployment minor."
+      error_message = "JobSet must retain the pinned v0.12.0 chart/image identities, v1alpha2 API, jobset-system namespace, and a Kubernetes 1.32-1.35 deployment minor backed by the declared upstream or FS2 qualification evidence."
     }
   }
 }

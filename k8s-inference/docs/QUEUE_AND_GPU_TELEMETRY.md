@@ -347,12 +347,14 @@ publishes it.
 
 ## Supported Kubernetes minors
 
-Nothing here claims a minor that upstream does not test. Kueue v0.17.8's own
-end-to-end matrix covers Kubernetes 1.33-1.35 and JobSet v0.12.0's covers
-1.32-1.34, so a cluster must sit inside the Kueue matrix, and enabling
-scientific batch narrows it to their tested intersection, 1.33 or 1.34. Managed
-patch upgrades inside a minor are accepted. The pinned Kind evidence runs on
-1.34, which is in both matrices.
+Kueue v0.17.8's upstream end-to-end matrix covers Kubernetes 1.33-1.35.
+JobSet v0.12.0's published table covers 1.32-1.34. FS2 keeps those upstream
+claims separate and additionally qualifies the exact pinned JobSet/Kueue pair
+on Kind 1.35.0 and the managed H100 Kubernetes 1.35.6 cluster. Scientific batch
+therefore supports the 1.33-1.35 intersection; 1.35 is an FS2 qualification,
+not an upstream JobSet-matrix claim. Managed patch upgrades inside those
+minors are accepted. Exact sources, pins, tests, live evidence, and rollback
+are recorded in modules/jobset-controller/QUALIFICATION.md.
 
 ## True-gang prerequisite
 
@@ -376,7 +378,7 @@ existing LocalQueue UID survives, and confirms v1beta2 remains served and
 stored.
 Kueue installation waits for JobSet. Before foundation state can become the
 workloads input, the readiness gate requires a Kubernetes minor inside the
-tested intersection above, an Established `jobsets.jobset.x-k8s.io` CRD serving
+supported set above, an Established `jobsets.jobset.x-k8s.io` CRD serving
 `v1alpha2`, an available controller, discovery, and a successful server-side
 dry-run JobSet. The root facade checks the Kueue matrix before infrastructure
 planning and applies the narrower intersection whenever scientific batch is

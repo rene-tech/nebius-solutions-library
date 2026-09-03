@@ -332,11 +332,11 @@ variable "jobset" {
         tonumber(split(".", trimprefix(var.jobset.kubernetes_version, "v"))[1]),
       ) &&
       (!var.jobset.enabled || contains(
-        [33, 34],
+        [33, 34, 35],
         tonumber(split(".", trimprefix(var.jobset.kubernetes_version, "v"))[1]),
       )),
       false,
     )
-    error_message = "Kueue v0.17.8's own end-to-end matrix covers Kubernetes 1.33-1.35; JobSet v0.12.0's covers 1.32-1.34. Enabling JobSet therefore requires their tested intersection, 1.33 or 1.34."
+    error_message = "Kueue v0.17.8's upstream end-to-end matrix covers Kubernetes 1.33-1.35. JobSet v0.12.0's published matrix covers 1.32-1.34, and FS2 qualifies the exact pinned release with Kueue v0.17.8 on Kubernetes 1.35. Enabling JobSet therefore requires 1.33-1.35."
   }
 }
