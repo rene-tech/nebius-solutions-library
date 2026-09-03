@@ -167,7 +167,33 @@ a one-to-one level mapping:
 | Shared restore | Restore a runtime-native or GPU-process snapshot from enhanced object storage or a regional shared filesystem. |
 | Node-local restore | Place a compatible snapshot on local NVMe and read shards in parallel. This needs a pool with local disks and a replacement strategy because the cache is ephemeral. |
 | Host-memory residency | Keep compatible weights or process state in system RAM and transfer them into GPU memory on activation. RAM accounting and placement remain explicit. |
+| GPU-resident cache | Keep a warm engine and its weights in GPU memory so activation is a promotion rather than a load. This holds an accelerator for as long as the replica is parked, so it depends on a hot floor that can afford it. |
 | Optimized transfer/runtime | GDS, NIXL, NVIDIA Dynamo Snapshot, GMS, ModelExpress, or another qualified backend may shorten one or more phases. |
+
+### Which mechanisms are implemented, and what each costs
+
+Three are implemented as selectable adapters in
+`components/control-plane/src/fs2_serve/fast_start_mechanisms.py`. A model pins
+one with `spec.cache.mechanism`; leaving it unset keeps the historical
+behaviour, where the fastest qualified path is selected from evidence.
+
+| Mechanism | What it retains | What it costs |
+| --- | --- | --- |
+| `regional-cache` | In-region image mirror, retained payload, and the JIT/compile cache under an ABI-scoped sub-path instead of a discarded `emptyDir`; a bounded pre-read leaves the payload pages warm | Nothing reserved |
+| `host-memory-residency` | A node-scoped holder keeps the exact payload in host RAM, or `runtime-sleep-offload` keeps a live engine's weights there | A scheduled host-memory reservation, requested and limited, capped at a quarter of the node |
+| `gpu-resident` | A standby replica holds its warm engine in GPU memory behind a readiness gate | An accelerator, for as long as the replica is parked |
+
+Each declaration's configuration is bound into the mechanism identity that
+benchmark evidence must match, so retuning a mechanism starts a new cohort
+instead of inheriting the previous one's percentile. Every mechanism is
+projected into `status.fastStart.cacheMechanisms` with its price, and a
+`Configured` mechanism sits next to whatever level the evidence supports, which
+is `Off` until a cohort is populated.
+
+`node-local-restore` and `shared-restore` are reported `Unavailable` for this
+cluster's H100 pool, with the pool's own `local-nvme.fs2.nebius/eligible=false`
+and `snapshot.fs2.nebius/eligible=false` selectors attached as the proof. They
+are never attempted.
 
 The runtime image, model artifacts, compiled kernels, snapshot, and host-memory
 state are separate dependencies. A GPU snapshot does not by itself eliminate a
