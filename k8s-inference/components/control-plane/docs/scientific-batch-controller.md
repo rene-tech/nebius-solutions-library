@@ -170,6 +170,35 @@ grace/drain, and the batch remains nonterminal while any exact UID is still
 present. Only confirmed absence emits teardown and permits every non-succeeded
 stage to become cancelled; no later stage can be created.
 
+A terminal cascade keeps stepping under the same claim until the batch stops
+moving, bounded by `CASCADE_STEP_BOUND`. A cascade needs at least two durable
+writes — one to record that deletes were requested, one to conclude that
+Kubernetes released the resources — and returning to the poll loop between them
+would report a cancelled batch, and its public Operation row, as running until
+an unrelated later poll. Each step is still its own fenced compare-and-swap, so
+a controller that dies mid-cascade resumes from what was committed; a cascade
+that a slow cluster leaves unfinished is picked up by the next poll rather than
+holding the lease.
+
+## Legacy state rows
+
+Stored state carries its schema version, and the codec reopens `v6` and `v7`
+rows into the current record so historical batches stay readable. A pre-`v8`
+row has no placement class, no raw scheduling contract digest, and no
+execution-map or stage bindings, because those values did not exist when it was
+written; the codec reopens them as the explicit null/empty representation.
+
+Such an admission is readable but not executable: the controller can neither
+render its workloads nor prove which image and resources it was admitted
+against. A still-open legacy row is therefore retired rather than resumed. It
+terminalizes as `failed` with `legacy_state_incompatible` and the retryable
+`infrastructure` failure kind, so the caller may resubmit the request against
+the current schema. Any workload identity the row carries is still deleted
+through the same UID-fenced cleanup. Scientific batch has never been enabled on
+a live cluster, so no such row can own real GPU capacity. A legacy row that
+already reached a terminal status is left untouched and stays readable at its
+original schema version.
+
 ## Lifecycle evidence
 
 Lifecycle markers are monotonic within an attempt. A retry starts a new

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -28,7 +30,11 @@ from fs2_serve.scientific_batch import (
     WorkloadState,
 )
 from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
-from fs2_serve.scientific_batch.models import BatchEventKind
+from fs2_serve.scientific_batch.models import (
+    LEGACY_ADMISSION_FAILURE_CODE,
+    BatchEventKind,
+    ScientificIdentityError,
+)
 from fs2_serve.scientific_batch.protocols import BatchRepositoryConflictError
 
 NOW = datetime(2026, 9, 2, 20, 40, tzinfo=UTC)
@@ -763,12 +769,9 @@ async def test_cancel_racing_with_job_creation_is_carried_into_fenced_state() ->
 
     await reconciler.reconcile_once()
     cancelled = repository.records[operation_id]
-    assert cancelled.status is BatchStatus.RUNNING
-    assert cancelled.stage("fold").attempts[0].deletion_requested
-    await reconciler.reconcile_once()
-    cancelled = repository.records[operation_id]
     assert cancelled.status is BatchStatus.CANCELLED
     assert cancelled.stage("fold").attempts[0].outcome is AttemptOutcome.CANCELLED
+    assert cancelled.stage("fold").attempts[0].deletion_requested
     assert cluster.delete_history == [cancelled.stage("fold").attempts[0].workload]
 
 
@@ -880,16 +883,19 @@ async def test_cancel_cascades_to_active_attempts_and_never_creates_downstream_s
     repository.force_cancel(operation_id)
     for attempt in repository.records[operation_id].stage("prepare").attempts:
         cluster.deletion_polls_before_absent[cluster.key(attempt.workload)] = 1
+    started = repository.records[operation_id].revision
     await reconciler.reconcile_once()
 
+    # Kubernetes has not confirmed absence yet, so the cascade settles at the
+    # persisted deletion boundary: exactly one durable write, and no attempt
+    # claims to have released its workload resource.
     deleting = repository.records[operation_id]
     assert deleting.status is BatchStatus.RUNNING
+    assert deleting.revision == started + 1
     assert all(
         attempt.deletion_requested and not attempt.resource_released for attempt in deleting.stage("prepare").attempts
     )
-    revision = deleting.revision
-    await reconciler.reconcile_once()
-    assert repository.records[operation_id].revision == revision
+    assert len(cluster.absence_polls) == 2
     await reconciler.reconcile_once()
 
     cancelled = repository.records[operation_id]
@@ -936,3 +942,83 @@ async def test_controller_rejects_a_frozen_local_queue_route_for_another_namespa
         )
     assert not repository.records
     assert not cluster.apply_history
+
+
+def legacy_state(name: str):
+    """Reopen one exact row a released pre-v8 controller left in PostgreSQL."""
+
+    fixture = Path(__file__).parent / "fixtures" / name
+    return state_from_value(json.loads(fixture.read_text()))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("fixture", "stage_status"),
+    [
+        ("scientific-batch-state-v7-545d71d9.json", StageStatus.PENDING),
+        ("scientific-batch-state-v7-active-aaaaaaaa.json", StageStatus.ACTIVE),
+    ],
+)
+async def test_open_legacy_admission_is_retired_instead_of_executed(fixture: str, stage_status: StageStatus) -> None:
+    legacy = legacy_state(fixture)
+    assert legacy.legacy_admission is True
+    assert legacy.stage("design").status is stage_status
+    assert legacy.execution_plan is not None and legacy.execution_plan.stage_bindings == ()
+    repository = FakeScientificBatchRepository()
+    repository.records[legacy.operation_id] = legacy
+    repository.events[legacy.operation_id] = []
+    cluster = FakeScientificBatchCluster()
+    reconciler = controller(repository, cluster)
+
+    assert await reconciler.reconcile_once() == legacy.operation_id
+
+    retired = repository.records[legacy.operation_id]
+    assert retired.status is BatchStatus.FAILED
+    assert retired.failure_code == LEGACY_ADMISSION_FAILURE_CODE
+    assert retired.result_published is True
+    assert all(attempt.resource_released for stage in retired.stages for attempt in stage.attempts)
+    assert all(
+        attempt.failure_kind is FailureKind.INFRASTRUCTURE and attempt.failure_code == LEGACY_ADMISSION_FAILURE_CODE
+        for stage in retired.stages
+        for attempt in stage.attempts
+    )
+    # The unusable admission is never rendered into a cluster workload, and an
+    # attempt that a pre-v8 controller had applied is deleted by its own UID.
+    assert cluster.apply_history == []
+    assert cluster.delete_history == [
+        attempt.workload for stage in legacy.stages for attempt in stage.attempts if attempt.workload.uid is not None
+    ]
+    assert repository.events[legacy.operation_id][-1].draft.kind is BatchEventKind.BATCH_FAILED
+
+    # Retirement is terminal, so a later poll leaves the row exactly as it is.
+    assert await reconciler.reconcile_once() is None
+    assert repository.records[legacy.operation_id] == retired
+
+
+@pytest.mark.asyncio
+async def test_completed_legacy_row_stays_readable_and_is_never_rewritten() -> None:
+    legacy = legacy_state("scientific-batch-state-v7-complete-cccccccc.json")
+    assert legacy.status is BatchStatus.SUCCEEDED and legacy.result_published is True
+    repository = FakeScientificBatchRepository()
+    repository.records[legacy.operation_id] = legacy
+    repository.events[legacy.operation_id] = []
+    cluster = FakeScientificBatchCluster()
+
+    assert await controller(repository, cluster).reconcile_once() is None
+    assert repository.records[legacy.operation_id] == legacy
+    assert repository.events[legacy.operation_id] == []
+    assert cluster.delete_history == []
+
+
+def test_missing_frozen_identities_raise_a_typed_error_not_stop_iteration() -> None:
+    legacy = legacy_state("scientific-batch-state-v7-545d71d9.json")
+    assert legacy.execution_plan is not None
+    for lookup in (
+        lambda: legacy.plan.stage("absent"),
+        lambda: legacy.scheduling.stage("absent"),
+        lambda: legacy.stage("absent"),
+        lambda: legacy.execution_plan.invocation("design", "absent"),
+        lambda: legacy.execution_plan.execution_binding("design"),
+    ):
+        with pytest.raises(ScientificIdentityError):
+            lookup()

@@ -14,6 +14,10 @@ from typing import Any, cast
 from uuid import UUID
 
 from .models import (
+    LEGACY_STATE_SCHEMA,
+    PREVIOUS_STATE_SCHEMA,
+    READABLE_STATE_SCHEMAS,
+    STATE_SCHEMA,
     AdapterExecutionPlan,
     ArtifactAccessContext,
     ArtifactMaterialization,
@@ -52,9 +56,6 @@ from .models import (
     WorkloadRef,
 )
 
-STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v8"
-PREVIOUS_STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v7"
-LEGACY_STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v6"
 MAX_STATE_BYTES = 4 * 1024 * 1024
 
 
@@ -427,8 +428,8 @@ def state_from_value(raw: object) -> ScientificBatchState:
         },
         "scientific-batch state",
     )
-    schema_version = value["schema_version"]
-    if schema_version not in {LEGACY_STATE_SCHEMA, PREVIOUS_STATE_SCHEMA, STATE_SCHEMA}:
+    schema_version = _string(value["schema_version"], "state schema version")
+    if schema_version not in READABLE_STATE_SCHEMAS:
         raise ValueError("stored scientific-batch state schema is unsupported")
     legacy_v6 = schema_version == LEGACY_STATE_SCHEMA
     legacy_before_v8 = schema_version in {LEGACY_STATE_SCHEMA, PREVIOUS_STATE_SCHEMA}
@@ -1126,4 +1127,5 @@ def state_from_value(raw: object) -> ScientificBatchState:
         cancel_requested=_boolean(value["cancel_requested"], "cancel request"),
         failure_code=_optional_string(value["failure_code"], "batch failure code"),
         result_published=_boolean(value["result_published"], "terminal result publication"),
+        stored_schema=schema_version,
     )
