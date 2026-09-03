@@ -2,6 +2,14 @@
 fs2-serve-control-plane
 {{- end -}}
 
+{{- define "fs2-serve.scientificWorkloadNamespaces" -}}
+{{- $names := dict .Values.scientificBatch.namespace true -}}
+{{- range .Values.scientificBatch.executionMap.models -}}
+{{- $_ := set $names .workload_namespace true -}}
+{{- end -}}
+{{- keys $names | sortAlpha | toJson -}}
+{{- end -}}
+
 {{- define "fs2-serve.fullname" -}}
 {{- printf "%s" (include "fs2-serve.name" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}

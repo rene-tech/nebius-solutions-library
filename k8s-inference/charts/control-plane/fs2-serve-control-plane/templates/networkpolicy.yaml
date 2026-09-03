@@ -15,13 +15,15 @@ spec:
   ingress:
     {{- if .Values.scientificBatch.enabled }}
     - from:
+        {{- range $workloadNamespace := (include "fs2-serve.scientificWorkloadNamespaces" . | fromJsonArray) }}
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.scientificBatch.namespace }}
+              kubernetes.io/metadata.name: {{ $workloadNamespace }}
           podSelector:
             matchExpressions:
               - key: fs2.nebius.ai/workload-id
                 operator: Exists
+        {{- end }}
       ports:
         - port: {{ .Values.service.port }}
           protocol: TCP
@@ -138,14 +140,16 @@ spec:
           protocol: TCP
     {{- end }}
 {{- if .Values.scientificBatch.enabled }}
+{{- $root := . }}
+{{- range $workloadNamespace := (include "fs2-serve.scientificWorkloadNamespaces" $root | fromJsonArray) }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "fs2-serve.fullname" . }}-scientific-workloads
-  namespace: {{ .Values.scientificBatch.namespace }}
+  name: {{ include "fs2-serve.fullname" $root }}-scientific-workloads
+  namespace: {{ $workloadNamespace }}
   labels:
-    {{- include "fs2-serve.labels" . | nindent 4 }}
+    {{- include "fs2-serve.labels" $root | nindent 4 }}
 spec:
   podSelector:
     matchExpressions:
@@ -168,16 +172,16 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+              kubernetes.io/metadata.name: {{ $root.Release.Namespace }}
           podSelector:
             matchLabels:
-              {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 14 }}
+              {{- include "fs2-serve.runtimeSelectorLabels" $root | nindent 14 }}
       ports:
-        - port: {{ .Values.service.port }}
+        - port: {{ $root.Values.service.port }}
           protocol: TCP
-    {{- if .Values.scientificArtifacts.egressCidrs }}
+    {{- if $root.Values.scientificArtifacts.egressCidrs }}
     - to:
-        {{- range .Values.scientificArtifacts.egressCidrs }}
+        {{- range $root.Values.scientificArtifacts.egressCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
         {{- end }}
@@ -185,6 +189,7 @@ spec:
         - port: 443
           protocol: TCP
     {{- end }}
+{{- end }}
 {{- end }}
 {{- if .Values.publicGateway.enabled }}
 ---

@@ -47,6 +47,7 @@ from .models import (
 )
 
 STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v7"
+LEGACY_STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v6"
 MAX_STATE_BYTES = 4 * 1024 * 1024
 
 
@@ -236,6 +237,7 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
             "tenant_queue": state.scheduling.tenant_queue,
             "model_lane": state.scheduling.model_lane,
             "workload_namespace": state.scheduling.workload_namespace,
+            "route_namespace": state.scheduling.route_namespace,
             "stages": [
                 {
                     "stage_id": stage.stage_id,
@@ -270,6 +272,7 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                         "completed_at": attempt.completed_at.isoformat() if attempt.completed_at is not None else None,
                         "workload": {
                             "namespace": attempt.workload.namespace,
+                            "route_namespace": attempt.workload.route_namespace,
                             "name": attempt.workload.name,
                             "kind": attempt.workload.kind.value,
                             "uid": attempt.workload.uid,
@@ -347,8 +350,10 @@ def state_from_value(raw: object) -> ScientificBatchState:
         },
         "scientific-batch state",
     )
-    if value["schema_version"] != STATE_SCHEMA:
+    schema_version = value["schema_version"]
+    if schema_version not in {LEGACY_STATE_SCHEMA, STATE_SCHEMA}:
         raise ValueError("stored scientific-batch state schema is unsupported")
+    legacy_v6 = schema_version == LEGACY_STATE_SCHEMA
 
     plan_value = _object(value["plan"], {"stages"}, "scientific-batch plan")
     plan_stages: list[ScientificStagePlan] = []
@@ -530,19 +535,21 @@ def state_from_value(raw: object) -> ScientificBatchState:
                 )
             runtime_mounts: list[RuntimeArtifactMount] = []
             for raw_mount in _items(invocation["runtime_mounts"], "runtime artifact mounts", maximum=64):
+                runtime_mount_fields = {
+                    "artifact_id",
+                    "mount_path",
+                    "sub_path",
+                    "read_only",
+                    "expected_content_sha256",
+                    "authorization_receipt_sha256",
+                    "readiness_receipt_sha256",
+                    "supplemental_groups",
+                }
+                if not legacy_v6:
+                    runtime_mount_fields.add("expected_manifest_sha256")
                 mount = _object(
                     raw_mount,
-                    {
-                        "artifact_id",
-                        "mount_path",
-                        "sub_path",
-                        "read_only",
-                        "expected_content_sha256",
-                        "expected_manifest_sha256",
-                        "authorization_receipt_sha256",
-                        "readiness_receipt_sha256",
-                        "supplemental_groups",
-                    },
+                    runtime_mount_fields,
                     "runtime artifact mount",
                 )
                 runtime_mounts.append(
@@ -554,8 +561,10 @@ def state_from_value(raw: object) -> ScientificBatchState:
                         expected_content_sha256=_optional_string(
                             mount["expected_content_sha256"], "runtime mount content digest"
                         ),
-                        expected_manifest_sha256=_optional_string(
-                            mount["expected_manifest_sha256"], "runtime mount manifest digest"
+                        expected_manifest_sha256=(
+                            None
+                            if legacy_v6
+                            else _optional_string(mount["expected_manifest_sha256"], "runtime mount manifest digest")
                         ),
                         authorization_receipt_sha256=_optional_string(
                             mount["authorization_receipt_sha256"], "runtime mount authorization receipt"
@@ -602,22 +611,23 @@ def state_from_value(raw: object) -> ScientificBatchState:
             ),
         )
 
+    scheduling_fields = {
+        "policy_revision",
+        "captured_at",
+        "service_class",
+        "tenant_queue",
+        "model_lane",
+        "stages",
+    }
+    if not legacy_v6:
+        scheduling_fields.update({"workload_namespace", "route_namespace"})
     scheduling_value = _object(
         value["scheduling"],
-        {
-            "policy_revision",
-            "captured_at",
-            "service_class",
-            "tenant_queue",
-            "model_lane",
-            "workload_namespace",
-            "stages",
-        },
+        scheduling_fields,
         "scientific-batch scheduling snapshot",
     )
     scheduling_keys = {
         "stage_id",
-        "resource_class",
         "resolved_cluster_queue",
         "resolved_local_queue",
         "workload_priority_class",
@@ -630,13 +640,21 @@ def state_from_value(raw: object) -> ScientificBatchState:
         "checkpoint_mode",
         "preemption_mode",
     }
+    scheduling_keys.add("admitted_resource_flavor" if legacy_v6 else "resource_class")
     decisions: list[StageSchedulingDecision] = []
     for raw_decision in _items(scheduling_value["stages"], "scheduling stages", maximum=64):
         decision = _object(raw_decision, scheduling_keys, "scheduling stage")
+        stage_id = _string(decision["stage_id"], "scheduling stage ID")
+        if legacy_v6:
+            _optional_string(decision["admitted_resource_flavor"], "legacy admitted ResourceFlavor")
         decisions.append(
             StageSchedulingDecision(
-                stage_id=_string(decision["stage_id"], "scheduling stage ID"),
-                resource_class=ResourceClass(_string(decision["resource_class"], "scheduling resource class")),
+                stage_id=stage_id,
+                resource_class=(
+                    plan.stage(stage_id).resource_class
+                    if legacy_v6
+                    else ResourceClass(_string(decision["resource_class"], "scheduling resource class"))
+                ),
                 resolved_cluster_queue=_string(decision["resolved_cluster_queue"], "cluster queue"),
                 resolved_local_queue=_string(decision["resolved_local_queue"], "local queue"),
                 workload_priority_class=_string(decision["workload_priority_class"], "priority class"),
@@ -662,13 +680,40 @@ def state_from_value(raw: object) -> ScientificBatchState:
                 preemption_mode=PreemptionMode(_string(decision["preemption_mode"], "preemption mode")),
             )
         )
+    legacy_namespaces: set[str] = set()
+    if legacy_v6:
+        raw_stage_states = value["stages"]
+        if isinstance(raw_stage_states, list):
+            for raw_stage_state in raw_stage_states:
+                if not isinstance(raw_stage_state, Mapping):
+                    continue
+                raw_attempts = raw_stage_state.get("attempts")
+                if not isinstance(raw_attempts, list):
+                    continue
+                for raw_attempt in raw_attempts:
+                    if not isinstance(raw_attempt, Mapping):
+                        continue
+                    raw_workload = raw_attempt.get("workload")
+                    if isinstance(raw_workload, Mapping) and isinstance(raw_workload.get("namespace"), str):
+                        legacy_namespaces.add(cast(str, raw_workload["namespace"]))
+        if len(legacy_namespaces) > 1:
+            raise ValueError("stored v6 scientific-batch state spans multiple workload namespaces")
+    workload_namespace = (
+        next(iter(legacy_namespaces), "fs2-models")
+        if legacy_v6
+        else _string(scheduling_value["workload_namespace"], "workload namespace")
+    )
+    route_namespace = (
+        workload_namespace if legacy_v6 else _string(scheduling_value["route_namespace"], "route namespace")
+    )
     scheduling = SchedulingSnapshot(
         policy_revision=_string(scheduling_value["policy_revision"], "scheduling policy revision"),
         captured_at=_datetime(scheduling_value["captured_at"], "scheduling capture"),
         service_class=ServiceClass(_string(scheduling_value["service_class"], "service class")),
         tenant_queue=_string(scheduling_value["tenant_queue"], "tenant queue"),
         model_lane=_string(scheduling_value["model_lane"], "model lane"),
-        workload_namespace=_string(scheduling_value["workload_namespace"], "workload namespace"),
+        workload_namespace=workload_namespace,
+        route_namespace=route_namespace,
         stages=tuple(decisions),
     )
 
@@ -683,7 +728,6 @@ def state_from_value(raw: object) -> ScientificBatchState:
         "workload",
         "outcome",
         "last_phase",
-        "deletion_requested",
         "resource_released",
         "scheduling_admission",
         "kueue_workload_uid",
@@ -691,7 +735,11 @@ def state_from_value(raw: object) -> ScientificBatchState:
         "failure_kind",
         "failure_code",
     }
+    if not legacy_v6:
+        attempt_keys.add("deletion_requested")
     workload_keys = {"namespace", "name", "kind", "uid"}
+    if not legacy_v6:
+        workload_keys.add("route_namespace")
     stage_states: list[ScientificStageState] = []
     for raw_stage_state in _items(value["stages"], "scientific-batch stages", maximum=64):
         stage_state = _object(raw_stage_state, stage_state_keys, "scientific-batch stage")
@@ -742,10 +790,17 @@ def state_from_value(raw: object) -> ScientificBatchState:
                         name=_string(workload["name"], "workload name"),
                         kind=WorkloadKind(_string(workload["kind"], "workload kind")),
                         uid=_optional_string(workload["uid"], "workload UID"),
+                        route_namespace=(
+                            _string(workload["namespace"], "workload namespace")
+                            if legacy_v6
+                            else _string(workload["route_namespace"], "workload route namespace")
+                        ),
                     ),
                     outcome=AttemptOutcome(_string(attempt["outcome"], "attempt outcome")),
                     last_phase=LifecyclePhase(_string(attempt["last_phase"], "attempt phase")),
-                    deletion_requested=_boolean(attempt["deletion_requested"], "attempt deletion request"),
+                    deletion_requested=(
+                        False if legacy_v6 else _boolean(attempt["deletion_requested"], "attempt deletion request")
+                    ),
                     resource_released=_boolean(attempt["resource_released"], "attempt resource release"),
                     scheduling_admission=admission,
                     kueue_workload_uid=_optional_string(attempt["kueue_workload_uid"], "Kueue Workload UID"),

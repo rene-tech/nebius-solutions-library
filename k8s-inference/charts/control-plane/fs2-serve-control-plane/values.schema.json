@@ -658,7 +658,7 @@
       "required": [
         "enabled", "writesEnabled", "namespace", "kubernetesApiUrl",
         "schedulingContractConfigMapName", "schedulingContractKey",
-        "executionMapConfigMapName", "executionMapKey", "workers",
+        "executionMapConfigMapName", "executionMapKey", "executionMap", "workers",
         "pollSeconds", "leaseSeconds", "apiTimeoutSeconds", "tokenExpirationSeconds"
       ],
       "properties": {
@@ -680,6 +680,26 @@
           "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
         },
         "executionMapKey": {"const": "execution-map.json"},
+        "executionMap": {
+          "type": "object",
+          "required": ["schema", "models"],
+          "properties": {
+            "schema": {"const": "fs2-serve.nebius.ai/scientific-execution-map/v3"},
+            "models": {
+              "type": "array",
+              "maxItems": 256,
+              "items": {
+                "type": "object",
+                "required": ["model_id", "workload_namespace"],
+                "properties": {
+                  "model_id": {"type": "string", "minLength": 1, "maxLength": 63},
+                  "workload_namespace": {"type": "string", "minLength": 1, "maxLength": 63}
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
         "workers": {"type": "integer", "minimum": 1, "maximum": 32},
         "pollSeconds": {"type": "string", "pattern": "^(?:0\\.(?:0[5-9]|[1-9][0-9]*)|[1-9](?:\\.[0-9]+)?|[1-5][0-9](?:\\.[0-9]+)?|60(?:\\.0+)?)$"},
         "leaseSeconds": {"type": "string", "pattern": "^(?:[5-9]|[1-9][0-9]|[12][0-9]{2}|300)$"},
@@ -1289,11 +1309,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "3e9cb0cf59dd28c74f94594ef20aa5aeaa87170f79d7f498b820fdf4a8c784af"},
-            "migrationSetSha256": {"const": "6926de8f73092cd53e0397a8b6f44e2a9e9a64e73ad4b273e08cc96b2a5c25dd"},
-            "migrationCount": {"const": 15},
+            "contractPayloadSha256": {"const": "0e5b4432885ffc0dcdaec8edde2c0bc8ec8662478bacaa59670b2bffb30c8fe1"},
+            "migrationSetSha256": {"const": "72ae1b37e07a9b2cdf16f60d79b338dc669ef4d5b26c7277021b60f81c62fa44"},
+            "migrationCount": {"const": 16},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0015_scientific_batch_controller.sql"},
+            "lastMigrationVersion": {"const": "0016_scientific_batch_state_v7.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false

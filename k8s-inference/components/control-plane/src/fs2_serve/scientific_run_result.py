@@ -198,6 +198,8 @@ class SchedulingSnapshot(ResultModel):
     service_class: ServiceClass
     tenant_queue: K8sName
     model_lane: K8sName
+    workload_namespace: K8sName
+    route_namespace: K8sName
     stages: tuple[StageSchedulingDecision, ...] = Field(min_length=1, max_length=MAX_SNAPSHOT_STAGES)
 
     @model_validator(mode="after")
@@ -205,6 +207,8 @@ class SchedulingSnapshot(ResultModel):
         ids = [stage.stage_id for stage in self.stages]
         if len(set(ids)) != len(ids):
             raise ValueError("scheduling snapshot stages must be unique")
+        if self.workload_namespace != self.route_namespace:
+            raise ValueError("workload and LocalQueue route namespaces must match")
         return self
 
 

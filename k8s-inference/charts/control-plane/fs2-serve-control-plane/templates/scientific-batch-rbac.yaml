@@ -1,12 +1,15 @@
 {{- if .Values.scientificBatch.enabled }}
+{{- $root := . }}
 {{- $serviceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
+{{- $workloadNamespaces := include "fs2-serve.scientificWorkloadNamespaces" . | fromJsonArray }}
+{{- range $workloadNamespace := $workloadNamespaces }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "fs2-serve.fullname" . }}-scientific-batch
-  namespace: {{ .Values.scientificBatch.namespace }}
+  name: {{ include "fs2-serve.fullname" $root }}-scientific-batch
+  namespace: {{ $workloadNamespace }}
   labels:
-    {{- include "fs2-serve.labels" . | nindent 4 }}
+    {{- include "fs2-serve.labels" $root | nindent 4 }}
 rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
@@ -24,19 +27,20 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "fs2-serve.fullname" . }}-scientific-batch
-  namespace: {{ .Values.scientificBatch.namespace }}
+  name: {{ include "fs2-serve.fullname" $root }}-scientific-batch
+  namespace: {{ $workloadNamespace }}
   labels:
-    {{- include "fs2-serve.labels" . | nindent 4 }}
+    {{- include "fs2-serve.labels" $root | nindent 4 }}
 subjects:
   - kind: ServiceAccount
     name: {{ $serviceAccount }}
-    namespace: {{ .Release.Namespace }}
+    namespace: {{ $root.Release.Namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "fs2-serve.fullname" . }}-scientific-batch
+  name: {{ include "fs2-serve.fullname" $root }}-scientific-batch
 ---
+{{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

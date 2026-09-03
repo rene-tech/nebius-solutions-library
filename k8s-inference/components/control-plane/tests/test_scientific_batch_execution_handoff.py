@@ -243,11 +243,12 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
         for index, name in enumerate(file_names[:-1] if omit_file else file_names)
     ]
     value = {
-        "schema": "fs2-serve.nebius.ai/scientific-execution-map/v2",
+        "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
         "models": [
             {
                 "model_id": "protenix-v2",
                 "variant_id": "upstream-v2-0-0",
+                "workload_namespace": "fs2-models",
                 "execution_identity_sha256": "f" * 64,
                 "plan_adapter": {
                     "module": "fs2_serve.scientific_batch.adapters",
@@ -273,6 +274,7 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                                 "name": "artifact-workspace",
                                 "kind": "artifact-workspace",
                                 "claim_name": None,
+                                "host_path": None,
                                 "mount_path": "/mnt/fs2-scientific",
                                 "sub_path": None,
                                 "read_only": False,
@@ -281,6 +283,7 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                                 "name": "model-artifacts",
                                 "kind": "reference",
                                 "claim_name": "scientific-model-artifacts",
+                                "host_path": None,
                                 "mount_path": "/models",
                                 "sub_path": None,
                                 "read_only": True,
@@ -291,6 +294,7 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
                         "environment": {},
+                        "required_node_labels": {},
                     },
                     {
                         "stage_id": "inference",
@@ -302,6 +306,7 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                                 "name": "artifact-workspace",
                                 "kind": "artifact-workspace",
                                 "claim_name": None,
+                                "host_path": None,
                                 "mount_path": "/mnt/fs2-scientific",
                                 "sub_path": None,
                                 "read_only": False,
@@ -310,6 +315,7 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                                 "name": "model-artifacts",
                                 "kind": "reference",
                                 "claim_name": "scientific-model-artifacts",
+                                "host_path": None,
                                 "mount_path": "/models",
                                 "sub_path": None,
                                 "read_only": True,
@@ -320,6 +326,7 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
                         "environment": {},
+                        "required_node_labels": {},
                     },
                 ],
             }
@@ -476,6 +483,7 @@ def scheduling(plan: ScientificBatchPlan) -> SchedulingSnapshot:
         tenant_queue="tenant-academic",
         model_lane="alphafold3",
         workload_namespace="fs2-models",
+        route_namespace="fs2-models",
         stages=tuple(
             StageSchedulingDecision(
                 stage_id=stage.stage_id,
@@ -539,8 +547,8 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     assert runtime_mount["subPath"] == "protenix-v2/common"
     assert runtime_mount["readOnly"] is True
     assert pod["securityContext"]["supplementalGroups"] == [10001]
-    assert pod["securityContext"]["fsGroupChangePolicy"] == "OnRootMismatch"
     assert "fsGroup" not in pod["securityContext"]
+    assert "fsGroupChangePolicy" not in pod["securityContext"]
     runtime_env = next(item["value"] for item in model["env"] if item["name"] == "FS2_RUNTIME_ARTIFACTS_JSON")
     marker = json.loads(runtime_env)
     assert marker["schema"] == companion.RUNTIME_LOCALIZATION_SCHEMA
@@ -559,6 +567,574 @@ def test_runtime_binding_renders_exact_subpath_and_never_requests_recursive_chow
     tampered = replace(resource, runtime_artifacts=(replace(localized[0], mount_path="/models/changed"),))
     with pytest.raises(ScientificExecutionMapError, match="lost its verified localization"):
         renderer.render(tampered)
+
+
+def _bindcraft_renderer(
+    tmp_path: Path,
+) -> tuple[FileScientificManifestRenderer, ScientificWorkloadProfile, AdapterExecutionPlan]:
+    image_digest = "9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1"
+    pyrosetta_digest = "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+    requirements = (
+        {
+            "artifact_id": "bindcraft-alphafold2-params",
+            "content_digest_sha256": "a" * 64,
+            "required_files": ["manifest.json"],
+            "file_manifest": [{"path": "manifest.json", "sha256": "1" * 64, "size_bytes": 512}],
+        },
+        {
+            "artifact_id": "bindcraft-proteinmpnn-weights",
+            "content_digest_sha256": "b" * 64,
+            "required_files": [
+                "vanilla_model_weights/v_48_020.pt",
+                "soluble_model_weights/v_48_020.pt",
+            ],
+            "file_manifest": [
+                {
+                    "path": "vanilla_model_weights/v_48_020.pt",
+                    "sha256": "2" * 64,
+                    "size_bytes": 6_681_301,
+                },
+                {
+                    "path": "soluble_model_weights/v_48_020.pt",
+                    "sha256": "3" * 64,
+                    "size_bytes": 6_650_310,
+                },
+            ],
+        },
+        {
+            "artifact_id": "bindcraft-pyrosetta-installed-tree",
+            "content_digest_sha256": pyrosetta_digest,
+            "required_files": ["pyrosetta/__init__.py"],
+            "file_manifest": [{"path": "pyrosetta/__init__.py", "sha256": "4" * 64, "size_bytes": 4096}],
+        },
+    )
+    profile = ScientificWorkloadProfile(
+        MappingProxyType(
+            {
+                "model_id": "bindcraft",
+                "state": "qualified",
+                "route_exposed": True,
+                "execution_identity": {
+                    "model_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+                    "runtime_image_digest": f"sha256:{image_digest}",
+                    "runtime_recipe_sha256": "5" * 64,
+                    "workload_recipe_sha256": "6" * 64,
+                    "artifact_manifest_digest": "7" * 64,
+                    "execution_identity_sha256": "8" * 64,
+                },
+                "access": {"state": "verified"},
+                "semantic_validation": {"state": "qualified"},
+                "artifact_requirements": list(requirements),
+                "workload": {"stages": [{"id": "design"}]},
+            }
+        )
+    )
+    localizations = [
+        {
+            "artifact_id": requirement["artifact_id"],
+            "mount_path": mount_path,
+            "content_digest": f"sha256:{requirement['content_digest_sha256']}",
+            "file_manifest": requirement["file_manifest"],
+            "localization_receipt_digest": sha(f"localized-{requirement['artifact_id']}"),
+        }
+        for requirement, mount_path in zip(
+            requirements,
+            (
+                "/models/alphafold2",
+                "/models/proteinmpnn",
+                "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+            ),
+            strict=True,
+        )
+    ]
+    physical_mounts = [
+        {
+            "name": "artifact-workspace",
+            "kind": "artifact-workspace",
+            "claim_name": None,
+            "host_path": None,
+            "mount_path": "/mnt/fs2-scientific",
+            "sub_path": None,
+            "read_only": False,
+        },
+        {
+            "name": "alphafold2-params",
+            "kind": "reference",
+            "claim_name": "scientific-model-artifacts",
+            "host_path": None,
+            "mount_path": "/models/alphafold2",
+            "sub_path": "bindcraft/alphafold2",
+            "read_only": True,
+        },
+        {
+            "name": "proteinmpnn-vanilla",
+            "kind": "reference",
+            "claim_name": "scientific-model-artifacts",
+            "host_path": None,
+            "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+            "sub_path": "bindcraft/proteinmpnn",
+            "read_only": True,
+        },
+        {
+            "name": "proteinmpnn-soluble",
+            "kind": "reference",
+            "claim_name": "scientific-model-artifacts",
+            "host_path": None,
+            "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+            "sub_path": "bindcraft/proteinmpnn",
+            "read_only": True,
+        },
+        {
+            "name": "pyrosetta",
+            "kind": "private",
+            "claim_name": "academic-assets-runtime-rwx",
+            "host_path": None,
+            "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+            "sub_path": "pyrosetta-bindcraft/site-packages",
+            "read_only": True,
+        },
+    ]
+    execution_map = {
+        "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+        "models": [
+            {
+                "model_id": "bindcraft",
+                "variant_id": "upstream-pyrosetta",
+                "workload_namespace": "fs2-academic-poc",
+                "execution_identity_sha256": "8" * 64,
+                "plan_adapter": {
+                    "module": "fs2_serve.scientific_batch.adapters",
+                    "function": "compile_adapter_run",
+                },
+                "runtime_artifacts": localizations,
+                "stages": [
+                    {
+                        "stage_id": "design",
+                        "image": f"registry.test/bindcraft@sha256:{image_digest}",
+                        "collector_id": "bindcraft-output-v1",
+                        "validator_id": "bindcraft-v1",
+                        "mounts": physical_mounts,
+                        "service_account_name": "fs2-academic-runner",
+                        "resources": {"cpu": "16", "memory": "96Gi", "ephemeral_storage": "64Gi"},
+                        "active_deadline_seconds": 7200,
+                        "termination_grace_seconds": 120,
+                        "environment": {
+                            "FS2_NETWORK_MODE": "offline",
+                            "PYTHONPATH": ("/opt/fs2/academic/pyrosetta-bindcraft/site-packages:/opt/bindcraft"),
+                        },
+                        "required_node_labels": {},
+                    }
+                ],
+            }
+        ],
+    }
+    path = tmp_path / "bindcraft-execution-map.json"
+    path.write_text(json.dumps(execution_map))
+    catalog = ScientificProfileCatalog(
+        profiles={profile.model_id: profile},
+        validators=ScientificProfileCatalog.load(CATALOG_ROOT)._validators,  # type: ignore[attr-defined]
+    )
+    renderer = FileScientificManifestRenderer(
+        path=path,
+        profiles=catalog,
+        tools_image="registry.test/control@sha256:" + "9" * 64,
+        internal_api_url="http://control.fs2.svc:8080",
+        capability_authority=ScientificWorkloadCapabilityAuthority(
+            KeyedHasher(active_key_id="ledger-v1", keys={"ledger-v1": b"k" * 32})
+        ),
+    )
+    marker = "/mnt/fs2-scientific/work/design/main/.fs2/runtime-localization.json"
+    mounts = (
+        RuntimeArtifactMount("bindcraft-alphafold2-params", "/models/alphafold2"),
+        RuntimeArtifactMount(
+            "bindcraft-proteinmpnn-weights",
+            "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+            sub_path="vanilla_model_weights",
+        ),
+        RuntimeArtifactMount(
+            "bindcraft-proteinmpnn-weights",
+            "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+            sub_path="soluble_model_weights",
+        ),
+        RuntimeArtifactMount(
+            "bindcraft-pyrosetta-installed-tree",
+            "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+            supplemental_groups=(65532,),
+        ),
+    )
+    invocation = StageInvocation(
+        stage_id="design",
+        shard_id="main",
+        argv=(
+            "python",
+            "/opt/fs2/runtime_entrypoint.py",
+            "/opt/fs2/bin/bindcraft-batch",
+            "--runtime-localization-marker",
+            marker,
+        ),
+        environment=(),
+        working_directory="/mnt/fs2-scientific/work/design/main",
+        consumes=(),
+        produces="design-result",
+        collector_id="bindcraft-output-v1",
+        validator_id="bindcraft-v1",
+        runtime_artifacts=(
+            "bindcraft-alphafold2-params",
+            "bindcraft-proteinmpnn-weights",
+            "bindcraft-pyrosetta-installed-tree",
+        ),
+        runtime_mounts=mounts,
+    )
+    controller_plan = ScientificBatchPlan((ScientificStagePlan("design"),))
+    plan = AdapterExecutionPlan(
+        model_id="bindcraft",
+        variant_id="upstream-pyrosetta",
+        source_revision="7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+        request_sha256="c" * 64,
+        controller_plan=controller_plan,
+        invocations=(invocation,),
+        required_model_artifacts=(
+            "bindcraft-alphafold2-params",
+            "bindcraft-proteinmpnn-weights",
+            "bindcraft-pyrosetta-installed-tree",
+        ),
+    )
+    return renderer, profile, plan
+
+
+def test_bindcraft_projects_one_verified_mpnn_artifact_to_both_exact_package_paths(tmp_path: Path) -> None:
+    renderer, profile, plan = _bindcraft_renderer(tmp_path)
+    access = ArtifactAccessContext(
+        profile="academic",
+        receipt_digest=sha("bindcraft-access"),
+        tenant_id="academic-poc",
+    )
+    localized = renderer.verify_runtime_artifacts(profile, plan, access)
+    plan = renderer.bind_runtime_artifacts(profile, plan, access, localized)
+    snapshot = replace(
+        scheduling(plan.controller_plan),
+        tenant_queue="academic-scientific",
+        model_lane="bindcraft",
+        workload_namespace="fs2-academic-poc",
+        route_namespace="fs2-academic-poc",
+        stages=(
+            replace(
+                scheduling(plan.controller_plan).stages[0],
+                resolved_local_queue="academic-scientific",
+            ),
+        ),
+    )
+    resource = WorkloadResource(
+        operation_id=uuid4(),
+        batch_id=uuid4(),
+        workload_id=uuid4(),
+        attempt_id=uuid4(),
+        stage_id="design",
+        shard_id="main",
+        attempt_number=1,
+        tenant_id="academic-poc",
+        model_id="bindcraft",
+        variant_id="upstream-pyrosetta",
+        input_artifact_id=uuid4(),
+        service_class=ServiceClass.CUSTOMER_BATCH,
+        scheduling_snapshot_digest=snapshot.digest,
+        namespace="fs2-academic-poc",
+        route_namespace="fs2-academic-poc",
+        name="bindcraft-design",
+        kind=WorkloadKind.JOB,
+        scheduling=snapshot.stage("design"),
+        invocation=plan.invocation("design", "main"),
+        access_context=access,
+        runtime_artifacts=localized,
+    )
+    pod = renderer.render(resource)["spec"]["template"]["spec"]  # type: ignore[index]
+    model = pod["containers"][0]
+    assert model["command"][:2] == ["python", "/opt/fs2/runtime_entrypoint.py"]
+    by_path = {item["mountPath"]: item for item in model["volumeMounts"]}
+    vanilla = "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights"
+    soluble = "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble"
+    assert by_path[vanilla]["subPath"] == "bindcraft/proteinmpnn/vanilla_model_weights"
+    assert by_path[soluble]["subPath"] == "bindcraft/proteinmpnn/soluble_model_weights"
+    assert "/models/alphafold2" in by_path
+    assert "/opt/fs2/academic/pyrosetta-bindcraft/site-packages" in by_path
+    assert pod["securityContext"]["supplementalGroups"] == [65532]
+    marker = json.loads(next(item["value"] for item in model["env"] if item["name"] == "FS2_RUNTIME_ARTIFACTS_JSON"))
+    mpnn_markers = [item for item in marker["artifacts"] if item["artifact_id"] == "bindcraft-proteinmpnn-weights"]
+    assert {item["mount_path"] for item in mpnn_markers} == {vanilla, soluble}
+    assert len({item["readiness_receipt_sha256"] for item in mpnn_markers}) == 1
+
+    bypass = replace(
+        plan,
+        invocations=(
+            replace(
+                plan.invocations[0],
+                argv=(
+                    "/opt/fs2/bin/bindcraft-batch",
+                    "--runtime-localization-marker",
+                    "/mnt/fs2-scientific/work/design/main/.fs2/runtime-localization.json",
+                ),
+            ),
+        ),
+    )
+    with pytest.raises(ScientificExecutionMapError, match="runtime artifact gate"):
+        renderer.verify_runtime_artifacts(profile, bypass, access)
+
+    missing_manifest = list(localized)
+    missing_manifest[0] = replace(
+        missing_manifest[0], files=(replace(missing_manifest[0].files[0], path="params.bin"),)
+    )
+    broken_map = renderer.runtime_artifacts.copy()
+    broken_map[("bindcraft", "bindcraft-alphafold2-params")] = missing_manifest[0]
+    object.__setattr__(renderer, "runtime_artifacts", MappingProxyType(broken_map))
+    with pytest.raises(ScientificExecutionMapError, match="localization evidence differs"):
+        renderer.verify_runtime_artifacts(profile, plan, access)
+
+
+def _academic_af3_renderer(
+    tmp_path: Path,
+    *,
+    database_sub_path: str = ("alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/" + "d" * 64),
+) -> tuple[FileScientificManifestRenderer, ScientificWorkloadProfile, AdapterExecutionPlan]:
+    requirements = (
+        {
+            "artifact_id": "alphafold3-parameters",
+            "content_digest_sha256": "a" * 64,
+            "required_files": ["af3.bin.zst"],
+            "file_manifest": [{"path": "af3.bin.zst", "sha256": "1" * 64, "size_bytes": 1024}],
+        },
+        {
+            "artifact_id": "alphafold3-public-databases-v3.0",
+            "content_digest_sha256": "b" * 64,
+            "required_files": [".fs2-manifest-sha256"],
+            "file_manifest": [{"path": ".fs2-manifest-sha256", "sha256": "2" * 64, "size_bytes": 64}],
+        },
+    )
+    profile = ScientificWorkloadProfile(
+        MappingProxyType(
+            {
+                "model_id": "alphafold3",
+                "state": "qualified",
+                "route_exposed": True,
+                "execution_identity": {
+                    "model_revision": "3" * 40,
+                    "runtime_image_digest": "sha256:" + "4" * 64,
+                    "runtime_recipe_sha256": "5" * 64,
+                    "workload_recipe_sha256": "6" * 64,
+                    "artifact_manifest_digest": "7" * 64,
+                    "execution_identity_sha256": "8" * 64,
+                },
+                "access": {"state": "verified"},
+                "semantic_validation": {"state": "qualified"},
+                "artifact_requirements": list(requirements),
+                "workload": {"stages": [{"id": "inference"}]},
+            }
+        )
+    )
+    localizations = (
+        {
+            "artifact_id": "alphafold3-parameters",
+            "mount_path": "/opt/fs2/academic/alphafold3/af3.bin.zst",
+            "content_digest": "sha256:" + "a" * 64,
+            "file_manifest": requirements[0]["file_manifest"],
+            "localization_receipt_digest": sha("localized-af3-parameters"),
+        },
+        {
+            "artifact_id": "alphafold3-public-databases-v3.0",
+            "mount_path": "/databases",
+            "content_digest": "sha256:" + "b" * 64,
+            "file_manifest": requirements[1]["file_manifest"],
+            "localization_receipt_digest": sha("localized-af3-databases"),
+        },
+    )
+    value = {
+        "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+        "models": [
+            {
+                "model_id": "alphafold3",
+                "variant_id": "upstream-v3-0-4",
+                "workload_namespace": "fs2-academic-poc",
+                "execution_identity_sha256": "8" * 64,
+                "plan_adapter": {
+                    "module": "fs2_serve.scientific_batch.adapters",
+                    "function": "compile_adapter_run",
+                },
+                "runtime_artifacts": list(localizations),
+                "stages": [
+                    {
+                        "stage_id": "inference",
+                        "image": "registry.test/alphafold3@sha256:" + "4" * 64,
+                        "collector_id": "alphafold3-result-collector-v1",
+                        "validator_id": "alphafold3-upstream-v3-0-4",
+                        "mounts": [
+                            {
+                                "name": "artifact-workspace",
+                                "kind": "artifact-workspace",
+                                "claim_name": None,
+                                "host_path": None,
+                                "mount_path": "/mnt/fs2-scientific",
+                                "sub_path": None,
+                                "read_only": False,
+                            },
+                            {
+                                "name": "alphafold3-parameters",
+                                "kind": "private",
+                                "claim_name": "academic-assets-runtime-rwx",
+                                "host_path": None,
+                                "mount_path": "/opt/fs2/academic/alphafold3",
+                                "sub_path": "alphafold3",
+                                "read_only": True,
+                            },
+                            {
+                                "name": "alphafold3-databases",
+                                "kind": "reference",
+                                "claim_name": None,
+                                "host_path": "/mnt/fs2-reference-data/data/datasets",
+                                "mount_path": "/databases",
+                                "sub_path": database_sub_path,
+                                "read_only": True,
+                            },
+                        ],
+                        "service_account_name": "fs2-academic-runner",
+                        "resources": {"cpu": "8", "memory": "64Gi", "ephemeral_storage": "64Gi"},
+                        "active_deadline_seconds": 3600,
+                        "termination_grace_seconds": 60,
+                        "environment": {"FS2_NETWORK_MODE": "offline"},
+                        "required_node_labels": {"storage.fs2.nebius/reference-data": "true"},
+                    }
+                ],
+            }
+        ],
+    }
+    path = tmp_path / f"af3-{hashlib.sha256(database_sub_path.encode()).hexdigest()[:12]}.json"
+    path.write_text(json.dumps(value))
+    catalog = ScientificProfileCatalog(
+        profiles={profile.model_id: profile},
+        validators=ScientificProfileCatalog.load(CATALOG_ROOT)._validators,  # type: ignore[attr-defined]
+    )
+    renderer = FileScientificManifestRenderer(
+        path=path,
+        profiles=catalog,
+        tools_image="registry.test/control@sha256:" + "9" * 64,
+        internal_api_url="http://control.fs2.svc:8080",
+        capability_authority=ScientificWorkloadCapabilityAuthority(
+            KeyedHasher(active_key_id="ledger-v1", keys={"ledger-v1": b"k" * 32})
+        ),
+    )
+    invocation = StageInvocation(
+        stage_id="inference",
+        shard_id="main",
+        argv=(
+            "run_alphafold.py",
+            "--norun_data_pipeline",
+            "--run_inference",
+            "--runtime-localization-marker",
+            "/mnt/fs2-scientific/work/inference/main/.fs2/runtime-localization.json",
+        ),
+        environment=(),
+        working_directory="/mnt/fs2-scientific/work/inference/main",
+        consumes=(),
+        produces="structure-results",
+        collector_id="alphafold3-result-collector-v1",
+        validator_id="alphafold3-upstream-v3-0-4",
+        handoff_name=None,
+        runtime_artifacts=("alphafold3-parameters", "alphafold3-public-databases-v3.0"),
+        runtime_mounts=(
+            RuntimeArtifactMount(
+                artifact_id="alphafold3-parameters",
+                mount_path="/opt/fs2/academic/alphafold3/af3.bin.zst",
+                sub_path="af3.bin.zst",
+                supplemental_groups=(65532,),
+            ),
+            RuntimeArtifactMount(
+                artifact_id="alphafold3-public-databases-v3.0",
+                mount_path="/databases",
+                supplemental_groups=(1000,),
+            ),
+        ),
+    )
+    controller_plan = ScientificBatchPlan((ScientificStagePlan("inference"),))
+    plan = AdapterExecutionPlan(
+        model_id="alphafold3",
+        variant_id="upstream-v3-0-4",
+        source_revision="3" * 40,
+        request_sha256="c" * 64,
+        controller_plan=controller_plan,
+        invocations=(invocation,),
+        required_model_artifacts=("alphafold3-parameters", "alphafold3-public-databases-v3.0"),
+    )
+    return renderer, profile, plan
+
+
+def test_af3_academic_v3_map_binds_exact_params_and_content_addressed_database(tmp_path: Path) -> None:
+    renderer, profile, plan = _academic_af3_renderer(tmp_path)
+    access = ArtifactAccessContext(
+        profile="academic",
+        receipt_digest=sha("af3-access"),
+        tenant_id="academic-poc",
+    )
+    localized = renderer.verify_runtime_artifacts(profile, plan, access)
+    plan = renderer.bind_runtime_artifacts(profile, plan, access, localized)
+    snapshot = replace(
+        scheduling(plan.controller_plan),
+        tenant_queue="academic-scientific",
+        workload_namespace="fs2-academic-poc",
+        route_namespace="fs2-academic-poc",
+        stages=(
+            replace(
+                scheduling(plan.controller_plan).stages[0],
+                resolved_local_queue="academic-scientific",
+            ),
+        ),
+    )
+    resource = WorkloadResource(
+        operation_id=uuid4(),
+        batch_id=uuid4(),
+        workload_id=uuid4(),
+        attempt_id=uuid4(),
+        stage_id="inference",
+        shard_id="main",
+        attempt_number=1,
+        tenant_id="academic-poc",
+        model_id="alphafold3",
+        variant_id="upstream-v3-0-4",
+        input_artifact_id=uuid4(),
+        service_class=ServiceClass.CUSTOMER_BATCH,
+        scheduling_snapshot_digest=snapshot.digest,
+        namespace="fs2-academic-poc",
+        route_namespace="fs2-academic-poc",
+        name="af3-inference",
+        kind=WorkloadKind.JOB,
+        scheduling=snapshot.stage("inference"),
+        invocation=plan.invocation("inference", "main"),
+        access_context=access,
+        runtime_artifacts=localized,
+    )
+    manifest = renderer.render(resource)
+    pod = manifest["spec"]["template"]["spec"]  # type: ignore[index]
+    assert pod["serviceAccountName"] == "fs2-academic-runner"
+    assert pod["nodeSelector"] == {"storage.fs2.nebius/reference-data": "true"}
+    assert pod["securityContext"]["supplementalGroups"] == [1000, 65532]
+    assert "fsGroup" not in pod["securityContext"]
+    volumes = {item["name"]: item for item in pod["volumes"]}
+    assert volumes["alphafold3-parameters"]["persistentVolumeClaim"] == {
+        "claimName": "academic-assets-runtime-rwx",
+        "readOnly": True,
+    }
+    assert volumes["alphafold3-databases"]["hostPath"] == {
+        "path": "/mnt/fs2-reference-data/data/datasets",
+        "type": "Directory",
+    }
+    mounts = {item["name"]: item for item in pod["containers"][0]["volumeMounts"]}
+    assert mounts["alphafold3-parameters"]["subPath"] == "alphafold3/af3.bin.zst"
+    assert mounts["alphafold3-databases"]["subPath"].endswith("/sha256/" + "d" * 64)
+
+    with pytest.raises(ScientificExecutionMapError, match="immutable execution-map route"):
+        renderer.render(replace(resource, namespace="fs2-models", route_namespace="fs2-models"))
+    with pytest.raises(ScientificExecutionMapError, match="content-addressed dataset subPath"):
+        _academic_af3_renderer(
+            tmp_path,
+            database_sub_path="alphafold3-public-databases-v3.0/v3.0-paper-snapshot/current",
+        )
 
 
 @pytest.mark.asyncio

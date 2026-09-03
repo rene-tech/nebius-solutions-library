@@ -151,6 +151,8 @@
         "service_class",
         "tenant_queue",
         "model_lane",
+        "workload_namespace",
+        "route_namespace",
         "stages"
       ],
       "properties": {
@@ -174,6 +176,12 @@
         },
         "model_lane": {
           "$ref": "#/$defs/opaque_id"
+        },
+        "workload_namespace": {
+          "$ref": "#/$defs/k8s_name"
+        },
+        "route_namespace": {
+          "$ref": "#/$defs/k8s_name"
         },
         "stages": {
           "type": "array",

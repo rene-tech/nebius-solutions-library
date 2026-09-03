@@ -14,6 +14,17 @@ Every batch is keyed by the UUID of an existing durable FS2 Operation. Migration
 and controller fencing; it does not create a second public operation ledger or
 duplicate the artifact-service-owned attempt, artifact, stage-commit, or result
 tables.
+Migration `0016_scientific_batch_state_v7.sql` permits a rolling read of existing
+v6 rows and upgrades them on their next controller write. The closed codec
+derives the former single execution/LocalQueue namespace from an applied
+attempt, or from the historical `fs2-models` default when no attempt exists;
+every emitted state is v7 with both namespaces explicit. The migration also
+normalizes the exact historical v6 scheduling-stage representation (removing
+the provisional admitted-flavor slot and deriving `resource_class` from the
+immutable plan) and adds JSON null for the formerly absent runtime-mount
+manifest identity before enforcing immutable-admission equality. A frozen
+`ec3440a2` v6 codec fixture is exercised through real PostgreSQL `replace` and
+`request_cancel` writes; queue or runtime-manifest drift remains rejected.
 `batch_id` and logical `workload_id` are deterministic, stable children of the
 Operation. Both survive retry; only `attempt_id` and the concrete Kubernetes
 resource name change. The service projects these internal UUIDs to opaque
@@ -25,10 +36,11 @@ terminology for resolved LocalQueue/ClusterQueue, priority class/value, ordered
 pool preference, resource class, accelerator resource/count,
 queue/execution ceilings, checkpoint mode, and preemption mode. It also freezes
 one of `presentation`, `interactive`, `customer-batch`, or `bulk-backfill`, plus
-the LocalQueue namespace, logical tenant queue, model lane, policy revision,
-and capture time. The controller rejects a snapshot routed to a namespace other
-than its configured workload namespace; it never silently posts all routed
-work into one default namespace. The canonical digest makes drift visible. An
+the execution `workload_namespace`, Kueue `route_namespace`, logical tenant
+queue, model lane, policy revision, and capture time. The two namespaces must
+match because a Kueue LocalQueue and its Job are namespace-scoped, but the
+controller supports multiple frozen namespaces and never silently posts all
+routed work into one process default. The canonical digest makes drift visible. An
 idempotent replay may return the existing batch only when tenant, internal
 plan, and snapshot are byte-for-byte equivalent. A later policy or capacity
 change never changes an admitted batch.
@@ -53,6 +65,27 @@ the exact same-poll assignment on queue timeout without falsely claiming the
 Pod ran. A started, successful, or preempted workload without an actual
 `Admitted` condition cannot advance, and its actual resource/count must match
 the frozen stage request.
+
+Kueue eviction is also an immutable-attempt boundary. After the controller has
+durably recorded a `QuotaReserved` assignment, disappearance of that
+assignment, a changed assignment on the same Workload, or recreation of the
+Kueue Workload is recorded as preemption. The controller retains the original
+ClusterQueue from the frozen stage decision and the original
+pool/ResourceFlavor/resource/count/time assignment on the attempt, deletes the
+UID-fenced Job or JobSet, waits for confirmed absence, and only then creates a
+new attempt. It never accepts same-Workload automatic requeue as a continuation,
+so the new attempt receives a new identity and a fresh queue deadline.
+Raw Kueue `DeactivationTarget` causes are retained: `MaximumExecutionTimeExceeded`
+is terminal application/policy failure, while `RequeuingLimitExceeded` is an
+infrastructure failure eligible for the normal bounded new-attempt retry. A
+generic `Deactivated` condition never replaces either exact cause.
+
+For a mixed JobSet, reservation parsing is scoped to the stage's exact frozen
+accelerator resource. CPU-only coordinator PodSets and unrelated extended
+resources do not contribute to the GPU quantity and need no GPU ResourceFlavor.
+Every PodSet that does request the exact GPU resource must carry a positive
+quantity and one consistent ResourceFlavor; their total must equal the frozen
+accelerator count before the assignment is persisted.
 
 ## Catalog profile adapter boundary
 
@@ -234,8 +267,9 @@ workload onto an incompatible pool. CPU stages do not receive this GPU
 constraint.
 
 The execution map is a closed operator configuration, not a public request or
-catalog schema extension. Version 2 binds each public `model_id` to one exact
-dynamic `variant_id`, one packaged plan adapter, and all of its profile stages.
+catalog schema extension. Version 3 binds each public `model_id` to one exact
+dynamic `variant_id`, one execution namespace, one packaged plan adapter, and
+all of its profile stages.
 The binding is frozen into durable controller state and propagated as the raw
 `FS2_VARIANT_ID`, a bounded Kubernetes label, and an exact annotation. The
 profile remains the authority for the execution-identity digest and image
@@ -248,6 +282,7 @@ Each model entry has exactly these fields:
 {
   "model_id": "protenix-v2",
   "variant_id": "protenix-v2-h100",
+  "workload_namespace": "fs2-models",
   "execution_identity_sha256": "<64 lowercase hex>",
   "plan_adapter": {
     "module": "fs2_serve.scientific_batch.adapters",
@@ -301,7 +336,7 @@ semantically validates files beneath the supplied contained workspace.
 Each execution-map stage has exactly `stage_id`, digest-qualified `image`,
 `collector_id`, `validator_id`, `mounts`, `service_account_name`, `resources`,
 `active_deadline_seconds`, `termination_grace_seconds`, and fixed
-`environment`. Run-specific argv and materializations come only from the
+`environment`, plus `required_node_labels`. Run-specific argv and materializations come only from the
 admitted invocation. The renderer copies argv directly to container `command`;
 there is no shell or request interpolation.
 
@@ -317,8 +352,9 @@ handoff artifacts. A successor is rendered only after the controller's atomic
 stage commit is reopened and all artifact identities match its successful
 predecessor attempt.
 
-Additional `reference` and `private` mounts require an exact PVC claim, are
-always read-only, and may use a safe relative `sub_path`. Every mount object has
+Additional `reference` and `private` mounts require exactly one exact PVC or
+allow-listed operator host path, are always read-only, and may use a safe
+relative `sub_path`. Every mount object has
 exactly:
 
 ```json
@@ -326,13 +362,19 @@ exactly:
   "name": "reference-data",
   "kind": "reference",
   "claim_name": "scientific-reference-data",
+  "host_path": null,
   "mount_path": "/run/fs2/reference",
   "sub_path": "protenix-v2",
   "read_only": true
 }
 ```
 
-For `artifact-workspace`, `claim_name` and `sub_path` are `null`. Caller values
+For `artifact-workspace`, `claim_name`, `host_path`, and `sub_path` are `null`.
+The only host-path source is the published reference-data dataset root
+`/mnt/fs2-reference-data/data/datasets`; it requires a relative
+`<bundle>/<revision>/sha256/<tree-sha256>` subpath and the node selector
+`storage.fs2.nebius/reference-data=true`. A mutable alias or broad data root is
+rejected before a Job exists. Caller values
 can select only fields allowed by the public request/parameter schemas; they
 never become image, collector, validator, queue, priority, flavor, mount,
 claim, or URL values. Adapter-generated paths must remain under the contained
@@ -342,16 +384,20 @@ workspace root.
 execution-map item binds a logical artifact ID and physical read-only source to
 an exact aggregate content digest, complete `(path, sha256, size_bytes)` file
 manifest, and localization receipt digest. Each `StageInvocation` lists the
-runtime artifacts used by that enabled stage and carries one exact
-`RuntimeArtifactMount` per ID: approved target `mount_path`, optional safe
+runtime artifacts used by that enabled stage and carries one or more exact
+`RuntimeArtifactMount` projections per ID: approved target `mount_path`, optional safe
 `sub_path`, expected content SHA, authorization/readiness receipt SHAs, and
-supplemental groups. The renderer exposes only those exact bindings, emits the
+supplemental groups. Repeated IDs are allowed only to project the same verified
+identity into distinct target paths; every target is unique and every
+projection carries the same controller-bound content and receipt evidence. The
+renderer exposes only those exact bindings, emits the
 verified receipt document atomically at
 `<working_directory>/.fs2/runtime-localization.json`, and requires that exact
 path in model argv. Wrappers verify the small marker rather than rehashing a
-multi-GB tree per attempt. The Pod security context sets
-`fsGroupChangePolicy=OnRootMismatch` without setting `fsGroup`, so Kubernetes
-does not recursively chown a multi-GB immutable tree.
+multi-GB tree per attempt. Published trees are pre-owned and mounted with the
+declared `supplementalGroups`; the Pod does not set `fsGroup`, so kubelet does
+not recursively chown a multi-GB immutable tree. If a future storage contract
+requires `fsGroup`, it must also render `fsGroupChangePolicy=OnRootMismatch`.
 
 Model compilers declare immutable mount intent and may leave the live readiness
 receipt unset. They are not allowed to invent localization evidence. After the
@@ -381,13 +427,38 @@ GPU invocations must declare the complete common bundle
 `clusters-by-entity-40.txt`, and `obsolete_release_date.csv`; a weights-only GPU
 stage is invalid.
 
+Native BindCraft is additionally fenced to the reviewed artifact-free image
+`sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1`
+and the academic namespace, ServiceAccount, PVC, and GID contract. Its AF2
+artifact must contain `manifest.json` and mount at `/models/alphafold2`; the
+PyRosetta installed tree must have content identity
+`a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d`
+and mount at `/opt/fs2/academic/pyrosetta-bindcraft/site-packages`. One verified
+`bindcraft-proteinmpnn-weights` artifact is explicitly projected from its
+`vanilla_model_weights` and `soluble_model_weights` manifest subtrees into the
+two exact ColabDesign package directories. BindCraft argv must begin with
+`python /opt/fs2/runtime_entrypoint.py`, so Kubernetes command override cannot
+bypass the image's AF2 artifact gate, and the merged environment must remain
+offline.
+
+Native AlphaFold3 follows the merged academic contract exactly: Jobs execute in
+`fs2-academic-poc`, use LocalQueue `academic-scientific` and ServiceAccount
+`fs2-academic-runner`, and mount parameters from
+`academic-assets-runtime-rwx` read-only with supplemental GID 65532. Its final
+database mount uses the content-addressed reference-data subtree above with GID
+1000. The execution map must remain disabled for that binding until the stager's
+published manifest supplies the final tree digest; no broad-root placeholder is
+valid.
+
 Helm's `scientificBatch.enabled` and `scientificBatch.writesEnabled` gates are
 both false by default and must be enabled together. Enabling requires:
 
-- immutable scheduling-contract and execution-map ConfigMaps;
+- an immutable scheduling-contract ConfigMap and a non-empty generated v3
+  execution map, rendered by Helm into an immutable ConfigMap;
 - the canonical `scientificArtifacts.enabled` PostgreSQL/S3 service;
 - bounded Kubernetes API egress CIDRs;
-- Job, JobSet, and Pod read/write RBAC in the configured workload namespace;
+- Job, JobSet, Workload, and Pod RBAC plus workload NetworkPolicies in every
+  unique execution-map namespace;
 - a catalog profile whose route, immutable execution identity, access state,
   semantic validator, and parameter schema are all qualified.
 
@@ -407,7 +478,9 @@ immutable admission, monotonically sequenced events, and controller fences.
 The fake cluster enforces immutable names and mutation fences. The focused
 tests cover sequential commit gating, contained logical-manifest resolution,
 relative AF3/Protenix handoff relocation, exact runtime mounts and localization
-receipts, delayed artifact publication, fan-out and gang rendering, routed
+receipts, the dual-target BindCraft MPNN projection and explicit runtime gate,
+the frozen v6-to-v7 real-PostgreSQL write path, delayed artifact publication,
+fan-out and gang rendering, routed
 LocalQueue namespaces, required GPU pool affinity, and quota handoff (including
 DELETE 202, a still-present UID, confirmed absence, and a DELETE 409 fence),
 canonical scheduling routing/deadlines, same-poll QuotaReserved persistence,

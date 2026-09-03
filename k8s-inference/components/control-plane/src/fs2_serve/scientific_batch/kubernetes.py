@@ -19,6 +19,7 @@ from .models import (
     LifecyclePhase,
     ResourceClass,
     SchedulingAdmission,
+    StageSchedulingDecision,
     WorkloadKind,
     WorkloadObservation,
     WorkloadRef,
@@ -48,6 +49,10 @@ CLUSTER_QUEUE_ANNOTATION = "fs2.nebius.ai/cluster-queue"
 POOL_PREFERENCE_ANNOTATION = "fs2.nebius.ai/pool-preference"
 PREEMPTION_ANNOTATION = "fs2.nebius.ai/preemption-mode"
 MAX_QUEUE_ANNOTATION = "fs2.nebius.ai/max-queue-seconds"
+ACCELERATOR_RESOURCE_ANNOTATION = "fs2.nebius.ai/accelerator-resource"
+ACCELERATOR_COUNT_ANNOTATION = "fs2.nebius.ai/accelerator-count"
+WORKLOAD_NAMESPACE_ANNOTATION = "fs2.nebius.ai/workload-namespace"
+ROUTE_NAMESPACE_ANNOTATION = "fs2.nebius.ai/route-namespace"
 KUEUE_JOB_UID_LABEL = "kueue.x-k8s.io/job-uid"
 POOL_LABEL = "fs2.nebius.ai/pool-id"
 NODE_POOL_LABEL = "accelerator.fs2.nebius/pool-id"
@@ -117,8 +122,11 @@ def _kueue_eviction(reason: str) -> tuple[WorkloadState, FailureKind, str]:
         "ClusterQueueStopped",
         "LocalQueueStopped",
         "EvictedOnManagerCluster",
+        "RequeuingLimitExceeded",
     }:
         return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, reason
+    if reason == "MaximumExecutionTimeExceeded":
+        return WorkloadState.FAILED, FailureKind.APPLICATION, reason
     return WorkloadState.FAILED, FailureKind.APPLICATION, reason
 
 
@@ -279,6 +287,8 @@ class HttpScientificBatchCluster:
             raise BatchRepositoryConflictError("deterministic workload name has different ownership")
 
     def _prepare(self, resource: WorkloadResource, controller_fence: int) -> dict[str, Any]:
+        if resource.route_namespace != resource.namespace:
+            raise ScientificKubernetesError("workload namespace differs from the routed Kueue LocalQueue namespace")
         manifest = copy.deepcopy(dict(self.renderer.render(resource)))
         expected_api = "batch/v1" if resource.kind is WorkloadKind.JOB else "jobset.x-k8s.io/v1alpha2"
         if manifest.get("apiVersion") != expected_api or manifest.get("kind") != str(resource.kind):
@@ -313,6 +323,10 @@ class HttpScientificBatchCluster:
         annotations[CLUSTER_QUEUE_ANNOTATION] = resource.scheduling.resolved_cluster_queue
         annotations[POOL_PREFERENCE_ANNOTATION] = ",".join(resource.scheduling.resolved_pool_preference)
         annotations[PREEMPTION_ANNOTATION] = str(resource.scheduling.preemption_mode)
+        annotations[ACCELERATOR_RESOURCE_ANNOTATION] = resource.scheduling.accelerator_resource_name or ""
+        annotations[ACCELERATOR_COUNT_ANNOTATION] = str(resource.scheduling.accelerator_count)
+        annotations[WORKLOAD_NAMESPACE_ANNOTATION] = resource.namespace
+        annotations[ROUTE_NAMESPACE_ANNOTATION] = resource.route_namespace
         if resource.scheduling.max_queue_seconds is not None:
             annotations[MAX_QUEUE_ANNOTATION] = str(resource.scheduling.max_queue_seconds)
         for pod_metadata in _template_metadata(manifest, resource.kind):
@@ -358,9 +372,20 @@ class HttpScientificBatchCluster:
         uid = metadata.get("uid")
         if not isinstance(uid, str) or not uid:
             raise ScientificKubernetesError("Kubernetes workload UID is absent")
-        return WorkloadRef(namespace=resource.namespace, name=resource.name, kind=resource.kind, uid=uid)
+        return WorkloadRef(
+            namespace=resource.namespace,
+            name=resource.name,
+            kind=resource.kind,
+            uid=uid,
+            route_namespace=resource.route_namespace,
+        )
 
-    async def observe(self, ref: WorkloadRef) -> WorkloadObservation:
+    async def observe(
+        self,
+        ref: WorkloadRef,
+        *,
+        scheduling: StageSchedulingDecision,
+    ) -> WorkloadObservation:
         _, item = self._paths(ref)
         response = await self._request("GET", item)
         if response.status_code == 404:
@@ -374,10 +399,31 @@ class HttpScientificBatchCluster:
             raise BatchRepositoryConflictError("workload attempt identity is absent or invalid") from None
         if ref.uid is not None and metadata.get("uid") != ref.uid:
             raise BatchRepositoryConflictError("workload UID changed")
+        annotations = _object(metadata.get("annotations"), "Kubernetes annotations")
+        if (
+            annotations.get(WORKLOAD_NAMESPACE_ANNOTATION) != ref.namespace
+            or annotations.get(ROUTE_NAMESPACE_ANNOTATION) != ref.route_namespace
+            or ref.route_namespace != ref.namespace
+        ):
+            raise BatchRepositoryConflictError("workload route namespace differs from the frozen attempt")
+        expected_cluster_queue = annotations.get(CLUSTER_QUEUE_ANNOTATION)
+        expected_accelerator_resource = annotations.get(ACCELERATOR_RESOURCE_ANNOTATION)
+        raw_expected_accelerator_count = annotations.get(ACCELERATOR_COUNT_ANNOTATION)
+        if (
+            expected_cluster_queue != scheduling.resolved_cluster_queue
+            or expected_accelerator_resource != (scheduling.accelerator_resource_name or "")
+            or raw_expected_accelerator_count != str(scheduling.accelerator_count)
+        ):
+            raise BatchRepositoryConflictError("workload scheduling annotations differ from the frozen attempt")
         status = _object(value.get("status", {}), "Kubernetes workload status")
         phases: list[LifecyclePhase] = []
         scheduling_admission, kueue_workload_uid, admitted, eviction_reason = await self._scheduling_admission(
-            ref, str(metadata.get("uid", ""))
+            ref,
+            str(metadata.get("uid", "")),
+            expected_cluster_queue=scheduling.resolved_cluster_queue,
+            expected_pool_preference=scheduling.resolved_pool_preference,
+            expected_accelerator_resource=scheduling.accelerator_resource_name,
+            expected_accelerator_count=scheduling.accelerator_count,
         )
         if admitted:
             phases.append(LifecyclePhase.ADMITTED)
@@ -427,8 +473,10 @@ class HttpScientificBatchCluster:
         succeeded = int(status.get("succeeded", 0) or 0) > 0 or _condition(status, "Completed") is not None
         failed_condition = _condition(status, "Failed")
         failed = int(status.get("failed", 0) or 0) > 0 or failed_condition is not None
-        if not admitted and (
-            status.get("startTime") or any(phase == "Running" for phase in pod_phases) or succeeded
+        if (
+            not admitted
+            and eviction_reason is None
+            and (status.get("startTime") or any(phase == "Running" for phase in pod_phases) or succeeded)
         ):
             raise ScientificKubernetesError("Kueue has not admitted a started workload")
         if succeeded:
@@ -477,14 +525,28 @@ class HttpScientificBatchCluster:
         )
 
     async def _scheduling_admission(
-        self, ref: WorkloadRef, job_uid: str
+        self,
+        ref: WorkloadRef,
+        job_uid: str,
+        *,
+        expected_cluster_queue: str,
+        expected_pool_preference: tuple[str, ...],
+        expected_accelerator_resource: str | None,
+        expected_accelerator_count: int,
     ) -> tuple[SchedulingAdmission | None, str | None, bool, str | None]:
-        """Reopen exact Kueue admission and its ResourceFlavor-to-pool label."""
+        """Reopen the exact frozen-resource Kueue reservation.
+
+        JobSets may contain CPU-only coordinator PodSets alongside GPU worker
+        PodSets. Only assignments carrying the frozen accelerator resource
+        contribute to the accelerator reservation; unrelated extended
+        resources are deliberately ignored.
+        """
 
         if not job_uid:
             raise ScientificKubernetesError("Kubernetes workload UID is absent during Kueue admission")
         selector = quote(f"{KUEUE_JOB_UID_LABEL}={job_uid}", safe="=,.-")
-        namespace = quote(ref.namespace, safe="")
+        assert ref.route_namespace is not None
+        namespace = quote(ref.route_namespace, safe="")
         response = await self._request(
             "GET", f"/apis/kueue.x-k8s.io/v1beta1/namespaces/{namespace}/workloads?labelSelector={selector}&limit=2"
         )
@@ -503,13 +565,39 @@ class HttpScientificBatchCluster:
         admitted = _condition(workload_status, "Admitted")
         quota_reserved = _condition(workload_status, "QuotaReserved")
         evicted = _condition(workload_status, "Evicted")
+        deactivation_target = _condition(workload_status, "DeactivationTarget")
         eviction_reason = evicted.get("reason") if evicted is not None else None
+        deactivation_reason = deactivation_target.get("reason") if deactivation_target is not None else None
         if eviction_reason is not None and not isinstance(eviction_reason, str):
             raise ScientificKubernetesError("Kueue eviction reason is invalid")
+        if deactivation_reason is not None and not isinstance(deactivation_reason, str):
+            raise ScientificKubernetesError("Kueue deactivation reason is invalid")
+        # Newer Kueue versions surface the terminal underlying cause on the
+        # temporary DeactivationTarget condition, while Evicted uses the
+        # generic reason Deactivated. Preserve the raw stable cause rather
+        # than collapsing it into a locally invented category.
+        if deactivation_reason in {"MaximumExecutionTimeExceeded", "RequeuingLimitExceeded"}:
+            eviction_reason = deactivation_reason
+        elif eviction_reason == "Deactivated":
+            conditions = workload_status.get("conditions", [])
+            raw_causes = {
+                item.get("reason")
+                for item in conditions
+                if isinstance(item, Mapping) and item.get("status") in {"True", "False"}
+            }
+            for raw_cause in ("MaximumExecutionTimeExceeded", "RequeuingLimitExceeded"):
+                if raw_cause in raw_causes:
+                    eviction_reason = raw_cause
+                    break
         admission = workload_status.get("admission")
-        admission_condition = admitted or quota_reserved
+        # QuotaReserved is the assignment boundary. Keep its first transition
+        # time after Admitted becomes true so a normal condition progression
+        # does not look like a different immutable reservation.
+        admission_condition = quota_reserved or admitted
         if admission_condition is None or not isinstance(admission, Mapping):
             return None, workload_uid, False, eviction_reason
+        if admission.get("clusterQueue") != expected_cluster_queue:
+            raise ScientificKubernetesError("Kueue admitted a different ClusterQueue than the frozen route")
         timestamp = admission_condition.get("lastTransitionTime")
         if not isinstance(timestamp, str):
             raise ScientificKubernetesError("Kueue admission timestamp is absent")
@@ -520,8 +608,8 @@ class HttpScientificBatchCluster:
         assignments = admission.get("podSetAssignments")
         if not isinstance(assignments, list) or not assignments:
             raise ScientificKubernetesError("Kueue admission has no PodSet assignment")
-        flavor_by_resource: dict[str, str] = {}
-        usage_by_resource: dict[str, int] = {}
+        accelerator_count = 0
+        accelerator_flavor: str | None = None
         for raw_assignment in assignments:
             if not isinstance(raw_assignment, Mapping):
                 raise ScientificKubernetesError("Kueue PodSet assignment is invalid")
@@ -529,22 +617,22 @@ class HttpScientificBatchCluster:
             usage = raw_assignment.get("resourceUsage", {})
             if not isinstance(flavors, Mapping) or not isinstance(usage, Mapping):
                 raise ScientificKubernetesError("Kueue PodSet assignment resources are invalid")
-            for resource, raw_count in usage.items():
-                if not isinstance(resource, str) or "/" not in resource:
-                    continue
-                try:
-                    count = int(raw_count)
-                except (TypeError, ValueError):
-                    raise ScientificKubernetesError("Kueue accelerator admission quantity is invalid") from None
-                flavor = flavors.get(resource)
-                if count < 0 or not isinstance(flavor, str):
-                    raise ScientificKubernetesError("Kueue accelerator admission is incomplete")
-                if resource in flavor_by_resource and flavor_by_resource[resource] != flavor:
-                    raise ScientificKubernetesError("Kueue admitted multiple ResourceFlavors for one accelerator")
-                flavor_by_resource[resource] = flavor
-                usage_by_resource[resource] = usage_by_resource.get(resource, 0) + count
-        active = [(resource, count) for resource, count in usage_by_resource.items() if count]
-        if not active:
+            if expected_accelerator_resource is None or expected_accelerator_resource not in usage:
+                continue
+            try:
+                count = int(usage[expected_accelerator_resource])
+            except (TypeError, ValueError):
+                raise ScientificKubernetesError("Kueue accelerator admission quantity is invalid") from None
+            flavor = flavors.get(expected_accelerator_resource)
+            if count <= 0 or not isinstance(flavor, str) or not flavor:
+                raise ScientificKubernetesError("Kueue GPU PodSet admission is not positive and complete")
+            if accelerator_flavor is not None and accelerator_flavor != flavor:
+                raise ScientificKubernetesError("Kueue admitted multiple ResourceFlavors for one accelerator")
+            accelerator_flavor = flavor
+            accelerator_count += count
+        if expected_accelerator_resource is None:
+            if expected_accelerator_count != 0:
+                raise ScientificKubernetesError("frozen accelerator count has no exact resource")
             return (
                 SchedulingAdmission(
                     resolved_pool_id=None,
@@ -557,10 +645,11 @@ class HttpScientificBatchCluster:
                 admitted is not None,
                 eviction_reason,
             )
-        if len(active) != 1:
-            raise ScientificKubernetesError("Kueue admitted an ambiguous accelerator resource set")
-        accelerator_resource, accelerator_count = active[0]
-        flavor = flavor_by_resource[accelerator_resource]
+        if accelerator_count <= 0 or accelerator_flavor is None:
+            raise ScientificKubernetesError("Kueue admission has no positive PodSet for the frozen accelerator")
+        if accelerator_count != expected_accelerator_count:
+            raise ScientificKubernetesError("Kueue accelerator admission differs from the frozen quantity")
+        flavor = accelerator_flavor
         flavor_response = await self._request(
             "GET", f"/apis/kueue.x-k8s.io/v1beta1/resourceflavors/{quote(flavor, safe='')}"
         )
@@ -571,11 +660,13 @@ class HttpScientificBatchCluster:
         pool_id = flavor_labels.get(POOL_LABEL)
         if not isinstance(pool_id, str):
             raise ScientificKubernetesError("Kueue admitted ResourceFlavor has no canonical pool identity")
+        if pool_id not in expected_pool_preference:
+            raise ScientificKubernetesError("Kueue admitted a pool outside the frozen preference")
         return (
             SchedulingAdmission(
                 resolved_pool_id=pool_id,
                 admitted_resource_flavor=flavor,
-                accelerator_resource_name=accelerator_resource,
+                accelerator_resource_name=expected_accelerator_resource,
                 accelerator_count=accelerator_count,
                 admitted_at=admitted_at,
             ),
@@ -594,6 +685,13 @@ class HttpScientificBatchCluster:
         value = cast(dict[str, Any], current.json())
         metadata = _metadata(value)
         labels = _object(metadata.get("labels"), "Kubernetes labels")
+        annotations = _object(metadata.get("annotations"), "Kubernetes annotations")
+        if (
+            annotations.get(WORKLOAD_NAMESPACE_ANNOTATION) != ref.namespace
+            or annotations.get(ROUTE_NAMESPACE_ANNOTATION) != ref.route_namespace
+            or ref.route_namespace != ref.namespace
+        ):
+            raise BatchRepositoryConflictError("workload route namespace changed before delete")
         try:
             operation_id = UUID(str(labels[OPERATION_LABEL]))
         except (KeyError, ValueError):
