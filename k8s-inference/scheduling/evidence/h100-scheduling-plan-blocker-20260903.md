@@ -1,103 +1,136 @@
-# Live H100 scheduling plan: reproduction of the blocker
+# Live H100 scheduling plan: blocker, measurement and fix
 
-Plan only. No apply, no cluster mutation, no B300. The one live interaction was
-a read-only `kubectl get nodes`.
+Plan only. No `terraform apply`, no merge, no B300. The only live mutations were
+one preemptible node scaled from zero for a capacity measurement and returned
+to zero, both authorized.
 
 ## Why this exists
 
-The workloads apply that would create the `fs2-serve-artifact-store` Secret and
-the scientific scheduling ConfigMaps cannot run, so `scientific_batch` cannot be
-switched on. This records exactly why, measured rather than assumed, so the fix
-is a decision rather than an investigation.
+The workloads apply that creates the `fs2-serve-artifact-store` Secret and the
+scientific scheduling ConfigMap could not run, so `scientific_batch` could not
+be switched on. This records what actually blocked it, what was measured rather
+than assumed, and what changed.
 
 ## Setup
 
 | Fact | Value |
 | --- | --- |
-| Code | `origin/main` `97f9491a` |
+| Code | `origin/main` `97f9491a` plus this branch |
 | Project / region | `project-e00rene` / `eu-north1` |
 | Cluster | `k8s-inference-h100`, `run_id` `r927c465c6d` |
 | Workloads state | copy of the retained run state, serial 468, 73 resources |
-| Inputs | the retained generated `workloads.tfvars.json` and the live `terraform.tfvars` |
 | Command | `terraform plan -input=false -lock=false -refresh=false` |
 
-State was copied to scratch first; the retained files were read, never used as a
-plan backend.
+State was copied to scratch; the retained files were read, never used as a plan
+backend.
 
-## The general CPU pool itself is clean
+## The defect that blocked the plan
 
-Against the retained infrastructure state, adding the pool is
-**34 no-op, 1 create, 0 destroy, 0 replace** — only
-`nebius_mk8s_v1_node_group.general_cpu["general-cpu-8x"]`. With the
-`32vcpu-128gb` reference-pool resize it is 1 create plus 1 **in-place** update
-(`replace_paths` null). Neither of those is what blocks the platform.
+The root emitted `core_pool_capacity` as a **sibling** of the workloads
+`scheduling` object, but the stage declares it **inside** that object and reads
+`var.scheduling.core_pool_capacity`. Terraform does not fail on an undeclared
+variable in a var-file; it warns and drops the value. The stage therefore saw an
+empty map while the facade believed it had supplied the capacity, and
+`queue.tf` refused to admit core-requesting work:
 
-## What actually fails
+```
+Warning: Value for undeclared variable
+The root module does not declare a variable named "core_pool_capacity"
+```
 
-The workloads stage fails three preconditions with the retained generated
-tfvars:
+Fixed by emitting it inside `scheduling`, where the contract declares it. It is
+silent when wrong, so it is covered by
+`test_core_pool_capacity_reaches_the_variable_the_stage_reads`.
 
-1. `stages/workloads/queue.tf:354`, `terraform_data.academic_lane_ownership` —
-   `core_pool_capacity` is empty while the reference-data plane is enabled.
-2. `modules/kueue-scheduling/main.tf:1218` — the retained `service_classes` do
-   not match the current contract (every class must be `restartable`, carry a
-   `default_local_queue` that exists, and a bounded description).
-3. `var.scientific_batch.execution_map.models` is an empty tuple under schema
-   `fs2-serve.nebius.ai/scientific-execution-map/v3`.
+## Measured accelerator capacity
 
-All three are **stale generated input**, not code. `workloads.tfvars.json` is
-written by the root facade, and the retained copy predates the current contract.
+Core admission requires a measured per-node capacity, with evidence, for every
+selected accelerator pool. Both were read from the live cluster with
+`kubectl get nodes -o json`, `.status.allocatable`:
 
-## Regenerating it hits the real gate
-
-Planning the root with the live `terraform.tfvars` fails at
-`main.tf:255`: the reference-data plane is enabled, so
-`deployment.scheduling.budget_core_resources` must be on, because Kueue drops
-cpu and memory before admission otherwise.
-
-Turning it on then fails at `main.tf:304`: core admission requires a **measured**
-per-node cpu and memory capacity for every selected accelerator pool, and the
-value must carry `evidence` (`pool_id`, `source`, `captured_at`,
-`payload_sha256`). That requirement is deliberate — it is what stops an invented
-number from becoming a quota.
-
-Both selected pools are reported missing: `h100-1x`, `h100-reserved-8x`.
-
-## Measured capacity, and the one value that cannot be measured
-
-Read from the live cluster on 2026-09-03, read-only:
-
-| Pool | Nodes | Allocatable CPU | Allocatable memory | memory_mib |
+| Pool | Nodes read | CPU | memory_mib | `payload_sha256` |
 | --- | --- | --- | --- | --- |
-| `h100-reserved-8x` | 2 Ready capacity-block nodes | `127900m` | `1610494004Ki` / `1610494024Ki` | 1572748 |
+| `h100-reserved-8x` | 2 Ready capacity-block nodes | `127900m` | 1572748 | `945b717df461dae8d21326ee6e5f5bd435ed9bce8cbae3e325b19e33d19069a9` |
+| `h100-1x` | 1 node, scaled from zero for this measurement | `15900m` | 190072 | `854bbf9643dbf38f4978b3e98ea7a1f02ea6efce798a39e564e9b556472cc777` |
 
-Node identifiers are deliberately omitted: the public export forbids opaque
-Nebius resource IDs. The digest below is taken over the captured payload, which
-does include them, so the measurement stays checkable against the cluster
-without publishing private identifiers.
+Captured `2026-09-03T12:02:45Z` and `2026-09-03T12:02:16Z`. Node identifiers are
+omitted deliberately: the public export forbids opaque Nebius resource IDs, and
+the digests are taken over the payloads that do contain them, so each
+measurement stays checkable against the cluster. The `h100-reserved-8x` pair is
+independently corroborated by `reference-data/placement-contract.json`.
 
-`payload_sha256` of the captured allocatable payload:
-`945b717df461dae8d21326ee6e5f5bd435ed9bce8cbae3e325b19e33d19069a9`. The same
-pair appears independently in `reference-data/placement-contract.json`, which
-corroborates it.
+`h100-1x` had no node to read, being `min_nodes = 0` and preemptible. Rather
+than infer it from the preset, one node was scaled up by scheduling a single
+`pause` Pod that requested `nvidia.com/gpu: 1` with the pool's selector and
+toleration — the pool's own scale-from-zero path, which also exercised it. The
+autoscaler reported `pod triggered scale-up: 0->1 (max: 2)`, the node reached
+Ready, allocatable was read, and the Pod was deleted so the pool returns to
+zero. No quota or limit was changed and B300 was untouched.
 
-`h100-1x` is `min_nodes = 0` and preemptible, and no node of that pool is
-running, so it has **no allocatable to measure**. There is no recorded
-measurement for it anywhere in the run state or the repository. Supplying a
-number for it would be exactly the invented quota the evidence requirement
-exists to prevent.
+Keeping `h100-1x` matters beyond this measurement: it is the scale-from-zero
+pool that BoltzGen and Proteina-Complexa both list in `compatible_pool_ids`, and
+the handover requires both hot capacity and scale-from-zero preemptibles to
+work.
 
-## The decision this needs
+## Input updates
 
-One of:
+Applied to the live customer tfvars (backed up alongside it):
 
-1. Briefly run one preemptible `h100-1x` node to capture its allocatable, then
-   record both pools with evidence. This is a live mutation and needs explicit
-   approval.
-2. Drop `h100-1x` from the deployment's selected pools, leaving
-   `h100-reserved-8x` as the only accelerator pool, which is already measured.
-3. Leave the reference-data plane disabled, which is not viable for AlphaFold 3.
+* `scheduling.budget_core_resources = true`, required once the reference-data
+  plane is on, because Kueue drops cpu and memory before admission otherwise.
+* `scheduling.accelerator_schedulable_capacity` for both pools, with the
+  evidence above.
+* `dynamic_models.handoff_receipt` refreshed to the recomputed
+  `sha256:867a1343…35ba`; the retained value predated the current catalog.
 
-Once one is chosen, the root regenerates `workloads.tfvars.json` and the two
-remaining failures (service classes, execution map) are follow-on input updates
-surfaced by that regeneration.
+The stale generated `workloads.tfvars.json` needed no hand editing beyond this:
+regenerating it from the root supplied the current `service_classes` shape by
+itself.
+
+## Plan results
+
+Infrastructure, general CPU pool added to the retained state:
+**34 no-op, 1 create, 0 destroy, 0 replace** — only the node group. With the
+`32vcpu-128gb` reference-pool resize, 1 create plus 1 **in-place** update
+(`replace_paths` null).
+
+Workloads, regenerated inputs against the retained state, with
+`scientific_batch.enabled = false`: **0 errors**, 105 resources,
+**68 no-op, 12 create, 19 update, 3 replace, 0 destroy-only**. The creates
+include exactly what the platform is waiting on:
+
+```
+kubernetes_secret_v1.scientific_artifact_store[0]
+kubernetes_config_map_v1.scientific_scheduling_contract
+module.reference_data[0].kubernetes_config_map_v1.placement
+```
+
+The three replacements are immutable objects being rewritten in place
+(`model_controller_*` ConfigMaps, the bootstrap Job, the reference-data tools
+ConfigMap and pipeline manifest). Nothing is deleted without being recreated.
+
+## What still gates `scientific_batch.enabled = true`
+
+One thing, and it is not in this branch:
+
+```
+scientific_batch.enabled requires a non-empty schema-v3 execution map
+```
+
+A schema-v3 entry needs a real `execution_identity_sha256`, `runtime_artifacts`
+with content digests, and a `localization_receipt_digest` per artifact. Those
+come from the runtime-image, artifact-localization and adapter workstreams.
+Inventing them would be the same failure the capacity evidence requirement
+exists to prevent, so the map is left empty and the gate left closed.
+
+The consequence is that the platform unblocks in two steps rather than one:
+apply now with `scientific_batch.enabled = false` to create the artifact-store
+Secret and the scheduling ConfigMap, then flip the batch gate once a real
+execution map exists. The Secret is gated on `scientific_artifacts.enabled`,
+not on the batch flag, so step one delivers it.
+
+## Sandbox note
+
+The workloads plan also requires `nvcrio_dockerconfigjson`, which the operator
+supplies from `FS2_..._NVCR_DOCKERCONFIGJSON` at apply time. A throwaway
+`{"auths":{}}` was used for the plan only; it is not committed and not applied.

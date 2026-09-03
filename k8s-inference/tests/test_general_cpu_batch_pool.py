@@ -84,6 +84,29 @@ TEST_APPLICATIONS = {
         },
     },
 }
+ACCELERATOR_CAPACITY_FIXTURE = {
+    "nebius-b300-preemptible-1x": {
+        "cpu_millicores": 22000,
+        "memory_mib": 344064,
+        "evidence": {
+            "pool_id": "nebius-b300-preemptible-1x",
+            "source": "fixture:utf8:nebius-b300-preemptible-1x",
+            "captured_at": "2026-09-03T06:00:00Z",
+            "payload_sha256": "85cae37a96eff77ba331fdb643f4ba282e3f4f945ec19297ab22dadef7157663",
+        },
+    },
+    "nebius-b300-preemptible-8x": {
+        "cpu_millicores": 188000,
+        "memory_mib": 2801664,
+        "evidence": {
+            "pool_id": "nebius-b300-preemptible-8x",
+            "source": "fixture:utf8:nebius-b300-preemptible-8x",
+            "captured_at": "2026-09-03T06:00:00Z",
+            "payload_sha256": "e86ec303bf8c775b8ce347e6d333f2418baf4f763bf67d97575e07fa233e1a4e",
+        },
+    },
+}
+
 SMALL_POOL = {
     "platform": "cpu-d3",
     "preset": "8vcpu-32gb",
@@ -641,6 +664,41 @@ class GeneralCpuPoolTests(unittest.TestCase):
             outputs["effective_configuration"]["general_cpu"]["namespace"],
             "fs2-models",
         )
+
+    def test_core_pool_capacity_reaches_the_variable_the_stage_reads(self) -> None:
+        """The stage declares it inside scheduling and reads var.scheduling.core_pool_capacity.
+
+        Emitted as a sibling it is an undeclared variable: Terraform warns and
+        drops it, the stage sees an empty map, and its core-admission
+        precondition fails while the facade believes it supplied the capacity.
+        That is silent, so it gets a test rather than a comment.
+        """
+
+        outputs = self._outputs(
+            "core-capacity-wiring",
+            {
+                "name": "fs2-core-capacity-wiring",
+                "scheduling": {
+                    "budget_core_resources": True,
+                    "accelerator_schedulable_capacity": ACCELERATOR_CAPACITY_FIXTURE,
+                },
+            },
+        )
+        workloads = outputs["deployment_contract"]["stages"]["workloads"]
+
+        self.assertNotIn(
+            "core_pool_capacity",
+            workloads,
+            "core_pool_capacity must not be emitted beside scheduling; the stage declares no such variable",
+        )
+        capacity = workloads["scheduling"]["core_pool_capacity"]
+        self.assertEqual(
+            sorted(capacity),
+            ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"],
+        )
+        # Per-node measurement times the pool's own node ceiling.
+        self.assertGreater(capacity["nebius-b300-preemptible-8x"]["cpu_millicores"], 0)
+        self.assertTrue(workloads["budget_core_resources"])
 
     def test_a_namespace_no_owner_creates_is_rejected(self) -> None:
         result = self._plan(
