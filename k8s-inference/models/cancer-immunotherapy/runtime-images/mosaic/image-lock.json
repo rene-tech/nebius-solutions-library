@@ -1,0 +1,248 @@
+{
+  "schema": "fs2.nebius.ai/mosaic-runtime-image-lock/v1",
+  "model_id": "mosaic",
+  "owner_task": "fs2-cancer-images-mosaic-runtime-qualification-r20260903",
+  "publication_policy": "explicit-non-overwriting-adapter-qualified-tags",
+  "source": {
+    "repository": "https://github.com/escalante-bio/mosaic",
+    "revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+    "revision_label": "main head 2026-08-01, 'Add BindCraft-style optimizer (#73)'; the repository publishes no git tags",
+    "archive_url": "https://codeload.github.com/escalante-bio/mosaic/tar.gz/70fec525423f5f87156a1a957b4a4048f9f8e676",
+    "archive_sha256": "41d30b2ac41920c952087a642882c6e8ef1a31a4565db5667a372c9f467b2d1a",
+    "archive_bytes": 37978589,
+    "source_date_epoch": 1785587114,
+    "license": "MIT",
+    "license_state": "verified"
+  },
+  "adapter": {
+    "commit": "6551d8708c829fe99d229d1f547b8bd8cab0231e",
+    "repository_path": "k8s-inference/models/structure/runtime/mosaic",
+    "adapter_id": "mosaic-boltz2-proteinmpnn-v1",
+    "consumption": "materialised-from-git-at-build-time-never-vendored",
+    "files": {
+      "bin/mosaic-batch": "edd017c67e548b6e5d74cd700b0665bd05b09cd16eb82afaaf14fa7f25d046e7",
+      "recipe.json": "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe"
+    },
+    "argv_contract": [
+      "/opt/fs2/bin/mosaic-batch run-shard --request <request.json> --input-manifest <input-manifest.json> --recipe /opt/fs2/mosaic/recipe.json --recipe-sha256 <sha256> --shard-index <int> --seed <int> --output <dir>",
+      "/opt/fs2/bin/mosaic-batch aggregate --request <request.json> --input-manifest <input-manifest.json> --shards <dir> --expected-shards <int> --staging-manifest <path> --output-manifest <path> --atomic-rename"
+    ],
+    "required_environment": {
+      "FS2_ARTIFACT_ROOT": "root of the external artifact plane; defaults to /opt/fs2/artifacts",
+      "FS2_RUNTIME_IMAGE_DIGEST": "aggregate stage only; binds the committed manifest to the admitted image digest"
+    }
+  },
+  "image": {
+    "id": "mosaic",
+    "platform": "linux/amd64",
+    "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
+    "repository": "mosaic",
+    "tag_suffix": "adapter-v5",
+    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic:70fec525423f5f87156a1a957b4a4048f9f8e676-adapter-v5",
+    "build_context": "..",
+    "dockerfile": "Dockerfile",
+    "python": "3.12",
+    "base": {
+      "builder": "nvidia/cuda:12.9.1-cudnn-devel-ubuntu24.04@sha256:a2e1e2360c85298ac47ec2543b406ab1e8cec42e31ee47e4d32140ebc82e1067",
+      "runtime": "nvidia/cuda:12.9.1-base-ubuntu24.04@sha256:29e5e3425e2e0f5a4e97c9fb4695ba4887cd78210a43cf94c3bcafc6ab01c5e6",
+      "uv": "ghcr.io/astral-sh/uv:0.11.7@sha256:240fb85ab0f263ef12f492d8476aa3a2e4e1e333f7d67fbdd923d00a506a516a"
+    },
+    "accelerator_runtime": {
+      "framework": "jax",
+      "framework_version": "0.10.2",
+      "cuda_abi": "12.9",
+      "architecture_policy": "the JAX CUDA 12 plugin discovers NVIDIA GPUs dynamically; no device-name or H100-only admission check. Upstream-pinned CPU PyTorch 2.7.1 is retained solely for checkpoint conversion."
+    },
+    "dependency_lock": {
+      "path": "requirements.lock",
+      "sha256": "7a08cfb625fa4c7456d213d0b76e979b863cb08d43ab7bcbd71f4ec3bd2780f3"
+    },
+    "runtime_entrypoint": {
+      "path": "runtime_entrypoint.py",
+      "container_path": "/opt/fs2/mosaic/runtime_entrypoint.py",
+      "sha256": "9ae9af6d7d64a0c046957363ffba6c838f337b93522807b6a09eb95f6b47ae12"
+    },
+    "smoke": [
+      [
+        "python",
+        "/opt/fs2/runtime_probe.py",
+        "--model",
+        "mosaic"
+      ],
+      [
+        "/opt/fs2/bin/mosaic-batch",
+        "run-shard",
+        "--help"
+      ]
+    ],
+    "published_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+    "supersedes": [
+      {
+        "tag_suffix": "adapter-v1",
+        "digest": "sha256:dc4dfa564eaa56507a598d9f3527e468be9f6466ca453f1d704ce5fc29f3378d",
+        "deployable": false,
+        "reason": "pre-qualification adapter wiring; never reached a real H100 semantic forward"
+      },
+      {
+        "tag_suffix": "adapter-v2",
+        "digest": "sha256:4d17ec790bc5962b095b97b298c9f65832a51d9ea4590b51d532e46db48df1ca",
+        "deployable": false,
+        "reason": "completed a real H100 Boltz-2/ProteinMPNN forward but serialised the binder structure with Gemmi UNK residue names, so the designed sequence could not be recovered from the PDB. Both the canonical adapter output validator and the qualification validator reject it."
+      },
+      {
+        "tag_suffix": "adapter-v3",
+        "digest": "sha256:8f80fe0aef493f17ed11cca682f2ccafc4689c088edea00654f4317a3b064992",
+        "deployable": false,
+        "reason": "corrected the binder PDB residue naming but kept image cache defaults under the image filesystem and the read-only artifact plane. Under the canonical readOnlyRootFilesystem Job, Boltz aborts at import with numba 'cannot cache function _prepare_msa_arrays_inner: no locator available'. Observed live on H100 job mosaic-4d5fd258d1ceec2c-s000, exit code 1."
+      },
+      {
+        "tag_suffix": "adapter-v4",
+        "digest": "sha256:f6f06b1976d5357553ef2f7017461ef0677ab948234631fb05412e0667f051e6",
+        "deployable": false,
+        "reason": "first image that survives the canonical readOnlyRootFilesystem Job, but it was built from the pre-fix entrypoint that serialises the binder chain straight from Gemmi, so every residue is still named UNK and the designed sequence is unrecoverable."
+      }
+    ],
+    "cache_policy": {
+      "rationale": "the canonical Job mounts only the request ConfigMap, /workspace and a /tmp emptyDir and sets readOnlyRootFilesystem, so every cache default must resolve under /tmp",
+      "variables": {
+        "HOME": "/tmp/fs2-home",
+        "HF_HOME": "/tmp/fs2-home/huggingface",
+        "XDG_CACHE_HOME": "/tmp/fs2-home/xdg",
+        "MPLCONFIGDIR": "/tmp/fs2-home/matplotlib",
+        "NUMBA_CACHE_DIR": "/tmp/fs2-home/numba",
+        "JAX_COMPILATION_CACHE_DIR": "/tmp/fs2-home/jax"
+      }
+    },
+    "qualification": {
+      "state": "h100-semantic-qualified",
+      "evidence": [
+        "evidence/h100-run-receipt.json",
+        "evidence/h100-semantic-qualification.json"
+      ],
+      "canonical_output_validator": "passed",
+      "scope": "one bounded single-shard minibinder design workflow; no throughput, fast-start, snapshot, elasticity or contention measurement",
+      "route_exposed": false
+    }
+  },
+  "weight_policy": {
+    "embedded": false,
+    "external_root": "/opt/fs2/artifacts",
+    "removed_from_source": [
+      "src/mosaic/proteinmpnn/weights/v_48_020.pt",
+      "src/mosaic/proteinmpnn/weights/soluble_v_48_020.pt",
+      "src/mosaic/proteinmpnn/weights/abmpnn.pt"
+    ],
+    "notes": "Upstream ships three ProteinMPNN checkpoints inside the package tree. They are deleted before installation so the image carries no model bytes; every component checkpoint is mounted from the external artifact plane."
+  },
+  "external_artifacts": [
+    {
+      "id": "boltz2-conf",
+      "mount": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt",
+      "sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+      "bytes": 2286561469,
+      "catalog_manifest": "../../../bionemo/boltz2/artifact-manifest.json",
+      "source": "hf://boltz-community/boltz-2@6fdef46d763fee7fbb83ca5501ccceff43b85607",
+      "baked_into_image": false
+    },
+    {
+      "id": "boltz2-mols",
+      "mount": "/opt/fs2/artifacts/mosaic/boltz/mols",
+      "archive_sha256": "39e076d96dbec6b4e86982bbda16f3a53a2a60c9bdc17828d88f6f9a0c7d1fd7",
+      "archive_bytes": 1855662080,
+      "catalog_manifest": "../../../bionemo/boltz2/artifact-manifest.json",
+      "source": "hf://boltz-community/boltz-2@6fdef46d763fee7fbb83ca5501ccceff43b85607#mols.tar",
+      "baked_into_image": false,
+      "notes": "Boltz-2 reads canonical molecules from the extracted mols/ directory; the Boltz-1 ccd.pkl path is not part of this contract."
+    },
+    {
+      "id": "proteinmpnn-v-48-020",
+      "mount": "/opt/fs2/artifacts/mosaic/proteinmpnn/v_48_020.pt",
+      "sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+      "bytes": 6681301,
+      "source": "git+https://github.com/escalante-bio/mosaic@70fec525423f5f87156a1a957b4a4048f9f8e676#src/mosaic/proteinmpnn/weights/v_48_020.pt",
+      "baked_into_image": false
+    }
+  ],
+  "artifact_delivery": {
+    "state": "transitional-task-scoped",
+    "canonical_plane": "unavailable",
+    "detail": "The canonical regional artifact plane owned by fs2-cancer-model-artifact-cache-ingestion-r20260902 does not yet publish a Mosaic artifact root. Qualification therefore reads an explicitly transitional copy on the shared qualification PVC. This copy is evidence, not artifact delivery: the runtime resolves every checkpoint by SHA-256, so it will bind to the canonical plane unchanged once that plane publishes.",
+    "transitional_claim": "fs2-runtime-qualification-artifacts-r20260902"
+  },
+  "upstream_contract_defects": [
+    {
+      "id": "boltz2-artifact-manifest-sha256-drift",
+      "severity": "blocking-for-lock-verification",
+      "location": "6551d870 models/structure/runtime/mosaic/recipe.json and artifact-lock.json",
+      "observed": "both pin boltz2_artifact_manifest_sha256 = c3bd08af34762feae697f9b2a0780f0ced57649b2a9d6fa5562786eceafc5e9e",
+      "actual": "models/bionemo/boltz2/artifact-manifest.json hashes to 6e837710a2a1dd619d1a5405eba98cafcb529cc36d180e4469c138c54aa2dfe3, identically at 6551d870, at main c83b97c6 and at the integration base main b77ccfa7",
+      "impact": "any consumer that verifies the referenced manifest by its pinned digest fails closed. The referenced content digest 9459dd0c... and the checkpoint digest 090e82ac... are correct, so this is a stale pin on the pointer, not on the artifact.",
+      "resolution": "reported to the primary adapter owner; this runtime verifies the checkpoint and molecule identities directly and does not consume the stale manifest pin.",
+      "reconfirmed_at": "b77ccfa7"
+    },
+    {
+      "id": "aggregate-cannot-learn-admitted-image-digest",
+      "severity": "blocking-for-end-to-end-contract",
+      "location": "6551d870 models/structure/runtime/mosaic/batch_adapter.py, _job and render_plan",
+      "observed": "the rendered aggregate Job carries no container env and no --runtime-image-digest argument",
+      "actual": "validate_output_manifest requires aggregate.runtime_image_digest to equal the admitted runtime image digest",
+      "impact": "a plan rendered strictly by the canonical adapter can never produce an aggregate the canonical validator accepts",
+      "resolution": "reported to the primary adapter owner. This runtime reads FS2_RUNTIME_IMAGE_DIGEST and fails closed when it is absent, so the adapter only has to project the admitted digest into the aggregate Job env."
+    },
+    {
+      "id": "canonical-job-read-only-root-breaks-boltz-numba-cache",
+      "severity": "blocking-for-end-to-end-contract",
+      "location": "6551d870 models/structure/runtime/mosaic/batch_adapter.py, _job",
+      "observed": "readOnlyRootFilesystem: true with only a ConfigMap, /workspace and /tmp emptyDir mounted, and no container env",
+      "actual": "Boltz decorates its MSA featuriser with numba @njit(cache=True), which requires a writable cache locator; JAX, Hugging Face and Matplotlib also default to caches under HOME",
+      "impact": "a strictly canonical Job aborts at import before any GPU work",
+      "resolution": "the image now defaults every cache under /tmp, which the canonical Job always provides. No change to the adapter is required for this defect."
+    }
+  ],
+  "integration": {
+    "base_commit": "b77ccfa7",
+    "base_branch": "main",
+    "predecessor": "d8dac5b6",
+    "preserved": [
+      "mosaic image inputs and the canonical mosaic-batch wrapper binding",
+      "immutable digest lock and the superseded-publication chain",
+      "H100 semantic evidence and the canonical-plan qualification tooling"
+    ],
+    "not_replayed": "no adapter, controller, catalog, admin, Terraform or shared-service file is touched; the canonical adapter stays owned by its own task and is only read from commit 6551d870"
+  },
+  "artifact_contract_reconciliation": {
+    "reconciled_against": "main b77ccfa7",
+    "boltz2_artifact_manifest": {
+      "path": "models/bionemo/boltz2/artifact-manifest.json",
+      "sha256_at_base": "6e837710a2a1dd619d1a5405eba98cafcb529cc36d180e4469c138c54aa2dfe3",
+      "unchanged_since": [
+        "6551d870",
+        "c83b97c6"
+      ],
+      "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+      "validates_against": "catalog/runtime/schema/artifact-manifest.schema.json",
+      "content_digest": "9459dd0c80992f21d07e70ae7d54c318e66a9d5202d6e849a134957b0740d82a",
+      "checkpoint_identity_matches_runtime": true,
+      "molecule_identity_matches_runtime": true
+    },
+    "catalog_constants": {
+      "batch_namespace": "fs2-models",
+      "canonical_queue": "fs2-models-async",
+      "canonical_bytes_encoding": "sorted keys, compact separators, ASCII, trailing newline; identical to the runtime encoding"
+    },
+    "canonical_mosaic_artifact_root": "still absent on main, so artifact delivery remains transitional-task-scoped",
+    "conclusion": "the stale pin is in the adapter candidate, not in the artifact plane. The referenced manifest, its content digest and both component identities are correct and unchanged at the integration base, so this runtime keeps verifying the checkpoint and molecule identities directly and never consumes the stale pointer pin."
+  },
+  "blocker_handoff": {
+    "to": "the active scientific-runtime-onboarding successor",
+    "scope": "three of the four recorded defects need an adapter or plan-renderer change; this task does not edit controller or adapter ownership",
+    "owned_here": [
+      "canonical-job-read-only-root-breaks-boltz-numba-cache"
+    ],
+    "owned_by_adapter": [
+      "aggregate-cannot-learn-admitted-image-digest",
+      "artifact-plane-mount-absent-from-canonical-job",
+      "boltz2-artifact-manifest-sha256-drift"
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "binder_structure": {
+    "atoms": 200,
+    "bytes": 16204,
+    "distinct_residue_types": 16,
+    "dominant_residue_fraction": 0.175,
+    "max_extent_angstrom": 30.117,
+    "residues": 40,
+    "sha256": "1a418b2d5a59a3969a1fa94d01f73af9950813c7441653ee9980e2edca8d376a",
+    "three_letter_length": 40
+  },
+  "candidate_metrics": {
+    "candidate_id": "design-000",
+    "iptm": 0.8496159315109253,
+    "mean_plddt": 0.9294729232788086,
+    "objective": 12.291522026062012,
+    "seed": 7300,
+    "sequence": "VGLALYCLWPELFDGDAEEHHDEEALSEGKLPNEAFLAIG",
+    "shard_index": 0
+  },
+  "canonical_adapter": {
+    "commit": "6551d8708c829fe99d229d1f547b8bd8cab0231e",
+    "receipt": {
+      "candidate_count": 1,
+      "output_manifest_sha256": "e5016dce6061de52ed3c4bf54329e48d5dadea6a81b5d7dcc7b36fe5ebf819f1",
+      "qualification_effect": "none-offline-validation-only",
+      "request_sha256": "24154c23d916f411ff687bc426771ff1fa6dd1cbcb75ad55d6d5a81472c246ff",
+      "shard_count": 1,
+      "status": "passed",
+      "validator_id": "mosaic-boltz2-proteinmpnn-v1"
+    },
+    "validator": "validate_output_manifest"
+  },
+  "runtime_image_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+  "schema": "fs2.nebius.ai/mosaic-h100-semantic-qualification/v1",
+  "status": "passed"
+}
