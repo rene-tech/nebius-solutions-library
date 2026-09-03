@@ -247,6 +247,24 @@ def scheduling() -> SchedulingContractResolver:
     )
 
 
+def test_controller_hashes_exact_mounted_scheduling_bytes_before_parse(tmp_path: Path) -> None:
+    contract = json.loads(json.dumps(scheduling().contract))
+    contract["service_classes"]["customer-batch"]["description"] = "café <queue> & λ"
+    raw = json.dumps(contract, ensure_ascii=False, indent=2).encode("utf-8")
+    path = tmp_path / "kueue-scheduling.json"
+    path.write_bytes(raw)
+    expected = hashlib.sha256(raw).hexdigest()
+
+    resolver = SchedulingContractResolver.load(path, expected_sha256=expected)
+    assert resolver.raw_contract_sha256 == f"sha256:{expected}"
+
+    # These bytes decode to the same JSON value, but Terraform did not publish
+    # them. Escaping or canonicalizing the mounted ConfigMap is therefore drift.
+    path.write_bytes(json.dumps(contract, ensure_ascii=True, separators=(",", ":")).encode("utf-8"))
+    with pytest.raises(SchedulingContractError, match="raw bytes differ from Terraform"):
+        SchedulingContractResolver.load(path, expected_sha256=expected)
+
+
 ACADEMIC_TENANT_ID = "tenant-academic"
 
 
