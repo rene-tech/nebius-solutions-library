@@ -121,8 +121,22 @@ variable "queue" {
     local_queue     = optional(string, "reference-data")
     nominal_cpu     = optional(string, "6")
     nominal_memory  = optional(string, "24Gi")
+    # Namespaces this ClusterQueue admits Workloads from, beyond the private
+    # reference-data plane. A licensed-asset namespace whose claim can only be
+    # mounted locally needs its CPU stages admitted here, and Kueue admits a
+    # Workload only from a namespace its selector matches.
+    additional_namespaces = optional(list(string), [])
   })
   default = {}
+
+  validation {
+    condition = alltrue([
+      for namespace in var.queue.additional_namespaces :
+      length(namespace) <= 63 &&
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", namespace))
+    ])
+    error_message = "queue.additional_namespaces must be Kubernetes namespace labels of at most 63 characters."
+  }
 }
 
 variable "status" {

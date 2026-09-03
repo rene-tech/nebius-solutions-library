@@ -1,0 +1,83 @@
+{
+  "fixture": "fs2-serve.nebius.ai/cpu-stage-classes/v1 general-cpu entry",
+  "purpose": "The exact entry modules/general-cpu-scheduling contributes to the single assembled kueue-scheduling.json. The assembler merges it into cpu_classes under the key general-cpu; it does not restate any of these values, because every one of them is derived from deployment.cpu_pools and the general lane configuration.",
+  "produced_from": {
+    "deployment.cpu_pools": {
+      "general-cpu-8x": {
+        "platform": "cpu-d3",
+        "preset": "8vcpu-32gb",
+        "capacity_type": "preemptible",
+        "autoscaling": {
+          "min_nodes": 0,
+          "max_nodes": 4
+        },
+        "schedulable_capacity": {
+          "cpu_millicores": 7000,
+          "memory_mib": 28672,
+          "ephemeral_storage_mib": 114688
+        }
+      }
+    },
+    "deployment.scheduling.general_cpu": {
+      "cluster_queue": "general-cpu",
+      "local_queue": "general-cpu",
+      "namespace": "fs2-academic-poc"
+    }
+  },
+  "cpu_classes": {
+    "general-cpu": {
+      "local_queue": "general-cpu",
+      "cluster_queue": "general-cpu",
+      "namespace": "fs2-academic-poc",
+      "resource_flavor": "general-cpu",
+      "pool_resolution": {
+        "mode": "per-pool-flavor",
+        "pool_id": "general-cpu-8x"
+      },
+      "node_selector": {
+        "workload.fs2.nebius/general-cpu": "true",
+        "capacity.fs2.nebius/pool": "general-cpu",
+        "capacity.fs2.nebius/pool-id": "general-cpu-8x"
+      },
+      "tolerations": [
+        {
+          "key": "workload.fs2.nebius/general-cpu",
+          "operator": "Equal",
+          "value": "true",
+          "effect": "NoSchedule"
+        }
+      ],
+      "eligible_pool_ids": [
+        "general-cpu-8x"
+      ],
+      "schedulable_capacity": {
+        "cpu": "7000m",
+        "memory": "28672Mi",
+        "ephemeral_storage": "114688Mi",
+        "cpu_millicores": 7000,
+        "memory_mib": 28672,
+        "ephemeral_storage_mib": 114688
+      }
+    }
+  },
+  "kueue_objects_owned_by_this_producer": {
+    "resource_flavor": "general-cpu",
+    "cluster_queue": "general-cpu",
+    "local_queue": "general-cpu in fs2-academic-poc",
+    "note": "The assembler must not render these; it consumes the class entry only. The general lane owns them, the reference-data plane owns its own, and no object has two owners."
+  },
+  "handshake": {
+    "producer_publishes": [
+      "the canonical general-cpu class entry above",
+      "its digest, for cpu_class_digests",
+      "external lane facts: the ClusterQueue, LocalQueue, namespace and nominal quota of the objects this producer owns"
+    ],
+    "assembler_does": [
+      "merge the entry into cpu_classes as-is, without adapting or restating it",
+      "record its digest in cpu_class_digests",
+      "describe the producer's queues as external lanes without becoming their owner",
+      "publish one immutable content-addressed ConfigMap and inject its name, key and digest into the chart"
+    ],
+    "controller": "Hash the raw mounted bytes and compare them with the injected digest before enabling writes. Persist the resolved resource_flavor, pool_resolution.pool_id and cpu/memory/ephemeral_storage quantities, keep QuotaReserved and Admitted as separate states with separate timestamps, and enforce eligible_pool_ids rather than trusting only runtime-reported compatibility."
+  }
+}

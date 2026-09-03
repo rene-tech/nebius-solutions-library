@@ -277,6 +277,26 @@ locals {
 # exists.  Keep this beside the academic namespace and claim so enabling the
 # feature from tfvars creates the complete admission lane rather than merely
 # returning a manifest for some later manual apply.
+# LocalQueue.spec.clusterQueue is immutable in Kueue. Keep the binding identity
+# in Terraform state so a changed namespace or ClusterQueue plans a replacement
+# instead of an in-place update the API rejects. Replacement briefly removes the
+# queue, so operators must drain it first.
+resource "terraform_data" "academic_local_queue_binding" {
+  for_each = local.execution_enabled ? {
+    (var.academic_assets.execution.local_queue) = {
+      namespace     = var.academic_assets.namespace
+      cluster_queue = var.academic_assets.execution.cluster_queue
+    }
+  } : {}
+
+  input = each.value
+
+  triggers_replace = [
+    each.value.namespace,
+    each.value.cluster_queue,
+  ]
+}
+
 resource "kubernetes_manifest" "academic_local_queue" {
   for_each = local.execution_enabled ? {
     (var.academic_assets.execution.local_queue) = local.academic_local_queue_manifest
@@ -287,6 +307,10 @@ resource "kubernetes_manifest" "academic_local_queue" {
   field_manager {
     force_conflicts = false
     name            = "fs2-academic-assets"
+  }
+
+  lifecycle {
+    replace_triggered_by = [terraform_data.academic_local_queue_binding[each.key]]
   }
 
   depends_on = [kubernetes_namespace_v1.academic_assets]

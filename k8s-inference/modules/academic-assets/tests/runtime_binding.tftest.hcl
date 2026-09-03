@@ -310,6 +310,17 @@ run "execution_is_bound_to_the_namespace_that_holds_the_claim" {
 
   assert {
     condition = (
+      length(terraform_data.academic_local_queue_binding) == 1 &&
+      terraform_data.academic_local_queue_binding["academic-scientific"].input.cluster_queue ==
+      var.academic_assets.execution.cluster_queue &&
+      output.managed_addresses.local_queue_binding ==
+      "terraform_data.academic_local_queue_binding[\"academic-scientific\"]"
+    )
+    error_message = "LocalQueue.spec.clusterQueue is immutable, so the binding identity must live in state and force replacement rather than an in-place update."
+  }
+
+  assert {
+    condition = (
       contains(flatten(kubernetes_role_v1.academic_execution[0].rule[*].resources), "jobsets") &&
       contains(flatten(kubernetes_role_v1.academic_execution[0].rule[*].resources), "workloads")
     )

@@ -1573,12 +1573,22 @@ def infrastructure_outputs(
         if scientific_artifacts_enabled
         else None
     )
+    # A general CPU pool is optional, so the output is read only when the facade
+    # declared one. Its absence is a valid deployment, not a missing handoff.
+    general_cpu_pools = (
+        terraform_optional_json_output(
+            terraform, INFRA_ROOT, "general_cpu_pool_contract", environment
+        )
+        if contract.get("stages", {}).get("infrastructure", {}).get("cpu_pools")
+        else None
+    )
     return {
         "run_root": str(run_root.resolve()),
         "nebius_profile": nebius_profile,
         "kubeconfig_path": str(kubeconfig.resolve()),
         "run_id": contract["run_id"],
         "cluster_id": cluster_id,
+        "general_cpu_pool_contract": general_cpu_pools,
         "cluster_name": cluster_name,
         "kube_context": cluster_name,
         "kube_system_uid": kube_system_uid,
@@ -1675,6 +1685,30 @@ def write_downstream_variables(
             "storage_contract": storage_contract if enabled else None,
             "object_storage_access": object_access if enabled else None,
         }
+    general_cpu_lane = workloads.get("general_cpu_lane")
+    if isinstance(general_cpu_lane, Mapping):
+        pool_contract = dynamic.get("general_cpu_pool_contract")
+        if general_cpu_lane.get("enabled") is True and not isinstance(
+            pool_contract, Mapping
+        ):
+            raise DeploymentError(
+                "an enabled general CPU lane requires the infrastructure general-CPU pool contract"
+            )
+        if isinstance(pool_contract, Mapping):
+            # The lane exists to keep general aggregation off the reference-data
+            # nodes, so a pool contract that claims that filesystem is refused
+            # rather than quietly admitted.
+            if pool_contract.get("reference_data_filesystem") is not False:
+                raise DeploymentError(
+                    "a general CPU pool must never carry the reference-data filesystem"
+                )
+            if pool_contract.get("schema") != "fs2-serve.nebius.ai/general-cpu-pools/v1":
+                raise DeploymentError(
+                    "the general CPU pool handoff must be the v1 general-CPU pool contract"
+                )
+        workloads["general_cpu_pools"] = (
+            pool_contract if general_cpu_lane.get("enabled") is True else None
+        )
     scientific_batch = workloads.get("scientific_batch")
     if isinstance(scientific_batch, Mapping):
         artifacts_enabled = (

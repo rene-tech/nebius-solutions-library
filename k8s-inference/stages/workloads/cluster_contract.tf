@@ -207,6 +207,27 @@ resource "terraform_data" "cluster_contract" {
       error_message = "Foundation state must match the selected cluster plus the exact authoritative v2 and optional legacy infrastructure contracts."
     }
     precondition {
+      condition = !var.scientific_batch.enabled || try(
+        data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.enabled &&
+        data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.api_version == "jobset.x-k8s.io/v1alpha2" &&
+        tonumber(split(".", trimprefix(data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.configured_kubernetes_version, "v"))[0]) == 1 &&
+        contains([33, 34], tonumber(split(".", trimprefix(data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.configured_kubernetes_version, "v"))[1])) &&
+        data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.kubernetes_minor == format(
+          "v%s.%s",
+          split(".", trimprefix(data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.configured_kubernetes_version, "v"))[0],
+          split(".", trimprefix(data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.configured_kubernetes_version, "v"))[1],
+        ) &&
+        data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.upstream_tested_kubernetes_minors == ["v1.32", "v1.33", "v1.34"] &&
+        data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.chart.version == "0.12.0" &&
+        data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.chart.digest == "sha256:02808a890a0b0e03a1d3bf5959e2f562b3b47c15e446bbba358c1d24e1f81b24" &&
+        data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.image.digest == "sha256:e75536f1135b7bb2f19f8c3b620782fbdd9091d73398e3a272f9a5fed322980d" &&
+        data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.ready.kubernetes_minor == data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.kubernetes_minor &&
+        data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.ready.api_version == "jobset.x-k8s.io/v1alpha2",
+        false,
+      )
+      error_message = "Scientific batch execution requires the foundation's ready, digest-pinned JobSet v0.12.0 v1alpha2 contract bound to a Kubernetes minor inside the Kueue/JobSet tested intersection, 1.33 or 1.34."
+    }
+    precondition {
       condition = (
         data.kubernetes_config_map_v1.foundation_contract.data.schema == "fs2-serve.nebius.ai/terraform-cluster-contract/v2" &&
         data.kubernetes_config_map_v1.foundation_contract.data.cluster_id == var.cluster_id &&

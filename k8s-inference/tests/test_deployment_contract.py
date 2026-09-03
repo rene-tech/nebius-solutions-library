@@ -28,6 +28,32 @@ TEST_TARGET = {
     },
     "system_update_strategy": {"max_surge": 1, "max_unavailable": 0},
 }
+# Synthetic plan fixture for values below the catalog profiles' nominal B300
+# sizes. Its fixture source names the exact UTF-8 bytes hashed below, so it is
+# truthful test provenance rather than a fabricated kubectl measurement.
+ACCELERATOR_CAPACITY_FIXTURE = {
+    "nebius-b300-preemptible-1x": {
+        "cpu_millicores": 22000,
+        "memory_mib": 344064,
+        "evidence": {
+            "pool_id": "nebius-b300-preemptible-1x",
+            "source": "fixture:utf8:nebius-b300-preemptible-1x",
+            "captured_at": "2026-09-03T06:00:00Z",
+            "payload_sha256": "85cae37a96eff77ba331fdb643f4ba282e3f4f945ec19297ab22dadef7157663",
+        },
+    },
+    "nebius-b300-preemptible-8x": {
+        "cpu_millicores": 188000,
+        "memory_mib": 2801664,
+        "evidence": {
+            "pool_id": "nebius-b300-preemptible-8x",
+            "source": "fixture:utf8:nebius-b300-preemptible-8x",
+            "captured_at": "2026-09-03T06:00:00Z",
+            "payload_sha256": "e86ec303bf8c775b8ce347e6d333f2418baf4f763bf67d97575e07fa233e1a4e",
+        },
+    },
+}
+
 TEST_APPLICATIONS = {
     "control_plane": {
         "repository": "registry.example.invalid/inference/control-plane",
@@ -141,12 +167,32 @@ class DeploymentContractTests(unittest.TestCase):
         )
 
     @classmethod
-    def _write_configuration(cls, name: str, deployment: dict[str, Any]) -> Path:
+    def _write_configuration(
+        cls,
+        name: str,
+        deployment: dict[str, Any],
+        **top_level: Any,
+    ) -> Path:
         deployment = dict(deployment)
         deployment.setdefault("applications", TEST_APPLICATIONS)
+        # core_capacity is bounded by measured schedulable capacity, never by
+        # a preset's nominal size, so a profile-pool fixture that budgets core
+        # resources states the measurement. A custom-pool fixture declares it
+        # on the pool itself.
+        scheduling = deployment.get("scheduling")
+        if (
+            isinstance(scheduling, dict)
+            and scheduling.get("budget_core_resources") is True
+            and "accelerator_schedulable_capacity" not in scheduling
+            and not deployment.get("accelerator_pools")
+        ):
+            deployment["scheduling"] = {
+                **scheduling,
+                "accelerator_schedulable_capacity": ACCELERATOR_CAPACITY_FIXTURE,
+            }
         path = cls.run_root / f"{name}.tfvars.json"
         path.write_text(
-            json.dumps({"deployment": deployment}, indent=2, sort_keys=True) + "\n",
+            json.dumps({"deployment": deployment, **top_level}, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         path.chmod(0o600)
@@ -208,6 +254,7 @@ class DeploymentContractTests(unittest.TestCase):
             {"capacity": "minimal", "accelerators": "minimal", "models": "minimal"},
         )
         self.assertEqual(contract["selected_model_ids"], ["proteinmpnn"])
+
         self.assertEqual(
             contract["selected_accelerator_pool_ids"],
             ["nebius-b300-preemptible-1x", "nebius-b300-preemptible-8x"],
@@ -242,6 +289,7 @@ class DeploymentContractTests(unittest.TestCase):
             contract["stages"]["workloads"]["model_image_overrides"],
             {"proteinmpnn": runtime_catalog["runtime"]["image"]["reference"]},
         )
+
         self.assertEqual(
             contract["stages"]["workloads"]["model_controller"],
             {
@@ -317,6 +365,1000 @@ class DeploymentContractTests(unittest.TestCase):
             outputs["effective_configuration"]["port_forward_ports"],
             contract["stages"]["infrastructure"]["port_forward_local_ports"],
         )
+
+    def test_dynamic_priority_class_label_boundary_is_rejected_at_root(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-priority-label-boundary",
+            "target": self.catalog_target(),
+            "dynamic_models": {
+                "priority_classes": {
+                    "standard": 0,
+                    "p" * 64: 1,
+                }
+            },
+        }
+        variable_file = self._write_configuration("priority-label-boundary", deployment)
+        result, _ = self._plan_file(variable_file, "priority-label-boundary")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("at most 63 characters", result.stderr)
+
+    def test_root_rejects_forbidden_kueue_flavor_preference_before_stages(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-invalid-flavor-preference",
+            "target": self.catalog_target(),
+            "scheduling": {
+                "cluster_queues": {
+                    "customer-batch": {
+                        "flavor_fungibility": {
+                            "when_can_borrow": "MayStopSearch",
+                            "when_can_preempt": "TryNextFlavor",
+                            "preference": "BorrowingOverPreemption",
+                        }
+                    }
+                }
+            },
+        }
+        variable_file = self._write_configuration("invalid-flavor-preference", deployment)
+        result, _ = self._plan_file(variable_file, "invalid-flavor-preference")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("scheduling must use", result.stderr)
+
+    def test_root_rejects_kueue_fair_sharing_weight_at_webhook_floor(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-invalid-fair-sharing-weight",
+            "target": self.catalog_target(),
+            "scheduling": {
+                "cohort": {"fair_sharing_weight": 0.000000001},
+            },
+        }
+        variable_file = self._write_configuration("invalid-fair-sharing-weight", deployment)
+        result, _ = self._plan_file(variable_file, "invalid-fair-sharing-weight")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("greater than 1e-9", result.stderr)
+
+    def test_root_rejects_duplicate_admission_checks_and_flavors(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-duplicate-admission-checks",
+            "target": self.catalog_target(),
+            "scheduling": {
+                "cluster_queues": {
+                    "customer-batch": {
+                        "admission_checks": [
+                            {"name": "capacity", "on_flavors": ["one", "one"]},
+                            {"name": "capacity", "on_flavors": []},
+                        ]
+                    }
+                }
+            },
+        }
+        variable_file = self._write_configuration("duplicate-admission-checks", deployment)
+        result, _ = self._plan_file(variable_file, "duplicate-admission-checks")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("scheduling must use", result.stderr)
+
+    def test_root_rejects_effective_scheduling_invariants_before_stages(self) -> None:
+        pool_profiles = json.loads(
+            (PROFILES_ROOT / "accelerator-pool-profiles.json").read_text(encoding="utf-8")
+        )
+        minimal = pool_profiles["profiles"]["minimal"]
+        pool_ids = list(minimal["pool_order"])
+        stable_cluster_queue = minimal["queue"]["cluster_queue_name"]
+        stable_local_queue = minimal["queue"]["local_queue_name"]
+
+        service_classes = {
+            name: {
+                "workload_priority_class": priority_name,
+                "priority": priority,
+                "preemption_mode": "restartable",
+            }
+            for name, priority_name, priority in (
+                ("platform-critical", "platform-critical", 10000),
+                ("presentation", "presentation", 1000),
+                ("interactive", "interactive", 100),
+                ("customer-batch", "standard", 0),
+                ("bulk-backfill", "batch", -100),
+            )
+        }
+        valid_queue = {
+            "namespace": "fs2-models",
+            "flavor_order": pool_ids,
+            "pool_quotas": {},
+            "preemption": {
+                "reclaim_within_cohort": "LowerPriority",
+                "within_cluster_queue": "LowerPriority",
+            },
+        }
+        cases: dict[str, tuple[dict[str, Any], str]] = {
+            "duplicate-pool-order": (
+                {"cluster_queues": {"customer": {**valid_queue, "flavor_order": [pool_ids[0], pool_ids[0]]}}},
+                "pool orders must be exact",
+            ),
+            "foreign-quota-pool": (
+                {"cluster_queues": {"customer": {**valid_queue, "pool_quotas": {"foreign": {"nominal_quota": 0}}}}},
+                "quota and AdmissionCheck pool keys",
+            ),
+            "floor-above-capacity": (
+                {"cluster_queues": {"customer": {**valid_queue, "pool_quotas": {pool_ids[0]: {"nominal_quota": 2}}}}},
+                "summed floors cannot exceed",
+            ),
+            "stable-localqueue-rebind": (
+                {
+                    "cluster_queues": {"customer": valid_queue},
+                    "local_queues": {
+                        stable_local_queue: {
+                            "cluster_queue": "customer",
+                        }
+                    },
+                },
+                "preserve the stable",
+            ),
+            "foreign-localqueue-namespace": (
+                {
+                    "local_queues": {
+                        "foreign": {
+                            "namespace": "other-models",
+                            "cluster_queue": stable_cluster_queue,
+                        }
+                    }
+                },
+                "namespace their ClusterQueue admits",
+            ),
+            "invalid-model-label": (
+                {
+                    "local_queues": {
+                        "invalid-model": {
+                            "cluster_queue": stable_cluster_queue,
+                            "model_ids": ["a.b"],
+                            "service_classes": ["customer-batch"],
+                        }
+                    }
+                },
+                "strict DNS-label model IDs",
+            ),
+            "ambiguous-route": (
+                {
+                    "local_queues": {
+                        name: {
+                            "cluster_queue": stable_cluster_queue,
+                            "model_ids": ["proteinmpnn"],
+                            "service_classes": ["customer-batch"],
+                        }
+                        for name in ("lane-a", "lane-b")
+                    }
+                },
+                "unambiguous",
+            ),
+            "high-route-without-displacement": (
+                {
+                    "cluster_queues": {
+                        "unprotected": {
+                            **valid_queue,
+                            "preemption": {
+                                "reclaim_within_cohort": "Never",
+                                "within_cluster_queue": "Never",
+                            },
+                        }
+                    },
+                    "local_queues": {
+                        "presentation-lane": {
+                            "cluster_queue": "unprotected",
+                            "model_ids": ["proteinmpnn"],
+                            "service_classes": ["presentation"],
+                        }
+                    },
+                },
+                "high-priority routes require both",
+            ),
+            "missing-service-default": (
+                {
+                    "service_classes": {
+                        **service_classes,
+                        "customer-batch": {
+                            **service_classes["customer-batch"],
+                            "default_local_queue": "missing",
+                        },
+                    }
+                },
+                "existing LocalQueue",
+            ),
+            "shared-priority-conflict": (
+                {
+                    "service_classes": {
+                        **service_classes,
+                        "customer-batch": {
+                            **service_classes["customer-batch"],
+                            "priority": 1,
+                        },
+                    }
+                },
+                "shared WorkloadPriorityClass",
+            ),
+        }
+        for index, (name, (scheduling, message)) in enumerate(cases.items()):
+            with self.subTest(name=name):
+                deployment = {
+                    "schema_version": 1,
+                    "name": f"fs2-root-scheduling-{index}",
+                    "target": self.catalog_target(),
+                    "scheduling": scheduling,
+                }
+                variable_file = self._write_configuration(f"root-scheduling-{name}", deployment)
+                result, _ = self._plan_file(variable_file, f"root-scheduling-{name}")
+                self.assertNotEqual(result.returncode, 0)
+                diagnostics = re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}")
+                self.assertIn(message, diagnostics)
+
+    def _modelexpress_deployment(self, name: str, rdma_resource_name: str) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "name": name,
+            "target": self.catalog_target(),
+            "profiles": {"models": "full_catalog"},
+            "models": {
+                "selection": "explicit",
+                "enabled": ["qwen3-8b"],
+                "scaling": {"mode": "keda", "hot": ["qwen3-8b"]},
+            },
+            "dynamic_models": {
+                "enabled": True,
+                "writes_enabled": True,
+                "workload_owner": "controller",
+                "bootstrap_model_ids": ["qwen3-8b"],
+                "fresh_install": True,
+            },
+            "acceleration": {
+                "model_express": {
+                    "enabled": True,
+                    "deployment_mode": "managed",
+                    "server_image": {
+                        "repository": "nvcr.io/nvidia/ai-dynamo/modelexpress-server",
+                        "digest": f"sha256:{'9' * 64}",
+                    },
+                    "cache": {"enabled": True, "size_gib": 200},
+                    "models": {
+                        "qwen3-8b": {
+                            "runtime_adapter": "vllm",
+                            "transport": {
+                                "mode": "nixl-rdma",
+                                "rdma_resource_name": rdma_resource_name,
+                                "rdma_resource_quantity": 8,
+                            },
+                            "pool_transports": {
+                                "nebius-b300-preemptible-8x": {
+                                    "mode": "nixl-rdma",
+                                    "rdma_resource_name": "networking.example.com/rdma_shared_device_b",
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+        }
+
+    def test_model_express_rdma_resources_reach_the_kueue_configuration(self) -> None:
+        """Kueue budgets accelerators only; an auxiliary device must be excluded."""
+
+        deployment = self._modelexpress_deployment(
+            "fs2-rdma-exclusions", "example.com/rdma_shared_device_a"
+        )
+        contract = self._planned_outputs(
+            self._write_configuration("rdma-exclusions", deployment), "rdma-exclusions"
+        )["deployment_contract"]
+        self.assertEqual(
+            contract["stages"]["foundation"]["kueue"]["exclude_resource_prefixes"],
+            [
+                "example.com/rdma_shared_device_a",
+                "networking.example.com/rdma_shared_device_b",
+            ],
+        )
+
+    def test_root_rejects_an_auxiliary_prefix_that_shadows_an_accelerator(self) -> None:
+        deployment = self._modelexpress_deployment("fs2-rdma-shadow", "nvidia.com/gpu")
+        variable_file = self._write_configuration("rdma-shadow", deployment)
+        result, _ = self._plan_file(variable_file, "rdma-shadow")
+        self.assertNotEqual(result.returncode, 0)
+        diagnostics = re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}")
+        self.assertIn("would also exclude an accelerator resource", diagnostics)
+
+    def test_kueue_exclusion_grammar_accepts_a_literal_prefix(self) -> None:
+        """Kueue matches these with strings.HasPrefix, so a bare prefix is valid."""
+
+        source = (DEPLOY_ROOT / "stages/foundation/variables.tf").read_text(encoding="utf-8")
+        match = re.search(
+            r'can\(regex\("(\^\[a-z0-9\][^"]*?)", prefix\)\)',
+            source,
+        )
+        self.assertIsNotNone(match)
+        pattern = re.compile(match.group(1).replace("\\\\", "\\"))
+        for accepted in (
+            "networking.example.com/",
+            "example.com/rdma_shared_device_a",
+            "example.com/rdma",
+            "cpu",
+            "ephemeral-storage",
+        ):
+            with self.subTest(accepted=accepted):
+                self.assertIsNotNone(pattern.fullmatch(accepted))
+        for rejected in ("Example.com/gpu", "example.com//gpu", "example.com/gpu/extra", "-bad"):
+            with self.subTest(rejected=rejected):
+                self.assertIsNone(pattern.fullmatch(rejected))
+
+    def test_core_admission_gates_a_prefix_that_shadows_cpu_or_memory(self) -> None:
+        """Kueue matches prefixes literally, so "c" would exclude cpu."""
+
+        # A ModelExpress RDMA name is always qualified and so can never prefix
+        # cpu or memory. The reachable source of a bare prefix is the
+        # foundation's own operator input, which is gated there and mirrored at
+        # the root for anything the root derives.
+        foundation = (DEPLOY_ROOT / "stages/foundation/releases.tf").read_text(encoding="utf-8")
+        root = (DEPLOY_ROOT / "main.tf").read_text(encoding="utf-8")
+        self.assertIn("!startswith(core_name, prefix)", foundation)
+        self.assertIn('for core_name in ["cpu", "memory"] : !startswith(core_name, prefix)', root)
+        self.assertIn("prefix of cpu or memory", root)
+
+    def test_core_admission_accepts_a_qualified_auxiliary_prefix(self) -> None:
+        deployment = self._modelexpress_deployment(
+            "fs2-core-admission", "example.com/rdma_shared_device_a"
+        )
+        deployment["scheduling"] = {
+            "budget_core_resources": True,
+        }
+        contract = self._planned_outputs(
+            self._write_configuration("core-admission", deployment), "core-admission"
+        )["deployment_contract"]
+        kueue = contract["stages"]["foundation"]["kueue"]
+        self.assertTrue(kueue["budget_core_resources"])
+        self.assertEqual(
+            kueue["exclude_resource_prefixes"],
+            [
+                "example.com/rdma_shared_device_a",
+                "networking.example.com/rdma_shared_device_b",
+            ],
+        )
+
+    def test_raw_alphafold3_configuration_passes_the_root_preflight(self) -> None:
+        """Root preflight only. The rendered lanes are proved in the stage test.
+
+        See stages/workloads/tests/scientific_scheduling_render.tftest.hcl for
+        the actual contract this configuration produces; a facade plan never
+        instantiates the workloads stage.
+        """
+
+        example = DEPLOY_ROOT / "examples/scheduling-academic-raw-af3.tfvars"
+        outputs = self._planned_outputs(example, "raw-af3")
+        scheduling = outputs["effective_configuration"]["scheduling"]
+        self.assertTrue(scheduling["academic_raw_data_stages"])
+        # Pool-coupled and derived: each pool's budget is its measured
+        # per-node capacity times its maximum node count, so the numbers
+        # cannot drift from the pools that get created.
+        self.assertEqual(scheduling["core_admission"], "pool-coupled")
+        self.assertEqual(
+            scheduling["core_pool_capacity"],
+            {
+                "h100-warm": {"cpu_millicores": 124000, "memory_mib": 1540096},
+                "h100-preemptible": {
+                    "cpu_millicores": 248000,
+                    "memory_mib": 3080192,
+                },
+            },
+        )
+        # The canonical request is derived, and it fits the declared per-node
+        # capacity and the ClusterQueue quota.
+        self.assertEqual(
+            scheduling["cpu_stage_requests"]["reference-data"],
+            {"cpu_millicores": 16000, "memory_mib": 65536},
+        )
+        self.assertEqual(scheduling["academic_cpu_local_queue"], "academic-scientific-cpu")
+        self.assertEqual(scheduling["reference_cluster_queue"], "reference-data-cpu")
+        # Warm capacity is tried first. Alphabetical pool order would put
+        # h100-preemptible first, so this is an explicit operator decision and
+        # not the default. The example sets it once: every service class
+        # inherits the queue's order rather than repeating the list.
+        self.assertEqual(
+            scheduling["default_queue_pool_order"], ["h100-warm", "h100-preemptible"]
+        )
+        self.assertNotEqual(
+            scheduling["default_queue_pool_order"],
+            sorted(scheduling["default_queue_pool_order"]),
+        )
+        example_text = example.read_text(encoding="utf-8")
+        self.assertEqual(example_text.count('["h100-warm", "h100-preemptible"]'), 2)
+        # One setting, not six: no service class repeats the list.
+        self.assertNotIn("pool_preference  ", example_text)
+        self.assertNotIn("pool_preference =", example_text)
+        self.assertNotIn("service_classes", example_text)
+        self.assertEqual(
+            scheduling["service_class_pool_preference"],
+            {
+                service_class: ["h100-warm", "h100-preemptible"]
+                for service_class in (
+                    "platform-critical",
+                    "presentation",
+                    "interactive",
+                    "customer-batch",
+                    "bulk-backfill",
+                )
+            },
+        )
+        # AlphaFold 3's declared set spans two pools that advertise the same
+        # extended resource, so Kueue can actually fall back between them.
+        self.assertEqual(
+            scheduling["model_eligible_pools"]["alphafold3"],
+            ["h100-warm", "h100-preemptible"],
+        )
+        self.assertEqual(
+            {scheduling["pool_resource_names"][pool] for pool in ("h100-warm", "h100-preemptible")},
+            {"nvidia.com/gpu"},
+        )
+
+    def test_the_scientific_batch_contract_is_declared_exactly_once(self) -> None:
+        """A repeated object attribute silently wins and drops fields.
+
+        HCL accepts a duplicate key in an object literal and the later one
+        wins, so a stale copy with fewer fields removes them from the
+        published contract without any error.
+        """
+
+        deployment = {
+            "schema_version": 1,
+            "name": "scientific-batch-shape",
+            "target": self.catalog_target(),
+            # Enabling scientific batch narrows the cluster to the Kueue and
+            # JobSet tested intersection.
+            "cluster": {"kubernetes_version": "1.34"},
+            "scientific_batch": {"enabled": True, "namespace": "fs2-scientific"},
+            "storage": {
+                "scientific_artifacts": {
+                    "enabled": True,
+                    "egress_cidrs": ["203.0.113.10/32"],
+                }
+            },
+        }
+        outputs = self._planned_outputs(
+            self._write_configuration("scientific-batch-shape", deployment),
+            "scientific-batch-shape",
+        )
+        stage = outputs["deployment_contract"]["stages"]["workloads"]["scientific_batch"]
+        self.assertEqual(
+            stage,
+            {
+                "enabled": True,
+                "writes_enabled": False,
+                "namespace": "fs2-scientific",
+            },
+        )
+        effective = outputs["effective_configuration"]["scientific_batch"]
+        self.assertEqual(effective["namespace"], "fs2-scientific")
+        self.assertTrue(effective["artifact_store_required"])
+
+        for relative in ("locals.tf", "outputs.tf"):
+            with self.subTest(source=relative):
+                source = (DEPLOY_ROOT / relative).read_text(encoding="utf-8")
+                self.assertEqual(source.count("    scientific_batch = {"), 1)
+
+    def test_measured_capacity_without_a_verifiable_origin_is_refused(self) -> None:
+        """A pair of integers with no origin is a claim, not a measurement."""
+
+        broken = {
+            "a mismatched pool identity": {"pool_id": "some-other-pool"},
+            "an empty source": {"source": "   "},
+            "a capture time that is not RFC3339 UTC": {"captured_at": "yesterday"},
+            "a payload digest that is not a SHA-256": {"payload_sha256": "abc"},
+            "a fixture source naming another pool": {
+                "source": "fixture:utf8:some-other-pool"
+            },
+            "a fixture digest not matching its exact bytes": {
+                "payload_sha256": "0" * 64
+            },
+            "a node group that is not a node group": {"node_group_id": "not-a-group"},
+        }
+        for index, (label, mutation) in enumerate(broken.items()):
+            with self.subTest(rejected=label):
+                capacity = json.loads(json.dumps(ACCELERATOR_CAPACITY_FIXTURE))
+                capacity["nebius-b300-preemptible-1x"]["evidence"].update(mutation)
+                deployment = {
+                    "schema_version": 1,
+                    "name": f"fs2-measured-evidence-{index}",
+                    "target": self.catalog_target(),
+                    "cluster": {"kubernetes_version": "1.34"},
+                    "scheduling": {
+                        "budget_core_resources": True,
+                        "accelerator_schedulable_capacity": capacity,
+                    },
+                }
+                variable_file = self._write_configuration(
+                    f"measured-evidence-{index}", deployment
+                )
+                result, _ = self._plan_file(variable_file, f"measured-evidence-{index}")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    "not a measurement",
+                    re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}"),
+                )
+
+    def test_a_pool_with_no_measurement_cannot_budget_core_resources(self) -> None:
+        """Fail closed: an unknown total cannot bound a pool-coupled quota."""
+
+        capacity = json.loads(json.dumps(ACCELERATOR_CAPACITY_FIXTURE))
+        del capacity["nebius-b300-preemptible-8x"]
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-measured-missing",
+            "target": self.catalog_target(),
+            "cluster": {"kubernetes_version": "1.34"},
+            "scheduling": {
+                "budget_core_resources": True,
+                "accelerator_schedulable_capacity": capacity,
+            },
+        }
+        variable_file = self._write_configuration("measured-missing", deployment)
+        result, _ = self._plan_file(variable_file, "measured-missing")
+        self.assertNotEqual(result.returncode, 0)
+        diagnostics = re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}")
+        self.assertIn("nebius-b300-preemptible-8x", diagnostics)
+
+    def test_a_pool_id_with_a_dot_and_underscore_is_accepted_everywhere(self) -> None:
+        """Pool IDs are label values, not DNS labels, at every layer."""
+
+        variable_file = self._two_pool_af3_deployment(
+            "raw-af3-label-value-ids", pool_id_suffix="_1.x"
+        )
+        outputs = self._planned_outputs(variable_file, "raw-af3-label-value-ids")
+        scheduling = outputs["effective_configuration"]["scheduling"]
+        self.assertEqual(
+            scheduling["default_queue_pool_order"],
+            ["h100-warm_1.x", "h100-preemptible_1.x"],
+        )
+        self.assertEqual(
+            scheduling["model_eligible_pools"]["alphafold3"],
+            ["h100-warm_1.x", "h100-preemptible_1.x"],
+        )
+        # The same grammar, stated once, is what every layer checks against.
+        grammar = '^[a-z0-9](?:[-_a-z0-9.]{0,61}[a-z0-9])?$'
+        for relative in (
+            "variables.tf",
+            "stages/workloads/variables.tf",
+            "stages/infrastructure/variables.tf",
+            "modules/kueue-scheduling/variables.tf",
+        ):
+            with self.subTest(layer=relative):
+                self.assertIn(grammar, (DEPLOY_ROOT / relative).read_text(encoding="utf-8"))
+        schema = json.loads(
+            (
+                DEPLOY_ROOT / "catalog/runtime/schema/cpu-stage-classes.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(schema["$defs"]["pool_id"]["pattern"], grammar)
+        self.assertEqual(schema["$defs"]["pool_id"]["maxLength"], 63)
+
+    def test_an_eligible_pool_set_spanning_two_resources_fails_the_root_preflight(
+        self,
+    ) -> None:
+        """A set Kueue cannot fall back across must fail before any stage runs.
+
+        A Workload requests exactly one extended resource and Kueue never
+        falls back across a resourceGroup, so the second pool is unreachable.
+        The workloads stage refuses it too, but the infrastructure stage runs
+        first and would already have created the pools.
+        """
+
+        # The shipped example's two-pool shape, with the burst pool advertising
+        # a MIG-slice resource instead of the full GPU.
+        variable_file = self._two_pool_af3_deployment(
+            "raw-af3-mixed", burst_resource_name="nvidia.com/mig-1g.10gb"
+        )
+        result, _ = self._plan_file(variable_file, "raw-af3-mixed")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "single extended resource name",
+            re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}"),
+        )
+
+        # The same deployment with one resource name across both pools is
+        # accepted, so the gate rejects the mix and not the two-pool set.
+        accepted = self._two_pool_af3_deployment("raw-af3-same-resource")
+        result, _ = self._plan_file(accepted, "raw-af3-same-resource")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_declaration_cannot_overwrite_an_authoritative_placement_at_root(
+        self,
+    ) -> None:
+        """The workloads stage refuses it, but infrastructure runs first."""
+
+        variable_file = self._two_pool_af3_deployment(
+            "raw-af3-collision", declare_placed_model=True
+        )
+        result, _ = self._plan_file(variable_file, "raw-af3-collision")
+        self.assertNotEqual(result.returncode, 0)
+        diagnostics = re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}")
+        self.assertIn("may not overwrite a model", diagnostics)
+        self.assertIn("proteinmpnn", diagnostics)
+
+    def test_an_empty_pool_order_is_derived_warm_first_at_the_facade(self) -> None:
+        variable_file = self._two_pool_af3_deployment("raw-af3-derived-warm-first")
+        value = json.loads(variable_file.read_text(encoding="utf-8"))
+        scheduling = value["deployment"]["scheduling"]
+        del scheduling["default_queue_pool_order"]
+        for policy in scheduling["service_classes"].values():
+            policy["pool_preference"] = []
+        variable_file.write_text(
+            json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+        outputs = self._planned_outputs(variable_file, "raw-af3-derived-warm-first")
+        self.assertEqual(
+            outputs["effective_configuration"]["scheduling"][
+                "default_queue_pool_order"
+            ],
+            ["h100-warm", "h100-preemptible"],
+        )
+
+    def test_a_reversed_explicit_pool_order_is_refused_at_the_facade(self) -> None:
+        variable_file = self._two_pool_af3_deployment("raw-af3-reversed-order")
+        value = json.loads(variable_file.read_text(encoding="utf-8"))
+        scheduling = value["deployment"]["scheduling"]
+        reversed_order = ["h100-preemptible", "h100-warm"]
+        scheduling["default_queue_pool_order"] = reversed_order
+        for policy in scheduling["service_classes"].values():
+            policy["pool_preference"] = reversed_order
+        variable_file.write_text(
+            json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+        result, _ = self._plan_file(variable_file, "raw-af3-reversed-order")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "warm-first", re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}")
+        )
+
+    def test_all_preemptible_pools_still_prefer_the_node_floor(self) -> None:
+        variable_file = self._two_pool_af3_deployment("raw-af3-all-preemptible")
+        value = json.loads(variable_file.read_text(encoding="utf-8"))
+        deployment = value["deployment"]
+        deployment["accelerator_pools"]["h100-warm"]["capacity_type"] = "preemptible"
+        scheduling = deployment["scheduling"]
+        del scheduling["default_queue_pool_order"]
+        for policy in scheduling["service_classes"].values():
+            policy["pool_preference"] = []
+        variable_file.write_text(
+            json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+        outputs = self._planned_outputs(variable_file, "raw-af3-all-preemptible")
+        self.assertEqual(
+            outputs["effective_configuration"]["scheduling"][
+                "default_queue_pool_order"
+            ],
+            ["h100-warm", "h100-preemptible"],
+        )
+
+    def _two_pool_af3_deployment(
+        self,
+        name: str,
+        burst_resource_name: str = "nvidia.com/gpu",
+        declare_placed_model: bool = False,
+        pool_id_suffix: str = "",
+    ) -> Path:
+        """The shipped raw example's warm-plus-burst shape, as JSON tfvars."""
+
+        def pool(
+            pool_id: str, capacity_type: str, minimum: int, maximum: int, **extra: Any
+        ) -> dict[str, Any]:
+            return {
+                "platform": "gpu-h100-sxm",
+                "preset": "8gpu-128vcpu-1600gb",
+                "accelerator_class": "nvidia-h100-sxm5-80gb",
+                "gpus_per_node": 8,
+                "gpu_memory_gb": 80,
+                "capacity_type": capacity_type,
+                "min_nodes": minimum,
+                "max_nodes": maximum,
+                "driver": {"mode": "managed", "preset": "cuda12.4"},
+                # Synthetic plan fixture below the nominal preset size. The
+                # source names the exact UTF-8 bytes hashed by the digest.
+                "schedulable_capacity": {
+                    "cpu_millicores": 124000,
+                    "memory_mib": 1540096,
+                    "evidence": {
+                        "pool_id": pool_id,
+                        "source": f"fixture:utf8:{pool_id}",
+                        "captured_at": "2026-09-03T06:00:00Z",
+                        "payload_sha256": hashlib.sha256(
+                            pool_id.encode("utf-8")
+                        ).hexdigest(),
+                    },
+                },
+                **extra,
+            }
+
+        order = [f"h100-warm{pool_id_suffix}", f"h100-preemptible{pool_id_suffix}"]
+        warm, burst = order
+        deployment = {
+            "schema_version": 1,
+            "name": name,
+            "target": self.catalog_target(),
+            "profiles": {
+                "capacity": "minimal",
+                "accelerators": "minimal",
+                # A selected model exists only in this profile, and the
+                # collision case needs one with an authoritative placement.
+                "models": "minimal" if declare_placed_model else "none",
+            },
+            "cluster": {"kubernetes_version": "1.34"},
+            "accelerator_pools": {
+                warm: pool(warm, "regular", 1, 1),
+                burst: pool(
+                    burst, "preemptible", 0, 2, resource_name=burst_resource_name
+                ),
+            },
+            "models": {"selection": "profile"},
+            "scientific_batch": {"enabled": True},
+            "scheduling": {
+                "cohort": {"enabled": True, "name": "inference-shared"},
+                "fair_share_precedence_acknowledged": True,
+                "academic_raw_data_stages": True,
+                "default_queue_pool_order": order,
+                "model_eligible_pool_ids": (
+                    {"alphafold3": order, "proteinmpnn": order}
+                    if declare_placed_model
+                    else {"alphafold3": order}
+                ),
+                "budget_core_resources": True,
+                "service_classes": {
+                    service_class: {
+                        "workload_priority_class": priority_class,
+                        "priority": priority,
+                        "preemption_mode": "restartable",
+                        "pool_preference": order,
+                    }
+                    for service_class, priority_class, priority in (
+                        ("platform-critical", "platform-critical", 10000),
+                        ("presentation", "presentation", 1000),
+                        ("interactive", "interactive", 100),
+                        ("customer-batch", "standard", 0),
+                        ("bulk-backfill", "batch", -100),
+                    )
+                },
+            },
+            "storage": {
+                "scientific_artifacts": {
+                    "enabled": True,
+                    "egress_cidrs": ["203.0.113.10/32"],
+                },
+                "reference_data": {
+                    "enabled": True,
+                    "cpu_pool": {
+                        "platform": "cpu-d3",
+                        "preset": "32vcpu-128gb",
+                        "node_count": 1,
+                        "schedulable_capacity": {
+                            "cpu_millicores": 30000,
+                            "memory_mib": 122880,
+                            "ephemeral_storage_mib": 114688,
+                        },
+                    },
+                    "filesystem": {"size_gib": 2048},
+                    "object_storage": {"max_size_gib": 2048},
+                    "queue": {"nominal_cpu": "24", "nominal_memory": "96Gi"},
+                },
+            },
+            "edge": {"mode": "internal-only"},
+        }
+        return self._write_configuration(
+            name,
+            deployment,
+            academic_assets={
+                "enabled": True,
+                "tenant_id": "tenant-academic",
+                "namespace": "fs2-academic-poc",
+                "execution": {"enabled": True},
+                "assets": {
+                    "alphafold3-parameters": {
+                        "model_id": "alphafold3",
+                        "relative_path": "alphafold3/af3.bin.zst",
+                        "runtime_binding": {
+                            "artifact_id": "alphafold3-parameters",
+                            "source_sub_path": "alphafold3/af3.bin.zst",
+                            "consumer_path": "/models/af3.bin.zst",
+                            "mechanism": "subpath-file-mount",
+                        },
+                    }
+                },
+            },
+        )
+
+    def _raw_af3_deployment(self, name: str, override: dict[str, Any] | None = None) -> Path:
+        """The shipped raw configuration's scheduling inputs, as a tfvars file."""
+
+        scheduling: dict[str, Any] = {
+            "cohort": {"enabled": True, "name": "inference-shared"},
+            "fair_share_precedence_acknowledged": True,
+            "academic_raw_data_stages": True,
+            "budget_core_resources": True,
+            # AlphaFold 3 is scientific-only, so nothing derives its
+            # qualification. The licensed lane routes it, so the root refuses
+            # the plan without a declaration, exactly as the stage does. Both
+            # profile pools advertise the same extended resource.
+            "model_eligible_pool_ids": {
+                "alphafold3": [
+                    "nebius-b300-preemptible-1x",
+                    "nebius-b300-preemptible-8x",
+                ]
+            },
+        }
+        if override is not None:
+            scheduling["cpu_stage_requests"] = override
+        deployment = {
+            "schema_version": 1,
+            "name": name,
+            "target": self.catalog_target(),
+            "profiles": {"capacity": "minimal", "accelerators": "minimal", "models": "none"},
+            "cluster": {"kubernetes_version": "1.34"},
+            "scientific_batch": {"enabled": True},
+            "scheduling": scheduling,
+            "storage": {
+                # Batch execution commits results to the artifact store, which
+                # main couples to the gate.
+                "scientific_artifacts": {
+                    "enabled": True,
+                    "egress_cidrs": ["203.0.113.10/32"],
+                },
+                "reference_data": {
+                    "enabled": True,
+                    "cpu_pool": {
+                        "preset": "32vcpu-128gb",
+                        "schedulable_capacity": {
+                            "cpu_millicores": 30000,
+                            "memory_mib": 122880,
+                            "ephemeral_storage_mib": 114688,
+                        },
+                    },
+                    "queue": {"nominal_cpu": "24", "nominal_memory": "96Gi"},
+                }
+            },
+        }
+        return self._write_configuration(
+            name,
+            deployment,
+            # The licensed claim and its execution identity are a separate
+            # top-level input, and raw mode needs them.
+            academic_assets={
+                "enabled": True,
+                "tenant_id": "tenant-academic",
+                "namespace": "fs2-academic-poc",
+                # The lane must name this deployment's actual stable
+                # ClusterQueue, not the default name from another profile.
+                "execution": {"enabled": True, "cluster_queue": "fs2-b300-async"},
+                "assets": {
+                    "alphafold3-parameters": {
+                        "model_id": "alphafold3",
+                        "relative_path": "alphafold3/af3.bin.zst",
+                    }
+                },
+            },
+        )
+
+    def test_a_smaller_override_cannot_lower_the_raw_stage_floor(self) -> None:
+        variable_file = self._raw_af3_deployment(
+            "raw-af3-override", {"reference-data": {"cpu_millicores": 1, "memory_mib": 1}}
+        )
+        scheduling = self._planned_outputs(variable_file, "raw-af3-override")[
+            "effective_configuration"
+        ]["scheduling"]
+        # The floor survives: an override may raise the canonical request and
+        # can never lower it below what the stage actually needs.
+        self.assertEqual(
+            scheduling["cpu_stage_requests"]["reference-data"],
+            {"cpu_millicores": 16000, "memory_mib": 65536},
+        )
+
+    def test_an_undersized_reference_pool_or_quota_is_rejected(self) -> None:
+        """One raw stage Pod must fit one node and its ClusterQueue quota."""
+
+        for name, mutation, expected in (
+            (
+                "raw-af3-small-node",
+                {
+                    "cpu_pool": {
+                        "schedulable_capacity": {
+                            "cpu_millicores": 7000,
+                            "memory_mib": 28672,
+                            "ephemeral_storage_mib": 114688,
+                        }
+                    }
+                },
+                "schedulable capacity",
+            ),
+            (
+                "raw-af3-small-quota",
+                {"queue": {"nominal_cpu": "6", "nominal_memory": "24Gi"}},
+                "quota of the ClusterQueue that admits it",
+            ),
+        ):
+            with self.subTest(name=name):
+                variable_file = self._raw_af3_deployment(name)
+                deployment = json.loads(variable_file.read_text(encoding="utf-8"))
+                reference = deployment["deployment"]["storage"]["reference_data"]
+                for key, value in mutation.items():
+                    reference[key] = {**reference.get(key, {}), **value}
+                variable_file.write_text(json.dumps(deployment, indent=2), encoding="utf-8")
+                result, _ = self._plan_file(variable_file, name)
+                self.assertNotEqual(result.returncode, 0)
+                diagnostics = re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}")
+                self.assertIn(expected, diagnostics)
+
+
+    def test_root_and_workloads_derive_one_academic_scheduling_lane(self) -> None:
+        """Both stages must derive the licensed lane from the same facts."""
+
+        root_locals = (DEPLOY_ROOT / "locals.tf").read_text(encoding="utf-8")
+        queue_source = (DEPLOY_ROOT / "stages/workloads/queue.tf").read_text(encoding="utf-8")
+        for expression in (
+            "var.academic_assets.execution.local_queue",
+            "var.academic_assets.execution.cluster_queue",
+            "var.academic_assets.namespace",
+            "var.academic_assets.tenant_id",
+        ):
+            with self.subTest(expression=expression):
+                self.assertIn(expression, root_locals)
+                self.assertIn(expression, queue_source)
+        # Both derive the model list from the declared assets rather than a
+        # separately maintained copy.
+        self.assertIn("for asset in values(var.academic_assets.assets) : asset.model_id", root_locals)
+        self.assertIn("for asset in values(var.academic_assets.assets) : asset.model_id", queue_source)
+        # Both reject an operator lane that collides with the derived one.
+        self.assertIn("root_academic_lane_queue_collisions", root_locals)
+        self.assertIn("academic_lane_queue_collisions", queue_source)
+        # Both mirror the same rank-separated route keys.
+        for source in (root_locals, queue_source + root_locals):
+            self.assertIn("jsonencode([service_class, tenant_id, model_id])", source)
+
+    def test_root_rejects_active_custom_mig_before_infrastructure(self) -> None:
+        pool = {
+            "platform": "gpu-h100-sxm",
+            "preset": "8gpu-128vcpu-1600gb",
+            "accelerator_class": "nvidia-h100-sxm5-80gb",
+            "gpus_per_node": 8,
+            "capacity_type": "preemptible",
+            "min_nodes": 0,
+            "max_nodes": 1,
+            "resource_name": "nvidia.com/mig-1g.10gb",
+            "driver": {"mode": "operator"},
+            "mig": {"strategy": "single", "config": "all-1g.10gb"},
+        }
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-root-active-mig",
+            "profiles": {"capacity": "minimal", "models": "none"},
+            "target": self.catalog_target(),
+            "accelerator_pools": {"h100-mig": pool},
+        }
+        variable_file = self._write_configuration("root-active-mig", deployment)
+        result, _ = self._plan_file(variable_file, "root-active-mig")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Active custom MIG scheduling is blocked", result.stderr)
+
+    def test_root_enforces_kueue_and_jobset_minor_compatibility(self) -> None:
+        for name, version, scientific in (
+            ("kueue-untested-minor", "1.32.9", False),
+            ("jobset-untested-minor", "1.35.0", True),
+        ):
+            deployment = {
+                "schema_version": 1,
+                "name": f"fs2-{name}",
+                "target": self.catalog_target(),
+                "cluster": {"kubernetes_version": version},
+            }
+            if scientific:
+                deployment["scientific_batch"] = {"enabled": True}
+            variable_file = self._write_configuration(name, deployment)
+            result, _ = self._plan_file(variable_file, name)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("upstream end-to-end matrix", result.stderr)
 
     def test_dynamic_model_tfvars_normalize_without_internal_json(self) -> None:
         deployment = {
@@ -759,6 +1801,11 @@ class DeploymentContractTests(unittest.TestCase):
             "schema_version": 1,
             "name": "fs2-reference-data-test",
             "target": self.catalog_target(),
+            # Its ClusterQueue budgets cpu and memory, which Kueue only
+            # counts when core admission is on.
+            "scheduling": {
+                "budget_core_resources": True,
+            },
             "storage": {
                 "reference_data": {
                     "enabled": True,
@@ -856,6 +1903,11 @@ class DeploymentContractTests(unittest.TestCase):
             "schema_version": 1,
             "name": "fs2-reference-retained-opt-in",
             "target": self.catalog_target(),
+            # Its ClusterQueue budgets cpu and memory, which Kueue only
+            # counts when core admission is on.
+            "scheduling": {
+                "budget_core_resources": True,
+            },
             "storage": {
                 "reference_data": {
                     "enabled": True,
@@ -1844,6 +2896,9 @@ class DeploymentContractTests(unittest.TestCase):
                 "os": "ubuntu24.04",
                 "resource_name": "nvidia.com/gpu",
                 "reference_data_filesystem": False,
+                # Measured allocatable is optional; a pool that budgets core
+                # resources must state it, and this one does not.
+                "schedulable_capacity": None,
                 "shared_filesystem": True,
                 "topology": {
                     "infiniband_fabric": None,
@@ -1937,6 +2992,8 @@ class DeploymentContractTests(unittest.TestCase):
         successful = (
             DEPLOY_ROOT / "terraform.tfvars.example",
             DEPLOY_ROOT / "examples/b300-zero-hot.tfvars",
+            DEPLOY_ROOT / "examples/scheduling-h100-lanes.tfvars",
+            DEPLOY_ROOT / "examples/scheduling-academic-raw-af3.tfvars",
         )
         for index, variable_file in enumerate(successful):
             with self.subTest(example=variable_file.name):
@@ -1961,7 +3018,40 @@ class DeploymentContractTests(unittest.TestCase):
             values["managerConfig"]["controllerManagerConfigYaml"]
         )
 
-        self.assertIn('values = [file("${path.module}/values/kueue.yaml")]', releases)
+        # Helm installs the chart by immutable digest, and the same digest is
+        # what the verification provisioner resolves, so both cannot install
+        # different bytes. The archive SHA-256 is a recorded identity of that
+        # digest's tarball, not a separate thing Helm consumes.
+        foundation_locals = (DEPLOY_ROOT / "stages/foundation/locals.tf").read_text(encoding="utf-8")
+        # Helm installs the exact archive the verifier checked, materialized
+        # during plan at a content-addressed path under the run root.
+        self.assertIn("chart            = local.kueue_chart_archive", releases)
+        self.assertIn('data "external" "kueue_chart"', releases)
+        self.assertIn("FS2_KUEUE_CHART_ARCHIVE        = local.kueue_chart_archive", releases)
+        self.assertIn(
+            "kueue_chart_archive = data.external.kueue_chart.result.path",
+            foundation_locals,
+        )
+        self.assertIn("yamlencode(local.kueue_effective_values)", releases)
+        self.assertIn(
+            "oci://registry.k8s.io/kueue/charts/kueue@sha256:e5f000fcf0604e5dea0025e0ffdd20e6712de432bcca0ec254d71d97f012a354",
+            foundation_locals,
+        )
+        self.assertIn(
+            'chart_archive_sha256 = "409de6260d2b7834fece5044502822bcb4e74ed8a03b8ea22bb78bcdfa1627db"',
+            foundation_locals,
+        )
+        # The pinned controller image lives only in the values file, so the
+        # release and the verifier cannot pin two different images.
+        self.assertEqual(
+            values["controllerManager"]["manager"]["image"]["tag"],
+            "v0.17.8@sha256:cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6",
+        )
+        self.assertNotIn("cecba825d0b0feab9bed2835efe2eb8d825512f1616c8762ab80c53f2ea6afe6", releases)
+        self.assertEqual(
+            values["controllerManager"]["nodeSelector"],
+            {"workload.fs2.nebius/system": "true"},
+        )
         self.assertEqual(
             manager["resources"]["excludeResourcePrefixes"],
             ["cpu", "memory", "ephemeral-storage"],

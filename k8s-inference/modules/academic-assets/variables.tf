@@ -89,6 +89,20 @@ variable "academic_assets" {
   nullable = false
 
   validation {
+    # These identities are consumed by the single Kueue policy owner as a route
+    # tenant identity, a LocalQueue namespace, and model lane IDs.
+    condition = (
+      length(var.academic_assets.tenant_id) <= 63 &&
+      can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", var.academic_assets.tenant_id)) &&
+      length(var.academic_assets.namespace) <= 63 &&
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.academic_assets.namespace)) &&
+      length(var.academic_assets.execution.local_queue) <= 63 &&
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.academic_assets.execution.local_queue))
+    )
+    error_message = "academic_assets tenant, namespace, and LocalQueue identities must be Kubernetes label-safe values of at most 63 characters."
+  }
+
+  validation {
     condition     = contains(["retained", "disposable"], var.academic_assets.runtime_claim.lifecycle)
     error_message = "academic_assets.runtime_claim.lifecycle must be \"retained\" or \"disposable\"."
   }

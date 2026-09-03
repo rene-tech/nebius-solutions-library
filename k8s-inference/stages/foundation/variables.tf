@@ -227,3 +227,116 @@ variable "bootstrap_grafana_credentials" {
   nullable  = true
   default   = null
 }
+
+variable "kueue" {
+  description = "Kueue configuration this deployment adds to the pinned release values."
+  type = object({
+    # Extended-resource prefixes Kueue must not budget, such as an RDMA device
+    # a model runtime requests alongside its accelerator.
+    exclude_resource_prefixes = optional(list(string), [])
+    # When true, cpu and memory leave the exclusions so Kueue counts core
+    # requests. ephemeral-storage stays excluded because no ClusterQueue here
+    # budgets it.
+    budget_core_resources = optional(bool, false)
+    # Per-resource weights for usage-based admission fair sharing. Kueue
+    # v0.17 sums resource.Quantity magnitudes with a default weight of 1 per
+    # resource and applies no unit normalization, so once cpu and memory are
+    # budgeted a single Workload's memory bytes exceed any plausible GPU count
+    # by nine orders of magnitude and fair-share ordering stops tracking
+    # accelerator demand. Setting a weight per resource is the only control
+    # Kueue offers. Empty leaves upstream behaviour exactly as it is.
+    fair_share_resource_weights = optional(map(number), {})
+  })
+  default = {}
+
+  validation {
+    # Kueue matches these with a literal prefix comparison against the whole
+    # ResourceName, so a qualified name such as example.com/rdma_shared_device_a
+    # is a valid entry and must not be rejected as a DNS-only string.
+    condition = alltrue([
+      for prefix in var.kueue.exclude_resource_prefixes :
+      length(prefix) >= 1 &&
+      length(prefix) <= 317 &&
+      length(split("/", prefix)) <= 2 &&
+      length(split("/", prefix)[0]) <= 253 &&
+      # An unqualified literal prefix has no name half to bound.
+      (length(split("/", prefix)) == 1 ? true : length(element(split("/", prefix), 1)) <= 63) &&
+      # A literal prefix may stop at the slash ("networking.example.com/"), be
+      # a partial name, or be a complete ResourceName.
+      can(regex("^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?(?:/(?:[A-Za-z0-9](?:[-A-Za-z0-9_.]*)?)?)?$", prefix))
+    ])
+    error_message = "Kueue excluded resource prefixes must be bounded literal ResourceName prefixes: an optional <=253 character DNS-style prefix and an optional <=63 character name after a single slash."
+  }
+
+  validation {
+    condition = (
+      length(var.kueue.fair_share_resource_weights) == 0 ||
+      (
+        alltrue([
+          for resource_name, weight in var.kueue.fair_share_resource_weights :
+          weight >= 0 &&
+          length(resource_name) <= 317 &&
+          can(regex("^([a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", resource_name))
+        ]) &&
+        # Kueue defaults an unspecified resource to weight 1, so a policy that
+        # weights cpu or memory without weighting an accelerator leaves the
+        # dominant term untouched, and one that budgets core resources must
+        # name both of them.
+        (
+          length(setintersection(
+            toset(keys(var.kueue.fair_share_resource_weights)),
+            toset(["cpu", "memory"]),
+          )) == 0 ||
+          (
+            length(setsubtract(
+              toset(keys(var.kueue.fair_share_resource_weights)),
+              toset(["cpu", "memory", "ephemeral-storage"]),
+            )) >= 1 &&
+            length(setintersection(
+              toset(keys(var.kueue.fair_share_resource_weights)),
+              toset(["cpu", "memory"]),
+            )) == 2
+          )
+        ) &&
+        (
+          !var.kueue.budget_core_resources ||
+          length(setintersection(
+            toset(keys(var.kueue.fair_share_resource_weights)),
+            toset(["cpu", "memory"]),
+          )) == 2
+        ) &&
+        anytrue([
+          for weight in values(var.kueue.fair_share_resource_weights) : weight > 0
+        ])
+      )
+    )
+    error_message = "A fair-share resource weight policy must be empty or complete: Kueue defaults every unspecified resource to weight 1, so a partial map leaves the omitted terms at their raw magnitudes. Keys must be valid ResourceNames with nonnegative weights and at least one positive; a policy that weights cpu or memory must weight both and at least one accelerator resource, and with core resources budgeted cpu and memory must both appear."
+  }
+}
+
+variable "jobset" {
+  description = "Pinned JobSet foundation required by enabled scientific true-gang execution."
+  type = object({
+    enabled            = optional(bool, false)
+    kubernetes_version = optional(string, "1.35")
+  })
+  default = {}
+
+  validation {
+    condition = try(
+      tonumber(split(".", trimprefix(var.jobset.kubernetes_version, "v"))[0]) == 1 &&
+      length(split(".", trimprefix(var.jobset.kubernetes_version, "v"))) >= 2 &&
+      length(split(".", trimprefix(var.jobset.kubernetes_version, "v"))) <= 3 &&
+      contains(
+        [33, 34, 35],
+        tonumber(split(".", trimprefix(var.jobset.kubernetes_version, "v"))[1]),
+      ) &&
+      (!var.jobset.enabled || contains(
+        [33, 34],
+        tonumber(split(".", trimprefix(var.jobset.kubernetes_version, "v"))[1]),
+      )),
+      false,
+    )
+    error_message = "Kueue v0.17.8's own end-to-end matrix covers Kubernetes 1.33-1.35; JobSet v0.12.0's covers 1.32-1.34. Enabling JobSet therefore requires their tested intersection, 1.33 or 1.34."
+  }
+}

@@ -247,6 +247,90 @@ resource "nebius_mk8s_v1_node_group" "reference_data" {
   ]
 }
 
+# Elastic general-purpose CPU capacity. It is a separate owner from the
+# reference-data pool above: a different taint, different labels, a different
+# Kueue flavor and no reference-data filesystem, so general aggregation can
+# never land on the storage-attached nodes and reference preprocessing can never
+# spill onto general ones.
+resource "nebius_mk8s_v1_node_group" "general_cpu" {
+  for_each = var.cpu_pools
+
+  parent_id = nebius_mk8s_v1_cluster.validation.id
+  name      = "${local.resource_name}-cpu-${substr(each.key, 0, 24)}"
+  labels    = merge(local.common_labels, { pool = "general-cpu-${each.key}" })
+  version   = var.kubernetes_version
+
+  fixed_node_count = each.value.elastic ? null : each.value.max_nodes
+
+  autoscaling = each.value.elastic ? {
+    min_node_count = each.value.min_nodes
+    max_node_count = each.value.max_nodes
+  } : null
+
+  strategy = {
+    max_surge       = { count = each.value.max_surge }
+    max_unavailable = { count = each.value.max_unavailable }
+    drain_timeout   = each.value.drain_timeout
+  }
+
+  template = {
+    metadata = {
+      labels = merge(each.value.node_labels, {
+        "workload.fs2.nebius/general-cpu" = "true"
+        "capacity.fs2.nebius/type"        = each.value.capacity_type
+        "capacity.fs2.nebius/pool"        = "general-cpu"
+        "capacity.fs2.nebius/pool-id"     = each.key
+        "lifecycle.fs2.nebius/run"        = var.run_id
+        "storage.fs2.nebius/shared-cache" = each.value.shared_filesystem ? "true" : "false"
+      })
+    }
+    taints = [{
+      key    = "workload.fs2.nebius/general-cpu"
+      value  = "true"
+      effect = "NO_SCHEDULE"
+    }]
+    boot_disk = {
+      size_gibibytes = each.value.boot_disk.size_gib
+      type           = each.value.boot_disk.type
+    }
+    filesystems        = each.value.shared_filesystem ? local.filesystem_attachment : []
+    network_interfaces = local.worker_network_interfaces
+    os                 = "ubuntu24.04"
+    preemptible        = each.value.capacity_type == "preemptible" ? {} : null
+    reservation_policy = { policy = "FORBID" }
+    resources = {
+      platform = each.value.platform
+      preset   = each.value.preset
+    }
+    service_account_id   = nebius_iam_v1_service_account.nodepull.id
+    underlay_required    = false
+    cloud_init_user_data = each.value.shared_filesystem ? local.shared_cache_cloud_init_user_data : null
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !contains(keys(local.selected_gpu_pools), each.key)
+      error_message = "General CPU pool ${each.key} collides with an accelerator pool ID; one pool ID has exactly one node group and one flavor."
+    }
+
+    precondition {
+      condition = (
+        each.value.max_nodes >= each.value.min_nodes &&
+        (each.value.elastic || each.value.min_nodes == each.value.max_nodes)
+      )
+      error_message = "General CPU pool ${each.key} must declare either a fixed node count or an elastic envelope whose maximum is at least its minimum."
+    }
+  }
+
+  depends_on = [
+    nebius_iam_v1_group_membership.nodepull_target_registry,
+    nebius_iam_v1_group_membership.nodepull_external_registry,
+    nebius_iam_v1_access_permit.nodepull_registry,
+    nebius_iam_v1_access_permit.nodepull_external_registry,
+    nebius_compute_v1_filesystem.cache,
+  ]
+}
+
 moved {
   from = nebius_mk8s_v1_node_group.gpu_b300_1x
   to   = nebius_mk8s_v1_node_group.gpu["nebius-b300-preemptible-1x"]

@@ -1,4 +1,17 @@
 locals {
+  # The private plane label always admits the reference-data namespace itself.
+  # Any additional namespace is named explicitly, so the selector stays a
+  # closed list rather than an open label match.
+  queue_namespace_selector = length(var.queue.additional_namespaces) == 0 ? [{
+    key      = "reference-data.fs2.nebius.ai/plane"
+    operator = "In"
+    values   = ["private"]
+    }] : [{
+    key      = "kubernetes.io/metadata.name"
+    operator = "In"
+    values   = sort(distinct(concat([var.namespace], var.queue.additional_namespaces)))
+  }]
+
   common_labels = {
     "app.kubernetes.io/name"       = "fs2-reference-data"
     "app.kubernetes.io/part-of"    = "fs2-serve"
@@ -490,12 +503,22 @@ resource "kubernetes_manifest" "cpu_cluster_queue" {
       labels = local.common_labels
     }
     spec = {
+      # matchExpressions rather than matchLabels, because this queue must be
+      # able to admit both the private reference-data plane and any explicitly
+      # listed namespace whose CPU stages read the shared databases.
       namespaceSelector = {
-        matchLabels = {
-          "reference-data.fs2.nebius.ai/plane" = "private"
-        }
+        matchExpressions = local.queue_namespace_selector
       }
       queueingStrategy = "BestEffortFIFO"
+      # Without this, withinClusterQueue defaults to Never and a presentation
+      # or interactive raw data stage waits behind admitted bulk preprocessing
+      # on the only lane that can run it, whatever WorkloadPriorityClass it
+      # carries. This queue is outside the accelerator Cohort, so in-queue
+      # displacement is the only mechanism it has.
+      preemption = {
+        reclaimWithinCohort = "Never"
+        withinClusterQueue  = "LowerPriority"
+      }
       resourceGroups = [{
         coveredResources = ["cpu", "memory"]
         flavors = [{
@@ -512,6 +535,22 @@ resource "kubernetes_manifest" "cpu_cluster_queue" {
   depends_on = [kubernetes_manifest.cpu_flavor]
 }
 
+# Kueue 0.17.8 makes LocalQueue.spec.clusterQueue immutable, so a changed
+# binding has to plan a replacement rather than an in-place update the API
+# server refuses. The binding lives in state for exactly that reason.
+# Replacement briefly removes the queue, so operators drain it first.
+resource "terraform_data" "local_queue_binding" {
+  input = {
+    namespace     = kubernetes_namespace_v1.reference_data.metadata[0].name
+    cluster_queue = var.queue.cluster_queue
+  }
+
+  triggers_replace = [
+    kubernetes_namespace_v1.reference_data.metadata[0].name,
+    var.queue.cluster_queue,
+  ]
+}
+
 resource "kubernetes_manifest" "local_queue" {
   manifest = {
     apiVersion = "kueue.x-k8s.io/v1beta2"
@@ -523,6 +562,11 @@ resource "kubernetes_manifest" "local_queue" {
     }
     spec = { clusterQueue = var.queue.cluster_queue }
   }
+
+  lifecycle {
+    replace_triggered_by = [terraform_data.local_queue_binding]
+  }
+
   depends_on = [kubernetes_manifest.cpu_cluster_queue]
 }
 

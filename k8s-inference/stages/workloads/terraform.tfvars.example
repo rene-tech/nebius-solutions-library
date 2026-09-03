@@ -43,11 +43,11 @@ hot_model_ids      = []
 #   cluster_queues = {}
 #   local_queues   = {}
 #   service_classes = {
-#     platform-critical = { workload_priority_class = "platform-critical", priority = 10000, preemption_mode = "non-preemptible" }
+#     platform-critical = { workload_priority_class = "platform-critical", priority = 10000, preemption_mode = "restartable" }
 #     presentation      = { workload_priority_class = "presentation", priority = 1000, preemption_mode = "restartable" }
 #     interactive       = { workload_priority_class = "interactive", priority = 100, preemption_mode = "restartable" }
 #     customer-batch    = { workload_priority_class = "standard", priority = 0, preemption_mode = "restartable" }
-#     bulk-backfill     = { workload_priority_class = "batch", priority = -100, preemption_mode = "checkpointable" }
+#     bulk-backfill     = { workload_priority_class = "batch", priority = -100, preemption_mode = "restartable" }
 #   }
 # }
 

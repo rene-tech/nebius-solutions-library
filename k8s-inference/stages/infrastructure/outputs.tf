@@ -77,6 +77,10 @@ output "node_group_ids" {
     var.reference_data.enabled ? {
       reference_data_cpu = nebius_mk8s_v1_node_group.reference_data[0].id
     } : {},
+    {
+      for pool_id, node_group in nebius_mk8s_v1_node_group.general_cpu :
+      "general_cpu_${replace(pool_id, "-", "_")}" => node_group.id
+    },
     contains(keys(nebius_mk8s_v1_node_group.gpu), "nebius-b300-preemptible-1x") ? {
       gpu_b300_1x = nebius_mk8s_v1_node_group.gpu["nebius-b300-preemptible-1x"].id
     } : {},
@@ -84,6 +88,50 @@ output "node_group_ids" {
       gpu_b300_8x = nebius_mk8s_v1_node_group.gpu["nebius-b300-preemptible-8x"].id
     } : {},
   )
+}
+
+output "general_cpu_pool_contract" {
+  description = "Provider-neutral general CPU pool facts: identity, capacity mode, measured schedulable capacity, and the exact node selector and toleration a CPU Job needs. It is deliberately disjoint from the reference-data plane."
+  value = {
+    schema     = "fs2-serve.nebius.ai/general-cpu-pools/v1"
+    project_id = nonsensitive(var.project_id)
+    region     = local.selected_target.region
+    taint = {
+      key    = "workload.fs2.nebius/general-cpu"
+      value  = "true"
+      effect = "NoSchedule"
+    }
+    # Every general pool shares one flavor selector; the pool-id label stays on
+    # the node for attribution without fragmenting the lane into one flavor per
+    # pool, which would make heterogeneous CPU classes unschedulable together.
+    node_selector = {
+      "workload.fs2.nebius/general-cpu" = "true"
+      "capacity.fs2.nebius/pool"        = "general-cpu"
+    }
+    pools = {
+      for pool_id, pool in var.cpu_pools : pool_id => {
+        id                   = nebius_mk8s_v1_node_group.general_cpu[pool_id].id
+        name                 = nebius_mk8s_v1_node_group.general_cpu[pool_id].name
+        platform             = pool.platform
+        preset               = pool.preset
+        capacity_type        = pool.capacity_type
+        elastic              = pool.elastic
+        min_nodes            = pool.min_nodes
+        max_nodes            = pool.max_nodes
+        scale_from_zero      = pool.elastic && pool.min_nodes == 0
+        schedulable_capacity = pool.schedulable_capacity
+        shared_filesystem    = pool.shared_filesystem
+        node_labels = merge(pool.node_labels, {
+          "workload.fs2.nebius/general-cpu" = "true"
+          "capacity.fs2.nebius/type"        = pool.capacity_type
+          "capacity.fs2.nebius/pool"        = "general-cpu"
+          "capacity.fs2.nebius/pool-id"     = pool_id
+          "storage.fs2.nebius/shared-cache" = pool.shared_filesystem ? "true" : "false"
+        })
+      }
+    }
+    reference_data_filesystem = false
+  }
 }
 
 output "accelerator_node_group_ids" {
@@ -114,6 +162,9 @@ output "owned_resource_ids" {
     reference_data_writer_sa  = try(nebius_iam_v1_service_account.reference_data[0].id, null)
     reference_data_access_key = try(nebius_iam_v2_access_key.reference_data[0].id, null)
     reference_data_cpu_pool   = try(nebius_mk8s_v1_node_group.reference_data[0].id, null)
+    general_cpu_pools = {
+      for pool_id, node_group in nebius_mk8s_v1_node_group.general_cpu : pool_id => node_group.id
+    }
     scientific_artifacts_bucket = (
       var.scientific_artifacts.enabled && var.scientific_artifacts.lifecycle.retention_mode == "disposable" ?
       local.scientific_artifacts_bucket_id : null

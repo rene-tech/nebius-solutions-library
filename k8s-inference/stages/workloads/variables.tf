@@ -602,17 +602,65 @@ variable "scheduling" {
       name                = optional(string, "inference-shared")
       fair_sharing_weight = optional(number, 1)
     }), {})
+    # Kueue orders LocalQueues by decayed fair-share usage before it compares
+    # WorkloadPriorityClass, so a higher class in a different LocalQueue is not
+    # categorically admitted first. Set this to accept that ordering on the
+    # stable ClusterQueue once it serves more than one lane.
+    fair_share_precedence_acknowledged = optional(bool, false)
+    # Whether licensed academic models run their own raw CPU data stages.
+    # They read the shared reference databases on a tainted pool, so this
+    # requires the reference-data plane and core-resource admission. Left
+    # false, that lane is absent and those models accept enriched inputs only.
+    academic_raw_data_stages = optional(bool, false)
+    # Pools a model is qualified for when it has no serving placement, such
+    # as a scientific-only model. Merged with the placements derived from
+    # the authoritative model contract; a routed model with neither fails.
+    model_eligible_pool_ids = optional(map(list(string)), {})
+    # Order Kueue tries ResourceFlavors in on the stable ClusterQueue. Empty
+    # derives a deterministic warm-first order from preemptibility and the node
+    # floor. An explicit order may reorder equally stable pools, but cannot put
+    # a colder tier ahead of a warmer one.
+    default_queue_pool_order = optional(list(string), [])
+    # Measured schedulable cpu and memory per accelerator pool, at that pool's
+    # maximum node count, keyed by pool ID. Supplying it turns core-resource
+    # admission on and couples cpu and memory to each pool's own
+    # ResourceFlavor, so a Workload's cores come from the pool that granted
+    # its accelerators. Empty keeps cpu and memory excluded, and then no
+    # cpu/memory quota anywhere in the cluster is enforced.
+    core_pool_capacity = optional(map(object({
+      cpu_millicores = number
+      memory_mib     = number
+    })), {})
+    # Largest per-Pod cpu/memory request each CPU stage class must run,
+    # checked against that class's per-node schedulable capacity.
+    cpu_stage_requests = optional(map(object({
+      cpu_millicores = number
+      memory_mib     = number
+    })), {})
+    # Count cpu and memory in Kueue admission. While they are excluded, any
+    # cpu/memory nominalQuota in the cluster is inert.
     cluster_queues = optional(map(object({
       namespace              = optional(string, "fs2-models")
+      namespaces             = optional(list(string), [])
       queueing_strategy      = optional(string, "BestEffortFIFO")
       fair_sharing_weight    = optional(number, 1)
       admission_fair_sharing = optional(bool, true)
       flavor_order           = optional(list(string), [])
+      flavor_fungibility = optional(object({
+        when_can_borrow  = optional(string, "MayStopSearch")
+        when_can_preempt = optional(string, "TryNextFlavor")
+        preference       = optional(string)
+      }), {})
+      admission_checks = optional(list(object({
+        name       = string
+        on_flavors = optional(list(string), [])
+      })), [])
       pool_quotas = optional(map(object({
         nominal_quota   = optional(number, 0)
         borrowing_limit = optional(number)
         lending_limit   = optional(number)
       })), {})
+      fair_share_precedence_acknowledged = optional(bool, false)
       preemption = optional(object({
         reclaim_within_cohort = optional(string, "Never")
         within_cluster_queue  = optional(string, "Never")
@@ -623,6 +671,8 @@ variable "scheduling" {
       cluster_queue       = string
       fair_sharing_weight = optional(number, 1)
       model_ids           = optional(set(string), [])
+      tenant_ids          = optional(set(string), [])
+      service_classes     = optional(set(string), [])
     })), {})
     service_classes = optional(map(object({
       workload_priority_class = string
@@ -630,11 +680,14 @@ variable "scheduling" {
       default_local_queue     = optional(string)
       preemption_mode         = optional(string, "restartable")
       pool_preference         = optional(list(string), [])
+      max_queue_seconds       = optional(number)
+      max_execution_seconds   = optional(number)
+      description             = optional(string)
       })), {
       platform-critical = {
         workload_priority_class = "platform-critical"
         priority                = 10000
-        preemption_mode         = "non-preemptible"
+        preemption_mode         = "restartable"
       }
       presentation = {
         workload_priority_class = "presentation"
@@ -654,11 +707,128 @@ variable "scheduling" {
       bulk-backfill = {
         workload_priority_class = "batch"
         priority                = -100
-        preemption_mode         = "checkpointable"
+        preemption_mode         = "restartable"
       }
     })
   })
   default = {}
+
+  validation {
+    condition = try(
+      (!var.scheduling.cohort.enabled || (
+        length(var.scheduling.cohort.name) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.scheduling.cohort.name))
+      )) && var.scheduling.cohort.fair_sharing_weight > 0.000000001 &&
+      alltrue([
+        for queue_name, queue in var.scheduling.cluster_queues :
+        length(queue_name) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", queue_name)) &&
+        queue.fair_sharing_weight > 0.000000001 &&
+        length(queue.admission_checks) <= 64 &&
+        alltrue([
+          for check in queue.admission_checks :
+          length(check.name) <= 63 &&
+          can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", check.name)) &&
+          length(check.on_flavors) <= 64
+        ])
+      ]) &&
+      alltrue(flatten([
+        for queue in values(var.scheduling.local_queues) : [
+          for tenant_id in queue.tenant_ids :
+          length(tenant_id) <= 63 &&
+          can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", tenant_id))
+        ]
+        ])) && alltrue([
+        for queue in values(var.scheduling.local_queues) :
+        queue.fair_sharing_weight > 0.000000001
+      ]),
+      false,
+    )
+    error_message = "Scheduling cohort, ClusterQueue, and AdmissionCheck identities must be strict DNS subdomains; tenant route identities must be Kubernetes label values of at most 63 characters; every fair-sharing weight must be greater than 1e-9."
+  }
+}
+
+variable "general_cpu_lane" {
+  description = "Operator policy for the general CPU admission lane. Its single execution namespace is already resolved by the facade, defaulting to the academic tenant when that tenant exists."
+  type = object({
+    enabled             = bool
+    cluster_queue       = string
+    local_queue         = string
+    resource_flavor     = string
+    queueing_strategy   = string
+    fair_sharing_weight = number
+    namespace           = string
+  })
+  default = {
+    enabled             = false
+    cluster_queue       = "general-cpu"
+    local_queue         = "general-cpu"
+    resource_flavor     = "general-cpu"
+    queueing_strategy   = "BestEffortFIFO"
+    fair_sharing_weight = 1
+    namespace           = ""
+  }
+}
+
+variable "budget_core_resources" {
+  description = "Whether the foundation switched Kueue's global core-resource budgeting on. Derived from the presence of a general CPU pool; a CPU lane whose cpu/memory quotas are globally excluded would be inert, so the lane refuses to render rather than publish decoration."
+  type        = bool
+  default     = false
+}
+
+variable "general_cpu_pools" {
+  description = "General CPU pool contract from the infrastructure stage, or null when no general pool is declared. Placement and capacity are authoritative here."
+  type = object({
+    schema        = string
+    project_id    = string
+    region        = string
+    node_selector = map(string)
+    taint = object({
+      key    = string
+      value  = string
+      effect = string
+    })
+    pools = map(object({
+      id              = string
+      name            = string
+      platform        = string
+      preset          = string
+      capacity_type   = string
+      elastic         = bool
+      min_nodes       = number
+      max_nodes       = number
+      scale_from_zero = bool
+      schedulable_capacity = object({
+        cpu_millicores        = number
+        memory_mib            = number
+        ephemeral_storage_mib = number
+      })
+      shared_filesystem = bool
+      node_labels       = map(string)
+    }))
+    reference_data_filesystem = bool
+  })
+  default = null
+
+  validation {
+    condition = var.general_cpu_pools == null || try(
+      var.general_cpu_pools.schema == "fs2-serve.nebius.ai/general-cpu-pools/v1" &&
+      # A general pool that reported a reference-data mount would be the exact
+      # cross-contamination this lane exists to prevent.
+      !var.general_cpu_pools.reference_data_filesystem &&
+      var.general_cpu_pools.taint.effect == "NoSchedule" &&
+      var.general_cpu_pools.node_selector["capacity.fs2.nebius/pool"] == "general-cpu" &&
+      alltrue([
+        for pool_id, pool in var.general_cpu_pools.pools :
+        can(regex("^mk8snodegroup-[a-z0-9]+$", pool.id)) &&
+        pool.node_labels["capacity.fs2.nebius/pool-id"] == pool_id &&
+        # Indexing a missing map key raises, so ask whether the key exists.
+        !contains(keys(pool.node_labels), "storage.fs2.nebius/reference-data")
+      ]),
+      false,
+    )
+    error_message = "general_cpu_pools must be the v1 general-CPU contract with a NoSchedule general taint, the general pool selector, real node-group IDs, per-pool identity labels, and no reference-data filesystem or label."
+  }
 }
 
 variable "model_controller" {
@@ -743,7 +913,8 @@ variable "model_controller" {
       contains(keys(var.model_controller.priority_classes), "standard") &&
       alltrue([
         for name, value in var.model_controller.priority_classes :
-        can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", name)) &&
+        length(name) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", name)) &&
         floor(value) == value && value >= -2147483648 && value <= 2147483647
       ]),
       false,
@@ -874,7 +1045,11 @@ variable "model_express" {
           (
             config.transport.mode == "nixl-rdma" ? (
               config.transport.rdma_resource_name != null &&
-              can(regex("^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", config.transport.rdma_resource_name))
+              length(config.transport.rdma_resource_name) <= 317 &&
+              length(split("/", config.transport.rdma_resource_name)) == 2 &&
+              length(split("/", config.transport.rdma_resource_name)[0]) <= 253 &&
+              length(split("/", config.transport.rdma_resource_name)[1]) <= 63 &&
+              can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", config.transport.rdma_resource_name))
               ) : (
               config.transport.rdma_resource_name == null
             )
@@ -882,7 +1057,7 @@ variable "model_express" {
           alltrue([
             for pool_id, transport in config.pool_transports :
             can(regex("^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$", pool_id)) &&
-            length(pool_id) <= 128 &&
+            length(pool_id) <= 63 &&
             contains(["fallback", "nixl-rdma"], transport.mode) &&
             contains(["UCX", "LIBFABRIC"], transport.nixl_backend) &&
             can(regex("^[A-Za-z0-9][A-Za-z0-9_.:,-]*$", transport.nic_pin)) &&
@@ -893,7 +1068,11 @@ variable "model_express" {
             (
               transport.mode == "nixl-rdma" ? (
                 transport.rdma_resource_name != null &&
-                can(regex("^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", transport.rdma_resource_name))
+                length(transport.rdma_resource_name) <= 317 &&
+                length(split("/", transport.rdma_resource_name)) == 2 &&
+                length(split("/", transport.rdma_resource_name)[0]) <= 253 &&
+                length(split("/", transport.rdma_resource_name)[1]) <= 63 &&
+                can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", transport.rdma_resource_name))
                 ) : (
                 transport.rdma_resource_name == null
               )
@@ -946,7 +1125,11 @@ variable "model_pool_overrides" {
       )) == 0 &&
       alltrue([
         for pool_id in values(var.model_pool_overrides) :
-        can(regex("^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$", pool_id))
+        # One canonical pool-ID grammar: a lowercase Kubernetes label value of 1 to
+        # 63 characters, matching the facade, the scheduling module, and the CPU
+        # stage class schema. Pool IDs are label values, not DNS labels.
+        length(pool_id) <= 63 &&
+        can(regex("^[a-z0-9](?:[-_a-z0-9.]{0,61}[a-z0-9])?$", pool_id))
       ])
     )
     error_message = "model_pool_overrides must map enabled canonical model IDs to bounded accelerator pool IDs."
@@ -1300,5 +1483,24 @@ variable "academic_assets" {
     }
     assets                    = {}
     readiness_manifest_sha256 = null
+  }
+
+  validation {
+    # The academic tenant and namespace become a Kueue route tenant identity
+    # and a LocalQueue namespace, so both are bounded label/DNS-label values.
+    condition = (
+      length(var.academic_assets.tenant_id) <= 63 &&
+      can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", var.academic_assets.tenant_id)) &&
+      length(var.academic_assets.namespace) <= 63 &&
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.academic_assets.namespace)) &&
+      length(var.academic_assets.execution.local_queue) <= 63 &&
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.academic_assets.execution.local_queue)) &&
+      alltrue([
+        for asset in values(var.academic_assets.assets) :
+        length(asset.model_id) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", asset.model_id))
+      ])
+    )
+    error_message = "academic_assets tenant, namespace, LocalQueue, and model identities must be Kubernetes label-safe values of at most 63 characters so the derived Kueue route is renderable."
   }
 }
