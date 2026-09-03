@@ -59,8 +59,8 @@
         "archive_sha256": "b8a29d4d5bd7b60eba40d49da4dbb324685eb409bdbdc7d088c187514ef3f7b9"
       },
       "dockerfile": "Dockerfile.rfdiffusion",
-      "build_tag_suffix": "-cuda121-r6",
-      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r6",
+      "build_tag_suffix": "-cuda121-r7",
+      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r7",
       "supersedes": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:56a5ed22e39f41284658c1a5840cb0286cba419f22cd7f4c2f7905ea5f803396",
       "artifact_kind": "rfdiffusion-checkpoints",
       "external_artifacts": [

@@ -151,7 +151,7 @@ class ImageLockTests(unittest.TestCase):
         by_id = {image["id"]: image for image in lock["images"]}
         for image_id in ("bindcraft-academic", "freebindcraft-open-fallback"):
             image = by_id[image_id]
-            expected = {"bindcraft-academic": "-cuda121-r14", "freebindcraft-open-fallback": "-cuda121-r9", "rfdiffusion": "-cuda121-r6"}.get(image_id, "")
+            expected = {"bindcraft-academic": "-cuda121-r14", "freebindcraft-open-fallback": "-cuda121-r9", "rfdiffusion": "-cuda121-r7"}.get(image_id, "")
             self.assertEqual(image["build_tag_suffix"], expected)
             self.assertTrue(image["target"].endswith(image["source"]["revision"] + expected))
             self.assertIn("@sha256:", image["supersedes"])
