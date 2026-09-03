@@ -1086,6 +1086,31 @@ class SemanticJobRenderTests(unittest.TestCase):
                 aggregate["spec"]["template"]["spec"]["nodeSelector"],
             )
 
+    def test_supplemental_groups_come_from_the_handoff(self) -> None:
+        # Read access is a property of where a tree was published. The private
+        # academic tree is group-readable only, and a public plane may be owned
+        # by a different group again, so one hard-coded constant cannot serve
+        # both and the handoff has to declare what the run needs.
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            _, default = self.render(self.handoff(root), stage="design")
+            self.assertEqual(
+                default["spec"]["template"]["spec"]["securityContext"]["supplementalGroups"],
+                [renderer.ACADEMIC_ASSET_GID],
+            )
+            path = self.handoff(root, supplemental_groups=[1000, 10001])
+            _, declared = self.render(path, stage="design")
+            self.assertEqual(
+                declared["spec"]["template"]["spec"]["securityContext"]["supplementalGroups"],
+                sorted({1000, 10001, renderer.ACADEMIC_ASSET_GID}),
+            )
+
+    def test_supplemental_groups_must_be_positive_integers(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            path = self.handoff(Path(name), supplemental_groups=["1000"])
+            with self.assertRaisesRegex(renderer.RenderError, "positive integers"):
+                self.render(path, stage="design")
+
     def test_the_licensed_tree_may_not_be_served_from_a_public_volume(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)

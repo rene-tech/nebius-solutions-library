@@ -40,7 +40,9 @@
       "reachable_from": [
         "origin/agent/fs2-bindcraft-final-image-h100-successor-r20260903-clean"
       ],
-      "verified": "the publisher read the published SLSA provenance back and required the attested revision and context to be the ones it built"
+      "verified": "the publisher read the published SLSA provenance back and required the attested revision and context to be the ones it built",
+      "source_fingerprint": "916cd3f79f1595efeac87ac6b265802110764360898faee478e51b2f0a420e6a",
+      "source_fingerprint_scope": "the files the Dockerfile copies into the image plus the Dockerfile, its dockerignore, the pinned requirements and the adapter wrapper; documents, tests and the renderer are build context but never image content, so they do not move this value"
     },
     "qualification_state": "offline-qualified; live H100 production-filter semantics gated on the immutable four-tree localization generation"
   },
@@ -191,6 +193,36 @@
         "ownership_verified_by": "the adapter task independently, confirming the schema is absent from origin/main, appears on this branch only in the inherited primary-adapters commit, and carries the same change as 47683340 on the primary-adapters branch",
         "routed": "the runtime-onboarding owner was messaged directly; the primary-adapters task runs as Codex and is unreachable by message, so it received a task-file entry and a table of the three disagreeing bounds in the shared handoff document. Nothing is blocked on either: the adapter fails closed at 320 regardless"
       }
+    },
+    "aggregate_still_needs_the_gated_trees": {
+      "question_from": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903",
+      "their_observation": "correct: _admit_external_trees is called from run_trajectory and never from aggregate",
+      "but": "the shared outer entrypoint, which the controller invokes, runs the AlphaFold2 artifact gate and binds PyRosetta on every non-smoke command including aggregate, so a CPU stage with no tree mounts is rejected",
+      "measured_on_r17": {
+        "through_outer_entrypoint_without_mounts": "runtime_gate_rejected: external artifact root is unavailable",
+        "inner_wrapper_only_without_mounts": "reached the shard lookup, confirming the aggregate logic itself needs no tree"
+      },
+      "consequence": "an aggregate Job must still mount at least the AlphaFold2 and PyRosetta trees today",
+      "open_improvement": "narrowing the outer gate so a non-design stage neither reads 5.59 GB of AlphaFold2 nor mounts the licensed tree is a real reduction in licensed surface, but it changes the shared outer entrypoint and would be an r18; not taken unilaterally"
+    },
+    "observed_artifact_ownership": {
+      "measured_at": "2026-09-03T06:20:00Z on academic-assets-runtime-rwx",
+      "public_trees_today": {
+        "uid": 65532,
+        "gid": 10001,
+        "dir_mode": "0o2775",
+        "file_mode": "0o664",
+        "note": "world-readable, so group membership is not what grants access today"
+      },
+      "licensed_tree": {
+        "uid": 65532,
+        "gid": 10001,
+        "dir_mode": "0o2770",
+        "file_mode": "0o2770",
+        "note": "group-readable only; the run reaches it through runAsGroup 10001"
+      },
+      "reference_data_plane_gid": "model-artifacts/render_jobs.py writes /reference-data as uid/gid 1000, which is a different place from the academic claim measured above",
+      "consequence": "supplemental groups are now declared by the handoff instead of assumed by the renderer"
     }
   },
   "external_tree_contract": {
@@ -420,9 +452,9 @@
     "reachable_revision": "publication refuses a HEAD not contained in any pushed remote branch",
     "revision_equality": "the published SLSA provenance is read back and the attested revision must equal the built revision",
     "context_equality": "the attested build context must be this package's path",
-    "source_stability": "every build input is re-hashed after the build and must be unchanged; the fingerprint is recorded",
+    "source_stability": "every file that becomes the image is re-hashed after the build and must be unchanged; the fingerprint is recorded and still matches the working tree",
     "adapter_binding": "the wrapper is pinned by SHA-256 in the lock, re-hashed by load_lock, and labelled as adapter.wrapper.sha256; the dangling adapter.commit label is gone",
-    "observed_fingerprint": "b74f0a8d6fa3424c53f2471279cedc1b17cacf74d93fe92f6f06b2986df34a0f"
+    "observed_fingerprint": "916cd3f79f1595efeac87ac6b265802110764360898faee478e51b2f0a420e6a"
   },
   "stage_topology": {
     "correction": "the design GPU init container plus CPU main container held the accelerator for the whole Pod lifetime, so a GPU sat idle through the CPU-only aggregation",

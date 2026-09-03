@@ -51,16 +51,19 @@ def git(arguments: list[str]) -> str:
 
 
 def build_input_paths() -> list[Path]:
-    """Every file the build reads, so a change to any of them is detectable."""
+    """Exactly the files that become the image, so the fingerprint means something.
 
-    paths = [
-        path
-        for path in sorted(ROOT.rglob("*"))
-        if path.is_file()
-        and not any(part in {"__pycache__", "evidence", "tests"} for part in path.relative_to(ROOT).parts)
-        and path.suffix != ".pyc"
-    ]
+    BuildKit copies only the paths the Dockerfile names, so widening this to the
+    whole package would make the recorded fingerprint change whenever a document
+    or a renderer did, while saying nothing more about the image.
+    """
+
+    paths = [ROOT / ".dockerignore", ROOT / "Dockerfile.bindcraft", ROOT / "requirements.bindcraft.txt"]
+    paths.extend(sorted(path for path in (ROOT / "runtime").glob("*.py")))
     paths.append(ADAPTER_CONTEXT / "bindcraft-native" / "bin" / "bindcraft-batch")
+    missing = [path for path in paths if not path.is_file()]
+    if missing:
+        raise BuildError("build inputs are missing: " + ", ".join(str(path) for path in missing))
     return paths
 
 

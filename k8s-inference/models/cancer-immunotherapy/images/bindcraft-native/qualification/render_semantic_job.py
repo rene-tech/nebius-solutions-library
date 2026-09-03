@@ -137,6 +137,16 @@ def load_handoff(path: Path) -> dict[str, Any]:
         for key, item in selector.items()
     ):
         raise RenderError("external tree handoff node selector must be a string map")
+    # Which groups grant read access is a property of where the trees were
+    # published, not of this image. The private academic tree is group-readable
+    # only, and a public plane may be owned by a different group again, so the
+    # handoff declares them rather than this renderer guessing one constant.
+    groups = value.get("supplemental_groups", [])
+    if not isinstance(groups, list) or not all(
+        isinstance(item, int) and not isinstance(item, bool) and 0 < item < 2**31
+        for item in groups
+    ):
+        raise RenderError("external tree handoff supplemental groups must be positive integers")
     declared = value.get("trees")
     if not isinstance(declared, list):
         raise RenderError("external tree handoff declares no trees")
@@ -178,7 +188,12 @@ def load_handoff(path: Path) -> dict[str, Any]:
             raise RenderError(
                 f"{role}: a public tree must not be served from the private academic claim"
             )
-    return {"generation": generation, "node_selector": selector, "trees": by_role}
+    return {
+        "generation": generation,
+        "node_selector": selector,
+        "supplemental_groups": sorted({ACADEMIC_ASSET_GID, *groups}),
+        "trees": by_role,
+    }
 
 
 def localization_marker(handoff: dict[str, Any]) -> dict[str, Any]:
@@ -397,7 +412,7 @@ def job(args: argparse.Namespace, handoff: dict[str, Any], config_name: str) -> 
             "runAsNonRoot": True,
             "runAsUser": 10001,
             "runAsGroup": 10001,
-            "supplementalGroups": [ACADEMIC_ASSET_GID],
+            "supplementalGroups": handoff["supplemental_groups"],
             "seccompProfile": {"type": "RuntimeDefault"},
         },
         # One stage per Job. Running the design as an init container of the
