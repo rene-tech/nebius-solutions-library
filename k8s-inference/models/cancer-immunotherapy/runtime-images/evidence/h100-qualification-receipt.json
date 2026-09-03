@@ -336,5 +336,30 @@
       "fs2-complexa-forward-ptxas-v1-20260903d"
     ],
     "forward_result": "blocked: upstream CLI requires writable .env; no readiness claim"
+  },
+  "canonical_localization_probe": {
+    "namespace": "fs2-academic-poc",
+    "claim": "academic-assets-runtime-rwx",
+    "subPath": "scientific-localization/public/alphafold2-params",
+    "inventory": [
+      "LICENSE",
+      "params_model_1.npz",
+      "params_model_1_multimer_v3.npz",
+      "params_model_1_ptm.npz",
+      "params_model_2.npz",
+      "params_model_2_multimer_v3.npz",
+      "params_model_2_ptm.npz",
+      "params_model_3.npz",
+      "params_model_3_multimer_v3.npz",
+      "params_model_3_ptm.npz",
+      "params_model_4.npz",
+      "params_model_4_multimer_v3.npz",
+      "params_model_4_ptm.npz",
+      "params_model_5.npz",
+      "params_model_5_multimer_v3.npz",
+      "params_model_5_ptm.npz"
+    ],
+    "loader_job": "fs2-complexa-af2-loader-canonical-20260903",
+    "result": "passed on preemptible H100; AF2_PARAMETER_LOADER_OK"
   }
 }
