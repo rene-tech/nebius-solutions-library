@@ -587,8 +587,9 @@ class RuntimeArtifactLocalization:
         if self.aggregate_tree is not None and self.content_digest != self.aggregate_tree.tree_digest:
             raise ValueError("runtime artifact content digest differs from its aggregate tree")
         receipt: object | None = None
-        if self.verification_receipt_json is not None:
-            encoded = self.verification_receipt_json.encode()
+        receipt_json = self.verification_receipt_json
+        if receipt_json is not None:
+            encoded = receipt_json.encode()
             if len(encoded) > 64 * 1024:
                 raise ValueError("runtime artifact verification receipt exceeds the bound")
             try:
@@ -596,7 +597,7 @@ class RuntimeArtifactLocalization:
             except (UnicodeError, ValueError) as error:
                 raise ValueError("runtime artifact verification receipt is invalid") from error
             canonical = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False)
-            if canonical != self.verification_receipt_json:
+            if canonical != receipt_json:
                 raise ValueError("runtime artifact verification receipt is not canonical JSON")
         reference_plane = (
             self.aggregate_tree is not None
@@ -626,7 +627,8 @@ class RuntimeArtifactLocalization:
                 or content.get("expanded_bytes") != self.aggregate_tree.expanded_bytes
             ):
                 raise ValueError("reference-data terminal receipt differs from its frozen aggregate identity")
-            digest = "sha256:" + hashlib.sha256(self.verification_receipt_json.encode()).hexdigest()
+            assert receipt_json is not None
+            digest = "sha256:" + hashlib.sha256(receipt_json.encode()).hexdigest()
             if digest != self.localization_receipt_digest:
                 raise ValueError("reference-data terminal receipt digest differs from its localization receipt")
 
@@ -1295,11 +1297,11 @@ class SchedulingAdmission:
     memory_bytes: int = 0
 
     def __post_init__(self) -> None:
-        for value, label in (
+        for timestamp, label in (
             (self.quota_reserved_at, "Kueue quota reservation time"),
             (self.admitted_at, "Kueue admission time"),
         ):
-            if value is not None and value.tzinfo is None:
+            if timestamp is not None and timestamp.tzinfo is None:
                 raise ValueError(f"{label} must be timezone-aware")
         if self.quota_reserved_at is not None and self.admitted_at is not None:
             if self.admitted_at < self.quota_reserved_at:
@@ -1323,11 +1325,11 @@ class SchedulingAdmission:
             raise ValueError("CPU admission must retain both its pool and ResourceFlavor or neither")
         elif self.resolved_pool_id is not None and (self.cpu_millis < 1 or self.memory_bytes < 1):
             raise ValueError("CPU admission requires positive core resource quantities")
-        for value, label in (
+        for identity, label in (
             (self.resolved_pool_id, "resolved_pool_id"),
             (self.admitted_resource_flavor, "admitted_resource_flavor"),
         ):
-            if value is not None and (len(value) > 128 or _POOL_RE.fullmatch(value) is None):
+            if identity is not None and (len(identity) > 128 or _POOL_RE.fullmatch(identity) is None):
                 raise ValueError(f"{label} is invalid")
 
 

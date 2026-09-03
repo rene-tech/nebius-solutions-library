@@ -231,7 +231,7 @@ class ArtifactServiceBridge:
                 completed_at=attempt.completed_at,
                 admission=(
                     None
-                    if admission is None
+                    if admission is None or admission.admitted_at is None
                     else KueueAdmission(
                         resolved_pool_id=admission.resolved_pool_id,
                         admitted_resource_flavor=admission.admitted_resource_flavor,

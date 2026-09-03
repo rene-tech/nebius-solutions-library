@@ -63,6 +63,7 @@ def _state(
     operation_id: UUID = OPERATION_ID,
     *,
     captured_at: datetime = NOW - timedelta(minutes=2),
+    input_artifact_id: UUID | None = None,
 ) -> ScientificBatchState:
     plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="design"),))
     scheduling = SchedulingSnapshot(
@@ -96,7 +97,7 @@ def _state(
         tenant_id="tenant-oncology",
         model_id="rfdiffusion",
         variant_id="rfdiffusion-h100",
-        input_artifact_id=uuid4(),
+        input_artifact_id=input_artifact_id or uuid4(),
         plan=plan,
         scheduling=scheduling,
     )
@@ -449,12 +450,52 @@ async def test_real_postgres_admin_projection_reads_durable_controller_and_key_a
         reserved_gpu_seconds=0,
         max_attempts=1,
     )
-    proposed = _state(operation.id, captured_at=operation.accepted_at)
+    input_attempt_id = uuid4()
+    input_artifact_id = uuid4()
+    async with postgres_admin_store.pool.acquire() as connection:
+        await connection.execute(
+            """
+            INSERT INTO fs2_scientific_stage_attempts(
+                attempt_id,operation_id,tenant_id,stage_id,shard_id,attempt_number,status,
+                started_at,retention_expires_at
+            ) VALUES($1,$2,$3,'input','-',1,'running',$4::timestamptz,
+                $4::timestamptz + interval '1 day')
+            """,
+            input_attempt_id,
+            operation.id,
+            principal.tenant_id,
+            operation.accepted_at,
+        )
+        await connection.execute(
+            """
+            INSERT INTO fs2_scientific_artifacts(
+                id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,
+                size_bytes,media_type,storage_key,access_profile,retention_expires_at
+            ) VALUES($1,$2,$3,$4,'input','-','input',$5,128,'application/json',$6,'public',
+                $7::timestamptz + interval '1 day')
+            """,
+            input_artifact_id,
+            input_attempt_id,
+            operation.id,
+            principal.tenant_id,
+            _digest("admin-input"),
+            f"scientific/v1/tenants/{principal.tenant_id}/operations/{operation.id}/"
+            f"stages/input/shards/-/attempts/{input_attempt_id}/input/sha256/"
+            f"{_digest('admin-input').removeprefix('sha256:')}",
+            operation.accepted_at,
+        )
+    proposed = _state(
+        operation.id,
+        captured_at=operation.accepted_at,
+        input_artifact_id=input_artifact_id,
+    )
     batches = PostgresScientificBatchRepository(postgres_admin_store.pool)
     await batches.create(
         operation_id=operation.id,
         tenant_id=principal.tenant_id,
         model_id="rfdiffusion",
+        variant_id=proposed.variant_id,
+        input_artifact_id=proposed.input_artifact_id,
         plan=proposed.plan,
         scheduling=proposed.scheduling,
     )

@@ -260,6 +260,7 @@ class ScientificBatchService:
                                 scheduling_admission=(
                                     None
                                     if attempt.scheduling_admission is None
+                                    or attempt.scheduling_admission.admitted_at is None
                                     else PublicSchedulingAdmission(
                                         resolved_pool_id=attempt.scheduling_admission.resolved_pool_id,
                                         admitted_resource_flavor=attempt.scheduling_admission.admitted_resource_flavor,

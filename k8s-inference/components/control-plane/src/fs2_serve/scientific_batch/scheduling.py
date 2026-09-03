@@ -226,7 +226,7 @@ class SchedulingContractResolver:
                 if isinstance(direct_pool, str):
                     resolved_pools = (direct_pool,)
                 elif isinstance(eligible_cpu_pools, list) and isinstance(pool_resolution, Mapping):
-                    resolved_pools = tuple(cast(str, item) for item in eligible_cpu_pools if isinstance(item, str))
+                    resolved_pools = tuple(item for item in eligible_cpu_pools if isinstance(item, str))
                     if (
                         not resolved_pools
                         or len(resolved_pools) != len(eligible_cpu_pools)

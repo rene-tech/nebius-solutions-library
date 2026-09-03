@@ -873,7 +873,12 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_pending_
     legacy_input_artifact_id = UUID(legacy_fixture["input_artifact_id"])
     legacy_input_attempt_id = UUID("44444444-4444-4444-8444-444444444444")
     legacy_token_id = UUID("33333333-3333-4333-8333-333333333333")
-    for version, _ in EXPECTED_MIGRATIONS[:-1]:
+    # Freeze the database immediately before the telemetry and deployment-
+    # authorization successors. Later migrations may be appended without
+    # silently moving this upgrade boundary past the tables asserted below.
+    for version, _ in EXPECTED_MIGRATIONS:
+        if version == "0018_workload_lifecycle_telemetry.sql":
+            break
         migration = CONTROL_ROOT / "migrations" / version
         shutil.copy2(migration, prior_dir / migration.name)
     admin = await asyncpg.connect(database_url)
@@ -1016,7 +1021,7 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_pending_
                 )
             }
             assert {version: after[version] for version in before} == before
-            assert list(after)[-1] == "0018_workload_lifecycle_telemetry.sql"
+            assert list(after)[-1] == EXPECTED_MIGRATIONS[-1][0]
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_activation_model_fences')")
                 == "fs2_activation_model_fences"
