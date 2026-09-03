@@ -1,0 +1,395 @@
+{
+  "schema": "fs2.nebius.ai/bindcraft-native-live-h100-qualification/v1",
+  "recorded_at": "2026-09-03T07:04:28Z",
+  "task_id": "fs2-bindcraft-h100-codex-successor-r20260903",
+  "verdict": {
+    "state": "passed",
+    "meaning": "The immutable r18 image completed its real outer entrypoint on H100, admitted all four external trees by full content, imported the authorized academic PyRosetta tree, produced two designs accepted by the checked-in production filters, and completed content-addressed aggregation.",
+    "route_ready": false,
+    "route_ready_reason": "This was the explicitly isolated direct-live proof. The three public generations are qualified, but the tenant-private PyRosetta generation remains rendered rather than promoted, so the runtime localization generation is intentionally empty and no catalog route-readiness claim is made.",
+    "adapter_aggregation_on_main": "f00dfe86abd4605976433d141fc650014e17ca8a"
+  },
+  "execution_source": {
+    "branch": "agent/fs2-bindcraft-h100-codex-successor-r20260903",
+    "base": "origin/main@3f8f4b4e",
+    "renderer_content_sha256": "c8b6b0552f25057303b040b6cb37d059bdb6e34ab4fe28b3aacd5ecd072e966d",
+    "direct_live_canonical_pyrosetta": true
+  },
+  "environment": {
+    "tenant": "authorized tenant; exact ID retained in the private Task Deck deployment record",
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_context": "k8s-inference-h100",
+    "cluster_id": "retained in the private Task Deck deployment record",
+    "namespace": "fs2-academic-poc",
+    "node": "exact capacity-block node ID retained in the private Task Deck deployment record",
+    "node_provider_id": "retained in the private Task Deck deployment record",
+    "node_group_id": "retained in the private Task Deck deployment record",
+    "node_gpu_capacity": 8,
+    "accelerator": "NVIDIA H100 80GB HBM3",
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "capacity_source": "capacity-block",
+    "capacity_choice": "regular capacity-block; no preemptible H100 node was Ready when the winning Job was submitted",
+    "gpu_uuid": "GPU-56941528-f485-5237-c98a-08e1f253a9c3",
+    "nvidia_driver": "580.159.04",
+    "gpu_identity_collection": "nvidia-smi was read inside the live design container while its BindCraft process held the assigned device",
+    "kernel": "6.11.0-1016-nvidia",
+    "kubelet": "v1.35.6",
+    "container_runtime": "containerd://2.2.6"
+  },
+  "image": {
+    "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18",
+    "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+    "index_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+    "linux_amd64_manifest_digest": "sha256:87cdf6a955f6856e1ffb15ab4e7794134a20ae53dd732de686c7256f737c8b9c",
+    "attestation_manifest_digest": "sha256:0d3221e16233a50320904639ca745d47bba8f9994cee18566b9840997468e890",
+    "registry_digest_reverified": true,
+    "image_created_at": "2026-09-03T05:44:51.93180546Z",
+    "runtime_user": "10001:10001",
+    "entrypoint": [
+      "python",
+      "/opt/fs2/runtime_entrypoint.py"
+    ],
+    "bindcraft_source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+    "attested_repository_revision": "aadd4a88dad488f2c7e8093d63990f7ab59e7824",
+    "attested_context": "k8s-inference/models/cancer-immunotherapy/images/bindcraft-native"
+  },
+  "authorization": {
+    "profile": "academic",
+    "serving_admission": "AdmittedNoPerRequestLicenseReceipt",
+    "pyrosetta_version": "2026.29+releasequarterly.80a0635615",
+    "pyrosetta_dist_info": "pyrosetta-2026.29+releasequarterly.80a0635615.dist-info",
+    "licensed_bytes_embedded_in_image": false,
+    "academic_artifact_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242"
+  },
+  "input": {
+    "operation": "design-binder",
+    "backend_id": "bindcraft-v1-5-3-pyrosetta-academic",
+    "run_id": "bcr18-20260903f",
+    "batch_id": "batch.bindcraft.native.production",
+    "request_sha256": "86d993db3f249bb6923ad9403c943ed66fbee49796cd0597d9e12cb6c0395bcc",
+    "input_manifest_id": "manifest.bindcraft.native.pdl1.production",
+    "input_manifest_declared_sha256": "2afce12a72f0e2a007195edad2ef488acf6e414684946b4d23868cf3ef4334be",
+    "target": {
+      "path_in_image": "/opt/bindcraft/example/PDL1.pdb",
+      "artifact_id": "artifact.bindcraft.target.pdl1",
+      "sha256": "d3c95434dcadf26d005340b15bd92be61e101ed921478c26f2a5550f198e61f6",
+      "size_bytes": 74686,
+      "chain": "A",
+      "hotspots": [
+        56
+      ]
+    },
+    "base_seed": 912083,
+    "binder_length": {
+      "minimum": 60,
+      "maximum": 75
+    },
+    "accepted_designs_per_shard": 1,
+    "max_trajectories_per_shard": 4,
+    "shard_count": 1,
+    "settings": {
+      "path": "/opt/bindcraft/settings_advanced/default_4stage_multimer.json",
+      "sha256": "4124733af9dff65fb23e6a5f52b2329fc0d7a4ce5c50b6df225422f77fe467d6",
+      "resolved_num_recycles_validation": 3,
+      "resolved_num_seqs": 20,
+      "resolved_max_mpnn_sequences": 2,
+      "resolved_mpnn_weights": "soluble"
+    },
+    "filters": {
+      "path": "/opt/bindcraft/settings_filters/default_filters.json",
+      "sha256": "4faeae2ed4a78b82ff8f9c3c763985ff0f0b97ebb9e10072d5d572424bb73206",
+      "configured_thresholds": 54
+    }
+  },
+  "external_tree_admission": {
+    "schema": "fs2.nebius.ai/bindcraft-external-tree-admission/v1",
+    "verified_bytes": 8928285965,
+    "admission_seconds": 17.658,
+    "localization_generation": "",
+    "trees": {
+      "pyrosetta-site-packages": {
+        "artifact_id": "bindcraft-pyrosetta-installed-tree",
+        "plane": "tenant-private academic-assets-runtime-rwx canonical tree",
+        "sub_path": "pyrosetta-bindcraft/site-packages",
+        "algorithm": "fs2-tree-manifest/v1",
+        "sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+        "files": 8697,
+        "bytes": 3287122494,
+        "ownership": {
+          "uid": 65532,
+          "gid": 65532,
+          "mode": "0o550"
+        }
+      },
+      "alphafold2-params": {
+        "artifact_id": "alphafold2-params-bindcraft",
+        "plane": "immutable public generation",
+        "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+        "entries": 17,
+        "bytes": 5587959437,
+        "ownership": {
+          "uid": 1000,
+          "gid": 1000,
+          "mode": "0o555"
+        }
+      },
+      "colabdesign-mpnn-weights-vanilla": {
+        "artifact_id": "colabdesign-mpnn-weights-vanilla",
+        "plane": "immutable public generation",
+        "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+        "entries": 5,
+        "bytes": 26602793,
+        "ownership": {
+          "uid": 1000,
+          "gid": 1000,
+          "mode": "0o555"
+        }
+      },
+      "colabdesign-mpnn-weights-soluble": {
+        "artifact_id": "colabdesign-mpnn-weights-soluble",
+        "plane": "immutable public generation",
+        "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+        "entries": 5,
+        "bytes": 26601241,
+        "ownership": {
+          "uid": 1000,
+          "gid": 1000,
+          "mode": "0o555"
+        }
+      }
+    },
+    "ownership_contract_conformance": "proven: private role gid 65532 and all public roles gid 1000"
+  },
+  "jobs": {
+    "design": {
+      "name": "fs2-bcr18-20260903f-design",
+      "uid": "c4df8653-abfc-4f49-877a-b317c2897d44",
+      "pod": "fs2-bcr18-20260903f-design-q2lg5",
+      "pod_uid": "26d67f56-55a0-4424-adce-f33e97ac25f5",
+      "created_at": "2026-09-03T06:49:04Z",
+      "main_started_at": "2026-09-03T06:49:09Z",
+      "main_finished_at": "2026-09-03T06:55:09Z",
+      "job_completed_at": "2026-09-03T06:55:12Z",
+      "exit_code": 0,
+      "restarts": 0,
+      "image_already_present": true,
+      "gpu_request": 1,
+      "cpu_request": "16",
+      "memory_request": "96Gi"
+    },
+    "aggregate": {
+      "name": "fs2-bcr18-20260903f-aggregate",
+      "uid": "19952c49-50e7-4e18-94dc-689ca8c66d03",
+      "pod": "fs2-bcr18-20260903f-aggregate-9tqlj",
+      "pod_uid": "27942a91-8d17-4142-8151-7250a683930b",
+      "created_at": "2026-09-03T06:55:42Z",
+      "main_started_at": "2026-09-03T06:55:47Z",
+      "main_finished_at": "2026-09-03T06:55:52Z",
+      "job_completed_at": "2026-09-03T06:55:55Z",
+      "exit_code": 0,
+      "restarts": 0,
+      "gpu_request": 0,
+      "cpu_request": "2",
+      "memory_request": "8Gi"
+    }
+  },
+  "timings_seconds": {
+    "design_job_wall": 368,
+    "schedule_queue": 0,
+    "cached_image_available_after_schedule": 1,
+    "pod_creation_to_main_start": 5,
+    "gpu_allocated_main_container": 360,
+    "gpu_phase_reconciliation": {
+      "outer_alphafold_artifact_gate_and_startup": 5.586,
+      "external_four_tree_full_content_admission": 17.658,
+      "pyrosetta_bind": 1.469,
+      "first_af2_model_warmup_within_upstream": 62.005,
+      "post_warmup_design_and_validation": 271.374,
+      "post_processing": 0.072,
+      "remaining_startup_and_teardown": 1.836,
+      "sum": 360.0,
+      "restore": 0.0,
+      "grace_or_drain": 0.0,
+      "note": "The outer-gate interval is derived from the second-resolution kubelet main start and nanosecond log event; the runtime-measured tree, PyRosetta, upstream and post-processing phases are exact to the recorded millisecond. Warmup is trajectory-start to first AF2 model output and is a subset split from the 333.379-second upstream measurement."
+    },
+    "runtime_measured_upstream_total": 333.379,
+    "aggregate_job_wall": 13,
+    "aggregate_main_container": 5
+  },
+  "semantic_results": {
+    "trajectory_rows": 1,
+    "mpnn_rows": 2,
+    "accepted_design_rows": 2,
+    "trajectories_recorded_by_wrapper": 1,
+    "upstream_message": "Found 2 MPNN designs passing filters",
+    "numeric_filter_validation": {
+      "configured_thresholds": 54,
+      "numeric_thresholds_checked_per_design": 48,
+      "inapplicable_empty_columns": [
+        "3_Binder_RMSD",
+        "3_Binder_pLDDT",
+        "4_Binder_RMSD",
+        "4_Binder_pLDDT",
+        "5_Binder_RMSD",
+        "5_Binder_pLDDT"
+      ],
+      "why_inapplicable": "The pinned production settings validate two AF2 models, so model-specific columns 3 through 5 are empty. Upstream accepted both rows, and every one of the 48 populated configured thresholds was independently re-evaluated with zero violations."
+    },
+    "designs": [
+      {
+        "upstream_id": "fs2_s000_l67_s912083_mpnn13",
+        "candidate_id": "native-s000-c000",
+        "length": 67,
+        "mean_plddt": 0.94,
+        "iptm": 0.79,
+        "binder_energy_score": -175.74,
+        "interface_dg": -40.73,
+        "buried_interface_area": 1491.97,
+        "interface_residue_count": 16,
+        "shape_complementarity": 0.74,
+        "hotspot_rmsd": 1.58,
+        "hotspot_A56_closest_binder_atom_angstrom": 2.057,
+        "hotspot_in_contact": true,
+        "filter_violations": 0
+      },
+      {
+        "upstream_id": "fs2_s000_l67_s912083_mpnn9",
+        "candidate_id": "native-s000-c001",
+        "length": 67,
+        "mean_plddt": 0.91,
+        "iptm": 0.69,
+        "binder_energy_score": -178.81,
+        "interface_dg": -45.8,
+        "buried_interface_area": 1566.45,
+        "interface_residue_count": 18,
+        "shape_complementarity": 0.74,
+        "hotspot_rmsd": 2.1,
+        "hotspot_A56_closest_binder_atom_angstrom": 3.662,
+        "hotspot_in_contact": true,
+        "filter_violations": 0
+      }
+    ]
+  },
+  "output": {
+    "manifest_id": "manifest.bindcraft.native.output",
+    "manifest_entries": 8,
+    "all_declared_sizes_and_sha256_reverified": true,
+    "aggregate": {
+      "sha256": "434bc041b1c99747bcf439b6edc4f2892950b169f09af5bcb699509766541da2",
+      "size_bytes": 654,
+      "atomic_commit": true,
+      "succeeded_shards": 1,
+      "expected_shards": 1
+    },
+    "candidate_artifacts": [
+      {
+        "candidate": 0,
+        "metrics_sha256": "5ce1c2e833dcbcd277b899732f02244814b95c5b1b1f86a0dae1077985d6b259",
+        "binder_pdb_sha256": "b93fa6b34188598843046e693fef6fb87a481a15301800fb94665d764f3abbbf",
+        "binder_pdb_bytes": 91943,
+        "binder_pdb_atom_records": 1135,
+        "binder_chain_residues": 67,
+        "relaxed_complex_sha256": "d4ef23773730b4d9bc6cabfd08650f91fa4ed1d7c07b60a4460cecc7c0f017e1",
+        "relaxed_complex_bytes": 242109,
+        "relaxed_complex_atom_records": 2987,
+        "relaxed_complex_chains": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "candidate": 1,
+        "metrics_sha256": "c332fd15455857c6cc4c2356188cd9c67e48ce890749ce81ba0609be0cc295a1",
+        "binder_pdb_sha256": "a8f108faa765e3e8bd22d19ac57888a012d534fa426fe676da67431e8ebac8db",
+        "binder_pdb_bytes": 94211,
+        "binder_pdb_atom_records": 1163,
+        "binder_chain_residues": 67,
+        "relaxed_complex_sha256": "9e5f96a22fa9290efcf7f9817e49a1b13404b1229e382294639cb1220acd7572",
+        "relaxed_complex_bytes": 244377,
+        "relaxed_complex_atom_records": 3015,
+        "relaxed_complex_chains": [
+          "A",
+          "B"
+        ]
+      }
+    ]
+  },
+  "implementation_findings": [
+    {
+      "attempt": "bcr18-20260903a",
+      "finding": "Kubernetes ConfigMap projections are symlinks, which r18 correctly refuses for security-sensitive control documents.",
+      "fix": "Copy the four projected documents into an emptyDir as regular read-only files before the outer entrypoint starts."
+    },
+    {
+      "attempt": "bcr18-20260903b",
+      "finding": "The task workspace claim was delivered root:root mode 0755, so runtime uid 10001 could not create its run directory.",
+      "fix": "Add a workspace-only init that creates the exact task run directory."
+    },
+    {
+      "attempt": "bcr18-20260903c",
+      "finding": "The filesystem root-squashes uid 0 and rejects chown.",
+      "fix": "Never chown the claim; chmod only the newly created task run directory."
+    },
+    {
+      "attempt": "bcr18-20260903d",
+      "finding": "An unprivileged init cannot create the first directory under the root-owned 0755 volume root.",
+      "fix": "Use the root-squashed uid 0 init only for mkdir and chmod of the exact run path, mount no academic or public tree there, and set no Pod fsGroup."
+    }
+  ],
+  "parallel_trials": {
+    "winner": "bcr18-20260903f",
+    "bcr18-20260903e": "two complete production trajectories produced no accepted design before cancellation after the winner completed",
+    "bcr18-20260903g": "one complete production trajectory produced no accepted design; the second was cancelled after the winner completed",
+    "cancellation_reason": "release two capacity-block H100s immediately after the first qualifying result"
+  },
+  "safety": {
+    "shared_service_deployed": false,
+    "task_owned_jobs_only": true,
+    "shared_claims_mounted_read_only": true,
+    "workspace_claim_task_owned": true,
+    "pod_fs_group_set": false,
+    "other_tenant_preserved": "fs2-models/qwen3-8b-b300-hot-h100-reserved-8x remained Running on the winning node",
+    "b300_touched": false
+  },
+  "cleanup": {
+    "state": "complete",
+    "jobs_deleted": [
+      "fs2-bcr18-20260903a-design",
+      "fs2-bcr18-20260903b-design",
+      "fs2-bcr18-20260903c-design",
+      "fs2-bcr18-20260903d-design",
+      "fs2-bcr18-20260903e-design",
+      "fs2-bcr18-20260903f-design",
+      "fs2-bcr18-20260903f-aggregate",
+      "fs2-bcr18-20260903g-design"
+    ],
+    "standalone_pods_deleted": [
+      "fs2-bcr18-workspace-stat",
+      "fs2-bcr18-evidence"
+    ],
+    "configmaps_deleted": [
+      "fs2-run-bcr18-20260903a",
+      "fs2-run-bcr18-20260903b",
+      "fs2-run-bcr18-20260903c",
+      "fs2-run-bcr18-20260903d",
+      "fs2-run-bcr18-20260903e",
+      "fs2-run-bcr18-20260903f",
+      "fs2-run-bcr18-20260903g"
+    ],
+    "workspace_pvc_deleted": "fs2-bcr18-workspace-20260903a",
+    "workspace_pv_deleted": "pvc-553a0150-ecef-4fe4-b748-853db7266097",
+    "workspace_capacity": "128Gi",
+    "workspace_reclaim_policy": "Delete",
+    "verified_remaining_labeled_resources": 0,
+    "verified_remaining_exact_configmaps": 0,
+    "task_owned_resources_remaining": false,
+    "verified_at": "2026-09-03T07:04:28Z"
+  }
+}

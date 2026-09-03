@@ -1,0 +1,487 @@
+{
+  "schema": "fs2.nebius.ai/cancer-runtime-final-image-qualification/v1",
+  "recorded_at": "2026-09-03T07:04:28Z",
+  "model": "bindcraft-native-pyrosetta",
+  "package_scope": {
+    "path": "k8s-inference/models/cancer-immunotherapy/images/bindcraft-native",
+    "contains": "the native academic PyRosetta BindCraft image, its runtime source, the immutable r18 lock and publication receipt, this evidence, the acceptance-run renderer, and focused tests and docs",
+    "excludes": "the open PyRosetta-free fallback, the RFdiffusion and ProteinMPNN images, and the mosaic, rfdiffusion, bindcraft-open and bindcraft-native batch adapters, all of which belonged to a superseded mixed package",
+    "single_adapter_dependency": "models/structure/runtime/bindcraft-native/bin/bindcraft-batch, the adapter's published wrapper and the only file the image build consumes from the adapter tree",
+    "in_image_bytes_frozen": "a test pins the SHA-256 and size of all five files the build copies into the image against the values recorded here, which were verified against the pulled r18 digest. runtime_entrypoint.py still names the split-out runtimes on purpose: this image only ever sets FS2_RUNTIME_NAME=bindcraft-academic"
+  },
+  "academic_authorization": {
+    "state": "reconfirmed by the owner for this proof of concept",
+    "lane": "native BindCraft is the required lane; the open PyRosetta-free fallback is not equivalent and is not part of this package",
+    "consumption": "the exact private PyRosetta 2026.29 installed tree is mounted and consumed read-only",
+    "never_embedded": "no licensed byte is embedded in the image or placed in a public cache; the artifact-free canary fails publication if pyrosetta becomes importable or a model artifact appears",
+    "per_request_license_receipt_required": false,
+    "serving_admission": "AdmittedNoPerRequestLicenseReceipt",
+    "receipt_digests_are_metadata": "the authorization and install receipt digests are deployment metadata, not request fields and not init gates",
+    "broader_or_commercial_use": "advisory and out of scope; nothing here grants or implies redistribution rights"
+  },
+  "source": {
+    "repository": "https://github.com/martinpacesa/BindCraft",
+    "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+    "archive_sha256": "cada0f51f221af568ad0ee84ada2e68317501adad233008d073d66839b1afb8d"
+  },
+  "final_image": {
+    "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r18",
+    "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+    "platform": "linux/amd64",
+    "attestation_predicate_types": [
+      "https://slsa.dev/provenance/v1",
+      "https://spdx.dev/Document"
+    ],
+    "registry_digest_verified_after_push": true,
+    "attested_source": {
+      "revision": "aadd4a88dad488f2c7e8093d63990f7ab59e7824",
+      "source": "https://github.com/rene-tech/nebius-solutions-library.git",
+      "context_path": "k8s-inference/models/cancer-immunotherapy/images/bindcraft-native",
+      "reachable_from": [
+        "origin/agent/fs2-bindcraft-final-image-h100-successor-r20260903-clean"
+      ],
+      "verified": "the publisher read the published SLSA provenance back and required the attested revision and context to be the ones it built"
+    },
+    "qualification_state": "H100 semantic-qualified by direct outer-entrypoint proof; catalog route remains gated on private generation promotion"
+  },
+  "non_overwriting_publication": {
+    "policy": "every tag is asserted absent before publication; a tag is never overwritten",
+    "chain": [
+      {
+        "tag_suffix": "-cuda121-r12",
+        "digest": "sha256:fcc5b0da20f8bee01e78ad042ba597f7596cd52322a542ff4e48c855abae0177",
+        "created": "2026-09-03T02:42:14Z",
+        "state": "superseded",
+        "finding": "semantic run used settings_filters/no_filters.json; its accepted design's mean pLDDT 0.79 would not pass the production filter set"
+      },
+      {
+        "tag_suffix": "-cuda121-r13",
+        "digest": "sha256:5ea7696fbcfdf35bb80f5662bb4d9bc1d40744f51b37a0a897babec8ef688892",
+        "created": "2026-09-03T02:49:56Z",
+        "state": "superseded",
+        "finding": "predates the relaxed-complex and interface-statistic runtime change"
+      },
+      {
+        "tag_suffix": "-cuda121-r14",
+        "digest": "sha256:351f8f5fa02f3c74107efa522884301e2c4896b934f9145dfdbbd61b79e57e1f",
+        "created": "2026-09-03T03:00:58Z",
+        "state": "superseded-not-qualified",
+        "finding": "read Average_InterfaceResidues and Average_BuriedSASA, which upstream never writes, each defaulted to \"0\"; reported a hard-coded hotspot_geometry_validated; overrode the pinned template with one validation recycle and one MPNN sequence"
+      },
+      {
+        "tag_suffix": "-cuda121-r15",
+        "digest": "sha256:a8ae983d26696e4858e7fbc67a581791c7b26e59544c2fb29c0b34bdcdeedbf5",
+        "created": "2026-09-03T03:52:24Z",
+        "state": "superseded-not-qualified",
+        "finding": "corrected every r14 defect and added the four-tree admission gate, but predates the controller's --runtime-localization-marker requirement"
+      },
+      {
+        "tag_suffix": "-cuda121-r16",
+        "digest": "sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d",
+        "created": "2026-09-03T04:09:39Z",
+        "state": "superseded-not-qualified",
+        "finding": "behaviourally correct but not reconstructible: its SLSA provenance attests revision ce3ca6cd, reachable only from a superseded branch, and it carried an adapter.commit label naming 3475ce0e, rebased away and reachable from nothing. It was also built from a working tree holding uncommitted edits"
+      },
+      {
+        "tag_suffix": "-cuda121-r17",
+        "digest": "sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
+        "state": "superseded-not-qualified",
+        "finding": "reconstructible, but could not read a single accepted generation: the artifact plane writes a .fs2-runtime-tree.json marker inside every generation, and r17's flat inventory rejected it on its leading dot while the nested manifest would have hashed it into the digest"
+      },
+      {
+        "tag_suffix": "-cuda121-r18",
+        "digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+        "state": "final"
+      }
+    ]
+  },
+  "source_identity_in_published_image": {
+    "method": "SHA-256 of each runtime file read from the pulled digest reference, compared to the repository working tree",
+    "match": true,
+    "files": [
+      {
+        "path": "/opt/fs2/bindcraft/runtime_entrypoint.py",
+        "sha256": "b30c37773f480e6eea771d927944d02e57f052bda14f9e46eaeaef86753a071c",
+        "size_bytes": 40841,
+        "repository_path": "runtime/bindcraft_runtime_entrypoint.py"
+      },
+      {
+        "path": "/opt/fs2/bindcraft/tree_identity.py",
+        "sha256": "4a526f07fb5e7bfd5ac59ebc2ca9291ac03b9cdaa496e14f12534d841a5da452",
+        "size_bytes": 8394,
+        "repository_path": "runtime/tree_identity.py"
+      },
+      {
+        "path": "/opt/fs2/runtime_entrypoint.py",
+        "sha256": "25be621b72005010e7924f90144f00f001b595cd7423efe5a7dffed732495f92",
+        "size_bytes": 8677,
+        "repository_path": "runtime/runtime_entrypoint.py"
+      },
+      {
+        "path": "/opt/fs2/artifact_gate.py",
+        "sha256": "8df100f0fb062f3a4ff5c3d345036249124ec240c8c427124f27dcb647d13527",
+        "size_bytes": 5001,
+        "repository_path": "runtime/artifact_gate.py"
+      },
+      {
+        "path": "/opt/fs2/bin/bindcraft-batch",
+        "sha256": "1c62303bb5eca99581fcd0ca9c45cb27d3a8e275875d198db57bec2edb2b7be3",
+        "size_bytes": 336,
+        "repository_path": "models/structure/runtime/bindcraft-native/bin/bindcraft-batch"
+      }
+    ],
+    "verified_against": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d"
+  },
+  "controller_interface": {
+    "requirement": "--runtime-localization-marker <absolute path> accepted on both subcommands",
+    "requested_by": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903, candidate 62d7f67e",
+    "state": "satisfied and live-qualified on sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+    "behaviour": "read, not ignored: the marker must be an absolute path to a readable JSON object and must agree with FS2_RUNTIME_LOCALIZATION_MARKER when that is set; its path, size and SHA-256 are recorded in the shard output, and a generation it declares is cross-checked against the mounted trees",
+    "verified": [
+      {
+        "subcommand": "run-trajectory",
+        "check": "--help lists --runtime-localization-marker",
+        "result": "present"
+      },
+      {
+        "subcommand": "aggregate",
+        "check": "--help lists --runtime-localization-marker",
+        "result": "present"
+      },
+      {
+        "subcommand": "run-trajectory",
+        "check": "adapter's exact argv with workspace /mnt/fs2-scientific/work/design/design-000",
+        "result": "argparse accepted; marker, request, input manifest, pinned settings and filter digests and target artifact all admitted; stopped at the next real gate with 'external tree admission declaration is unavailable'"
+      },
+      {
+        "subcommand": "aggregate",
+        "check": "adapter's exact argv, mirror form",
+        "result": "argparse accepted; marker admitted; stopped at the absent shard output as expected with no shards present"
+      }
+    ],
+    "open_dependency": "the controller companion must also publish the external tree admission document and point FS2_BINDCRAFT_EXTERNAL_TREES at it, beside .fs2/request.json and .fs2/input-manifest.json; without it the design stage fails closed",
+    "mpnn_lane": "FS2_BINDCRAFT_MPNN_WEIGHTS selects original or soluble; unset defers to the pinned advanced template. Both colabdesign weight directories are absent from the image and mounted per run.",
+    "output_directory": "run-trajectory accepts a pre-created empty output directory and rejects a non-empty one rather than merging into a previous attempt",
+    "artifact_id_is_not_matched": "the admission document's artifact_id must be a non-empty string but is never compared to an expected value; the role key selects the algorithm and mount. The adapter's bindcraft-pyrosetta-installed-tree is preferred over the renderer's example value because it matches the ID in the adapter's artifact-lock.json",
+    "input_manifest_digest_is_not_verified": "the wrapper cross-checks only request.input_manifest.artifact_id against manifest.manifest_id, so the manifest's own sha256/size_bytes and both files' on-disk formatting are free; request_sha256 is hashed over a re-canonicalization of the parsed request. The target structure itself is still gated: its size and SHA-256 are verified against the manifest entry before design starts. Reported to the adapter task as a deliberate gap rather than silently tightened",
+    "reported_defect_in_consumer": {
+      "where": "the batch adapter's design sharding against models/structure/runtime/bindcraft-native/parameters.schema.json",
+      "finding": "shards = min(designs, 32) exceeded accepted_designs_per_shard maximum 10 once designs passed 320, and the schema cannot express more than shard_count 64 x 10 = 640 designs at any shard count, so the adapter's claimed 1..1024 range could not validate",
+      "boundaries": {
+        "320": "valid",
+        "321": "quota 11, rejected",
+        "641": "not representable at any shard count"
+      },
+      "state": "resolved by the adapter task in 8a7a015b",
+      "resolution": "the adapter refuses above 320 at parse time and names both governing bounds, keeping shards = min(designs, 32) so small requests stay parallel. This is better than the shards = ceil(designs / 10) that was suggested here, which would have collapsed four one-design shards into a single shard doing four designs and serialised work that need not be",
+      "owner": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903",
+      "open_decision": {
+        "question": "whether BindCraft should be able to run more than 320 designs in one request",
+        "needs": "one of three changes, none of them this task's to make",
+        "not_taken_here": "this task did not raise the cap. parameters.schema.json is not owned by the image task: it arrives on this branch only through the inherited primary-adapters commit and is not yet on main, so its owner is the primary-adapters task, and the public parameter schema that admits 1024 belongs to the scientific runtime onboarding task",
+        "options": [
+          {
+            "change": "raise the catalog profile's design max_parallelism above 102",
+            "owner": "fs2-scientific-runtime-onboarding-successor-r20260903"
+          },
+          {
+            "change": "raise the native accepted_designs_per_shard cap to at least 16 with 64 shards",
+            "owner": "fs2-cancer-primary-adapters-mosaic-bindcraft-rfdiffusion-r20260902"
+          },
+          {
+            "change": "lower the public designs maximum from 1024 to 320 so the caller-facing contract stops promising what the platform cannot execute",
+            "owner": "fs2-scientific-runtime-onboarding-successor-r20260903",
+            "note": "proposed by the adapter task as the smallest honest change; narrowing a public contract is its owner's call, and it is recorded here because the first two options were the only ones this record originally listed"
+          }
+        ],
+        "ownership_verified_by": "the adapter task independently, confirming the schema is absent from origin/main, appears on this branch only in the inherited primary-adapters commit, and carries the same change as 47683340 on the primary-adapters branch",
+        "routed": "the runtime-onboarding owner was messaged directly; the primary-adapters task runs as Codex and is unreachable by message, so it received a task-file entry and a table of the three disagreeing bounds in the shared handoff document. Nothing is blocked on either: the adapter fails closed at 320 regardless"
+      }
+    },
+    "aggregate_tree_scope": {
+      "question_from": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903",
+      "resolved_on_r18": "the aggregate completed in five seconds without importing PyRosetta or running the inner four-tree admission; its only model-side log was the shared outer AlphaFold2 artifact gate",
+      "remaining_improvement": "the qualification renderer still mounts the read-only trees on aggregate for one manifest shape across both stages. Removing those unused mounts is a later least-surface improvement and is not required for this qualified digest."
+    },
+    "observed_artifact_ownership": {
+      "correction": "the earlier post-chown damage was repaired before the qualifying run; the runtime now emits ownership with its own full-content admission receipt.",
+      "published_contract": {
+        "source": "catalog/runtime/contracts/academic-asset-readiness.json on origin/main",
+        "asset_gid": 65532,
+        "consumer_access": "supplemental-group",
+        "applies_to": "both academic models",
+        "public_plane_gid": 1000
+      },
+      "measured_state": {
+        "measured_at": "2026-09-03T06:49:09Z through bcr18-20260903f runtime admission",
+        "licensed_tree": {
+          "uid": 65532,
+          "gid": 65532,
+          "root_mode": "0o550"
+        },
+        "public_tree_roots": {
+          "uid": 1000,
+          "gid": 1000,
+          "root_mode": "0o555"
+        },
+        "verdict": "conforming delivery: private gid 65532 and public gid 1000"
+      },
+      "historical_damage": "two earlier pods mounted the claim with fsGroup 10001 and recursively changed ownership. The academic-assets owner repaired all 9,477 paths before this run.",
+      "effect_on_a_conforming_pod": "the qualifying Pod joined 65532 as a supplemental group, set no fsGroup, and consumed the private tree read-only",
+      "this_renderer": {
+        "default_supplemental_group": 65532,
+        "why_unchanged": "65532 is the published contract; the measurement is damage and must not be encoded",
+        "measured_result": "the Pod ran as 10001:10001 with supplemental group 65532 and the runtime measured the repaired private root as 65532:65532 mode 0550",
+        "default_supplemental_groups": [
+          1000,
+          65532
+        ]
+      },
+      "shared_repair": "accepted without mutation by this task; all shared model trees were mounted read-only",
+      "latent_risk": "a future Pod setting fsGroup on the academic claim could recur the damage; this renderer deliberately sets no fsGroup",
+      "receipt_requirement": "satisfied in evidence/live-h100-qualification-20260903.json and the shard output"
+    }
+  },
+  "external_tree_contract": {
+    "roles": [
+      {
+        "role": "pyrosetta-site-packages",
+        "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+        "identity_algorithm": "fs2-tree-manifest/v1",
+        "authority": "pinned in the image; the licensed tree this image is built around",
+        "pinned_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+      },
+      {
+        "role": "alphafold2-params",
+        "mount_path": "/models/alphafold2",
+        "identity_algorithm": "fs2-flat-tree-inventory/v1",
+        "authority": "declared per run by the platform artifact plane"
+      },
+      {
+        "role": "colabdesign-mpnn-weights-vanilla",
+        "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+        "identity_algorithm": "fs2-flat-tree-inventory/v1",
+        "authority": "declared per run by the platform artifact plane"
+      },
+      {
+        "role": "colabdesign-mpnn-weights-soluble",
+        "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+        "identity_algorithm": "fs2-flat-tree-inventory/v1",
+        "authority": "declared per run by the platform artifact plane"
+      }
+    ],
+    "algorithm_agreement": [
+      {
+        "algorithm": "fs2-tree-manifest/v1",
+        "kept_identical_to": "academic-assets/scripts/install_tree.py",
+        "proven_by": "unit test comparing both implementations on the same tree"
+      },
+      {
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "kept_identical_to": "scientific-localization staging receipts",
+        "proven_by": "recomputed digests equal the published receipt digests for both ColabDesign trees"
+      }
+    ],
+    "no_metadata_only_shortcut": "every admitted tree is read in full; a size-and-shape check would pass on a tree whose contents were swapped",
+    "backing_stores": {
+      "correction": "the renderer previously assumed one claim held all four trees, which could not have mounted three of them",
+      "public_trees": "immutable generations on the reference-data filesystem, reached by hostPath, so both Jobs carry the handoff's node selector",
+      "licensed_tree": "the private academic claim only",
+      "enforced": "a handoff serving the licensed tree from a public volume, or a public tree from the private claim, is refused",
+      "handoff_schema": "fs2.nebius.ai/bindcraft-external-tree-handoff/v2, which adds a per-tree volume source and a node selector"
+    }
+  },
+  "measured_tree_identity_cost": {
+    "environment": {
+      "project": "project-e00rene",
+      "region": "eu-north1",
+      "context": "k8s-inference-h100",
+      "namespace": "fs2-academic-poc",
+      "claim": "academic-assets-runtime-rwx",
+      "node": "exact H100 node ID retained in the private Task Deck deployment record",
+      "accelerator_class": "nvidia-h100-sxm5-80gb",
+      "capacity_source": "capacity-block"
+    },
+    "note": "measured read-only against the current mutable localization layout to size the per-run gate; these digests are not pinned in the image and the run that consumes them is gated on the immutable generation",
+    "trees": [
+      {
+        "artifact": "pyrosetta-bindcraft/site-packages",
+        "algorithm": "fs2-tree-manifest/v1",
+        "sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+        "bytes": 3287122494,
+        "files": 8697,
+        "symlinks": 0,
+        "elapsed_seconds": 14.853,
+        "throughput_mib_per_s": 211.1,
+        "matches_installer_receipt": true
+      },
+      {
+        "artifact": "alphafold2-params-bindcraft",
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+        "bytes": 5587959437,
+        "entries": 17,
+        "elapsed_seconds": 5.363,
+        "throughput_mib_per_s": 993.7,
+        "matches_staging_receipt": true
+      },
+      {
+        "artifact": "colabdesign-mpnn-weights-vanilla",
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+        "bytes": 26602793,
+        "entries": 5,
+        "elapsed_seconds": 0.035,
+        "throughput_mib_per_s": 722.1,
+        "matches_staging_receipt": true
+      },
+      {
+        "artifact": "colabdesign-mpnn-weights-soluble",
+        "algorithm": "fs2-flat-tree-inventory/v1",
+        "sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+        "bytes": 26601241,
+        "entries": 5,
+        "elapsed_seconds": 0.034,
+        "throughput_mib_per_s": 738.7,
+        "matches_staging_receipt": true
+      }
+    ],
+    "total_gate_seconds": 20.285,
+    "conclusion": "full-content verification of all four trees costs about 20 s against trajectories that run for minutes, so no metadata-only shortcut is warranted"
+  },
+  "in_image_fail_closed_proofs": {
+    "image": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+    "predecessor_proofs_on": "sha256:a8ae983d26696e4858e7fbc67a581791c7b26e59544c2fb29c0b34bdcdeedbf5",
+    "cases": [
+      {
+        "case": "no external tree admission declaration",
+        "result": "rejected",
+        "reason": "external tree admission declaration is unavailable",
+        "exit_code": 78
+      },
+      {
+        "case": "three public trees admitted by full content, licensed tree content wrong",
+        "result": "rejected",
+        "reason": "pyrosetta-site-packages: mounted tree is not the immutable tree this runtime is pinned to",
+        "note": "the AlphaFold2 and both ColabDesign trees were each read in full and matched their declared identities before the licensed tree was rejected, so the positive path for the three public trees is proven in-image"
+      },
+      {
+        "case": "soluble ColabDesign tree byte-swapped after publication",
+        "result": "rejected",
+        "reason": "colabdesign-mpnn-weights-soluble: mounted tree is not the immutable tree this runtime is pinned to"
+      },
+      {
+        "case": "full outer-entrypoint chain with a valid AlphaFold2 artifact manifest",
+        "result": "outer artifact gate passed, then rejected at the shared PyRosetta binding",
+        "reason": "PyRosetta installed dist-info is missing from the tenant-private mount",
+        "note": "confirms the rendered Job's environment satisfies the shared external artifact gate; the licensed tree's positive path needs the real 3.29 GB mount"
+      }
+    ]
+  },
+  "offline_test_evidence": {
+    "image_contract_suite": {
+      "command": "python3 -m unittest discover -s tests",
+      "tests": 80,
+      "result": "passed"
+    },
+    "native_adapter_suite": {
+      "command": "PYTHONPATH=catalog/runtime python3 -m unittest discover -s models/structure/runtime/bindcraft-native/tests",
+      "tests": 4,
+      "result": "passed"
+    },
+    "artifact_free_image_smoke": {
+      "command": "docker run --network none <digest> --fs2-image-smoke",
+      "result": "passed on r18",
+      "embedded_model_artifacts": false,
+      "embedded_pyrosetta": false
+    },
+    "batch_subcommand_smoke": {
+      "command": "docker run --network none --entrypoint /opt/fs2/bin/bindcraft-batch <digest> {run-trajectory,aggregate} --help",
+      "result": "both subcommands accept --runtime-localization-marker on the published r18"
+    }
+  },
+  "live_semantic_acceptance": {
+    "state": "passed",
+    "receipt": "evidence/live-h100-qualification-20260903.json",
+    "run_id": "bcr18-20260903f",
+    "design_job": "fs2-bcr18-20260903f-design",
+    "aggregate_job": "fs2-bcr18-20260903f-aggregate",
+    "image_digest": "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d",
+    "node": "exact H100 node ID retained in the private Task Deck deployment record",
+    "gpu_uuid": "GPU-56941528-f485-5237-c98a-08e1f253a9c3",
+    "result": "two accepted 67-residue binders, two relaxed target-binder complexes, non-empty statistics, one atomic aggregate and eight digest-verified manifest entries",
+    "production_filters": "upstream accepted both rows under default_filters.json sha256:4faeae2ed4a78b82ff8f9c3c763985ff0f0b97ebb9e10072d5d572424bb73206; all 48 populated values among its 54 configured thresholds were independently re-evaluated with zero violations",
+    "runtime_tree_ownership": {
+      "state": "measured",
+      "per_role": {
+        "pyrosetta-site-packages": {
+          "uid": 65532,
+          "gid": 65532,
+          "mode": "0o550"
+        },
+        "alphafold2-params": {
+          "uid": 1000,
+          "gid": 1000,
+          "mode": "0o555"
+        },
+        "colabdesign-mpnn-weights-vanilla": {
+          "uid": 1000,
+          "gid": 1000,
+          "mode": "0o555"
+        },
+        "colabdesign-mpnn-weights-soluble": {
+          "uid": 1000,
+          "gid": 1000,
+          "mode": "0o555"
+        }
+      },
+      "contract_conformance": "proven"
+    },
+    "localization_scope": "the three public roles used immutable qualified generations; PyRosetta used the content-pinned, ownership-repaired canonical private tree because its private promotion remains pending",
+    "route_ready": false,
+    "route_ready_reason": "the direct mode intentionally emits an empty private localization generation, so this receipt is semantic H100 evidence and not a catalog localization or route-enablement receipt"
+  },
+  "cleanup": {
+    "current_task_receipt": "evidence/live-h100-qualification-20260903.json",
+    "task_owned_resources_remaining": 0,
+    "verified_at": "2026-09-03T07:04:28Z",
+    "deleted": "eight task Jobs, their Pods, two standalone probe Pods, seven ConfigMaps, the 128Gi task workspace PVC and its Delete-policy PV",
+    "shared_resources_touched": "the immutable public generations and academic claim were mounted read-only; no shared service, queue, Terraform resource or B300 node was modified",
+    "other_tenants": "qwen3-8b-b300-hot-h100-reserved-8x remained Running on the qualification node after cleanup; it was the only Running GPU consumer then visible"
+  },
+  "provenance_enforcement": {
+    "why": "an attested revision that cannot be resolved back to source proves nothing, which is what r16 shipped",
+    "clean_source": "publication refuses a dirty working tree across the package and the adapter wrapper",
+    "reachable_revision": "publication refuses a HEAD not contained in any pushed remote branch",
+    "revision_equality": "the published SLSA provenance is read back and the attested revision must equal the built revision",
+    "context_equality": "the attested build context must be this package's path",
+    "source_stability": "every file that becomes the image is re-hashed after the build and must be unchanged; the fingerprint is recorded and still matches the working tree",
+    "adapter_binding": "the wrapper is pinned by SHA-256 in the lock, re-hashed by load_lock, and labelled as adapter.wrapper.sha256; the dangling adapter.commit label is gone",
+    "observed_fingerprint": "916cd3f79f1595efeac87ac6b265802110764360898faee478e51b2f0a420e6a"
+  },
+  "stage_topology": {
+    "correction": "the design GPU init container plus CPU main container held the accelerator for the whole Pod lifetime, so a GPU sat idle through the CPU-only aggregation",
+    "now": "one stage per Job over a durable workspace claim; the GPU is released when design ends",
+    "handoff": "content-addressed: the aggregate re-reads every artifact the design stage published and holds it to that shard's declared SHA-256 and size, rejecting a missing, rewritten or escaping path",
+    "server_validated": "both current-branch rendered Jobs passed kubectl apply --dry-run=server against k8s-inference-h100; the live design and aggregate then both completed with exit code zero"
+  },
+  "r18_resolution": {
+    "state": "built, published and H100-qualified",
+    "ownership_receipt": "every admitted root's uid, gid and mode are emitted by the runtime and captured in the live receipt",
+    "aggregate": "the aggregate does not import PyRosetta or execute the inner four-tree admission; it completed CPU-only in five seconds",
+    "immutable_marker": "both tree identity implementations exclude exactly the producer's reserved .fs2-runtime-tree.json terminal marker"
+  },
+  "accepted_localization_contract": {
+    "source": "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json on origin/main",
+    "schema": "fs2-serve.nebius.ai/scientific-localization-binding-handoff/v1",
+    "superseded": "the handoff shape this package invented while the real one was unavailable is gone; the renderer now reads the plane's own document",
+    "mixed_plane": {
+      "public": "three immutable generations on the reference-data host plane at /mnt/fs2-reference-data/data, node selector storage.fs2.nebius/reference-data=true",
+      "private": "the licensed PyRosetta tree only, on claim academic-assets-runtime-rwx in fs2-academic-poc"
+    },
+    "generation_is_per_artifact": "each artifact's generation equals its own tree identity digest; there is no run-level generation token, and none is invented here",
+    "marker_in_generation": "every generation carries .fs2-runtime-tree.json inside it, excluded from both identities by that one reserved name exactly as the producer excludes it",
+    "supplemental_groups": "[1000, 65532], derived from the planes actually mounted, matching the assertion in the localization renderer on main",
+    "cross_contract_tests": "read the real handoff and hold this runtime to its four mount paths, per-role identity algorithms, planes, node selector and marker"
+  }
+}

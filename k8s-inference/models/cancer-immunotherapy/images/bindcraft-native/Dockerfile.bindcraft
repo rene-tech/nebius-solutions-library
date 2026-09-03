@@ -1,0 +1,83 @@
+# syntax=docker/dockerfile:1.7
+FROM docker.io/pytorch/pytorch@sha256:0279f7aa29974bf64e61d0ff6e979b41a249b3662a46e30778dbf80b8c99c361
+
+ARG SOURCE_REVISION=7cd4ace1b7407adf66a50dfefa47de2270f5e4a9
+ARG SOURCE_ARCHIVE_SHA256=cada0f51f221af568ad0ee84ada2e68317501adad233008d073d66839b1afb8d
+ARG COLABDESIGN_REVISION=e31a56fe1d9b4de25c8697f3a28b75892941cc72
+ARG COLABDESIGN_ARCHIVE_SHA256=26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f
+ARG LIBGFORTRAN_VERSION=12.3.0-1ubuntu1~22.04.3
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+COPY runtime/fetch_verified.py /opt/fs2/fetch_verified.py
+COPY runtime/patch_bindcraft_pyrosetta.py /opt/fs2/patch_bindcraft_pyrosetta.py
+COPY requirements.bindcraft.txt /tmp/requirements.bindcraft.txt
+RUN --mount=type=cache,id=fs2-cancer-bindcraft-pip,target=/root/.cache/pip,sharing=locked \
+    set -eux; \
+    apt-get update; \
+    apt-get install --yes --no-install-recommends \
+      "gcc-12-base=${LIBGFORTRAN_VERSION}" \
+      "libgcc-s1=${LIBGFORTRAN_VERSION}" \
+      "libstdc++6=${LIBGFORTRAN_VERSION}" \
+      "libquadmath0=${LIBGFORTRAN_VERSION}" \
+      "libgfortran5=${LIBGFORTRAN_VERSION}"; \
+    rm -rf /var/lib/apt/lists/*; \
+    python -m pip install --timeout 300 --retries 10 -r /tmp/requirements.bindcraft.txt; \
+    ln -sfn /opt/conda/lib/python3.10/site-packages/nvidia/cusparse/lib/libcusparse.so.12 /opt/conda/lib/libcusparse.so.12; \
+    rm -f /tmp/requirements.bindcraft.txt
+RUN set -eux; \
+    python /opt/fs2/fetch_verified.py \
+      "https://github.com/martinpacesa/BindCraft/archive/${SOURCE_REVISION}.tar.gz" \
+      "${SOURCE_ARCHIVE_SHA256}" /tmp/bindcraft.tar.gz; \
+    mkdir -p /opt/bindcraft; \
+    tar -xzf /tmp/bindcraft.tar.gz --strip-components=1 -C /opt/bindcraft; \
+    python /opt/fs2/patch_bindcraft_pyrosetta.py /opt/bindcraft/functions/pyrosetta_utils.py; \
+    python /opt/fs2/fetch_verified.py \
+      "https://github.com/sokrypton/ColabDesign/archive/${COLABDESIGN_REVISION}.tar.gz" \
+      "${COLABDESIGN_ARCHIVE_SHA256}" /tmp/colabdesign.tar.gz; \
+    mkdir -p /tmp/colabdesign; \
+    tar -xzf /tmp/colabdesign.tar.gz --strip-components=1 -C /tmp/colabdesign; \
+    python -m pip install --no-cache-dir --no-deps /tmp/colabdesign; \
+    rm -rf \
+      /opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights \
+      /opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble; \
+    chmod +x /opt/bindcraft/functions/dssp /opt/bindcraft/functions/DAlphaBall.gcc; \
+    rm -rf /tmp/bindcraft.tar.gz /tmp/colabdesign.tar.gz /tmp/colabdesign /root/.cache; \
+    find /opt/bindcraft -type f \( -name '*.pt' -o -name '*.pth' -o -name '*.ckpt' -o -name '*.pkl' \) -delete; \
+    test ! -e /opt/bindcraft/params; \
+    useradd --create-home --uid 10001 --shell /usr/sbin/nologin fs2; \
+    chown -R root:root /opt/bindcraft; \
+    chmod -R a-w /opt/bindcraft
+
+COPY --chown=root:root runtime/artifact_gate.py runtime/runtime_entrypoint.py /opt/fs2/
+COPY --chown=root:root runtime/bindcraft_runtime_entrypoint.py /opt/fs2/bindcraft/runtime_entrypoint.py
+COPY --chown=root:root runtime/tree_identity.py /opt/fs2/bindcraft/tree_identity.py
+COPY --from=fs2-adapters bindcraft-native/bin/bindcraft-batch /opt/fs2/bin/bindcraft-batch
+RUN chmod 0555 /opt/fs2/bin/bindcraft-batch /opt/fs2/bindcraft/runtime_entrypoint.py \
+      /opt/fs2/bindcraft/tree_identity.py
+
+LABEL org.opencontainers.image.source="https://github.com/martinpacesa/BindCraft" \
+      org.opencontainers.image.revision="7cd4ace1b7407adf66a50dfefa47de2270f5e4a9" \
+      org.opencontainers.image.licenses="MIT AND LicenseRef-PyRosetta-Academic" \
+      ai.nebius.fs2.runtime.relationship="canonical-native-academic" \
+      ai.nebius.fs2.runtime.weights="external" \
+      ai.nebius.fs2.runtime.pyrosetta="tenant-private-preinstalled-tree" \
+      ai.nebius.fs2.runtime.pyrosetta.artifact.sha256="4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242" \
+      ai.nebius.fs2.runtime.pyrosetta.environment.digest="sha256:fd76ade0c607f27677bc04be3c60749f400eedc941d9e72967e19a4cedff80c2" \
+      ai.nebius.fs2.runtime.pyrosetta.request-receipt-required="false" \
+      ai.nebius.fs2.runtime.adapter.wrapper.sha256="1c62303bb5eca99581fcd0ca9c45cb27d3a8e275875d198db57bec2edb2b7be3"
+
+ENV FS2_RUNTIME_NAME=bindcraft-academic \
+    FS2_SOURCE_REVISION=7cd4ace1b7407adf66a50dfefa47de2270f5e4a9 \
+    FS2_ARTIFACT_KIND=bindcraft-af2-params \
+    FS2_ARTIFACT_ROOT=/models/alphafold2 \
+    FS2_ARTIFACT_MANIFEST=/models/alphafold2/manifest.json \
+    LD_LIBRARY_PATH=/opt/conda/lib/python3.10/site-packages/torch/lib:/opt/conda/lib/python3.10/site-packages/nvidia/cusparse/lib:/opt/conda/lib/python3.10/site-packages/nvidia/nvjitlink/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
+    PYTHONPATH=/opt/fs2/academic/pyrosetta-bindcraft/site-packages:/opt/bindcraft \
+    XLA_PYTHON_CLIENT_PREALLOCATE=false \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    PYTHONUNBUFFERED=1
+
+USER 10001:10001
+WORKDIR /opt/bindcraft
+ENTRYPOINT ["python", "/opt/fs2/runtime_entrypoint.py"]
+CMD ["python", "-u", "/opt/bindcraft/bindcraft.py"]
