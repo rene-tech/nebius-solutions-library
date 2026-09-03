@@ -14,6 +14,7 @@ from fs2_serve.scientific_batch.models import (
     BatchClaim,
     BatchEvent,
     BatchEventDraft,
+    BatchEventKind,
     RuntimeArtifactLocalization,
     SchedulingSnapshot,
     ScientificBatchPlan,
@@ -219,6 +220,17 @@ class FakeScientificBatchRepository:
     ) -> list[BatchEvent]:
         await self.get(operation_id, tenant_id=tenant_id)
         return [event for event in self.events[operation_id] if event.sequence > after_sequence][:limit]
+
+    async def list_events_by_kind(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        kind: BatchEventKind,
+        limit: int = 2,
+    ) -> list[BatchEvent]:
+        await self.get(operation_id, tenant_id=tenant_id)
+        return [event for event in self.events[operation_id] if event.draft.kind is kind][:limit]
 
     def force_cancel(self, operation_id: UUID) -> None:
         current = self.records[operation_id]

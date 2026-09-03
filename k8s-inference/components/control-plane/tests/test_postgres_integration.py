@@ -80,6 +80,7 @@ from fs2_serve.postgres import PostgresMaintenanceStore, PostgresStore, _decode_
 from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS
 from fs2_serve.runtime import ActivationError, StubRuntimeClient
 from fs2_serve.scientific_artifacts import FinalizeArtifactUpload, PostgresArtifactRepository, ScientificArtifactService
+from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
 from fs2_serve.scientific_batch.models import (
     CheckpointMode,
@@ -87,6 +88,7 @@ from fs2_serve.scientific_batch.models import (
     ResourceClass,
     SchedulingSnapshot,
     ScientificBatchPlan,
+    ScientificBatchState,
     ScientificStagePlan,
     ServiceClass,
     StageSchedulingDecision,
@@ -3201,6 +3203,137 @@ async def test_customer_input_upload_is_verified_and_terminal_in_postgres(
             "SELECT count(*) FROM fs2_operation_events WHERE operation_id=$1 AND event='artifact_uploaded'",
             begun.operation_id,
         ) == 1
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_scientific_admission_outbox_recovers_after_committed_operation_without_client_replay(
+    postgres_store: PostgresStore,
+) -> None:
+    principal = await add_token(postgres_store)
+    input_artifact_id = uuid4()
+    plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="design", max_attempts=2),))
+
+    def frozen_admission(operation) -> dict[str, object]:
+        scheduling = SchedulingSnapshot(
+            policy_revision=hashlib.sha256(b"atomic-scientific-policy").hexdigest(),
+            captured_at=operation.accepted_at,
+            service_class=ServiceClass.CUSTOMER_BATCH,
+            tenant_queue="scientific",
+            model_lane="qwen3-8b",
+            workload_namespace="fs2-models",
+            route_namespace="fs2-models",
+            stages=(
+                StageSchedulingDecision(
+                    stage_id="design",
+                    resource_class=ResourceClass.GPU,
+                    resolved_cluster_queue="inference-accelerators",
+                    resolved_local_queue="scientific",
+                    workload_priority_class="customer-batch",
+                    workload_priority_value=100,
+                    resolved_pool_preference=("h100-preemptible",),
+                    accelerator_resource_name="nvidia.com/gpu",
+                    accelerator_count=1,
+                    max_queue_seconds=None,
+                    max_execution_seconds=None,
+                    checkpoint_mode=CheckpointMode.RESTART,
+                    preemption_mode=PreemptionMode.RESTARTABLE,
+                ),
+            ),
+        )
+        return state_to_value(
+            ScientificBatchState.admit(
+                operation_id=operation.id,
+                tenant_id=principal.tenant_id,
+                model_id="qwen3-8b",
+                variant_id="qwen3-8b-h100",
+                input_artifact_id=input_artifact_id,
+                plan=plan,
+                scheduling=scheduling,
+            )
+        )
+
+    async def insert_then_crash() -> None:
+        await postgres_store.append_operation(
+            principal=principal,
+            admission=AdmissionRequest(
+                model_id="qwen3-8b",
+                operation="design",
+                protocol="scientific-batch-v1",
+                idempotency_key="postgres-scientific-crash-0001",
+                request_body=b'{"schema":"fs2-serve.nebius.ai/scientific-run-request/v1"}',
+            ),
+            model_revision="b968826d",
+            reserved_gpu_seconds=0,
+            max_attempts=1,
+            scientific_admission_factory=frozen_admission,
+        )
+        raise RuntimeError("injected crash after committed Operation insert")
+
+    with pytest.raises(RuntimeError, match="injected crash after committed Operation insert"):
+        await insert_then_crash()
+
+    pending = await postgres_store.list_scientific_admissions()
+    assert len(pending) == 1
+    frozen = state_from_value(pending[0].payload)
+    assert frozen.operation_id == pending[0].operation_id
+    assert frozen.scheduling.captured_at == (
+        await postgres_store.get_operation(frozen.operation_id, tenant_id=principal.tenant_id)
+    ).accepted_at
+    assert await postgres_store.claim_operation("generic-worker", lease_seconds=30) is None
+
+    input_attempt_id = uuid4()
+    input_digest = "sha256:" + "1" * 64
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            """
+            INSERT INTO fs2_scientific_stage_attempts(
+                attempt_id,operation_id,tenant_id,stage_id,shard_id,attempt_number,
+                status,started_at,retention_expires_at
+            ) VALUES($1,$2,$3,'input','-',1,'running',clock_timestamp(),clock_timestamp()+interval '1 day')
+            """,
+            input_attempt_id,
+            frozen.operation_id,
+            principal.tenant_id,
+        )
+        await connection.execute(
+            """
+            INSERT INTO fs2_scientific_artifacts(
+                id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
+                media_type,storage_key,access_profile,retention_expires_at
+            ) VALUES($1,$2,$3,$4,'input','-','input',$5,1,'application/json',$6,'public',
+                clock_timestamp()+interval '1 day')
+            """,
+            input_artifact_id,
+            input_attempt_id,
+            frozen.operation_id,
+            principal.tenant_id,
+            input_digest,
+            f"scientific/v1/tenants/{principal.tenant_id}/operations/{frozen.operation_id}/stages/input/"
+            f"shards/-/attempts/{input_attempt_id}/input/sha256/{input_digest.removeprefix('sha256:')}",
+        )
+        assert await connection.fetchval(
+            "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_admission_outbox',"
+            "'SELECT,INSERT,DELETE')"
+        )
+
+    batches = PostgresScientificBatchRepository(postgres_store.pool)
+    recovered = await batches.create(
+        operation_id=frozen.operation_id,
+        tenant_id=frozen.tenant_id,
+        model_id=frozen.model_id,
+        variant_id=frozen.variant_id,
+        input_artifact_id=frozen.input_artifact_id,
+        plan=frozen.plan,
+        scheduling=frozen.scheduling,
+        execution_plan=frozen.execution_plan,
+        access_context=frozen.access_context,
+        input_manifest=frozen.input_manifest,
+        runtime_artifacts=frozen.runtime_artifacts,
+    )
+    await postgres_store.complete_scientific_admission(frozen.operation_id)
+    assert recovered == frozen
+    assert await postgres_store.get_scientific_admission(frozen.operation_id) is None
 
 
 @pytest.mark.postgres

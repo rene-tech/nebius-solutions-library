@@ -9,6 +9,7 @@ import functools
 import hashlib
 import json
 import secrets
+from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -74,6 +75,7 @@ from .models import (
     OperationResult,
     OperationStatus,
     OperationView,
+    PendingScientificAdmission,
     Principal,
     ReportedUsage,
     RuntimeIdentity,
@@ -459,7 +461,7 @@ class PostgresStore:
                     f"fs2_scientific_stage_commits,fs2_scientific_stage_commit_attempts,"
                     f"fs2_scientific_run_results,fs2_scientific_artifact_events,"
                     f"fs2_scientific_retention_ledger,fs2_scientific_batches,"
-                    f"fs2_scientific_batch_events,"
+                    f"fs2_scientific_batch_events,fs2_scientific_admission_outbox,"
                     f"fs2_reporting_model_usage,fs2_reporting_principal_usage,"
                     f"fs2_reporting_terminal_totals,fs2_activation_intents,fs2_activation_events,"
                     f"fs2_activation_target_state,fs2_activation_controller_status,"
@@ -545,6 +547,9 @@ class PostgresStore:
                 f"fencing_token,lease_expires_at,updated_at) ON fs2_scientific_batches TO {quoted_runtime}"
             )
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batch_events TO {quoted_runtime}")
+            await connection.execute(
+                f"GRANT SELECT,INSERT,DELETE ON fs2_scientific_admission_outbox TO {quoted_runtime}"
+            )
             await connection.execute(
                 f"GRANT DELETE ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
                 f"fs2_scientific_uploads,fs2_scientific_stage_commits,"
@@ -2386,6 +2391,7 @@ class PostgresStore:
         max_attempts: int,
         dispatch_snapshot: str | None = None,
         dynamic_fence: DynamicAdmissionFence | None = None,
+        scientific_admission_factory: Callable[[OperationView], dict[str, object]] | None = None,
     ) -> OperationView:
         async with self.pool.acquire() as connection, connection.transaction():
             await self._token_lock(connection, principal.token_id)
@@ -2437,7 +2443,13 @@ class PostgresStore:
                 )
                 if comparable != incoming:
                     raise ConflictError("idempotency key is already bound to a different request")
-                return self._operation(existing, reused=True)
+                operation = self._operation(existing, reused=True)
+                await self._stage_scientific_admission(
+                    connection,
+                    operation,
+                    scientific_admission_factory,
+                )
+                return operation
             if (dynamic_fence is None) != (dispatch_snapshot is None):
                 raise ConflictError("dynamic admission fence and dispatch snapshot must be supplied together")
             if dynamic_fence is not None:
@@ -2540,6 +2552,12 @@ class PostgresStore:
             except asyncpg.UniqueViolationError as exc:
                 raise ConflictError("idempotency key raced with another request") from exc
             assert row is not None
+            operation = self._operation(row)
+            await self._stage_scientific_admission(
+                connection,
+                operation,
+                scientific_admission_factory,
+            )
             await connection.execute(
                 """
                 UPDATE fs2_tokens
@@ -2567,7 +2585,87 @@ class PostgresStore:
                 outcome="queued",
                 detail={"model_id": admission.model_id, "protocol": admission.protocol},
             )
-            return self._operation(row)
+            return operation
+
+    @staticmethod
+    async def _stage_scientific_admission(
+        connection: asyncpg.Connection[Any],
+        operation: OperationView,
+        factory: Callable[[OperationView], dict[str, object]] | None,
+    ) -> None:
+        if factory is None:
+            return
+        if operation.protocol != "scientific-batch-v1":
+            raise ConflictError("scientific admission outbox requires a scientific batch Operation")
+        if await connection.fetchval(
+            "SELECT true FROM fs2_scientific_batches WHERE operation_id=$1",
+            operation.id,
+        ):
+            # An idempotent client replay must not recreate an already
+            # consumed outbox from today's policy or execution bindings.
+            return
+        payload = factory(operation)
+        payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        if len(payload_json.encode("utf-8")) > 4 * 1024 * 1024:
+            raise ConflictError("scientific admission outbox exceeds the durable bound")
+        await connection.execute(
+            """
+            INSERT INTO fs2_scientific_admission_outbox(operation_id,payload)
+            VALUES($1,$2::jsonb)
+            ON CONFLICT (operation_id) DO NOTHING
+            """,
+            operation.id,
+            payload_json,
+        )
+        stored = await connection.fetchval(
+            "SELECT payload FROM fs2_scientific_admission_outbox WHERE operation_id=$1 FOR SHARE",
+            operation.id,
+        )
+        if stored is None or _decode_configuration_json(stored, "scientific admission outbox") != payload:
+            raise ConflictError("scientific admission outbox already contains another frozen request")
+
+    async def get_scientific_admission(self, operation_id: UUID) -> PendingScientificAdmission | None:
+        async with self.pool.acquire() as connection:
+            record = await connection.fetchrow(
+                "SELECT operation_id,payload,created_at FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
+                operation_id,
+            )
+        if record is None:
+            return None
+        return PendingScientificAdmission(
+            operation_id=record["operation_id"],
+            payload=_decode_configuration_json(record["payload"], "scientific admission outbox"),
+            created_at=record["created_at"],
+        )
+
+    async def list_scientific_admissions(self, *, limit: int = 100) -> list[PendingScientificAdmission]:
+        if not 1 <= limit <= 1000:
+            raise ValueError("scientific admission page is outside the bound")
+        async with self.pool.acquire() as connection:
+            records = await connection.fetch(
+                """
+                SELECT operation_id,payload,created_at
+                FROM fs2_scientific_admission_outbox
+                ORDER BY created_at,operation_id
+                LIMIT $1
+                """,
+                limit,
+            )
+        return [
+            PendingScientificAdmission(
+                operation_id=record["operation_id"],
+                payload=_decode_configuration_json(record["payload"], "scientific admission outbox"),
+                created_at=record["created_at"],
+            )
+            for record in records
+        ]
+
+    async def complete_scientific_admission(self, operation_id: UUID) -> None:
+        async with self.pool.acquire() as connection:
+            await connection.execute(
+                "DELETE FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
+                operation_id,
+            )
 
     async def get_operation(self, operation_id: UUID, *, tenant_id: str | None = None) -> OperationView:
         async with self.pool.acquire() as connection:

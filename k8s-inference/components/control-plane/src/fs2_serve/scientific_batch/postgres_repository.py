@@ -18,6 +18,7 @@ from .models import (
     BatchClaim,
     BatchEvent,
     BatchEventDraft,
+    BatchEventKind,
     BatchStatus,
     RuntimeArtifactLocalization,
     SchedulingSnapshot,
@@ -27,7 +28,7 @@ from .models import (
 )
 from .protocols import BatchFenceLostError, BatchRepositoryConflictError
 
-SCIENTIFIC_BATCH_MIGRATION = "0017_scientific_batch_state_v8.sql"
+SCIENTIFIC_BATCH_MIGRATION = "0020_scientific_atomic_admission.sql"
 
 
 class ScientificBatchNotFoundError(RuntimeError):
@@ -520,11 +521,43 @@ class PostgresScientificBatchRepository:
             )
         return [_event_from_record(cast(Mapping[str, Any], record)) for record in records]
 
+    async def list_events_by_kind(
+        self,
+        operation_id: UUID,
+        *,
+        tenant_id: str,
+        kind: BatchEventKind,
+        limit: int = 2,
+    ) -> list[BatchEvent]:
+        if not 1 <= limit <= 1000:
+            raise ValueError("scientific-batch event-kind page is outside the bound")
+        async with self.pool.acquire() as connection:
+            exists = await connection.fetchval(
+                "SELECT true FROM fs2_scientific_batches WHERE operation_id=$1 AND tenant_id=$2",
+                operation_id,
+                tenant_id,
+            )
+            if not exists:
+                raise ScientificBatchNotFoundError("scientific batch does not exist")
+            records = await connection.fetch(
+                """
+                SELECT * FROM fs2_scientific_batch_events
+                WHERE operation_id=$1 AND kind=$2
+                ORDER BY sequence LIMIT $3
+                """,
+                operation_id,
+                kind.value,
+                limit,
+            )
+        return [_event_from_record(cast(Mapping[str, Any], record)) for record in records]
+
 
 # Owner-only disposal path for migration verification. Production migrations
 # remain forward-only; dropping this extension must precede any test-only
 # rollback of the artifact tables it references.
 SCIENTIFIC_BATCH_ROLLBACK_SQL = """
+DROP TABLE IF EXISTS fs2_scientific_admission_outbox;
+DROP INDEX IF EXISTS fs2_scientific_batch_events_kind_idx;
 DROP TRIGGER IF EXISTS fs2_scientific_batch_events_append_only_trigger ON fs2_scientific_batch_events;
 DROP TRIGGER IF EXISTS fs2_scientific_batch_state_immutable_trigger ON fs2_scientific_batches;
 DROP TABLE IF EXISTS fs2_scientific_batch_events;
@@ -533,6 +566,7 @@ DROP FUNCTION IF EXISTS fs2_scientific_batch_append_only();
 DROP FUNCTION IF EXISTS fs2_scientific_batch_state_immutable();
 DELETE FROM fs2_schema_migrations
 WHERE version IN (
+    '0020_scientific_atomic_admission.sql',
     '0017_scientific_batch_state_v8.sql',
     '0016_scientific_batch_state_v7.sql',
     '0015_scientific_batch_controller.sql'

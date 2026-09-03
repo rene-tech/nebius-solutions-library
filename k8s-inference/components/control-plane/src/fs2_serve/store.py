@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import datetime
 from typing import Protocol
@@ -48,6 +48,7 @@ from .models import (
     OperationResult,
     OperationStatus,
     OperationView,
+    PendingScientificAdmission,
     Principal,
     ReportedUsage,
     RuntimeIdentity,
@@ -290,7 +291,16 @@ class Store(Protocol):
         max_attempts: int,
         dispatch_snapshot: str | None = None,
         dynamic_fence: DynamicAdmissionFence | None = None,
+        scientific_admission_factory: Callable[[OperationView], dict[str, object]] | None = None,
     ) -> OperationView: ...
+
+    async def get_scientific_admission(
+        self, operation_id: UUID
+    ) -> PendingScientificAdmission | None: ...
+
+    async def list_scientific_admissions(self, *, limit: int = 100) -> list[PendingScientificAdmission]: ...
+
+    async def complete_scientific_admission(self, operation_id: UUID) -> None: ...
 
     async def complete_scientific_artifact_upload(
         self,

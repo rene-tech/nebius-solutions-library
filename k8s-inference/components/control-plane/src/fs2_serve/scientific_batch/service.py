@@ -11,11 +11,12 @@ from uuid import UUID
 from pydantic import Field
 
 from ..auth import require_operation_access
-from ..models import AdmissionRequest, OperationView, Principal, Scope, StrictModel
+from ..models import AdmissionRequest, OperationView, PendingScientificAdmission, Principal, Scope, StrictModel
 from ..scientific_run_result import ArtifactRef, ScientificRunResult
 from ..scientific_run_result import SchedulingAdmission as PublicSchedulingAdmission
 from ..store import ConflictError, Store
 from .catalog_adapter import CatalogProfileAdapterError, scientific_plan_from_catalog_profile
+from .codec import state_from_value, state_to_value
 from .controller import ScientificBatchController
 from .models import (
     AdapterExecutionPlan,
@@ -362,6 +363,56 @@ class ScientificBatchService:
         except SchedulingContractError as error:
             raise ScientificProfileError("Kueue scheduling contract cannot admit this profile") from error
         body = json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        def freeze_admission(operation: OperationView) -> dict[str, object]:
+            try:
+                snapshot = self.scheduling.freeze(
+                    service_class=validated["service_class"],
+                    model_id=model_id,
+                    tenant_id=principal.tenant_id,
+                    profile=profile.value,
+                    plan=plan,
+                    workload_namespace=workload_namespace,
+                    captured_at=operation.accepted_at,
+                )
+            except SchedulingContractError as error:  # defensive against mutable custom resolvers
+                raise ScientificProfileError("Kueue scheduling contract changed during admission") from error
+            try:
+                admitted_execution = self.plan_factory.plan(
+                    profile,
+                    validated,
+                    operation_id=operation.id,
+                    access_context=access_context,
+                    input_artifacts=input_admission.manifest.entries,
+                )
+            except CatalogProfileAdapterError as error:
+                raise ScientificProfileError("scientific workload profile cannot form an execution plan") from error
+            if isinstance(admitted_execution, AdapterExecutionPlan):
+                if admitted_execution.controller_plan != plan:
+                    raise ScientificProfileError("adapter changed stage topology after durable admission")
+                execution_plan = self.execution_binding.bind_runtime_artifacts(
+                    profile,
+                    admitted_execution,
+                    access_context,
+                    runtime_artifacts,
+                )
+            else:
+                execution_plan = None
+            return state_to_value(
+                ScientificBatchState.admit(
+                    operation_id=operation.id,
+                    tenant_id=principal.tenant_id,
+                    model_id=model_id,
+                    variant_id=variant_id,
+                    input_artifact_id=UUID(validated["input_manifest"]["artifact_id"]),
+                    plan=plan,
+                    scheduling=snapshot,
+                    execution_plan=execution_plan,
+                    access_context=access_context,
+                    input_manifest=input_admission.manifest,
+                    runtime_artifacts=runtime_artifacts,
+                )
+            )
+
         operation = await self.store.append_operation(
             principal=principal,
             admission=AdmissionRequest(
@@ -378,64 +429,65 @@ class ScientificBatchService:
             # ledger; no guessed reservation is charged to the generic worker.
             reserved_gpu_seconds=0,
             max_attempts=1,
+            scientific_admission_factory=freeze_admission,
         )
-        try:
-            snapshot = self.scheduling.freeze(
-                service_class=validated["service_class"],
-                model_id=model_id,
-                tenant_id=principal.tenant_id,
-                profile=profile.value,
-                plan=plan,
-                workload_namespace=workload_namespace,
-                captured_at=operation.accepted_at,
-            )
-        except SchedulingContractError as error:  # defensive against mutable custom resolvers
-            raise ScientificProfileError("Kueue scheduling contract changed during admission") from error
         state = None
         if operation.reused:
             try:
                 state = await self.repository.get(operation.id, tenant_id=principal.tenant_id)
             except ScientificBatchNotFoundError:
-                # Recovery from a crash between durable Operation admission
-                # and extension creation. The first successful create freezes
-                # the scheduling snapshot; later racers compare it exactly.
+                # The committed outbox is the recovery authority when an
+                # earlier process exited before materializing the extension.
                 pass
+            else:
+                await self.store.complete_scientific_admission(operation.id)
         if state is None:
             try:
-                admitted_execution = self.plan_factory.plan(
-                    profile,
-                    validated,
-                    operation_id=operation.id,
-                    access_context=access_context,
-                    input_artifacts=input_admission.manifest.entries,
-                )
-                if isinstance(admitted_execution, AdapterExecutionPlan):
-                    if admitted_execution.controller_plan != plan:
-                        raise ScientificProfileError("adapter changed stage topology after durable admission")
-                    execution_plan = self.execution_binding.bind_runtime_artifacts(
-                        profile,
-                        admitted_execution,
-                        access_context,
-                        runtime_artifacts,
-                    )
-                else:
-                    execution_plan = None
-                state = await self.controller.admit(
-                    operation_id=operation.id,
-                    tenant_id=principal.tenant_id,
-                    model_id=model_id,
-                    variant_id=variant_id,
-                    input_artifact_id=UUID(validated["input_manifest"]["artifact_id"]),
-                    plan=plan,
-                    scheduling=snapshot,
-                    execution_plan=execution_plan,
-                    access_context=access_context,
-                    input_manifest=input_admission.manifest,
-                    runtime_artifacts=runtime_artifacts,
-                )
+                state = await self._materialize_admission(operation.id)
             except BatchRepositoryConflictError as error:
                 raise ConflictError("scientific batch admission conflicts with its durable Operation") from error
         return self._state_view(operation, state)
+
+    async def _materialize_pending(self, pending: PendingScientificAdmission) -> ScientificBatchState:
+        state = state_from_value(pending.payload)
+        operation = await self.store.get_operation(state.operation_id, tenant_id=state.tenant_id)
+        if (
+            operation.id != pending.operation_id
+            or operation.protocol != "scientific-batch-v1"
+            or operation.model_id != state.model_id
+            or operation.accepted_at != state.scheduling.captured_at
+        ):
+            raise BatchRepositoryConflictError("scientific admission outbox differs from its durable Operation")
+        admitted = await self.controller.admit(
+            operation_id=state.operation_id,
+            tenant_id=state.tenant_id,
+            model_id=state.model_id,
+            variant_id=state.variant_id,
+            input_artifact_id=state.input_artifact_id,
+            plan=state.plan,
+            scheduling=state.scheduling,
+            execution_plan=state.execution_plan,
+            access_context=state.access_context,
+            input_manifest=state.input_manifest,
+            runtime_artifacts=state.runtime_artifacts,
+        )
+        await self.store.complete_scientific_admission(state.operation_id)
+        return admitted
+
+    async def _materialize_admission(self, operation_id: UUID) -> ScientificBatchState:
+        pending = await self.store.get_scientific_admission(operation_id)
+        if pending is None:
+            operation = await self.store.get_operation(operation_id)
+            return await self.repository.get(operation_id, tenant_id=operation.tenant_id)
+        return await self._materialize_pending(pending)
+
+    async def recover_pending_admissions(self, *, limit: int = 100) -> int:
+        """Materialize accepted batch requests left by a stopped API process."""
+
+        pending = await self.store.list_scientific_admissions(limit=limit)
+        for item in pending:
+            await self._materialize_pending(item)
+        return len(pending)
 
     async def status(self, operation_id: UUID, *, principal: Principal) -> dict[str, Any]:
         self._authorize(principal, Scope.OPERATIONS_READ)
