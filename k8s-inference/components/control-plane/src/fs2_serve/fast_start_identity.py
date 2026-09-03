@@ -202,20 +202,36 @@ class FastStartIdentityMismatch(KubernetesModel):
     observed_digest: str | None = Field(default=None, pattern=SHA256_DIGEST_PATTERN)
 
 
-def mechanism_config_digest(*, mechanism: str, storage_contract_digest: str) -> str:
+def mechanism_config_digest(
+    *,
+    mechanism: str,
+    storage_contract_digest: str,
+    declaration_digest: str | None = None,
+) -> str:
     """Canonical config identity for non-ModelExpress mechanisms.
 
     ModelExpress uses its separately reviewed ``configDigest`` because network
     transport and coordinator settings are material to restore performance.
+
+    The other accelerated mechanisms are reviewed the same way: when a model
+    declares a regional-cache, host-memory-residency or gpu-resident
+    configuration, that declaration's own digest is bound in here, because the
+    retained cache, the reserved host memory and the standby accelerator count
+    are all material to how fast the model starts.  Retuning a mechanism
+    therefore starts a new evidence cohort instead of inheriting the previous
+    cohort's percentile.  Omitting the declaration keeps the historical
+    storage-only identity byte for byte, so retained ``conventional`` receipts
+    stay compatible.
     """
 
-    return canonical_digest(
-        {
-            "schema": MECHANISM_CONTRACT_SCHEMA,
-            "mechanism": mechanism,
-            "storageContractDigest": storage_contract_digest,
-        }
-    )
+    payload = {
+        "schema": MECHANISM_CONTRACT_SCHEMA,
+        "mechanism": mechanism,
+        "storageContractDigest": storage_contract_digest,
+    }
+    if declaration_digest is not None:
+        payload["declarationDigest"] = declaration_digest
+    return canonical_digest(payload)
 
 
 def identity_mismatches(
