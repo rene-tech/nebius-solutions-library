@@ -280,7 +280,9 @@ def qualify_job(
     node_selector: dict[str, str],
     tolerations: list[dict[str, Any]],
     gpu_resource: str,
+    gpu_count: int,
     security_context: dict[str, Any],
+    resources: dict[str, Any],
     tree_prefix: str = "",
 ) -> dict[str, Any]:
     volumes, mounts = _verifier_volumes(config_map, claim, tree_prefix)
@@ -318,10 +320,14 @@ def qualify_job(
                 {"name": "PYTHONDONTWRITEBYTECODE", "value": "1"},
             ],
             "volumeMounts": runtime_mounts,
-            "resources": {"requests": {"cpu": "1", "memory": "4Gi"}, "limits": {"cpu": "4", "memory": "16Gi"}},
+            "resources": resources,
         }
         for artifact in artifacts
     ]
+    probe_resources = json.loads(json.dumps(resources))
+    if gpu_count:
+        probe_resources["requests"][gpu_resource] = str(gpu_count)
+        probe_resources["limits"][gpu_resource] = str(gpu_count)
     metadata_labels = labels(run_id, f"qualify-{model_id}")
     if queue:
         metadata_labels["kueue.x-k8s.io/queue-name"] = queue
@@ -347,18 +353,16 @@ def qualify_job(
                             "image": image,
                             "command": probe,
                             "env": [
-                                {"name": "PYTHONPATH", "value": PACKAGE_MOUNT},
                                 {"name": "PYTHONDONTWRITEBYTECODE", "value": "1"},
+                                {"name": "HOME", "value": "/scratch"},
+                                {"name": "TMPDIR", "value": "/scratch"},
                                 {"name": "FS2_TREE_RECEIPTS", "value": RECEIPT_DIR},
                                 *[
                                     {"name": "FS2_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName"}}}
                                 ],
                             ],
                             "volumeMounts": runtime_mounts,
-                            "resources": {
-                                "requests": {"cpu": "4", "memory": "24Gi", gpu_resource: "1"},
-                                "limits": {"cpu": "8", "memory": "48Gi", gpu_resource: "1"},
-                            },
+                            "resources": probe_resources,
                         }
                     ],
                     "volumes": volumes,
@@ -458,6 +462,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--queue", help="qualify only: Kueue LocalQueue name")
     parser.add_argument("--gpu-resource", default="nvidia.com/gpu")
+    parser.add_argument(
+        "--gpu-count",
+        type=int,
+        default=1,
+        help="qualify only; 0 verifies a mount without holding an accelerator",
+    )
     parser.add_argument("--run-as-user", type=int, default=DEFAULT_RUNTIME_UID)
     parser.add_argument("--run-as-group", type=int, default=DEFAULT_RUNTIME_UID)
     parser.add_argument("--supplemental-group", action="append", type=int, default=[])
@@ -562,7 +572,12 @@ def main(argv: list[str] | None = None) -> int:
                 node_selector=node_selector,
                 tolerations=tolerations,
                 gpu_resource=options.gpu_resource,
+                gpu_count=options.gpu_count,
                 security_context=security_context,
+                resources={
+                    "requests": {"cpu": options.cpu_request, "memory": options.memory_request},
+                    "limits": {"cpu": options.cpu_limit, "memory": options.memory_limit},
+                },
                 tree_prefix=options.tree_prefix,
             )
         )
