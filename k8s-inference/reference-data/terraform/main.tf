@@ -536,6 +536,10 @@ resource "kubernetes_manifest" "pipeline" {
   computed_fields = [
     "metadata.annotations",
     "metadata.labels",
+    # The Job controller injects its ownership labels into the pod template
+    # immediately after creation. Treat only that map as computed so the
+    # kubernetes_manifest provider does not reject the valid API response.
+    "spec.template.metadata.labels",
     "spec.suspend",
   ]
 

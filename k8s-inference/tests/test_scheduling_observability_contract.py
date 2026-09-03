@@ -80,7 +80,9 @@ class SchedulingObservabilityContractTests(unittest.TestCase):
         self.assertNotIn("uuid", regex)
         self.assertNotIn("pod_uid", regex)
         self.assertEqual(standard["attributionMetricCollectionInterval"], "5s")
-        self.assertEqual(standard["helmValues"]["arguments"], ["--collect-interval", "5000"])
+        self.assertEqual(
+            standard["helmValues"]["arguments"], ["--collect-interval=5000"]
+        )
         self.assertEqual(standard["helmValues"]["serviceMonitor"]["interval"], "5s")
         self.assertEqual(standard["minimumNominalWindowSeconds"], 10)
         self.assertEqual(cold["helmValues"]["serviceMonitor"]["interval"], "1s")

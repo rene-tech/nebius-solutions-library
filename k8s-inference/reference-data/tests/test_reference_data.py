@@ -551,6 +551,7 @@ class ReferenceDataContractTests(unittest.TestCase):
         self.assertIn("template                = local.pipeline_pod_template", job_contract)
         self.assertRegex(module, r"job\s*= local\.pipeline_job_contract")
         self.assertIn("spec = local.pipeline_job_contract.spec", module)
+        self.assertIn('"spec.template.metadata.labels",', module)
 
     def test_dedicated_worker_capacity_is_checked_before_workloads_exist(self) -> None:
         module = (REFERENCE_DATA / "terraform" / "main.tf").read_text(encoding="utf-8")

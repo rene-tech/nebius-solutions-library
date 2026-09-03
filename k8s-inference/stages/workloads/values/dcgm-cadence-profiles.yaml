@@ -8,8 +8,10 @@ profiles:
     minimumNominalWindowSeconds: 10
     helmValues:
       arguments:
-        - --collect-interval
-        - "5000"
+        # The upstream chart emits arguments without YAML quoting. Keep the
+        # numeric value attached to its flag so Kubernetes always receives a
+        # string and Helm upgrades remain type-correct.
+        - --collect-interval=5000
       config:
         enabled: false
       serviceMonitor:
