@@ -180,9 +180,10 @@ def write_confidence_envelope(
                 "metrics": dict(sorted(metrics.items())),
             }
         )
+    seed_order = {seed: index for index, seed in enumerate(seeds)}
     normalized.sort(
         key=lambda item: (
-            int(item["seed"]),
+            seed_order[int(item["seed"])],
             int(item["sample_index"]),
             str(item["structure"]["filename"]),  # type: ignore[index]
         )

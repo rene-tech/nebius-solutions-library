@@ -4,17 +4,24 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
 import sys
 
 from result_contract import finite_metric, write_confidence_envelope
+from runtime_localization import (
+    RuntimeArtifactExpectation,
+    validate_runtime_localization,
+)
 
 
 CCD_BYTES = 417_306_584
-CCD_SHA256 = "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5"
+ESMFOLD2_CONTENT_SHA256 = "136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c"
+ESMFOLD2_FAST_CONTENT_SHA256 = "19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63"
+ESMC_CONTENT_SHA256 = "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758"
+CCD_CONTENT_SHA256 = "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e"
+VARIANT_ID = "biohub-v3-4-0"
 
 
 def _absolute_file(path: str, label: str) -> Path:
@@ -31,14 +38,6 @@ def _absolute_dir(path: str, label: str) -> Path:
     return candidate
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def _load_request(path: Path):
     from esm.utils.structure.input_builder import deserialize_structure_prediction_input
 
@@ -46,6 +45,38 @@ def _load_request(path: Path):
     if not isinstance(document, dict) or not document.get("sequences"):
         raise SystemExit("ESMFold2 request must contain a non-empty sequences array")
     return deserialize_structure_prediction_input(document)
+
+
+def _validate_runtime_localization_args(
+    command: str, args: argparse.Namespace
+) -> dict[str, object]:
+    if command != "fold":
+        raise SystemExit(f"{command} does not consume runtime artifacts")
+    if args.variant == "esmfold2":
+        model_artifact = RuntimeArtifactExpectation(
+            "esmfold2-trunk", "/models/esmfold2", ESMFOLD2_CONTENT_SHA256
+        )
+    elif args.variant == "esmfold2-fast":
+        model_artifact = RuntimeArtifactExpectation(
+            "esmfold2-fast-trunk",
+            "/models/esmfold2-fast",
+            ESMFOLD2_FAST_CONTENT_SHA256,
+        )
+    else:
+        raise SystemExit("variant must identify the exact ESMFold2 runtime")
+    return validate_runtime_localization(
+        args.runtime_localization_marker,
+        model_id=args.variant,
+        variant_id=VARIANT_ID,
+        stage_id="fold",
+        artifacts=(
+            model_artifact,
+            RuntimeArtifactExpectation("esmc-6b", "/models/esmc-6b", ESMC_CONTENT_SHA256),
+            RuntimeArtifactExpectation(
+                "esmfold2-ccd", "/databases/esmfold2", CCD_CONTENT_SHA256
+            ),
+        ),
+    )
 
 
 def _prepare(args: argparse.Namespace) -> None:
@@ -85,6 +116,7 @@ def _prepare(args: argparse.Namespace) -> None:
 def _fold(args: argparse.Namespace) -> None:
     import torch
 
+    _validate_runtime_localization_args("fold", args)
     if not torch.cuda.is_available():
         raise SystemExit("fold requires a CUDA GPU")
     capability = tuple(torch.cuda.get_device_capability(0))
@@ -99,8 +131,8 @@ def _fold(args: argparse.Namespace) -> None:
     model_dir = _absolute_dir(args.model_dir, "model-dir")
     esmc_dir = _absolute_dir(args.esmc_dir, "esmc-dir")
     ccd_path = _absolute_file(args.ccd_path, "ccd-path")
-    if ccd_path.stat().st_size != CCD_BYTES or _sha256(ccd_path) != CCD_SHA256:
-        raise SystemExit("ESMFold2 CCD does not match the exact locked object")
+    if ccd_path.stat().st_size != CCD_BYTES:
+        raise SystemExit("ESMFold2 CCD does not match the exact locked byte size")
     os.environ.update(
         {
             "ESMCFOLD_CCD_PATH": str(ccd_path),
@@ -226,7 +258,8 @@ def main() -> None:
     fold.add_argument("--smoke", action="store_true", help="use the explicit 1-loop/2-step smoke profile")
     fold.add_argument("--seed", type=int, default=0)
     fold.add_argument("--complex-id", default="fs2-smoke")
-    fold.add_argument("--variant", choices=("esmfold2", "esmfold2-fast"))
+    fold.add_argument("--variant", choices=("esmfold2", "esmfold2-fast"), required=True)
+    fold.add_argument("--runtime-localization-marker", required=True)
     fold.set_defaults(handler=_fold)
 
     args = parser.parse_args()

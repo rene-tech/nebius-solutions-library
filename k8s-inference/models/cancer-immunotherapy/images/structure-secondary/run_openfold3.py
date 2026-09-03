@@ -15,27 +15,40 @@ import yaml
 
 from handoff_contract import write_archive
 from result_contract import load_bounded_metrics, write_confidence_envelope
+from runtime_localization import (
+    RuntimeArtifactExpectation,
+    validate_runtime_localization,
+)
 
 
 CCD_BYTES = 63_393_643
 CCD_SHA256 = "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c"
 CHECKPOINT_BYTES = 2_287_872_989
+CHECKPOINT_CONTENT_SHA256 = "f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5"
+CCD_CONTENT_SHA256 = "ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b"
 CANONICAL_CHECKPOINT = Path("/models/openfold3/of3-ob-2025-06-30-174k.pt")
 CANONICAL_CCD = Path("/databases/openfold3/components.bcif")
+CANONICAL_BASE_RUNNER = Path("/opt/fs2/runtime/openfold3/runner-base.yaml")
+BASE_RUNNER_SHA256 = "c42271cdfc4c9dd01ceca7a9e0c2d0a207c2d8106a2bb03146d491d54b601469"
 OPENFOLD_HANDOFF_SCHEMA = "fs2.nebius.ai/openfold3-query-handoff/v1"
+SOURCE_REVISION = "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86"
+LANE_ID = "openfold3-openbind-0-none"
+VARIANT_ID = "upstream-openbind-v0-5-0"
+EXTERNAL_CHAIN_FIELDS = (
+    "paired_msa_file_paths",
+    "main_msa_file_paths",
+    "template_alignment_file_path",
+    "template_entry_chain_ids",
+    "template_cif_paths",
+    "template_cif_chain_ids",
+    "sdf_file_path",
+)
 
 
 def _file(path: str | Path, label: str) -> Path:
     candidate = Path(path)
     if not candidate.is_absolute() or not candidate.is_file():
         raise SystemExit(f"{label} must be an existing absolute file: {candidate}")
-    return candidate
-
-
-def _directory(path: str | Path, label: str) -> Path:
-    candidate = Path(path)
-    if not candidate.is_absolute() or not candidate.is_dir():
-        raise SystemExit(f"{label} must be an existing absolute directory: {candidate}")
     return candidate
 
 
@@ -54,6 +67,31 @@ def _logical_id(value: str) -> str:
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}", value) is None:
         raise SystemExit("stage artifact ID must be a valid bounded logical ID")
     return value
+
+
+def _validate_runtime_localization_args(
+    command: str, args: argparse.Namespace
+) -> dict[str, object]:
+    if command != "predict":
+        raise SystemExit(f"{command} does not consume OpenFold3 runtime artifacts")
+    return validate_runtime_localization(
+        args.runtime_localization_marker,
+        model_id="openfold3",
+        variant_id=VARIANT_ID,
+        stage_id="inference",
+        artifacts=(
+            RuntimeArtifactExpectation(
+                "openfold3-openbind-0",
+                "/models/openfold3",
+                CHECKPOINT_CONTENT_SHA256,
+            ),
+            RuntimeArtifactExpectation(
+                "openfold3-components-bcif",
+                "/databases/openfold3",
+                CCD_CONTENT_SHA256,
+            ),
+        ),
+    )
 
 
 def _parse_seeds(value: str) -> list[int]:
@@ -114,26 +152,25 @@ def _bind_msa_mode(document: dict[str, object], mode: str) -> None:
     for query_name, query in queries.items():
         if not isinstance(query, dict) or not isinstance(query.get("chains"), list):
             raise SystemExit(f"OpenFold3 query {query_name!r} must contain a chains array")
+        if mode != "none":
+            raise SystemExit("only the fail-closed OpenFold3 msa_mode=none lane is supported")
         for chain in query["chains"]:
             if not isinstance(chain, dict):
                 raise SystemExit(f"OpenFold3 query {query_name!r} contains an invalid chain")
-            if chain.get("molecule_type") not in {"protein", "rna"}:
-                continue
-            if mode == "none":
-                chain["use_msas"] = False
-                chain["use_main_msas"] = False
-                chain["use_paired_msas"] = False
-                continue
-            paths = chain.get("main_msa_file_paths")
-            values = [paths] if isinstance(paths, str) else paths
-            if not isinstance(values, list) or not values:
+            populated = [
+                field
+                for field in EXTERNAL_CHAIN_FIELDS
+                if field in chain and chain[field] not in (None, "", [], {})
+            ]
+            if populated:
                 raise SystemExit(
-                    f"precomputed mode requires main_msa_file_paths for {query_name!r}"
+                    "OpenFold3 msa_mode=none rejects external Chain fields: "
+                    + ", ".join(populated)
                 )
-            for value in values:
-                if not isinstance(value, str):
-                    raise SystemExit("precomputed MSA paths must be strings")
-                _file(value, "precomputed MSA")
+        # These are Query controls in OpenFold3 v0.5.0, not Chain controls.
+        query["use_msas"] = False
+        query["use_main_msas"] = False
+        query["use_paired_msas"] = False
 
 
 def build_command(
@@ -170,19 +207,15 @@ def _prepare(args: argparse.Namespace) -> None:
     raw_sha256 = _sha256(input_manifest)
     if raw_sha256 != args.raw_input_sha256:
         raise SystemExit("raw-input-sha256 does not bind input-manifest")
-    if args.database_dir is not None:
-        database_dir = _directory(args.database_dir, "database-dir")
-        ccd = _file(database_dir / "components.bcif", "OpenFold3 CCD")
-        if ccd.stat().st_size != CCD_BYTES or _sha256(ccd) != CCD_SHA256:
-            raise SystemExit("OpenFold3 components.bcif does not match the pinned object")
     try:
         document = json.loads(input_manifest.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise SystemExit(f"input-manifest is invalid JSON: {exc}") from exc
     if not isinstance(document, dict):
         raise SystemExit("input-manifest must be a JSON object")
-    _bind_msa_mode(document, args.msa_mode)
     seeds = _parse_seeds(args.model_seeds)
+    _bind_msa_mode(document, args.msa_mode)
+    document["seeds"] = seeds
     query_json = _output(args.query_json, "query-json")
     query_json.parent.mkdir(parents=True, exist_ok=True)
     query_json.write_text(
@@ -190,6 +223,10 @@ def _prepare(args: argparse.Namespace) -> None:
         encoding="utf-8",
     )
     base_runner = _file(args.base_runner_yaml, "base-runner-yaml")
+    if Path(args.base_runner_yaml) != CANONICAL_BASE_RUNNER:
+        raise SystemExit("base-runner-yaml must be the image-baked canonical runner")
+    if _sha256(base_runner) != BASE_RUNNER_SHA256:
+        raise SystemExit("image-baked OpenFold3 runner identity changed")
     runner_yaml = _output(args.runner_yaml, "runner-yaml")
     _write_seeded_runner(base_runner, runner_yaml, seeds)
     provenance_marker = _output(args.provenance_marker, "provenance-marker")
@@ -203,6 +240,8 @@ def _prepare(args: argparse.Namespace) -> None:
         "model_seeds": seeds,
         "msa_mode": args.msa_mode,
         "runner_base_sha256": _sha256(base_runner),
+        "lane_id": LANE_ID,
+        "source_revision": SOURCE_REVISION,
     }
     provenance_marker.write_text(
         json.dumps(marker, sort_keys=True, separators=(",", ":")) + "\n",
@@ -295,6 +334,7 @@ def _write_confidence(
 
 
 def _predict(args: argparse.Namespace) -> None:
+    _validate_runtime_localization_args("predict", args)
     _logical_id(args.input_artifact_id)
     if re.fullmatch(r"[0-9a-f]{64}", args.expected_raw_input_sha256) is None:
         raise SystemExit("expected-raw-input-sha256 must be a lowercase SHA-256")
@@ -307,6 +347,10 @@ def _predict(args: argparse.Namespace) -> None:
     checkpoint = _file(args.checkpoint, "checkpoint")
     ccd_path = _file(args.ccd_path, "ccd-path")
     base_runner = _file(args.base_runner_yaml, "base-runner-yaml")
+    if Path(args.base_runner_yaml) != CANONICAL_BASE_RUNNER:
+        raise SystemExit("base-runner-yaml must be the image-baked canonical runner")
+    if _sha256(base_runner) != BASE_RUNNER_SHA256:
+        raise SystemExit("image-baked OpenFold3 runner identity changed")
     runner_yaml = _output(args.runner_yaml, "runner-yaml")
     output = _output(args.output_dir, "output-dir")
     output.mkdir(parents=True, exist_ok=True)
@@ -332,6 +376,8 @@ def _predict(args: argparse.Namespace) -> None:
         "model_seeds": seeds,
         "msa_mode": args.msa_mode,
         "runner_base_sha256": _sha256(base_runner),
+        "lane_id": LANE_ID,
+        "source_revision": SOURCE_REVISION,
     }
     if marker != expected_marker:
         raise SystemExit("provenance-marker does not bind the relocated OpenFold3 query")
@@ -340,6 +386,8 @@ def _predict(args: argparse.Namespace) -> None:
     if not isinstance(canonical_document, dict):
         raise SystemExit("query-json must contain an object")
     _bind_msa_mode(canonical_document, args.msa_mode)
+    if canonical_document.get("seeds") != seeds:
+        raise SystemExit("query-json does not bind the exact ordered model seeds")
     if canonical_document != prepared_document:
         raise SystemExit("query-json is not in the canonical offline MSA mode")
     _write_seeded_runner(base_runner, runner_yaml, seeds)
@@ -383,7 +431,6 @@ def main(argv: list[str] | None = None) -> None:
     prepare.add_argument("--output-artifact-id", required=True)
     prepare.add_argument("--raw-input-sha256", required=True)
     prepare.add_argument("--msa-mode", choices=("none",), required=True)
-    prepare.add_argument("--database-dir")
     prepare.add_argument("--model-seeds", required=True)
     prepare.add_argument("--offline", action="store_true", required=True)
     prepare.set_defaults(handler=_prepare)
@@ -403,6 +450,7 @@ def main(argv: list[str] | None = None) -> None:
     predict.add_argument("--model-seeds", required=True)
     predict.add_argument("--msa-mode", choices=("none",), required=True)
     predict.add_argument("--use-templates", choices=("false",), required=True)
+    predict.add_argument("--runtime-localization-marker", required=True)
     predict.add_argument("--print-command", action="store_true")
     predict.set_defaults(handler=_predict)
 

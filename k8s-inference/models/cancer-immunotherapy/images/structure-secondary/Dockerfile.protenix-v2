@@ -24,6 +24,7 @@ RUN apt-get update \
 WORKDIR /opt/protenix-build
 COPY protenix-torch-ext-compile.py /tmp/protenix-torch-ext-compile.py
 COPY patch_protenix_source.py /tmp/patch_protenix_source.py
+COPY verify_protenix_offline_prep.py /tmp/verify_protenix_offline_prep.py
 COPY protenix-constraints.txt /tmp/protenix-constraints.txt
 RUN python -m venv --system-site-packages /opt/protenix-venv \
     && git init . \
@@ -43,6 +44,8 @@ RUN python -m venv --system-site-packages /opt/protenix-venv \
       --constraint /tmp/protenix-constraints.txt \
       --requirement requirements.txt \
     && /opt/protenix-venv/bin/python -m pip install --no-cache-dir --no-deps . \
+    && /opt/protenix-venv/bin/python -c 'import importlib.metadata; assert importlib.metadata.version("protenix") == "2.0.0"' \
+    && env -C / /opt/protenix-venv/bin/python /tmp/verify_protenix_offline_prep.py \
     && env -C / TORCH_CUDA_ARCH_LIST="${H100_CUDA_ARCH_LIST}" /opt/protenix-venv/bin/python -c 'from protenix.model.protenix import Protenix; assert Protenix' \
     && package_root="$(env -C / /opt/protenix-venv/bin/python -c 'import pathlib, protenix; print(pathlib.Path(protenix.__file__).parent)')" \
     && test -f "${package_root}/model/layer_norm/fast_layer_norm_cuda_v2.so" \
@@ -57,6 +60,7 @@ RUN python -m venv --system-site-packages /opt/protenix-venv \
       "${package_root}/model/layer_norm/"*.o \
       /root/.cache/pip /opt/protenix-build /opt/cutlass \
       /tmp/protenix-torch-ext-compile.py /tmp/patch_protenix_source.py \
+      /tmp/verify_protenix_offline_prep.py \
     && chmod -R a-w /opt/protenix-venv
 
 FROM ${BASE_IMAGE}
@@ -70,24 +74,28 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# The runtime stage intentionally has no nvcc/compiler. HMMER, Kalign and the
-# PostgreSQL client support only the explicit external preprocessing contract.
+# The runtime stage intentionally has no nvcc or task-owned extension sources.
+# Triton's Python launcher compilation still requires a small system C compiler;
+# gcc is retained solely for that acknowledged cuequivariance runtime path.
 # hadolint ignore=DL3008
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates postgresql-client hmmer kalign zstd \
+    && apt-get install --yes --no-install-recommends ca-certificates gcc postgresql-client hmmer kalign zstd \
     && rm -rf /var/lib/apt/lists/* \
     && ! command -v nvcc \
+    && command -v gcc \
     && groupadd --gid 10001 fs2 \
     && useradd --uid 10001 --gid 10001 --create-home --home-dir /tmp/fs2-home fs2 \
-    && mkdir -p /opt/fs2/runtime /models/protenix-v2/checkpoint /models/protenix-v2/common /outputs /tmp/fs2-cache /cache/protenix/triton /cache/protenix/cueq-triton \
+    && mkdir -p /opt/fs2/runtime /models/protenix-v2/checkpoint /models/protenix-v2/common /outputs /cache/protenix/triton /cache/protenix/cueq-triton /cache/protenix/torch-extensions /cache/protenix/xdg \
     && printf '%s\n' "${SOURCE_REVISION}" > /opt/fs2/source-revision \
-    && chown -R 10001:10001 /models /outputs /cache/protenix /tmp/fs2-home /tmp/fs2-cache \
+    && chown -R 10001:10001 /models /outputs /cache/protenix /tmp/fs2-home \
     && chmod 0555 /opt/fs2/runtime
 COPY --from=builder /opt/protenix-venv /opt/protenix-venv
 COPY --chmod=0555 entrypoint.sh /usr/local/bin/fs2-entrypoint
 COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
 COPY --chmod=0555 run_protenix.py /usr/local/bin/fs2-run-protenix
 COPY --chmod=0555 run_protenix.py /opt/fs2/run_protenix.py
+COPY --chmod=0444 runtime_localization.py /usr/local/bin/runtime_localization.py
+COPY --chmod=0444 runtime_localization.py /opt/fs2/runtime_localization.py
 COPY --chmod=0444 handoff_contract.py /usr/local/bin/handoff_contract.py
 COPY --chmod=0444 handoff_contract.py /opt/fs2/handoff_contract.py
 COPY --chmod=0444 result_contract.py /usr/local/bin/result_contract.py
@@ -102,8 +110,9 @@ ENV FS2_RUNTIME_ID=protenix-v2 \
     PROTENIX_ROOT_DIR=/models/protenix-v2 \
     TRITON_CACHE_DIR=/cache/protenix/triton \
     CUEQ_TRITON_CACHE_DIR=/cache/protenix/cueq-triton \
+    TORCH_EXTENSIONS_DIR=/cache/protenix/torch-extensions \
     HOME=/tmp/fs2-home \
-    XDG_CACHE_HOME=/tmp/fs2-cache \
+    XDG_CACHE_HOME=/cache/protenix/xdg \
     SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 
 LABEL org.opencontainers.image.source="https://github.com/bytedance/Protenix" \

@@ -25,20 +25,13 @@
       "digest": "sha256:ad2a55f1740f49296ec730e9ff4f1d06ad391a87354f03b2921f960fe0f6d240",
       "deployable": false,
       "reason": "source checkout shadows the installed wheel and permits runtime JIT; CPU teardown also exited 139"
-    },
-    {
-      "id": "alphafold3",
-      "target": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3:85c4d20505fd5cef05eac22b534d4e793971ae69",
-      "digest": "sha256:bead2e68627c1aa7d5fa80243b1164a18160f48cf3a1867090d72ff2b9270e37",
-      "deployable": false,
-      "reason": "package metadata reports a development version rather than exact v3.0.4 and the image duplicates its environment layer"
     }
   ],
   "images": [
     {
       "id": "esmfold2",
       "dockerfile": "Dockerfile.esmfold2",
-      "repository": "esmfold2",
+      "repository": "cancer-immunotherapy/esmfold2",
       "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r3",
       "source": {
         "repository": "https://github.com/Biohub/esm.git",
@@ -75,8 +68,10 @@
         {
           "id": "esmfold2-ccd",
           "state": "available-external",
-          "mount": "/databases/esmfold2/ccd.pkl",
+          "mount": "/databases/esmfold2",
+          "runtime_path": "/databases/esmfold2/ccd.pkl",
           "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
+          "content_digest": "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
           "sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5",
           "bytes": 417306584,
           "baked_into_image": false
@@ -86,11 +81,23 @@
         "entrypoint": "/usr/local/bin/fs2-run-esmfold2",
         "subcommands": ["prepare-input", "fold"],
         "network_policy": "offline-local-artifacts-only",
-        "required_mounts": ["/models/esmfold2", "/models/esmc-6b", "/databases/esmfold2/ccd.pkl"],
+        "required_mounts": ["/models/esmfold2", "/models/esmc-6b", "/databases/esmfold2"],
         "commands": [
           "/usr/local/bin/fs2-run-esmfold2 prepare-input --input-manifest <raw.json> --output <request.json> [--sequence <AA>] --mode <single-sequence|precomputed-msa> --seed <int>",
-          "/usr/local/bin/fs2-run-esmfold2 fold --input <request.json> --output-dir <dir> --variant esmfold2 --seed <int> [--smoke]"
+          "/usr/local/bin/fs2-run-esmfold2 fold --input <request.json> --output-dir <dir> --variant esmfold2 --seed <int> --runtime-localization-marker <runtime-localization.json> [--smoke]"
         ]
+      },
+      "fast_start": {
+        "maximum_candidate_level": "L1",
+        "qualified_level": null,
+        "qualification_state": "pending-regional-image-cache-evidence",
+        "level_states": {
+          "L1": "candidate-pending-regional-image-cache-evidence",
+          "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
+          "L3": "unavailable-no-local-disk-cached-snapshot",
+          "L4": "unavailable-no-system-ram-retained-model"
+        },
+        "compiler_cache_optimization": "none-proven-l1-image-plus-external-artifacts"
       },
       "accelerator_support": {
         "h100": {"compute_capability": "9.0", "status": "pending-exact-artifact-semantic-test"},
@@ -102,7 +109,7 @@
     {
       "id": "esmfold2-fast",
       "dockerfile": "Dockerfile.esmfold2",
-      "repository": "esmfold2-fast",
+      "repository": "cancer-immunotherapy/esmfold2-fast",
       "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r3",
       "source": {
         "repository": "https://github.com/Biohub/esm.git",
@@ -139,8 +146,10 @@
         {
           "id": "esmfold2-ccd",
           "state": "available-external",
-          "mount": "/databases/esmfold2/ccd.pkl",
+          "mount": "/databases/esmfold2",
+          "runtime_path": "/databases/esmfold2/ccd.pkl",
           "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
+          "content_digest": "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
           "sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5",
           "bytes": 417306584,
           "baked_into_image": false
@@ -150,11 +159,23 @@
         "entrypoint": "/usr/local/bin/fs2-run-esmfold2",
         "subcommands": ["prepare-input", "fold"],
         "network_policy": "offline-local-artifacts-only",
-        "required_mounts": ["/models/esmfold2-fast", "/models/esmc-6b", "/databases/esmfold2/ccd.pkl"],
+        "required_mounts": ["/models/esmfold2-fast", "/models/esmc-6b", "/databases/esmfold2"],
         "commands": [
           "/usr/local/bin/fs2-run-esmfold2 prepare-input --input-manifest <raw.json> --output <request.json> [--sequence <AA>] --mode <single-sequence|precomputed-msa> --seed <int>",
-          "/usr/local/bin/fs2-run-esmfold2 fold --input <request.json> --output-dir <dir> --variant esmfold2-fast --seed <int> [--smoke]"
+          "/usr/local/bin/fs2-run-esmfold2 fold --input <request.json> --output-dir <dir> --variant esmfold2-fast --seed <int> --runtime-localization-marker <runtime-localization.json> [--smoke]"
         ]
+      },
+      "fast_start": {
+        "maximum_candidate_level": "L1",
+        "qualified_level": null,
+        "qualification_state": "pending-regional-image-cache-evidence",
+        "level_states": {
+          "L1": "candidate-pending-regional-image-cache-evidence",
+          "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
+          "L3": "unavailable-no-local-disk-cached-snapshot",
+          "L4": "unavailable-no-system-ram-retained-model"
+        },
+        "compiler_cache_optimization": "none-proven-l1-image-plus-external-artifacts"
       },
       "accelerator_support": {
         "h100": {"compute_capability": "9.0", "status": "pending-exact-artifact-semantic-test"},
@@ -166,7 +187,7 @@
     {
       "id": "protenix-v2",
       "dockerfile": "Dockerfile.protenix-v2",
-      "repository": "protenix-v2",
+      "repository": "cancer-immunotherapy/protenix-v2",
       "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r3",
       "source": {
         "repository": "https://github.com/bytedance/Protenix.git",
@@ -185,6 +206,8 @@
           "state": "third-party-mirror-verified-not-publisher-byte-compared",
           "mount": "/models/protenix-v2",
           "revision": "code-2475421477ab414b571149ad4a875c390ff8a35d_checkpoint-653edab28103133512575365130916e3fd23ecc3_common-2026-01-29",
+          "localized_content_digest_sha256": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+          "localization_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
           "manifest": "/models/protenix-v2/manifest.json",
           "ready_marker": "/models/protenix-v2/.fs2-manifest-sha256",
           "checkpoint": {
@@ -220,11 +243,29 @@
         "network_policy": "offline-single-composite-artifact-cpu-prep-gpu-pred",
         "required_mounts": ["/models/protenix-v2"],
         "writable_cache_mounts": ["/cache/protenix"],
-        "runtime_compilation": "prebuilt-fast-layernorm; cuequivariance-ops-torch-0.8.0-triton-jit-with-persistable-cache",
+        "runtime_compilation": "prebuilt-fast-layernorm-no-nvcc; cuequivariance-ops-torch-0.8.0-triton-jit-with-system-gcc-launcher-and-persistable-cache",
+        "cache_environment": {
+          "TRITON_CACHE_DIR": "/cache/protenix/triton",
+          "CUEQ_TRITON_CACHE_DIR": "/cache/protenix/cueq-triton",
+          "TORCH_EXTENSIONS_DIR": "/cache/protenix/torch-extensions",
+          "XDG_CACHE_HOME": "/cache/protenix/xdg"
+        },
         "commands": [
-          "/usr/local/bin/fs2-run-protenix prep --input <raw.json> --output-dir <dir> --processed-json <processed.json> --provenance-marker <provenance.json> --handoff-tar <handoff.tar.zst> --output-artifact-id <id> --msa-mode none --reference-root /models/protenix-v2 --reference-manifest /models/protenix-v2/manifest.json",
-          "/usr/local/bin/fs2-run-protenix pred --input <input/processed.json> --input-marker <input/provenance.json> --input-artifact-id <id> --output-dir <dir> --checkpoint /models/protenix-v2/checkpoint/protenix-v2.pt --common-dir /models/protenix-v2/common --msa-mode none --seed <int> --sample-count <1..16> --disable-templates --disable-rna-msa"
+          "/usr/local/bin/fs2-run-protenix prep --input <raw.json> --output-dir <dir> --processed-json <processed.json> --provenance-marker <provenance.json> --handoff-tar <handoff.tar.zst> --output-artifact-id <id> --msa-mode none --reference-root /models/protenix-v2 --reference-manifest /models/protenix-v2/manifest.json --runtime-localization-marker <runtime-localization.json>",
+          "/usr/local/bin/fs2-run-protenix pred --input <input/processed.json> --input-marker <input/provenance.json> --input-artifact-id <id> --output-dir <dir> --checkpoint /models/protenix-v2/checkpoint/protenix-v2.pt --common-dir /models/protenix-v2/common --msa-mode none --seeds <1..16-unique-csv> --sample-count <1..16> --disable-templates --disable-rna-msa --runtime-localization-marker <runtime-localization.json>"
         ]
+      },
+      "fast_start": {
+        "maximum_candidate_level": "L1",
+        "qualified_level": null,
+        "qualification_state": "pending-regional-image-cache-evidence",
+        "level_states": {
+          "L1": "candidate-pending-regional-image-cache-evidence",
+          "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
+          "L3": "unavailable-no-local-disk-cached-snapshot",
+          "L4": "unavailable-no-system-ram-retained-model"
+        },
+        "compiler_cache_optimization": "auxiliary-l1-plus-persistent-cache-pending-first-vs-warm-h100-timing"
       },
       "accelerator_support": {
         "h100": {"compute_capability": "9.0", "status": "pending-exact-checkpoint-semantic-test", "extension": "sm90-cubin-plus-compute90-ptx"},
@@ -234,60 +275,9 @@
       "published_digest": null
     },
     {
-      "id": "alphafold3",
-      "dockerfile": "Dockerfile.alphafold3",
-      "repository": "alphafold3",
-      "tag": "85c4d20505fd5cef05eac22b534d4e793971ae69-h100-r3",
-      "source": {
-        "repository": "https://github.com/google-deepmind/alphafold3.git",
-        "revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
-        "tag": "v3.0.4",
-        "source_date_epoch": 1785243463
-      },
-      "base_images": [
-        "nvidia/cuda:12.6.3-base-ubuntu24.04@sha256:6b3201183858bad08441837f5a5efc2c75290135cc25fcc87d9ff763190cfd09",
-        "ghcr.io/astral-sh/uv:0.9.24@sha256:e4bc0bb4310505e7104f06430c0a2271a58f60a756a3b2c287bb409890081b2a"
-      ],
-      "build_args": {},
-      "external_artifacts": [
-        {
-          "id": "alphafold3-parameters",
-          "state": "operator-staged-private",
-          "mount": "/models/af3.bin.zst",
-          "revision": "gs://alphafold3/af3.bin.zst#1780568696389861",
-          "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
-          "bytes": 1020545840,
-          "baked_into_image": false
-        },
-        {
-          "id": "alphafold3-public-databases-v3.0",
-          "state": "available-external",
-          "mount": "/databases",
-          "revision": "fetch_databases.sh@231efc9bb9c13b45cc59e43f7107869084ee9624",
-          "baked_into_image": false
-        }
-      ],
-      "runtime_contract": {
-        "entrypoint": "/usr/local/bin/fs2-run-alphafold3",
-        "subcommands": ["data", "inference"],
-        "network_policy": "official-parameters-and-databases-explicit",
-        "required_mounts": ["/models/af3.bin.zst", "/databases"],
-        "commands": [
-          "/usr/local/bin/fs2-run-alphafold3 data --input-json <raw.json> --output-dir <dir> --processed-json <processed.json> --provenance-marker <provenance.json> --handoff-tar <handoff.tar.zst> --output-artifact-id <id> --db-dir /databases --db-manifest /databases/manifest.json --db-ready-marker /databases/.fs2-manifest-sha256 --reference-artifact-id alphafold3-public-databases-v3.0 --raw-input-sha256 <sha256> --model-seeds <csv>",
-          "/usr/local/bin/fs2-run-alphafold3 inference --processed-json <input/processed.json> --provenance-marker <input/provenance.json> --input-artifact-id <id> --expected-reference-artifact-id alphafold3-public-databases-v3.0 --expected-model-seeds <csv> [--expected-raw-input-sha256 <sha256>] --output-dir <dir> --model-dir /models --num-diffusion-samples <1..16> --model-seeds <csv>"
-        ]
-      },
-      "accelerator_support": {
-        "h100": {"compute_capability": "9.0", "status": "pending-official-parameter-semantic-test"},
-        "blackwell": {"status": "not-qualified", "scope": "portability-not-readiness", "native_targets": []}
-      },
-      "smoke": "/usr/local/bin/fs2-image-smoke",
-      "published_digest": null
-    },
-    {
       "id": "openfold3",
       "dockerfile": "Dockerfile.openfold3",
-      "repository": "openfold3",
+      "repository": "cancer-immunotherapy/openfold3-upstream",
       "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r3",
       "source": {
         "repository": "https://github.com/aqlaboratory/openfold-3.git",
@@ -304,8 +294,10 @@
         {
           "id": "openfold3-openbind-0",
           "state": "available-external",
-          "mount": "/models/openfold3/of3-ob-2025-06-30-174k.pt",
+          "mount": "/models/openfold3",
+          "runtime_path": "/models/openfold3/of3-ob-2025-06-30-174k.pt",
           "revision": "of3-ob-2025-06-30-174k",
+          "content_digest": "f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
           "sha256": "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8e29e4",
           "bytes": 2287872989,
           "baked_into_image": false
@@ -313,8 +305,10 @@
         {
           "id": "openfold3-components-bcif",
           "state": "available-external",
-          "mount": "/databases/openfold3/components.bcif",
+          "mount": "/databases/openfold3",
+          "runtime_path": "/databases/openfold3/components.bcif",
           "revision": "s3://openfold3-data/components.bcif#etag-b251a30629b9c30d077a5b91aeefecb2-4",
+          "content_digest": "ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
           "sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c",
           "bytes": 63393643,
           "baked_into_image": false
@@ -324,11 +318,30 @@
         "entrypoint": "/usr/local/bin/fs2-run-openfold3",
         "subcommands": ["prepare", "predict"],
         "network_policy": "msa-server-forced-offline-explicit-checkpoint-and-ccd",
-        "required_mounts": ["/models/openfold3/of3-ob-2025-06-30-174k.pt", "/databases/openfold3/components.bcif"],
+        "required_mounts": ["/models/openfold3", "/databases/openfold3"],
+        "writable_cache_mounts": ["/cache/openfold3"],
+        "runtime_compilation": "triton-and-torch-extension-caches-at-deployment-owned-persistent-paths",
+        "cache_environment": {
+          "TRITON_CACHE_DIR": "/cache/openfold3/triton",
+          "TORCH_EXTENSIONS_DIR": "/cache/openfold3/torch-extensions",
+          "XDG_CACHE_HOME": "/cache/openfold3/xdg"
+        },
         "commands": [
-          "/usr/local/bin/fs2-run-openfold3 prepare --input-manifest <input.json> --query-json <prepared/query.json> --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --runner-yaml <prepared/runner.yaml> --provenance-marker <prepared/provenance.json> --handoff-tar <prepared.tar.zst> --output-artifact-id <id> --raw-input-sha256 <sha256> --msa-mode none --model-seeds <csv> --offline [--database-dir /databases/openfold3]",
-          "/usr/local/bin/fs2-run-openfold3 predict --query-json <input/query.json> --provenance-marker <input/provenance.json> --input-artifact-id <id> --expected-raw-input-sha256 <sha256> --output-dir <dir> --checkpoint /models/openfold3/of3-ob-2025-06-30-174k.pt --ccd-path /databases/openfold3/components.bcif --runner-yaml <runner.yaml> --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --num-diffusion-samples 1 --num-model-seeds <seed-count> --model-seeds <csv> --msa-mode none --use-templates false"
+          "/usr/local/bin/fs2-run-openfold3 prepare --input-manifest <input.json> --query-json <prepared/query.json> --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --runner-yaml <prepared/runner.yaml> --provenance-marker <prepared/provenance.json> --handoff-tar <prepared.tar.zst> --output-artifact-id <id> --raw-input-sha256 <sha256> --msa-mode none --model-seeds <csv> --offline",
+          "/usr/local/bin/fs2-run-openfold3 predict --query-json <input/query.json> --provenance-marker <input/provenance.json> --input-artifact-id <id> --expected-raw-input-sha256 <sha256> --output-dir <dir> --checkpoint /models/openfold3/of3-ob-2025-06-30-174k.pt --ccd-path /databases/openfold3/components.bcif --runner-yaml <runner.yaml> --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --num-diffusion-samples 1 --num-model-seeds <seed-count> --model-seeds <csv> --msa-mode none --use-templates false --runtime-localization-marker <runtime-localization.json>"
         ]
+      },
+      "fast_start": {
+        "maximum_candidate_level": "L1",
+        "qualified_level": null,
+        "qualification_state": "pending-regional-image-cache-evidence",
+        "level_states": {
+          "L1": "candidate-pending-regional-image-cache-evidence",
+          "L2": "unavailable-no-shared-storage-gpu-process-snapshot",
+          "L3": "unavailable-no-local-disk-cached-snapshot",
+          "L4": "unavailable-no-system-ram-retained-model"
+        },
+        "compiler_cache_optimization": "auxiliary-l1-plus-persistent-cache-pending-first-vs-warm-h100-timing"
       },
       "accelerator_support": {
         "h100": {"compute_capability": "9.0", "status": "pending-exact-artifact-semantic-test"},

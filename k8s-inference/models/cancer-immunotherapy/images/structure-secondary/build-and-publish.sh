@@ -6,11 +6,12 @@ lock_file="${runtime_dir}/image-lock.json"
 mode=build
 output_dir="${runtime_dir}/evidence/local"
 registry_root="${FS2_REGISTRY_ROOT:-$(jq -r '.registry_default' "$lock_file")}"
+adapter_worktree="${FS2_RUNTIME_ADAPTER_WORKTREE:-}"
 declare -a requested=()
 
 usage() {
   printf '%s\n' \
-    'usage: build-and-publish.sh [--publish] [--registry-root ROOT] [--output-dir DIR] [IMAGE_ID ...]' \
+    'usage: build-and-publish.sh [--publish] --adapter-worktree DIR [--registry-root ROOT] [--output-dir DIR] [IMAGE_ID ...]' \
     '' \
     'Builds linux/amd64 images, runs the weight-free smoke test, and writes SBOMs.' \
     '--publish additionally refuses existing tags, pushes once, and records digests.'
@@ -28,6 +29,10 @@ while (($#)); do
       ;;
     --registry-root)
       registry_root="${2:?--registry-root requires a value}"
+      shift 2
+      ;;
+    --adapter-worktree)
+      adapter_worktree="${2:?--adapter-worktree requires a value}"
       shift 2
       ;;
     --help|-h)
@@ -50,6 +55,48 @@ if [[ ! "$registry_root" =~ ^[a-z0-9.-]+/[a-z0-9][a-z0-9._/-]*[a-z0-9]$ ]]; then
   printf 'invalid registry root: %s\n' "$registry_root" >&2
   exit 2
 fi
+if [[ -z "$adapter_worktree" || ! -d "$adapter_worktree" ]]; then
+  printf '%s\n' \
+    'a concrete runtime adapter worktree is required via --adapter-worktree or FS2_RUNTIME_ADAPTER_WORKTREE' >&2
+  exit 2
+fi
+
+command -v git >/dev/null || {
+  printf 'required tool is missing: git\n' >&2
+  exit 1
+}
+repo_root="$(git -C "$runtime_dir" rev-parse --show-toplevel)"
+git -C "$repo_root" fetch --quiet --no-tags origin \
+  refs/heads/main:refs/remotes/origin/main
+task_head="$(git -C "$repo_root" rev-parse HEAD)"
+main_head="$(git -C "$repo_root" rev-parse refs/remotes/origin/main)"
+merge_base="$(git -C "$repo_root" merge-base HEAD refs/remotes/origin/main)"
+read -r task_ahead task_behind < <(
+  git -C "$repo_root" rev-list --left-right --count \
+    HEAD...refs/remotes/origin/main
+)
+ahead_behind="${task_ahead}/${task_behind}"
+if ! git -C "$repo_root" merge-base --is-ancestor \
+  refs/remotes/origin/main HEAD; then
+  printf '%s\n' \
+    "refusing stale-base build: HEAD=${task_head} origin/main=${main_head} merge-base=${merge_base} ahead/behind=${ahead_behind}" \
+    'integrate the fetched origin/main into the task branch and rerun every source/cross-contract gate first' >&2
+  exit 1
+fi
+if [[ -n "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]]; then
+  printf '%s\n' \
+    "refusing uncommitted-source build from HEAD=${task_head}" \
+    'the reviewed task source must be clean and commit-addressable' >&2
+  exit 1
+fi
+printf 'SOURCE_INTEGRATION head=%s origin_main=%s merge_base=%s ahead_behind=%s\n' \
+  "$task_head" "$main_head" "$merge_base" "$ahead_behind"
+
+"${runtime_dir}/check.sh"
+python3 "${runtime_dir}/tests/verify_runtime_adapter_contract.py" \
+  --adapter-worktree "$adapter_worktree"
+adapter_revision="$(git -C "$adapter_worktree" rev-parse HEAD)"
+adapter_branch="$(git -C "$adapter_worktree" symbolic-ref --short HEAD)"
 
 for tool in docker crane jq syft; do
   command -v "$tool" >/dev/null || {
@@ -141,7 +188,29 @@ for id in "${requested[@]}"; do
     exit "$smoke_rc"
   fi
   smoke_json="$(tail -n 1 "${output_dir}/${id}.smoke.log")"
-  jq -e --arg id "$id" '.status == "passed" and .runtime_id == $id and .artifact_policy == "external-only"' <<<"$smoke_json" >/dev/null
+  expected_cache_mounts="$(jq -c '.runtime_contract.writable_cache_mounts // []' <<<"$image")"
+  expected_cache_environment="$(jq -c '.runtime_contract.cache_environment // {}' <<<"$image")"
+  jq -e \
+    --arg id "$id" \
+    --argjson expected_cache_mounts "$expected_cache_mounts" \
+    --argjson expected_cache_environment "$expected_cache_environment" \
+    '
+      ($expected_cache_mounts + [$expected_cache_environment[]] | unique | sort) as $expected_paths
+      | .status == "passed"
+        and .runtime_id == $id
+        and .artifact_policy == "external-only"
+        and .mode == "build-only-not-semantic-readiness"
+        and .build_cache.scope == "built-image-filesystem-only"
+        and .build_cache.deployment_persistent_mount_readiness == "not-tested"
+        and .build_cache.effective_uid == 10001
+        and .build_cache.effective_gid == 10001
+        and .build_cache.mount_roots == $expected_cache_mounts
+        and .build_cache.environment == $expected_cache_environment
+        and .build_cache.declared == (($expected_paths | length) > 0)
+        and ([.build_cache.directories[].path] | sort) == $expected_paths
+        and all(.build_cache.directories[];
+          .probe == "bounded-create-read-remove-passed" and .probe_bytes == 25)
+    ' <<<"$smoke_json" >/dev/null
   printf '%s\n' "$smoke_json" > "${output_dir}/${id}.smoke.json"
 
   docker inspect "$local_ref" --format '{{.Architecture}}' | grep -Fx amd64 >/dev/null
@@ -187,6 +256,23 @@ done
 jq -s \
   --arg mode "$mode" \
   --arg platform linux/amd64 \
-  '{schema:"fs2.nebius.ai/structure-secondary-image-build-receipt/v1",mode:$mode,platform:$platform,images:.}' \
+  --arg image_source_revision "$task_head" \
+  --arg origin_main_revision "$main_head" \
+  --arg merge_base_revision "$merge_base" \
+  --arg source_ahead_behind "$ahead_behind" \
+  --arg runtime_adapter_revision "$adapter_revision" \
+  --arg runtime_adapter_branch "$adapter_branch" \
+  '{
+    schema:"fs2.nebius.ai/structure-secondary-image-build-receipt/v2",
+    mode:$mode,
+    platform:$platform,
+    image_source_revision:$image_source_revision,
+    origin_main_revision:$origin_main_revision,
+    merge_base_revision:$merge_base_revision,
+    source_ahead_behind:$source_ahead_behind,
+    runtime_adapter_revision:$runtime_adapter_revision,
+    runtime_adapter_branch:$runtime_adapter_branch,
+    images:.
+  }' \
   "$receipt_lines" > "${output_dir}/build-receipt.json"
 printf 'RECEIPT %s\n' "${output_dir}/build-receipt.json"

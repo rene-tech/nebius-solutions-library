@@ -1,9 +1,21 @@
 # Secondary structure runtime images
 
-This directory reproducibly builds five weight-free `linux/amd64` runtime
+This directory reproducibly builds four weight-free `linux/amd64` runtime
 identities. Code, base images, model identities, artifact mounts, and unique
 H100 build tags are locked in `image-lock.json`. Model weights, parameters,
 CCDs, MSAs, and reference databases are never copied into an image.
+
+Native AlphaFold3 is intentionally not built here. Its clean image, wrapper,
+academic parameter binding, public-database binding, persistent JAX cache, and
+H100 qualification are owned by the dedicated AlphaFold3 successor under
+`models/cancer-immunotherapy/images/alphafold3/`. Current main records the
+authorized academic-only parameter object as `alphafold3-parameters`, source
+subpath `alphafold3/af3.bin.zst`, consumer path `/models/af3.bin.zst`, size
+1,020,545,840 bytes, and SHA-256
+`74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff`.
+That asset is available to the authorized academic PoC and is not treated as
+request-time license-gated. This publisher neither duplicates that image nor
+claims its final database/runtime readiness.
 
 ## Exact identities and external artifacts
 
@@ -12,15 +24,14 @@ CCDs, MSAs, and reference databases are never copied into an image.
 | ESMFold2 | Biohub ESM `827ec128e4cdaf80f7d6f95fb367a08980b34918` (`v3.4.0`) | trunk `8fc3ff471022fdce52c77030685eb775de0c00a3`, ESMC-6B `45b0fa5d7fb06faefbd5e3b89bdcef35d564e79a`, and CCD SHA-256 `9ff44b19…38fc5` |
 | ESMFold2-Fast | same code, distinct runtime/model/tag | Fast trunk `c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6`, the same exact ESMC-6B, and the same exact CCD |
 | Protenix v2 | `2475421477ab414b571149ad4a875c390ff8a35d` (`v2.0.0`) | one composite artifact `protenix-v2` at `/models/protenix-v2`, containing the canonical checkpoint, four common files, `manifest.json`, and `.fs2-manifest-sha256` |
-| AlphaFold3 | `85c4d20505fd5cef05eac22b534d4e793971ae69` (`v3.0.4`) | privately staged academic `/models/af3.bin.zst` and official public databases rooted at `/databases` |
 | OpenFold3 | `c4771653c5d0a3ebb0b3af71b05efd64bc44ee86` (`v0.5.0`) | OpenBind-0 checkpoint SHA-256 `bd43301c…e29e4` and `components.bcif` SHA-256 `473d845c…fcc0c` |
 
 OpenFold3 is an independent, non-equivalent backend; it is never reported as
 native AlphaFold3. The Protenix v2 checkpoint was recovered from the immutable
 third-party mirror `TMF001/protenix-v2-weights@653edab…ecc3` and validated as
 1,859,785,497 bytes with SHA-256 `8f931f97…0d599`. It has not yet been
-byte-compared with the unavailable publisher CDN object, so that limitation is
-preserved in the lock and evidence.
+byte-compared with the publisher CDN object because that endpoint returned a
+region-specific 403; the mirror provenance limitation remains explicit.
 
 Protenix CPU prep and prediction both fail unless the single mounted artifact
 manifest identifies the exact code, checkpoint, and common-data revisions,
@@ -44,6 +55,18 @@ five payload files once, writes their path-independent identities to
 `manifest.json`, then atomically promotes the tree with one
 `.fs2-manifest-sha256` ready marker. Both stages validate that one marker and
 cheap file-size guards rather than rehashing the 1.86 GB checkpoint per run.
+The admitted localized-tree content digest is
+`5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48`;
+the canonical composite-manifest/ready-marker digest is
+`a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7`.
+That identity hashes the artifact worker's canonical compact JSON encoding plus
+one trailing newline; omitting the newline produces a different, invalid identity.
+The image validates the latter cheaply on every invocation, while the
+controller-owned localizer must bind both immutable identities in its runtime
+mount. The image build imports the installed wheel and executes its patched
+`prep` callback with service functions instrumented to fail, proving the
+`none` lane uses `use_msa=false`, `use_template=false`, and
+`use_rna_msa=false`.
 
 ## Runtime boundaries
 
@@ -52,7 +75,6 @@ The exact scripts copied into the images are:
 ```text
 /opt/fs2/run_esmfold2.py prepare-input|fold
 /opt/fs2/run_protenix.py prep|pred
-/opt/fs2/run_alphafold3.py data|inference
 /opt/fs2/run_openfold3.py prepare|predict
 ```
 
@@ -62,16 +84,13 @@ machine-readable adapter boundary. The stable command forms are:
 
 ```text
 fs2-run-esmfold2 prepare-input --input-manifest RAW --output REQUEST [--sequence AA] --mode MODE --seed N
-fs2-run-esmfold2 fold --input REQUEST --output-dir OUT --variant esmfold2|esmfold2-fast --seed N [--smoke]
+fs2-run-esmfold2 fold --input REQUEST --output-dir OUT --variant esmfold2|esmfold2-fast --seed N --runtime-localization-marker RUNTIME_MARKER [--smoke]
 
-fs2-run-protenix prep --input RAW --output-dir PREP --processed-json PREP/processed.json --provenance-marker PREP/provenance.json --handoff-tar HANDOFF.tar.zst --output-artifact-id ID --msa-mode none --reference-root /models/protenix-v2 --reference-manifest /models/protenix-v2/manifest.json
-fs2-run-protenix pred --input INPUT/processed.json --input-marker INPUT/provenance.json --input-artifact-id ID --output-dir OUT --checkpoint /models/protenix-v2/checkpoint/protenix-v2.pt --common-dir /models/protenix-v2/common --msa-mode none --seed N --sample-count N --disable-templates --disable-rna-msa
-
-fs2-run-alphafold3 data --input-json RAW --output-dir DATA --processed-json DATA/processed.json --provenance-marker DATA/provenance.json --handoff-tar HANDOFF.tar.zst --output-artifact-id ID --db-dir /databases --db-manifest /databases/manifest.json --db-ready-marker /databases/.fs2-manifest-sha256 --reference-artifact-id alphafold3-public-databases-v3.0 --raw-input-sha256 SHA256 --model-seeds CSV
-fs2-run-alphafold3 inference --processed-json INPUT/processed.json --provenance-marker INPUT/provenance.json --input-artifact-id ID --expected-reference-artifact-id alphafold3-public-databases-v3.0 --expected-model-seeds CSV [--expected-raw-input-sha256 SHA256] --output-dir OUT --model-dir /models --num-diffusion-samples N --model-seeds CSV
+fs2-run-protenix prep --input RAW --output-dir PREP --processed-json PREP/processed.json --provenance-marker PREP/provenance.json --handoff-tar HANDOFF.tar.zst --output-artifact-id ID --msa-mode none --reference-root /models/protenix-v2 --reference-manifest /models/protenix-v2/manifest.json --runtime-localization-marker RUNTIME_MARKER
+fs2-run-protenix pred --input INPUT/processed.json --input-marker INPUT/provenance.json --input-artifact-id ID --output-dir OUT --checkpoint /models/protenix-v2/checkpoint/protenix-v2.pt --common-dir /models/protenix-v2/common --msa-mode none --seeds CSV --sample-count N --disable-templates --disable-rna-msa --runtime-localization-marker RUNTIME_MARKER
 
 fs2-run-openfold3 prepare --input-manifest RAW --query-json PREP/query.json --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --runner-yaml PREP/runner.yaml --provenance-marker PREP/provenance.json --handoff-tar HANDOFF.tar.zst --output-artifact-id ID --raw-input-sha256 SHA256 --msa-mode none --model-seeds CSV --offline
-fs2-run-openfold3 predict --query-json INPUT/query.json --provenance-marker INPUT/provenance.json --input-artifact-id ID --expected-raw-input-sha256 SHA256 --output-dir OUT --checkpoint /models/openfold3/of3-ob-2025-06-30-174k.pt --ccd-path /databases/openfold3/components.bcif --runner-yaml WORK/runner.yaml --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --num-diffusion-samples 1 --num-model-seeds SEED_COUNT --model-seeds CSV --msa-mode none --use-templates false
+fs2-run-openfold3 predict --query-json INPUT/query.json --provenance-marker INPUT/provenance.json --input-artifact-id ID --expected-raw-input-sha256 SHA256 --output-dir OUT --checkpoint /models/openfold3/of3-ob-2025-06-30-174k.pt --ccd-path /databases/openfold3/components.bcif --runner-yaml WORK/runner.yaml --base-runner-yaml /opt/fs2/runtime/openfold3/runner-base.yaml --num-diffusion-samples 1 --num-model-seeds SEED_COUNT --model-seeds CSV --msa-mode none --use-templates false --runtime-localization-marker RUNTIME_MARKER
 ```
 
 ESM production defaults are 20 trunk loops and 200 diffusion steps;
@@ -84,20 +103,13 @@ construction. The full and Fast identities mount their distinct trunks at
 the structure and sibling `confidence.json`. The envelope contains bounded
 mean pLDDT in its native normalized `[0,1]` scale, pTM, and ipTM summaries plus the exact relative structure filename,
 SHA-256, and byte size; it never serializes unbounded per-token pLDDT.
+The controller-issued localization marker already binds the read-only CCD
+artifact's exact aggregate content identity. The fold boundary therefore keeps
+the exact 417,306,584-byte stat guard but deliberately does not rehash that file
+on every invocation; avoiding a redundant 417 MB read protects cold-start time
+without weakening the controller/localizer trust boundary.
 
-AlphaFold3 does not expose an unrestricted upstream remainder. `data` accepts no
-model path and permits only the canonical `/databases` root plus its composite
-manifest/ready marker; it runs only the CPU pipeline and emits a deterministic
-zstd tar containing exactly
-`processed.json` and `provenance.json`. The path-independent provenance envelope
-binds the logical stage artifact ID and processed bytes. `inference` consumes
-those two extracted names, verifies the artifact ID/digest and exact ordered
-`modelSeeds`, binds `/models/af3.bin.zst`, and runs only GPU inference. The exact
-native command is `/opt/alphafold3-venv/bin/python
-/opt/alphafold3/run_alphafold.py`; protected upstream arguments cannot be
-overridden.
-
-OpenFold’s single wrapper surface emits a relocatable zstd handoff containing
+OpenFold's single wrapper surface emits a relocatable zstd handoff containing
 exactly `query.json` and a path-independent provenance marker. The image-owned
 base runner configuration is regenerated with the exact ordered seed list in
 both stages. Prediction verifies `num_model_seeds == len(model_seeds)`, uses one
@@ -106,8 +118,11 @@ diffusion sample per seed, but deliberately does not forward
 seed list with generated values. It always supplies the exact checkpoint, forces the MSA
 server and templates off, and calls the public
 `biotite.structure.info.ccd.set_ccd_path()` API so all CCD-dependent caches are
-cleared before the packaged `run_openfold predict` API runs. Protenix,
-AlphaFold3, and OpenFold3 return from their upstream runner and then write the
+cleared before the packaged `run_openfold predict` API runs. The `none` lane
+sets all three MSA switches on each Query and rejects every path-bearing Chain
+field because the handoff contains no referenced file. Its CPU prepare stage
+has no checkpoint, CCD, or database dependency. Protenix and OpenFold3 return
+from their upstream runner and then write the
 same `fs2.nebius.ai/structure-confidence/v1` envelope. Every upstream summary
 is paired one-to-one with its structure, all accepted metrics are finite and
 bounded, and the result set must exactly cover every requested seed/sample pair
@@ -118,19 +133,50 @@ machine-readable contract is installed at `/opt/fs2/confidence.schema.json`.
 
 These are H100-tagged images. A build/import check is not semantic readiness.
 
+The image contract exposes deployment-owned, persistent writable compiler
+caches only where the runtime is known to compile. The deployment must mount
+the listed root read-write for UID/GID 10001 and isolate its contents by the
+exact runtime image, model artifacts, and H100 SM identity; an image-owned
+directory alone is not persistent evidence.
+
+| Runtime/stage | Persistent mount | Exact runtime environment | Auxiliary L1+ cache state |
+|---|---|---|---|
+| ESMFold2 / Fast fold | none | none proven | no compiler cache; regional image-cache and external-artifact timing remain separate evidence |
+| Protenix v2 prediction | `/cache/protenix` | `TRITON_CACHE_DIR=/cache/protenix/triton`; `CUEQ_TRITON_CACHE_DIR=/cache/protenix/cueq-triton`; `TORCH_EXTENSIONS_DIR=/cache/protenix/torch-extensions`; `XDG_CACHE_HOME=/cache/protenix/xdg` | persistent compiler cache declared; first-versus-warm H100 compile timing pending |
+| OpenFold3 prediction | `/cache/openfold3` | `TRITON_CACHE_DIR=/cache/openfold3/triton`; `TORCH_EXTENSIONS_DIR=/cache/openfold3/torch-extensions`; `XDG_CACHE_HOME=/cache/openfold3/xdg` | persistent compiler cache declared; first-versus-warm H100 compile timing pending |
+
+The fixed user-level taxonomy is:
+
+- L1: regional image cache.
+- L2: a real GPU/process snapshot restored from shared filesystem or enhanced object storage.
+- L3: that snapshot cached on local disk.
+- L4: the model retained in system RAM for GPU swap.
+
+Compiler caches, external-artifact caches, and their first-versus-warm timing
+cannot qualify L2. No GPU/process snapshot exists for these images, and there
+is no local-disk snapshot or system-RAM-retained model evidence. Every lock
+entry therefore has `maximum_candidate_level: L1`, `qualified_level: null`, and
+pending regional image-cache evidence; L2, L3, and L4 are explicitly
+unavailable.
+
 | Runtime | Exact H100 state | Blackwell state |
 |---|---|---|
 | ESMFold2 / Fast | pending semantic run with exact trunk, ESMC-6B, and CCD | not qualified; only an explicit SDPA portability path exists |
 | Protenix v2 | pending exact-checkpoint H100 run; CPU installed-path teardown previously exited 139 | **unsupported** in this image: pinned PyTorch 2.7.1+cu126 libtorch has neither Blackwell cubins nor PTX |
-| AlphaFold3 | pending official-parameter and database H100 run | not qualified |
 | OpenFold3 | pending OpenBind-0 plus exact CCD H100 run | not qualified |
 
 Protenix’s task-owned layer-normalization extension is prebuilt with an SM90
-cubin and compute_90 PTX, then its source/compiler paths are removed from the
-runtime stage. This does **not** eliminate all runtime compilation: pinned
+cubin and compute_90 PTX, then its CUDA source, build metadata, and `nvcc` path
+are removed from the runtime stage. This does **not** eliminate all runtime
+compilation: pinned
 `cuequivariance-ops-torch` 0.8.0 uses Triton JIT for triangle operations above
-its fallback thresholds. `TRITON_CACHE_DIR=/cache/protenix/triton` and
-`CUEQ_TRITON_CACHE_DIR=/cache/protenix/cueq-triton` are writable stable paths;
+its fallback thresholds, so the runtime retains `gcc` only for Triton's small
+Python launcher build. Build-only smoke requires that launcher compiler while
+also requiring `nvcc` to remain absent, then compiles and removes one bounded
+Python-extension probe below the Triton cache. `TRITON_CACHE_DIR=/cache/protenix/triton`,
+`CUEQ_TRITON_CACHE_DIR=/cache/protenix/cueq-triton`,
+`TORCH_EXTENSIONS_DIR=/cache/protenix/torch-extensions`, and
+`XDG_CACHE_HOME=/cache/protenix/xdg` are writable stable paths;
 mount `/cache/protenix` persistently to retain a warmed shape cache. Exact H100
 first-call versus warm-call measurements remain pending the semantic run. That
 one prebuilt extension does not make the whole CUDA 12.6 image
@@ -142,37 +188,108 @@ own semantic qualification.
 Validate without changing a registry:
 
 ```bash
-python3 -m unittest discover -s tests -v
-./build-and-publish.sh --output-dir /tmp/fs2-structure-image-evidence
+./check.sh
+./build-and-publish.sh \
+  --adapter-worktree /path/to/corrected-runtime-adapter-worktree \
+  --output-dir /tmp/fs2-structure-image-evidence
 ```
 
-The build script consumes lock v2 `repository` and `tag` fields. The registry
-root is operator-configurable without weakening the schema:
+The build/publish runner first fetches the current `origin/main` and refuses to
+continue unless that exact remote commit is an ancestor of the task `HEAD` and
+the task worktree is clean. It reports the task head, fetched main head, merge
+base, and ahead/behind counts on failure. Reviewer-red remediation may continue
+to use `check.sh` while dirty, but an accepted successor must first integrate
+the then-current `origin/main` and rerun the exact source and external runtime
+cross-contract gates. This prevents a build or publication from the stale
+pre-infrastructure base.
+
+`check.sh` always executes the OpenFold3 parser against an exact
+`c4771653c5d0a3ebb0b3af71b05efd64bc44ee86` (`v0.5.0`) checkout and applies
+the audited one-block Protenix patch to an exact
+`2475421477ab414b571149ad4a875c390ff8a35d` (`v2.0.0`) checkout. It fetches
+those tagged sources when verified local checkouts are not supplied. It also
+creates a separate depth-one object store, fetches the currently reachable
+artifact-worker ref, requires exact commit
+`58e84e517c927b1be231597963251b55faf73960`, and verifies generator SHA-256
+`b8b1b7dc3be7192452685773c8602a2d326ad894b6b52ae673b355681fd9b9b5`.
+That revision is an interface draft only. Immutable promotion receipts from its
+successor remain a publication and H100 qualification gate.
+The clean store must not contain superseded unreachable commit `80d3b940...`.
+Tests pin the exact generated `runtime-integration.json` and Protenix manifest
+bytes before checking their mount/content/manifest identities against this
+image contract. The build runner invokes this check first, so these pinned
+parser/source/output checks are not an optional skipped qualification path.
+
+Before review freeze, execute the actual adapter compiler output—not copied argv
+fixtures—through these parsers:
+
+```bash
+python3 tests/verify_runtime_adapter_contract.py \
+  --adapter-worktree /path/to/fs2-cancer-immunotherapy-runtime-onboarding-r20260902
+```
+
+The parser-shape unit fixtures are not cross-contract evidence. The integration
+gate requires the adapter commit to be the exact clean pushed branch head on
+current main, imports that concrete external commit, compiles all four real plans,
+executes their exact argv through these parsers, and validates exact artifact
+mount identities and each controller-issued runtime-localization marker. The
+shared marker validator requires the exact model, variant, stage, artifact IDs,
+mount roots, aggregate content digests, optional manifest digests and subpaths;
+it also cross-checks readiness/localization and request-context receipts. It
+requires canonical ESM trunk identities,
+both Protenix localization digests, both OpenFold content digests, Protenix's
+multi-seed CSV surface, and OpenFold preparation with no reference-data mount.
+AlphaFold3's separate clean successor retains its own generated-argv,
+database-promotion, stable-selector storage, academic namespace, and nonroot
+persistent-cache gates; passing this four-image publisher never substitutes for
+those independent gates.
+
+The build script consumes lock v2 `repository` and `tag` fields. Those
+repositories exactly match the runtime catalog: `cancer-immunotherapy/esmfold2`,
+`cancer-immunotherapy/esmfold2-fast`, `cancer-immunotherapy/protenix-v2`,
+`cancer-immunotherapy/openfold3-upstream`. A concrete clean adapter worktree is
+required and the script runs the external cross-contract verifier before any
+Docker build. The registry root remains operator-configurable without weakening
+the schema:
 
 ```bash
 FS2_REGISTRY_ROOT=registry.example/project/repository \
-  ./build-and-publish.sh --output-dir /tmp/fs2-structure-image-evidence esmfold2
-./build-and-publish.sh --registry-root registry.example/project/repository esmfold2-fast
+  ./build-and-publish.sh --adapter-worktree /path/to/corrected-runtime-adapter-worktree \
+    --output-dir /tmp/fs2-structure-image-evidence esmfold2
+./build-and-publish.sh --adapter-worktree /path/to/corrected-runtime-adapter-worktree \
+  --registry-root registry.example/project/repository esmfold2-fast
 ```
 
 Publication is a separate explicit operation:
 
 ```bash
-./build-and-publish.sh --publish --output-dir /tmp/fs2-structure-image-evidence
+./build-and-publish.sh --publish \
+  --adapter-worktree /path/to/corrected-runtime-adapter-worktree \
+  --output-dir /tmp/fs2-structure-image-evidence
 ```
 
 Before the build and again immediately before a push, the script inspects each
 derived destination and refuses to overwrite an existing tag. It never logs in,
 prints credentials, or emits a mutable alias. Build receipts record the selected
 registry root, target, local identity, smoke result, SBOM hash, and—only after a
-successful push—the registry digest.
+successful push—the registry digest. Receipt v2 also binds the exact clean image
+source Git revision, fetched `origin/main` revision and merge base, ahead/behind
+state, and the clean pushed runtime-adapter branch/revision whose generated argv
+passed the external parser and mount contract.
 
 `fs2-image-smoke --build-only` is the intentionally weight-free package/API
-check used during image construction. The default smoke mode fails without a
-semantic request, exact mounted artifacts, an output directory, and an H100; it
-loads the model offline and requires an exact canonical confidence envelope.
+check used during image construction. For each declared compiler cache it
+exact-compares the image environment with the lock, requires the final process
+to run as UID/GID `10001:10001`, and performs a bounded create/read/remove probe
+in the cache mount root and every declared cache directory. This proves only
+that the unmounted image filesystem is writable by the final nonroot user; it
+does not claim that a deployment-owned PVC or another persistent mount is ready.
+The publisher validates this structured evidence against `image-lock.json`
+before any push. The default smoke mode fails without a semantic request, exact
+mounted artifacts, an output directory, and an H100; it loads the model offline
+and requires an exact canonical confidence envelope.
 Every bound PDB/mmCIF must match its recorded hash/byte count and contain at
-least three atom records. Run it in a
+least ten atom records. Run it in a
 network-disabled task-owned H100 Job, for example:
 
 ```bash
@@ -183,8 +300,8 @@ network-disabled task-owned H100 Job, for example:
 ```
 
 OpenFold3 additionally requires materialized `query.json` and `runner.yaml` from
-its preparation stage. Protenix and AlphaFold3 require the matching extracted
-`provenance.json` plus logical artifact ID; Protenix also requires the single
+its preparation stage. Protenix requires the matching extracted
+`provenance.json` plus logical artifact ID and the single
 `protenix-v2` composite artifact. These semantic runs
 are valid only on the `k8s-inference-h100` H100 target with the exact mounts.
 
@@ -192,8 +309,9 @@ No model endpoint or shared service is deployed by this image task.
 
 ## Superseded preliminary publications
 
-Four pre-review tags were pushed before the independent findings arrived. Their
+Three task-owned pre-review tags were pushed before the independent findings arrived. Their
 digests and reasons are retained under `superseded_publications`; all have
-`deployable: false`. No OpenFold3 manifest was published. Corrected `-h100-r3`
+`deployable: false`. The historical AF3 image evidence is owned by the dedicated
+AF3 successor and is not repeated here. No OpenFold3 manifest was published. Corrected `-h100-r3`
 tags must not be published until the build, no-runtime-nvcc, artifact-closure, generated
 argv, offline semantic-smoke, and layer-history gates pass.

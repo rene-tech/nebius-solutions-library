@@ -27,6 +27,7 @@ RUN git init . \
     && test "$(git describe --tags --exact-match HEAD)" = v3.4.0 \
     && printf '%s\n' "${SOURCE_REVISION}" > /tmp/source-revision
 RUN CONDA_OVERRIDE_CUDA=13.0 pixi install --frozen -e gpu \
+    && /opt/esm/.pixi/envs/gpu/bin/python -c 'import importlib.metadata; assert importlib.metadata.version("esm") == "3.4.0"' \
     && CONDA_OVERRIDE_CUDA=13.0 pixi shell-hook -e gpu -s bash > /opt/activate.sh \
     && mkdir -p /opt/fs2 \
     && mv /opt/activate.sh /opt/fs2/activate.sh \
@@ -43,6 +44,8 @@ COPY --chmod=0555 entrypoint.sh /usr/local/bin/fs2-entrypoint
 COPY --chmod=0555 image_smoke.py /usr/local/bin/fs2-image-smoke
 COPY --chmod=0555 run_esmfold2.py /usr/local/bin/fs2-run-esmfold2
 COPY --chmod=0555 run_esmfold2.py /opt/fs2/run_esmfold2.py
+COPY --chmod=0444 runtime_localization.py /usr/local/bin/runtime_localization.py
+COPY --chmod=0444 runtime_localization.py /opt/fs2/runtime_localization.py
 COPY --chmod=0444 result_contract.py /usr/local/bin/result_contract.py
 COPY --chmod=0444 result_contract.py /opt/fs2/result_contract.py
 COPY --chmod=0444 confidence.schema.json /opt/fs2/confidence.schema.json

@@ -28,12 +28,12 @@
     },
     "images": {
       "type": "array",
-      "minItems": 5,
-      "maxItems": 5,
+      "minItems": 4,
+      "maxItems": 4,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "dockerfile", "repository", "tag", "source", "base_images", "build_args", "external_artifacts", "runtime_contract", "accelerator_support", "smoke", "published_digest"],
+        "required": ["id", "dockerfile", "repository", "tag", "source", "base_images", "build_args", "external_artifacts", "runtime_contract", "fast_start", "accelerator_support", "smoke", "published_digest"],
         "properties": {
           "id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
           "dockerfile": {"type": "string", "pattern": "^Dockerfile\\."},
@@ -54,6 +54,7 @@
           "build_args": {"type": "object", "additionalProperties": {"type": "string"}},
           "external_artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/artifact"}},
           "runtime_contract": {"$ref": "#/$defs/runtimeContract"},
+          "fast_start": {"$ref": "#/$defs/fastStart"},
           "accelerator_support": {"$ref": "#/$defs/acceleratorSupport"},
           "smoke": {"type": "string", "pattern": "^/"},
           "published_digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}
@@ -71,17 +72,25 @@
       "allOf": [
         {
           "if": {"properties": {"id": {"const": "protenix-v2"}}, "required": ["id"]},
-          "then": {"required": ["manifest", "ready_marker", "checkpoint", "common", "expected_paths"]}
+          "then": {"required": ["localized_content_digest_sha256", "localization_manifest_sha256", "manifest", "ready_marker", "checkpoint", "common", "expected_paths"]}
         }
       ],
       "properties": {
         "id": {"type": "string", "minLength": 1},
-        "state": {"enum": ["available-external", "operator-staged-private", "third-party-mirror-verified-not-publisher-byte-compared"]},
+        "state": {"enum": ["available-external", "promotion-pending", "operator-staged-private", "third-party-mirror-verified-not-publisher-byte-compared"]},
         "mount": {"type": "string", "pattern": "^/"},
+        "runtime_path": {"type": "string", "pattern": "^/"},
+        "source_sub_path": {"type": "string", "pattern": "^[^/]"},
         "revision": {"type": "string", "minLength": 1},
         "content_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_revision": {"type": "string", "minLength": 1},
+        "localized_content_digest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "localization_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "manifest_layout": {"type": "string", "minLength": 1},
+        "tree_ready_marker": {"type": "string", "pattern": "^/"},
+        "manifest_digest_state": {"const": "required-from-qualified-localization"},
         "bytes": {"type": "integer", "minimum": 1},
         "manifest": {"type": "string", "pattern": "^/"},
         "ready_marker": {"type": "string", "pattern": "^/"},
@@ -141,11 +150,44 @@
           "items": {"type": "string", "pattern": "^/"}
         },
         "runtime_compilation": {"type": "string", "minLength": 1},
+        "cache_environment": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"type": "string", "pattern": "^/cache/"},
+          "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]*$"}
+        },
         "commands": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
           "items": {"type": "string", "pattern": "^/"}
+        }
+      }
+    },
+    "fastStart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maximum_candidate_level", "qualified_level", "qualification_state", "level_states", "compiler_cache_optimization"],
+      "properties": {
+        "maximum_candidate_level": {"const": "L1"},
+        "qualified_level": {"type": "null"},
+        "qualification_state": {"const": "pending-regional-image-cache-evidence"},
+        "level_states": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["L1", "L2", "L3", "L4"],
+          "properties": {
+            "L1": {"const": "candidate-pending-regional-image-cache-evidence"},
+            "L2": {"const": "unavailable-no-shared-storage-gpu-process-snapshot"},
+            "L3": {"const": "unavailable-no-local-disk-cached-snapshot"},
+            "L4": {"const": "unavailable-no-system-ram-retained-model"}
+          }
+        },
+        "compiler_cache_optimization": {
+          "enum": [
+            "none-proven-l1-image-plus-external-artifacts",
+            "auxiliary-l1-plus-persistent-cache-pending-first-vs-warm-h100-timing"
+          ]
         }
       }
     },

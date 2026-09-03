@@ -7,7 +7,7 @@
   "required": ["schema", "runtime_id", "model_revision", "seeds", "samples_per_seed", "results"],
   "properties": {
     "schema": {"const": "fs2.nebius.ai/structure-confidence/v1"},
-    "runtime_id": {"enum": ["esmfold2", "esmfold2-fast", "protenix-v2", "alphafold3", "openfold3"]},
+    "runtime_id": {"enum": ["esmfold2", "esmfold2-fast", "protenix-v2", "openfold3"]},
     "model_revision": {"type": "string", "minLength": 1},
     "seeds": {
       "type": "array",

@@ -11,7 +11,8 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
+import sysconfig
+import tempfile
 from typing import Any
 
 from result_contract import sha256_file, validate_confidence_envelope
@@ -19,7 +20,104 @@ from result_contract import sha256_file, validate_confidence_envelope
 
 SOURCE_REVISION_FILE = Path("/opt/fs2/source-revision")
 EXTERNAL_ROOTS = (Path("/models"), Path("/databases"))
-MIN_ATOM_RECORDS = 3
+MIN_ATOM_RECORDS = 10
+IMAGE_RUNTIME_UID = 10001
+IMAGE_RUNTIME_GID = 10001
+CACHE_WRITE_PROBE = b"fs2-cache-write-probe-v1\n"
+BUILD_CACHE_CONTRACTS: dict[str, dict[str, object]] = {
+    "protenix-v2": {
+        "mount_roots": ["/cache/protenix"],
+        "environment": {
+            "TRITON_CACHE_DIR": "/cache/protenix/triton",
+            "CUEQ_TRITON_CACHE_DIR": "/cache/protenix/cueq-triton",
+            "TORCH_EXTENSIONS_DIR": "/cache/protenix/torch-extensions",
+            "XDG_CACHE_HOME": "/cache/protenix/xdg",
+        },
+    },
+    "openfold3": {
+        "mount_roots": ["/cache/openfold3"],
+        "environment": {
+            "TRITON_CACHE_DIR": "/cache/openfold3/triton",
+            "TORCH_EXTENSIONS_DIR": "/cache/openfold3/torch-extensions",
+            "XDG_CACHE_HOME": "/cache/openfold3/xdg",
+        },
+    },
+}
+
+
+def _probe_cache_directory(directory: Path) -> dict[str, object]:
+    if not directory.is_absolute():
+        raise RuntimeError(f"cache directory must be absolute: {directory}")
+    if not directory.is_dir():
+        raise RuntimeError(f"cache directory does not exist: {directory}")
+    if not os.access(directory, os.W_OK, effective_ids=True):
+        raise RuntimeError(
+            f"cache directory is not writable by UID {IMAGE_RUNTIME_UID}: {directory}"
+        )
+
+    descriptor = -1
+    probe: Path | None = None
+    try:
+        descriptor, probe_name = tempfile.mkstemp(
+            prefix=".fs2-cache-smoke.", dir=str(directory)
+        )
+        probe = Path(probe_name)
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = -1
+            stream.write(CACHE_WRITE_PROBE)
+            stream.flush()
+        if probe.read_bytes() != CACHE_WRITE_PROBE:
+            raise RuntimeError(f"cache write probe readback failed: {directory}")
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if probe is not None:
+            probe.unlink(missing_ok=True)
+    if probe is None or probe.exists():
+        raise RuntimeError(f"cache write probe cleanup failed: {directory}")
+    return {
+        "path": str(directory),
+        "probe": "bounded-create-read-remove-passed",
+        "probe_bytes": len(CACHE_WRITE_PROBE),
+    }
+
+
+def _validate_build_cache_contract(runtime_id: str) -> dict[str, object]:
+    effective_uid = os.geteuid()
+    effective_gid = os.getegid()
+    if effective_uid != IMAGE_RUNTIME_UID or effective_gid != IMAGE_RUNTIME_GID:
+        raise RuntimeError(
+            "build-only cache smoke must run as the final image user "
+            f"{IMAGE_RUNTIME_UID}:{IMAGE_RUNTIME_GID}, got "
+            f"{effective_uid}:{effective_gid}"
+        )
+
+    contract = BUILD_CACHE_CONTRACTS.get(
+        runtime_id, {"mount_roots": [], "environment": {}}
+    )
+    mount_roots = list(contract["mount_roots"])
+    expected_environment = dict(contract["environment"])
+    actual_environment = {
+        name: os.environ.get(name) for name in expected_environment
+    }
+    if actual_environment != expected_environment:
+        raise RuntimeError(
+            "cache environment does not exactly match the canonical contract: "
+            f"expected={expected_environment!r} actual={actual_environment!r}"
+        )
+
+    paths = sorted(set(mount_roots) | set(expected_environment.values()))
+    directories = [_probe_cache_directory(Path(path)) for path in paths]
+    return {
+        "scope": "built-image-filesystem-only",
+        "deployment_persistent_mount_readiness": "not-tested",
+        "effective_uid": effective_uid,
+        "effective_gid": effective_gid,
+        "declared": bool(mount_roots or expected_environment),
+        "mount_roots": mount_roots,
+        "environment": expected_environment,
+        "directories": directories,
+    }
 
 
 def _run_cli(
@@ -68,15 +166,50 @@ def _torch_build_smoke() -> dict[str, Any]:
     }
 
 
-def _jax_build_smoke() -> dict[str, Any]:
-    import jax
-
-    return {
-        "framework": "jax",
-        "version": jax.__version__,
-        "default_backend": jax.default_backend(),
-        "devices": [str(device) for device in jax.devices()],
-    }
+def _probe_python_launcher_compiler(compiler: str, cache_dir: Path) -> int:
+    """Compile one bounded Python launcher object using the runtime toolchain."""
+    include_dir = Path(sysconfig.get_paths()["include"])
+    python_header = include_dir / "Python.h"
+    if not python_header.is_file():
+        raise RuntimeError(f"runtime Python headers are missing: {python_header}")
+    source_text = """\
+#include <Python.h>
+static struct PyModuleDef module = {PyModuleDef_HEAD_INIT, "fs2_launcher_probe", NULL, -1, NULL};
+PyMODINIT_FUNC PyInit_fs2_launcher_probe(void) { return PyModule_Create(&module); }
+"""
+    with tempfile.TemporaryDirectory(prefix=".fs2-launcher-probe.", dir=cache_dir) as root:
+        root_path = Path(root)
+        source = root_path / "launcher.c"
+        output = root_path / "fs2_launcher_probe.so"
+        source.write_text(source_text, encoding="utf-8")
+        completed = subprocess.run(
+            [
+                compiler,
+                str(source),
+                "-O2",
+                "-shared",
+                "-fPIC",
+                f"-I{include_dir}",
+                "-o",
+                str(output),
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=30,
+        )
+        if completed.returncode != 0 or not output.is_file():
+            raise RuntimeError(
+                "Protenix runtime launcher compiler probe failed: "
+                f"exit={completed.returncode} output={completed.stdout[-1200:]}"
+            )
+        output_size = output.stat().st_size
+        if not 1_000 <= output_size <= 1_000_000:
+            raise RuntimeError(
+                f"Protenix runtime launcher probe size is implausible: {output_size}"
+            )
+        return output_size
 
 
 def _build_smoke(runtime_id: str) -> dict[str, Any]:
@@ -87,6 +220,10 @@ def _build_smoke(runtime_id: str) -> dict[str, Any]:
             raise RuntimeError("ESMFold2 public inference API is incomplete")
         result = _torch_build_smoke()
         result["package_version"] = importlib.metadata.version("esm")
+        if result["package_version"] != "3.4.0":
+            raise RuntimeError(
+                f"installed esm package must be exactly 3.4.0, got {result['package_version']}"
+            )
         result["api"] = "esm.models.esmfold2"
         _run_cli(["/usr/local/bin/fs2-run-esmfold2", "--help"], "prepare-input")
         result["cli"] = "fs2-run-esmfold2 prepare-input|fold"
@@ -113,47 +250,37 @@ def _build_smoke(runtime_id: str) -> dict[str, Any]:
             raise RuntimeError("runtime Protenix package still contains the fast-layernorm build path")
         if shutil.which("nvcc"):
             raise RuntimeError("Protenix runtime unexpectedly contains nvcc")
-        triton_cache = Path(os.environ.get("TRITON_CACHE_DIR", ""))
-        cueq_cache = Path(os.environ.get("CUEQ_TRITON_CACHE_DIR", ""))
-        for cache in (triton_cache, cueq_cache):
-            if not cache.is_absolute() or not cache.is_dir() or not os.access(cache, os.W_OK):
-                raise RuntimeError(f"Protenix runtime cache is not writable: {cache}")
+        launcher_compiler = shutil.which("gcc") or shutil.which("clang")
+        if launcher_compiler is None:
+            raise RuntimeError(
+                "Protenix cuequivariance Triton JIT requires a runtime C launcher compiler"
+            )
+        launcher_probe_bytes = _probe_python_launcher_compiler(
+            launcher_compiler, Path(os.environ["TRITON_CACHE_DIR"])
+        )
         _run_cli(["/opt/protenix-venv/bin/protenix", "--help"], "pred")
         _run_cli(["/usr/local/bin/fs2-run-protenix", "--help"], "prep")
         result = _torch_build_smoke()
         result["package_version"] = importlib.metadata.version("protenix")
+        if result["package_version"] != "2.0.0":
+            raise RuntimeError(
+                "installed protenix package must be exactly 2.0.0, "
+                f"got {result['package_version']}"
+            )
         result["cli"] = "protenix prep|pred"
         result["module_resolutions"] = resolutions
         result["prebuilt_extension"] = str(extension)
         result["runtime_compilation"] = {
             "fast_layernorm": "prebuilt-sm90-cubin-plus-compute90-ptx",
             "cuequivariance": "active-triton-jit-first-shape-then-cache",
-            "triton_cache_dir": str(triton_cache),
-            "cueq_triton_cache_dir": str(cueq_cache),
+            "launcher_compiler": launcher_compiler,
+            "launcher_probe": "bounded-python-extension-compile-passed",
+            "launcher_probe_bytes": launcher_probe_bytes,
+            "nvcc": "absent",
+            "triton_cache_dir": os.environ.get("TRITON_CACHE_DIR"),
+            "cueq_triton_cache_dir": os.environ.get("CUEQ_TRITON_CACHE_DIR"),
             "h100_first_call_vs_warm_call": "pending-semantic-measurement",
         }
-        return result
-
-    if runtime_id == "alphafold3":
-        import alphafold3
-        import alphafold3.cpp
-        from alphafold3.model import model
-
-        if not alphafold3 or not alphafold3.cpp or not model:
-            raise RuntimeError("AlphaFold3 compiled/model API is incomplete")
-        _run_cli(
-            [sys.executable, "/opt/alphafold3/run_alphafold.py", "--helpshort"],
-            "model_dir",
-            {0, 1},
-        )
-        result = _jax_build_smoke()
-        result["package_version"] = importlib.metadata.version("alphafold3")
-        if result["package_version"] != "3.0.4":
-            raise RuntimeError(
-                f"AlphaFold3 package identity is not v3.0.4: {result['package_version']}"
-            )
-        _run_cli(["/usr/local/bin/fs2-run-alphafold3", "--help"], "inference")
-        result["cli"] = "fs2-run-alphafold3 data|inference"
         return result
 
     if runtime_id == "openfold3":
@@ -180,16 +307,6 @@ def _build_smoke(runtime_id: str) -> dict[str, Any]:
 
 
 def _assert_h100(runtime_id: str) -> dict[str, object]:
-    if runtime_id == "alphafold3":
-        import jax
-
-        devices = [device for device in jax.devices() if device.platform == "gpu"]
-        if not devices or "H100" not in devices[0].device_kind:
-            raise RuntimeError(
-                f"exact H100 semantic smoke requires H100; JAX devices={jax.devices()}"
-            )
-        return {"device_name": devices[0].device_kind, "compute_capability": [9, 0]}
-
     import torch
 
     if not torch.cuda.is_available():
@@ -251,6 +368,7 @@ def _semantic_smoke(
     msa_mode: str,
     runner_yaml: Path | None,
     provenance_marker: Path | None,
+    runtime_localization_marker: Path,
     input_artifact_id: str | None,
     samples_per_seed: int,
 ) -> dict[str, object]:
@@ -303,32 +421,12 @@ def _semantic_smoke(
             "/models/protenix-v2/checkpoint/protenix-v2.pt",
             "--common-dir",
             "/models/protenix-v2/common",
-            "--seed",
-            str(parsed_seeds[0]),
+            "--seeds",
+            seeds,
             "--sample-count",
             str(samples_per_seed),
             "--disable-templates",
             "--disable-rna-msa",
-        ],
-        "alphafold3": [
-            "/usr/local/bin/fs2-run-alphafold3",
-            "inference",
-            "--processed-json",
-            str(request),
-            "--output-dir",
-            str(output_dir),
-            "--provenance-marker",
-            str(provenance_marker) if provenance_marker is not None else "",
-            "--input-artifact-id",
-            input_artifact_id or "",
-            "--expected-reference-artifact-id",
-            "alphafold3-public-databases-v3.0",
-            "--expected-model-seeds",
-            seeds,
-            "--model-seeds",
-            seeds,
-            "--num-diffusion-samples",
-            str(samples_per_seed),
         ],
         "openfold3": [
             "/usr/local/bin/fs2-run-openfold3",
@@ -368,7 +466,10 @@ def _semantic_smoke(
         ],
     }
     command = commands[runtime_id]
-    if runtime_id in {"esmfold2", "esmfold2-fast", "protenix-v2"} and len(parsed_seeds) != 1:
+    command.extend(
+        ["--runtime-localization-marker", str(runtime_localization_marker)]
+    )
+    if runtime_id in {"esmfold2", "esmfold2-fast"} and len(parsed_seeds) != 1:
         raise RuntimeError(f"{runtime_id} semantic smoke accepts exactly one seed")
     environment = dict(os.environ)
     environment.update(
@@ -392,7 +493,7 @@ def _semantic_smoke(
         )
     expected_samples = 1 if runtime_id in {"esmfold2", "esmfold2-fast", "openfold3"} else samples_per_seed
     expected_seeds = parsed_seeds
-    if runtime_id in {"esmfold2", "esmfold2-fast", "protenix-v2"}:
+    if runtime_id in {"esmfold2", "esmfold2-fast"}:
         expected_seeds = parsed_seeds[:1]
     confidence_path, validated, nonempty = _validate_semantic_output(
         output_dir,
@@ -433,6 +534,7 @@ def main() -> None:
         help="OpenFold3 prepared runner YAML containing the exact model seeds",
     )
     parser.add_argument("--provenance-marker")
+    parser.add_argument("--runtime-localization-marker")
     parser.add_argument("--input-artifact-id")
     parser.add_argument("--samples-per-seed", type=int, default=1)
     args = parser.parse_args()
@@ -456,11 +558,12 @@ def main() -> None:
         "build": build,
     }
     if args.build_only:
-        if args.semantic_request or args.output_dir:
+        if args.semantic_request or args.output_dir or args.runtime_localization_marker:
             raise SystemExit("--build-only cannot be combined with semantic arguments")
         result.update(
             {
                 "mode": "build-only-not-semantic-readiness",
+                "build_cache": _validate_build_cache_contract(runtime_id),
                 "external_roots": _assert_external_roots_are_empty(),
                 "status": "passed",
             }
@@ -478,6 +581,19 @@ def main() -> None:
             raise SystemExit("output-dir must be absolute")
         runner_yaml = Path(args.runner_yaml) if args.runner_yaml else None
         provenance_marker = Path(args.provenance_marker) if args.provenance_marker else None
+        runtime_localization_marker = (
+            Path(args.runtime_localization_marker)
+            if args.runtime_localization_marker
+            else None
+        )
+        if (
+            runtime_localization_marker is None
+            or not runtime_localization_marker.is_absolute()
+            or not runtime_localization_marker.is_file()
+        ):
+            raise SystemExit(
+                "semantic smoke requires an absolute existing --runtime-localization-marker"
+            )
         if runtime_id == "openfold3" and (
             runner_yaml is None or not runner_yaml.is_absolute()
         ):
@@ -486,7 +602,7 @@ def main() -> None:
             )
         if runtime_id != "openfold3" and runner_yaml is not None:
             raise SystemExit("--runner-yaml is valid only for OpenFold3")
-        if runtime_id in {"protenix-v2", "alphafold3", "openfold3"} and (
+        if runtime_id in {"protenix-v2", "openfold3"} and (
             provenance_marker is None
             or not provenance_marker.is_absolute()
             or not provenance_marker.is_file()
@@ -495,7 +611,7 @@ def main() -> None:
             raise SystemExit(
                 "staged semantic smoke requires --provenance-marker and --input-artifact-id"
             )
-        if runtime_id not in {"protenix-v2", "alphafold3", "openfold3"} and (
+        if runtime_id not in {"protenix-v2", "openfold3"} and (
             provenance_marker is not None or args.input_artifact_id is not None
         ):
             raise SystemExit("handoff provenance arguments are valid only for staged runtimes")
@@ -512,6 +628,7 @@ def main() -> None:
                     msa_mode=args.msa_mode,
                     runner_yaml=runner_yaml,
                     provenance_marker=provenance_marker,
+                    runtime_localization_marker=runtime_localization_marker,
                     input_artifact_id=args.input_artifact_id,
                     samples_per_seed=args.samples_per_seed,
                 ),
