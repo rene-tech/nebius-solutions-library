@@ -1,0 +1,34 @@
+{
+  "archive_provenance": {
+    "bytes": 391401102,
+    "filename": "mols.zip",
+    "license_id": "MIT",
+    "present_in_mount": false,
+    "sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+    "source_revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+    "source_uri": "https://huggingface.co/datasets/boltzgen/inference-data/resolve/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip"
+  },
+  "artifact_id": "boltzgen-inference-molecules",
+  "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+  "observation": {
+    "duration_seconds": 94.785
+  },
+  "observed_at": "2026-09-03T03:03:53Z",
+  "runtime_bindings": [
+    {
+      "binding_kind": "argv-option",
+      "binding_name": "--moldir",
+      "binding_value": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+      "model_id": "boltzgen"
+    }
+  ],
+  "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+  "state": "verified",
+  "tree_identity": {
+    "entry_count": 45227,
+    "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+    "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+    "probe_entries_verified": 10,
+    "total_bytes": 1820698819
+  }
+}
