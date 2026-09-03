@@ -1,0 +1,437 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+  "models": [
+    {
+      "model_id": "boltzgen",
+      "variant_id": "upstream-v0-3-2",
+      "workload_namespace": "fs2-models",
+      "execution_identity_sha256": "0ecc74cc88193ee484a78da3b3fff6e326a125d4d68515a569f3372c387391e6",
+      "plan_adapter": {
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
+      },
+      "runtime_artifacts": [
+        {
+          "artifact_id": "boltzgen-checkpoints",
+          "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
+          "content_digest": "sha256:ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+          "localization_receipt_digest": "sha256:723ada21585427b7cec08ddeccbba3279e74bd3c4660c8d12cc0d33e3f36a44f",
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+            "manifest_sha256": "723ada21585427b7cec08ddeccbba3279e74bd3c4660c8d12cc0d33e3f36a44f",
+            "inventory_sha256": "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
+            "file_count": 6,
+            "directory_count": 0,
+            "expanded_bytes": 10234382415,
+            "canonical_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
+        },
+        {
+          "aggregate_tree": {
+            "canonical_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+            "directory_count": 0,
+            "expanded_bytes": 1820698819,
+            "file_count": 45227,
+            "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
+            "manifest_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+            "marker_relative_path": ".fs2-runtime-tree.json",
+            "storage_kind": "localization-generation",
+            "tree_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
+          },
+          "artifact_id": "boltzgen-inference-molecules",
+          "content_digest": "sha256:8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "localization_receipt_digest": "sha256:1baf37e3110e7ec006f7896b38bd6fe2f04cb622cb7b7600411b3359527aa629",
+          "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules"
+        }
+      ],
+      "stages": [
+        {
+          "stage_id": "configure",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "reference-data",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/reference-data",
+              "sub_path": null,
+              "read_only": true
+            }
+          ],
+          "service_account_name": "default",
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
+          "stage_id": "design",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "reference-data",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/reference-data",
+              "sub_path": null,
+              "read_only": true
+            }
+          ],
+          "service_account_name": "default",
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
+          "stage_id": "inverse-folding",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "reference-data",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/reference-data",
+              "sub_path": null,
+              "read_only": true
+            }
+          ],
+          "service_account_name": "default",
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
+          "stage_id": "folding",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "reference-data",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/reference-data",
+              "sub_path": null,
+              "read_only": true
+            }
+          ],
+          "service_account_name": "default",
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
+          "stage_id": "design-folding",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "reference-data",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/reference-data",
+              "sub_path": null,
+              "read_only": true
+            }
+          ],
+          "service_account_name": "default",
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
+          "stage_id": "affinity",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "reference-data",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/reference-data",
+              "sub_path": null,
+              "read_only": true
+            }
+          ],
+          "service_account_name": "default",
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
+          "stage_id": "analysis",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "reference-data",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/reference-data",
+              "sub_path": null,
+              "read_only": true
+            }
+          ],
+          "service_account_name": "default",
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
+          "stage_id": "filtering",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "reference-data",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/reference-data",
+              "sub_path": null,
+              "read_only": true
+            }
+          ],
+          "service_account_name": "default",
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "accelerator.fs2.nebius/pool-id": "h100-1x",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "_blocked_on": {
+    "note": "This map is complete and every digest in it is real. It cannot be activated yet because main's profile schema requires a qualification block whose receipts do not exist.",
+    "profile_qualification_block_requires": {
+      "h100_semantic_receipt_sha256": "AVAILABLE: f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46, the evidence_sha256 recorded in runtime-images/boltzgen/image-lock.json",
+      "qualified_at": "AVAILABLE: 2026-09-03T07:34:56Z, the H100 receipt's observed_at",
+      "execution_map_sha256": "AVAILABLE once this file is final; it is the sha256 of these bytes",
+      "public_completion_receipt_sha256": "MISSING: no producer for this receipt exists anywhere on main",
+      "scheduler_eligibility_receipt_sha256": "MISSING: no producer for this receipt exists anywhere on main"
+    },
+    "also_required_for_qualified_state": [
+      "source.classification must become qualified-input",
+      "access.state should be not-required for BoltzGen, which is MIT and public"
+    ]
+  }
+}
