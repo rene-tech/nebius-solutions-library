@@ -444,6 +444,36 @@ def _mount_path_of(container: Mapping[str, Any], volume_name: str) -> str | None
     return None
 
 
+def payload_mount(
+    pod_spec: Mapping[str, Any],
+    container: Mapping[str, Any],
+    claim_name: str,
+) -> tuple[str, str] | None:
+    """Locate the volume that exposes the declared retained payload.
+
+    The volume is found by the claim the declaration names, not by a
+    conventional volume name, so a template that mounts its payload under any
+    name still works and a template that does not mount it at all fails loudly.
+    """
+
+    volumes = pod_spec.get("volumes")
+    if not isinstance(volumes, list):
+        return None
+    for volume in volumes:
+        if not isinstance(volume, dict):
+            continue
+        claim = volume.get("persistentVolumeClaim")
+        if not isinstance(claim, dict) or claim.get("claimName") != claim_name:
+            continue
+        name = volume.get("name")
+        if not isinstance(name, str):
+            continue
+        mounted_at = _mount_path_of(container, name)
+        if mounted_at is not None:
+            return name, mounted_at
+    return None
+
+
 WARM_PAGE_CACHE_SCRIPT = r"""
 import concurrent.futures as futures
 import json
@@ -567,9 +597,12 @@ def configure_regional_cache(
 
     warm = qualification.warm_page_cache
     if warm is not None:
-        payload_mount = _mount_path_of(container, "model")
-        if payload_mount is None:
-            raise FastStartMechanismError("regional-cache page warming needs the retained payload mounted")
+        located = payload_mount(pod_spec, container, qualification.payload_claim_name)
+        if located is None:
+            raise FastStartMechanismError(
+                "regional-cache page warming needs the declared retained payload claim mounted into the runtime"
+            )
+        payload_volume, payload_path = located
         init_containers = pod_spec.setdefault("initContainers", [])
         if not isinstance(init_containers, list):
             raise FastStartMechanismError("rendered Pod initContainers must be a list")
@@ -597,7 +630,7 @@ def configure_regional_cache(
                     "allowPrivilegeEscalation": False,
                     "capabilities": {"drop": ["ALL"]},
                 },
-                "volumeMounts": [{"name": "model", "mountPath": payload_mount, "readOnly": True}],
+                "volumeMounts": [{"name": payload_volume, "mountPath": payload_path, "readOnly": True}],
             }
         )
 
