@@ -1171,3 +1171,55 @@ def test_the_archive_supplies_every_entry_the_generator_does_not(tmp_path: Path)
     archive.write_bytes(payload)
     with pytest.raises(ArtifactLocalizationError):
         localize_archive(archive, tmp_path / "mount", LocalizationContract.parse(document))
+
+
+# ---------------------------------------------------------------------------
+# The verifier is delivered into runtime images, so it must stay portable
+# ---------------------------------------------------------------------------
+
+
+def test_the_delivered_verifier_still_parses_as_python_3_10() -> None:
+    """Staging and qualification run this code inside model runtime images.
+
+    Those images are not all on the control plane's interpreter; the published
+    BindCraft runtime is Python 3.10. A 3.11-only construct here fails the
+    verifier on import, before it can report anything about the mount, so the
+    delivered modules are checked against the older grammar and against the
+    stdlib names that moved.
+    """
+
+    import ast
+
+    adapters = Path(__file__).resolve().parents[1] / "src/fs2_serve/scientific_batch/adapters"
+    for name in ("localization.py", "primitives.py"):
+        source = (adapters / name).read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=name, feature_version=(3, 10))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "datetime":
+                assert "UTC" not in {alias.name for alias in node.names}, name
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "datetime":
+                assert node.attr != "UTC", name
+
+
+def test_the_delivered_verifier_imports_nothing_outside_the_standard_library() -> None:
+    """It ships as two files through a ConfigMap, so it can depend on nothing else."""
+
+    import ast
+    import sys
+
+    adapters = Path(__file__).resolve().parents[1] / "src/fs2_serve/scientific_batch/adapters"
+    allowed_local = {"primitives"}
+    for name in ("localization.py", "primitives.py"):
+        tree = ast.parse((adapters / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                if node.level:
+                    assert node.module in allowed_local, f"{name} imports .{node.module}"
+                    continue
+                assert node.module is not None
+                root = node.module.split(".")[0]
+                assert root in sys.stdlib_module_names, f"{name} imports {node.module}"
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    root = alias.name.split(".")[0]
+                    assert root in sys.stdlib_module_names, f"{name} imports {alias.name}"

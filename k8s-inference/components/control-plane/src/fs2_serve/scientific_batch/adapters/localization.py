@@ -25,7 +25,7 @@ import zipfile
 import zlib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import cast
 
@@ -41,6 +41,12 @@ RECEIPT_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-receipt/v1"
 TREE_INVENTORY_ALGORITHM = "fs2-flat-tree-inventory/v1"
 
 RUNTIME_ARTIFACT_ROOT = PurePosixPath("/opt/fs2/artifacts")
+
+# This module is delivered into model runtime images to verify their own mounts,
+# and those images are not all on the control plane's Python. Nothing here may
+# use an interpreter feature newer than 3.10: `datetime.UTC`, for one, does not
+# exist there, and importing it fails the verifier before it can report anything.
+_UTC = timezone.utc  # noqa: UP017 - datetime.UTC is 3.11+, this module targets 3.10
 
 MAX_TREE_ENTRIES = 1_048_576
 MAX_TREE_BYTES = 1_099_511_627_776
@@ -579,7 +585,7 @@ class LocalizationReceipt:
         value: dict[str, object] = {
             "schema": RECEIPT_SCHEMA,
             "artifact_id": self.artifact_id,
-            "observed_at": self.observed_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "observed_at": self.observed_at.astimezone(_UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "mount_path": self.mount_path,
             "state": self.state,
             "archive_provenance": self.archive.to_receipt(present_in_mount=self.archive_present_in_mount),
@@ -723,7 +729,7 @@ def verify_localized_tree(
     was refused. Structurally impossible input still raises.
     """
 
-    moment = now or datetime.now(tz=UTC)
+    moment = now or datetime.now(tz=_UTC)
     tree = contract.tree
     try:
         resolved = _real_directory(root, "runtime artifact mount")

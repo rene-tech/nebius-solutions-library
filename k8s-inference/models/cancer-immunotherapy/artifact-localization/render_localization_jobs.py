@@ -37,6 +37,10 @@ PACKAGE_MOUNT = "/opt/fs2-localization"
 CONTRACT_MOUNT = f"{PACKAGE_MOUNT}/{PACKAGE_NAME}/localization-contract.json"
 TREE_ROOT = "/trees"
 RECEIPT_DIR = f"{TREE_ROOT}/.receipts"
+# A qualification pod reads the shared volume and must not write to it: it runs
+# as the runtime image's own account, which is a guest in the claim's group, and
+# its receipt is evidence about one node rather than shared artifact state.
+QUALIFY_RECEIPT_DIR = "/scratch"
 
 LABEL_PREFIX = "fs2-serve.nebius.ai"
 
@@ -222,7 +226,14 @@ def stage_job(
     prepare = {
         "name": "prepare",
         "image": image,
-        "command": [python, "-c", f"import os; os.makedirs({RECEIPT_DIR!r}, exist_ok=True)"],
+        "command": [
+            python,
+            "-c",
+            # Group-writable so another member of the claim's group can add a
+            # receipt later without needing the account that staged first.
+            f"import os; os.makedirs({RECEIPT_DIR!r}, mode=0o775, exist_ok=True); "
+            f"os.chmod({RECEIPT_DIR!r}, 0o775)",
+        ],
         "volumeMounts": mounts,
         "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}},
     }
@@ -313,7 +324,7 @@ def qualify_job(
                 "--mount",
                 artifact["tree"]["mount_paths"][0],
                 "--receipt",
-                f"{RECEIPT_DIR}/{artifact['artifact_id']}.{model_id}-node.json",
+                f"{QUALIFY_RECEIPT_DIR}/{artifact['artifact_id']}.{model_id}-node.json",
             ],
             "env": [
                 {"name": "PYTHONPATH", "value": PACKAGE_MOUNT},
@@ -356,7 +367,7 @@ def qualify_job(
                                 {"name": "PYTHONDONTWRITEBYTECODE", "value": "1"},
                                 {"name": "HOME", "value": "/scratch"},
                                 {"name": "TMPDIR", "value": "/scratch"},
-                                {"name": "FS2_TREE_RECEIPTS", "value": RECEIPT_DIR},
+                                {"name": "FS2_TREE_RECEIPTS", "value": QUALIFY_RECEIPT_DIR},
                                 *[
                                     {"name": "FS2_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName"}}}
                                 ],
