@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://fs2-serve.nebius.ai/schema/scientific-source-candidate-receipts/v1",
   "title": "Scientific source candidate receipts",
-  "description": "Immutable upstream HEAD observations used only to start review. These receipts are not build, artifact, access, license, hardware, semantic, performance, or production qualification evidence.",
+  "description": "Source-qualified exact revisions used to start runtime review. These receipts are not build, artifact materialization, hardware, semantic, performance, or production qualification evidence.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -27,6 +27,7 @@
         "additionalProperties": false,
         "required": [
           "model_id",
+          "variant_id",
           "upstream_name",
           "backend_identity",
           "status",
@@ -43,6 +44,11 @@
             "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
             "maxLength": 63
           },
+          "variant_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+            "maxLength": 63
+          },
           "upstream_name": {
             "type": "string",
             "minLength": 1,
@@ -55,10 +61,10 @@
             "const": "candidate"
           },
           "qualification_state": {
-            "const": "unqualified"
+            "const": "source-qualified"
           },
           "observation_method": {
-            "const": "git-ls-remote-head"
+            "const": "source-qualification-record"
           },
           "source": {
             "type": "object",
@@ -96,7 +102,10 @@
             ]
           },
           "access_state": {
-            "const": "unverified"
+            "enum": [
+              "not-required",
+              "license-acceptance-pending"
+            ]
           },
           "notes": {
             "type": "string",

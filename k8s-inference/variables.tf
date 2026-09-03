@@ -366,9 +366,10 @@ variable "deployment" {
     # controller successors are integrated; the result store above is
     # independently deployable while they are.
     scientific_batch = optional(object({
-      enabled        = optional(bool, false)
-      writes_enabled = optional(bool, false)
-      namespace      = optional(string, "fs2-models")
+      enabled            = optional(bool, false)
+      writes_enabled     = optional(bool, false)
+      namespace          = optional(string, "fs2-models")
+      execution_map_file = optional(string, null)
     }), {})
 
     artifacts = optional(object({
@@ -854,10 +855,16 @@ variable "deployment" {
         ) && (
         !var.deployment.scientific_batch.writes_enabled ||
         var.deployment.scientific_batch.enabled
-      ) && can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.deployment.scientific_batch.namespace)),
+        ) && can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.deployment.scientific_batch.namespace)) && (
+        !var.deployment.scientific_batch.enabled || (
+          var.deployment.scientific_batch.execution_map_file != null &&
+          startswith(var.deployment.scientific_batch.execution_map_file, "/") &&
+          !strcontains(var.deployment.scientific_batch.execution_map_file, "..")
+        )
+      ),
       false,
     )
-    error_message = "scientific_batch.enabled requires storage.scientific_artifacts.enabled, scientific_batch.writes_enabled requires scientific_batch.enabled, and the batch namespace must be a DNS label."
+    error_message = "scientific_batch.enabled requires storage.scientific_artifacts.enabled and an absolute generated v3 execution_map_file without traversal; writes require enabled and namespace must be a DNS label."
   }
 
   validation {

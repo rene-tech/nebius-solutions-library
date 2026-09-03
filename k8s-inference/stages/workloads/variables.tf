@@ -353,22 +353,34 @@ variable "scientific_artifacts" {
 variable "scientific_batch" {
   description = "Staged scientific batch gates. Batch execution requires the artifact store; Kubernetes writes require batch."
   type = object({
-    enabled        = bool
-    writes_enabled = bool
-    namespace      = string
+    enabled                       = bool
+    writes_enabled                = bool
+    namespace                     = string
+    execution_map_config_map_json = optional(string, null)
   })
   default = {
-    enabled        = false
-    writes_enabled = false
-    namespace      = "fs2-models"
+    enabled                       = false
+    writes_enabled                = false
+    namespace                     = "fs2-models"
+    execution_map_config_map_json = null
   }
 
   validation {
     condition = (
       (!var.scientific_batch.writes_enabled || var.scientific_batch.enabled) &&
-      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.scientific_batch.namespace))
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.scientific_batch.namespace)) &&
+      (var.scientific_batch.execution_map_config_map_json == null || try(
+        length(var.scientific_batch.execution_map_config_map_json) <= 8388608 &&
+        jsondecode(var.scientific_batch.execution_map_config_map_json).apiVersion == "v1" &&
+        jsondecode(var.scientific_batch.execution_map_config_map_json).kind == "ConfigMap" &&
+        jsondecode(var.scientific_batch.execution_map_config_map_json).metadata.namespace == "fs2-system" &&
+        jsondecode(var.scientific_batch.execution_map_config_map_json).immutable == true &&
+        jsondecode(jsondecode(var.scientific_batch.execution_map_config_map_json).data["execution-map.json"]).schema == "fs2-serve.nebius.ai/scientific-execution-map/v3" &&
+        length(jsondecode(jsondecode(var.scientific_batch.execution_map_config_map_json).data["execution-map.json"]).models) > 0,
+        false,
+      ))
     )
-    error_message = "scientific_batch.writes_enabled requires scientific_batch.enabled and a DNS-label namespace."
+    error_message = "scientific_batch requires a bounded generated v3 execution map with at least one model; writes require enabled and namespace must be a DNS label."
   }
 }
 

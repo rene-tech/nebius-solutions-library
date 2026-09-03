@@ -360,6 +360,7 @@
       "required": [
         "stage_id",
         "resource_class",
+        "execution_namespace",
         "resolved_cluster_queue",
         "resolved_local_queue",
         "workload_priority_class",
@@ -381,6 +382,9 @@
             "cpu",
             "gpu"
           ]
+        },
+        "execution_namespace": {
+          "$ref": "#/$defs/k8s_name"
         },
         "resolved_cluster_queue": {
           "$ref": "#/$defs/k8s_name"

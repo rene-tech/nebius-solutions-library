@@ -323,6 +323,7 @@ The top-level variable is `deployment`:
 | `cluster` | Kubernetes version, API CIDR allowlist, and optional regular CPU system-pool shape. |
 | `accelerator_pools` | Open map of GPU platform/preset, capacity, optional capacity-block reservation, topology, driver, local-storage, and node-floor/ceiling settings. |
 | `models` | Profile or explicit selection, KEDA/static scaling, hot-model floor, and per-model scaling overrides. |
+| `scientific_batch.execution_map_file` | Absolute path to the immutable ConfigMap JSON emitted by `fs2-serve-render-scientific-execution-map`; required when scientific batch is enabled. |
 | `dynamic_models` | Optional live controller gate, exclusive workload owner, and initial model IDs. Internal envelope and renderer JSON is derived, not customer-authored. |
 | `scheduling` | Optional GPU-neutral Kueue Cohort, queue floors, borrowing/preemption, fair-sharing weights, model lanes, and five customer service classes. |
 | `storage.shared_cache` | Optional shared model-cache size/type/block-size override. |

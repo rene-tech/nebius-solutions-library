@@ -30,6 +30,7 @@
       {
         "stage_id": "design",
         "resource_class": "gpu",
+        "execution_namespace": "fs2-models",
         "resolved_cluster_queue": "scientific-gpu",
         "resolved_local_queue": "example-protein-design",
         "workload_priority_class": "customer-batch",

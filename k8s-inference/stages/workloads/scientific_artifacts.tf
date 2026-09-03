@@ -70,9 +70,11 @@ locals {
 
   scientific_batch_overrides = {
     scientificBatch = {
-      enabled       = var.scientific_batch.enabled
-      writesEnabled = var.scientific_batch.writes_enabled
-      namespace     = var.scientific_batch.namespace
+      enabled                         = var.scientific_batch.enabled
+      writesEnabled                   = var.scientific_batch.writes_enabled
+      namespace                       = var.scientific_batch.namespace
+      executionMapConfigMapName       = var.scientific_batch.enabled ? local.scientific_execution_config_map.metadata.name : ""
+      schedulingContractConfigMapName = var.scientific_batch.enabled ? local.scientific_scheduling_name : ""
     }
   }
 

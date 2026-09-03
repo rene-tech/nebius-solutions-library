@@ -1555,6 +1555,7 @@ class MemoryStore:
             ):
                 if (
                     row.view.status != OperationStatus.QUEUED
+                    or row.view.protocol == "scientific-batch-v1"
                     or row.view.available_at > now
                     or row.view.attempt >= row.view.max_attempts
                 ):

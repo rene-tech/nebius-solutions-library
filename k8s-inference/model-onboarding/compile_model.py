@@ -14,9 +14,10 @@ import os
 import re
 import sys
 import tempfile
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 try:
     from jsonschema import Draft202012Validator
@@ -37,6 +38,9 @@ _IMAGE = re.compile(
     r"^(?:[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[1-9][0-9]{0,4})?/)"
     r"(?:[a-z0-9]+(?:[._-]+[a-z0-9]+)*)(?:/[a-z0-9]+(?:[._-]+[a-z0-9]+)*)*"
     r"@(sha256:[0-9a-f]{64})$"
+)
+_LOGICAL_REPOSITORY = re.compile(
+    r"^[a-z0-9]+(?:[._-]+[a-z0-9]+)*(?:/[a-z0-9]+(?:[._-]+[a-z0-9]+)*)+$"
 )
 _HF_REPO_ID = re.compile(
     r"^(?=.{3,96}$)[A-Za-z0-9_][A-Za-z0-9._-]*/[A-Za-z0-9_][A-Za-z0-9._-]*$"
@@ -72,6 +76,72 @@ _BINARY_UNITS = {
     "Mi": 1 << 20,
     "Gi": 1 << 30,
     "Ti": 1 << 40,
+}
+_SCIENTIFIC_ADAPTER_SHARED_RECIPE_PATHS = (
+    "components/control-plane/src/fs2_serve/scientific_batch/__init__.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/codec.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/controller.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/execution.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/execution_map_builder.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/models.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/catalog_adapter.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/protocols.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/scheduling.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/service.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/adapters/__init__.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/adapters/common.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/adapters/secondary_structure.py",
+    "catalog/runtime/schema/scientific-run-request.schema.json",
+    "catalog/runtime/schema/scientific-run-result.schema.json",
+    "catalog/runtime/schema/scientific-execution-targets.schema.json",
+    "catalog/runtime/schema/scientific-runtime-localizations.schema.json",
+    "catalog/runtime/schema/scientific-workload-profile.schema.json",
+    "catalog/runtime/contracts/scientific-execution-targets.json",
+    "model-onboarding/compile_model.py",
+    "model-onboarding/model-declaration.schema.json",
+)
+_SCIENTIFIC_ADAPTER_MODEL_RECIPE_PATHS = {
+    "alphafold3": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/alphafold3.py",
+        "model-onboarding/declarations/cancer-immunotherapy/alphafold3.json",
+        "models/structure/runtime/alphafold3/adapter.py",
+    ),
+    "boltzgen": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/boltzgen.py",
+        "catalog/runtime/schema/boltzgen-parameters.schema.json",
+        "models/structure/batch-adapters/boltzgen/adapter.py",
+        "models/structure/batch-adapters/boltzgen/contract.json",
+    ),
+    "proteina-complexa": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/proteina_complexa.py",
+        "catalog/runtime/schema/proteina-complexa-parameters.schema.json",
+        "models/structure/batch-adapters/proteina-complexa/adapter.py",
+        "models/structure/batch-adapters/proteina-complexa/contract.json",
+    ),
+    "esmfold2": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/esmfold2.py",
+        "model-onboarding/declarations/cancer-immunotherapy/esmfold2.json",
+        "models/structure/runtime/esmfold2/adapter.py",
+    ),
+    "esmfold2-fast": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/esmfold2_fast.py",
+        "model-onboarding/declarations/cancer-immunotherapy/esmfold2-fast.json",
+        "models/structure/runtime/esmfold2_fast/adapter.py",
+    ),
+    "openfold3": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/openfold3.py",
+        "model-onboarding/declarations/cancer-immunotherapy/openfold3.json",
+        "models/structure/runtime/openfold3/adapter.py",
+    ),
+    "protenix-v2": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/protenix_v2.py",
+        "model-onboarding/declarations/cancer-immunotherapy/protenix-v2.json",
+        "models/structure/runtime/protenix_v2/adapter.py",
+    ),
+}
+_SCIENTIFIC_ADAPTER_PARAMETER_SCHEMA_IDS = {
+    "boltzgen": "fs2-serve.nebius.ai/boltzgen-parameters/v1",
+    "proteina-complexa": "fs2-serve.nebius.ai/proteina-complexa-parameters/v1",
 }
 
 
@@ -130,6 +200,30 @@ def _json_bytes(value: Any) -> bytes:
 
 def _canonical_bytes(value: Any) -> bytes:
     return json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+def _scientific_adapter_runtime_recipe_sha256(
+    solution_root: Path, model_id: str
+) -> str | None:
+    """Bind a registered controller adapter to every executable contract input."""
+
+    model_paths = _SCIENTIFIC_ADAPTER_MODEL_RECIPE_PATHS.get(model_id)
+    if model_paths is None:
+        return None
+    digest = hashlib.sha256()
+    for relative in sorted((*_SCIENTIFIC_ADAPTER_SHARED_RECIPE_PATHS, *model_paths)):
+        path = solution_root / relative
+        if not path.is_file():
+            raise OnboardingError(
+                f"scientific runtime recipe input is missing: {relative}"
+            )
+        content = path.read_bytes()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(str(len(content)).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(content)
+    return digest.hexdigest()
 
 
 def _error_path(error: Any) -> str:
@@ -281,6 +375,132 @@ def _valid_image_reference(value: str) -> bool:
     return all(_DNS_LABEL.fullmatch(part) is not None for part in host.split("."))
 
 
+def _runtime_image(runtime: Mapping[str, Any]) -> tuple[str, str | None, str]:
+    """Return repository, digest, and supply state without inventing a registry."""
+
+    value = runtime["image"]
+    if isinstance(value, str):
+        match = _IMAGE.fullmatch(value)
+        if match is None:
+            raise OnboardingError(
+                "runtime.image must be a canonical lowercase OCI digest or a logical batch repository"
+            )
+        return value.rsplit("@", 1)[0], match.group(1), "digest-pinned"
+    if not isinstance(value, Mapping):
+        raise OnboardingError("runtime.image must be a string or object")
+    repository = value.get("logical_repository")
+    digest = value.get("digest")
+    state = value.get("state")
+    if (
+        not isinstance(repository, str)
+        or _LOGICAL_REPOSITORY.fullmatch(repository) is None
+    ):
+        raise OnboardingError(
+            "runtime.image.logical_repository must be a provider-neutral repository path"
+        )
+    first = repository.split("/", 1)[0]
+    if "." in first or ":" in first:
+        raise OnboardingError(
+            "runtime.image.logical_repository cannot contain a registry host"
+        )
+    if state == "build-required":
+        if digest is not None:
+            raise OnboardingError(
+                "a build-required runtime image cannot declare a digest"
+            )
+    elif state == "digest-pinned":
+        if (
+            not isinstance(digest, str)
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None
+        ):
+            raise OnboardingError(
+                "a digest-pinned runtime image requires an immutable digest"
+            )
+    else:
+        raise OnboardingError("runtime.image.state is unsupported")
+    return repository, digest, state
+
+
+def _parameter_contract(
+    batch: Mapping[str, Any],
+) -> tuple[str, Mapping[str, Any] | None, str | None]:
+    value = batch["parameter_schema"]
+    if isinstance(value, str):
+        return value, None, None
+    if not isinstance(value, Mapping):
+        raise OnboardingError(
+            "batch.parameter_schema must be an ID or an inline contract"
+        )
+    schema_id = value.get("id")
+    document = value.get("document")
+    if not isinstance(schema_id, str) or not isinstance(document, Mapping):
+        raise OnboardingError("batch.parameter_schema inline contract is incomplete")
+    try:
+        Draft202012Validator.check_schema(document)
+    except SchemaError as error:
+        raise OnboardingError(
+            f"invalid batch parameter schema: {error.message}"
+        ) from error
+    if (
+        document.get("type") != "object"
+        or document.get("additionalProperties") is not False
+    ):
+        raise OnboardingError(
+            "batch parameter schema must be a fail-closed object with additionalProperties=false"
+        )
+    return schema_id, document, hashlib.sha256(_canonical_bytes(document)).hexdigest()
+
+
+def _deployment_pool_contract(solution_root: Path) -> dict[str, Any]:
+    """Load the reviewed retained-deployment pool inventory.
+
+    Scientific declarations express an accelerator requirement. Pool IDs are a
+    deployment resolution of that requirement and must never be accepted from
+    declaration text alone.
+    """
+
+    path = solution_root / "catalog/runtime/contracts/scientific-deployment-pools.json"
+    contract = _load_json(path)
+    _validate_schema(
+        contract,
+        _load_json(
+            solution_root
+            / "catalog/runtime/schema/scientific-deployment-pools.schema.json"
+        ),
+        "scientific deployment pools",
+    )
+    return contract
+
+
+def _validate_deployment_placement(
+    declaration: Mapping[str, Any], solution_root: Path
+) -> None:
+    placement = declaration["placement"]
+    resources = declaration["resources"]
+    contract = _deployment_pool_contract(solution_root)
+    pools = {item["pool_id"]: item for item in contract["pools"]}
+    requested_class = placement["accelerator_class"]
+    requested_resource = placement["accelerator_resource_name"]
+    for pool_id in placement["compatible_pool_ids"]:
+        pool = pools.get(pool_id)
+        if pool is None:
+            raise OnboardingError(
+                f"placement pool {pool_id} is absent from the reviewed deployment inventory"
+            )
+        if pool["accelerator_class"] != requested_class:
+            raise OnboardingError(
+                f"placement pool {pool_id} does not satisfy accelerator class {requested_class}"
+            )
+        if pool["accelerator_resource_name"] != requested_resource:
+            raise OnboardingError(
+                f"placement pool {pool_id} does not expose {requested_resource}"
+            )
+        if pool["gpus_per_node"] < resources["gpu_count"]:
+            raise OnboardingError(
+                f"placement pool {pool_id} cannot supply {resources['gpu_count']} GPUs"
+            )
+
+
 def _custom_validate(declaration: Mapping[str, Any]) -> None:
     model = declaration["model"]
     source = model["source"]
@@ -289,10 +509,18 @@ def _custom_validate(declaration: Mapping[str, Any]) -> None:
     serving = declaration["serving"]
     batch = declaration["batch"]
 
-    if not _valid_image_reference(runtime["image"]):
-        raise OnboardingError(
-            "runtime.image must be a canonical lowercase OCI repository pinned by sha256 digest"
-        )
+    image_repository, image_digest, image_state = _runtime_image(runtime)
+    if _has_http(declaration):
+        if not isinstance(runtime["image"], str) or not _valid_image_reference(
+            runtime["image"]
+        ):
+            raise OnboardingError(
+                "HTTP runtime.image must be a canonical lowercase OCI repository pinned by sha256 digest"
+            )
+        if image_state != "digest-pinned" or image_digest is None:
+            raise OnboardingError("HTTP runtime images must be digest-pinned")
+    elif not image_repository:
+        raise OnboardingError("scientific batch runtime requires a logical repository")
     review = source["review"]
     repository = source["repository"]
     if (
@@ -342,12 +570,20 @@ def _custom_validate(declaration: Mapping[str, Any]) -> None:
         raise OnboardingError(
             "multiple GPUs require gpu_topology=single-node-multi-gpu"
         )
-    if (
-        "accelerator.fs2.nebius/class"
-        not in declaration["placement"]["required_node_labels"]
+    accelerator_class = declaration["placement"].get(
+        "accelerator_class",
+        declaration["placement"]["required_node_labels"].get(
+            "accelerator.fs2.nebius/class"
+        ),
+    )
+    if not accelerator_class or (
+        declaration["placement"]["required_node_labels"].get(
+            "accelerator.fs2.nebius/class"
+        )
+        != accelerator_class
     ):
         raise OnboardingError(
-            "placement.required_node_labels must declare accelerator.fs2.nebius/class"
+            "placement.required_node_labels accelerator class must equal placement.accelerator_class"
         )
     for key, value in declaration["placement"]["required_node_labels"].items():
         if not _valid_label_key(key):
@@ -357,9 +593,14 @@ def _custom_validate(declaration: Mapping[str, Any]) -> None:
     _resource_projection(resources)
 
     argv = [*runtime["command"], *runtime["args"]]
-    if argv.count(MODEL_PATH_TOKEN) != 1:
+    model_path_references = sum(item.count(MODEL_PATH_TOKEN) for item in argv)
+    if _has_http(declaration) and model_path_references != 1:
         raise OnboardingError(
-            f"runtime command and args must contain exactly one {MODEL_PATH_TOKEN} token"
+            f"HTTP runtime command and args must contain exactly one {MODEL_PATH_TOKEN} token"
+        )
+    if _has_scientific_batch(declaration) and model_path_references > 1:
+        raise OnboardingError(
+            f"scientific runtime argv may reference {MODEL_PATH_TOKEN} at most once; adapters own artifact localization"
         )
     if runtime["kind"] == "vllm":
         if not _has_http(declaration):
@@ -411,6 +652,31 @@ def _custom_validate(declaration: Mapping[str, Any]) -> None:
 
     if _has_scientific_batch(declaration):
         assert batch is not None
+        if "variant_id" not in model or "default_variant" not in model:
+            raise OnboardingError(
+                "scientific declarations require explicit variant_id and default_variant"
+            )
+        if (
+            declaration["placement"].get("accelerator_resource_name")
+            != "nvidia.com/gpu"
+        ):
+            raise OnboardingError(
+                "scientific placement requires accelerator_resource_name=nvidia.com/gpu"
+            )
+        parameter_schema_id, _, _ = _parameter_contract(batch)
+        expected_parameter_schema = _SCIENTIFIC_ADAPTER_PARAMETER_SCHEMA_IDS.get(
+            model["id"],
+            f"fs2-serve.nebius.ai/{model['id']}-"
+            f"{model.get('variant_id', 'default')}-parameters/v1",
+        )
+        if not isinstance(batch["parameter_schema"], Mapping):
+            raise OnboardingError(
+                "scientific batch.parameter_schema must embed a fail-closed schema and digest input"
+            )
+        if parameter_schema_id != expected_parameter_schema:
+            raise OnboardingError(
+                "batch.parameter_schema.id must bind model.id and model.variant_id exactly"
+            )
         if batch["operations"] != sorted(batch["operations"]):
             raise OnboardingError(
                 "batch.operations must be sorted for deterministic review"
@@ -438,7 +704,57 @@ def _custom_validate(declaration: Mapping[str, Any]) -> None:
                 raise OnboardingError(
                     f"scientific stage {stage_id} gang-jobset requires min_parallelism >= 2"
                 )
+            stage_resources = stage.get("resources")
+            if stage_resources is not None:
+                _resource_projection(stage_resources)
+                stage_gpu_count = stage_resources["gpu_count"]
+                if stage["resource_class"] == "cpu" and stage_gpu_count != 0:
+                    raise OnboardingError(
+                        f"scientific CPU stage {stage_id} cannot reserve a GPU"
+                    )
+                if stage["resource_class"] == "gpu" and stage_gpu_count < 1:
+                    raise OnboardingError(
+                        f"scientific GPU stage {stage_id} requires a GPU"
+                    )
+            if stage["resource_class"] == "cpu" and "placement" in stage:
+                raise OnboardingError(
+                    f"scientific CPU stage {stage_id} cannot declare accelerator placement"
+                )
             stage_ids.add(stage_id)
+        for storage in batch.get("storage", []):
+            unknown_stages = sorted(set(storage["stages"]) - stage_ids)
+            if unknown_stages:
+                raise OnboardingError(
+                    f"scientific storage {storage['id']} references unknown stages: "
+                    + ", ".join(unknown_stages)
+                )
+
+    for artifact in model.get("artifacts", []):
+        artifact_source = artifact["source"]
+        source_kind = artifact_source["kind"]
+        repository_value = artifact_source["repository"]
+        revision_value = artifact_source["revision"]
+        release_id = artifact_source["release_id"]
+        if source_kind in {"huggingface", "source-tree"}:
+            if not isinstance(repository_value, str) or not isinstance(
+                revision_value, str
+            ):
+                raise OnboardingError(
+                    f"artifact {artifact['artifact_id']} requires an exact repository revision"
+                )
+            if release_id is not None:
+                raise OnboardingError(
+                    f"artifact {artifact['artifact_id']} exact repository source cannot use release_id"
+                )
+        elif source_kind == "operator-staged":
+            if (
+                repository_value is not None
+                or revision_value is not None
+                or not isinstance(release_id, str)
+            ):
+                raise OnboardingError(
+                    f"artifact {artifact['artifact_id']} operator-staged source must use only release_id"
+                )
 
     if (
         _has_http(declaration)
@@ -704,7 +1020,7 @@ def _profile_projection(declaration: Mapping[str, Any]) -> dict[str, Any]:
                 "workload_topology": resources["gpu_topology"],
                 "host_architectures": sorted(placement["host_architectures"]),
                 "selection_mode": "accelerator-class",
-                "compatible_pool_ids": sorted(placement["compatible_pool_ids"]),
+                "compatible_pool_ids": list(placement["compatible_pool_ids"]),
                 "required_node_labels": dict(
                     sorted(placement["required_node_labels"].items())
                 ),
@@ -756,7 +1072,7 @@ def _route_projection(declaration: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _scientific_workload_projection(
-    declaration: Mapping[str, Any]
+    declaration: Mapping[str, Any], solution_root: Path
 ) -> dict[str, Any]:
     """Render a candidate batch contract; this does not create a Job or route."""
 
@@ -768,9 +1084,11 @@ def _scientific_workload_projection(
     batch = declaration["batch"]
     policy = declaration["policy"]
     assert batch is not None
-    image_match = _IMAGE.fullmatch(runtime["image"])
-    assert image_match is not None
-    image_digest = image_match.group(1)
+    image_repository, image_digest, image_state = _runtime_image(runtime)
+    parameter_schema_id, parameter_schema_document, parameter_schema_sha256 = (
+        _parameter_contract(batch)
+    )
+    poc_authorized = batch.get("poc_authorization") == "user-authorized-academic-poc"
     runtime_recipe = {
         "template": runtime["template"],
         "kind": runtime["kind"],
@@ -778,12 +1096,15 @@ def _scientific_workload_projection(
         "image": runtime["image"],
         "command": runtime["command"],
         "args": runtime["args"],
+        "working_directory": runtime.get("working_directory"),
         "environment": dict(sorted(runtime.get("environment", {}).items())),
     }
     workload_recipe = {
-        "parameter_schema": batch["parameter_schema"],
+        "parameter_schema": parameter_schema_id,
+        "parameter_schema_sha256": parameter_schema_sha256,
         "operations": batch["operations"],
         "stages": batch["stages"],
+        "storage": batch.get("storage", []),
     }
     limitations = sorted(
         set(
@@ -796,9 +1117,14 @@ def _scientific_workload_projection(
             ]
         )
     )
+    adapter_runtime_recipe_sha256 = _scientific_adapter_runtime_recipe_sha256(
+        solution_root, model["id"]
+    )
     profile = {
         "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
         "model_id": model["id"],
+        "variant_id": model.get("variant_id", "default"),
+        "default_variant": model.get("default_variant", False),
         "display_name": model["display_name"],
         "execution_mode": declaration["execution_mode"],
         "state": "candidate-unqualified",
@@ -812,10 +1138,11 @@ def _scientific_workload_projection(
         },
         "execution_identity": {
             "model_revision": source["revision"],
+            "runtime_image_repository": image_repository,
+            "runtime_image_state": image_state,
             "runtime_image_digest": image_digest,
-            "runtime_recipe_sha256": hashlib.sha256(
-                _canonical_bytes(runtime_recipe)
-            ).hexdigest(),
+            "runtime_recipe_sha256": adapter_runtime_recipe_sha256
+            or hashlib.sha256(_canonical_bytes(runtime_recipe)).hexdigest(),
             "workload_recipe_sha256": hashlib.sha256(
                 _canonical_bytes(workload_recipe)
             ).hexdigest(),
@@ -824,10 +1151,20 @@ def _scientific_workload_projection(
         },
         "interface": {
             "protocol": batch["protocol"],
-            "submit_endpoint": f"/v1/models/{model['id']}:submit",
+            "variant_submit_endpoint": (
+                f"/v1/models/{model['id']}/variants/"
+                f"{model.get('variant_id', 'default')}:submit"
+            ),
+            "default_submit_endpoint": (
+                f"/v1/models/{model['id']}:submit"
+                if model.get("default_variant", False)
+                else None
+            ),
             "request_schema": batch["request_schema"],
             "result_schema": batch["result_schema"],
-            "parameter_schema": batch["parameter_schema"],
+            "parameter_schema": parameter_schema_id,
+            "parameter_schema_sha256": parameter_schema_sha256,
+            "parameter_schema_definition": parameter_schema_document,
             "operations": batch["operations"],
             "service_classes": batch["service_classes"],
             "mcp": {
@@ -842,18 +1179,115 @@ def _scientific_workload_projection(
             "state": batch["access_state"],
             "receipt_digest": None,
             "credentials_embedded": False,
+            "condition": (
+                "LicenseAcceptancePending"
+                if batch["access_state"] == "license-acceptance-pending"
+                else None
+            ),
+            "materialization": (
+                "restricted-quarantine-poc-authorized"
+                if poc_authorized
+                else "quarantine-required"
+                if batch["access_state"] == "license-acceptance-pending"
+                else "not-materialized"
+            ),
+            "operational_activation": (
+                "user-authorized-academic-poc"
+                if poc_authorized
+                else "poc-quarantine-only"
+                if batch["access_state"] == "license-acceptance-pending"
+                else "candidate-not-activated"
+            ),
+            "formal_license_acceptance": (
+                "pending-authorized-institution-representative"
+                if batch["access_state"] == "license-acceptance-pending"
+                else "not-required"
+            ),
+            "license_gate_scope": (
+                "production-promotion-only"
+                if poc_authorized
+                else "materialization-and-execution"
+                if batch["access_state"] == "license-acceptance-pending"
+                else "not-applicable"
+            ),
         },
+        "artifact_requirements": [dict(item) for item in model.get("artifacts", [])],
         "resources": {
             "gpu_count": resources["gpu_count"],
             "gpu_topology": resources["gpu_topology"],
             "host_architectures": sorted(placement["host_architectures"]),
-            "compatible_pool_ids": sorted(placement["compatible_pool_ids"]),
+            "compatible_pool_ids": list(placement["compatible_pool_ids"]),
             "required_node_labels": dict(
                 sorted(placement["required_node_labels"].items())
             ),
+            "accelerator_requirement": {
+                "class": placement["accelerator_class"],
+                "resource_name": placement["accelerator_resource_name"],
+                "count": resources["gpu_count"],
+            },
+            "cache_pvc": {
+                "size_bytes": _binary_bytes(resources["cache_pvc"]["size"]),
+                "storage_class": resources["cache_pvc"]["storage_class"],
+                "binding": "deployment-configured-claim",
+            },
         },
         "workload": {
-            "stages": batch["stages"],
+            "parameter_schema_sha256": parameter_schema_sha256,
+            "stages": [
+                {
+                    **{
+                        key: value for key, value in stage.items() if key != "resources"
+                    },
+                    **(
+                        {
+                            "resources": {
+                                **_resource_projection(stage["resources"]),
+                                "gpu_count": stage["resources"]["gpu_count"],
+                                "limits": {
+                                    "cpu_millis": _cpu_millis(
+                                        stage["resources"]["limits"]["cpu"]
+                                    ),
+                                    "memory_bytes": _binary_bytes(
+                                        stage["resources"]["limits"]["memory"]
+                                    ),
+                                    "ephemeral_storage_bytes": _binary_bytes(
+                                        stage["resources"]["limits"][
+                                            "ephemeral_storage"
+                                        ]
+                                    ),
+                                },
+                            }
+                        }
+                        if "resources" in stage
+                        else {}
+                    ),
+                    "placement": (
+                        {
+                            "accelerator_requirement": {
+                                "class": placement["accelerator_class"],
+                                "resource_name": placement["accelerator_resource_name"],
+                                "count": stage.get("resources", {}).get(
+                                    "gpu_count", resources["gpu_count"]
+                                ),
+                            },
+                            "compatible_pool_ids": list(
+                                placement["compatible_pool_ids"]
+                            ),
+                            "required_node_labels": dict(
+                                sorted(placement["required_node_labels"].items())
+                            ),
+                        }
+                        if stage["resource_class"] == "gpu"
+                        else {
+                            "accelerator_requirement": None,
+                            "compatible_pool_ids": [],
+                            "required_node_labels": {},
+                        }
+                    ),
+                }
+                for stage in batch["stages"]
+            ],
+            "storage": batch.get("storage", []),
             "retry": batch["retry"],
             "cancellation": batch["cancellation"],
         },
@@ -862,13 +1296,50 @@ def _scientific_workload_projection(
             "commercial_use": policy["commercial_use"],
             "non_clinical": policy["non_clinical"],
             "limitations": limitations,
+            "fast_start": policy.get(
+                "fast_start",
+                {
+                    "requested_level": "Off",
+                    "maximum_level": "L1",
+                    "qualified_level": "Off",
+                    "state": "candidate-unqualified",
+                    "cache_strategy": "shared-pvc",
+                },
+            ),
         },
     }
+    profile["execution_identity"]["workload_recipe_sha256"] = hashlib.sha256(
+        _canonical_bytes(profile["workload"])
+    ).hexdigest()
     return {
         "schema": "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1",
         "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
         "profile": profile,
     }
+
+
+def compile_scientific_profile(
+    declaration: Mapping[str, Any], solution_root: Path
+) -> dict[str, Any]:
+    """Compile and schema-check one canonical scientific profile without merging it."""
+
+    _validate_declaration_value(declaration)
+    if _has_scientific_batch(declaration):
+        _validate_deployment_placement(declaration, solution_root)
+    if not _has_scientific_batch(declaration):
+        raise OnboardingError("declaration has no scientific-batch interface")
+    projection = _scientific_workload_projection(declaration, solution_root)
+    profile_schema_path = (
+        solution_root / "catalog/runtime/schema/scientific-workload-profile.schema.json"
+    )
+    if not profile_schema_path.is_file():
+        raise OnboardingError(f"solution root does not contain {profile_schema_path}")
+    _validate_schema(
+        projection["profile"],
+        _load_json(profile_schema_path),
+        "scientific workload profile projection",
+    )
+    return projection["profile"]
 
 
 def _catalog_index_projection(declaration: Mapping[str, Any]) -> dict[str, Any]:
@@ -895,7 +1366,7 @@ def _validate_collisions(declaration: Mapping[str, Any], solution_root: Path) ->
     collisions: set[str] = set()
 
     model_path = solution_root / f"catalog/runtime/models/{model_id}.json"
-    if model_path.exists() or model_path.is_symlink():
+    if _has_http(declaration) and (model_path.exists() or model_path.is_symlink()):
         collisions.add(f"catalog model {model_id}")
     http_tool_name: str | None = None
     batch_tool_name: str | None = None
@@ -910,13 +1381,19 @@ def _validate_collisions(declaration: Mapping[str, Any], solution_root: Path) ->
     if _has_scientific_batch(declaration):
         assert declaration["batch"] is not None
         batch_tool_name = declaration["batch"]["mcp"]["tool_name"]
+        if declaration["model"].get("default_variant", False) and model_path.is_file():
+            collisions.add(
+                f"default scientific submit route /v1/models/{model_id}:submit conflicts with canonical catalog model"
+            )
 
     catalog_path = solution_root / "catalog/runtime/catalog.json"
     if catalog_path.is_file():
         catalog = _load_json(catalog_path)
-        if f"{model_id}.json" in catalog.get("model_files", []):
+        if _has_http(declaration) and f"{model_id}.json" in catalog.get(
+            "model_files", []
+        ):
             collisions.add(f"catalog index file {model_id}.json")
-        if model_id in catalog.get("tested_model_ids", []):
+        if _has_http(declaration) and model_id in catalog.get("tested_model_ids", []):
             collisions.add(f"catalog index model {model_id}")
 
     profile_path = solution_root / "catalog/profiles/model-profiles.json"
@@ -962,17 +1439,56 @@ def _validate_collisions(declaration: Mapping[str, Any], solution_root: Path) ->
                 )
 
     scientific_profiles_path = (
-        solution_root
-        / "catalog/runtime/contracts/scientific-workload-profiles.json"
+        solution_root / "catalog/runtime/contracts/scientific-workload-profiles.json"
     )
     if scientific_profiles_path.is_file():
         profiles = _load_json(scientific_profiles_path)
+        variant_id = declaration["model"].get("variant_id", "default")
+        variant_endpoint = f"/v1/models/{model_id}/variants/{variant_id}:submit"
+        default_endpoint = (
+            f"/v1/models/{model_id}:submit"
+            if declaration["model"].get("default_variant", False)
+            else None
+        )
+        image_repository, _, _ = _runtime_image(declaration["runtime"])
         for profile in profiles.get("profiles", []):
-            if profile.get("model_id") == model_id:
-                collisions.add(f"scientific workload profile {model_id}")
-            existing_tool = (
-                profile.get("interface", {}).get("mcp", {}).get("tool_name")
+            same_identity = (
+                profile.get("model_id") == model_id
+                and profile.get("variant_id", "default") == variant_id
             )
+            same_checked_in_declaration = (
+                same_identity
+                and profile.get("source", {}).get("revision")
+                == declaration["model"]["source"]["revision"]
+                and profile.get("interface", {}).get("mcp", {}).get("tool_name")
+                == batch_tool_name
+            )
+            if same_checked_in_declaration:
+                continue
+            if same_identity:
+                collisions.add(f"scientific workload profile {model_id}/{variant_id}")
+            existing_variant_endpoint = profile.get("interface", {}).get(
+                "variant_submit_endpoint"
+            )
+            existing_default_endpoint = profile.get("interface", {}).get(
+                "default_submit_endpoint"
+            )
+            if existing_variant_endpoint == variant_endpoint:
+                collisions.add(f"scientific variant route {variant_endpoint}")
+            if (
+                default_endpoint is not None
+                and existing_default_endpoint == default_endpoint
+            ):
+                collisions.add(f"scientific default route {default_endpoint}")
+            if (
+                profile.get("execution_identity", {}).get("runtime_image_repository")
+                == image_repository
+            ):
+                collisions.add(
+                    f"scientific runtime repository {image_repository} "
+                    f"(model={profile.get('model_id', 'unknown')})"
+                )
+            existing_tool = profile.get("interface", {}).get("mcp", {}).get("tool_name")
             if batch_tool_name is not None and existing_tool == batch_tool_name:
                 collisions.add(
                     f"scientific MCP tool {batch_tool_name} "
@@ -1259,6 +1775,8 @@ def compile_artifacts(
     """Build all staged bytes and validate projections against current schemas."""
 
     _validate_declaration_value(declaration)
+    if _has_scientific_batch(declaration):
+        _validate_deployment_placement(declaration, solution_root)
     _validate_collisions(declaration, solution_root)
     model_id = declaration["model"]["id"]
     base: list[Artifact] = []
@@ -1266,9 +1784,7 @@ def compile_artifacts(
         model_record = _catalog_record(declaration)
         model_schema_path = solution_root / "catalog/runtime/schema/model.schema.json"
         if not model_schema_path.is_file():
-            raise OnboardingError(
-                f"solution root does not contain {model_schema_path}"
-            )
+            raise OnboardingError(f"solution root does not contain {model_schema_path}")
         _validate_schema(
             model_record, _load_json(model_schema_path), "catalog model projection"
         )
@@ -1308,20 +1824,12 @@ def compile_artifacts(
             ]
         )
     if _has_scientific_batch(declaration):
-        projection = _scientific_workload_projection(declaration)
-        profile_schema_path = (
-            solution_root
-            / "catalog/runtime/schema/scientific-workload-profile.schema.json"
-        )
-        if not profile_schema_path.is_file():
-            raise OnboardingError(
-                f"solution root does not contain {profile_schema_path}"
-            )
-        _validate_schema(
-            projection["profile"],
-            _load_json(profile_schema_path),
-            "scientific workload profile projection",
-        )
+        profile = compile_scientific_profile(declaration, solution_root)
+        projection = {
+            "schema": "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1",
+            "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
+            "profile": profile,
+        }
         base.append(
             Artifact(
                 path="projections/scientific-workload-profile.json",
@@ -1335,6 +1843,7 @@ def compile_artifacts(
         "schema": COMPILER_SCHEMA,
         "compiler_version": 2,
         "model_id": model_id,
+        "variant_id": declaration["model"].get("variant_id"),
         "declaration_sha256": declaration_digest,
         "promotion_ready": False,
         "artifacts": [

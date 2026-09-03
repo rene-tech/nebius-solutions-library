@@ -207,10 +207,29 @@ locals {
       workload_priority_class = policy.workload_priority_class
       priority                = policy.priority
       default_local_queue     = try(policy.default_local_queue, null)
-      preemption_mode         = policy.preemption_mode
+      preemption_mode         = replace(policy.preemption_mode, "-", "_")
+      caller_selectable       = service_class != "platform-critical"
+      max_queue_seconds       = null
+      max_execution_seconds   = null
       pool_preference = (
         length(policy.pool_preference) == 0 ? local.pool_ids : policy.pool_preference
       )
+    }
+  }
+
+  local_queue_routes = {
+    for queue_name, queue in local.local_queues : queue_name => {
+      namespace     = queue.namespace
+      cluster_queue = queue.cluster_queue
+      model_ids     = sort(tolist(queue.model_ids))
+      tenant_ids    = []
+    }
+  }
+
+  pool_contract = {
+    for pool_id, pool in var.pools : pool_id => {
+      accelerator_resource_name = pool.resource_name
+      resource_flavor           = pool.flavor_name
     }
   }
 
@@ -221,6 +240,8 @@ locals {
     local_queues              = local.local_queue_manifests
     workload_priority_classes = local.priority_class_manifests
     service_classes           = local.service_class_contract
+    local_queue_routes        = local.local_queue_routes
+    pools                     = local.pool_contract
     pool_capacity             = { for pool_id, pool in var.pools : pool_id => pool.capacity }
     shared_pool_quota         = local.shared_by_pool
   }
@@ -309,7 +330,7 @@ resource "terraform_data" "contract" {
         can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", service_class)) &&
         can(regex("^[a-z0-9](?:[-a-z0-9]{0,251}[a-z0-9])?$", policy.workload_priority_class)) &&
         floor(policy.priority) == policy.priority && policy.priority >= -2147483648 && policy.priority <= 2147483647 &&
-        contains(["non-preemptible", "restartable", "checkpointable"], policy.preemption_mode) &&
+        contains(["non_preemptible", "restartable", "checkpointable"], policy.preemption_mode) &&
         (policy.default_local_queue == null || contains(keys(local.local_queues), policy.default_local_queue)) &&
         toset(policy.pool_preference) == toset(local.pool_ids) &&
         length(policy.pool_preference) == length(distinct(policy.pool_preference))

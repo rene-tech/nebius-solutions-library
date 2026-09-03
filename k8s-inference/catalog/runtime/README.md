@@ -78,8 +78,62 @@ separate disabled cohorts. Node-local remains explicitly
 `WaitForFirstConsumer`, exact PV node affinity, preemption and lost-node
 fencing, and PVC recreation for each activation generation. The one-B300 pool
 is never a Qwen provider-block or node-local cache target.
-Model and localizer Pods consume PVCs; neither renderer emits `hostPath` or
-pins a Pod with `nodeName`.
+Model and localizer Pods consume PVCs by default and never pin a Pod with
+`nodeName`. The scientific renderer has one deployment-owned exception: the
+AlphaFold3 data stage may use the canonical operator reference volume root
+`/mnt/fs2-reference-data/data`, but never exposes that root directly. A
+promoted aggregate-tree identity supplies the exact safe
+`datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/<tree_sha256>`
+subPath mounted read-only at `/databases`, its independent manifest digest, and
+attested node-access selector. The trusted target and renderer both require
+`storage.fs2.nebius/reference-data=true` at apply time, conjunct it with Kueue's
+normal ResourceFlavor accelerator placement without node or pool IDs, and retain
+the dedicated inference toleration plus supplemental group `1000`; AF3 parameter inference uses the
+private RWX claim with supplemental group `65532`. The trusted
+`scientific-execution-targets/v1`
+contract fixes that model, stage, namespace, root and subPath policy. It also
+binds the controller caller to ServiceAccount
+`fs2-system/fs2-serve-control-plane-runtime`, matching the companion academic
+execution RoleBinding. Public requests cannot select a controller identity,
+namespace, PVC or `hostPath`.
+
+The target contract is a production compiler input, not a second runtime map.
+`fs2-serve-render-scientific-execution-map` combines it with the promoted
+canonical profile set and an exact
+`scientific-runtime-localizations/v1` deployment-evidence document. The tool
+expands packaged adapter stage contracts, verifies the complete small-file or
+aggregate-tree closure through `FileScientificManifestRenderer`, and emits both
+`execution-map.json` v3 and an immutable content-addressed ConfigMap document.
+The workloads Terraform stage installs that exact ConfigMap and passes its name
+to Helm. Generation fails when a profile is not runnable, an image is not
+digest-pinned, a localization differs, or the AF3 tree content, independent
+manifest, pinned subPath, placement receipt, namespace or group is absent.
+
+```bash
+uv run --project components/control-plane \
+  fs2-serve-render-scientific-execution-map \
+  --catalog-root /path/to/promoted/catalog/runtime \
+  --targets catalog/runtime/contracts/scientific-execution-targets.json \
+  --localizations /path/to/scientific-runtime-localizations.json \
+  --output /private/run/execution-map.json \
+  --config-map-output /private/run/execution-map-configmap.json
+```
+
+Set the absolute generated ConfigMap path as
+`deployment.scientific_batch.execution_map_file`. Checked-in profiles remain
+candidate/unqualified, so the command intentionally refuses to manufacture a
+deployable map until exact image and AF3 database promotion evidence exists.
+
+The same trusted target contract binds writable compiler-cache PVCs only for
+AlphaFold3 inference (`/cache/alphafold3` in `fs2-academic-poc`), OpenFold3
+inference (`/cache/openfold3` in `fs2-models`), and Protenix sampling
+(`/cache/protenix` in `fs2-models`). Each cache is same-namespace,
+operator-owned, has no runtime artifact identity, and uses exact image-contract
+environment paths. These bindings are auxiliary L1+ compiler/JIT optimizations,
+not L2. Their numbered ceiling is `L1`, their current qualified level is `Off`,
+and routing remains unqualified until first/warm H100 compile measurements. L2
+requires an actual GPU/process snapshot on shared filesystem or object storage;
+L3 requires a local-disk snapshot, and L4 requires host-RAM residency.
 
 The acquisition Job runs as deterministic UID/GID/fsGroup `10001`, with
 strict supplemental groups, `RuntimeDefault`, and no root fallback. A provider

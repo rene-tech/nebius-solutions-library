@@ -10,6 +10,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
+from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
+
 from .models import (
     CheckpointMode,
     ExecutionMode,
@@ -30,6 +32,8 @@ class ScientificStageExpansion:
 
     shard_ids: tuple[str, ...] = ("main",)
     gang_size: int | None = None
+    enabled: bool = True
+    depends_on: tuple[str, ...] | None = None
 
 
 def _mapping(value: object, path: str) -> Mapping[str, object]:
@@ -94,6 +98,11 @@ def scientific_plan_from_catalog_profile(
         maximum = _integer(stage.get("max_parallelism"), f"{path}.max_parallelism")
         expansion = selected.pop(stage_id, None)
 
+        if expansion is not None and not expansion.enabled:
+            if expansion.gang_size is not None or expansion.depends_on is not None:
+                raise CatalogProfileAdapterError(f"{path} disabled expansion cannot supply execution fields")
+            continue
+
         if mode is ExecutionMode.FANOUT:
             if expansion is None:
                 if minimum != 1:
@@ -117,7 +126,11 @@ def scientific_plan_from_catalog_profile(
             stages.append(
                 ScientificStagePlan(
                     stage_id=stage_id,
-                    depends_on=_string_tuple(stage.get("needs"), f"{path}.needs"),
+                    depends_on=(
+                        expansion.depends_on
+                        if expansion is not None and expansion.depends_on is not None
+                        else _string_tuple(stage.get("needs"), f"{path}.needs")
+                    ),
                     mode=mode,
                     shards=shards,
                     max_attempts=max_attempts,
@@ -138,3 +151,26 @@ def scientific_plan_from_catalog_profile(
         return ScientificBatchPlan(stages=tuple(stages))
     except ValueError as error:
         raise CatalogProfileAdapterError(f"catalog workload cannot form an internal stage plan: {error}") from error
+
+
+def validate_scientific_run_request(
+    profile: Mapping[str, object],
+    request: Mapping[str, object],
+    request_schema: Mapping[str, object],
+) -> None:
+    """Fail closed against the canonical envelope and model parameters."""
+
+    Draft202012Validator(request_schema).validate(request)
+    interface = _mapping(profile.get("interface"), "profile.interface")
+    operations = _string_tuple(interface.get("operations"), "profile.interface.operations")
+    service_classes = _string_tuple(interface.get("service_classes"), "profile.interface.service_classes")
+    if request.get("operation") not in operations:
+        raise CatalogProfileAdapterError("request.operation is not supported by this model variant")
+    if request.get("service_class") not in service_classes:
+        raise CatalogProfileAdapterError("request.service_class is not supported by this model variant")
+    parameter_schema = _mapping(
+        interface.get("parameter_schema_definition"),
+        "profile.interface.parameter_schema_definition",
+    )
+    parameters = _mapping(request.get("parameters"), "request.parameters")
+    Draft202012Validator(parameter_schema).validate(parameters)

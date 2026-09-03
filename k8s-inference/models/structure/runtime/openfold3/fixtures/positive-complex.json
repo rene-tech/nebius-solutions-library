@@ -1,0 +1,16 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-complex-structure",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "manifest.openfold3.complex",
+    "sha256": "b0f3340d7ef7504331d8c3ea769a351ae47e2fdadf4d4a8be49e12db5d56fe44",
+    "size_bytes": 1024,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "parameters": {
+    "model_seeds": [13, 31],
+    "msa_mode": "none"
+  }
+}

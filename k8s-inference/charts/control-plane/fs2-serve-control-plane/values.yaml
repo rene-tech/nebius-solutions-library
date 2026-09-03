@@ -93,6 +93,24 @@ modelController:
   tolerations: []
   affinity: {}
 
+# Staged scientific-batch API and reconciler. Both gates must be explicitly
+# enabled after immutable profile, execution-map, and Kueue contract ConfigMaps
+# are installed. Default releases receive no workload mutation credential.
+scientificBatch:
+  enabled: false
+  writesEnabled: false
+  namespace: fs2-models
+  kubernetesApiUrl: https://kubernetes.default.svc
+  schedulingContractConfigMapName: ""
+  schedulingContractKey: kueue-scheduling.json
+  executionMapConfigMapName: ""
+  executionMapKey: execution-map.json
+  workers: 2
+  pollSeconds: "0.25"
+  leaseSeconds: "30"
+  apiTimeoutSeconds: "5"
+  tokenExpirationSeconds: 600
+
 # Idempotent initialization of the Terraform-owned client PAT. The raw token
 # remains in a Kubernetes Secret and Terraform state; Helm receives only the
 # Secret reference plus its least-privilege policy.
@@ -206,6 +224,11 @@ secrets:
   admin:
     name: fs2-serve-admin
     key: token
+  # JSON object with access_key_id and secret_access_key. Only consumed when
+  # scientificArtifacts.enabled is true.
+  artifactStore:
+    name: fs2-serve-artifact-store
+    key: credentials.json
 
 config:
   # Required public HTTPS origins; empty defaults fail validation.
@@ -255,11 +278,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 3a977a1c29f338233eb017454ee3d07bf505c31db909bccc05a2524388ad3da2
-    migrationSetSha256: 081ae3ea6ddc3a0efd8b86151352d7b2f2ebc8de4d07a1e078bcb24b1c0f66cf
-    migrationCount: 13
+    contractPayloadSha256: 3e9cb0cf59dd28c74f94594ef20aa5aeaa87170f79d7f498b820fdf4a8c784af
+    migrationSetSha256: 6926de8f73092cd53e0397a8b6f44e2a9e9a64e73ad4b273e08cc96b2a5c25dd
+    migrationCount: 15
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0013_durable_dynamic_dispatch.sql
+    lastMigrationVersion: 0015_scientific_batch_controller.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:
@@ -563,3 +586,30 @@ academicAssets:
     namespace: fs2-academic-poc
     localQueue: academic-scientific
     serviceAccount: fs2-academic-runner
+
+# Scientific artifact provenance and result service. Disabled by default: the
+# routes are mounted only when object storage is fully configured, so an
+# unconfigured cluster never exposes an endpoint backed by absent credentials.
+scientificArtifacts:
+  enabled: false
+  endpoint: https://storage.eu-north1.nebius.cloud
+  bucket: fs2-scientific-artifacts
+  region: eu-north1
+  addressingStyle: path
+  verifyTls: true
+  handleTtlSeconds: 600
+  maxBytes: 1099511627776
+  retentionSeconds: 7776000
+  mediaTypes:
+    - application/octet-stream
+    - application/json
+    - application/gzip
+    - application/vnd.fs2.scientific-manifest+json
+    - application/vnd.fs2.scientific-validation+json
+    - chemical/x-pdb
+    - chemical/x-cif
+    - text/plain
+    - text/x-fasta
+  # CIDRs the control plane may reach on 443 to serve artifact handles and
+  # verify stored objects. Empty keeps the default-deny egress policy intact.
+  egressCidrs: []

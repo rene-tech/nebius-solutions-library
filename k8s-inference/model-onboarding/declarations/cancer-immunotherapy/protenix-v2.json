@@ -1,0 +1,286 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "scientific-batch",
+  "model": {
+    "id": "protenix-v2",
+    "variant_id": "upstream-v2-0-0",
+    "display_name": "Protenix v2",
+    "family": "scientific-protein",
+    "source": {
+      "kind": "git",
+      "repository": "bytedance/Protenix",
+      "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+      "review": {
+        "url": "https://github.com/bytedance/Protenix/tree/2475421477ab414b571149ad4a875c390ff8a35d",
+        "revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+        "summary": "Qualified v2.0.0 code source; the exact v2 checkpoint is verified from an immutable third-party mirror and has not been publisher-byte-compared."
+      },
+      "license": {
+        "id": "Apache-2.0",
+        "state": "verified",
+        "notes": "Code is Apache-2.0; the verified mirror provenance and missing H100 semantic evidence keep the route closed."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The mirror is public and ungated; this does not establish byte parity with the publisher CDN object."
+      }
+    },
+    "artifacts": [
+      {
+        "artifact_id": "protenix-v2",
+        "kind": "weights",
+        "source": {
+          "kind": "third-party-mirror",
+          "repository": "TMF001/protenix-v2-weights",
+          "revision": "653edab28103133512575365130916e3fd23ecc3",
+          "release_id": "code-2475421477ab414b571149ad4a875c390ff8a35d_checkpoint-653edab28103133512575365130916e3fd23ecc3_common-2026-01-29"
+        },
+        "required_files": [
+          ".fs2-manifest-sha256",
+          "checkpoint/protenix-v2.pt",
+          "common/clusters-by-entity-40.txt",
+          "common/components.cif",
+          "common/components.cif.rdkit_mol.pkl",
+          "common/obsolete_release_date.csv",
+          "manifest.json"
+        ],
+        "supply_state": "third-party-mirror-verified",
+        "handling": "standard",
+        "content_digest_sha256": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+        "localization_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+        "total_size_bytes": 2514897184,
+        "file_manifest": [
+          {
+            "path": ".fs2-manifest-sha256",
+            "size_bytes": 65,
+            "sha256": "ebf101faecd9e311292e40b2e53cce4983f7d49e38ef4dba0f20d16174dc39bb"
+          },
+          {
+            "path": "checkpoint/protenix-v2.pt",
+            "size_bytes": 1859785497,
+            "sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+            "md5": "49016ebf4775bf6b629bc4dc77b6673e"
+          },
+          {
+            "path": "common/clusters-by-entity-40.txt",
+            "size_bytes": 21699572,
+            "sha256": "1ab4af905e75b382eda8dec59917dc3608bee0729e36b9e71baf860bbe86850c"
+          },
+          {
+            "path": "common/components.cif",
+            "size_bytes": 490777362,
+            "sha256": "bb31ae5cf6c8bc669924313077cb4231ee5ffefd3a20118cd14f3ec89f8bb6a5"
+          },
+          {
+            "path": "common/components.cif.rdkit_mol.pkl",
+            "size_bytes": 142498117,
+            "sha256": "d1cfb71f5993a3ebea7c47877022d7f597bbfbaf86e28a4770e957da6c50cd35"
+          },
+          {
+            "path": "common/obsolete_release_date.csv",
+            "size_bytes": 134716,
+            "sha256": "a4f3f63ac5d7eebd78b07995cc669b9eccd6f5d8813c9492c9df02868893cf33"
+          },
+          {
+            "path": "manifest.json",
+            "size_bytes": 1855,
+            "sha256": "8c1e3240cba92fa265ebfa7e3c806af2206d3ae9347444fe3075ab90e576444f"
+          }
+        ]
+      }
+    ],
+    "default_variant": true
+  },
+  "runtime": {
+    "template": "scientific-batch",
+    "kind": "custom",
+    "version": "2.0.0-candidate",
+    "image": {
+      "logical_repository": "cancer-immunotherapy/protenix-v2",
+      "digest": null,
+      "state": "build-required"
+    },
+    "command": [
+      "/usr/local/bin/fs2-run-protenix"
+    ],
+    "args": [],
+    "working_directory": "/",
+    "environment": {
+      "PROTENIX_ROOT_DIR": "/models/protenix-v2"
+    }
+  },
+  "resources": {
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "16Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "8",
+      "memory": "64Gi",
+      "ephemeral_storage": "16Gi"
+    },
+    "limits": {
+      "cpu": "32",
+      "memory": "160Gi",
+      "ephemeral_storage": "64Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_resource_name": "nvidia.com/gpu",
+    "compatible_pool_ids": [
+      "h100-reserved-8x",
+      "h100-1x"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    }
+  },
+  "serving": null,
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": {
+      "id": "fs2-serve.nebius.ai/protenix-v2-upstream-v2-0-0-parameters/v1",
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "checkpoint",
+          "msa_mode",
+          "sample_count",
+          "model_seeds"
+        ],
+        "properties": {
+          "checkpoint": {
+            "const": "protenix-v2"
+          },
+          "msa_mode": {
+            "const": "none"
+          },
+          "sample_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16
+          },
+          "model_seeds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          }
+        }
+      }
+    },
+    "operations": [
+      "predict-complex-structure"
+    ],
+    "service_classes": [
+      "customer-batch"
+    ],
+    "access_profile": "standard",
+    "access_state": "not-required",
+    "stages": [
+      {
+        "id": "prepare-data",
+        "needs": [],
+        "resource_class": "cpu",
+        "resources": {
+          "gpu_count": 0,
+          "requests": {
+            "cpu": "4",
+            "memory": "16Gi",
+            "ephemeral_storage": "8Gi"
+          },
+          "limits": {
+            "cpu": "8",
+            "memory": "32Gi",
+            "ephemeral_storage": "32Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 64,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "id": "sample-structure",
+        "needs": [
+          "prepare-data"
+        ],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "ephemeral_storage": "16Gi"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "160Gi",
+            "ephemeral_storage": "64Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 32,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      }
+    ],
+    "storage": [],
+    "retry": {
+      "max_attempts": 2,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 60
+    },
+    "semantic_validation": {
+      "validator_id": "protenix-v2-upstream-v2-0-0",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_protenix_v2",
+      "description": "Submit a typed Protenix v2 prediction after artifact admission."
+    }
+  },
+  "policy": {
+    "commercial_use": "allowed",
+    "non_clinical": true,
+    "limitations": [
+      "The lane remains fail-closed until the corrected image, all four common assets, and real H100 semantics are verified.",
+      "CPU preparation must complete and commit its enriched JSON before GPU admission.",
+      "Checkpoint is verified against a third-party mirror, not publisher bytes; route remains unqualified until H100 evidence."
+    ],
+    "fast_start": {
+      "requested_level": "Off",
+      "maximum_level": "L1",
+      "qualified_level": "Off",
+      "state": "candidate-unqualified",
+      "cache_strategy": "shared-pvc",
+      "cache_role": "auxiliary-compiler-jit-l1-plus"
+    }
+  }
+}

@@ -84,7 +84,9 @@
     ],
     "scientificBatch": [
       "enabled",
+      "executionMapConfigMapName",
       "namespace",
+      "schedulingContractConfigMapName",
       "writesEnabled"
     ],
     "secrets.artifactStore": [

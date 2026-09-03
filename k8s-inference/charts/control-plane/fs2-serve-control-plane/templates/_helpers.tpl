@@ -95,6 +95,53 @@ app.kubernetes.io/component: model-controller
       key: {{ .Values.secrets.maintenanceDatabase.key }}
 {{- end -}}
 
+{{- define "fs2-serve.scientificArtifactsEnv" -}}
+{{- if .Values.scientificArtifacts.enabled }}
+- name: FS2_SCIENTIFIC_ARTIFACTS_ENABLED
+  value: "true"
+- name: FS2_ARTIFACT_STORE_ENDPOINT
+  value: {{ required "scientificArtifacts.endpoint is required" .Values.scientificArtifacts.endpoint | quote }}
+- name: FS2_ARTIFACT_STORE_BUCKET
+  value: {{ required "scientificArtifacts.bucket is required" .Values.scientificArtifacts.bucket | quote }}
+- name: FS2_ARTIFACT_STORE_REGION
+  value: {{ required "scientificArtifacts.region is required" .Values.scientificArtifacts.region | quote }}
+- name: FS2_ARTIFACT_STORE_ADDRESSING_STYLE
+  value: {{ .Values.scientificArtifacts.addressingStyle | quote }}
+- name: FS2_ARTIFACT_STORE_VERIFY_TLS
+  value: {{ .Values.scientificArtifacts.verifyTls | quote }}
+- name: FS2_ARTIFACT_STORE_CREDENTIALS_FILE
+  value: /var/run/secrets/fs2-serve/artifact-store/credentials.json
+- name: FS2_ARTIFACT_HANDLE_TTL_SECONDS
+  value: {{ .Values.scientificArtifacts.handleTtlSeconds | int64 | quote }}
+- name: FS2_ARTIFACT_MAX_BYTES
+  value: {{ .Values.scientificArtifacts.maxBytes | int64 | quote }}
+- name: FS2_ARTIFACT_RETENTION_SECONDS
+  value: {{ .Values.scientificArtifacts.retentionSeconds | int64 | quote }}
+- name: FS2_ARTIFACT_MEDIA_TYPES
+  value: {{ join "," .Values.scientificArtifacts.mediaTypes | quote }}
+{{- end }}
+{{- end -}}
+
+{{- define "fs2-serve.scientificArtifactsVolumes" -}}
+{{- if .Values.scientificArtifacts.enabled }}
+- name: artifact-store
+  secret:
+    secretName: {{ .Values.secrets.artifactStore.name }}
+    defaultMode: 0400
+    items:
+      - key: {{ .Values.secrets.artifactStore.key }}
+        path: credentials.json
+{{- end }}
+{{- end -}}
+
+{{- define "fs2-serve.scientificArtifactsVolumeMounts" -}}
+{{- if .Values.scientificArtifacts.enabled }}
+- name: artifact-store
+  mountPath: /var/run/secrets/fs2-serve/artifact-store
+  readOnly: true
+{{- end }}
+{{- end -}}
+
 {{- define "fs2-serve.cryptoEnv" -}}
 - name: FS2_PAYLOAD_KEYRING_FILE
   value: /var/run/secrets/fs2-serve/crypto/payload-keyring.json
@@ -122,6 +169,7 @@ app.kubernetes.io/component: model-controller
 {{ include "fs2-serve.databaseEnv" . }}
 {{ include "fs2-serve.cryptoEnv" . }}
 {{ include "fs2-serve.payloadEnv" . }}
+{{- include "fs2-serve.scientificArtifactsEnv" . }}
 - name: FS2_CATALOG_DIR
   value: {{ ternary .Values.catalog.imagePath "/etc/fs2-serve/catalog" (eq .Values.catalog.delivery "image") | quote }}
 {{- if eq .Values.catalog.delivery "image" }}
@@ -246,6 +294,40 @@ app.kubernetes.io/component: model-controller
 - name: FS2_ADMIN_OBSERVABILITY_CONFIG_FILE
   value: /etc/fs2-serve/admin-observability/config.json
 {{- end }}
+{{- if .Values.scientificBatch.enabled }}
+- name: FS2_SCIENTIFIC_BATCH_ENABLED
+  value: "true"
+- name: FS2_SCIENTIFIC_BATCH_WRITES_ENABLED
+  value: {{ .Values.scientificBatch.writesEnabled | quote }}
+- name: FS2_SCIENTIFIC_BATCH_NAMESPACE
+  value: {{ .Values.scientificBatch.namespace | quote }}
+- name: FS2_SCIENTIFIC_BATCH_CONTROLLER_ID
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.uid
+- name: FS2_SCIENTIFIC_BATCH_KUBERNETES_API_URL
+  value: {{ .Values.scientificBatch.kubernetesApiUrl | quote }}
+- name: FS2_SCIENTIFIC_BATCH_KUBERNETES_TOKEN_FILE
+  value: /var/run/secrets/fs2-scientific-batch/token
+- name: FS2_SCIENTIFIC_BATCH_KUBERNETES_CA_FILE
+  value: /var/run/secrets/fs2-scientific-batch/ca.crt
+- name: FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_FILE
+  value: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.schedulingContractKey }}
+- name: FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE
+  value: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.executionMapKey }}
+- name: FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE
+  value: {{ include "fs2-serve.image" . }}
+- name: FS2_SCIENTIFIC_BATCH_INTERNAL_API_URL
+  value: http://{{ include "fs2-serve.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+- name: FS2_SCIENTIFIC_BATCH_WORKERS
+  value: {{ .Values.scientificBatch.workers | quote }}
+- name: FS2_SCIENTIFIC_BATCH_POLL_SECONDS
+  value: {{ .Values.scientificBatch.pollSeconds | quote }}
+- name: FS2_SCIENTIFIC_BATCH_LEASE_SECONDS
+  value: {{ .Values.scientificBatch.leaseSeconds | quote }}
+- name: FS2_SCIENTIFIC_BATCH_API_TIMEOUT_SECONDS
+  value: {{ .Values.scientificBatch.apiTimeoutSeconds | quote }}
+{{- end }}
 - name: FS2_ADMIN_ADAPTER_TIMEOUT_SECONDS
   value: {{ .Values.adminReadAdapters.adapterTimeoutSeconds | quote }}
 - name: FS2_ADMIN_SOURCE_MAX_AGE_SECONDS
@@ -309,6 +391,7 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeVolumeMounts" -}}
 {{ include "fs2-serve.cryptoVolumeMounts" . }}
+{{- include "fs2-serve.scientificArtifactsVolumeMounts" . }}
 {{ include "fs2-serve.databaseCaVolumeMount" . }}
 {{- if eq .Values.catalog.delivery "pvc" }}
 - name: catalog
@@ -377,6 +460,19 @@ app.kubernetes.io/component: model-controller
   subPath: {{ .Values.modelController.rendererBundlesKey }}
   readOnly: true
 {{- end }}
+{{- if .Values.scientificBatch.enabled }}
+- name: scientific-batch-kubernetes
+  mountPath: /var/run/secrets/fs2-scientific-batch
+  readOnly: true
+- name: scientific-batch-scheduling
+  mountPath: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.schedulingContractKey }}
+  subPath: {{ .Values.scientificBatch.schedulingContractKey }}
+  readOnly: true
+- name: scientific-batch-execution
+  mountPath: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.executionMapKey }}
+  subPath: {{ .Values.scientificBatch.executionMapKey }}
+  readOnly: true
+{{- end }}
 {{- end -}}
 
 {{- define "fs2-serve.cryptoVolumes" -}}
@@ -398,6 +494,7 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeVolumes" -}}
 {{ include "fs2-serve.cryptoVolumes" . }}
+{{- include "fs2-serve.scientificArtifactsVolumes" . }}
 {{ include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) }}
 {{- if eq .Values.catalog.delivery "pvc" }}
 - name: catalog
@@ -503,5 +600,32 @@ app.kubernetes.io/component: model-controller
     items:
       - key: {{ .Values.modelController.rendererBundlesKey }}
         path: {{ .Values.modelController.rendererBundlesKey }}
+{{- end }}
+{{- if .Values.scientificBatch.enabled }}
+- name: scientific-batch-kubernetes
+  projected:
+    defaultMode: 0400
+    sources:
+      - serviceAccountToken:
+          audience: kubernetes.default.svc
+          expirationSeconds: {{ .Values.scientificBatch.tokenExpirationSeconds }}
+          path: token
+      - configMap:
+          name: kube-root-ca.crt
+          items:
+            - key: ca.crt
+              path: ca.crt
+- name: scientific-batch-scheduling
+  configMap:
+    name: {{ .Values.scientificBatch.schedulingContractConfigMapName }}
+    items:
+      - key: {{ .Values.scientificBatch.schedulingContractKey }}
+        path: {{ .Values.scientificBatch.schedulingContractKey }}
+- name: scientific-batch-execution
+  configMap:
+    name: {{ .Values.scientificBatch.executionMapConfigMapName }}
+    items:
+      - key: {{ .Values.scientificBatch.executionMapKey }}
+        path: {{ .Values.scientificBatch.executionMapKey }}
 {{- end }}
 {{- end -}}

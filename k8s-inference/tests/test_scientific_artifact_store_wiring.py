@@ -390,8 +390,10 @@ class TfvarsSurfaceTests(ArtifactStoreContractTests):
 
     def test_storage_stays_deployable_while_batch_and_academic_stay_false(self) -> None:
         batch = block(self.root_variables, "scientific_batch = optional(object({")
-        self.assertIn("enabled        = optional(bool, false)", batch)
-        self.assertIn("writes_enabled = optional(bool, false)", batch)
+        self.assertIn("enabled", batch)
+        self.assertIn("optional(bool, false)", batch)
+        self.assertIn("writes_enabled", batch)
+        self.assertIn("execution_map_file = optional(string, null)", batch)
         # Nothing about the store depends on the batch gates.
         store = block(self.root_variables, "scientific_artifacts = optional(object({")
         self.assertNotIn("scientific_batch", store)

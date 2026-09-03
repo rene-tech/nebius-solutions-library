@@ -1,0 +1,901 @@
+"""Closed JSON codec for durable internal scientific-batch state.
+
+This is deliberately not an API schema.  It serializes the controller's
+``Scientific*`` records for PostgreSQL and rejects any missing or extra field
+when reopening them.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping
+from datetime import datetime
+from typing import Any, cast
+from uuid import UUID
+
+from .models import (
+    AdapterExecutionPlan,
+    ArtifactAccessContext,
+    ArtifactMaterialization,
+    AttemptOutcome,
+    BatchStatus,
+    CheckpointMode,
+    ExecutionMode,
+    FailureKind,
+    LifecyclePhase,
+    MaterializationMode,
+    PreemptionMode,
+    ResourceClass,
+    RuntimeArtifactAggregateTree,
+    RuntimeArtifactFile,
+    RuntimeArtifactLocalization,
+    RuntimeArtifactMount,
+    RuntimeArtifactNodeAccessibility,
+    SchedulingAdmission,
+    SchedulingSnapshot,
+    ScientificAttemptState,
+    ScientificBatchPlan,
+    ScientificBatchState,
+    ScientificInputArtifact,
+    ScientificStagePlan,
+    ScientificStageState,
+    ServiceClass,
+    StageInvocation,
+    StageSchedulingDecision,
+    StageStatus,
+    VerifiedInputManifest,
+    WorkloadKind,
+    WorkloadRef,
+)
+
+STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v9"
+LEGACY_STATE_SCHEMA_V6 = "fs2-serve.nebius.ai/scientific-batch-state/v6"
+LEGACY_STATE_SCHEMA_V7 = "fs2-serve.nebius.ai/scientific-batch-state/v7"
+READABLE_STATE_SCHEMAS = frozenset({STATE_SCHEMA, LEGACY_STATE_SCHEMA_V6, LEGACY_STATE_SCHEMA_V7})
+LEGACY_EXECUTION_NAMESPACE = "fs2-models"
+MAX_STATE_BYTES = 4 * 1024 * 1024
+
+
+def _object(value: object, keys: set[str], label: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
+        raise ValueError(f"stored {label} is not an object")
+    result = cast(Mapping[str, Any], value)
+    if set(result) != keys:
+        raise ValueError(f"stored {label} fields differ")
+    return result
+
+
+def _items(value: object, label: str, *, maximum: int = 4096) -> list[Any]:
+    if not isinstance(value, list) or len(value) > maximum:
+        raise ValueError(f"stored {label} is not a bounded array")
+    return value
+
+
+def _datetime(value: object, label: str) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError(f"stored {label} is not a timestamp")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError(f"stored {label} timestamp is naive")
+    return parsed
+
+
+def _integer(value: object, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"stored {label} is not an integer")
+    return value
+
+
+def _boolean(value: object, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"stored {label} is not a boolean")
+    return value
+
+
+def _string(value: object, label: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"stored {label} is not a string")
+    return value
+
+
+def _optional_string(value: object, label: str) -> str | None:
+    return None if value is None else _string(value, label)
+
+
+def _uuid(value: object, label: str) -> UUID:
+    try:
+        return UUID(_string(value, label))
+    except ValueError as error:
+        raise ValueError(f"stored {label} is not a UUID") from error
+
+
+def _string_items(value: object, label: str, *, maximum: int) -> tuple[str, ...]:
+    return tuple(_string(item, label) for item in _items(value, label, maximum=maximum))
+
+
+def _legacy_execution_namespace(stage_id: str, execution: AdapterExecutionPlan | None) -> str:
+    """Recover the namespace omitted by pre-multi-namespace scheduling rows."""
+
+    if execution is None:
+        return LEGACY_EXECUTION_NAMESPACE
+    namespaces = {
+        invocation.namespace
+        for invocation in execution.invocations
+        if invocation.stage_id == stage_id and invocation.namespace is not None
+    }
+    if len(namespaces) > 1:
+        raise ValueError("stored legacy stage has conflicting execution namespaces")
+    return next(iter(namespaces), LEGACY_EXECUTION_NAMESPACE)
+
+
+def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
+    """Return canonical, payload-free internal state."""
+
+    return {
+        "schema_version": STATE_SCHEMA,
+        "operation_id": str(state.operation_id),
+        "batch_id": str(state.batch_id),
+        "workload_id": str(state.workload_id),
+        "tenant_id": state.tenant_id,
+        "model_id": state.model_id,
+        "variant_id": state.variant_id,
+        "input_artifact_id": str(state.input_artifact_id),
+        "access_context": {
+            "profile": state.access_context.profile,
+            "receipt_digest": state.access_context.receipt_digest,
+            "tenant_id": state.access_context.tenant_id,
+        },
+        "input_manifest": (
+            None
+            if state.input_manifest is None
+            else {
+                "manifest_id": state.input_manifest.manifest_id,
+                "manifest_artifact_id": str(state.input_manifest.manifest_artifact_id),
+                "manifest_digest": state.input_manifest.manifest_digest,
+                "entries": [
+                    {
+                        "logical_artifact_id": item.logical_artifact_id,
+                        "semantic_type": item.semantic_type,
+                        "artifact_id": str(item.artifact_id),
+                        "digest": item.digest,
+                        "size_bytes": item.size_bytes,
+                        "media_type": item.media_type,
+                        "compression": item.compression,
+                    }
+                    for item in state.input_manifest.entries
+                ],
+            }
+        ),
+        "runtime_artifacts": [
+            {
+                "logical_artifact_id": item.logical_artifact_id,
+                "mount_path": item.mount_path,
+                "content_digest": item.content_digest,
+                "files": [
+                    {"path": file.path, "digest": file.digest, "size_bytes": file.size_bytes} for file in item.files
+                ],
+                "localization_receipt_digest": item.localization_receipt_digest,
+                "aggregate_tree": (
+                    None
+                    if item.aggregate_tree is None
+                    else {
+                        "manifest_digest": item.aggregate_tree.manifest_digest,
+                        "dataset_relative_path": item.aggregate_tree.dataset_relative_path,
+                        "dataset_uri": item.aggregate_tree.dataset_uri,
+                        "file_count": item.aggregate_tree.file_count,
+                        "node_accessibility": {
+                            "evidence_receipt_digest": (item.aggregate_tree.node_accessibility.evidence_receipt_digest),
+                            "required_node_labels": dict(item.aggregate_tree.node_accessibility.required_node_labels),
+                            "node_names": list(item.aggregate_tree.node_accessibility.node_names),
+                        },
+                    }
+                ),
+            }
+            for item in state.runtime_artifacts
+        ],
+        "adapter_execution": (
+            None
+            if state.execution_plan is None
+            else {
+                "model_id": state.execution_plan.model_id,
+                "variant_id": state.execution_plan.variant_id,
+                "source_revision": state.execution_plan.source_revision,
+                "request_sha256": state.execution_plan.request_sha256,
+                "required_model_artifacts": list(state.execution_plan.required_model_artifacts),
+                "invocations": [
+                    {
+                        "stage_id": invocation.stage_id,
+                        "shard_id": invocation.shard_id,
+                        "argv": list(invocation.argv),
+                        "environment": [list(item) for item in invocation.environment],
+                        "working_directory": invocation.working_directory,
+                        "consumes": list(invocation.consumes),
+                        "produces": invocation.produces,
+                        "collector_id": invocation.collector_id,
+                        "validator_id": invocation.validator_id,
+                        "handoff_name": invocation.handoff_name,
+                        "namespace": invocation.namespace,
+                        "local_queue_name": invocation.local_queue_name,
+                        "max_output_artifacts": invocation.max_output_artifacts,
+                        "max_output_bytes": invocation.max_output_bytes,
+                        "runtime_artifacts": list(invocation.runtime_artifacts),
+                        "runtime_mounts": [
+                            {
+                                "artifact_id": item.artifact_id,
+                                "mount_path": item.mount_path,
+                                "sub_path": item.sub_path,
+                                "read_only": item.read_only,
+                                "expected_content_sha256": item.expected_content_sha256,
+                                "expected_manifest_sha256": item.expected_manifest_sha256,
+                                "authorization_receipt_sha256": item.authorization_receipt_sha256,
+                                "readiness_receipt_sha256": item.readiness_receipt_sha256,
+                                "supplemental_groups": list(item.supplemental_groups),
+                            }
+                            for item in invocation.runtime_mounts
+                        ],
+                        "materializations": [
+                            {
+                                "artifact_id": item.artifact_id,
+                                "destination": item.destination,
+                                "mode": item.mode.value,
+                                "compression": item.compression,
+                                "yaml_name": item.yaml_name,
+                                "reuse_prefix": item.reuse_prefix,
+                            }
+                            for item in invocation.materializations
+                        ],
+                    }
+                    for invocation in state.execution_plan.invocations
+                ],
+            }
+        ),
+        "plan": {
+            "stages": [
+                {
+                    "stage_id": stage.stage_id,
+                    "depends_on": list(stage.depends_on),
+                    "mode": stage.mode.value,
+                    "shards": list(stage.shards),
+                    "max_attempts": stage.max_attempts,
+                    "gang_size": stage.gang_size,
+                    "resource_class": stage.resource_class.value,
+                    "min_parallelism": stage.min_parallelism,
+                    "max_parallelism": stage.max_parallelism,
+                    "checkpoint_mode": stage.checkpoint_mode.value,
+                    "preemption_mode": stage.preemption_mode.value,
+                }
+                for stage in state.plan.stages
+            ]
+        },
+        "scheduling": {
+            "policy_revision": state.scheduling.policy_revision,
+            "captured_at": state.scheduling.captured_at.isoformat(),
+            "service_class": state.scheduling.service_class.value,
+            "tenant_queue": state.scheduling.tenant_queue,
+            "model_lane": state.scheduling.model_lane,
+            "stages": [
+                {
+                    "stage_id": stage.stage_id,
+                    "execution_namespace": stage.execution_namespace,
+                    "resolved_cluster_queue": stage.resolved_cluster_queue,
+                    "resolved_local_queue": stage.resolved_local_queue,
+                    "workload_priority_class": stage.workload_priority_class,
+                    "workload_priority_value": stage.workload_priority_value,
+                    "resolved_pool_preference": list(stage.resolved_pool_preference),
+                    "admitted_resource_flavor": stage.admitted_resource_flavor,
+                    "accelerator_resource_name": stage.accelerator_resource_name,
+                    "accelerator_count": stage.accelerator_count,
+                    "max_queue_seconds": stage.max_queue_seconds,
+                    "max_execution_seconds": stage.max_execution_seconds,
+                    "checkpoint_mode": stage.checkpoint_mode.value,
+                    "preemption_mode": stage.preemption_mode.value,
+                }
+                for stage in state.scheduling.stages
+            ],
+        },
+        "stages": [
+            {
+                "stage_id": stage.stage_id,
+                "status": stage.status.value,
+                "failure_code": stage.failure_code,
+                "attempts": [
+                    {
+                        "attempt_id": str(attempt.attempt_id),
+                        "stage_id": attempt.stage_id,
+                        "shard_id": attempt.shard_id,
+                        "attempt_number": attempt.attempt_number,
+                        "started_at": attempt.started_at.isoformat() if attempt.started_at is not None else None,
+                        "completed_at": attempt.completed_at.isoformat() if attempt.completed_at is not None else None,
+                        "workload": {
+                            "namespace": attempt.workload.namespace,
+                            "name": attempt.workload.name,
+                            "kind": attempt.workload.kind.value,
+                            "uid": attempt.workload.uid,
+                        },
+                        "outcome": attempt.outcome.value,
+                        "last_phase": attempt.last_phase.value,
+                        "resource_released": attempt.resource_released,
+                        "scheduling_admission": (
+                            None
+                            if attempt.scheduling_admission is None
+                            else {
+                                "resolved_pool_id": attempt.scheduling_admission.resolved_pool_id,
+                                "admitted_resource_flavor": attempt.scheduling_admission.admitted_resource_flavor,
+                                "accelerator_resource_name": attempt.scheduling_admission.accelerator_resource_name,
+                                "accelerator_count": attempt.scheduling_admission.accelerator_count,
+                                "admitted_at": attempt.scheduling_admission.admitted_at.isoformat(),
+                            }
+                        ),
+                        "kueue_workload_uid": attempt.kueue_workload_uid,
+                        "pod_uids": list(attempt.pod_uids),
+                        "failure_kind": attempt.failure_kind.value if attempt.failure_kind else None,
+                        "failure_code": attempt.failure_code,
+                    }
+                    for attempt in stage.attempts
+                ],
+            }
+            for stage in state.stages
+        ],
+        "status": state.status.value,
+        "revision": state.revision,
+        "cancel_requested": state.cancel_requested,
+        "failure_code": state.failure_code,
+        "result_published": state.result_published,
+    }
+
+
+def state_to_json(state: ScientificBatchState) -> str:
+    value = json.dumps(state_to_value(state), sort_keys=True, separators=(",", ":"), allow_nan=False)
+    if len(value.encode("utf-8")) > MAX_STATE_BYTES:
+        raise ValueError("scientific-batch state exceeds the durable bound")
+    return value
+
+
+def state_from_value(raw: object) -> ScientificBatchState:
+    """Reopen and validate one exact internal state value."""
+
+    if isinstance(raw, str):
+        if len(raw.encode("utf-8")) > MAX_STATE_BYTES:
+            raise ValueError("stored scientific-batch state exceeds the durable bound")
+        raw = json.loads(raw)
+    value = _object(
+        raw,
+        {
+            "schema_version",
+            "operation_id",
+            "batch_id",
+            "workload_id",
+            "tenant_id",
+            "model_id",
+            "variant_id",
+            "input_artifact_id",
+            "access_context",
+            "input_manifest",
+            "runtime_artifacts",
+            "adapter_execution",
+            "plan",
+            "scheduling",
+            "stages",
+            "status",
+            "revision",
+            "cancel_requested",
+            "failure_code",
+            "result_published",
+        },
+        "scientific-batch state",
+    )
+    stored_schema = _string(value["schema_version"], "scientific-batch state schema")
+    if stored_schema not in READABLE_STATE_SCHEMAS:
+        raise ValueError("stored scientific-batch state schema is unsupported")
+
+    plan_value = _object(value["plan"], {"stages"}, "scientific-batch plan")
+    plan_stages: list[ScientificStagePlan] = []
+    stage_plan_keys = {
+        "stage_id",
+        "depends_on",
+        "mode",
+        "shards",
+        "max_attempts",
+        "gang_size",
+        "resource_class",
+        "min_parallelism",
+        "max_parallelism",
+        "checkpoint_mode",
+        "preemption_mode",
+    }
+    for raw_stage in _items(plan_value["stages"], "scientific-batch plan stages", maximum=64):
+        stage = _object(raw_stage, stage_plan_keys, "scientific-batch plan stage")
+        plan_stages.append(
+            ScientificStagePlan(
+                stage_id=_string(stage["stage_id"], "stage ID"),
+                depends_on=_string_items(stage["depends_on"], "stage dependency", maximum=32),
+                mode=ExecutionMode(_string(stage["mode"], "stage mode")),
+                shards=_string_items(stage["shards"], "stage shard", maximum=1024),
+                max_attempts=_integer(stage["max_attempts"], "stage max attempts"),
+                gang_size=None if stage["gang_size"] is None else _integer(stage["gang_size"], "gang size"),
+                resource_class=ResourceClass(_string(stage["resource_class"], "stage resource class")),
+                min_parallelism=_integer(stage["min_parallelism"], "stage minimum parallelism"),
+                max_parallelism=_integer(stage["max_parallelism"], "stage maximum parallelism"),
+                checkpoint_mode=CheckpointMode(_string(stage["checkpoint_mode"], "stage checkpoint mode")),
+                preemption_mode=PreemptionMode(_string(stage["preemption_mode"], "stage preemption mode")),
+            )
+        )
+    plan = ScientificBatchPlan(tuple(plan_stages))
+
+    access_value = _object(
+        value["access_context"], {"profile", "receipt_digest", "tenant_id"}, "artifact access context"
+    )
+    access_context = ArtifactAccessContext(
+        profile=_string(access_value["profile"], "artifact access profile"),
+        receipt_digest=_optional_string(access_value["receipt_digest"], "artifact access receipt"),
+        tenant_id=_optional_string(access_value["tenant_id"], "artifact access tenant"),
+    )
+
+    input_manifest = None
+    if value["input_manifest"] is not None:
+        manifest = _object(
+            value["input_manifest"],
+            {"manifest_id", "manifest_artifact_id", "manifest_digest", "entries"},
+            "verified input manifest",
+        )
+        entries: list[ScientificInputArtifact] = []
+        for raw_entry in _items(manifest["entries"], "verified input entries", maximum=10_000):
+            entry = _object(
+                raw_entry,
+                {
+                    "logical_artifact_id",
+                    "semantic_type",
+                    "artifact_id",
+                    "digest",
+                    "size_bytes",
+                    "media_type",
+                    "compression",
+                },
+                "verified input entry",
+            )
+            entries.append(
+                ScientificInputArtifact(
+                    logical_artifact_id=_string(entry["logical_artifact_id"], "input logical artifact ID"),
+                    semantic_type=_string(entry["semantic_type"], "input semantic type"),
+                    artifact_id=_uuid(entry["artifact_id"], "input artifact ID"),
+                    digest=_string(entry["digest"], "input artifact digest"),
+                    size_bytes=_integer(entry["size_bytes"], "input artifact size"),
+                    media_type=_string(entry["media_type"], "input artifact media type"),
+                    compression=_optional_string(entry["compression"], "input artifact compression"),
+                )
+            )
+        input_manifest = VerifiedInputManifest(
+            manifest_id=_string(manifest["manifest_id"], "input manifest ID"),
+            manifest_artifact_id=_uuid(manifest["manifest_artifact_id"], "input manifest artifact ID"),
+            manifest_digest=_string(manifest["manifest_digest"], "input manifest digest"),
+            entries=tuple(entries),
+        )
+
+    runtime_artifacts: list[RuntimeArtifactLocalization] = []
+    for raw_artifact in _items(value["runtime_artifacts"], "runtime artifact localizations", maximum=64):
+        artifact_keys = {
+            "logical_artifact_id",
+            "mount_path",
+            "content_digest",
+            "files",
+            "localization_receipt_digest",
+        }
+        if stored_schema not in {LEGACY_STATE_SCHEMA_V6, LEGACY_STATE_SCHEMA_V7}:
+            artifact_keys.add("aggregate_tree")
+        artifact = _object(
+            raw_artifact,
+            artifact_keys,
+            "runtime artifact localization",
+        )
+        aggregate_tree = None
+        if "aggregate_tree" in artifact and artifact["aggregate_tree"] is not None:
+            aggregate = _object(
+                artifact["aggregate_tree"],
+                {
+                    "manifest_digest",
+                    "dataset_relative_path",
+                    "dataset_uri",
+                    "file_count",
+                    "node_accessibility",
+                },
+                "runtime artifact aggregate tree",
+            )
+            node_accessibility = _object(
+                aggregate["node_accessibility"],
+                {"evidence_receipt_digest", "required_node_labels", "node_names"},
+                "runtime artifact node accessibility",
+            )
+            raw_required_node_labels = node_accessibility["required_node_labels"]
+            if (
+                not isinstance(raw_required_node_labels, Mapping)
+                or not 1 <= len(raw_required_node_labels) <= 32
+                or not all(isinstance(key, str) for key in raw_required_node_labels)
+            ):
+                raise ValueError("stored aggregate-tree node-accessibility selector is invalid")
+            required_node_labels = cast(Mapping[str, object], raw_required_node_labels)
+            aggregate_tree = RuntimeArtifactAggregateTree(
+                manifest_digest=_string(aggregate["manifest_digest"], "aggregate-tree manifest digest"),
+                dataset_relative_path=_string(
+                    aggregate["dataset_relative_path"], "aggregate-tree dataset relative path"
+                ),
+                dataset_uri=_string(aggregate["dataset_uri"], "aggregate-tree dataset URI"),
+                file_count=_integer(aggregate["file_count"], "aggregate-tree file count"),
+                node_accessibility=RuntimeArtifactNodeAccessibility(
+                    evidence_receipt_digest=_string(
+                        node_accessibility["evidence_receipt_digest"],
+                        "aggregate-tree node-accessibility receipt",
+                    ),
+                    required_node_labels=tuple(
+                        sorted(
+                            (
+                                _string(key, "aggregate-tree node selector key"),
+                                _string(value, "aggregate-tree node selector value"),
+                            )
+                            for key, value in required_node_labels.items()
+                        )
+                    ),
+                    node_names=_string_items(
+                        node_accessibility["node_names"], "aggregate-tree accessible node", maximum=64
+                    ),
+                ),
+            )
+        runtime_artifacts.append(
+            RuntimeArtifactLocalization(
+                logical_artifact_id=_string(artifact["logical_artifact_id"], "runtime artifact ID"),
+                mount_path=_string(artifact["mount_path"], "runtime artifact mount path"),
+                content_digest=_string(artifact["content_digest"], "runtime artifact content digest"),
+                files=tuple(
+                    RuntimeArtifactFile(
+                        path=_string(file["path"], "runtime artifact file path"),
+                        digest=_string(file["digest"], "runtime artifact file digest"),
+                        size_bytes=_integer(file["size_bytes"], "runtime artifact file size"),
+                    )
+                    for file in (
+                        _object(raw_file, {"path", "digest", "size_bytes"}, "runtime artifact file")
+                        for raw_file in _items(artifact["files"], "runtime artifact files", maximum=4096)
+                    )
+                ),
+                localization_receipt_digest=_string(
+                    artifact["localization_receipt_digest"], "runtime artifact localization receipt"
+                ),
+                aggregate_tree=aggregate_tree,
+            )
+        )
+
+    adapter_execution = None
+    if value["adapter_execution"] is not None:
+        execution = _object(
+            value["adapter_execution"],
+            {
+                "model_id",
+                "variant_id",
+                "source_revision",
+                "request_sha256",
+                "required_model_artifacts",
+                "invocations",
+            },
+            "adapter execution",
+        )
+        invocations: list[StageInvocation] = []
+        for raw_invocation in _items(execution["invocations"], "adapter invocations"):
+            invocation_keys = {
+                "stage_id",
+                "shard_id",
+                "argv",
+                "environment",
+                "working_directory",
+                "consumes",
+                "produces",
+                "collector_id",
+                "validator_id",
+                "handoff_name",
+                "max_output_artifacts",
+                "max_output_bytes",
+                "runtime_artifacts",
+                "runtime_mounts",
+                "materializations",
+            }
+            if stored_schema != LEGACY_STATE_SCHEMA_V6:
+                invocation_keys.update({"namespace", "local_queue_name"})
+            invocation = _object(
+                raw_invocation,
+                invocation_keys,
+                "adapter invocation",
+            )
+            environment: list[tuple[str, str]] = []
+            for raw_item in _items(invocation["environment"], "adapter environment", maximum=128):
+                items = _items(raw_item, "adapter environment item", maximum=2)
+                if len(items) != 2:
+                    raise ValueError("stored adapter environment item fields differ")
+                environment.append((_string(items[0], "environment key"), _string(items[1], "environment value")))
+            materializations: list[ArtifactMaterialization] = []
+            for raw_materialization in _items(invocation["materializations"], "artifact materializations", maximum=64):
+                materialization = _object(
+                    raw_materialization,
+                    {"artifact_id", "destination", "mode", "compression", "yaml_name", "reuse_prefix"},
+                    "artifact materialization",
+                )
+                materializations.append(
+                    ArtifactMaterialization(
+                        artifact_id=_string(materialization["artifact_id"], "logical artifact ID"),
+                        destination=_string(materialization["destination"], "materialization destination"),
+                        mode=MaterializationMode(_string(materialization["mode"], "materialization mode")),
+                        compression=_optional_string(materialization["compression"], "artifact compression"),
+                        yaml_name=_optional_string(materialization["yaml_name"], "BoltzGen YAML name"),
+                        reuse_prefix=_optional_string(materialization["reuse_prefix"], "BoltzGen reuse prefix"),
+                    )
+                )
+            runtime_mounts: list[RuntimeArtifactMount] = []
+            for raw_mount in _items(invocation["runtime_mounts"], "runtime artifact mounts", maximum=64):
+                mount = _object(
+                    raw_mount,
+                    {
+                        "artifact_id",
+                        "mount_path",
+                        "sub_path",
+                        "read_only",
+                        "expected_content_sha256",
+                        "expected_manifest_sha256",
+                        "authorization_receipt_sha256",
+                        "readiness_receipt_sha256",
+                        "supplemental_groups",
+                    },
+                    "runtime artifact mount",
+                )
+                runtime_mounts.append(
+                    RuntimeArtifactMount(
+                        artifact_id=_string(mount["artifact_id"], "runtime mount artifact ID"),
+                        mount_path=_string(mount["mount_path"], "runtime mount path"),
+                        sub_path=_optional_string(mount["sub_path"], "runtime mount sub-path"),
+                        read_only=_boolean(mount["read_only"], "runtime mount read-only"),
+                        expected_content_sha256=_optional_string(
+                            mount["expected_content_sha256"], "runtime mount content digest"
+                        ),
+                        expected_manifest_sha256=_optional_string(
+                            mount["expected_manifest_sha256"], "runtime mount manifest digest"
+                        ),
+                        authorization_receipt_sha256=_optional_string(
+                            mount["authorization_receipt_sha256"], "runtime mount authorization receipt"
+                        ),
+                        readiness_receipt_sha256=_optional_string(
+                            mount["readiness_receipt_sha256"], "runtime mount readiness receipt"
+                        ),
+                        supplemental_groups=tuple(
+                            _integer(item, "runtime mount supplemental group")
+                            for item in _items(
+                                mount["supplemental_groups"], "runtime mount supplemental groups", maximum=32
+                            )
+                        ),
+                    )
+                )
+            invocations.append(
+                StageInvocation(
+                    stage_id=_string(invocation["stage_id"], "invocation stage ID"),
+                    shard_id=_string(invocation["shard_id"], "invocation shard ID"),
+                    argv=_string_items(invocation["argv"], "invocation argv", maximum=64),
+                    environment=tuple(environment),
+                    working_directory=_string(invocation["working_directory"], "invocation working directory"),
+                    consumes=_string_items(invocation["consumes"], "logical input", maximum=64),
+                    produces=_string(invocation["produces"], "logical output"),
+                    collector_id=_string(invocation["collector_id"], "collector ID"),
+                    validator_id=_string(invocation["validator_id"], "validator ID"),
+                    handoff_name=_optional_string(invocation["handoff_name"], "handoff entry name"),
+                    namespace=(
+                        None
+                        if stored_schema == LEGACY_STATE_SCHEMA_V6
+                        else _optional_string(invocation["namespace"], "stage execution namespace")
+                    ),
+                    local_queue_name=(
+                        None
+                        if stored_schema == LEGACY_STATE_SCHEMA_V6
+                        else _optional_string(invocation["local_queue_name"], "stage execution LocalQueue")
+                    ),
+                    max_output_artifacts=_integer(invocation["max_output_artifacts"], "maximum output artifacts"),
+                    max_output_bytes=_integer(invocation["max_output_bytes"], "maximum output bytes"),
+                    materializations=tuple(materializations),
+                    runtime_artifacts=_string_items(invocation["runtime_artifacts"], "runtime artifact", maximum=64),
+                    runtime_mounts=tuple(runtime_mounts),
+                )
+            )
+        adapter_execution = AdapterExecutionPlan(
+            model_id=_string(execution["model_id"], "adapter model ID"),
+            variant_id=_string(execution["variant_id"], "adapter variant ID"),
+            source_revision=_string(execution["source_revision"], "adapter source revision"),
+            request_sha256=_string(execution["request_sha256"], "adapter request digest"),
+            controller_plan=plan,
+            invocations=tuple(invocations),
+            required_model_artifacts=_string_items(
+                execution["required_model_artifacts"], "required runtime artifact", maximum=64
+            ),
+        )
+
+    scheduling_value = _object(
+        value["scheduling"],
+        {"policy_revision", "captured_at", "service_class", "tenant_queue", "model_lane", "stages"},
+        "scientific-batch scheduling snapshot",
+    )
+    scheduling_keys = {
+        "stage_id",
+        "execution_namespace",
+        "resolved_cluster_queue",
+        "resolved_local_queue",
+        "workload_priority_class",
+        "workload_priority_value",
+        "resolved_pool_preference",
+        "admitted_resource_flavor",
+        "accelerator_resource_name",
+        "accelerator_count",
+        "max_queue_seconds",
+        "max_execution_seconds",
+        "checkpoint_mode",
+        "preemption_mode",
+    }
+    decisions: list[StageSchedulingDecision] = []
+    for raw_decision in _items(scheduling_value["stages"], "scheduling stages", maximum=64):
+        legacy_scheduling_keys = scheduling_keys - {"execution_namespace"}
+        if stored_schema in {LEGACY_STATE_SCHEMA_V6, LEGACY_STATE_SCHEMA_V7}:
+            decision = _object(raw_decision, legacy_scheduling_keys, "scheduling stage")
+        elif isinstance(raw_decision, Mapping) and "execution_namespace" not in raw_decision:
+            # Early v9 rows were written before the namespace was added to the
+            # scheduling snapshot without a corresponding schema bump.
+            decision = _object(raw_decision, legacy_scheduling_keys, "scheduling stage")
+        else:
+            decision = _object(raw_decision, scheduling_keys, "scheduling stage")
+        stage_id = _string(decision["stage_id"], "scheduling stage ID")
+        decisions.append(
+            StageSchedulingDecision(
+                stage_id=stage_id,
+                execution_namespace=(
+                    _string(decision["execution_namespace"], "execution namespace")
+                    if "execution_namespace" in decision
+                    else _legacy_execution_namespace(stage_id, adapter_execution)
+                ),
+                resolved_cluster_queue=_string(decision["resolved_cluster_queue"], "cluster queue"),
+                resolved_local_queue=_string(decision["resolved_local_queue"], "local queue"),
+                workload_priority_class=_string(decision["workload_priority_class"], "priority class"),
+                workload_priority_value=_integer(decision["workload_priority_value"], "workload priority"),
+                resolved_pool_preference=_string_items(
+                    decision["resolved_pool_preference"], "pool preference", maximum=256
+                ),
+                admitted_resource_flavor=_optional_string(
+                    decision["admitted_resource_flavor"], "admitted resource flavor"
+                ),
+                accelerator_resource_name=_string(decision["accelerator_resource_name"], "accelerator resource"),
+                accelerator_count=_integer(decision["accelerator_count"], "accelerator count"),
+                max_queue_seconds=(
+                    None
+                    if decision["max_queue_seconds"] is None
+                    else _integer(decision["max_queue_seconds"], "maximum queue seconds")
+                ),
+                max_execution_seconds=(
+                    None
+                    if decision["max_execution_seconds"] is None
+                    else _integer(decision["max_execution_seconds"], "maximum execution seconds")
+                ),
+                checkpoint_mode=CheckpointMode(_string(decision["checkpoint_mode"], "checkpoint mode")),
+                preemption_mode=PreemptionMode(_string(decision["preemption_mode"], "preemption mode")),
+            )
+        )
+    scheduling = SchedulingSnapshot(
+        policy_revision=_string(scheduling_value["policy_revision"], "scheduling policy revision"),
+        captured_at=_datetime(scheduling_value["captured_at"], "scheduling capture"),
+        service_class=ServiceClass(_string(scheduling_value["service_class"], "service class")),
+        tenant_queue=_string(scheduling_value["tenant_queue"], "tenant queue"),
+        model_lane=_string(scheduling_value["model_lane"], "model lane"),
+        stages=tuple(decisions),
+    )
+
+    stage_state_keys = {"stage_id", "status", "failure_code", "attempts"}
+    attempt_keys = {
+        "attempt_id",
+        "stage_id",
+        "shard_id",
+        "attempt_number",
+        "started_at",
+        "completed_at",
+        "workload",
+        "outcome",
+        "last_phase",
+        "resource_released",
+        "scheduling_admission",
+        "kueue_workload_uid",
+        "pod_uids",
+        "failure_kind",
+        "failure_code",
+    }
+    workload_keys = {"namespace", "name", "kind", "uid"}
+    stage_states: list[ScientificStageState] = []
+    for raw_stage_state in _items(value["stages"], "scientific-batch stages", maximum=64):
+        stage_state = _object(raw_stage_state, stage_state_keys, "scientific-batch stage")
+        attempts: list[ScientificAttemptState] = []
+        for raw_attempt in _items(stage_state["attempts"], "scientific attempts"):
+            attempt = _object(raw_attempt, attempt_keys, "scientific attempt")
+            workload = _object(attempt["workload"], workload_keys, "scientific attempt workload")
+            admission = None
+            if attempt["scheduling_admission"] is not None:
+                admission_value = _object(
+                    attempt["scheduling_admission"],
+                    {
+                        "resolved_pool_id",
+                        "admitted_resource_flavor",
+                        "accelerator_resource_name",
+                        "accelerator_count",
+                        "admitted_at",
+                    },
+                    "scientific attempt scheduling admission",
+                )
+                admission = SchedulingAdmission(
+                    resolved_pool_id=_optional_string(admission_value["resolved_pool_id"], "resolved pool ID"),
+                    admitted_resource_flavor=_optional_string(
+                        admission_value["admitted_resource_flavor"], "admitted ResourceFlavor"
+                    ),
+                    accelerator_resource_name=_optional_string(
+                        admission_value["accelerator_resource_name"], "admitted accelerator resource"
+                    ),
+                    accelerator_count=_integer(admission_value["accelerator_count"], "admitted accelerator count"),
+                    admitted_at=_datetime(admission_value["admitted_at"], "Kueue admission time"),
+                )
+            attempts.append(
+                ScientificAttemptState(
+                    attempt_id=_uuid(attempt["attempt_id"], "attempt ID"),
+                    stage_id=_string(attempt["stage_id"], "attempt stage ID"),
+                    shard_id=_optional_string(attempt["shard_id"], "attempt shard ID"),
+                    attempt_number=_integer(attempt["attempt_number"], "attempt number"),
+                    started_at=(
+                        None if attempt["started_at"] is None else _datetime(attempt["started_at"], "attempt start")
+                    ),
+                    completed_at=(
+                        None
+                        if attempt["completed_at"] is None
+                        else _datetime(attempt["completed_at"], "attempt completion")
+                    ),
+                    workload=WorkloadRef(
+                        namespace=_string(workload["namespace"], "workload namespace"),
+                        name=_string(workload["name"], "workload name"),
+                        kind=WorkloadKind(_string(workload["kind"], "workload kind")),
+                        uid=_optional_string(workload["uid"], "workload UID"),
+                    ),
+                    outcome=AttemptOutcome(_string(attempt["outcome"], "attempt outcome")),
+                    last_phase=LifecyclePhase(_string(attempt["last_phase"], "attempt phase")),
+                    resource_released=_boolean(attempt["resource_released"], "attempt resource release"),
+                    scheduling_admission=admission,
+                    kueue_workload_uid=_optional_string(attempt["kueue_workload_uid"], "Kueue Workload UID"),
+                    pod_uids=_string_items(attempt["pod_uids"], "Pod UID", maximum=64),
+                    failure_kind=(
+                        None
+                        if attempt["failure_kind"] is None
+                        else FailureKind(_string(attempt["failure_kind"], "attempt failure kind"))
+                    ),
+                    failure_code=_optional_string(attempt["failure_code"], "attempt failure code"),
+                )
+            )
+        stage_states.append(
+            ScientificStageState(
+                stage_id=_string(stage_state["stage_id"], "stage state ID"),
+                status=StageStatus(_string(stage_state["status"], "stage status")),
+                attempts=tuple(attempts),
+                failure_code=_optional_string(stage_state["failure_code"], "stage failure code"),
+            )
+        )
+
+    return ScientificBatchState(
+        operation_id=_uuid(value["operation_id"], "operation ID"),
+        batch_id=_uuid(value["batch_id"], "batch ID"),
+        workload_id=_uuid(value["workload_id"], "workload ID"),
+        tenant_id=_string(value["tenant_id"], "tenant ID"),
+        model_id=_string(value["model_id"], "model ID"),
+        variant_id=_string(value["variant_id"], "variant ID"),
+        input_artifact_id=_uuid(value["input_artifact_id"], "input artifact ID"),
+        plan=plan,
+        scheduling=scheduling,
+        stages=tuple(stage_states),
+        execution_plan=adapter_execution,
+        access_context=access_context,
+        input_manifest=input_manifest,
+        runtime_artifacts=tuple(runtime_artifacts),
+        status=BatchStatus(_string(value["status"], "batch status")),
+        revision=_integer(value["revision"], "revision"),
+        cancel_requested=_boolean(value["cancel_requested"], "cancel request"),
+        failure_code=_optional_string(value["failure_code"], "batch failure code"),
+        result_published=_boolean(value["result_published"], "terminal result publication"),
+    )

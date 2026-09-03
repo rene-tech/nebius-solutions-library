@@ -1,0 +1,372 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/scientific-execution-targets/v1",
+  "title": "Trusted deployment-owned scientific execution targets",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "default_execution_namespace",
+    "default_local_queue_name",
+    "default_cluster_queue_name",
+    "default_service_account_name",
+    "default_active_deadline_seconds",
+    "default_runtime_artifact_claim",
+    "default_tolerations",
+    "controller_service_account",
+    "bindings"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/scientific-execution-targets/v1"},
+    "default_execution_namespace": {"const": "fs2-models"},
+    "default_local_queue_name": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+    "default_cluster_queue_name": {"const": "inference-accelerators"},
+    "default_service_account_name": {"const": "scientific-runner"},
+    "default_active_deadline_seconds": {"type": "integer", "minimum": 1, "maximum": 604800},
+    "default_runtime_artifact_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "namespace"],
+      "properties": {
+        "name": {"const": "scientific-model-artifacts"},
+        "namespace": {"const": "fs2-models"}
+      }
+    },
+    "default_tolerations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/toleration"}
+    },
+    "controller_service_account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace", "name"],
+      "properties": {
+        "namespace": {"const": "fs2-system"},
+        "name": {"const": "fs2-serve-control-plane-runtime"}
+      }
+    },
+    "bindings": {
+      "type": "array",
+      "minItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_id",
+          "stage_id",
+          "execution_namespace",
+          "local_queue_name",
+          "cluster_queue_name",
+          "service_account_name",
+          "node_selector",
+          "tolerations",
+          "mounts"
+        ],
+        "properties": {
+          "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+          "stage_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+          "execution_namespace": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+          "local_queue_name": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+          "cluster_queue_name": {"const": "inference-accelerators"},
+          "service_account_name": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+          "node_selector": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {"pattern": "^[A-Za-z0-9](?:[-A-Za-z0-9_.]*/)?[A-Za-z0-9](?:[-A-Za-z0-9_.]*[A-Za-z0-9])?$"},
+            "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 63}
+          },
+          "tolerations": {
+            "type": "array",
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/toleration"}
+          },
+          "mounts": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/mount"}
+          },
+          "environment": {
+            "type": "object",
+            "additionalProperties": {"type": "string", "maxLength": 4096},
+            "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["model_id", "stage_id"],
+              "properties": {
+                "model_id": {"const": "alphafold3"},
+                "stage_id": {"const": "data-pipeline"}
+              }
+            },
+            "then": {
+              "properties": {
+                "node_selector": {
+                  "required": ["storage.fs2.nebius/reference-data"],
+                  "properties": {
+                    "storage.fs2.nebius/reference-data": {"const": "true"}
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": ["model_id", "stage_id"],
+              "properties": {
+                "model_id": {"const": "alphafold3"},
+                "stage_id": {"const": "inference"}
+              }
+            },
+            "then": {
+              "properties": {
+                "execution_namespace": {"const": "fs2-academic-poc"},
+                "local_queue_name": {"const": "academic-scientific"},
+                "service_account_name": {"const": "fs2-academic-runner"},
+                "mounts": {
+                  "contains": {
+                    "required": ["kind", "artifact_id", "supplemental_groups"],
+                    "properties": {
+                      "kind": {"const": "private"},
+                      "artifact_id": {"const": "alphafold3-parameters"},
+                      "supplemental_groups": {"const": [65532]}
+                    }
+                  },
+                  "minContains": 1,
+                  "maxContains": 1
+                },
+                "environment": {
+                  "required": [
+                    "FS2_AF3_CACHE_ROOT",
+                    "FS2_AF3_JAX_CACHE_DIR",
+                    "FS2_AF3_TRITON_CACHE_DIR",
+                    "FS2_AF3_XDG_CACHE_DIR"
+                  ],
+                  "properties": {
+                    "FS2_AF3_CACHE_ROOT": {"const": "/cache/alphafold3"},
+                    "FS2_AF3_JAX_CACHE_DIR": {"const": "/cache/alphafold3/jax"},
+                    "FS2_AF3_TRITON_CACHE_DIR": {"const": "/cache/alphafold3/triton"},
+                    "FS2_AF3_XDG_CACHE_DIR": {"const": "/cache/alphafold3/xdg"}
+                  }
+                }
+              },
+              "allOf": [
+                {
+                  "properties": {
+                    "mounts": {
+                      "contains": {"$ref": "#/$defs/alphafold3CacheMount"},
+                      "minContains": 1,
+                      "maxContains": 1
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "if": {
+              "required": ["model_id", "stage_id"],
+              "properties": {
+                "model_id": {"const": "openfold3"},
+                "stage_id": {"const": "inference"}
+              }
+            },
+            "then": {
+              "properties": {
+                "execution_namespace": {"const": "fs2-models"},
+                "local_queue_name": {"const": "inference-models"},
+                "service_account_name": {"const": "scientific-runner"},
+                "mounts": {
+                  "contains": {"$ref": "#/$defs/openfold3CacheMount"},
+                  "minContains": 1,
+                  "maxContains": 1
+                },
+                "environment": {
+                  "required": ["TRITON_CACHE_DIR", "TORCH_EXTENSIONS_DIR", "XDG_CACHE_HOME"],
+                  "properties": {
+                    "TRITON_CACHE_DIR": {"const": "/cache/openfold3/triton"},
+                    "TORCH_EXTENSIONS_DIR": {"const": "/cache/openfold3/torch-extensions"},
+                    "XDG_CACHE_HOME": {"const": "/cache/openfold3/xdg"}
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "nullableName": {
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+    },
+    "nullablePath": {
+      "type": ["string", "null"],
+      "pattern": "^(?:/[^/\\\\]+)+$"
+    },
+    "mount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "artifact_id",
+        "claim_name",
+        "claim_namespace",
+        "host_path",
+        "operator_owned",
+        "mount_path",
+        "sub_path",
+        "aggregate_tree_policy",
+        "supplemental_groups",
+        "read_only"
+      ],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+        "kind": {"enum": ["private", "reference", "operator-host-path", "cache"]},
+        "artifact_id": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+        "claim_name": {"$ref": "#/$defs/nullableName"},
+        "claim_namespace": {"$ref": "#/$defs/nullableName"},
+        "host_path": {"$ref": "#/$defs/nullablePath"},
+        "operator_owned": {"const": true},
+        "mount_path": {"type": "string", "pattern": "^(?:/[^/\\\\]+)+$"},
+        "sub_path": {"type": ["string", "null"], "pattern": "^[^/\\\\.][^\\\\]*$"},
+        "aggregate_tree_policy": {
+          "anyOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/aggregateTreePolicy"}
+          ]
+        },
+        "supplemental_groups": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1, "maximum": 2147483647}
+        },
+        "read_only": {"type": "boolean"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "cache"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "artifact_id": {"type": "null"},
+              "host_path": {"type": "null"},
+              "sub_path": {"type": "null"},
+              "aggregate_tree_policy": {"type": "null"},
+              "supplemental_groups": {"const": []},
+              "read_only": {"const": false}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "operator-host-path"}}},
+          "then": {
+            "properties": {
+              "artifact_id": {"const": "alphafold3-public-databases-v3.0"},
+              "host_path": {"const": "/mnt/fs2-reference-data/data"},
+              "mount_path": {"const": "/databases"},
+              "aggregate_tree_policy": {"$ref": "#/$defs/aggregateTreePolicy"},
+              "sub_path": {
+                "const": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}"
+              },
+              "supplemental_groups": {"const": [1000]},
+              "read_only": {"const": true}
+            }
+          },
+          "else": {"properties": {"aggregate_tree_policy": {"type": "null"}}}
+        }
+      ]
+    },
+    "alphafold3CacheMount": {
+      "allOf": [
+        {"$ref": "#/$defs/mount"},
+        {
+          "properties": {
+            "name": {"const": "alphafold3-warm-cache"},
+            "kind": {"const": "cache"},
+            "artifact_id": {"type": "null"},
+            "claim_name": {"const": "scientific-alphafold3-cache"},
+            "claim_namespace": {"const": "fs2-academic-poc"},
+            "host_path": {"type": "null"},
+            "mount_path": {"const": "/cache/alphafold3"},
+            "sub_path": {"type": "null"},
+            "aggregate_tree_policy": {"type": "null"},
+            "supplemental_groups": {"const": []},
+            "read_only": {"const": false}
+          }
+        }
+      ]
+    },
+    "openfold3CacheMount": {
+      "allOf": [
+        {"$ref": "#/$defs/mount"},
+        {
+          "properties": {
+            "name": {"const": "openfold3-warm-cache"},
+            "kind": {"const": "cache"},
+            "artifact_id": {"type": "null"},
+            "claim_name": {"const": "scientific-openfold3-cache"},
+            "claim_namespace": {"const": "fs2-models"},
+            "host_path": {"type": "null"},
+            "mount_path": {"const": "/cache/openfold3"},
+            "sub_path": {"type": "null"},
+            "aggregate_tree_policy": {"type": "null"},
+            "supplemental_groups": {"const": []},
+            "read_only": {"const": false}
+          }
+        }
+      ]
+    },
+    "aggregateTreePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataset_relative_path_template",
+        "dataset_uri_template",
+        "manifest_marker",
+        "minimum_file_count",
+        "node_accessibility_receipt_required",
+        "required_node_selector"
+      ],
+      "properties": {
+        "dataset_relative_path_template": {
+          "const": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}"
+        },
+        "dataset_uri_template": {
+          "const": "file:///mnt/fs2-reference-data/data/datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}"
+        },
+        "manifest_marker": {"const": ".fs2-manifest-sha256"},
+        "minimum_file_count": {"const": 4097},
+        "node_accessibility_receipt_required": {"const": true},
+        "required_node_selector": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["storage.fs2.nebius/reference-data"],
+          "properties": {
+            "storage.fs2.nebius/reference-data": {"const": "true"}
+          }
+        }
+      }
+    },
+    "toleration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "operator", "value", "effect"],
+      "properties": {
+        "key": {"const": "dedicated"},
+        "operator": {"const": "Equal"},
+        "value": {"const": "fs2-inference"},
+        "effect": {"const": "NoSchedule"}
+      }
+    }
+  }
+}

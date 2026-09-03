@@ -370,9 +370,10 @@ locals {
       credential_generation = var.deployment.storage.scientific_artifacts.credential_generation
     }
     scientific_batch = {
-      enabled        = var.deployment.scientific_batch.enabled
-      writes_enabled = var.deployment.scientific_batch.writes_enabled
-      namespace      = var.deployment.scientific_batch.namespace
+      enabled                       = var.deployment.scientific_batch.enabled
+      writes_enabled                = var.deployment.scientific_batch.writes_enabled
+      namespace                     = var.deployment.scientific_batch.namespace
+      execution_map_config_map_json = var.deployment.scientific_batch.execution_map_file == null ? null : file(var.deployment.scientific_batch.execution_map_file)
     }
     academic_assets = local.academic_assets_contract
     model_express = {

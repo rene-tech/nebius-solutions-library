@@ -135,7 +135,7 @@ resource "kubernetes_manifest" "accelerator_flavor" {
 }
 
 resource "kubernetes_manifest" "async_cluster_queue" {
-  manifest = module.kueue_scheduling.contract.cluster_queues[local.queue_default.cluster_queue_name]
+  manifest = local.scientific_cluster_queues[local.queue_default.cluster_queue_name]
   depends_on = [
     kubernetes_manifest.accelerator_cohort,
     kubernetes_manifest.accelerator_flavor,
@@ -153,7 +153,7 @@ resource "kubernetes_manifest" "accelerator_cohort" {
 
 resource "kubernetes_manifest" "additional_cluster_queue" {
   for_each = {
-    for queue_name, manifest in module.kueue_scheduling.contract.cluster_queues :
+    for queue_name, manifest in local.scientific_cluster_queues :
     queue_name => manifest if queue_name != local.queue_default.cluster_queue_name
   }
 
