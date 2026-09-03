@@ -17,6 +17,7 @@ import httpx
 from .models import (
     FailureKind,
     LifecyclePhase,
+    ResourceClass,
     SchedulingAdmission,
     WorkloadKind,
     WorkloadObservation,
@@ -49,6 +50,7 @@ PREEMPTION_ANNOTATION = "fs2.nebius.ai/preemption-mode"
 MAX_QUEUE_ANNOTATION = "fs2.nebius.ai/max-queue-seconds"
 KUEUE_JOB_UID_LABEL = "kueue.x-k8s.io/job-uid"
 POOL_LABEL = "fs2.nebius.ai/pool-id"
+NODE_POOL_LABEL = "accelerator.fs2.nebius/pool-id"
 
 
 class ScientificManifestRenderer(Protocol):
@@ -92,7 +94,7 @@ def _condition(status: Mapping[str, Any], kind: str, expected: str = "True") -> 
 def _failure(reasons: list[str]) -> tuple[WorkloadState, FailureKind, str]:
     normalized = [reason.lower() for reason in reasons if reason]
     selected = reasons[0] if reasons else "workload_failed"
-    if any("preempt" in reason or "evict" in reason or "deactiv" in reason for reason in normalized):
+    if "preempted" in normalized:
         return WorkloadState.PREEMPTED, FailureKind.PREEMPTION, selected
     if any(
         reason in {"nodelost", "nodefailure", "shutdown", "unexpectedadmissioncheck"} or "unreachable" in reason
@@ -102,6 +104,22 @@ def _failure(reasons: list[str]) -> tuple[WorkloadState, FailureKind, str]:
     # Unknown Job/container failures are application failures. Classifying
     # them as infrastructure would silently retry invalid input or model code.
     return WorkloadState.FAILED, FailureKind.APPLICATION, selected
+
+
+def _kueue_eviction(reason: str) -> tuple[WorkloadState, FailureKind, str]:
+    """Classify only Kueue's exact eviction reason; generic Pod eviction is not preemption."""
+
+    if reason == "Preempted":
+        return WorkloadState.PREEMPTED, FailureKind.PREEMPTION, reason
+    if reason in {
+        "NodeFailures",
+        "PodsReadyTimeout",
+        "ClusterQueueStopped",
+        "LocalQueueStopped",
+        "EvictedOnManagerCluster",
+    }:
+        return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, reason
+    return WorkloadState.FAILED, FailureKind.APPLICATION, reason
 
 
 def _safe_label(value: str) -> str:
@@ -135,6 +153,45 @@ def _template_metadata(manifest: dict[str, Any], kind: WorkloadKind) -> list[dic
         pod = _object(_object(job_spec.get("spec"), "JobSet Job spec").get("template"), "JobSet Pod template")
         result.append(_object(pod.setdefault("metadata", {}), "JobSet Pod metadata"))
     return result
+
+
+def _pod_specs(manifest: dict[str, Any], kind: WorkloadKind) -> list[dict[str, Any]]:
+    spec = _object(manifest.get("spec"), "Kubernetes workload spec")
+    if kind is WorkloadKind.JOB:
+        template = _object(spec.get("template"), "Job Pod template")
+        return [_object(template.get("spec"), "Job Pod spec")]
+    jobs = spec.get("replicatedJobs")
+    if not isinstance(jobs, list) or not jobs:
+        raise ScientificKubernetesError("JobSet must contain replicatedJobs")
+    result: list[dict[str, Any]] = []
+    for raw_job in jobs:
+        job = _object(raw_job, "JobSet replicated job")
+        job_template = _object(job.get("template"), "JobSet Job template")
+        job_spec = _object(job_template.get("spec"), "JobSet Job spec")
+        pod_template = _object(job_spec.get("template"), "JobSet Pod template")
+        result.append(_object(pod_template.get("spec"), "JobSet Pod spec"))
+    return result
+
+
+def _bind_pool_affinity(pod: dict[str, Any], pools: tuple[str, ...]) -> None:
+    """Constrain every required node-selector term to the frozen pool set."""
+
+    affinity = _object(pod.setdefault("affinity", {}), "Pod affinity")
+    node_affinity = _object(affinity.setdefault("nodeAffinity", {}), "Pod node affinity")
+    required = _object(
+        node_affinity.setdefault("requiredDuringSchedulingIgnoredDuringExecution", {}),
+        "required Pod node affinity",
+    )
+    terms = required.setdefault("nodeSelectorTerms", [{}])
+    if not isinstance(terms, list) or not terms:
+        raise ScientificKubernetesError("required Pod node affinity has no node selector terms")
+    for raw_term in terms:
+        term = _object(raw_term, "Pod node selector term")
+        expressions = term.setdefault("matchExpressions", [])
+        if not isinstance(expressions, list) or not all(isinstance(item, dict) for item in expressions):
+            raise ScientificKubernetesError("Pod node affinity matchExpressions are invalid")
+        expressions[:] = [item for item in expressions if item.get("key") != NODE_POOL_LABEL]
+        expressions.append({"key": NODE_POOL_LABEL, "operator": "In", "values": list(pools)})
 
 
 def _set_active_deadline(manifest: dict[str, Any], kind: WorkloadKind, seconds: int) -> None:
@@ -263,6 +320,12 @@ class HttpScientificBatchCluster:
             pod_labels.update(labels)
         spec = _object(manifest.get("spec"), "Kubernetes workload spec")
         spec["suspend"] = True
+        if resource.scheduling.resource_class is ResourceClass.GPU:
+            pools = resource.scheduling.resolved_pool_preference
+            if not pools:
+                raise ScientificKubernetesError("GPU workload has no frozen pool preference")
+            for pod in _pod_specs(manifest, resource.kind):
+                _bind_pool_affinity(pod, pools)
         if resource.kind is WorkloadKind.JOB:
             spec["backoffLimit"] = 0
         if resource.scheduling.max_execution_seconds is not None:
@@ -313,8 +376,10 @@ class HttpScientificBatchCluster:
             raise BatchRepositoryConflictError("workload UID changed")
         status = _object(value.get("status", {}), "Kubernetes workload status")
         phases: list[LifecyclePhase] = []
-        scheduling_admission, kueue_workload_uid = await self._scheduling_admission(ref, str(metadata.get("uid", "")))
-        if scheduling_admission is not None:
+        scheduling_admission, kueue_workload_uid, admitted, eviction_reason = await self._scheduling_admission(
+            ref, str(metadata.get("uid", ""))
+        )
+        if admitted:
             phases.append(LifecyclePhase.ADMITTED)
 
         selector = quote(f"{ATTEMPT_LABEL}={attempt_id}", safe="=,.-")
@@ -362,12 +427,27 @@ class HttpScientificBatchCluster:
         succeeded = int(status.get("succeeded", 0) or 0) > 0 or _condition(status, "Completed") is not None
         failed_condition = _condition(status, "Failed")
         failed = int(status.get("failed", 0) or 0) > 0 or failed_condition is not None
-        if scheduling_admission is None and (
+        if not admitted and (
             status.get("startTime") or any(phase == "Running" for phase in pod_phases) or succeeded
         ):
-            raise ScientificKubernetesError("Kueue admission is unresolved for a started workload")
+            raise ScientificKubernetesError("Kueue has not admitted a started workload")
         if succeeded:
             state = WorkloadState.SUCCEEDED
+        elif eviction_reason is not None:
+            workload_state, failure_kind, failure_code = _kueue_eviction(eviction_reason)
+            if workload_state is WorkloadState.PREEMPTED:
+                phases.append(LifecyclePhase.PREEMPTED)
+            return WorkloadObservation(
+                ref=ref,
+                attempt_id=attempt_id,
+                state=workload_state,
+                phases=tuple(dict.fromkeys(phases)),
+                scheduling_admission=scheduling_admission,
+                kueue_workload_uid=kueue_workload_uid,
+                pod_uids=tuple(dict.fromkeys(pod_uids)),
+                failure_kind=failure_kind,
+                failure_code=failure_code[:128],
+            )
         elif failed:
             reason = str((failed_condition or {}).get("reason", "workload_failed"))
             workload_state, failure_kind, failure_code = _failure([reason, *failure_reasons])
@@ -398,7 +478,7 @@ class HttpScientificBatchCluster:
 
     async def _scheduling_admission(
         self, ref: WorkloadRef, job_uid: str
-    ) -> tuple[SchedulingAdmission | None, str | None]:
+    ) -> tuple[SchedulingAdmission | None, str | None, bool, str | None]:
         """Reopen exact Kueue admission and its ResourceFlavor-to-pool label."""
 
         if not job_uid:
@@ -409,22 +489,28 @@ class HttpScientificBatchCluster:
             "GET", f"/apis/kueue.x-k8s.io/v1beta1/namespaces/{namespace}/workloads?labelSelector={selector}&limit=2"
         )
         if response.status_code == 404:
-            return None, None
+            return None, None, False, None
         items = cast(dict[str, Any], response.json()).get("items")
         if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], Mapping):
-            return None, None
+            return None, None, False, None
         workload_metadata = items[0].get("metadata")
         workload_uid = workload_metadata.get("uid") if isinstance(workload_metadata, Mapping) else None
         if not isinstance(workload_uid, str) or not workload_uid:
             raise ScientificKubernetesError("Kueue Workload UID is absent")
         workload_status = items[0].get("status")
         if not isinstance(workload_status, Mapping):
-            return None, workload_uid
+            return None, workload_uid, False, None
         admitted = _condition(workload_status, "Admitted")
+        quota_reserved = _condition(workload_status, "QuotaReserved")
+        evicted = _condition(workload_status, "Evicted")
+        eviction_reason = evicted.get("reason") if evicted is not None else None
+        if eviction_reason is not None and not isinstance(eviction_reason, str):
+            raise ScientificKubernetesError("Kueue eviction reason is invalid")
         admission = workload_status.get("admission")
-        if admitted is None or not isinstance(admission, Mapping):
-            return None, workload_uid
-        timestamp = admitted.get("lastTransitionTime")
+        admission_condition = admitted or quota_reserved
+        if admission_condition is None or not isinstance(admission, Mapping):
+            return None, workload_uid, False, eviction_reason
+        timestamp = admission_condition.get("lastTransitionTime")
         if not isinstance(timestamp, str):
             raise ScientificKubernetesError("Kueue admission timestamp is absent")
         try:
@@ -468,6 +554,8 @@ class HttpScientificBatchCluster:
                     admitted_at=admitted_at,
                 ),
                 workload_uid,
+                admitted is not None,
+                eviction_reason,
             )
         if len(active) != 1:
             raise ScientificKubernetesError("Kueue admitted an ambiguous accelerator resource set")
@@ -492,6 +580,8 @@ class HttpScientificBatchCluster:
                 admitted_at=admitted_at,
             ),
             workload_uid,
+            admitted is not None,
+            eviction_reason,
         )
 
     async def delete(self, ref: WorkloadRef, *, controller_fence: int) -> None:
@@ -512,7 +602,7 @@ class HttpScientificBatchCluster:
             raise BatchRepositoryConflictError("workload UID changed before delete")
         await self.fence.assert_fence(operation_id, controller_id=self.controller_id, fencing_token=controller_fence)
         uid = metadata.get("uid")
-        await self._request(
+        response = await self._request(
             "DELETE",
             item,
             json={
@@ -522,3 +612,22 @@ class HttpScientificBatchCluster:
                 "preconditions": {"uid": uid},
             },
         )
+        if response.status_code == 409:
+            raise BatchRepositoryConflictError("workload UID precondition failed during delete")
+        if response.status_code != 202:
+            raise ScientificKubernetesError("Kubernetes workload delete was not accepted asynchronously")
+
+    async def absent(self, ref: WorkloadRef) -> bool:
+        """Confirm UID-specific absence after an accepted foreground deletion."""
+
+        _, item = self._paths(ref)
+        current = await self._request("GET", item)
+        if current.status_code == 404:
+            return True
+        value = cast(dict[str, Any], current.json())
+        metadata = _metadata(value)
+        if metadata.get("name") != ref.name or metadata.get("namespace") != ref.namespace:
+            raise BatchRepositoryConflictError("workload identity changed while deletion was pending")
+        if ref.uid is None or metadata.get("uid") != ref.uid:
+            raise BatchRepositoryConflictError("workload UID changed while deletion was pending")
+        return False

@@ -893,35 +893,59 @@ class FileScientificManifestRenderer:
                     "fsGroupChangePolicy": "OnRootMismatch",
                 }
             )
+        affinity: dict[str, Any] | None = None
+        if gpu_count:
+            if not resource.scheduling.resolved_pool_preference:
+                raise ScientificExecutionMapError("GPU scheduling has no compatible pool constraint")
+            affinity = {
+                "nodeAffinity": {
+                    "requiredDuringSchedulingIgnoredDuringExecution": {
+                        "nodeSelectorTerms": [
+                            {
+                                "matchExpressions": [
+                                    {
+                                        "key": "accelerator.fs2.nebius/pool-id",
+                                        "operator": "In",
+                                        "values": list(resource.scheduling.resolved_pool_preference),
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            }
+        pod_spec: dict[str, Any] = {
+            "serviceAccountName": execution.service_account_name,
+            "automountServiceAccountToken": False,
+            "enableServiceLinks": False,
+            "restartPolicy": "Never",
+            "terminationGracePeriodSeconds": execution.termination_grace_seconds,
+            "securityContext": pod_security,
+            "initContainers": init_containers,
+            "containers": [
+                {
+                    "name": "scientific-stage",
+                    "image": execution.image,
+                    "imagePullPolicy": "IfNotPresent",
+                    "command": list(invocation.argv),
+                    "workingDir": invocation.working_directory,
+                    "env": env,
+                    "volumeMounts": volume_mounts,
+                    "resources": {"requests": copy.deepcopy(limits), "limits": limits},
+                    "securityContext": {
+                        "allowPrivilegeEscalation": False,
+                        "capabilities": {"drop": ["ALL"]},
+                    },
+                },
+                collector,
+            ],
+            "volumes": volumes,
+        }
+        if affinity is not None:
+            pod_spec["affinity"] = affinity
         return {
             "metadata": {},
-            "spec": {
-                "serviceAccountName": execution.service_account_name,
-                "automountServiceAccountToken": False,
-                "enableServiceLinks": False,
-                "restartPolicy": "Never",
-                "terminationGracePeriodSeconds": execution.termination_grace_seconds,
-                "securityContext": pod_security,
-                "initContainers": init_containers,
-                "containers": [
-                    {
-                        "name": "scientific-stage",
-                        "image": execution.image,
-                        "imagePullPolicy": "IfNotPresent",
-                        "command": list(invocation.argv),
-                        "workingDir": invocation.working_directory,
-                        "env": env,
-                        "volumeMounts": volume_mounts,
-                        "resources": {"requests": copy.deepcopy(limits), "limits": limits},
-                        "securityContext": {
-                            "allowPrivilegeEscalation": False,
-                            "capabilities": {"drop": ["ALL"]},
-                        },
-                    },
-                    collector,
-                ],
-                "volumes": volumes,
-            },
+            "spec": pod_spec,
         }
 
     def render(self, resource: WorkloadResource) -> Mapping[str, Any]:

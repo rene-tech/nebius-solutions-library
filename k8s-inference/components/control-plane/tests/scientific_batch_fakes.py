@@ -236,6 +236,8 @@ class FakeScientificBatchCluster:
         self.apply_history: list[WorkloadResource] = []
         self.delete_history: list[WorkloadRef] = []
         self.delete_calls: list[WorkloadRef] = []
+        self.deletion_polls_before_absent: dict[tuple[str, str, str], int] = {}
+        self.absence_polls: list[WorkloadRef] = []
 
     @staticmethod
     def key(ref: WorkloadRef) -> tuple[str, str, str]:
@@ -277,6 +279,21 @@ class FakeScientificBatchCluster:
         self.delete_calls.append(ref)
         if ref not in self.delete_history:
             self.delete_history.append(ref)
+
+    async def absent(self, ref: WorkloadRef) -> bool:
+        key = self.key(ref)
+        self.absence_polls.append(ref)
+        current = self.refs.get(key)
+        if current is not None and current.uid != ref.uid:
+            raise BatchRepositoryConflictError("workload UID changed while deletion was pending")
+        remaining = self.deletion_polls_before_absent.get(key, 0)
+        if remaining > 0:
+            self.deletion_polls_before_absent[key] = remaining - 1
+            return False
+        self.resources.pop(key, None)
+        self.refs.pop(key, None)
+        self.observations.pop(key, None)
+        return True
 
     def set_observation(self, ref: WorkloadRef, observation: WorkloadObservation) -> None:
         self.observations[self.key(ref)] = observation
