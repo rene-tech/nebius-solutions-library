@@ -139,8 +139,25 @@
       "owner": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903",
       "open_decision": {
         "question": "whether BindCraft should be able to run more than 320 designs in one request",
-        "needs": "either the catalog profile's design max_parallelism above 102, or the native per-shard cap raised to at least 16 with 64 shards",
-        "not_taken_here": "this task did not raise the cap. parameters.schema.json is not owned by the image task: it arrives on this branch only through the inherited primary-adapters commit and is not yet on main, so its owner is the primary-adapters task, and the public parameter schema that admits 1024 belongs to the scientific runtime onboarding task"
+        "needs": "one of three changes, none of them this task's to make",
+        "not_taken_here": "this task did not raise the cap. parameters.schema.json is not owned by the image task: it arrives on this branch only through the inherited primary-adapters commit and is not yet on main, so its owner is the primary-adapters task, and the public parameter schema that admits 1024 belongs to the scientific runtime onboarding task",
+        "options": [
+          {
+            "change": "raise the catalog profile's design max_parallelism above 102",
+            "owner": "fs2-scientific-runtime-onboarding-successor-r20260903"
+          },
+          {
+            "change": "raise the native accepted_designs_per_shard cap to at least 16 with 64 shards",
+            "owner": "fs2-cancer-primary-adapters-mosaic-bindcraft-rfdiffusion-r20260902"
+          },
+          {
+            "change": "lower the public designs maximum from 1024 to 320 so the caller-facing contract stops promising what the platform cannot execute",
+            "owner": "fs2-scientific-runtime-onboarding-successor-r20260903",
+            "note": "proposed by the adapter task as the smallest honest change; narrowing a public contract is its owner's call, and it is recorded here because the first two options were the only ones this record originally listed"
+          }
+        ],
+        "ownership_verified_by": "the adapter task independently, confirming the schema is absent from origin/main, appears on this branch only in the inherited primary-adapters commit, and carries the same change as 47683340 on the primary-adapters branch",
+        "routed": "the runtime-onboarding owner was messaged directly; the primary-adapters task runs as Codex and is unreachable by message, so it received a task-file entry and a table of the three disagreeing bounds in the shared handoff document. Nothing is blocked on either: the adapter fails closed at 320 regardless"
       }
     }
   },
