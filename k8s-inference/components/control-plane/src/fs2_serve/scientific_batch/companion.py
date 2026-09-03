@@ -26,8 +26,10 @@ _MAX_ARCHIVE_FILES = 4096
 _MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
 _MAX_RUNTIME_MARKER_BYTES = 64 * 1024
 RUNTIME_LOCALIZATION_SCHEMA = "fs2-serve.nebius.ai/runtime-localization-marker/v1"
-RUNTIME_TREE_IDENTITY_SCHEMA = "fs2-serve.nebius.ai/runtime-tree-identity/v1"
+RUNTIME_TREE_IDENTITY_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
 RUNTIME_TREE_IDENTITY_FILE = ".fs2-runtime-tree.json"
+REFERENCE_DATA_MANIFEST_SCHEMA = "fs2-serve.nebius.ai/reference-data-manifest/v1"
+REFERENCE_DATA_TREE_MARKER = ".fs2-manifest-sha256"
 
 
 class CollectionDeadlineError(RuntimeError):
@@ -151,35 +153,25 @@ def verify_runtime_artifacts(*, runtime_localization_json: str) -> None:
                 != {
                     "tree_digest",
                     "manifest_digest",
+                    "inventory_digest",
                     "manifest_algorithm",
                     "file_count",
+                    "directory_count",
                     "expanded_bytes",
                     "canonical_path",
+                    "storage_kind",
+                    "marker_relative_path",
                 }
             ):
                 raise ValueError("runtime aggregate-tree evidence differs")
-            sidecar = mount / RUNTIME_TREE_IDENTITY_FILE
-            if sidecar.is_symlink() or not sidecar.is_file():
-                raise ValueError("runtime aggregate tree has no trusted identity sidecar")
-            sidecar_bytes = sidecar.read_bytes()
-            if len(sidecar_bytes) > _MAX_RUNTIME_MARKER_BYTES:
-                raise ValueError("runtime aggregate-tree identity exceeds the bound")
-            if f"sha256:{hashlib.sha256(sidecar_bytes).hexdigest()}" != raw_tree["manifest_digest"]:
-                raise ValueError("runtime aggregate-tree identity digest differs")
-            try:
-                identity = json.loads(sidecar_bytes)
-            except (UnicodeError, ValueError) as error:
-                raise ValueError("runtime aggregate-tree identity is invalid") from error
-            expected = {
-                "schema": RUNTIME_TREE_IDENTITY_SCHEMA,
-                "manifest_algorithm": raw_tree["manifest_algorithm"],
-                "tree_digest": raw_tree["tree_digest"],
-                "file_count": raw_tree["file_count"],
-                "expanded_bytes": raw_tree["expanded_bytes"],
-                "canonical_path": raw_tree["canonical_path"],
-            }
-            if identity != expected or artifact["content_digest"] != raw_tree["tree_digest"]:
-                raise ValueError("runtime aggregate-tree identity content differs")
+            if artifact["content_digest"] != raw_tree["tree_digest"]:
+                raise ValueError("runtime aggregate-tree content digest differs")
+            if raw_tree["storage_kind"] == "localization-generation":
+                _verify_localization_generation(artifact=artifact, mount=mount, tree=raw_tree)
+            elif raw_tree["storage_kind"] == "reference-data-plane":
+                _verify_reference_data_plane(artifact=artifact, mount=mount, tree=raw_tree)
+            else:
+                raise ValueError("runtime aggregate-tree storage kind is unsupported")
             continue
 
         files = cast(list[dict[str, Any]], artifact["files"])
@@ -204,6 +196,83 @@ def verify_runtime_artifacts(*, runtime_localization_json: str) -> None:
                     digest.update(chunk)
             if f"sha256:{digest.hexdigest()}" != expected["digest"]:
                 raise ValueError("runtime artifact file digest differs")
+
+
+def _bounded_json(path: Path, *, label: str) -> tuple[bytes, dict[str, Any]]:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"{label} is absent or unsafe")
+    payload = path.read_bytes()
+    if len(payload) > _MAX_RUNTIME_MARKER_BYTES:
+        raise ValueError(f"{label} exceeds the bound")
+    try:
+        value = json.loads(payload)
+    except (UnicodeError, ValueError) as error:
+        raise ValueError(f"{label} is invalid") from error
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} is not an object")
+    return payload, cast(dict[str, Any], value)
+
+
+def _verify_localization_generation(*, artifact: dict[str, Any], mount: Path, tree: dict[str, Any]) -> None:
+    if tree["marker_relative_path"] != RUNTIME_TREE_IDENTITY_FILE:
+        raise ValueError("runtime localization marker path differs")
+    payload, identity = _bounded_json(mount / RUNTIME_TREE_IDENTITY_FILE, label="runtime aggregate-tree marker")
+    if f"sha256:{hashlib.sha256(payload).hexdigest()}" != tree["manifest_digest"]:
+        raise ValueError("runtime aggregate-tree marker digest differs")
+    expected = {
+        "schema": RUNTIME_TREE_IDENTITY_SCHEMA,
+        "artifact_id": artifact["artifact_id"],
+        "generation": tree["tree_digest"].removeprefix("sha256:"),
+        "inventory_algorithm": tree["manifest_algorithm"],
+        "inventory_sha256": tree["inventory_digest"].removeprefix("sha256:"),
+        "entry_count": tree["file_count"],
+        "directory_count": tree["directory_count"],
+        "total_bytes": tree["expanded_bytes"],
+        "sub_path": tree["canonical_path"],
+        "read_only": True,
+    }
+    if any(identity.get(key) != value for key, value in expected.items()):
+        raise ValueError("runtime aggregate-tree marker content differs")
+
+
+def _verify_reference_data_plane(*, artifact: dict[str, Any], mount: Path, tree: dict[str, Any]) -> None:
+    if artifact["mount_path"] != "/reference-data" or tree["marker_relative_path"] != REFERENCE_DATA_TREE_MARKER:
+        raise ValueError("reference-data plane root or marker differs")
+    root = mount.resolve(strict=True)
+    dataset = mount.joinpath(*_safe_relative(tree["canonical_path"]).parts)
+    resolved_dataset = dataset.resolve(strict=True)
+    if dataset.is_symlink() or not dataset.is_dir() or root not in resolved_dataset.parents:
+        raise ValueError("reference-data dataset is absent or unsafe")
+    marker_path = dataset / REFERENCE_DATA_TREE_MARKER
+    if marker_path.is_symlink() or not marker_path.is_file():
+        raise ValueError("reference-data dataset publication marker is absent")
+    marker = marker_path.read_text(encoding="utf-8").strip()
+    manifest_digest = tree["manifest_digest"].removeprefix("sha256:")
+    if marker != manifest_digest:
+        raise ValueError("reference-data dataset publication marker differs")
+    manifest_path = mount / "manifests" / "sha256" / f"{manifest_digest}.json"
+    _, manifest = _bounded_json(manifest_path, label="reference-data publication manifest")
+    canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    if hashlib.sha256(canonical).hexdigest() != manifest_digest:
+        raise ValueError("reference-data publication manifest digest differs")
+    content = manifest.get("content")
+    storage = manifest.get("storage")
+    expected_content = {
+        "tree_sha256": tree["tree_digest"].removeprefix("sha256:"),
+        "inventory_sha256": tree["inventory_digest"].removeprefix("sha256:"),
+        "file_count": tree["file_count"],
+        "expanded_bytes": tree["expanded_bytes"],
+    }
+    if (
+        manifest.get("schema") != REFERENCE_DATA_MANIFEST_SCHEMA
+        or manifest.get("bundle_id") != artifact["artifact_id"]
+        or not isinstance(content, dict)
+        or any(content.get(key) != value for key, value in expected_content.items())
+        or not isinstance(storage, dict)
+        or storage.get("dataset_sub_path") != tree["canonical_path"]
+        or storage.get("host_root") != "/mnt/fs2-reference-data/data"
+    ):
+        raise ValueError("reference-data publication manifest content differs")
 
 
 def _safe_relative(value: str) -> PurePosixPath:

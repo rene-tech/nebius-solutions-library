@@ -59,7 +59,6 @@ ROUTE_NAMESPACE_ANNOTATION = "fs2.nebius.ai/route-namespace"
 KUEUE_JOB_UID_LABEL = "kueue.x-k8s.io/job-uid"
 POOL_LABEL = "accelerator.fs2.nebius/pool-id"
 NODE_POOL_LABEL = POOL_LABEL
-LEGACY_POOL_LABEL = "fs2.nebius.ai/pool-id"
 
 _KUEUE_EXECUTION_TIMEOUT_REASONS = frozenset(
     {
@@ -778,8 +777,6 @@ class HttpScientificBatchCluster:
         flavor_metadata = _metadata(cast(dict[str, Any], flavor_response.json()))
         flavor_labels = _object(flavor_metadata.get("labels", {}), "ResourceFlavor labels")
         pool_id = flavor_labels.get(POOL_LABEL)
-        if pool_id is None and LEGACY_POOL_LABEL in flavor_labels:
-            raise ScientificKubernetesError("Kueue ResourceFlavor uses the retired accelerator pool label")
         if not isinstance(pool_id, str):
             raise ScientificKubernetesError("Kueue admitted ResourceFlavor has no canonical pool identity")
         if pool_id not in expected_pool_preference:

@@ -33,15 +33,18 @@ def _object(value: object, label: str) -> Mapping[str, Any]:
     return cast(Mapping[str, Any], value)
 
 
-def _read(path: Path) -> tuple[dict[str, Any], str]:
+def _read(path: Path, *, expected_sha256: str | None = None) -> tuple[dict[str, Any], str]:
     try:
         raw = path.read_bytes()
         if len(raw) > 4 * 1024 * 1024:
             raise SchedulingContractError("Kueue scheduling contract exceeds the bound")
+        observed_sha256 = hashlib.sha256(raw).hexdigest()
+        if expected_sha256 is not None and observed_sha256 != expected_sha256:
+            raise SchedulingContractError("Kueue scheduling contract raw bytes differ from Terraform")
         value = json.loads(raw)
     except (OSError, RecursionError, ValueError) as error:
         raise SchedulingContractError("Kueue scheduling contract is unavailable or invalid") from error
-    return dict(_object(value, "Kueue scheduling contract")), f"sha256:{hashlib.sha256(raw).hexdigest()}"
+    return dict(_object(value, "Kueue scheduling contract")), f"sha256:{observed_sha256}"
 
 
 class SchedulingContractResolver:
@@ -76,8 +79,8 @@ class SchedulingContractResolver:
             raise SchedulingContractError("Kueue contract uses a non-canonical accelerator pool label")
 
     @classmethod
-    def load(cls, path: Path) -> SchedulingContractResolver:
-        contract, digest = _read(path)
+    def load(cls, path: Path, *, expected_sha256: str | None = None) -> SchedulingContractResolver:
+        contract, digest = _read(path, expected_sha256=expected_sha256)
         return cls(contract, raw_contract_sha256=digest)
 
     def freeze(
@@ -342,7 +345,7 @@ class SchedulingContractResolver:
         default_local_queue: str,
         desired_local_queue: str | None,
     ) -> tuple[str, str, str]:
-        ranked: dict[int, list[str]] = {2: [], 1: []}
+        ranked: dict[int, list[str]] = {}
         for queue_name, raw_route in self.local_queue_routes.items():
             if not isinstance(queue_name, str):
                 raise SchedulingContractError("Kueue LocalQueue route identity is invalid")
@@ -356,14 +359,16 @@ class SchedulingContractResolver:
             models, tenants, classes = selectors
             if desired_local_queue is not None and queue_name != desired_local_queue:
                 continue
-            if models and model_id not in models or classes and service_class not in classes:
+            if (
+                (models and model_id not in models)
+                or (tenants and tenant_id not in tenants)
+                or (classes and service_class not in classes)
+            ):
                 continue
-            if tenants:
-                if tenant_id in tenants:
-                    ranked[2].append(queue_name)
-            elif models or classes:
-                ranked[1].append(queue_name)
-        selected = ranked[2] or ranked[1]
+            specificity = sum(bool(values) for values in (models, tenants, classes))
+            if specificity:
+                ranked.setdefault(specificity, []).append(queue_name)
+        selected = ranked[max(ranked)] if ranked else []
         if len(selected) > 1:
             raise SchedulingContractError("model, tenant, and service class resolve to multiple Kueue LocalQueues")
         if selected:

@@ -17,7 +17,11 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 _NAME_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$")
 _POOL_RE = re.compile(r"^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$")
-_RESOURCE_NAME_RE = re.compile(r"^[a-z0-9.-]+/[A-Za-z0-9][A-Za-z0-9._-]*$")
+_RESOURCE_NAME_RE = re.compile(
+    r"^(?=[^/]{1,253}/)(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?\.)*"
+    r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?/"
+    r"[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$"
+)
 _DIGEST_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
 _RAW_SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 _VARIANT_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
@@ -26,7 +30,8 @@ _ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _SENSITIVE_KEY_RE = re.compile(r"(?:token|secret|password|credential|private[_-]?key)", re.IGNORECASE)
 _CONTROLLER_MOUNT_ROOT = PurePosixPath("/mnt/fs2-scientific")
 _RUNTIME_MOUNT_ROOTS = tuple(
-    PurePosixPath(value) for value in ("/models", "/databases", "/opt/fs2/artifacts", "/opt/fs2/academic")
+    PurePosixPath(value)
+    for value in ("/models", "/databases", "/reference-data", "/opt/fs2/artifacts", "/opt/fs2/academic")
 )
 _RUNTIME_EXACT_MOUNT_PATHS = {
     PurePosixPath("/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights"),
@@ -127,6 +132,13 @@ class MaterializationMode(StrEnum):
     EXTRACT_TAR = "extract-tar"
     OVERLAY_TAR = "overlay-tar"
     BOLTZGEN_INPUT = "boltzgen-input"
+
+
+class RuntimeArtifactTreeKind(StrEnum):
+    """Physical publication/verifier contract for one bounded tree identity."""
+
+    LOCALIZATION_GENERATION = "localization-generation"
+    REFERENCE_DATA_PLANE = "reference-data-plane"
 
 
 class AttemptOutcome(StrEnum):
@@ -460,30 +472,55 @@ class RuntimeArtifactAggregateTree:
 
     tree_digest: str
     manifest_digest: str
+    inventory_digest: str
     file_count: int
+    directory_count: int
     expanded_bytes: int
     canonical_path: str
-    manifest_algorithm: str = "fs2-tree-manifest/v1"
+    storage_kind: RuntimeArtifactTreeKind
+    manifest_algorithm: str
+    marker_relative_path: str
 
     def __post_init__(self) -> None:
         _check_digest(self.tree_digest, "runtime artifact tree digest")
         _check_digest(self.manifest_digest, "runtime artifact tree manifest digest")
-        if self.tree_digest == self.manifest_digest:
-            raise ValueError("tree and independent manifest digests must differ")
-        if self.manifest_algorithm != "fs2-tree-manifest/v1":
-            raise ValueError("runtime artifact tree manifest algorithm is unsupported")
+        _check_digest(self.inventory_digest, "runtime artifact tree inventory digest")
         if not 1 <= self.file_count <= 100_000_000:
             raise ValueError("runtime artifact tree file count is outside the bound")
+        if not 0 <= self.directory_count <= 100_000_000:
+            raise ValueError("runtime artifact tree directory count is outside the bound")
         if not 1 <= self.expanded_bytes <= 128 * 1024**4:
             raise ValueError("runtime artifact expanded bytes are outside the bound")
         path = PurePosixPath(self.canonical_path)
         parts = path.parts
         if path.is_absolute() or not parts or any(part in {"", ".", ".."} for part in parts):
             raise ValueError("runtime artifact tree path must be a safe published relative path")
-        if "sha256" in parts and (
-            len(parts) < 2 or parts[-2] != "sha256" or parts[-1] != self.tree_digest.removeprefix("sha256:")
-        ):
-            raise ValueError("content-addressed runtime artifact path differs from its tree digest")
+        marker = PurePosixPath(self.marker_relative_path)
+        if marker.is_absolute() or any(part in {"", ".", ".."} for part in marker.parts):
+            raise ValueError("runtime artifact tree marker path is unsafe")
+        if self.storage_kind is RuntimeArtifactTreeKind.LOCALIZATION_GENERATION:
+            if self.manifest_algorithm not in {
+                "fs2-flat-tree-inventory/v1",
+                "fs2-tree-inventory/v2",
+                "fs2-tree-manifest/v1",
+            }:
+                raise ValueError("runtime localization tree algorithm is unsupported")
+            if self.inventory_digest != self.tree_digest:
+                raise ValueError("runtime localization generation must be named by its inventory digest")
+            if parts[-2:] != ("sha256", self.tree_digest.removeprefix("sha256:")):
+                raise ValueError("runtime localization generation path differs from its tree digest")
+            if self.marker_relative_path != ".fs2-runtime-tree.json":
+                raise ValueError("runtime localization generation marker path is unsupported")
+        elif self.storage_kind is RuntimeArtifactTreeKind.REFERENCE_DATA_PLANE:
+            if self.manifest_algorithm != "fs2-serve.nebius.ai/reference-data-manifest/v1":
+                raise ValueError("reference-data manifest schema is unsupported")
+            if len(parts) < 5 or parts[0] != "datasets" or parts[-2:] != (
+                "sha256",
+                self.tree_digest.removeprefix("sha256:"),
+            ):
+                raise ValueError("reference-data dataset path differs from its tree digest")
+            if self.marker_relative_path != ".fs2-manifest-sha256":
+                raise ValueError("reference-data marker path is unsupported")
 
 
 @dataclass(frozen=True, slots=True)
@@ -605,9 +642,6 @@ class StageInvocation:
         mount_targets = tuple(item.mount_path for item in self.runtime_mounts)
         if len(set(mount_targets)) != len(mount_targets):
             raise ValueError("runtime artifact mount targets must be unique")
-        marker_path = f"{self.working_directory}/.fs2/runtime-localization.json"
-        if self.runtime_mounts and self.runtime_artifacts and marker_path not in self.argv:
-            raise ValueError("runtime artifact stages must pass the canonical localization marker to argv")
         materialized = tuple(item.artifact_id for item in self.materializations)
         if len(set(materialized)) != len(materialized) or set(materialized) != set(self.consumes):
             raise ValueError("materializations must cover every consumed logical artifact exactly once")
@@ -662,9 +696,12 @@ class StageExecutionBinding:
     validator_id: str
     mounts: tuple[StageVolumeBinding, ...]
     service_account_name: str
-    cpu: str
-    memory: str
-    ephemeral_storage: str
+    request_cpu: str
+    request_memory: str
+    request_ephemeral_storage: str
+    limit_cpu: str
+    limit_memory: str
+    limit_ephemeral_storage: str
     active_deadline_seconds: int
     termination_grace_seconds: int
     environment: tuple[tuple[str, str], ...]
@@ -791,9 +828,7 @@ class ArtifactAccessContext:
             raise ValueError("artifact access profile is unsupported")
         if self.profile == "public" and self.receipt_digest is not None:
             raise ValueError("public artifact access cannot carry a receipt")
-        if self.profile != "public":
-            if self.receipt_digest is None:
-                raise ValueError("gated artifact access requires a receipt digest")
+        if self.receipt_digest is not None:
             _check_digest(self.receipt_digest, "artifact access receipt")
         if self.tenant_id is not None and (not self.tenant_id or len(self.tenant_id) > 120):
             raise ValueError("artifact access tenant is invalid")
@@ -937,7 +972,7 @@ class StageSchedulingDecision:
                 not self.resolved_pool_preference
                 or self.accelerator_count < 1
                 or self.accelerator_resource_name is None
-                or len(self.accelerator_resource_name) > 253
+                or len(self.accelerator_resource_name) > 317
                 or _RESOURCE_NAME_RE.fullmatch(self.accelerator_resource_name) is None
             ):
                 raise ValueError("GPU scheduling requires an exact accelerator request and pool preference")
@@ -1080,6 +1115,7 @@ class SchedulingAdmission:
                 raise ValueError("GPU admission requires an exact pool and ResourceFlavor")
             if (
                 self.accelerator_resource_name is None
+                or len(self.accelerator_resource_name) > 317
                 or _RESOURCE_NAME_RE.fullmatch(self.accelerator_resource_name) is None
             ):
                 raise ValueError("GPU admission requires an exact accelerator resource")

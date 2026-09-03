@@ -696,7 +696,8 @@ async def test_gated_artifacts_carry_a_receipt_and_project_academic_admission() 
         FinalizeArtifactUpload(upload_id=upload_id, operation_id=operation_id, tenant_id=TENANT)
     )
     assert record.access == access
-    # The receipt proves lawful access; it is a digest, never the gated bytes.
+    # A receipt may record the deployment authorization, but ordinary inputs do
+    # not need a caller-supplied license receipt.
     admission = access.to_admission().model_dump(mode="json")
     assert admission == {
         "profile": "academic",
@@ -705,8 +706,7 @@ async def test_gated_artifacts_carry_a_receipt_and_project_academic_admission() 
     }
     assert record.to_public_ref().model_dump(mode="json").get("receipt_digest") is None
 
-    with pytest.raises(ValidationError, match="gated artifacts require"):
-        ArtifactAccess(profile=ArtifactAccessProfile.ACADEMIC)
+    assert ArtifactAccess(profile=ArtifactAccessProfile.ACADEMIC).receipt_digest is None
     with pytest.raises(ValidationError, match="public artifacts cannot"):
         ArtifactAccess(receipt_digest=receipt)
 

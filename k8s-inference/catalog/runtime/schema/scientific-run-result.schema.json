@@ -133,9 +133,6 @@
             "properties": {
               "state": {
                 "const": "verified"
-              },
-              "receipt_digest": {
-                "$ref": "#/$defs/sha256"
               }
             }
           }

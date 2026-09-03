@@ -30,6 +30,7 @@ from .models import (
     RuntimeArtifactFile,
     RuntimeArtifactLocalization,
     RuntimeArtifactMount,
+    RuntimeArtifactTreeKind,
     SchedulingAdmission,
     SchedulingSnapshot,
     ScientificAttemptState,
@@ -168,10 +169,14 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                     else {
                         "tree_digest": item.aggregate_tree.tree_digest,
                         "manifest_digest": item.aggregate_tree.manifest_digest,
+                        "inventory_digest": item.aggregate_tree.inventory_digest,
                         "manifest_algorithm": item.aggregate_tree.manifest_algorithm,
                         "file_count": item.aggregate_tree.file_count,
+                        "directory_count": item.aggregate_tree.directory_count,
                         "expanded_bytes": item.aggregate_tree.expanded_bytes,
                         "canonical_path": item.aggregate_tree.canonical_path,
+                        "storage_kind": item.aggregate_tree.storage_kind,
+                        "marker_relative_path": item.aggregate_tree.marker_relative_path,
                     }
                 ),
             }
@@ -206,9 +211,12 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                             for mount in binding.mounts
                         ],
                         "service_account_name": binding.service_account_name,
-                        "cpu": binding.cpu,
-                        "memory": binding.memory,
-                        "ephemeral_storage": binding.ephemeral_storage,
+                        "request_cpu": binding.request_cpu,
+                        "request_memory": binding.request_memory,
+                        "request_ephemeral_storage": binding.request_ephemeral_storage,
+                        "limit_cpu": binding.limit_cpu,
+                        "limit_memory": binding.limit_memory,
+                        "limit_ephemeral_storage": binding.limit_ephemeral_storage,
                         "active_deadline_seconds": binding.active_deadline_seconds,
                         "termination_grace_seconds": binding.termination_grace_seconds,
                         "environment": [list(item) for item in binding.environment],
@@ -572,20 +580,30 @@ def state_from_value(raw: object) -> ScientificBatchState:
                 {
                     "tree_digest",
                     "manifest_digest",
+                    "inventory_digest",
                     "manifest_algorithm",
                     "file_count",
+                    "directory_count",
                     "expanded_bytes",
                     "canonical_path",
+                    "storage_kind",
+                    "marker_relative_path",
                 },
                 "runtime artifact aggregate tree",
             )
             aggregate_tree = RuntimeArtifactAggregateTree(
                 tree_digest=_string(tree["tree_digest"], "runtime artifact tree digest"),
                 manifest_digest=_string(tree["manifest_digest"], "runtime artifact tree manifest digest"),
+                inventory_digest=_string(tree["inventory_digest"], "runtime artifact tree inventory digest"),
                 manifest_algorithm=_string(tree["manifest_algorithm"], "runtime artifact tree manifest algorithm"),
                 file_count=_integer(tree["file_count"], "runtime artifact tree file count"),
+                directory_count=_integer(tree["directory_count"], "runtime artifact tree directory count"),
                 expanded_bytes=_integer(tree["expanded_bytes"], "runtime artifact tree bytes"),
                 canonical_path=_string(tree["canonical_path"], "runtime artifact tree path"),
+                storage_kind=RuntimeArtifactTreeKind(
+                    _string(tree["storage_kind"], "runtime artifact tree storage kind")
+                ),
+                marker_relative_path=_string(tree["marker_relative_path"], "runtime artifact tree marker path"),
             )
         runtime_artifacts.append(
             RuntimeArtifactLocalization(
@@ -747,9 +765,12 @@ def state_from_value(raw: object) -> ScientificBatchState:
                         "validator_id",
                         "mounts",
                         "service_account_name",
-                        "cpu",
-                        "memory",
-                        "ephemeral_storage",
+                        "request_cpu",
+                        "request_memory",
+                        "request_ephemeral_storage",
+                        "limit_cpu",
+                        "limit_memory",
+                        "limit_ephemeral_storage",
                         "active_deadline_seconds",
                         "termination_grace_seconds",
                         "environment",
@@ -804,9 +825,16 @@ def state_from_value(raw: object) -> ScientificBatchState:
                         service_account_name=_string(
                             binding["service_account_name"], "stage execution service account"
                         ),
-                        cpu=_string(binding["cpu"], "stage execution CPU"),
-                        memory=_string(binding["memory"], "stage execution memory"),
-                        ephemeral_storage=_string(binding["ephemeral_storage"], "stage execution ephemeral storage"),
+                        request_cpu=_string(binding["request_cpu"], "stage execution requested CPU"),
+                        request_memory=_string(binding["request_memory"], "stage execution requested memory"),
+                        request_ephemeral_storage=_string(
+                            binding["request_ephemeral_storage"], "stage execution requested ephemeral storage"
+                        ),
+                        limit_cpu=_string(binding["limit_cpu"], "stage execution CPU limit"),
+                        limit_memory=_string(binding["limit_memory"], "stage execution memory limit"),
+                        limit_ephemeral_storage=_string(
+                            binding["limit_ephemeral_storage"], "stage execution ephemeral storage limit"
+                        ),
                         active_deadline_seconds=_integer(binding["active_deadline_seconds"], "stage active deadline"),
                         termination_grace_seconds=_integer(
                             binding["termination_grace_seconds"], "stage termination grace"

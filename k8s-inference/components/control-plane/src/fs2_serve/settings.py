@@ -187,7 +187,16 @@ class Settings(BaseSettings):
     scientific_batch_kubernetes_token_file: Path = Path("/var/run/secrets/fs2-scientific-batch/token")
     scientific_batch_kubernetes_ca_file: Path = Path("/var/run/secrets/fs2-scientific-batch/ca.crt")
     scientific_batch_scheduling_contract_file: Path = Path("/etc/fs2-scientific-batch/kueue-scheduling.json")
+    scientific_batch_scheduling_contract_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
     scientific_batch_execution_map_file: Path = Path("/etc/fs2-scientific-batch/execution-map.json")
+    scientific_batch_academic_tenant_id: str | None = Field(default=None, min_length=1, max_length=120)
+    scientific_batch_academic_authorization_receipt_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
     scientific_batch_tools_image: str | None = Field(default=None, max_length=1024)
     scientific_batch_internal_api_url: str = Field(
         default="http://fs2-serve-control-plane.default.svc:8080", min_length=1, max_length=2048

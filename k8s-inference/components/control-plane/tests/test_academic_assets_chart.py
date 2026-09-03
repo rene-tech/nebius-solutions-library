@@ -98,6 +98,15 @@ def test_renderer_generates_real_subpath_mounts_from_the_bindings() -> None:
             "academicAssets.runtimeBindings.alphafold3.mechanism=subpath-file-mount",
             "--set",
             "academicAssets.runtimeBindings.alphafold3.contentIdentityKind=file-digest",
+            "--set-json",
+            "academicAssets.runtimeBindings.alphafold3.contentManifestAlgorithm=null",
+            "--set",
+            "academicAssets.runtimeBindings.alphafold3.contentDigestSha256=" + "a" * 64,
+            "--set",
+            "academicAssets.runtimeBindings.alphafold3.sizeBytes=1024",
+            "--set-json",
+            "academicAssets.runtimeBindings.alphafold3.sourceArtifact="
+            + '{"filename":"af3.bin.zst","sha256":"' + "a" * 64 + '","size_bytes":1024}',
             "--set",
             "academicAssets.runtimeBindings.alphafold3.readOnly=true",
             "--set",
@@ -112,6 +121,14 @@ def test_renderer_generates_real_subpath_mounts_from_the_bindings() -> None:
             "academicAssets.runtimeBindings.pyrosetta.mechanism=subpath-directory-mount",
             "--set",
             "academicAssets.runtimeBindings.pyrosetta.contentIdentityKind=tree-manifest",
+            "--set",
+            "academicAssets.runtimeBindings.pyrosetta.contentManifestAlgorithm=fs2-tree-manifest/v1",
+            "--set",
+            "academicAssets.runtimeBindings.pyrosetta.contentDigestSha256=" + "b" * 64,
+            "--set",
+            "academicAssets.runtimeBindings.pyrosetta.sizeBytes=3287122494",
+            "--set-json",
+            "academicAssets.runtimeBindings.pyrosetta.sourceArtifact=null",
             "--set",
             "academicAssets.runtimeBindings.pyrosetta.readOnly=true",
         )
@@ -147,6 +164,18 @@ BINDING_FLAGS = [
     "--set",
     "academicAssets.execution.enabled=true",
     "--set",
+    "academicAssets.tenantId=academic-poc",
+    "--set",
+    "academicAssets.readinessManifestSha256=" + "b" * 64,
+    "--set",
+    "academicAssets.execution.localQueue=academic-scientific",
+    "--set",
+    "academicAssets.execution.clusterQueue=inference-accelerators",
+    "--set",
+    "academicAssets.execution.referenceDataLocalQueue=academic-reference-data",
+    "--set",
+    "academicAssets.execution.referenceDataClusterQueue=reference-data-cpu",
+    "--set",
     "academicAssets.runtimeBindings.af3.modelId=alphafold3",
     "--set",
     "academicAssets.runtimeBindings.af3.artifactId=alphafold3-parameters",
@@ -158,6 +187,15 @@ BINDING_FLAGS = [
     "academicAssets.runtimeBindings.af3.mechanism=subpath-file-mount",
     "--set",
     "academicAssets.runtimeBindings.af3.contentIdentityKind=file-digest",
+    "--set-json",
+    "academicAssets.runtimeBindings.af3.contentManifestAlgorithm=null",
+    "--set",
+    "academicAssets.runtimeBindings.af3.contentDigestSha256=" + "a" * 64,
+    "--set",
+    "academicAssets.runtimeBindings.af3.sizeBytes=1024",
+    "--set-json",
+    "academicAssets.runtimeBindings.af3.sourceArtifact="
+    + '{"filename":"af3.bin.zst","sha256":"' + "a" * 64 + '","size_bytes":1024}',
     "--set",
     "academicAssets.runtimeBindings.af3.readOnly=true",
 ]
@@ -170,40 +208,29 @@ def execution_config_map(documents: list[dict]) -> dict | None:
     return None
 
 
-def test_rendered_job_runs_in_the_namespace_that_holds_the_claim() -> None:
-    """A claim cannot be mounted from another namespace, so the Job must land here."""
+def test_chart_does_not_publish_a_static_academic_execution_job() -> None:
+    """The controller owns per-attempt Jobs; the asset chart publishes bindings only."""
 
-    config_map = execution_config_map(render(*BINDING_FLAGS))
+    documents = render(*BINDING_FLAGS)
+    assert execution_config_map(documents) is None
+    assert not any(
+        document.get("kind") == "Job" and document.get("metadata", {}).get("namespace") == "fs2-academic-poc"
+        for document in documents
+    )
+
+
+def test_enabled_academic_execution_still_publishes_only_the_mount_contract() -> None:
+    config_map = academic_config_map(render(*BINDING_FLAGS))
     assert config_map is not None
-    data = config_map["data"]
-    assert data["execution_namespace"] == data["claim_namespace"]
-    assert data["cross_namespace_mount"] == "false"
-
-    job = yaml.safe_load(data["job_template"])
-    assert job["kind"] == "Job"
-    assert job["metadata"]["namespace"] == data["claim_namespace"]
-
-    pod = job["spec"]["template"]["spec"]
-    claim = pod["volumes"][0]["persistentVolumeClaim"]
-    # Same-namespace by construction: a claimName has no namespace field.
-    assert claim["claimName"] == "academic-assets-runtime-rwx"
-    assert claim["readOnly"] is True
-    assert pod["securityContext"]["supplementalGroups"] == [65532]
-    assert pod["serviceAccountName"] == data["service_account"]
-    assert job["metadata"]["labels"]["kueue.x-k8s.io/queue-name"] == data["local_queue"]
-
-
-def test_rendered_job_mounts_every_binding_by_subpath() -> None:
-    config_map = execution_config_map(render(*BINDING_FLAGS))
-    assert config_map is not None
-    job = yaml.safe_load(config_map["data"]["job_template"])
-    mounts = job["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
-    assert mounts, "the rendered Job mounts nothing"
-    for mount in mounts:
-        assert mount["readOnly"] is True
-        assert mount["subPath"]
-    by_path = {mount["mountPath"]: mount for mount in mounts}
-    assert by_path["/models/af3.bin.zst"]["subPath"] == "alphafold3/af3.bin.zst"
+    mounts = yaml.safe_load(config_map["data"]["runtime_binding_mounts"])["volumeMounts"]
+    assert mounts == [
+        {
+            "mountPath": "/models/af3.bin.zst",
+            "name": "academic-assets",
+            "readOnly": True,
+            "subPath": "alphafold3/af3.bin.zst",
+        }
+    ]
 
 
 def test_no_execution_objects_without_the_feature() -> None:

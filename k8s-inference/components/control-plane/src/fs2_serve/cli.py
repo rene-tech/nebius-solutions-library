@@ -342,6 +342,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     if settings.scientific_batch_enabled:
         if artifact_service is None:
             raise RuntimeError("scientific batch requires the canonical artifact service")
+        if settings.scientific_batch_scheduling_contract_sha256 is None:
+            raise RuntimeError("scientific batch requires the Terraform scheduling-contract digest")
         scientific_profiles = ScientificProfileCatalog.load(settings.catalog_dir)
         if not scientific_profiles.list():
             raise RuntimeError("scientific batch is enabled without a runnable qualified profile")
@@ -354,6 +356,10 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             tools_image=settings.scientific_batch_tools_image,
             internal_api_url=settings.scientific_batch_internal_api_url,
             capability_authority=scientific_capabilities,
+            academic_tenant_id=settings.scientific_batch_academic_tenant_id,
+            academic_authorization_receipt_sha256=(
+                settings.scientific_batch_academic_authorization_receipt_sha256
+            ),
         )
         scientific_batch_cluster = HttpScientificBatchCluster(
             base_url=settings.scientific_batch_kubernetes_api_url,
@@ -387,7 +393,10 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             repository=scientific_repository,
             controller=scientific_controller,
             profiles=scientific_profiles,
-            scheduling=SchedulingContractResolver.load(settings.scientific_batch_scheduling_contract_file),
+            scheduling=SchedulingContractResolver.load(
+                settings.scientific_batch_scheduling_contract_file,
+                expected_sha256=settings.scientific_batch_scheduling_contract_sha256,
+            ),
             artifacts=scientific_artifact_bridge,
             execution_binding=scientific_renderer,
             plan_factory=scientific_renderer,

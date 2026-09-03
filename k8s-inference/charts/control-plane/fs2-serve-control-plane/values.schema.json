@@ -657,14 +657,17 @@
       "type": "object",
       "required": [
         "enabled", "writesEnabled", "namespace", "kubernetesApiUrl",
-        "schedulingContractConfigMapName", "schedulingContractKey",
+        "schedulingContractConfigMapName", "schedulingContractKey", "schedulingContractSha256",
         "executionMapConfigMapName", "executionMapKey", "executionMap", "workers",
         "pollSeconds", "leaseSeconds", "apiTimeoutSeconds", "tokenExpirationSeconds"
       ],
       "properties": {
         "enabled": {"type": "boolean"},
         "writesEnabled": {"type": "boolean"},
-        "namespace": {"const": "fs2-models"},
+        "namespace": {
+          "type": "string", "maxLength": 63,
+          "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$"
+        },
         "kubernetesApiUrl": {
           "type": "string",
           "pattern": "^https://[a-z0-9.-]+(?::[0-9]+)?$",
@@ -675,6 +678,10 @@
           "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
         },
         "schedulingContractKey": {"const": "kueue-scheduling.json"},
+        "schedulingContractSha256": {
+          "type": "string",
+          "pattern": "^$|^[a-f0-9]{64}$"
+        },
         "executionMapConfigMapName": {
           "type": "string", "maxLength": 253,
           "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
@@ -1310,11 +1317,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "88665d6c508bdca6c756d9a6d1b29394e6571f72f441018b9afd26b4ff74ce1b"},
-            "migrationSetSha256": {"const": "5de2500fc6bc0b75f028614936af7fa6c177bc96d78eebe79e3736bae10e65ce"},
-            "migrationCount": {"const": 17},
+            "contractPayloadSha256": {"const": "e0bba052fa4b04e93a7d944444a9de155c82db6ff62ab188ad28af6db6b62cfc"},
+            "migrationSetSha256": {"const": "97d71b58d235015eb5e58901caa696f8e09c863682d5c3c48a3874bfec2520d7"},
+            "migrationCount": {"const": 19},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0017_scientific_batch_state_v8.sql"},
+            "lastMigrationVersion": {"const": "0019_scientific_deployment_authorization.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false

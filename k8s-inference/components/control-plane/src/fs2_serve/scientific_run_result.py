@@ -14,12 +14,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Any, Final, Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import AfterValidator, AwareDatetime, ConfigDict, Field, StringConstraints, model_validator
 
 from .models import StrictModel
 
@@ -34,8 +35,24 @@ RawSha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 PrefixedSha256 = Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
 StageId = Annotated[str, StringConstraints(max_length=63, pattern=r"^[a-z][a-z0-9-]*$")]
 PoolId = Annotated[str, StringConstraints(max_length=128, pattern=r"^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$")]
+_EXTENDED_RESOURCE_NAME_RE = re.compile(
+    r"^(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?\.)*"
+    r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?/"
+    r"[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$"
+)
+
+
+def _extended_resource_name(value: str) -> str:
+    prefix, separator, _ = value.partition("/")
+    if separator != "/" or len(prefix) > 253 or _EXTENDED_RESOURCE_NAME_RE.fullmatch(value) is None:
+        raise ValueError("accelerator resource name is not a Kubernetes qualified name")
+    return value
+
+
 ExtendedResourceName = Annotated[
-    str, StringConstraints(max_length=253, pattern=r"^[a-z0-9.-]+/[A-Za-z0-9][A-Za-z0-9._-]*$")
+    str,
+    StringConstraints(max_length=317),
+    AfterValidator(_extended_resource_name),
 ]
 ModelRevision = Annotated[str, StringConstraints(pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")]
 Uid = Annotated[str, StringConstraints(min_length=1, max_length=128)]
@@ -137,10 +154,8 @@ class AccessAdmission(ResultModel):
 
     @model_validator(mode="after")
     def academic_access_is_proven(self) -> AccessAdmission:
-        if self.profile is AccessProfile.ACADEMIC and (
-            self.state is not AccessState.VERIFIED or self.receipt_digest is None
-        ):
-            raise ValueError("academic access requires a verified state and a receipt digest")
+        if self.profile is AccessProfile.ACADEMIC and self.state is not AccessState.VERIFIED:
+            raise ValueError("academic access requires a verified deployment authorization")
         return self
 
 

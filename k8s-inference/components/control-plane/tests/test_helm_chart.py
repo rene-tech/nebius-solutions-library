@@ -888,6 +888,8 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "--set",
         "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
         "--set",
+        "scientificBatch.schedulingContractSha256=" + "c" * 64,
+        "--set",
         "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
         "--set-json",
         "scientificBatch.executionMap.models="
@@ -1086,6 +1088,8 @@ def test_academic_scientific_execution_requires_the_exact_namespace_local_contra
             "scientificBatch.writesEnabled=true",
             "--set",
             "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+            "--set",
+            "scientificBatch.schedulingContractSha256=" + "c" * 64,
             "--set",
             "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
             "--set-json",

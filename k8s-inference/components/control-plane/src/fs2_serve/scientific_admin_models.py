@@ -172,7 +172,7 @@ class ScientificAttempt(StrictModel):
     admitted_at: AwareDatetime | None = None
     resolved_pool_id: str | None = Field(default=None, max_length=128)
     admitted_resource_flavor: str | None = Field(default=None, max_length=253)
-    accelerator_resource_name: str | None = Field(default=None, max_length=253)
+    accelerator_resource_name: str | None = Field(default=None, max_length=317)
     checkpoint_input_artifact_id: str | None = Field(default=None, max_length=128)
     checkpoint_output_artifact_id: str | None = Field(default=None, max_length=128)
     error: ScientificError | None = None

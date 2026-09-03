@@ -394,7 +394,7 @@ def test_trace_context_and_migration_contract_are_strict() -> None:
     assert trace_identity("00-" + "1" * 32 + "-" + "2" * 16 + "-01") == ("1" * 32, "2" * 16)
     assert trace_identity("00-" + "0" * 32 + "-" + "2" * 16 + "-01") == (None, None)
     migration = (
-        Path(__file__).resolve().parents[1] / "migrations" / "0016_workload_lifecycle_telemetry.sql"
+        Path(__file__).resolve().parents[1] / "migrations" / "0018_workload_lifecycle_telemetry.sql"
     ).read_text(encoding="utf-8")
     assert "BEFORE UPDATE OR DELETE" in migration
     assert "fs2_reporting_gpu_phase_usage" in migration

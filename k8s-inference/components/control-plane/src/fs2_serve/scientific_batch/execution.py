@@ -7,7 +7,6 @@ image digest must match before a manifest can be rendered.
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import importlib
 import json
@@ -33,6 +32,7 @@ from .models import (
     RuntimeArtifactFile,
     RuntimeArtifactLocalization,
     RuntimeArtifactMount,
+    RuntimeArtifactTreeKind,
     ScientificInputArtifact,
     StageExecutionBinding,
     StageInvocation,
@@ -61,8 +61,8 @@ AF3_PARAMETERS_ARTIFACT = "alphafold3-parameters"
 AF3_DATABASES_ARTIFACT = "alphafold3-public-databases-v3.0"
 AF3_PREPROCESS_STAGE = "data-pipeline"
 AF3_INFERENCE_STAGE = "inference"
-AF3_PREPROCESS_CPU_MILLIS = 6_000
-AF3_PREPROCESS_MEMORY_BYTES = 24 * 1024**3
+AF3_PREPROCESS_CPU_MILLIS = 16_000
+AF3_PREPROCESS_MEMORY_BYTES = 64 * 1024**3
 
 
 class ScientificExecutionMapError(CatalogProfileAdapterError):
@@ -88,6 +88,12 @@ def _strings(value: object, label: str) -> list[str]:
 def _positive_integer(value: object, label: str, *, maximum: int) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= maximum:
         raise ScientificExecutionMapError(f"{label} must be an integer between 1 and {maximum}")
+    return value
+
+
+def _nonnegative_integer(value: object, label: str, *, maximum: int) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= maximum:
+        raise ScientificExecutionMapError(f"{label} must be an integer between 0 and {maximum}")
     return value
 
 
@@ -134,9 +140,12 @@ class StageExecution:
     validator_id: str
     mounts: tuple[StageMount, ...]
     service_account_name: str
-    cpu: str
-    memory: str
-    ephemeral_storage: str
+    request_cpu: str
+    request_memory: str
+    request_ephemeral_storage: str
+    limit_cpu: str
+    limit_memory: str
+    limit_ephemeral_storage: str
     active_deadline_seconds: int
     termination_grace_seconds: int
     environment: Mapping[str, str]
@@ -201,6 +210,8 @@ class FileScientificManifestRenderer:
         tools_image: str | None = None,
         internal_api_url: str | None = None,
         capability_authority: ScientificWorkloadCapabilityAuthority | None = None,
+        academic_tenant_id: str | None = None,
+        academic_authorization_receipt_sha256: str | None = None,
     ) -> None:
         try:
             raw = path.read_bytes()
@@ -317,27 +328,44 @@ class FileScientificManifestRenderer:
                 if "aggregate_tree" in artifact:
                     raw_tree = _object(artifact["aggregate_tree"], "runtime artifact aggregate tree")
                     if set(raw_tree) != {
+                        "storage_kind",
                         "tree_sha256",
                         "manifest_sha256",
+                        "inventory_sha256",
                         "manifest_algorithm",
                         "file_count",
+                        "directory_count",
                         "expanded_bytes",
                         "canonical_path",
+                        "marker_relative_path",
                     }:
                         raise ScientificExecutionMapError("runtime artifact aggregate tree fields differ")
                     aggregate_tree = RuntimeArtifactAggregateTree(
+                        storage_kind=RuntimeArtifactTreeKind(
+                            _bounded_string(raw_tree["storage_kind"], "tree storage kind", maximum=64)
+                        ),
                         tree_digest=f"sha256:{_bounded_string(raw_tree['tree_sha256'], 'tree digest', maximum=64)}",
                         manifest_digest=(
                             f"sha256:{_bounded_string(raw_tree['manifest_sha256'], 'tree manifest digest', maximum=64)}"
                         ),
+                        inventory_digest=(
+                            "sha256:"
+                            + _bounded_string(raw_tree["inventory_sha256"], "tree inventory digest", maximum=64)
+                        ),
                         manifest_algorithm=_bounded_string(
-                            raw_tree["manifest_algorithm"], "tree manifest algorithm", maximum=64
+                            raw_tree["manifest_algorithm"], "tree manifest algorithm", maximum=128
                         ),
                         file_count=_positive_integer(raw_tree["file_count"], "tree file count", maximum=100_000_000),
+                        directory_count=_nonnegative_integer(
+                            raw_tree["directory_count"], "tree directory count", maximum=100_000_000
+                        ),
                         expanded_bytes=_positive_integer(
                             raw_tree["expanded_bytes"], "tree expanded bytes", maximum=128 * 1024**4
                         ),
                         canonical_path=_bounded_string(raw_tree["canonical_path"], "tree canonical path", maximum=512),
+                        marker_relative_path=_bounded_string(
+                            raw_tree["marker_relative_path"], "tree marker path", maximum=512
+                        ),
                     )
                 runtime_artifacts[key] = RuntimeArtifactLocalization(
                     logical_artifact_id=artifact_id,
@@ -456,16 +484,9 @@ class FileScientificManifestRenderer:
                                 raise ScientificExecutionMapError(
                                     "reference-data host path must use the published datasets root"
                                 )
-                            if (
-                                sub_path is None
-                                or re.fullmatch(
-                                    r"datasets/[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?/[^/]+/sha256/[0-9a-f]{64}",
-                                    str(sub_path),
-                                )
-                                is None
-                            ):
+                            if mount_path != "/reference-data" or sub_path is not None:
                                 raise ScientificExecutionMapError(
-                                    "reference-data host path requires an exact content-addressed dataset subPath"
+                                    "reference-data host plane must be mounted whole at /reference-data"
                                 )
                         if not read_only:
                             raise ScientificExecutionMapError("reference/private mounts require a read-only source")
@@ -493,19 +514,36 @@ class FileScientificManifestRenderer:
                 if kinds.count("artifact-workspace") != 1:
                     raise ScientificExecutionMapError("each stage requires exactly one contained artifact workspace")
                 resources = _object(stage["resources"], "scientific execution resources")
-                if set(resources) != {"cpu", "memory", "ephemeral_storage"}:
+                if set(resources) != {"requests", "limits"}:
                     raise ScientificExecutionMapError("scientific execution resource fields differ")
-                cpu = _bounded_string(resources["cpu"], "scientific CPU quantity", maximum=32)
-                memory = _bounded_string(resources["memory"], "scientific memory quantity", maximum=32)
-                ephemeral_storage = _bounded_string(
-                    resources["ephemeral_storage"], "scientific ephemeral-storage quantity", maximum=32
-                )
-                if re.fullmatch(r"[1-9][0-9]*(?:m)?", cpu) is None:
-                    raise ScientificExecutionMapError("scientific CPU quantity is invalid")
-                if any(
-                    re.fullmatch(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)", item) is None for item in (memory, ephemeral_storage)
-                ):
-                    raise ScientificExecutionMapError("scientific storage quantity is invalid")
+                parsed_resources: dict[str, tuple[str, str, str]] = {}
+                for resource_kind in ("requests", "limits"):
+                    values = _object(resources[resource_kind], f"scientific execution resource {resource_kind}")
+                    if set(values) != {"cpu", "memory", "ephemeral_storage"}:
+                        raise ScientificExecutionMapError(
+                            f"scientific execution resource {resource_kind} fields differ"
+                        )
+                    cpu = _bounded_string(values["cpu"], f"scientific {resource_kind} CPU", maximum=32)
+                    memory = _bounded_string(
+                        values["memory"], f"scientific {resource_kind} memory", maximum=32
+                    )
+                    ephemeral_storage = _bounded_string(
+                        values["ephemeral_storage"],
+                        f"scientific {resource_kind} ephemeral storage",
+                        maximum=32,
+                    )
+                    if re.fullmatch(r"[1-9][0-9]*(?:m)?", cpu) is None:
+                        raise ScientificExecutionMapError(f"scientific {resource_kind} CPU quantity is invalid")
+                    if any(
+                        re.fullmatch(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)", item) is None
+                        for item in (memory, ephemeral_storage)
+                    ):
+                        raise ScientificExecutionMapError(
+                            f"scientific {resource_kind} storage quantity is invalid"
+                        )
+                    parsed_resources[resource_kind] = (cpu, memory, ephemeral_storage)
+                request_cpu, request_memory, request_ephemeral_storage = parsed_resources["requests"]
+                limit_cpu, limit_memory, limit_ephemeral_storage = parsed_resources["limits"]
                 environment = _object(stage["environment"], "scientific execution environment")
                 if len(environment) > 128 or not all(
                     isinstance(key, str)
@@ -549,9 +587,12 @@ class FileScientificManifestRenderer:
                     validator_id=validator_id,
                     mounts=tuple(mounts),
                     service_account_name=service_account_name,
-                    cpu=cpu,
-                    memory=memory,
-                    ephemeral_storage=ephemeral_storage,
+                    request_cpu=request_cpu,
+                    request_memory=request_memory,
+                    request_ephemeral_storage=request_ephemeral_storage,
+                    limit_cpu=limit_cpu,
+                    limit_memory=limit_memory,
+                    limit_ephemeral_storage=limit_ephemeral_storage,
                     active_deadline_seconds=_positive_integer(
                         stage["active_deadline_seconds"], "scientific active deadline", maximum=7 * 24 * 3600
                     ),
@@ -586,6 +627,34 @@ class FileScientificManifestRenderer:
         self.tools_image = tools_image
         self.internal_api_url = internal_api_url
         self.capability_authority = capability_authority
+        if academic_authorization_receipt_sha256 is not None and re.fullmatch(
+            r"[a-f0-9]{64}", academic_authorization_receipt_sha256
+        ) is None:
+            raise ScientificExecutionMapError("academic deployment authorization digest is invalid")
+        self.academic_tenant_id = academic_tenant_id
+        self.academic_authorization_receipt_sha256 = academic_authorization_receipt_sha256
+
+    def access_context(self, profile: ScientificWorkloadProfile, *, tenant_id: str) -> ArtifactAccessContext:
+        """Resolve deployment-bound authorization independently of caller input."""
+
+        access = _object(profile.value.get("access"), "profile access identity")
+        if access.get("profile") != "academic":
+            if access.get("profile") != "standard" or access.get("state") != "not-required":
+                raise ScientificExecutionMapError("standard scientific profile access is not runnable")
+            return ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id=tenant_id)
+        if access.get("state") != "verified" or access.get("credentials_embedded") is not False:
+            raise ScientificExecutionMapError("academic deployment authorization is absent or revoked")
+        if (
+            self.access_profiles.get(profile.model_id) != "academic"
+            or self.academic_tenant_id != tenant_id
+            or self.academic_authorization_receipt_sha256 is None
+        ):
+            raise ScientificExecutionMapError("academic deployment authorization handoff is absent or mismatched")
+        return ArtifactAccessContext(
+            profile="academic",
+            receipt_digest=f"sha256:{self.academic_authorization_receipt_sha256}",
+            tenant_id=tenant_id,
+        )
 
     def variant_id(self, model_id: str) -> str:
         """Return the operator-owned runtime binding for one public model ID."""
@@ -682,10 +751,15 @@ class FileScientificManifestRenderer:
             if stage.resources is None:
                 continue
             execution = self.executions[(profile.model_id, stage.stage_id)]
-            rendered = (
-                _cpu_millis(execution.cpu),
-                _quantity_bytes(execution.memory),
-                _quantity_bytes(execution.ephemeral_storage),
+            rendered_requests = (
+                _cpu_millis(execution.request_cpu),
+                _quantity_bytes(execution.request_memory),
+                _quantity_bytes(execution.request_ephemeral_storage),
+            )
+            rendered_limits = (
+                _cpu_millis(execution.limit_cpu),
+                _quantity_bytes(execution.limit_memory),
+                _quantity_bytes(execution.limit_ephemeral_storage),
             )
             requested = (
                 stage.resources.cpu_millis,
@@ -697,7 +771,7 @@ class FileScientificManifestRenderer:
                 stage.resources.limit_memory_bytes,
                 stage.resources.limit_ephemeral_storage_bytes,
             )
-            if rendered != requested or rendered != limits:
+            if rendered_requests != requested or rendered_limits != limits:
                 raise ScientificExecutionMapError(
                     f"stage {stage.stage_id} execution-map resources differ from the frozen profile envelope"
                 )
@@ -738,9 +812,12 @@ class FileScientificManifestRenderer:
                 for mount in execution.mounts
             ),
             service_account_name=execution.service_account_name,
-            cpu=execution.cpu,
-            memory=execution.memory,
-            ephemeral_storage=execution.ephemeral_storage,
+            request_cpu=execution.request_cpu,
+            request_memory=execution.request_memory,
+            request_ephemeral_storage=execution.request_ephemeral_storage,
+            limit_cpu=execution.limit_cpu,
+            limit_memory=execution.limit_memory,
+            limit_ephemeral_storage=execution.limit_ephemeral_storage,
             active_deadline_seconds=execution.active_deadline_seconds,
             termination_grace_seconds=execution.termination_grace_seconds,
             environment=tuple(sorted(execution.environment.items())),
@@ -766,9 +843,12 @@ class FileScientificManifestRenderer:
                 for mount in binding.mounts
             ),
             service_account_name=binding.service_account_name,
-            cpu=binding.cpu,
-            memory=binding.memory,
-            ephemeral_storage=binding.ephemeral_storage,
+            request_cpu=binding.request_cpu,
+            request_memory=binding.request_memory,
+            request_ephemeral_storage=binding.request_ephemeral_storage,
+            limit_cpu=binding.limit_cpu,
+            limit_memory=binding.limit_memory,
+            limit_ephemeral_storage=binding.limit_ephemeral_storage,
             active_deadline_seconds=binding.active_deadline_seconds,
             termination_grace_seconds=binding.termination_grace_seconds,
             environment=MappingProxyType(dict(binding.environment)),
@@ -893,11 +973,9 @@ class FileScientificManifestRenderer:
             or preprocessing.placement_class is None
             or preprocessing.placement_class.value != "reference-data"
             or preprocessing.resources.cpu_millis != AF3_PREPROCESS_CPU_MILLIS
-            or preprocessing.resources.limit_cpu_millis != AF3_PREPROCESS_CPU_MILLIS
             or preprocessing.resources.memory_bytes != AF3_PREPROCESS_MEMORY_BYTES
-            or preprocessing.resources.limit_memory_bytes != AF3_PREPROCESS_MEMORY_BYTES
         ):
-            raise ScientificExecutionMapError("AlphaFold3 preprocessing must freeze the 6 CPU/24Gi reference lane")
+            raise ScientificExecutionMapError("AlphaFold3 preprocessing must freeze the 16 CPU/64Gi reference lane")
         if (
             inference.resource_class.value != "gpu"
             or inference.placement_class is None
@@ -908,8 +986,8 @@ class FileScientificManifestRenderer:
         cpu = execution_plan.invocation(AF3_PREPROCESS_STAGE, "main")
         gpu = execution_plan.invocation(AF3_INFERENCE_STAGE, "main")
         cpu_args = {value: cpu.argv[index + 1] for index, value in enumerate(cpu.argv[:-1]) if value.startswith("--")}
-        if cpu_args.get("--jackhmmer_n_cpu") != "6" or cpu_args.get("--nhmmer_n_cpu") != "6":
-            raise ScientificExecutionMapError("AlphaFold3 preprocessing thread flags differ from its CPU envelope")
+        if cpu_args.get("--threads") != "16" or cpu_args.get("--cpu-request") != "16":
+            raise ScientificExecutionMapError("AlphaFold3 preprocessing thread contract differs from its CPU envelope")
         if set(cpu.runtime_artifacts) != {AF3_DATABASES_ARTIFACT}:
             raise ScientificExecutionMapError("AlphaFold3 preprocessing must materialize only its reference database")
         if set(gpu.runtime_artifacts) != {AF3_PARAMETERS_ARTIFACT}:
@@ -923,14 +1001,18 @@ class FileScientificManifestRenderer:
         cpu_execution = self.executions[(execution_plan.model_id, AF3_PREPROCESS_STAGE)]
         gpu_execution = self.executions[(execution_plan.model_id, AF3_INFERENCE_STAGE)]
         if (
-            cpu_execution.cpu != "6"
-            or cpu_execution.memory != "24Gi"
-            or _quantity_bytes(cpu_execution.ephemeral_storage) != preprocessing.resources.ephemeral_storage_bytes
-            or _cpu_millis(gpu_execution.cpu) != inference.resources.cpu_millis
-            or _quantity_bytes(gpu_execution.memory) != inference.resources.memory_bytes
-            or _quantity_bytes(gpu_execution.ephemeral_storage) != inference.resources.ephemeral_storage_bytes
+            _cpu_millis(cpu_execution.request_cpu) != AF3_PREPROCESS_CPU_MILLIS
+            or _quantity_bytes(cpu_execution.request_memory) != AF3_PREPROCESS_MEMORY_BYTES
+            or _quantity_bytes(cpu_execution.request_ephemeral_storage)
+            != preprocessing.resources.ephemeral_storage_bytes
+            or _cpu_millis(gpu_execution.request_cpu) != inference.resources.cpu_millis
+            or _quantity_bytes(gpu_execution.request_memory) != inference.resources.memory_bytes
+            or _quantity_bytes(gpu_execution.request_ephemeral_storage) != inference.resources.ephemeral_storage_bytes
             or not any(
-                mount.kind == "reference" and mount.host_path == REFERENCE_DATASETS_HOST_PATH
+                mount.kind == "reference"
+                and mount.host_path == REFERENCE_DATASETS_HOST_PATH
+                and mount.mount_path == "/reference-data"
+                and mount.sub_path is None
                 for mount in cpu_execution.mounts
             )
             or any(mount.kind == "private" for mount in cpu_execution.mounts)
@@ -1065,16 +1147,22 @@ class FileScientificManifestRenderer:
                     f"runtime artifact {binding.artifact_id} lost its verified localization binding before apply"
                 )
         gpu_count = resource.scheduling.accelerator_count
+        requests = {
+            "cpu": execution.request_cpu,
+            "memory": execution.request_memory,
+            "ephemeral-storage": execution.request_ephemeral_storage,
+        }
         limits = {
-            "cpu": execution.cpu,
-            "memory": execution.memory,
-            "ephemeral-storage": execution.ephemeral_storage,
+            "cpu": execution.limit_cpu,
+            "memory": execution.limit_memory,
+            "ephemeral-storage": execution.limit_ephemeral_storage,
         }
         if gpu_count:
             accelerator_resource = resource.scheduling.accelerator_resource_name
             if accelerator_resource is None:
                 raise ScientificExecutionMapError("GPU scheduling has no accelerator resource")
             limits[accelerator_resource] = str(gpu_count)
+            requests[accelerator_resource] = str(gpu_count)
         runtime_marker = {
             "schema": RUNTIME_LOCALIZATION_SCHEMA,
             "operation_id": str(resource.operation_id),
@@ -1099,10 +1187,14 @@ class FileScientificManifestRenderer:
                         else {
                             "tree_digest": item.aggregate_tree.tree_digest,
                             "manifest_digest": item.aggregate_tree.manifest_digest,
+                            "inventory_digest": item.aggregate_tree.inventory_digest,
                             "manifest_algorithm": item.aggregate_tree.manifest_algorithm,
                             "file_count": item.aggregate_tree.file_count,
+                            "directory_count": item.aggregate_tree.directory_count,
                             "expanded_bytes": item.aggregate_tree.expanded_bytes,
                             "canonical_path": item.aggregate_tree.canonical_path,
+                            "storage_kind": item.aggregate_tree.storage_kind,
+                            "marker_relative_path": item.aggregate_tree.marker_relative_path,
                         }
                     ),
                     "files": [
@@ -1171,9 +1263,16 @@ class FileScientificManifestRenderer:
             if (
                 resource.model_id == "alphafold3"
                 and binding.artifact_id == "alphafold3-public-databases-v3.0"
-                and (source.kind != "reference" or source.host_path != REFERENCE_DATASETS_HOST_PATH)
+                and (
+                    source.kind != "reference"
+                    or source.host_path != REFERENCE_DATASETS_HOST_PATH
+                    or source.mount_path != "/reference-data"
+                    or source.sub_path is not None
+                    or binding.mount_path != "/reference-data"
+                    or binding.sub_path is not None
+                )
             ):
-                raise ScientificExecutionMapError("AlphaFold3 databases lost their content-addressed reference binding")
+                raise ScientificExecutionMapError("AlphaFold3 databases lost their whole-root reference-plane binding")
             if source.host_path is not None and REFERENCE_DATA_GID not in binding.supplemental_groups:
                 raise ScientificExecutionMapError("reference-data runtime mount requires its published group")
             if (
@@ -1199,12 +1298,15 @@ class FileScientificManifestRenderer:
             localization = localized[binding.artifact_id]
             if localization.aggregate_tree is not None:
                 actual_path = PurePosixPath(*sub_parts).as_posix() if sub_parts else None
-                if actual_path != localization.aggregate_tree.canonical_path:
+                if localization.aggregate_tree.storage_kind is RuntimeArtifactTreeKind.REFERENCE_DATA_PLANE:
+                    if actual_path is not None or source.mount_path != "/reference-data":
+                        raise ScientificExecutionMapError(
+                            f"runtime artifact {binding.artifact_id} reference plane must be mounted without subPath"
+                        )
+                elif actual_path != localization.aggregate_tree.canonical_path:
                     raise ScientificExecutionMapError(
                         f"runtime artifact {binding.artifact_id} physical tree path differs from its localization"
                     )
-                if source.kind == "reference" and not actual_path.startswith("datasets/"):
-                    raise ScientificExecutionMapError("reference-data tree is not mounted from datasets")
             volume_mounts.append(volume_mount)
             if source.name not in volume_names:
                 physical_source: dict[str, Any]
@@ -1389,7 +1491,7 @@ class FileScientificManifestRenderer:
                     "workingDir": invocation.working_directory,
                     "env": env,
                     "volumeMounts": volume_mounts,
-                    "resources": {"requests": copy.deepcopy(limits), "limits": limits},
+                    "resources": {"requests": requests, "limits": limits},
                     "securityContext": {
                         "allowPrivilegeEscalation": False,
                         "capabilities": {"drop": ["ALL"]},

@@ -326,6 +326,14 @@ app.kubernetes.io/component: model-controller
   value: /var/run/secrets/fs2-scientific-batch/ca.crt
 - name: FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_FILE
   value: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.schedulingContractKey }}
+- name: FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_SHA256
+  value: {{ .Values.scientificBatch.schedulingContractSha256 | quote }}
+{{- if and .Values.academicAssets.enabled .Values.academicAssets.execution.enabled }}
+- name: FS2_SCIENTIFIC_BATCH_ACADEMIC_TENANT_ID
+  value: {{ .Values.academicAssets.tenantId | quote }}
+- name: FS2_SCIENTIFIC_BATCH_ACADEMIC_AUTHORIZATION_RECEIPT_SHA256
+  value: {{ .Values.academicAssets.readinessManifestSha256 | quote }}
+{{- end }}
 - name: FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE
   value: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.executionMapKey }}
 - name: FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE

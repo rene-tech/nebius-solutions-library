@@ -165,8 +165,6 @@ class ArtifactAccess(ScientificArtifactModel):
     def receipt_matches_profile(self) -> ArtifactAccess:
         if self.profile is ArtifactAccessProfile.PUBLIC and self.receipt_digest is not None:
             raise ValueError("public artifacts cannot carry a gated-access receipt")
-        if self.profile is not ArtifactAccessProfile.PUBLIC and self.receipt_digest is None:
-            raise ValueError("gated artifacts require a non-secret access receipt digest")
         return self
 
     def to_admission(self) -> AccessAdmission:
@@ -175,11 +173,10 @@ class ArtifactAccess(ScientificArtifactModel):
         if self.profile is ArtifactAccessProfile.PUBLIC:
             return AccessAdmission(profile=AccessProfile.STANDARD, state=AccessState.NOT_REQUIRED)
         profile = AccessProfile.ACADEMIC if self.profile is ArtifactAccessProfile.ACADEMIC else AccessProfile.STANDARD
-        assert self.receipt_digest is not None
         return AccessAdmission(
             profile=profile,
             state=AccessState.VERIFIED,
-            receipt_digest=self.receipt_digest.removeprefix("sha256:"),
+            receipt_digest=(None if self.receipt_digest is None else self.receipt_digest.removeprefix("sha256:")),
         )
 
 
@@ -188,7 +185,7 @@ class KueueAdmission(ScientificArtifactModel):
 
     resolved_pool_id: Annotated[str, StringConstraints(max_length=128)] | None = None
     admitted_resource_flavor: Annotated[str, StringConstraints(max_length=253)] | None = None
-    accelerator_resource_name: Annotated[str, StringConstraints(max_length=253)] | None = None
+    accelerator_resource_name: Annotated[str, StringConstraints(max_length=317)] | None = None
     accelerator_count: int = Field(default=0, ge=0, le=1024)
     admitted_at: AwareDatetime
 

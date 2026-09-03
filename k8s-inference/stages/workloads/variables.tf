@@ -350,28 +350,6 @@ variable "scientific_artifacts" {
   }
 }
 
-variable "scientific_batch" {
-  description = "Staged scientific batch gates. Batch execution requires the artifact store; Kubernetes writes require batch."
-  type = object({
-    enabled        = bool
-    writes_enabled = bool
-    namespace      = string
-  })
-  default = {
-    enabled        = false
-    writes_enabled = false
-    namespace      = "fs2-models"
-  }
-
-  validation {
-    condition = (
-      (!var.scientific_batch.writes_enabled || var.scientific_batch.enabled) &&
-      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.scientific_batch.namespace))
-    )
-    error_message = "scientific_batch.writes_enabled requires scientific_batch.enabled and a DNS-label namespace."
-  }
-}
-
 variable "kubeconfig_path" {
   description = "Exact run-owned kubeconfig; must equal <run_root>/kubeconfig."
   type        = string
@@ -753,6 +731,7 @@ variable "scientific_batch" {
   type = object({
     enabled        = optional(bool, false)
     writes_enabled = optional(bool, false)
+    namespace      = optional(string, "fs2-models")
     execution_map = optional(any, {
       schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
       models = []
@@ -762,48 +741,25 @@ variable "scientific_batch" {
     lease_seconds            = optional(string, "30")
     api_timeout_seconds      = optional(string, "5")
     token_expiration_seconds = optional(number, 600)
-    artifacts = optional(object({
-      enabled                 = optional(bool, false)
-      endpoint                = optional(string, "https://storage.eu-north1.nebius.cloud")
-      bucket                  = optional(string, "fs2-scientific-artifacts")
-      region                  = optional(string, "eu-north1")
-      addressing_style        = optional(string, "path")
-      verify_tls              = optional(bool, true)
-      credentials_secret_name = optional(string, "")
-      credentials_secret_key  = optional(string, "credentials.json")
-      handle_ttl_seconds      = optional(number, 600)
-      max_bytes               = optional(number, 1099511627776)
-      retention_seconds       = optional(number, 7776000)
-      media_types = optional(list(string), [
-        "application/octet-stream",
-        "application/json",
-        "application/gzip",
-        "application/vnd.fs2.scientific-manifest+json",
-        "application/vnd.fs2.scientific-validation+json",
-        "chemical/x-pdb",
-        "chemical/x-cif",
-        "text/plain",
-        "text/x-fasta",
-      ])
-      egress_cidrs = optional(set(string), [])
-    }), {})
   })
   default = {}
 
   validation {
-    condition     = !var.scientific_batch.writes_enabled || var.scientific_batch.enabled
-    error_message = "scientific_batch writes require enabled=true."
+    condition = (
+      (!var.scientific_batch.writes_enabled || var.scientific_batch.enabled) &&
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.scientific_batch.namespace))
+    )
+    error_message = "scientific_batch writes require enabled=true and a DNS-label default namespace."
   }
 
   validation {
     condition = !var.scientific_batch.enabled || try(
       var.scientific_batch.execution_map.schema == "fs2-serve.nebius.ai/scientific-execution-map/v3" &&
       length(var.scientific_batch.execution_map.models) > 0 &&
-      var.scientific_batch.artifacts.enabled &&
-      length(var.scientific_batch.artifacts.credentials_secret_name) > 0,
+      var.scientific_artifacts.enabled,
       false,
     )
-    error_message = "scientific_batch.enabled requires a non-empty schema-v3 execution map plus the canonical artifact service and its existing credential Secret."
+    error_message = "scientific_batch.enabled requires a non-empty schema-v3 execution map plus the accepted scientific artifact-store contract."
   }
 }
 

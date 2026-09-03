@@ -66,6 +66,8 @@ class ScientificPlanFactory(Protocol):
 class ScientificExecutionBinding(Protocol):
     """Operator-owned binding kept outside the canonical public profile schema."""
 
+    def access_context(self, profile: ScientificWorkloadProfile, *, tenant_id: str) -> ArtifactAccessContext: ...
+
     def variant_id(self, model_id: str) -> str: ...
 
     def workload_namespace(self, model_id: str) -> str: ...
@@ -316,18 +318,14 @@ class ScientificBatchService:
         input_admission = await self.artifacts.validate_input(
             validated["input_manifest"], tenant_id=principal.tenant_id
         )
-        access_context = input_admission.access_context
-        profile_access = profile.value.get("access")
-        if not isinstance(profile_access, Mapping):
-            raise ScientificProfileError("scientific profile access admission is invalid")
-        expected_access_profile = (
-            "public" if profile_access.get("profile") == "standard" else profile_access.get("profile")
-        )
-        expected_receipt = profile_access.get("receipt_digest")
-        if isinstance(expected_receipt, str) and not expected_receipt.startswith("sha256:"):
-            expected_receipt = f"sha256:{expected_receipt}"
-        if access_context.profile != expected_access_profile or access_context.receipt_digest != expected_receipt:
-            raise ScientificProfileError("input artifact access receipt differs from the runnable profile")
+        # Input artifacts are caller-owned scientific data, not license
+        # credentials. Academic runtime authorization is deployment-bound and
+        # projected from the reviewed execution handoff, never supplied by a
+        # request or copied from an input-manifest entry.
+        try:
+            access_context = self.execution_binding.access_context(profile, tenant_id=principal.tenant_id)
+        except CatalogProfileAdapterError as error:
+            raise ScientificProfileError("scientific workload deployment authorization is not runnable") from error
         try:
             preflight = self.plan_factory.plan(
                 profile,

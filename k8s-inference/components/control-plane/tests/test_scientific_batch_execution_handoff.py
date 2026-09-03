@@ -44,6 +44,7 @@ from fs2_serve.scientific_batch.models import (
     ResolvedArtifactMaterialization,
     ResourceClass,
     RuntimeArtifactMount,
+    RuntimeArtifactTreeKind,
     SchedulingAdmission,
     SchedulingSnapshot,
     ScientificBatchPlan,
@@ -292,7 +293,10 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                             },
                         ],
                         "service_account_name": "scientific-runner",
-                        "resources": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
+                        "resources": {
+                            "requests": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
+                            "limits": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
+                        },
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
                         "environment": {},
@@ -324,7 +328,10 @@ def runtime_execution_map(tmp_path: Path, *, omit_file: bool = False) -> FileSci
                             },
                         ],
                         "service_account_name": "scientific-runner",
-                        "resources": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
+                        "resources": {
+                            "requests": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
+                            "limits": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "20Gi"},
+                        },
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
                         "environment": {},
@@ -588,11 +595,15 @@ def test_mounted_runtime_verifier_supports_real_size_aggregate_tree_without_enum
     tree.mkdir()
     tree_identity = {
         "schema": companion.RUNTIME_TREE_IDENTITY_SCHEMA,
-        "manifest_algorithm": "fs2-tree-manifest/v1",
-        "tree_digest": "sha256:" + "a" * 64,
-        "file_count": 8_697,
-        "expanded_bytes": 3_287_122_494,
-        "canonical_path": "pyrosetta-bindcraft/site-packages",
+        "artifact_id": "bindcraft-pyrosetta-installed-tree",
+        "generation": "a" * 64,
+        "inventory_algorithm": "fs2-tree-manifest/v1",
+        "inventory_sha256": "a" * 64,
+        "entry_count": 8_697,
+        "directory_count": 796,
+        "total_bytes": 3_287_122_494,
+        "sub_path": "pyrosetta-bindcraft/site-packages/sha256/" + "a" * 64,
+        "read_only": True,
     }
     sidecar = json.dumps(tree_identity, sort_keys=True, separators=(",", ":")).encode()
     (tree / companion.RUNTIME_TREE_IDENTITY_FILE).write_bytes(sidecar)
@@ -626,16 +637,24 @@ def test_mounted_runtime_verifier_supports_real_size_aggregate_tree_without_enum
             {
                 "artifact_id": "bindcraft-pyrosetta-installed-tree",
                 "mount_path": str(tree),
-                "content_digest": tree_identity["tree_digest"],
+                "content_digest": "sha256:" + "a" * 64,
                 "artifact_manifest_sha256": hashlib.sha256(sidecar).hexdigest(),
                 "localization_receipt_digest": sha("pyrosetta-receipt"),
-                "sub_path": "pyrosetta-bindcraft/site-packages",
+                "sub_path": tree_identity["sub_path"],
                 "readiness_receipt_sha256": "3" * 64,
                 "authorization_receipt_sha256": "4" * 64,
                 "files": [],
                 "aggregate_tree": {
-                    **{key: value for key, value in tree_identity.items() if key != "schema"},
+                    "tree_digest": "sha256:" + "a" * 64,
                     "manifest_digest": "sha256:" + hashlib.sha256(sidecar).hexdigest(),
+                    "inventory_digest": "sha256:" + "a" * 64,
+                    "manifest_algorithm": "fs2-tree-manifest/v1",
+                    "file_count": 8_697,
+                    "directory_count": 796,
+                    "expanded_bytes": 3_287_122_494,
+                    "canonical_path": tree_identity["sub_path"],
+                    "storage_kind": RuntimeArtifactTreeKind.LOCALIZATION_GENERATION,
+                    "marker_relative_path": companion.RUNTIME_TREE_IDENTITY_FILE,
                 },
             },
         ],
@@ -643,7 +662,7 @@ def test_mounted_runtime_verifier_supports_real_size_aggregate_tree_without_enum
     encoded = json.dumps(marker, sort_keys=True, separators=(",", ":"))
     companion.verify_runtime_artifacts(runtime_localization_json=encoded)
     (tree / companion.RUNTIME_TREE_IDENTITY_FILE).write_bytes(sidecar + b"\n")
-    with pytest.raises(ValueError, match="identity digest differs"):
+    with pytest.raises(ValueError, match="marker digest differs"):
         companion.verify_runtime_artifacts(runtime_localization_json=encoded)
 
 
@@ -719,12 +738,16 @@ def _bindcraft_renderer(
             **(
                 {
                     "aggregate_tree": {
+                        "storage_kind": "localization-generation",
                         "tree_sha256": pyrosetta_digest,
                         "manifest_sha256": "4" * 64,
+                        "inventory_sha256": pyrosetta_digest,
                         "manifest_algorithm": "fs2-tree-manifest/v1",
                         "file_count": 8_697,
+                        "directory_count": 796,
                         "expanded_bytes": 3_287_122_494,
-                        "canonical_path": "pyrosetta-bindcraft/site-packages",
+                        "canonical_path": f"pyrosetta-bindcraft/site-packages/sha256/{pyrosetta_digest}",
+                        "marker_relative_path": ".fs2-runtime-tree.json",
                     }
                 }
                 if requirement["artifact_id"] == "bindcraft-pyrosetta-installed-tree"
@@ -786,7 +809,7 @@ def _bindcraft_renderer(
             "claim_name": "academic-assets-runtime-rwx",
             "host_path": None,
             "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
-            "sub_path": "pyrosetta-bindcraft/site-packages",
+            "sub_path": f"pyrosetta-bindcraft/site-packages/sha256/{pyrosetta_digest}",
             "read_only": True,
         },
     ]
@@ -812,7 +835,10 @@ def _bindcraft_renderer(
                         "validator_id": "bindcraft-v1",
                         "mounts": physical_mounts,
                         "service_account_name": "fs2-academic-runner",
-                        "resources": {"cpu": "16", "memory": "96Gi", "ephemeral_storage": "64Gi"},
+                        "resources": {
+                            "requests": {"cpu": "16", "memory": "96Gi", "ephemeral_storage": "64Gi"},
+                            "limits": {"cpu": "16", "memory": "96Gi", "ephemeral_storage": "64Gi"},
+                        },
                         "active_deadline_seconds": 7200,
                         "termination_grace_seconds": 120,
                         "environment": {
@@ -1052,15 +1078,19 @@ def _academic_af3_renderer(
         },
         {
             "artifact_id": "alphafold3-public-databases-v3.0",
-            "mount_path": "/databases",
+            "mount_path": "/reference-data",
             "content_digest": "sha256:" + "d" * 64,
             "aggregate_tree": {
+                "storage_kind": "reference-data-plane",
                 "tree_sha256": "d" * 64,
                 "manifest_sha256": "2" * 64,
-                "manifest_algorithm": "fs2-tree-manifest/v1",
+                "inventory_sha256": "e" * 64,
+                "manifest_algorithm": "fs2-serve.nebius.ai/reference-data-manifest/v1",
                 "file_count": 20_000,
+                "directory_count": 0,
                 "expanded_bytes": 1_000_000_000,
                 "canonical_path": database_sub_path,
+                "marker_relative_path": ".fs2-manifest-sha256",
             },
             "localization_receipt_digest": sha("localized-af3-databases"),
         },
@@ -1100,13 +1130,16 @@ def _academic_af3_renderer(
                                 "kind": "reference",
                                 "claim_name": None,
                                 "host_path": "/mnt/fs2-reference-data/data",
-                                "mount_path": "/databases",
-                                "sub_path": database_sub_path,
+                                "mount_path": "/reference-data",
+                                "sub_path": None,
                                 "read_only": True,
                             },
                         ],
                         "service_account_name": "fs2-academic-runner",
-                        "resources": {"cpu": "6", "memory": "24Gi", "ephemeral_storage": "64Gi"},
+                        "resources": {
+                            "requests": {"cpu": "16", "memory": "64Gi", "ephemeral_storage": "64Gi"},
+                            "limits": {"cpu": "32", "memory": "192Gi", "ephemeral_storage": "64Gi"},
+                        },
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
                         "environment": {"FS2_NETWORK_MODE": "offline"},
@@ -1138,7 +1171,10 @@ def _academic_af3_renderer(
                             },
                         ],
                         "service_account_name": "fs2-academic-runner",
-                        "resources": {"cpu": "8", "memory": "64Gi", "ephemeral_storage": "64Gi"},
+                        "resources": {
+                            "requests": {"cpu": "8", "memory": "64Gi", "ephemeral_storage": "64Gi"},
+                            "limits": {"cpu": "32", "memory": "192Gi", "ephemeral_storage": "64Gi"},
+                        },
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
                         "environment": {"FS2_NETWORK_MODE": "offline"},
@@ -1163,20 +1199,23 @@ def _academic_af3_renderer(
             KeyedHasher(active_key_id="ledger-v1", keys={"ledger-v1": b"k" * 32})
         ),
     )
-    marker_root = "/mnt/fs2-scientific/work/data-pipeline/main/.fs2/runtime-localization.json"
     preprocessing = StageInvocation(
         stage_id="data-pipeline",
         shard_id="main",
         argv=(
-            "run_alphafold.py",
-            "--run_data_pipeline=true",
-            "--run_inference=false",
-            "--jackhmmer_n_cpu",
-            "6",
-            "--nhmmer_n_cpu",
-            "6",
-            "--runtime-localization-marker",
-            marker_root,
+            "/alphafold3_venv/bin/python3",
+            "/opt/fs2/af3_runtime.py",
+            "data",
+            "--json-path",
+            "/mnt/fs2-scientific/work/data-pipeline/main/input.json",
+            "--output-dir",
+            "/mnt/fs2-scientific/work/data-pipeline/main/output",
+            "--reference-receipt",
+            "/mnt/fs2-scientific/work/data-pipeline/main/.fs2/runtime-artifacts/alphafold3-public-databases-v3.0.receipt.json",
+            "--threads",
+            "16",
+            "--cpu-request",
+            "16",
         ),
         environment=(),
         working_directory="/mnt/fs2-scientific/work/data-pipeline/main",
@@ -1196,7 +1235,7 @@ def _academic_af3_renderer(
         runtime_mounts=(
             RuntimeArtifactMount(
                 artifact_id="alphafold3-public-databases-v3.0",
-                mount_path="/databases",
+                mount_path="/reference-data",
                 supplemental_groups=(1000,),
             ),
         ),
@@ -1205,11 +1244,13 @@ def _academic_af3_renderer(
         stage_id="inference",
         shard_id="main",
         argv=(
-            "run_alphafold.py",
-            "--run_data_pipeline=false",
-            "--run_inference=true",
-            "--runtime-localization-marker",
-            "/mnt/fs2-scientific/work/inference/main/.fs2/runtime-localization.json",
+            "/alphafold3_venv/bin/python3",
+            "/opt/fs2/af3_runtime.py",
+            "inference",
+            "--handoff-dir",
+            "/mnt/fs2-scientific/work/inference/main/prepared",
+            "--output-dir",
+            "/mnt/fs2-scientific/work/inference/main/output",
         ),
         environment=(),
         working_directory="/mnt/fs2-scientific/work/inference/main",
@@ -1235,19 +1276,19 @@ def _academic_af3_renderer(
         ),
     )
     cpu_resources = StageResourceEnvelope(
-        cpu_millis=6_000,
-        memory_bytes=24 * 1024**3,
+        cpu_millis=16_000,
+        memory_bytes=64 * 1024**3,
         ephemeral_storage_bytes=64 * 1024**3,
-        limit_cpu_millis=6_000,
-        limit_memory_bytes=24 * 1024**3,
+        limit_cpu_millis=32_000,
+        limit_memory_bytes=192 * 1024**3,
         limit_ephemeral_storage_bytes=64 * 1024**3,
     )
     gpu_resources = StageResourceEnvelope(
         cpu_millis=8_000,
         memory_bytes=64 * 1024**3,
         ephemeral_storage_bytes=64 * 1024**3,
-        limit_cpu_millis=8_000,
-        limit_memory_bytes=64 * 1024**3,
+        limit_cpu_millis=32_000,
+        limit_memory_bytes=192 * 1024**3,
         limit_ephemeral_storage_bytes=64 * 1024**3,
     )
     controller_plan = ScientificBatchPlan(
@@ -1388,10 +1429,16 @@ def test_af3_academic_v3_map_binds_exact_params_and_content_addressed_database(t
         "type": "Directory",
     }
     cpu_mounts = {item["name"]: item for item in cpu_pod["containers"][0]["volumeMounts"]}
-    assert cpu_mounts["alphafold3-databases"]["subPath"].endswith("/sha256/" + "d" * 64)
-    assert cpu_pod["containers"][0]["resources"]["requests"]["cpu"] == "6"
-    assert cpu_pod["containers"][0]["resources"]["requests"]["memory"] == "24Gi"
-    assert cpu_pod["containers"][0]["command"][3:7] == ["--jackhmmer_n_cpu", "6", "--nhmmer_n_cpu", "6"]
+    assert cpu_mounts["alphafold3-databases"]["mountPath"] == "/reference-data"
+    assert "subPath" not in cpu_mounts["alphafold3-databases"]
+    assert cpu_pod["containers"][0]["resources"]["requests"]["cpu"] == "16"
+    assert cpu_pod["containers"][0]["resources"]["requests"]["memory"] == "64Gi"
+    assert cpu_pod["containers"][0]["resources"]["limits"]["cpu"] == "32"
+    assert cpu_pod["containers"][0]["resources"]["limits"]["memory"] == "192Gi"
+    command = cpu_pod["containers"][0]["command"]
+    assert command[:3] == ["/alphafold3_venv/bin/python3", "/opt/fs2/af3_runtime.py", "data"]
+    assert command[command.index("--threads") + 1] == "16"
+    assert command[command.index("--cpu-request") + 1] == "16"
 
     gpu_pod = renderer.render(gpu_resource)["spec"]["template"]["spec"]  # type: ignore[index]
     gpu_volumes = {item["name"]: item for item in gpu_pod["volumes"]}
@@ -1402,11 +1449,11 @@ def test_af3_academic_v3_map_binds_exact_params_and_content_addressed_database(t
     }
     gpu_mounts = {item["name"]: item for item in gpu_pod["containers"][0]["volumeMounts"]}
     assert gpu_mounts["alphafold3-parameters"]["subPath"] == "alphafold3/af3.bin.zst"
-    assert not any(item["mountPath"] == "/databases" for item in gpu_mounts.values())
+    assert not any(item["mountPath"] == "/reference-data" for item in gpu_mounts.values())
 
     with pytest.raises(ScientificExecutionMapError, match="immutable execution-map route"):
         renderer.render(replace(gpu_resource, namespace="fs2-models", route_namespace="fs2-models"))
-    with pytest.raises(ScientificExecutionMapError, match="content-addressed dataset subPath"):
+    with pytest.raises(ValueError, match="dataset path differs from its tree digest"):
         _academic_af3_renderer(
             tmp_path,
             database_sub_path="datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot/current",

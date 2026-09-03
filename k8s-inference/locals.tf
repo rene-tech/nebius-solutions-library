@@ -675,11 +675,6 @@ locals {
       media_types           = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
       credential_generation = var.deployment.storage.scientific_artifacts.credential_generation
     }
-    scientific_batch = {
-      enabled        = var.deployment.scientific_batch.enabled
-      writes_enabled = var.deployment.scientific_batch.writes_enabled
-      namespace      = var.deployment.scientific_batch.namespace
-    }
     academic_assets = local.academic_assets_contract
     # The chart is the sole execution-map owner; the workloads stage forwards
     # the exact v3 document and artifact-service binding without creating a

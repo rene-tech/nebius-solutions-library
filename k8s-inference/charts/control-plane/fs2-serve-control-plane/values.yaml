@@ -103,6 +103,8 @@ scientificBatch:
   kubernetesApiUrl: https://kubernetes.default.svc
   schedulingContractConfigMapName: ""
   schedulingContractKey: kueue-scheduling.json
+  # Exact raw-byte digest published by Terraform beside the immutable ConfigMap.
+  schedulingContractSha256: ""
   executionMapConfigMapName: ""
   executionMapKey: execution-map.json
   # Rendered into the immutable ConfigMap above by this release. Runtime
@@ -294,11 +296,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 88665d6c508bdca6c756d9a6d1b29394e6571f72f441018b9afd26b4ff74ce1b
-    migrationSetSha256: 5de2500fc6bc0b75f028614936af7fa6c177bc96d78eebe79e3736bae10e65ce
-    migrationCount: 17
+    contractPayloadSha256: e0bba052fa4b04e93a7d944444a9de155c82db6ff62ab188ad28af6db6b62cfc
+    migrationSetSha256: 97d71b58d235015eb5e58901caa696f8e09c863682d5c3c48a3874bfec2520d7
+    migrationCount: 19
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0017_scientific_batch_state_v8.sql
+    lastMigrationVersion: 0019_scientific_deployment_authorization.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:

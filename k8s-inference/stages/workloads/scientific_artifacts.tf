@@ -70,9 +70,21 @@ locals {
 
   scientific_batch_overrides = {
     scientificBatch = {
-      enabled       = var.scientific_batch.enabled
-      writesEnabled = var.scientific_batch.writes_enabled
-      namespace     = var.scientific_batch.namespace
+      enabled                         = var.scientific_batch.enabled
+      writesEnabled                   = var.scientific_batch.writes_enabled
+      namespace                       = var.scientific_batch.namespace
+      kubernetesApiUrl                = "https://kubernetes.default.svc"
+      schedulingContractConfigMapName = kubernetes_config_map_v1.scientific_scheduling_contract.metadata[0].name
+      schedulingContractKey           = local.scheduling_contract_key
+      schedulingContractSha256        = local.scheduling_contract_sha256
+      executionMapConfigMapName       = "fs2-${var.run_id}-scientific-execution"
+      executionMapKey                 = "execution-map.json"
+      executionMap                    = var.scientific_batch.execution_map
+      workers                         = var.scientific_batch.workers
+      pollSeconds                     = var.scientific_batch.poll_seconds
+      leaseSeconds                    = var.scientific_batch.lease_seconds
+      apiTimeoutSeconds               = var.scientific_batch.api_timeout_seconds
+      tokenExpirationSeconds          = var.scientific_batch.token_expiration_seconds
     }
   }
 

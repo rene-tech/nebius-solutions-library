@@ -90,8 +90,8 @@ from fs2_serve.scientific_batch.models import (
     StageInvocation,
     StagePlacementClass,
     StageResourceEnvelope,
-    StageVolumeBinding,
     StageSchedulingDecision,
+    StageVolumeBinding,
     VerifiedInputManifest,
     WorkloadKind,
     WorkloadObservation,
@@ -332,6 +332,10 @@ class FakeArtifactAccess:
 
 
 class FakeExecutionBinding:
+    def access_context(self, profile, *, tenant_id: str) -> ArtifactAccessContext:
+        assert profile.model_id == "protein-design"
+        return ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id=tenant_id)
+
     def variant_id(self, model_id: str) -> str:
         assert model_id == "protein-design"
         return "protein-design-h100"
@@ -371,9 +375,12 @@ class FakeExecutionBinding:
                         ),
                     ),
                     service_account_name="scientific-runner",
-                    cpu="4",
-                    memory="32Gi",
-                    ephemeral_storage="100Gi",
+                    request_cpu="4",
+                    request_memory="32Gi",
+                    request_ephemeral_storage="100Gi",
+                    limit_cpu="4",
+                    limit_memory="32Gi",
+                    limit_ephemeral_storage="100Gi",
                     active_deadline_seconds=3600,
                     termination_grace_seconds=60,
                     environment=(),
@@ -1225,6 +1232,77 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
     assert observation.kueue_workload_uid == "kueue-workload-uid"
     assert fence.calls == [(operation_id, "controller-a", 7)]
     assert [request.method for request in requests] == ["POST", "GET", "GET", "GET", "GET"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kueue_admission_rejects_resource_flavor_with_only_retired_pool_label(tmp_path: Path) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/workloads"):
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "metadata": {"uid": "kueue-workload-uid"},
+                            "status": {
+                                "conditions": [
+                                    {
+                                        "type": "QuotaReserved",
+                                        "status": "True",
+                                        "lastTransitionTime": "2026-09-02T19:59:00Z",
+                                    }
+                                ],
+                                "admission": {
+                                    "clusterQueue": "inference",
+                                    "podSetAssignments": [
+                                        {
+                                            "flavors": {"nvidia.com/gpu": "inference-h100-1x"},
+                                            "resourceUsage": {"nvidia.com/gpu": "1"},
+                                        }
+                                    ],
+                                },
+                            },
+                        }
+                    ]
+                },
+            )
+        if request.url.path.endswith("/resourceflavors/inference-h100-1x"):
+            return httpx.Response(
+                200,
+                json={"metadata": {"labels": {"fs2.nebius.ai/pool-id": "h100-preemptible"}}},
+            )
+        raise AssertionError(f"unexpected Kubernetes request: {request.method} {request.url}")
+
+    token = tmp_path / "token"
+    token.write_text("x" * 32)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=client,
+    )
+
+    with pytest.raises(ScientificKubernetesError, match="no canonical pool identity"):
+        await cluster._scheduling_admission(
+            WorkloadRef(
+                namespace="fs2-models",
+                route_namespace="fs2-models",
+                name="scientific-job",
+                kind=WorkloadKind.JOB,
+                uid="job-uid",
+            ),
+            "job-uid",
+            expected_cluster_queue="inference",
+            expected_pool_preference=("h100-preemptible",),
+            expected_accelerator_resource="nvidia.com/gpu",
+            expected_accelerator_count=1,
+        )
     await client.aclose()
 
 
@@ -2624,7 +2702,10 @@ def test_execution_map_renders_only_digest_qualified_direct_argv(tmp_path: Path,
                             },
                         ],
                         "service_account_name": "scientific-runner",
-                        "resources": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "100Gi"},
+                        "resources": {
+                            "requests": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "100Gi"},
+                            "limits": {"cpu": "4", "memory": "32Gi", "ephemeral_storage": "100Gi"},
+                        },
                         "active_deadline_seconds": 3600,
                         "termination_grace_seconds": 60,
                         "environment": {"FS2_ADAPTER_MODE": "production"},

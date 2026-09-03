@@ -243,48 +243,6 @@ variable "deployment" {
       })
     }), {})
 
-    # Feature gate for the staged scientific controller. Enabling it also
-    # installs and qualifies the pinned JobSet API for true-gang stages. The
-    # controller's own execution map is owned by the control-plane chart.
-    scientific_batch = optional(object({
-      enabled        = optional(bool, false)
-      writes_enabled = optional(bool, false)
-      execution_map = optional(any, {
-        schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
-        models = []
-      })
-      workers                  = optional(number, 2)
-      poll_seconds             = optional(string, "0.25")
-      lease_seconds            = optional(string, "30")
-      api_timeout_seconds      = optional(string, "5")
-      token_expiration_seconds = optional(number, 600)
-      artifacts = optional(object({
-        enabled                 = optional(bool, false)
-        endpoint                = optional(string, "https://storage.eu-north1.nebius.cloud")
-        bucket                  = optional(string, "fs2-scientific-artifacts")
-        region                  = optional(string, "eu-north1")
-        addressing_style        = optional(string, "path")
-        verify_tls              = optional(bool, true)
-        credentials_secret_name = optional(string, "")
-        credentials_secret_key  = optional(string, "credentials.json")
-        handle_ttl_seconds      = optional(number, 600)
-        max_bytes               = optional(number, 1099511627776)
-        retention_seconds       = optional(number, 7776000)
-        media_types = optional(list(string), [
-          "application/octet-stream",
-          "application/json",
-          "application/gzip",
-          "application/vnd.fs2.scientific-manifest+json",
-          "application/vnd.fs2.scientific-validation+json",
-          "chemical/x-pdb",
-          "chemical/x-cif",
-          "text/plain",
-          "text/x-fasta",
-        ])
-        egress_cidrs = optional(set(string), [])
-      }), {})
-    }), {})
-
     acceleration = optional(object({
       model_express = optional(object({
         enabled          = optional(bool, false)
@@ -458,6 +416,15 @@ variable "deployment" {
       enabled        = optional(bool, false)
       writes_enabled = optional(bool, false)
       namespace      = optional(string, "fs2-models")
+      execution_map = optional(any, {
+        schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
+        models = []
+      })
+      workers                  = optional(number, 2)
+      poll_seconds             = optional(string, "0.25")
+      lease_seconds            = optional(string, "30")
+      api_timeout_seconds      = optional(string, "5")
+      token_expiration_seconds = optional(number, 600)
     }), {})
 
     artifacts = optional(object({
@@ -648,11 +615,10 @@ variable "deployment" {
     condition = !var.deployment.scientific_batch.enabled || try(
       var.deployment.scientific_batch.execution_map.schema == "fs2-serve.nebius.ai/scientific-execution-map/v3" &&
       length(var.deployment.scientific_batch.execution_map.models) > 0 &&
-      var.deployment.scientific_batch.artifacts.enabled &&
-      length(var.deployment.scientific_batch.artifacts.credentials_secret_name) > 0,
+      var.deployment.storage.scientific_artifacts.enabled,
       false,
     )
-    error_message = "scientific_batch.enabled requires a non-empty schema-v3 execution map plus the canonical artifact service and its existing credential Secret."
+    error_message = "scientific_batch.enabled requires a non-empty schema-v3 execution map plus the accepted scientific artifact-store contract."
   }
 
   validation {
