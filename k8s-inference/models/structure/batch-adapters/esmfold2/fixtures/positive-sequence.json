@@ -1,0 +1,8 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-structure",
+  "service_class": "interactive",
+  "input_manifest": {"artifact_id": "manifest.esmfold2.sequence", "sha256": "b595ec472c92a3cff7126b1789f3f18c643ddbe1a7c480ff41f95afb647b847e", "size_bytes": 512, "media_type": "application/vnd.fs2.scientific-manifest+json", "compression": "none"},
+  "parameters": {"sequence": "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ", "mode": "single-sequence", "seed": 4},
+  "client_context": {"display_name": "offline ESMFold2 fixture"}
+}

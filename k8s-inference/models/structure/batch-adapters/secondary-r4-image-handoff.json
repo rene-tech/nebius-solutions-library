@@ -1,0 +1,38 @@
+{
+  "schema": "fs2.nebius.ai/secondary-r4-image-handoff/v1",
+  "state": "build-only-not-activated",
+  "image_source_commit": "e6d20c7cb3abf5e172852f17a20c7e100daa1245",
+  "semantic_h100_qualification": false,
+  "route_activation_allowed": false,
+  "images": [
+    {
+      "model_id": "esmfold2",
+      "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
+      "digest": "sha256:e8fb269ff17e752ed8dd8f6c4689eaa55c0efc7adaffc156ccd9357bd075463d"
+    },
+    {
+      "model_id": "esmfold2-fast",
+      "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast",
+      "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
+      "digest": "sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577"
+    },
+    {
+      "model_id": "protenix-v2",
+      "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2",
+      "tag": "2475421477ab414b571149ad4a875c390ff8a35d-h100-r4",
+      "digest": "sha256:27d816dc518b5dda205f9916205fbc4e2053a8109d9380b85628d9f0d968a644"
+    },
+    {
+      "model_id": "openfold3",
+      "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream",
+      "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r4",
+      "digest": "sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b"
+    }
+  ],
+  "evidence": {
+    "source": "/home/tux/.local/state/fs2-cancer-images-structure-secondary-r20260902/published-e6d20c7c-r4",
+    "scope": "Published immutable registry manifests and real H100 CUDA/build-only startup checks; no exact-artifact semantic inference claim.",
+    "activation_gate": "Promote only after immutable artifact localization, exact runtime cache delivery where declared, and successful semantic H100 inference."
+  }
+}

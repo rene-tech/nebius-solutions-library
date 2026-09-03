@@ -1,0 +1,18 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "predict-complex-structure",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "manifest.protenix-v2.invalid",
+    "sha256": "c3841f8fe013bce5a575956c0ffc5dc965fcd3e09c7f55f0a581c1294e80ab08",
+    "size_bytes": 512,
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "compression": "none"
+  },
+  "parameters": {
+    "checkpoint": "protenix-v2",
+    "msa_mode": "none",
+    "sample_count": 1,
+    "model_seeds": [7, 7]
+  }
+}
