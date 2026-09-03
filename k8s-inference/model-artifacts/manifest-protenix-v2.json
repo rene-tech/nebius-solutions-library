@@ -1,0 +1,47 @@
+{
+  "content": {
+    "digest": "8e14bb809d37db806159b7d277577abc692aec81d8899fbc84915d23ebe12eca",
+    "expanded_bytes": 2514895264,
+    "files": [
+      {
+        "bytes": 1859785497,
+        "path": "checkpoint/protenix-v2.pt",
+        "sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
+      },
+      {
+        "bytes": 21699572,
+        "path": "common/clusters-by-entity-40.txt",
+        "sha256": "1ab4af905e75b382eda8dec59917dc3608bee0729e36b9e71baf860bbe86850c"
+      },
+      {
+        "bytes": 490777362,
+        "path": "common/components.cif",
+        "sha256": "bb31ae5cf6c8bc669924313077cb4231ee5ffefd3a20118cd14f3ec89f8bb6a5"
+      },
+      {
+        "bytes": 142498117,
+        "path": "common/components.cif.rdkit_mol.pkl",
+        "sha256": "d1cfb71f5993a3ebea7c47877022d7f597bbfbaf86e28a4770e957da6c50cd35"
+      },
+      {
+        "bytes": 134716,
+        "path": "common/obsolete_release_date.csv",
+        "sha256": "a4f3f63ac5d7eebd78b07995cc669b9eccd6f5d8813c9492c9df02868893cf33"
+      }
+    ]
+  },
+  "entitlement_state": "not-required",
+  "kind": "weights",
+  "license": {
+    "id": "Apache-2.0",
+    "state": "verified"
+  },
+  "model_id": "protenix-v2",
+  "owner": "cancer-immunotherapy",
+  "retention": "retained-platform",
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "source": {
+    "revision": "code-2475421477ab414b571149ad4a875c390ff8a35d_checkpoint-653edab28103133512575365130916e3fd23ecc3_common-2026-01-29",
+    "uri": "https://github.com/rene-tech/nebius-solutions-library"
+  }
+}

@@ -1,0 +1,474 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/public-artifact-catalog/v1",
+  "title": "Immutable public model artifact acquisition catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generated_at", "licenses", "artifacts", "consumers", "consumer_layouts", "private_layouts", "reference_layouts", "runtime_constraints", "runtime_handoffs"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/public-artifact-catalog/v1"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "licenses": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "url", "commercial_use", "redistribution"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "url": {"type": "string", "pattern": "^https://"},
+          "commercial_use": {"type": "string", "minLength": 1},
+          "redistribution": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/artifact"}
+    },
+    "consumers": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"}
+      }
+    },
+    "consumer_layouts": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/consumer_layout"}
+    },
+    "private_layouts": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/private_layout"}
+    },
+    "reference_layouts": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/reference_layout"}
+    },
+    "runtime_constraints": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/runtime_constraint"}
+    },
+    "runtime_handoffs": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/runtime_handoff"}
+    }
+  },
+  "$defs": {
+    "binary_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "version", "wheel", "wheel_url", "source_revision", "native_cubins", "ptx_present", "inspection"],
+      "properties": {
+        "component": {"const": "flash-attn"},
+        "version": {"const": "2.7.4.post1"},
+        "wheel": {"const": "flash_attn-2.7.4.post1-cp312-cp312-linux_x86_64.whl"},
+        "wheel_url": {"type": "string", "pattern": "^https://"},
+        "source_revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "native_cubins": {"const": ["sm80", "sm90"]},
+        "ptx_present": {"const": false},
+        "inspection": {"const": "manager-provided-frozen-wheel-binary-inspection"}
+      }
+    },
+    "consumer_layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mount_root", "bindings"],
+      "properties": {
+        "mount_root": {"const": "/models"},
+        "runtime_paths": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^/(?:models|databases|opt/fs2/artifacts)/[A-Za-z0-9._/-]+$"
+          }
+        },
+        "bindings": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["artifact_id", "mount_path", "read_only"],
+            "properties": {
+              "artifact_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+              "mount_root": {"enum": ["/models", "/databases", "/opt/fs2/artifacts", "/opt/conda/lib/python3.10/site-packages"]},
+              "mount_path": {"type": "string", "pattern": "^/(?:models|databases|opt/fs2/artifacts)/[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$|^/opt/conda/lib/python3\\.10/site-packages/colabdesign/mpnn/weights(?:_soluble)?$"},
+              "read_only": {"const": true}
+            }
+          }
+        }
+      }
+    },
+    "private_layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "source_plane", "cache_scope", "general_shared_cache_allowed", "embed_in_image", "source_url", "source_revision", "generation", "last_modified", "filename", "bytes", "sha256", "mount_path", "file_path", "read_only", "runtime_argument", "evidence"],
+      "properties": {
+        "artifact_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+        "source_plane": {"const": "academic-assets"},
+        "cache_scope": {"const": "tenant-private"},
+        "general_shared_cache_allowed": {"const": false},
+        "embed_in_image": {"const": false},
+        "source_url": {"type": "string", "pattern": "^https://"},
+        "source_revision": {"type": "string", "minLength": 1},
+        "generation": {"type": "string", "pattern": "^[0-9]+$"},
+        "last_modified": {"type": "string", "format": "date-time"},
+        "filename": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "mount_path": {"const": "/models"},
+        "file_path": {"const": "/models/af3.bin.zst"},
+        "read_only": {"const": true},
+        "runtime_argument": {"const": "--model_dir=/models"},
+        "evidence": {"type": "string", "pattern": "^evidence/[A-Za-z0-9._-]+\\.json$"}
+      }
+    },
+    "reference_layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle_id", "bundle_revision", "source_plane", "source_revision", "mount_path", "read_only", "runtime_argument"],
+      "properties": {
+        "bundle_id": {"type": "string", "pattern": "^[a-z0-9](?:[-.a-z0-9]*[a-z0-9])?$"},
+        "bundle_revision": {"type": "string", "minLength": 1},
+        "source_plane": {"const": "reference-data"},
+        "source_revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "mount_path": {"const": "/databases"},
+        "read_only": {"const": true},
+        "runtime_argument": {"const": "--db_dir=/databases"}
+      }
+    },
+    "runtime_constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["binary_compatibility", "candidate_accelerator_families", "candidate_cuda_architectures", "qualification_state", "blackwell_state", "blackwell_unblock_requires_one_of", "external_immutable_artifacts", "binary_evidence", "evidence"],
+      "properties": {
+        "binary_compatibility": {"const": "candidate-hopper-sm90-cubin-no-ptx"},
+        "candidate_accelerator_families": {"const": ["Hopper"]},
+        "candidate_cuda_architectures": {"const": ["sm90"]},
+        "qualification_state": {"const": "pending-exact-image-h100-semantic-test"},
+        "blackwell_state": {"const": "blocked"},
+        "blackwell_unblock_requires_one_of": {"const": ["qualified-sdpa-fallback-image", "target-aware-blackwell-image"]},
+        "external_immutable_artifacts": {"const": ["esmc-6b", "esmfold2-ccd"]},
+        "binary_evidence": {"$ref": "#/$defs/binary_evidence"},
+        "evidence": {"type": "string", "pattern": "^evidence/[A-Za-z0-9._-]+\\.json$"}
+      }
+    },
+    "runtime_handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "model_id", "variant_id", "source", "checkpoint", "localization", "image", "adapter", "semantic_smoke"],
+      "properties": {
+        "schema": {"const": "fs2-serve.nebius.ai/public-artifact-runtime-handoff/v1"},
+        "model_id": {"type": "string", "minLength": 1},
+        "variant_id": {"type": "string", "minLength": 1},
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "revision", "tag", "model_name"],
+          "properties": {
+            "repository": {"type": "string", "pattern": "^https://"},
+            "revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+            "tag": {"type": "string", "minLength": 1},
+            "model_name": {"type": "string", "minLength": 1}
+          }
+        },
+        "checkpoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["artifact_id", "source_path", "mount_path", "runtime_path", "bytes", "sha256", "md5", "provenance_state", "mirror_repository", "mirror_revision"],
+          "properties": {
+            "artifact_id": {"type": "string", "minLength": 1},
+            "source_path": {"type": "string", "minLength": 1},
+            "mount_path": {"type": "string", "pattern": "^/models/"},
+            "runtime_path": {"type": "string", "pattern": "^/models/"},
+            "bytes": {"type": "integer", "minimum": 1},
+            "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "md5": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+            "provenance_state": {"const": "mirror-verified-not-publisher-byte-compared"},
+            "mirror_repository": {"type": "string", "minLength": 1},
+            "mirror_revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"}
+          }
+        },
+        "localization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["artifact_id", "mount_path", "manifest_path", "manifest_schema", "manifest_sha256", "ready_marker_path", "source_content_digest_sha256", "content_digest_sha256", "files", "required_files"],
+          "properties": {
+            "artifact_id": {"const": "protenix-v2"},
+            "mount_path": {"const": "/models/protenix-v2"},
+            "manifest_path": {"const": "/models/protenix-v2/manifest.json"},
+            "manifest_schema": {"const": "fs2.nebius.ai/protenix-v2-composite-artifact/v1"},
+            "manifest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "ready_marker_path": {"const": "/models/protenix-v2/.fs2-manifest-sha256"},
+            "source_content_digest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "content_digest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "files": {
+              "type": "array",
+              "minItems": 7,
+              "maxItems": 7,
+              "items": {"$ref": "#/$defs/localized_file"}
+            },
+            "required_files": {
+              "type": "array",
+              "minItems": 7,
+              "maxItems": 7,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runtime_id", "source_revision", "candidate_tag", "runtime_base_image", "entrypoint", "required_checkpoint_path", "required_manifest_path", "required_manifest_sha256", "required_ready_marker_path", "required_content_sha256", "digest_required", "known_unqualified_digests"],
+          "properties": {
+            "runtime_id": {"type": "string", "minLength": 1},
+            "source_revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+            "candidate_tag": {"type": "string", "minLength": 1},
+            "runtime_base_image": {"type": "string", "pattern": "@sha256:[a-f0-9]{64}$"},
+            "entrypoint": {"type": "string", "pattern": "^/"},
+            "required_checkpoint_path": {"type": "string", "pattern": "^/models/"},
+            "required_manifest_path": {"const": "/models/protenix-v2/manifest.json"},
+            "required_manifest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "required_ready_marker_path": {"const": "/models/protenix-v2/.fs2-manifest-sha256"},
+            "required_content_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "digest_required": {"const": true},
+            "known_unqualified_digests": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+            }
+          }
+        },
+        "adapter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model_id", "variant_id", "artifact_id", "required_files", "mount_path", "expected_content_sha256", "expected_manifest_sha256", "forbidden_artifact_ids"],
+          "properties": {
+            "model_id": {"type": "string", "minLength": 1},
+            "variant_id": {"type": "string", "minLength": 1},
+            "artifact_id": {"type": "string", "minLength": 1},
+            "required_files": {"type": "array", "minItems": 7, "maxItems": 7, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+            "mount_path": {"type": "string", "pattern": "^/models/"},
+            "expected_content_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "expected_manifest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "forbidden_artifact_ids": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "semantic_smoke": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "target", "fixture", "network_mode", "preprocessing", "stages", "required_evidence"],
+          "properties": {
+            "state": {"const": "required-not-yet-qualified"},
+            "target": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["project_id", "region", "cluster_context", "accelerator_product", "compute_capability"],
+              "properties": {
+                "project_id": {"type": "string", "minLength": 1},
+                "region": {"type": "string", "minLength": 1},
+                "cluster_context": {"type": "string", "minLength": 1},
+                "accelerator_product": {"type": "string", "minLength": 1},
+                "compute_capability": {"type": "string", "minLength": 1}
+              }
+            },
+            "fixture": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "sha256"],
+              "properties": {
+                "path": {"type": "string", "minLength": 1},
+                "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+              }
+            },
+            "network_mode": {"const": "offline"},
+            "preprocessing": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["namespace", "local_queue", "pool", "artifact_id", "mount_path"],
+              "properties": {
+                "namespace": {"type": "string", "minLength": 1},
+                "local_queue": {"type": "string", "minLength": 1},
+                "pool": {"type": "string", "minLength": 1},
+                "artifact_id": {"const": "protenix-v2"},
+                "mount_path": {"const": "/models/protenix-v2"}
+              }
+            },
+            "stages": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "compute", "argv"],
+                "properties": {
+                  "id": {"type": "string", "minLength": 1},
+                  "compute": {"type": "string", "minLength": 1},
+                  "argv": {"type": "array", "minItems": 2, "items": {"type": "string"}}
+                }
+              }
+            },
+            "required_evidence": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "url", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "url": {"type": "string", "pattern": "^https://"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "localized_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "localization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_schema", "transform", "archive_sha256", "mount_paths", "tree"],
+      "properties": {
+        "receipt_schema": {"const": "fs2-serve.nebius.ai/scientific-localization-receipt/v1"},
+        "transform": {"enum": ["safe-extract-tar", "safe-extract-tar-gz", "safe-extract-zip"]},
+        "archive_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "mount_paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^/"}
+        },
+        "tree": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["entry_count", "total_bytes", "inventory_algorithm", "inventory_sha256"],
+          "properties": {
+            "entry_count": {"type": "integer", "minimum": 1},
+            "total_bytes": {"type": "integer", "minimum": 1},
+            "inventory_algorithm": {"const": "fs2-flat-tree-inventory/v1"},
+            "inventory_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "canonical_source", "acquisition_source", "verification"],
+      "properties": {
+        "state": {"const": "mirror-verified-not-publisher-byte-compared"},
+        "canonical_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["publisher", "uri", "source_revision", "publisher_bytes_reachable", "publisher_digest_available"],
+          "properties": {
+            "publisher": {"type": "string", "minLength": 1},
+            "uri": {"type": "string", "pattern": "^https://"},
+            "source_revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+            "publisher_bytes_reachable": {"const": false},
+            "publisher_digest_available": {"const": false}
+          }
+        },
+        "acquisition_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["relationship", "repository", "repository_revision", "url", "lfs_oid_sha256", "bytes"],
+          "properties": {
+            "relationship": {"const": "third-party-mirror"},
+            "repository": {"type": "string", "minLength": 1},
+            "repository_revision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+            "url": {"type": "string", "pattern": "^https://"},
+            "lfs_oid_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "bytes": {"type": "integer", "minimum": 1}
+          }
+        },
+        "verification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["evidence", "evidence_sha256", "sha256", "md5", "safe_torch_load", "root_type", "top_level_key", "checkpoint_key_count", "checkpoint_tensor_count", "checkpoint_tensor_dtypes", "source_state_key_count", "checkpoint_parameter_count", "checkpoint_element_count", "source_parameter_count", "key_shape_inventory_sha256", "inspection_image_digest", "inspection_torch_version", "strict_key_shape_match", "publisher_byte_compared"],
+          "properties": {
+            "evidence": {"type": "string", "minLength": 1},
+            "evidence_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "md5": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+            "safe_torch_load": {"const": "weights-only-mmap-cpu"},
+            "root_type": {"const": "dict"},
+            "top_level_key": {"const": "model"},
+            "checkpoint_key_count": {"type": "integer", "minimum": 1},
+            "checkpoint_tensor_count": {"type": "integer", "minimum": 1},
+            "checkpoint_tensor_dtypes": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["torch.float32"],
+              "properties": {"torch.float32": {"type": "integer", "minimum": 1}}
+            },
+            "source_state_key_count": {"type": "integer", "minimum": 1},
+            "checkpoint_parameter_count": {"type": "integer", "minimum": 1},
+            "checkpoint_element_count": {"type": "integer", "minimum": 1},
+            "source_parameter_count": {"type": "integer", "minimum": 1},
+            "key_shape_inventory_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "inspection_image_digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+            "inspection_torch_version": {"type": "string", "minLength": 1},
+            "strict_key_shape_match": {"const": true},
+            "publisher_byte_compared": {"const": false}
+          }
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["id", "family", "state", "reason", "consumers"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+        "family": {"type": "string", "minLength": 1},
+        "state": {"enum": ["available", "unavailable", "excluded-private"]},
+        "reason": {"type": ["string", "null"]},
+        "consumers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+        "manifest": {"type": "string", "minLength": 1},
+        "sources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source"}},
+        "offline_smoke": {"enum": ["checkpoint", "hf-sharded-snapshot", "esmc-6b-snapshot", "esmfold2-model-snapshot", "ccd-pickle", "binarycif-ccd", "protenix-v2-bundle", "boltzgen-molecules-zip", "archive"]},
+        "localization": {"$ref": "#/$defs/localization"},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"state": {"const": "available"}}},
+          "then": {"required": ["manifest", "sources", "offline_smoke"], "properties": {"reason": {"type": "null"}}},
+          "else": {"properties": {"reason": {"type": "string", "minLength": 1}}, "not": {"anyOf": [{"required": ["manifest"]}, {"required": ["sources"]}, {"required": ["offline_smoke"]}]}}
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}
