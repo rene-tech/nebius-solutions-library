@@ -1105,6 +1105,19 @@ class SemanticJobRenderTests(unittest.TestCase):
                 sorted({1000, 10001, renderer.ACADEMIC_ASSET_GID}),
             )
 
+    def test_the_default_supplemental_group_is_the_published_contract(self) -> None:
+        # academic-asset-readiness.json publishes asset_gid 65532 with
+        # consumer_access "supplemental-group". The claim was later recursively
+        # chowned to group 10001 by pods mounting it with fsGroup 10001, so the
+        # group observed on the volume is damage. Encoding the observation would
+        # make this runtime depend on the fault and break on repair.
+        self.assertEqual(renderer.ACADEMIC_ASSET_GID, 65532)
+        with tempfile.TemporaryDirectory() as name:
+            _, job = self.render(self.handoff(Path(name)), stage="design")
+            context = job["spec"]["template"]["spec"]["securityContext"]
+            self.assertIn(65532, context["supplementalGroups"])
+            self.assertNotIn("fsGroup", context)
+
     def test_supplemental_groups_must_be_positive_integers(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             path = self.handoff(Path(name), supplemental_groups=["1000"])

@@ -206,23 +206,38 @@
       "open_improvement": "narrowing the outer gate so a non-design stage neither reads 5.59 GB of AlphaFold2 nor mounts the licensed tree is a real reduction in licensed surface, but it changes the shared outer entrypoint and would be an r18; not taken unilaterally"
     },
     "observed_artifact_ownership": {
-      "measured_at": "2026-09-03T06:20:00Z on academic-assets-runtime-rwx",
-      "public_trees_today": {
-        "uid": 65532,
-        "gid": 10001,
-        "dir_mode": "0o2775",
-        "file_mode": "0o664",
-        "note": "world-readable, so group membership is not what grants access today"
+      "correction": "an earlier version of this record presented the measured group as if it were the contract. It is not: it is damage, and the adapter task was right to push back rather than harden it.",
+      "published_contract": {
+        "source": "catalog/runtime/contracts/academic-asset-readiness.json on origin/main",
+        "asset_gid": 65532,
+        "consumer_access": "supplemental-group",
+        "applies_to": "both academic models"
       },
-      "licensed_tree": {
-        "uid": 65532,
-        "gid": 10001,
-        "dir_mode": "0o2770",
-        "file_mode": "0o2770",
-        "note": "group-readable only; the run reaches it through runAsGroup 10001"
+      "measured_state": {
+        "measured_at": "2026-09-03T06:20:00Z on academic-assets-runtime-rwx",
+        "licensed_tree": {
+          "uid": 65532,
+          "gid": 10001,
+          "dir_mode": "0o2770",
+          "file_mode": "0o2770"
+        },
+        "public_trees_today": {
+          "uid": 65532,
+          "gid": 10001,
+          "dir_mode": "0o2775",
+          "file_mode": "0o664"
+        },
+        "verdict": "post-chown damage, not the intended delivery"
       },
-      "reference_data_plane_gid": "model-artifacts/render_jobs.py writes /reference-data as uid/gid 1000, which is a different place from the academic claim measured above",
-      "consequence": "supplemental groups are now declared by the handoff instead of assumed by the renderer"
+      "reported_cause": "two pods mounted the claim with fsGroup 10001, whose default fsGroupChangePolicy Always makes the kubelet recursively chown the volume; reported by the AlphaFold 3 runtime task and corroborated read-only by the BindCraft adapter task. The pods are gone; the chown persists.",
+      "effect_on_a_conforming_pod": "a pod that joins 65532 as a supplemental group and sets no fsGroup, which is what the contract specifies, now gets EACCES on a mode-2770 tree owned by group 10001",
+      "this_renderer": {
+        "default_supplemental_group": 65532,
+        "why_unchanged": "65532 is the published contract; the measurement is damage and must not be encoded",
+        "works_in_both_states": "the Pod runs runAsUser 10001 runAsGroup 10001 with supplemental group 65532, so it reaches a repaired tree through the supplemental group and the damaged tree through its primary group",
+        "hazard_to_watch": "that robustness masks the fault: an acceptance run would succeed against the damaged claim and must not be read as proving the 65532 supplemental-group access contract. Re-measure the ownership at run time and record it beside the result."
+      },
+      "shared_repair": "repairing the claim is the academic-assets owner's call, not this task's; four tasks have now hit it and none has repaired it, and this task will not chown a shared claim it does not own"
     }
   },
   "external_tree_contract": {
