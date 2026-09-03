@@ -26,6 +26,7 @@ from .models import (
     MaterializationMode,
     PreemptionMode,
     ResourceClass,
+    RuntimeArtifactAggregateTree,
     RuntimeArtifactFile,
     RuntimeArtifactLocalization,
     RuntimeArtifactMount,
@@ -38,15 +39,21 @@ from .models import (
     ScientificStagePlan,
     ScientificStageState,
     ServiceClass,
+    StageExecutionBinding,
     StageInvocation,
+    StagePlacementClass,
+    StageResourceEnvelope,
     StageSchedulingDecision,
     StageStatus,
+    StageToleration,
+    StageVolumeBinding,
     VerifiedInputManifest,
     WorkloadKind,
     WorkloadRef,
 )
 
-STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v7"
+STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v8"
+PREVIOUS_STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v7"
 LEGACY_STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v6"
 MAX_STATE_BYTES = 4 * 1024 * 1024
 
@@ -155,6 +162,18 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                     {"path": file.path, "digest": file.digest, "size_bytes": file.size_bytes} for file in item.files
                 ],
                 "localization_receipt_digest": item.localization_receipt_digest,
+                "aggregate_tree": (
+                    None
+                    if item.aggregate_tree is None
+                    else {
+                        "tree_digest": item.aggregate_tree.tree_digest,
+                        "manifest_digest": item.aggregate_tree.manifest_digest,
+                        "manifest_algorithm": item.aggregate_tree.manifest_algorithm,
+                        "file_count": item.aggregate_tree.file_count,
+                        "expanded_bytes": item.aggregate_tree.expanded_bytes,
+                        "canonical_path": item.aggregate_tree.canonical_path,
+                    }
+                ),
             }
             for item in state.runtime_artifacts
         ],
@@ -167,6 +186,36 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                 "source_revision": state.execution_plan.source_revision,
                 "request_sha256": state.execution_plan.request_sha256,
                 "required_model_artifacts": list(state.execution_plan.required_model_artifacts),
+                "execution_map_sha256": state.execution_plan.execution_map_sha256,
+                "stage_bindings": [
+                    {
+                        "stage_id": binding.stage_id,
+                        "image": binding.image,
+                        "collector_id": binding.collector_id,
+                        "validator_id": binding.validator_id,
+                        "mounts": [
+                            {
+                                "name": mount.name,
+                                "kind": mount.kind,
+                                "claim_name": mount.claim_name,
+                                "host_path": mount.host_path,
+                                "mount_path": mount.mount_path,
+                                "sub_path": mount.sub_path,
+                                "read_only": mount.read_only,
+                            }
+                            for mount in binding.mounts
+                        ],
+                        "service_account_name": binding.service_account_name,
+                        "cpu": binding.cpu,
+                        "memory": binding.memory,
+                        "ephemeral_storage": binding.ephemeral_storage,
+                        "active_deadline_seconds": binding.active_deadline_seconds,
+                        "termination_grace_seconds": binding.termination_grace_seconds,
+                        "environment": [list(item) for item in binding.environment],
+                        "required_node_labels": [list(item) for item in binding.required_node_labels],
+                    }
+                    for binding in state.execution_plan.stage_bindings
+                ],
                 "invocations": [
                     {
                         "stage_id": invocation.stage_id,
@@ -226,6 +275,19 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                     "max_parallelism": stage.max_parallelism,
                     "checkpoint_mode": stage.checkpoint_mode.value,
                     "preemption_mode": stage.preemption_mode.value,
+                    "placement_class": None if stage.placement_class is None else stage.placement_class.value,
+                    "resources": (
+                        None
+                        if stage.resources is None
+                        else {
+                            "cpu_millis": stage.resources.cpu_millis,
+                            "memory_bytes": stage.resources.memory_bytes,
+                            "ephemeral_storage_bytes": stage.resources.ephemeral_storage_bytes,
+                            "limit_cpu_millis": stage.resources.limit_cpu_millis,
+                            "limit_memory_bytes": stage.resources.limit_memory_bytes,
+                            "limit_ephemeral_storage_bytes": stage.resources.limit_ephemeral_storage_bytes,
+                        }
+                    ),
                 }
                 for stage in state.plan.stages
             ]
@@ -238,6 +300,7 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
             "model_lane": state.scheduling.model_lane,
             "workload_namespace": state.scheduling.workload_namespace,
             "route_namespace": state.scheduling.route_namespace,
+            "raw_contract_sha256": state.scheduling.raw_contract_sha256,
             "stages": [
                 {
                     "stage_id": stage.stage_id,
@@ -253,6 +316,20 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                     "max_execution_seconds": stage.max_execution_seconds,
                     "checkpoint_mode": stage.checkpoint_mode.value,
                     "preemption_mode": stage.preemption_mode.value,
+                    "placement_class": None if stage.placement_class is None else stage.placement_class.value,
+                    "workload_namespace": stage.workload_namespace,
+                    "route_namespace": stage.route_namespace,
+                    "requested_resource_flavor": stage.requested_resource_flavor,
+                    "node_selector": [list(item) for item in stage.node_selector],
+                    "tolerations": [
+                        {
+                            "key": item.key,
+                            "operator": item.operator,
+                            "value": item.value,
+                            "effect": item.effect,
+                        }
+                        for item in stage.tolerations
+                    ],
                 }
                 for stage in state.scheduling.stages
             ],
@@ -351,9 +428,10 @@ def state_from_value(raw: object) -> ScientificBatchState:
         "scientific-batch state",
     )
     schema_version = value["schema_version"]
-    if schema_version not in {LEGACY_STATE_SCHEMA, STATE_SCHEMA}:
+    if schema_version not in {LEGACY_STATE_SCHEMA, PREVIOUS_STATE_SCHEMA, STATE_SCHEMA}:
         raise ValueError("stored scientific-batch state schema is unsupported")
     legacy_v6 = schema_version == LEGACY_STATE_SCHEMA
+    legacy_before_v8 = schema_version in {LEGACY_STATE_SCHEMA, PREVIOUS_STATE_SCHEMA}
 
     plan_value = _object(value["plan"], {"stages"}, "scientific-batch plan")
     plan_stages: list[ScientificStagePlan] = []
@@ -370,8 +448,43 @@ def state_from_value(raw: object) -> ScientificBatchState:
         "checkpoint_mode",
         "preemption_mode",
     }
+    if not legacy_before_v8:
+        stage_plan_keys.update({"placement_class", "resources"})
     for raw_stage in _items(plan_value["stages"], "scientific-batch plan stages", maximum=64):
         stage = _object(raw_stage, stage_plan_keys, "scientific-batch plan stage")
+        resources = None
+        placement_class = None
+        if not legacy_before_v8:
+            placement_class = (
+                None
+                if stage["placement_class"] is None
+                else StagePlacementClass(_string(stage["placement_class"], "stage placement class"))
+            )
+            if stage["resources"] is not None:
+                resource_value = _object(
+                    stage["resources"],
+                    {
+                        "cpu_millis",
+                        "memory_bytes",
+                        "ephemeral_storage_bytes",
+                        "limit_cpu_millis",
+                        "limit_memory_bytes",
+                        "limit_ephemeral_storage_bytes",
+                    },
+                    "stage resources",
+                )
+                resources = StageResourceEnvelope(
+                    cpu_millis=_integer(resource_value["cpu_millis"], "stage CPU request"),
+                    memory_bytes=_integer(resource_value["memory_bytes"], "stage memory request"),
+                    ephemeral_storage_bytes=_integer(
+                        resource_value["ephemeral_storage_bytes"], "stage ephemeral storage request"
+                    ),
+                    limit_cpu_millis=_integer(resource_value["limit_cpu_millis"], "stage CPU limit"),
+                    limit_memory_bytes=_integer(resource_value["limit_memory_bytes"], "stage memory limit"),
+                    limit_ephemeral_storage_bytes=_integer(
+                        resource_value["limit_ephemeral_storage_bytes"], "stage ephemeral storage limit"
+                    ),
+                )
         plan_stages.append(
             ScientificStagePlan(
                 stage_id=_string(stage["stage_id"], "stage ID"),
@@ -385,6 +498,8 @@ def state_from_value(raw: object) -> ScientificBatchState:
                 max_parallelism=_integer(stage["max_parallelism"], "stage maximum parallelism"),
                 checkpoint_mode=CheckpointMode(_string(stage["checkpoint_mode"], "stage checkpoint mode")),
                 preemption_mode=PreemptionMode(_string(stage["preemption_mode"], "stage preemption mode")),
+                placement_class=placement_class,
+                resources=resources,
             )
         )
     plan = ScientificBatchPlan(tuple(plan_stages))
@@ -440,17 +555,38 @@ def state_from_value(raw: object) -> ScientificBatchState:
 
     runtime_artifacts: list[RuntimeArtifactLocalization] = []
     for raw_artifact in _items(value["runtime_artifacts"], "runtime artifact localizations", maximum=64):
-        artifact = _object(
-            raw_artifact,
-            {
-                "logical_artifact_id",
-                "mount_path",
-                "content_digest",
-                "files",
-                "localization_receipt_digest",
-            },
-            "runtime artifact localization",
-        )
+        artifact_fields = {
+            "logical_artifact_id",
+            "mount_path",
+            "content_digest",
+            "files",
+            "localization_receipt_digest",
+        }
+        if not legacy_before_v8:
+            artifact_fields.add("aggregate_tree")
+        artifact = _object(raw_artifact, artifact_fields, "runtime artifact localization")
+        aggregate_tree = None
+        if not legacy_before_v8 and artifact["aggregate_tree"] is not None:
+            tree = _object(
+                artifact["aggregate_tree"],
+                {
+                    "tree_digest",
+                    "manifest_digest",
+                    "manifest_algorithm",
+                    "file_count",
+                    "expanded_bytes",
+                    "canonical_path",
+                },
+                "runtime artifact aggregate tree",
+            )
+            aggregate_tree = RuntimeArtifactAggregateTree(
+                tree_digest=_string(tree["tree_digest"], "runtime artifact tree digest"),
+                manifest_digest=_string(tree["manifest_digest"], "runtime artifact tree manifest digest"),
+                manifest_algorithm=_string(tree["manifest_algorithm"], "runtime artifact tree manifest algorithm"),
+                file_count=_integer(tree["file_count"], "runtime artifact tree file count"),
+                expanded_bytes=_integer(tree["expanded_bytes"], "runtime artifact tree bytes"),
+                canonical_path=_string(tree["canonical_path"], "runtime artifact tree path"),
+            )
         runtime_artifacts.append(
             RuntimeArtifactLocalization(
                 logical_artifact_id=_string(artifact["logical_artifact_id"], "runtime artifact ID"),
@@ -470,23 +606,23 @@ def state_from_value(raw: object) -> ScientificBatchState:
                 localization_receipt_digest=_string(
                     artifact["localization_receipt_digest"], "runtime artifact localization receipt"
                 ),
+                aggregate_tree=aggregate_tree,
             )
         )
 
     adapter_execution = None
     if value["adapter_execution"] is not None:
-        execution = _object(
-            value["adapter_execution"],
-            {
-                "model_id",
-                "variant_id",
-                "source_revision",
-                "request_sha256",
-                "required_model_artifacts",
-                "invocations",
-            },
-            "adapter execution",
-        )
+        execution_fields = {
+            "model_id",
+            "variant_id",
+            "source_revision",
+            "request_sha256",
+            "required_model_artifacts",
+            "invocations",
+        }
+        if not legacy_before_v8:
+            execution_fields.update({"execution_map_sha256", "stage_bindings"})
+        execution = _object(value["adapter_execution"], execution_fields, "adapter execution")
         invocations: list[StageInvocation] = []
         for raw_invocation in _items(execution["invocations"], "adapter invocations"):
             invocation = _object(
@@ -599,6 +735,86 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     runtime_mounts=tuple(runtime_mounts),
                 )
             )
+        stage_bindings: list[StageExecutionBinding] = []
+        if not legacy_before_v8:
+            for raw_binding in _items(execution["stage_bindings"], "stage execution bindings", maximum=64):
+                binding = _object(
+                    raw_binding,
+                    {
+                        "stage_id",
+                        "image",
+                        "collector_id",
+                        "validator_id",
+                        "mounts",
+                        "service_account_name",
+                        "cpu",
+                        "memory",
+                        "ephemeral_storage",
+                        "active_deadline_seconds",
+                        "termination_grace_seconds",
+                        "environment",
+                        "required_node_labels",
+                    },
+                    "stage execution binding",
+                )
+                mounts = tuple(
+                    StageVolumeBinding(
+                        name=_string(mount["name"], "stage volume name"),
+                        kind=_string(mount["kind"], "stage volume kind"),
+                        claim_name=_optional_string(mount["claim_name"], "stage volume claim"),
+                        host_path=_optional_string(mount["host_path"], "stage volume host path"),
+                        mount_path=_string(mount["mount_path"], "stage volume mount path"),
+                        sub_path=_optional_string(mount["sub_path"], "stage volume sub-path"),
+                        read_only=_boolean(mount["read_only"], "stage volume read-only"),
+                    )
+                    for mount in (
+                        _object(
+                            raw_mount,
+                            {
+                                "name",
+                                "kind",
+                                "claim_name",
+                                "host_path",
+                                "mount_path",
+                                "sub_path",
+                                "read_only",
+                            },
+                            "stage volume binding",
+                        )
+                        for raw_mount in _items(binding["mounts"], "stage volume bindings", maximum=64)
+                    )
+                )
+
+                def pairs(raw: object, label: str) -> tuple[tuple[str, str], ...]:
+                    result: list[tuple[str, str]] = []
+                    for raw_item in _items(raw, label, maximum=128):
+                        item = _items(raw_item, label, maximum=2)
+                        if len(item) != 2:
+                            raise ValueError(f"stored {label} item fields differ")
+                        result.append((_string(item[0], label), _string(item[1], label)))
+                    return tuple(result)
+
+                stage_bindings.append(
+                    StageExecutionBinding(
+                        stage_id=_string(binding["stage_id"], "stage execution binding ID"),
+                        image=_string(binding["image"], "stage execution image"),
+                        collector_id=_string(binding["collector_id"], "stage execution collector"),
+                        validator_id=_string(binding["validator_id"], "stage execution validator"),
+                        mounts=mounts,
+                        service_account_name=_string(
+                            binding["service_account_name"], "stage execution service account"
+                        ),
+                        cpu=_string(binding["cpu"], "stage execution CPU"),
+                        memory=_string(binding["memory"], "stage execution memory"),
+                        ephemeral_storage=_string(binding["ephemeral_storage"], "stage execution ephemeral storage"),
+                        active_deadline_seconds=_integer(binding["active_deadline_seconds"], "stage active deadline"),
+                        termination_grace_seconds=_integer(
+                            binding["termination_grace_seconds"], "stage termination grace"
+                        ),
+                        environment=pairs(binding["environment"], "stage execution environment"),
+                        required_node_labels=pairs(binding["required_node_labels"], "stage execution node label"),
+                    )
+                )
         adapter_execution = AdapterExecutionPlan(
             model_id=_string(execution["model_id"], "adapter model ID"),
             variant_id=_string(execution["variant_id"], "adapter variant ID"),
@@ -609,6 +825,12 @@ def state_from_value(raw: object) -> ScientificBatchState:
             required_model_artifacts=_string_items(
                 execution["required_model_artifacts"], "required runtime artifact", maximum=64
             ),
+            execution_map_sha256=(
+                None
+                if legacy_before_v8
+                else _optional_string(execution["execution_map_sha256"], "execution map digest")
+            ),
+            stage_bindings=tuple(stage_bindings),
         )
 
     scheduling_fields = {
@@ -621,6 +843,8 @@ def state_from_value(raw: object) -> ScientificBatchState:
     }
     if not legacy_v6:
         scheduling_fields.update({"workload_namespace", "route_namespace"})
+    if not legacy_before_v8:
+        scheduling_fields.add("raw_contract_sha256")
     scheduling_value = _object(
         value["scheduling"],
         scheduling_fields,
@@ -641,12 +865,47 @@ def state_from_value(raw: object) -> ScientificBatchState:
         "preemption_mode",
     }
     scheduling_keys.add("admitted_resource_flavor" if legacy_v6 else "resource_class")
+    if not legacy_before_v8:
+        scheduling_keys.update(
+            {
+                "placement_class",
+                "workload_namespace",
+                "route_namespace",
+                "requested_resource_flavor",
+                "node_selector",
+                "tolerations",
+            }
+        )
     decisions: list[StageSchedulingDecision] = []
     for raw_decision in _items(scheduling_value["stages"], "scheduling stages", maximum=64):
         decision = _object(raw_decision, scheduling_keys, "scheduling stage")
         stage_id = _string(decision["stage_id"], "scheduling stage ID")
         if legacy_v6:
             _optional_string(decision["admitted_resource_flavor"], "legacy admitted ResourceFlavor")
+        node_selector: tuple[tuple[str, str], ...] = ()
+        tolerations: tuple[StageToleration, ...] = ()
+        if not legacy_before_v8:
+            selector_items: list[tuple[str, str]] = []
+            for raw_selector in _items(decision["node_selector"], "stage node selector", maximum=32):
+                selector = _items(raw_selector, "stage node selector item", maximum=2)
+                if len(selector) != 2:
+                    raise ValueError("stored stage node selector item fields differ")
+                selector_items.append(
+                    (_string(selector[0], "stage node selector key"), _string(selector[1], "stage node selector value"))
+                )
+            node_selector = tuple(selector_items)
+            tolerations = tuple(
+                StageToleration(
+                    key=_string(item["key"], "stage toleration key"),
+                    operator=_string(item["operator"], "stage toleration operator"),
+                    value=_optional_string(item["value"], "stage toleration value"),
+                    effect=_string(item["effect"], "stage toleration effect"),
+                )
+                for item in (
+                    _object(raw_item, {"key", "operator", "value", "effect"}, "stage toleration")
+                    for raw_item in _items(decision["tolerations"], "stage tolerations", maximum=32)
+                )
+            )
         decisions.append(
             StageSchedulingDecision(
                 stage_id=stage_id,
@@ -678,6 +937,26 @@ def state_from_value(raw: object) -> ScientificBatchState:
                 ),
                 checkpoint_mode=CheckpointMode(_string(decision["checkpoint_mode"], "checkpoint mode")),
                 preemption_mode=PreemptionMode(_string(decision["preemption_mode"], "preemption mode")),
+                placement_class=(
+                    None
+                    if legacy_before_v8 or decision["placement_class"] is None
+                    else StagePlacementClass(_string(decision["placement_class"], "stage placement class"))
+                ),
+                workload_namespace=(
+                    None
+                    if legacy_before_v8
+                    else _optional_string(decision["workload_namespace"], "stage workload namespace")
+                ),
+                route_namespace=(
+                    None if legacy_before_v8 else _optional_string(decision["route_namespace"], "stage route namespace")
+                ),
+                requested_resource_flavor=(
+                    None
+                    if legacy_before_v8
+                    else _optional_string(decision["requested_resource_flavor"], "requested resource flavor")
+                ),
+                node_selector=node_selector,
+                tolerations=tolerations,
             )
         )
     legacy_namespaces: set[str] = set()
@@ -715,6 +994,11 @@ def state_from_value(raw: object) -> ScientificBatchState:
         workload_namespace=workload_namespace,
         route_namespace=route_namespace,
         stages=tuple(decisions),
+        raw_contract_sha256=(
+            None
+            if legacy_before_v8
+            else _optional_string(scheduling_value["raw_contract_sha256"], "raw scheduling contract digest")
+        ),
     )
 
     stage_state_keys = {"stage_id", "status", "failure_code", "attempts"}

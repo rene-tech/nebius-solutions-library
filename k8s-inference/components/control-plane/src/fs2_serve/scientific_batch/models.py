@@ -68,6 +68,14 @@ class ResourceClass(StrEnum):
     GPU = "gpu"
 
 
+class StagePlacementClass(StrEnum):
+    """Operator-owned placement lane frozen independently for every stage."""
+
+    REFERENCE_DATA_CPU = "reference-data-cpu"
+    GENERAL_CPU = "general-cpu"
+    ACCELERATOR = "accelerator"
+
+
 class CheckpointMode(StrEnum):
     NONE = "none"
     RESTART = "restart"
@@ -189,6 +197,38 @@ def _check_variant(value: str) -> None:
 
 
 @dataclass(frozen=True, slots=True)
+class StageResourceEnvelope:
+    """Exact request and limit bytes frozen from the catalog profile."""
+
+    cpu_millis: int
+    memory_bytes: int
+    ephemeral_storage_bytes: int
+    limit_cpu_millis: int
+    limit_memory_bytes: int
+    limit_ephemeral_storage_bytes: int
+
+    def __post_init__(self) -> None:
+        values = (
+            self.cpu_millis,
+            self.memory_bytes,
+            self.ephemeral_storage_bytes,
+            self.limit_cpu_millis,
+            self.limit_memory_bytes,
+            self.limit_ephemeral_storage_bytes,
+        )
+        if any(not isinstance(value, int) or isinstance(value, bool) or value < 1 for value in values):
+            raise ValueError("stage resource requests and limits must be positive integers")
+        if self.cpu_millis > 512_000 or self.limit_cpu_millis > 512_000:
+            raise ValueError("stage CPU resources exceed the controller bound")
+        if (
+            self.limit_cpu_millis < self.cpu_millis
+            or self.limit_memory_bytes < self.memory_bytes
+            or self.limit_ephemeral_storage_bytes < self.ephemeral_storage_bytes
+        ):
+            raise ValueError("stage resource limits cannot be smaller than requests")
+
+
+@dataclass(frozen=True, slots=True)
 class ScientificStagePlan:
     stage_id: str
     depends_on: tuple[str, ...] = ()
@@ -201,6 +241,8 @@ class ScientificStagePlan:
     max_parallelism: int = 1024
     checkpoint_mode: CheckpointMode = CheckpointMode.RESTART
     preemption_mode: PreemptionMode = PreemptionMode.RESTARTABLE
+    placement_class: StagePlacementClass | None = None
+    resources: StageResourceEnvelope | None = None
 
     def __post_init__(self) -> None:
         _check_name(self.stage_id, "stage_id")
@@ -228,6 +270,13 @@ class ScientificStagePlan:
             raise ValueError("expanded stage parallelism is outside the catalog profile bounds")
         if self.checkpoint_mode is CheckpointMode.RESUME and self.preemption_mode is not PreemptionMode.CHECKPOINTABLE:
             raise ValueError("resume checkpoints require checkpointable preemption")
+        if self.placement_class is not None:
+            if self.resource_class is ResourceClass.GPU and self.placement_class is not StagePlacementClass.ACCELERATOR:
+                raise ValueError("GPU stages require the accelerator placement class")
+            if self.resource_class is ResourceClass.CPU and self.placement_class is StagePlacementClass.ACCELERATOR:
+                raise ValueError("CPU stages require a CPU placement class")
+        if (self.placement_class is None) != (self.resources is None):
+            raise ValueError("stage placement and resources must be frozen together")
 
     @property
     def workload_units(self) -> tuple[str | None, ...]:
@@ -386,6 +435,38 @@ class RuntimeArtifactFile:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeArtifactAggregateTree:
+    """Bounded identity for a published tree too large to enumerate in state."""
+
+    tree_digest: str
+    manifest_digest: str
+    file_count: int
+    expanded_bytes: int
+    canonical_path: str
+    manifest_algorithm: str = "fs2-tree-manifest/v1"
+
+    def __post_init__(self) -> None:
+        _check_digest(self.tree_digest, "runtime artifact tree digest")
+        _check_digest(self.manifest_digest, "runtime artifact tree manifest digest")
+        if self.tree_digest == self.manifest_digest:
+            raise ValueError("tree and independent manifest digests must differ")
+        if self.manifest_algorithm != "fs2-tree-manifest/v1":
+            raise ValueError("runtime artifact tree manifest algorithm is unsupported")
+        if not 1 <= self.file_count <= 100_000_000:
+            raise ValueError("runtime artifact tree file count is outside the bound")
+        if not 1 <= self.expanded_bytes <= 128 * 1024**4:
+            raise ValueError("runtime artifact expanded bytes are outside the bound")
+        path = PurePosixPath(self.canonical_path)
+        parts = path.parts
+        if path.is_absolute() or not parts or any(part in {"", ".", ".."} for part in parts):
+            raise ValueError("runtime artifact tree path must be a safe published relative path")
+        if "sha256" in parts and (
+            len(parts) < 2 or parts[-2] != "sha256" or parts[-1] != self.tree_digest.removeprefix("sha256:")
+        ):
+            raise ValueError("content-addressed runtime artifact path differs from its tree digest")
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeArtifactLocalization:
     """Trusted, exact localization proof frozen before workload admission."""
 
@@ -394,6 +475,7 @@ class RuntimeArtifactLocalization:
     content_digest: str
     files: tuple[RuntimeArtifactFile, ...]
     localization_receipt_digest: str
+    aggregate_tree: RuntimeArtifactAggregateTree | None = None
 
     def __post_init__(self) -> None:
         if _ARTIFACT_ID_RE.fullmatch(self.logical_artifact_id) is None:
@@ -404,8 +486,12 @@ class RuntimeArtifactLocalization:
         _check_digest(self.content_digest, "runtime artifact content digest")
         _check_digest(self.localization_receipt_digest, "runtime artifact localization receipt")
         paths = tuple(item.path for item in self.files)
-        if not paths or len(paths) != len(set(paths)):
-            raise ValueError("runtime artifact file manifest must be non-empty and unique")
+        if len(paths) != len(set(paths)):
+            raise ValueError("runtime artifact file manifest must be unique")
+        if bool(paths) == (self.aggregate_tree is not None):
+            raise ValueError("runtime artifact localization requires either bounded files or one aggregate tree")
+        if self.aggregate_tree is not None and self.content_digest != self.aggregate_tree.tree_digest:
+            raise ValueError("runtime artifact content digest differs from its aggregate tree")
 
 
 @dataclass(frozen=True, slots=True)
@@ -517,6 +603,71 @@ class StageInvocation:
 
 
 @dataclass(frozen=True, slots=True)
+class StageVolumeBinding:
+    """Frozen physical source for one execution-map stage mount."""
+
+    name: str
+    kind: str
+    claim_name: str | None
+    host_path: str | None
+    mount_path: str
+    sub_path: str | None
+    read_only: bool
+
+    def __post_init__(self) -> None:
+        _check_name(self.name, "stage volume name")
+        if self.kind not in {"artifact-workspace", "reference", "private"}:
+            raise ValueError("stage volume kind is unsupported")
+        if self.kind == "artifact-workspace":
+            if self.claim_name is not None or self.host_path is not None or self.read_only:
+                raise ValueError("attempt workspace must be a writable emptyDir")
+        elif (self.claim_name is None) == (self.host_path is None) or not self.read_only:
+            raise ValueError("runtime stage volumes require one read-only physical source")
+        path = PurePosixPath(self.mount_path)
+        if not path.is_absolute() or path == PurePosixPath("/"):
+            raise ValueError("stage volume mount path must be normalized and absolute")
+        if self.sub_path is not None:
+            relative = PurePosixPath(self.sub_path)
+            if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+                raise ValueError("stage volume sub_path is unsafe")
+
+
+@dataclass(frozen=True, slots=True)
+class StageExecutionBinding:
+    """Exact stage image/resources/source bindings frozen at public admission."""
+
+    stage_id: str
+    image: str
+    collector_id: str
+    validator_id: str
+    mounts: tuple[StageVolumeBinding, ...]
+    service_account_name: str
+    cpu: str
+    memory: str
+    ephemeral_storage: str
+    active_deadline_seconds: int
+    termination_grace_seconds: int
+    environment: tuple[tuple[str, str], ...]
+    required_node_labels: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        _check_name(self.stage_id, "stage execution binding ID")
+        if not self.image or len(self.image) > 1024 or "@sha256:" not in self.image:
+            raise ValueError("stage execution image must use an immutable digest")
+        _check_name(self.service_account_name, "stage execution service account")
+        if not self.mounts or len({item.name for item in self.mounts}) != len(self.mounts):
+            raise ValueError("stage execution mounts must be non-empty and uniquely named")
+        if len(dict(self.environment)) != len(self.environment) or len(dict(self.required_node_labels)) != len(
+            self.required_node_labels
+        ):
+            raise ValueError("stage execution maps must have unique keys")
+        if not 1 <= self.active_deadline_seconds <= 7 * 24 * 3600:
+            raise ValueError("stage active deadline is outside the bound")
+        if not 1 <= self.termination_grace_seconds <= 24 * 3600:
+            raise ValueError("stage termination grace is outside the bound")
+
+
+@dataclass(frozen=True, slots=True)
 class AdapterExecutionPlan:
     """The single catalog-adapter-to-controller execution contract."""
 
@@ -527,6 +678,8 @@ class AdapterExecutionPlan:
     controller_plan: ScientificBatchPlan
     invocations: tuple[StageInvocation, ...]
     required_model_artifacts: tuple[str, ...]
+    execution_map_sha256: str | None = None
+    stage_bindings: tuple[StageExecutionBinding, ...] = ()
 
     def __post_init__(self) -> None:
         _check_name(self.model_id, "model_id")
@@ -562,6 +715,16 @@ class AdapterExecutionPlan:
         sink_stages = {stage.stage_id for stage in self.controller_plan.stages if stage.stage_id not in depended_on}
         if len(sink_stages) != 1 or sum(item.stage_id in sink_stages for item in self.invocations) != 1:
             raise ValueError("an executable plan requires one canonical terminal output invocation")
+        if self.execution_map_sha256 is not None:
+            _check_digest(self.execution_map_sha256, "execution map digest")
+        binding_ids = tuple(item.stage_id for item in self.stage_bindings)
+        expected_binding_ids = {stage.stage_id for stage in self.controller_plan.stages}
+        if self.stage_bindings and (
+            len(binding_ids) != len(set(binding_ids)) or set(binding_ids) != expected_binding_ids
+        ):
+            raise ValueError("execution-map stage bindings must cover the controller plan exactly")
+        if bool(self.stage_bindings) != (self.execution_map_sha256 is not None):
+            raise ValueError("execution-map digest and stage bindings must be frozen together")
 
     def assert_controller_bound(self) -> None:
         """Reject an adapter plan that still lacks trusted execution evidence."""
@@ -581,10 +744,15 @@ class AdapterExecutionPlan:
                 raise ValueError("controller runtime localization receipts are not bound")
             if invocation.produces in consumed_outputs and invocation.handoff_name is None:
                 raise ValueError("a predecessor consumed downstream must declare an exact handoff entry")
+        if self.execution_map_sha256 is None or not self.stage_bindings:
+            raise ValueError("controller execution-map image and resource bindings are not frozen")
 
     def invocation(self, stage_id: str, shard_id: str | None) -> StageInvocation:
         key = (stage_id, shard_id or "gang")
         return next(item for item in self.invocations if (item.stage_id, item.shard_id) == key)
+
+    def execution_binding(self, stage_id: str) -> StageExecutionBinding:
+        return next(item for item in self.stage_bindings if item.stage_id == stage_id)
 
     def producer(self, logical_artifact_id: str) -> StageInvocation | None:
         return next((item for item in self.invocations if item.produces == logical_artifact_id), None)
@@ -674,6 +842,26 @@ class ResolvedArtifactMaterialization:
 
 
 @dataclass(frozen=True, slots=True)
+class StageToleration:
+    key: str
+    operator: str
+    value: str | None
+    effect: str
+
+    def __post_init__(self) -> None:
+        if not self.key or len(self.key) > 253:
+            raise ValueError("stage toleration key is invalid")
+        if self.operator not in {"Equal", "Exists"} or self.effect not in {
+            "NoSchedule",
+            "PreferNoSchedule",
+            "NoExecute",
+        }:
+            raise ValueError("stage toleration policy is invalid")
+        if (self.operator == "Exists") != (self.value is None):
+            raise ValueError("Exists tolerations omit value; Equal tolerations require one")
+
+
+@dataclass(frozen=True, slots=True)
 class StageSchedulingDecision:
     stage_id: str
     resource_class: ResourceClass
@@ -688,6 +876,12 @@ class StageSchedulingDecision:
     max_execution_seconds: int | None
     checkpoint_mode: CheckpointMode
     preemption_mode: PreemptionMode
+    placement_class: StagePlacementClass | None = None
+    workload_namespace: str | None = None
+    route_namespace: str | None = None
+    requested_resource_flavor: str | None = None
+    node_selector: tuple[tuple[str, str], ...] = ()
+    tolerations: tuple[StageToleration, ...] = ()
 
     def __post_init__(self) -> None:
         _check_name(self.stage_id, "stage_id")
@@ -699,6 +893,18 @@ class StageSchedulingDecision:
             _check_name(value, label)
         if not isinstance(self.resource_class, ResourceClass):
             raise ValueError("resource_class must be a supported scheduling resource class")
+        if self.workload_namespace is not None:
+            _check_name(self.workload_namespace, "stage workload namespace")
+        if self.route_namespace is not None:
+            _check_name(self.route_namespace, "stage route namespace")
+        if (self.workload_namespace is None) != (self.route_namespace is None):
+            raise ValueError("stage workload and route namespaces must be frozen together")
+        if self.workload_namespace is not None and self.workload_namespace != self.route_namespace:
+            raise ValueError("stage workload namespace differs from its LocalQueue namespace")
+        if self.requested_resource_flavor is not None:
+            _check_name(self.requested_resource_flavor, "requested resource flavor")
+        if len(dict(self.node_selector)) != len(self.node_selector):
+            raise ValueError("stage node selector keys must be unique")
         if len(self.resolved_pool_preference) != len(set(self.resolved_pool_preference)):
             raise ValueError("resolved_pool_preference must be unique")
         for pool in self.resolved_pool_preference:
@@ -717,6 +923,11 @@ class StageSchedulingDecision:
                 raise ValueError("GPU scheduling requires an exact accelerator request and pool preference")
         elif self.resolved_pool_preference or self.accelerator_resource_name is not None or self.accelerator_count != 0:
             raise ValueError("CPU scheduling cannot retain accelerator resource or pool preferences")
+        if self.placement_class is not None:
+            if self.resource_class is ResourceClass.GPU and self.placement_class is not StagePlacementClass.ACCELERATOR:
+                raise ValueError("GPU scheduling requires accelerator placement")
+            if self.resource_class is ResourceClass.CPU and self.placement_class is StagePlacementClass.ACCELERATOR:
+                raise ValueError("CPU scheduling requires a CPU placement")
         if self.max_queue_seconds is not None and self.max_queue_seconds < 1:
             raise ValueError("max_queue_seconds must be positive when set")
         if self.max_execution_seconds is not None and self.max_execution_seconds < 1:
@@ -735,6 +946,7 @@ class SchedulingSnapshot:
     workload_namespace: str
     route_namespace: str
     stages: tuple[StageSchedulingDecision, ...]
+    raw_contract_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if not self.policy_revision or len(self.policy_revision) > 200:
@@ -754,6 +966,11 @@ class SchedulingSnapshot:
         ids = [stage.stage_id for stage in self.stages]
         if not ids or len(ids) != len(set(ids)):
             raise ValueError("scheduling snapshot stage identities must be non-empty and unique")
+        if self.raw_contract_sha256 is not None:
+            _check_digest(self.raw_contract_sha256, "raw scheduling contract digest")
+        for stage in self.stages:
+            if stage.workload_namespace is not None and stage.route_namespace != stage.workload_namespace:
+                raise ValueError("stage LocalQueue route namespace is inconsistent")
 
     def stage(self, stage_id: str) -> StageSchedulingDecision:
         return next(stage for stage in self.stages if stage.stage_id == stage_id)
@@ -768,6 +985,7 @@ class SchedulingSnapshot:
             "model_lane": self.model_lane,
             "workload_namespace": self.workload_namespace,
             "route_namespace": self.route_namespace,
+            "raw_contract_sha256": self.raw_contract_sha256,
             "stages": [
                 {
                     "stage_id": item.stage_id,
@@ -783,6 +1001,20 @@ class SchedulingSnapshot:
                     "max_execution_seconds": item.max_execution_seconds,
                     "checkpoint_mode": item.checkpoint_mode,
                     "preemption_mode": item.preemption_mode,
+                    "placement_class": item.placement_class,
+                    "workload_namespace": item.workload_namespace,
+                    "route_namespace": item.route_namespace,
+                    "requested_resource_flavor": item.requested_resource_flavor,
+                    "node_selector": item.node_selector,
+                    "tolerations": [
+                        {
+                            "key": toleration.key,
+                            "operator": toleration.operator,
+                            "value": toleration.value,
+                            "effect": toleration.effect,
+                        }
+                        for toleration in item.tolerations
+                    ],
                 }
                 for item in self.stages
             ],
@@ -976,6 +1208,8 @@ class ScientificBatchState:
                 raise ValueError("CPU stages cannot reserve accelerators")
             if plan.resource_class is ResourceClass.GPU and scheduling.accelerator_count < 1:
                 raise ValueError("GPU stages require a positive accelerator count")
+            if plan.placement_class is not None and scheduling.placement_class is not plan.placement_class:
+                raise ValueError("the scheduling snapshot changed the frozen stage placement class")
 
     @classmethod
     def admit(
@@ -1115,6 +1349,8 @@ class WorkloadResource:
     materializations: tuple[ResolvedArtifactMaterialization, ...] = ()
     access_context: ArtifactAccessContext = PUBLIC_ARTIFACT_ACCESS_CONTEXT
     runtime_artifacts: tuple[RuntimeArtifactLocalization, ...] = ()
+    execution_map_sha256: str | None = None
+    execution_binding: StageExecutionBinding | None = None
 
     def __post_init__(self) -> None:
         _check_name(self.namespace, "namespace")
@@ -1152,6 +1388,11 @@ class WorkloadResource:
             localized = {item.logical_artifact_id for item in self.runtime_artifacts}
             if required != localized or len(localized) != len(self.runtime_artifacts):
                 raise ValueError("workload runtime artifacts are not exactly localized")
+            if self.execution_map_sha256 is None or self.execution_binding is None:
+                raise ValueError("workload has no frozen execution-map binding")
+            _check_digest(self.execution_map_sha256, "workload execution map digest")
+            if self.execution_binding.stage_id != self.stage_id:
+                raise ValueError("workload execution binding differs from its stage")
 
     @property
     def ref(self) -> WorkloadRef:

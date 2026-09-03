@@ -78,6 +78,7 @@ from .scientific_batch.companion import (
     collect_and_commit,
     materialize_artifact,
     prepare_workspace,
+    verify_runtime_artifacts,
 )
 from .scientific_batch.controller import ScientificBatchController
 from .scientific_batch.execution import FileScientificManifestRenderer
@@ -632,6 +633,7 @@ def main() -> None:
             "scientific-materialize",
             "scientific-collect",
             "scientific-prepare-workspace",
+            "scientific-verify-runtime-artifacts",
         ),
         nargs="?",
         default="serve",
@@ -662,6 +664,11 @@ def main() -> None:
         if not runtime_localization_json:
             parser.error("scientific runtime localization marker is required")
         prepare_workspace(Path(args.workspace), runtime_localization_json=runtime_localization_json)
+    elif args.command == "scientific-verify-runtime-artifacts":
+        runtime_localization_json = os.environ.get("FS2_RUNTIME_ARTIFACTS_JSON")
+        if not runtime_localization_json:
+            parser.error("scientific runtime localization marker is required")
+        verify_runtime_artifacts(runtime_localization_json=runtime_localization_json)
     elif args.command in {"scientific-materialize", "scientific-collect"}:
         api_url = os.environ.get("FS2_SCIENTIFIC_INTERNAL_API_URL")
         capability = os.environ.get("FS2_SCIENTIFIC_WORKLOAD_CAPABILITY")

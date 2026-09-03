@@ -100,8 +100,14 @@ class ScientificBatchController:
     ) -> ScientificBatchState:
         """Bind a frozen admission snapshot to an existing durable Operation."""
 
-        if scheduling.workload_namespace != scheduling.route_namespace:
+        if any(
+            (stage.workload_namespace or scheduling.workload_namespace)
+            != (stage.route_namespace or scheduling.route_namespace)
+            for stage in scheduling.stages
+        ):
             raise ValueError("workload namespace differs from the routed Kueue LocalQueue namespace")
+        if execution_plan is not None:
+            execution_plan.assert_controller_bound()
         return await self.repository.create(
             operation_id=operation_id,
             tenant_id=tenant_id,
@@ -204,6 +210,9 @@ class ScientificBatchController:
         now: datetime,
     ) -> None:
         stage = record.stage(spec.stage_id)
+        stage_scheduling = record.scheduling.stage(spec.stage_id)
+        workload_namespace = stage_scheduling.workload_namespace or record.scheduling.workload_namespace
+        route_namespace = stage_scheduling.route_namespace or record.scheduling.route_namespace
         attempts: list[ScientificAttemptState] = []
         events: list[BatchEventDraft] = []
         for shard_id in spec.workload_units:
@@ -220,10 +229,10 @@ class ScientificBatchController:
                     shard_id=shard_id,
                     attempt_number=attempt_number,
                     workload=WorkloadRef(
-                        namespace=record.scheduling.workload_namespace,
+                        namespace=workload_namespace,
                         name=workload_name(record.operation_id, spec.stage_id, shard_id, attempt_number),
                         kind=kind,
-                        route_namespace=record.scheduling.route_namespace,
+                        route_namespace=route_namespace,
                     ),
                     started_at=now,
                 )
@@ -321,6 +330,16 @@ class ScientificBatchController:
                         item
                         for item in record.runtime_artifacts
                         if invocation is not None and item.logical_artifact_id in invocation.runtime_artifacts
+                    ),
+                    execution_map_sha256=(
+                        None if record.execution_plan is None else record.execution_plan.execution_map_sha256
+                    ),
+                    execution_binding=(
+                        None
+                        if record.execution_plan is None
+                        else next(
+                            item for item in record.execution_plan.stage_bindings if item.stage_id == spec.stage_id
+                        )
                     ),
                 )
                 ref = await self.cluster.apply(resource, controller_fence=claim.fencing_token)

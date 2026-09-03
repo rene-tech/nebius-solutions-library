@@ -11,7 +11,7 @@ from uuid import UUID
 
 import asyncpg
 
-from .codec import LEGACY_STATE_SCHEMA, state_from_value, state_to_json
+from .codec import LEGACY_STATE_SCHEMA, PREVIOUS_STATE_SCHEMA, state_from_value, state_to_json
 from .models import (
     PUBLIC_ARTIFACT_ACCESS_CONTEXT,
     AdapterExecutionPlan,
@@ -28,7 +28,7 @@ from .models import (
 )
 from .protocols import BatchFenceLostError, BatchRepositoryConflictError
 
-SCIENTIFIC_BATCH_MIGRATION = "0016_scientific_batch_state_v7.sql"
+SCIENTIFIC_BATCH_MIGRATION = "0017_scientific_batch_state_v8.sql"
 
 
 class ScientificBatchNotFoundError(RuntimeError):
@@ -70,7 +70,10 @@ class PostgresScientificBatchRepository:
         raw_state = record["state"]
         state = state_from_value(record["state"])
         raw_value = json.loads(raw_state) if isinstance(raw_state, str) else raw_state
-        legacy = isinstance(raw_value, Mapping) and raw_value.get("schema_version") == LEGACY_STATE_SCHEMA
+        legacy = isinstance(raw_value, Mapping) and raw_value.get("schema_version") in {
+            LEGACY_STATE_SCHEMA,
+            PREVIOUS_STATE_SCHEMA,
+        }
         if (
             state.operation_id != record["operation_id"]
             or state.batch_id != record["batch_id"]
@@ -532,5 +535,9 @@ DROP TABLE IF EXISTS fs2_scientific_batches;
 DROP FUNCTION IF EXISTS fs2_scientific_batch_append_only();
 DROP FUNCTION IF EXISTS fs2_scientific_batch_state_immutable();
 DELETE FROM fs2_schema_migrations
-WHERE version IN ('0016_scientific_batch_state_v7.sql','0015_scientific_batch_controller.sql');
+WHERE version IN (
+    '0017_scientific_batch_state_v8.sql',
+    '0016_scientific_batch_state_v7.sql',
+    '0015_scientific_batch_controller.sql'
+);
 """.strip()
