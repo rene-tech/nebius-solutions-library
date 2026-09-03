@@ -188,6 +188,7 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                                 "sub_path": item.sub_path,
                                 "read_only": item.read_only,
                                 "expected_content_sha256": item.expected_content_sha256,
+                                "expected_manifest_sha256": item.expected_manifest_sha256,
                                 "authorization_receipt_sha256": item.authorization_receipt_sha256,
                                 "readiness_receipt_sha256": item.readiness_receipt_sha256,
                                 "supplemental_groups": list(item.supplemental_groups),
@@ -535,6 +536,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
                         "sub_path",
                         "read_only",
                         "expected_content_sha256",
+                        "expected_manifest_sha256",
                         "authorization_receipt_sha256",
                         "readiness_receipt_sha256",
                         "supplemental_groups",
@@ -549,6 +551,9 @@ def state_from_value(raw: object) -> ScientificBatchState:
                         read_only=_boolean(mount["read_only"], "runtime mount read-only"),
                         expected_content_sha256=_optional_string(
                             mount["expected_content_sha256"], "runtime mount content digest"
+                        ),
+                        expected_manifest_sha256=_optional_string(
+                            mount["expected_manifest_sha256"], "runtime mount manifest digest"
                         ),
                         authorization_receipt_sha256=_optional_string(
                             mount["authorization_receipt_sha256"], "runtime mount authorization receipt"

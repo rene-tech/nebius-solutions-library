@@ -77,6 +77,14 @@ class ScientificExecutionBinding(Protocol):
         access_context: ArtifactAccessContext,
     ) -> tuple[RuntimeArtifactLocalization, ...]: ...
 
+    def bind_runtime_artifacts(
+        self,
+        profile: ScientificWorkloadProfile,
+        execution_plan: AdapterExecutionPlan,
+        access_context: ArtifactAccessContext,
+        localizations: tuple[RuntimeArtifactLocalization, ...],
+    ) -> AdapterExecutionPlan: ...
+
 
 class CatalogScientificPlanFactory:
     """Default adapter for profiles whose catalog minimum expands to one unit."""
@@ -392,7 +400,12 @@ class ScientificBatchService:
                 if isinstance(admitted_execution, AdapterExecutionPlan):
                     if admitted_execution.controller_plan != plan:
                         raise ScientificProfileError("adapter changed stage topology after durable admission")
-                    execution_plan = admitted_execution
+                    execution_plan = self.execution_binding.bind_runtime_artifacts(
+                        profile,
+                        admitted_execution,
+                        access_context,
+                        runtime_artifacts,
+                    )
                 else:
                     execution_plan = None
                 state = await self.controller.admit(

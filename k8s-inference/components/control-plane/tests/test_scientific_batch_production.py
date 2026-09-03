@@ -280,6 +280,11 @@ class FakeExecutionBinding:
         del profile, execution_plan, access_context
         return ()
 
+    def bind_runtime_artifacts(self, profile, execution_plan, access_context, localizations):
+        del profile, access_context, localizations
+        execution_plan.assert_controller_bound()
+        return execution_plan
+
 
 class FakePlanFactory:
     def plan(
