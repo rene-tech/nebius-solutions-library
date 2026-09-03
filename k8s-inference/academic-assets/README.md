@@ -71,10 +71,23 @@ differ from the private contract's. Each asset therefore publishes a localizer t
 points the consumer at the *same* verified bytes by subPath mount, so nothing is
 copied or embedded:
 
-| Private asset | Onboarding artifact | Source subPath on the claim | Consumer path |
-|---|---|---|---|
-| `alphafold3` | `alphafold3-parameters` | `alphafold3/af3.bin.zst` | `/models/af3.bin.zst` |
-| `pyrosetta-bindcraft` | `bindcraft-pyrosetta` | `pyrosetta-bindcraft/site-packages` | `/opt/fs2/academic/pyrosetta-bindcraft/site-packages` |
+| Private asset | Onboarding artifact | Source subPath on the claim | Consumer path | Identity |
+|---|---|---|---|---|
+| `alphafold3` | `alphafold3-parameters` | `alphafold3/af3.bin.zst` | `/models/af3.bin.zst` | file digest |
+| `pyrosetta-bindcraft` | `bindcraft-pyrosetta` | `pyrosetta-bindcraft/site-packages` | `/opt/fs2/academic/pyrosetta-bindcraft/site-packages` | tree manifest |
+
+A directory has no natural digest, so one is defined rather than borrowed. Under
+`fs2-tree-manifest/v1` every file contributes its POSIX-relative path, size and
+SHA-256, entries are sorted by path and serialized as canonical JSON, and the
+manifest digest is the SHA-256 of those bytes. The installer computes it and the
+real byte total at install time and records both in the install receipt; every
+consumer gate checks them. The wheel SHA-256 and size stay separate as the source
+artifact that produced the tree, so no directory is ever labelled with the
+identity of the archive it came from.
+
+Terraform hands the chart the exact bindings as machine-readable values, and the
+renderer generates real `subPath` mounts from them. A claim and a mount root alone
+cannot produce a subPath mount.
 
 `contracts/onboarding-binding-expectations.json` pins that interface, and
 `tests/test_onboarding_cross_contract.py` fails if either side drifts on artifact

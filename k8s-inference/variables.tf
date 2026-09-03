@@ -1128,12 +1128,19 @@ variable "academic_assets" {
       # How model onboarding addresses this object. Declared here so the rendered
       # mount is the contracted one rather than a path derived from the asset key.
       runtime_binding = optional(object({
-        artifact_id           = string
-        source_sub_path       = string
-        consumer_path         = string
-        mechanism             = string
-        content_digest_sha256 = optional(string, null)
-        size_bytes            = optional(number, null)
+        artifact_id                = string
+        source_sub_path            = string
+        consumer_path              = string
+        mechanism                  = string
+        content_identity_kind      = optional(string, "file-digest")
+        content_manifest_algorithm = optional(string, null)
+        content_digest_sha256      = optional(string, null)
+        size_bytes                 = optional(number, null)
+        source_artifact = optional(object({
+          filename   = string
+          sha256     = string
+          size_bytes = number
+        }), null)
       }), null)
     })), {})
   })

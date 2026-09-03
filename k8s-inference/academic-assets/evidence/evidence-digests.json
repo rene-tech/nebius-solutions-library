@@ -1,36 +1,40 @@
 {
   "files": {
     "jobs/academic-af3-official-loader-v3.json": {
-      "bytes": 14443,
-      "sha256": "9e47c8935ca5658200f48506501c6832786895f7dd39f9d3b63e5fd59bd89ee0"
+      "bytes": 14535,
+      "sha256": "153ace43bf1b3e6f2a1550bc262b8fdfa1dec84772360f34ca46a5d67fe03ac8"
     },
     "jobs/academic-af3-v304-semantic-v1.json": {
-      "bytes": 13926,
-      "sha256": "74ca9c4cb865b95ab64cab229ec81f3a093d9d9e10859e3c9e5f01d28a4bd1a2"
+      "bytes": 13990,
+      "sha256": "33c639b044e36f8839d043791f4c28b820d309bb37a1dce544a3e4a4d44bdad2"
     },
     "jobs/academic-assets-normalize-modes-v1.json": {
-      "bytes": 8667,
-      "sha256": "cb41f5c3f49bdcc7b2a0f64c86b4dbd5ef0fe8be3c79cedc2e51b1af81320c4a"
+      "bytes": 8847,
+      "sha256": "f07f3080ee96743f631a51ae02db70de1d393236a126c42855b727ddba8896b2"
     },
     "jobs/academic-assets-stage-v1.json": {
-      "bytes": 9910,
-      "sha256": "b49ef0877b8a5123c229f83bd4127599b28e01aee6a30fe13bf3385463a446cd"
+      "bytes": 10090,
+      "sha256": "aa16a75f50a83fa1426b67477363b44788ec16a75b770b09aa5ac899ce84f293"
     },
     "jobs/academic-h100-runtime-smoke-v1.json": {
-      "bytes": 13357,
-      "sha256": "b439471436a90a7f1e849217657b792f676cb43a8d2acb6df0459f84969e7b19"
+      "bytes": 13537,
+      "sha256": "3dd2b2fb29cebb8c3e4d6ac22e330fcdea882499e929ec0edc914fae712f2d98"
     },
     "jobs/academic-pyrosetta-install-v1.json": {
-      "bytes": 7285,
-      "sha256": "09c3ba5adce31232414633b4f0dfadf0766b409322d7792c4e46407830d48269"
+      "bytes": 7465,
+      "sha256": "864e70d7fd13ac2907149e42ebb83f75819fd8e696adce14b02598376db13449"
     },
     "jobs/academic-pyrosetta-offline-import-v2.json": {
-      "bytes": 9916,
-      "sha256": "802a680d915e57c5dec5b068290e26d64896917f889dca21f153fd9a03ed3003"
+      "bytes": 10096,
+      "sha256": "fc15042a6dc085a877747255adf87d71c713efac8c5bb434ff513f090ee82053"
+    },
+    "jobs/academic-tree-identity-v1.json": {
+      "bytes": 6990,
+      "sha256": "374b0d5d774bb044abee121c59bb2d62f2418b5818cbaff5d030d0830919c575"
     },
     "jobs/academic-tree-installer-pyrosetta-bindcraft-4383d8d1.json": {
-      "bytes": 10034,
-      "sha256": "66e53c05090b3d0a024182242ce1cffb03da208269e98bf8e1e9eb84ab537abb"
+      "bytes": 10214,
+      "sha256": "e38daac05379bdde45cdba056449db44105e18f10b3c33d995c393ef4ee3716f"
     },
     "logs/academic-af3-official-loader-v2.log": {
       "bytes": 13350,
@@ -79,6 +83,10 @@
     "logs/academic-pyrosetta-offline-import-v2.log": {
       "bytes": 1672,
       "sha256": "b2a1d3e09fcb387cc4a6ccd4a22935df4f217bad1edf0a372d0f7bda3b7fb4c0"
+    },
+    "logs/academic-tree-identity-v1.log": {
+      "bytes": 239,
+      "sha256": "2645af6da33f0fffc9f9c9b72b8f9375a28796977b39721789775037d7f8d8f4"
     },
     "logs/academic-tree-installer-pyrosetta-bindcraft-4383d8d1.log": {
       "bytes": 430,

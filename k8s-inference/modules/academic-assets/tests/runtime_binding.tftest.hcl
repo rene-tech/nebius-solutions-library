@@ -44,12 +44,19 @@ variables {
         relative_path = "alphafold3/af3.bin.zst"
         read_only     = true
         runtime_binding = {
-          artifact_id           = "alphafold3-parameters"
-          source_sub_path       = "alphafold3/af3.bin.zst"
-          consumer_path         = "/models/af3.bin.zst"
-          mechanism             = "subpath-file-mount"
-          content_digest_sha256 = "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff"
-          size_bytes            = 1020545840
+          artifact_id                = "alphafold3-parameters"
+          source_sub_path            = "alphafold3/af3.bin.zst"
+          consumer_path              = "/models/af3.bin.zst"
+          mechanism                  = "subpath-file-mount"
+          content_identity_kind      = "file-digest"
+          content_manifest_algorithm = null
+          content_digest_sha256      = "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff"
+          size_bytes                 = 1020545840
+          source_artifact = {
+            filename   = "af3.bin.zst"
+            sha256     = "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff"
+            size_bytes = 1020545840
+          }
         }
       }
       pyrosetta-bindcraft = {
@@ -58,12 +65,20 @@ variables {
         install_relative_path = "pyrosetta-bindcraft/site-packages"
         read_only             = true
         runtime_binding = {
-          artifact_id           = "bindcraft-pyrosetta"
-          source_sub_path       = "pyrosetta-bindcraft/site-packages"
-          consumer_path         = "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
-          mechanism             = "subpath-directory-mount"
-          content_digest_sha256 = "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242"
-          size_bytes            = 1667097173
+          artifact_id                = "bindcraft-pyrosetta"
+          source_sub_path            = "pyrosetta-bindcraft/site-packages"
+          consumer_path              = "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+          mechanism                  = "subpath-directory-mount"
+          content_identity_kind      = "tree-manifest"
+          content_manifest_algorithm = "fs2-tree-manifest/v1"
+          # Observed at install time; the wheel identity is the source artifact.
+          content_digest_sha256 = "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+          size_bytes            = 3287122494
+          source_artifact = {
+            filename   = "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl"
+            sha256     = "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242"
+            size_bytes = 1667097173
+          }
         }
       }
     }
@@ -96,10 +111,46 @@ run "alphafold3_binding_is_the_canonical_onboarding_location" {
 
   assert {
     condition = (
+      output.academic_assets.runtime_bindings["alphafold3"].content_identity_kind == "file-digest" &&
       output.academic_assets.runtime_bindings["alphafold3"].content_digest_sha256 == "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff" &&
       output.academic_assets.runtime_bindings["alphafold3"].size_bytes == 1020545840
     )
-    error_message = "The advertised mount must carry the immutable identity of the object it exposes."
+    error_message = "A single file is identified by its own digest."
+  }
+}
+
+run "pyrosetta_tree_is_identified_by_its_manifest_not_by_the_wheel" {
+  command = plan
+
+  assert {
+    condition     = output.academic_assets.runtime_bindings["pyrosetta-bindcraft"].content_identity_kind == "tree-manifest"
+    error_message = "An installed directory is identified by a tree manifest, not a file digest."
+  }
+
+  assert {
+    condition = (
+      output.academic_assets.runtime_bindings["pyrosetta-bindcraft"].content_digest_sha256 !=
+      output.academic_assets.runtime_bindings["pyrosetta-bindcraft"].source_artifact.sha256
+    )
+    error_message = "The installed tree must not be labelled with the wheel digest."
+  }
+
+  assert {
+    condition = (
+      output.academic_assets.runtime_bindings["pyrosetta-bindcraft"].size_bytes !=
+      output.academic_assets.runtime_bindings["pyrosetta-bindcraft"].source_artifact.size_bytes
+    )
+    error_message = "The installed tree must not be labelled with the wheel size."
+  }
+
+  assert {
+    condition     = output.academic_assets.runtime_bindings["pyrosetta-bindcraft"].source_artifact.sha256 == "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242"
+    error_message = "The wheel stays recorded as the separate source artifact."
+  }
+
+  assert {
+    condition     = output.academic_assets.runtime_bindings["pyrosetta-bindcraft"].content_manifest_algorithm == "fs2-tree-manifest/v1"
+    error_message = "A tree identity must name the manifest algorithm that produced it."
   }
 }
 

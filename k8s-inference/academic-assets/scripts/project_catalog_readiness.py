@@ -82,6 +82,12 @@ def build_projection(contract: dict[str, Any], readiness: dict[str, Any]) -> dic
                     "read_only": delivery["runtime_binding"]["read_only"],
                     "duplicates_bytes": delivery["runtime_binding"]["duplicates_bytes"],
                     "embeds_bytes": delivery["runtime_binding"]["embeds_bytes"],
+                    "content_identity_kind": delivery["runtime_binding"]["content_identity_kind"],
+                    "content_manifest_algorithm": delivery["runtime_binding"]["content_manifest_algorithm"],
+                    # Observed for a tree, pinned for a file; never the archive's.
+                    "content_digest_sha256": state["binding_content_digest_sha256"],
+                    "content_bytes": state["binding_content_bytes"],
+                    "source_artifact": delivery["runtime_binding"]["source_artifact"],
                 },
                 "runtime_invocation": {
                     "offline_validation_kind": offline["kind"],

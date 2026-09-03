@@ -379,7 +379,12 @@
               "mechanism",
               "read_only",
               "duplicates_bytes",
-              "embeds_bytes"
+              "embeds_bytes",
+              "content_identity_kind",
+              "content_manifest_algorithm",
+              "content_digest_sha256",
+              "content_bytes",
+              "source_artifact"
             ],
             "description": "Canonical localizer: how a model runtime addresses this object. The same verified bytes are exposed by a subPath mount, never duplicated or embedded.",
             "properties": {
@@ -410,6 +415,60 @@
               },
               "embeds_bytes": {
                 "const": false
+              },
+              "content_identity_kind": {
+                "enum": [
+                  "file-digest",
+                  "tree-manifest"
+                ]
+              },
+              "content_manifest_algorithm": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "content_digest_sha256": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "Identity of the object the consumer mounts. For an installed tree this is its observed manifest digest, never the digest of the archive it came from."
+              },
+              "content_bytes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "source_artifact": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": false,
+                "required": [
+                  "filename",
+                  "sha256",
+                  "size_bytes"
+                ],
+                "description": "The source artifact that produced the mounted object, kept separate from the mounted object's own identity.",
+                "properties": {
+                  "filename": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "size_bytes": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
               }
             }
           }

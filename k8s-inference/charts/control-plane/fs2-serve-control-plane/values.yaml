@@ -553,3 +553,6 @@ academicAssets:
   mountRoot: /opt/fs2/academic
   assetGid: 65532
   readOnly: true
+  # Exact per-object bindings. A subPath mount cannot be derived from a claim and a
+  # mount root alone, so the renderer consumes these directly.
+  runtimeBindings: {}

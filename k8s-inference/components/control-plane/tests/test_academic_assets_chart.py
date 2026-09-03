@@ -79,6 +79,68 @@ def test_no_rendered_manifest_carries_licensed_bytes() -> None:
         assert forbidden not in encoded
 
 
+def test_renderer_generates_real_subpath_mounts_from_the_bindings() -> None:
+    """A claim and a mount root alone cannot produce a subPath mount."""
+
+    config_map = academic_config_map(
+        render(
+            "--set",
+            "academicAssets.enabled=true",
+            "--set",
+            "academicAssets.runtimeBindings.alphafold3.modelId=alphafold3",
+            "--set",
+            "academicAssets.runtimeBindings.alphafold3.artifactId=alphafold3-parameters",
+            "--set",
+            "academicAssets.runtimeBindings.alphafold3.sourceSubPath=alphafold3/af3.bin.zst",
+            "--set",
+            "academicAssets.runtimeBindings.alphafold3.consumerPath=/models/af3.bin.zst",
+            "--set",
+            "academicAssets.runtimeBindings.alphafold3.mechanism=subpath-file-mount",
+            "--set",
+            "academicAssets.runtimeBindings.alphafold3.contentIdentityKind=file-digest",
+            "--set",
+            "academicAssets.runtimeBindings.alphafold3.readOnly=true",
+            "--set",
+            "academicAssets.runtimeBindings.pyrosetta.modelId=bindcraft",
+            "--set",
+            "academicAssets.runtimeBindings.pyrosetta.artifactId=bindcraft-pyrosetta",
+            "--set",
+            "academicAssets.runtimeBindings.pyrosetta.sourceSubPath=pyrosetta-bindcraft/site-packages",
+            "--set",
+            "academicAssets.runtimeBindings.pyrosetta.consumerPath=/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+            "--set",
+            "academicAssets.runtimeBindings.pyrosetta.mechanism=subpath-directory-mount",
+            "--set",
+            "academicAssets.runtimeBindings.pyrosetta.contentIdentityKind=tree-manifest",
+            "--set",
+            "academicAssets.runtimeBindings.pyrosetta.readOnly=true",
+        )
+    )
+    assert config_map is not None
+    mounts = yaml.safe_load(config_map["data"]["runtime_binding_mounts"])
+    by_path = {mount["mountPath"]: mount for mount in mounts["volumeMounts"]}
+
+    assert by_path["/models/af3.bin.zst"]["subPath"] == "alphafold3/af3.bin.zst"
+    assert by_path["/models/af3.bin.zst"]["readOnly"] is True
+    tree = by_path["/opt/fs2/academic/pyrosetta-bindcraft/site-packages"]
+    assert tree["subPath"] == "pyrosetta-bindcraft/site-packages"
+    assert tree["readOnly"] is True
+
+    assert mounts["volumes"][0]["persistentVolumeClaim"]["claimName"] == config_map["data"]["claim"]
+    assert mounts["volumes"][0]["persistentVolumeClaim"]["readOnly"] is True
+
+    published = yaml.safe_load(config_map["data"]["runtime_bindings"])
+    assert published["pyrosetta"]["contentIdentityKind"] == "tree-manifest"
+    assert published["alphafold3"]["contentIdentityKind"] == "file-digest"
+
+
+def test_renderer_emits_no_mounts_without_bindings() -> None:
+    config_map = academic_config_map(render("--set", "academicAssets.enabled=true"))
+    assert config_map is not None
+    mounts = yaml.safe_load(config_map["data"]["runtime_binding_mounts"])
+    assert mounts["volumeMounts"] == []
+
+
 def test_control_plane_pods_never_mount_the_licensed_volume() -> None:
     """The API server has no reason to hold model weights."""
 

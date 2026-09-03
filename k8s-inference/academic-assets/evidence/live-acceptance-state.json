@@ -24,7 +24,7 @@
     "registry_id": "withheld"
   },
   "note": "Generated environment binding for one deployment. The reusable contract deliberately carries no project, region, cluster, volume or registry identity; those are observed per deployment. Opaque cloud IDs stay in the owner-only state so this file is exportable.",
-  "observed_at": "2026-09-02T23:27:00Z",
+  "observed_at": "2026-09-03T01:10:00Z",
   "open_items": [
     "Serving deployment and model-level semantic readiness for both models belong to the runtime onboarding work; they are truthfully reported as missing here.",
     "Formal institutional licence acceptance is outstanding and is deliberately not synthesized; it does not block the authorized proof-of-concept path.",
@@ -74,8 +74,12 @@
     "installed_tree": {
       "atomic_promotion": true,
       "files_installed": 8697,
+      "identity_note": "The installed tree is identified by its own manifest digest and real byte total. The source wheel (4383d8d1..., 1667097173 bytes) is recorded separately; the tree is never labelled with the archive identity.",
       "job": "academic-tree-installer-pyrosetta-bindcraft-4383d8d1",
       "modes": "8681 files at 0440, 796 directories at 0550, all group 65532",
+      "tree_manifest_algorithm": "fs2-tree-manifest/v1",
+      "tree_manifest_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+      "tree_total_bytes": 3287122494,
       "verified_paths": 9477,
       "world_or_group_writable_paths": 0
     },

@@ -37,6 +37,7 @@ from typing import Any
 
 
 SCHEMA_PREFIX = "fs2-serve.nebius.ai"
+TREE_MANIFEST_ALGORITHM = "fs2-tree-manifest/v1"
 CONTRACT_SCHEMA = f"{SCHEMA_PREFIX}/academic-assets/v3"
 READINESS_SCHEMA = f"{SCHEMA_PREFIX}/academic-assets-readiness/v3"
 AUTHORIZATION_SCHEMA = f"{SCHEMA_PREFIX}/academic-use-authorization/v1"
@@ -99,6 +100,9 @@ STAGE_RECEIPT_KEYS: dict[str, frozenset[str]] = {
         "installed_distribution_version",
         "python_version",
         "file_count",
+        "tree_manifest_algorithm",
+        "tree_manifest_sha256",
+        "tree_total_bytes",
         "file_mode",
         "directory_mode",
         "asset_gid",
@@ -455,9 +459,51 @@ def _validate_asset(asset_id: str, asset: dict[str, Any]) -> None:
         "read_only",
         "duplicates_bytes",
         "embeds_bytes",
+        "content_identity_kind",
+        "content_manifest_algorithm",
+        "content_digest_sha256",
+        "size_bytes",
+        "source_artifact",
         "note",
     }:
         raise IngestionError("InvalidInput", f"{asset_id} runtime_binding is invalid")
+
+    # A directory is never labelled with the identity of the archive it came from.
+    kind = binding["content_identity_kind"]
+    if kind not in {"file-digest", "tree-manifest"}:
+        raise IngestionError("InvalidInput", f"{asset_id} binding content identity kind is unsupported")
+    expected_kind = "file-digest" if binding["mechanism"] == "subpath-file-mount" else "tree-manifest"
+    if kind != expected_kind:
+        raise IngestionError(
+            "InvalidInput", f"{asset_id} binding identity kind does not match how it is mounted"
+        )
+    if kind == "file-digest":
+        if binding["content_manifest_algorithm"] is not None:
+            raise IngestionError("InvalidInput", f"{asset_id} a file binding has no manifest algorithm")
+        if not SHA256_RE.fullmatch(str(binding["content_digest_sha256"])):
+            raise IngestionError("InvalidInput", f"{asset_id} a file binding needs its exact file digest")
+        if binding["content_digest_sha256"] != artifact["sha256"]:
+            raise IngestionError("InvalidInput", f"{asset_id} binding digest is not the pinned artifact digest")
+        if binding["size_bytes"] != artifact["size_bytes"]:
+            raise IngestionError("InvalidInput", f"{asset_id} binding size is not the pinned artifact size")
+    else:
+        if binding["content_manifest_algorithm"] != TREE_MANIFEST_ALGORITHM:
+            raise IngestionError("InvalidInput", f"{asset_id} tree binding needs the contracted manifest algorithm")
+        # Observed at install time, so it must not be pinned or borrowed here.
+        if binding["content_digest_sha256"] is not None or binding["size_bytes"] is not None:
+            raise IngestionError(
+                "InvalidInput",
+                f"{asset_id} a tree binding must not carry a pinned digest or size; the installer observes them",
+            )
+    source_artifact = binding["source_artifact"]
+    if not isinstance(source_artifact, dict) or set(source_artifact) != {"filename", "sha256", "size_bytes"}:
+        raise IngestionError("InvalidInput", f"{asset_id} binding source_artifact is invalid")
+    if (
+        source_artifact["filename"] != artifact["filename"]
+        or source_artifact["sha256"] != artifact["sha256"]
+        or source_artifact["size_bytes"] != artifact["size_bytes"]
+    ):
+        raise IngestionError("InvalidInput", f"{asset_id} binding source artifact is not the pinned artifact")
     _require_nonempty_string(binding["artifact_id"], label=f"{asset_id} binding artifact_id")
     if binding["mechanism"] not in {"subpath-file-mount", "subpath-directory-mount"}:
         raise IngestionError("InvalidInput", f"{asset_id} binding must localize by subPath mount")
@@ -1348,6 +1394,21 @@ def validate_stage_receipt(
             raise IngestionError("InvalidEvidence", "the pinned cp310 wheel requires a CPython 3.10 runtime")
         if not isinstance(receipt["file_count"], int) or receipt["file_count"] <= 0:
             raise IngestionError("InvalidEvidence", "an installed tree must contain files")
+        # The installed tree is identified by its own manifest, never by the wheel.
+        if receipt["tree_manifest_algorithm"] != delivery["runtime_binding"]["content_manifest_algorithm"]:
+            raise IngestionError("InvalidEvidence", "installed tree manifest algorithm is not the contracted one")
+        if not SHA256_RE.fullmatch(str(receipt["tree_manifest_sha256"])):
+            raise IngestionError("InvalidEvidence", "installed tree manifest digest is invalid")
+        if not isinstance(receipt["tree_total_bytes"], int) or receipt["tree_total_bytes"] <= 0:
+            raise IngestionError("InvalidEvidence", "an installed tree must have a real byte total")
+        if receipt["tree_manifest_sha256"] == spec["artifact"]["sha256"]:
+            raise IngestionError(
+                "InvalidEvidence", "the installed tree is labelled with the source archive digest"
+            )
+        if receipt["tree_total_bytes"] == spec["artifact"]["size_bytes"]:
+            raise IngestionError(
+                "InvalidEvidence", "the installed tree is labelled with the source archive size"
+            )
         if receipt["atomic_promotion"] is not True:
             raise IngestionError("InvalidEvidence", "the installed tree must be promoted atomically")
         if receipt["import_verified"] is not True:
@@ -1464,6 +1525,9 @@ def asset_readiness(
         "artifact_sha256": None,
         "runtime_image_digest": None,
         "runtime_environment_digest": None,
+        "binding_content_identity_kind": spec["delivery"]["runtime_binding"]["content_identity_kind"],
+        "binding_content_digest_sha256": spec["delivery"]["runtime_binding"]["content_digest_sha256"],
+        "binding_content_bytes": spec["delivery"]["runtime_binding"]["size_bytes"],
         "authorization_receipt_sha256": None,
         "acceptance_receipt_sha256": None,
     }
@@ -1532,6 +1596,10 @@ def asset_readiness(
             projection["state"] = invalid_state
             return projection
         projection[field] = ready_value
+        if stage == "install":
+            # A tree binding has no pinned identity; the observed one comes from here.
+            projection["binding_content_digest_sha256"] = receipt["tree_manifest_sha256"]
+            projection["binding_content_bytes"] = receipt["tree_total_bytes"]
         if stage == "runtime" and projection["runtime_status"] == "RuntimeReady":
             pass
         if stage == "runtime":

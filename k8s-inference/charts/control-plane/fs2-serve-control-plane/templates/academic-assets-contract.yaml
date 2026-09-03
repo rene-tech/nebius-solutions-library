@@ -25,6 +25,40 @@ data:
   embeds_licensed_bytes: "false"
   general_shared_cache: "false"
   world_readable: "false"
+  # Generated from the exact bindings: each entry is a real subPath mount, which
+  # could not be produced from the claim and mount root alone.
+  runtime_binding_mounts: |
+{{- if .Values.academicAssets.runtimeBindings }}
+    volumes:
+      - name: academic-assets
+        persistentVolumeClaim:
+          claimName: {{ .Values.academicAssets.claim }}
+          readOnly: true
+    volumeMounts:
+  {{- range $key, $binding := .Values.academicAssets.runtimeBindings }}
+      - name: academic-assets
+        mountPath: {{ $binding.consumerPath }}
+        subPath: {{ $binding.sourceSubPath }}
+        readOnly: true
+  {{- end }}
+{{- else }}
+    volumeMounts: []
+{{- end }}
+  runtime_bindings: |
+{{- if .Values.academicAssets.runtimeBindings }}
+  {{- range $key, $binding := .Values.academicAssets.runtimeBindings }}
+    {{ $key }}:
+      modelId: {{ $binding.modelId }}
+      artifactId: {{ $binding.artifactId }}
+      sourceSubPath: {{ $binding.sourceSubPath }}
+      consumerPath: {{ $binding.consumerPath }}
+      mechanism: {{ $binding.mechanism }}
+      contentIdentityKind: {{ $binding.contentIdentityKind }}
+      contentDigestSha256: {{ $binding.contentDigestSha256 | default "null" }}
+  {{- end }}
+{{- else }}
+    {}
+{{- end }}
   consumer_pod_contract: |
     securityContext:
       supplementalGroups: [{{ .Values.academicAssets.assetGid }}]

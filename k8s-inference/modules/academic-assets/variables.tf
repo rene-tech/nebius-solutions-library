@@ -58,12 +58,19 @@ variable "academic_assets" {
       # cannot state a mount, so the output reports the binding as absent rather
       # than deriving a path that would be wrong for an installed tree.
       runtime_binding = optional(object({
-        artifact_id           = string
-        source_sub_path       = string
-        consumer_path         = string
-        mechanism             = string
-        content_digest_sha256 = optional(string, null)
-        size_bytes            = optional(number, null)
+        artifact_id                = string
+        source_sub_path            = string
+        consumer_path              = string
+        mechanism                  = string
+        content_identity_kind      = optional(string, "file-digest")
+        content_manifest_algorithm = optional(string, null)
+        content_digest_sha256      = optional(string, null)
+        size_bytes                 = optional(number, null)
+        source_artifact = optional(object({
+          filename   = string
+          sha256     = string
+          size_bytes = number
+        }), null)
       }), null)
     }))
     readiness_manifest_sha256 = optional(string, null)
@@ -128,5 +135,30 @@ variable "academic_assets" {
       )
     ])
     error_message = "A runtime binding must localize a safe relative subPath at an absolute consumer path by subPath mount."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, asset in var.academic_assets.assets :
+      asset.runtime_binding == null || (
+        asset.runtime_binding.content_identity_kind == (
+          asset.runtime_binding.mechanism == "subpath-file-mount" ? "file-digest" : "tree-manifest"
+        )
+      )
+    ])
+    error_message = "A binding's content identity kind must match how it is mounted: a file by digest, a directory by tree manifest."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, asset in var.academic_assets.assets :
+      asset.runtime_binding == null ||
+      asset.runtime_binding.content_identity_kind != "tree-manifest" ||
+      asset.runtime_binding.source_artifact == null || (
+        asset.runtime_binding.content_digest_sha256 != asset.runtime_binding.source_artifact.sha256 &&
+        asset.runtime_binding.size_bytes != asset.runtime_binding.source_artifact.size_bytes
+      )
+    ])
+    error_message = "An installed tree must not be labelled with the digest or size of the archive it came from."
   }
 }

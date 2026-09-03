@@ -114,6 +114,17 @@ class AcademicAssetTestCase(unittest.TestCase):
         wheel = contract["assets"]["pyrosetta-bindcraft"]["artifact"]
         wheel["size_bytes"] = self.wheel_path.stat().st_size
         wheel["sha256"] = sha256_file(self.wheel_path)
+        # Bindings reference the artifacts, so they follow the tiny fixtures.
+        for asset_id, artifact in (("alphafold3", af3), ("pyrosetta-bindcraft", wheel)):
+            binding = contract["assets"][asset_id]["delivery"]["runtime_binding"]
+            binding["source_artifact"] = {
+                "filename": artifact["filename"],
+                "sha256": artifact["sha256"],
+                "size_bytes": artifact["size_bytes"],
+            }
+            if binding["content_identity_kind"] == "file-digest":
+                binding["content_digest_sha256"] = artifact["sha256"]
+                binding["size_bytes"] = artifact["size_bytes"]
         contract["assets"]["alphafold3"]["runtime"]["offline_validation"][
             "expect_min_parameter_arrays"
         ] = 1
@@ -300,6 +311,9 @@ class AcademicAssetTestCase(unittest.TestCase):
             "installed_distribution_version": offline.get("expect_version"),
             "python_version": "3.10.21",
             "file_count": 1234,
+            "tree_manifest_algorithm": "fs2-tree-manifest/v1",
+            "tree_manifest_sha256": "a" * 63 + "b",
+            "tree_total_bytes": 3287122494,
             "file_mode": delivery["file_mode"],
             "directory_mode": delivery["directory_mode"],
             "asset_gid": delivery["asset_gid"],
@@ -740,6 +754,63 @@ class ReadinessStateMachineTests(AcademicAssetTestCase):
         self.assertEqual(2, code)
         self.assertIn("pinned runtime image", error["message"])
 
+    def test_installed_tree_is_never_labelled_with_the_wheel_identity(self) -> None:
+        """A directory has its own manifest identity; borrowing the archive's is a lie."""
+
+        self.ingest("poc-tree-identity")
+        self.record("pyrosetta-bindcraft", "cache", self.cache_receipt("pyrosetta-bindcraft"))
+        artifact = self.contract_document["assets"]["pyrosetta-bindcraft"]["artifact"]
+
+        code, error = self.record(
+            "pyrosetta-bindcraft",
+            "install",
+            self.install_receipt("pyrosetta-bindcraft", tree_manifest_sha256=artifact["sha256"]),
+        )
+        self.assertEqual(2, code)
+        self.assertIn("source archive digest", error["message"])
+
+        code, error = self.record(
+            "pyrosetta-bindcraft",
+            "install",
+            self.install_receipt("pyrosetta-bindcraft", tree_total_bytes=artifact["size_bytes"]),
+        )
+        self.assertEqual(2, code)
+        self.assertIn("source archive size", error["message"])
+
+    def test_observed_tree_identity_reaches_the_projection(self) -> None:
+        self.ingest("poc-tree-projection")
+        self.record("pyrosetta-bindcraft", "cache", self.cache_receipt("pyrosetta-bindcraft"))
+        code, projection = self.record(
+            "pyrosetta-bindcraft", "install", self.install_receipt("pyrosetta-bindcraft")
+        )
+        self.assertEqual(0, code)
+        self.assert_schema_valid(projection)
+        pyrosetta = self.asset(projection, "pyrosetta-bindcraft")
+        artifact = self.contract_document["assets"]["pyrosetta-bindcraft"]["artifact"]
+        self.assertEqual("tree-manifest", pyrosetta["binding_content_identity_kind"])
+        self.assertEqual("a" * 63 + "b", pyrosetta["binding_content_digest_sha256"])
+        self.assertEqual(3287122494, pyrosetta["binding_content_bytes"])
+        self.assertNotEqual(artifact["sha256"], pyrosetta["binding_content_digest_sha256"])
+        self.assertNotEqual(artifact["size_bytes"], pyrosetta["binding_content_bytes"])
+
+        alphafold3 = self.asset(projection, "alphafold3")
+        # A single file is correctly identified by its own digest.
+        self.assertEqual("file-digest", alphafold3["binding_content_identity_kind"])
+        self.assertEqual(
+            self.contract_document["assets"]["alphafold3"]["artifact"]["sha256"],
+            alphafold3["binding_content_digest_sha256"],
+        )
+
+    def test_a_tree_binding_may_not_pin_a_digest_in_the_contract(self) -> None:
+        document = copy.deepcopy(self.contract_document)
+        binding = document["assets"]["pyrosetta-bindcraft"]["delivery"]["runtime_binding"]
+        binding["content_digest_sha256"] = binding["source_artifact"]["sha256"]
+        binding["size_bytes"] = binding["source_artifact"]["size_bytes"]
+        self.write_contract(document)
+        with self.assertRaises(aa.IngestionError) as caught:
+            aa.load_contract(self.contract_path)
+        self.assertIn("installer observes them", caught.exception.message)
+
     def test_licence_terms_are_not_a_per_request_admission_gate(self) -> None:
         """An authorized, runtime-ready asset must be servable without a caller receipt."""
 
@@ -896,6 +967,11 @@ class EvidenceValidationTests(AcademicAssetTestCase):
         tampered = self.sources / "af3.bin.zst"
         document = copy.deepcopy(self.contract_document)
         document["assets"]["alphafold3"]["artifact"]["sha256"] = "e" * 64
+        # Keep the binding consistent so this exercises the copy-time digest check
+        # rather than the contract consistency check.
+        binding = document["assets"]["alphafold3"]["delivery"]["runtime_binding"]
+        binding["content_digest_sha256"] = "e" * 64
+        binding["source_artifact"]["sha256"] = "e" * 64
         self.write_contract(document)
         code, error = self.run_cli(
             "ingest",

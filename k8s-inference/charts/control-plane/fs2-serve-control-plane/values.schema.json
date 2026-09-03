@@ -1885,7 +1885,8 @@
         "claim",
         "mountRoot",
         "assetGid",
-        "readOnly"
+        "readOnly",
+        "runtimeBindings"
       ],
       "properties": {
         "enabled": {
@@ -1910,6 +1911,63 @@
         },
         "readOnly": {
           "const": true
+        },
+        "runtimeBindings": {
+          "type": "object",
+          "description": "Exact localizers keyed by asset. Each states the source subPath on the claim and the consumer path the runtime reads.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "modelId",
+              "artifactId",
+              "sourceSubPath",
+              "consumerPath",
+              "mechanism",
+              "contentIdentityKind",
+              "readOnly"
+            ],
+            "properties": {
+              "modelId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "artifactId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sourceSubPath": {
+                "type": "string",
+                "pattern": "^[^/].*"
+              },
+              "consumerPath": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "mechanism": {
+                "enum": [
+                  "subpath-file-mount",
+                  "subpath-directory-mount"
+                ]
+              },
+              "contentIdentityKind": {
+                "enum": [
+                  "file-digest",
+                  "tree-manifest"
+                ]
+              },
+              "contentDigestSha256": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "readOnly": {
+                "const": true
+              }
+            }
+          }
         }
       }
     }

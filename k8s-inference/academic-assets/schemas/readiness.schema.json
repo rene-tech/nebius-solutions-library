@@ -95,7 +95,10 @@
           "runtime_image_digest",
           "runtime_environment_digest",
           "authorization_receipt_sha256",
-          "acceptance_receipt_sha256"
+          "acceptance_receipt_sha256",
+          "binding_content_identity_kind",
+          "binding_content_digest_sha256",
+          "binding_content_bytes"
         ],
         "properties": {
           "asset_id": {
@@ -227,6 +230,23 @@
           },
           "acceptance_receipt_sha256": {
             "$ref": "#/$defs/sha256"
+          },
+          "binding_content_identity_kind": {
+            "enum": [
+              "file-digest",
+              "tree-manifest"
+            ]
+          },
+          "binding_content_digest_sha256": {
+            "$ref": "#/$defs/sha256",
+            "description": "Identity of what the consumer actually mounts. For a tree this is the observed manifest digest, never the source archive digest."
+          },
+          "binding_content_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
           }
         }
       }

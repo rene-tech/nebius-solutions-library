@@ -132,6 +132,53 @@ def prepare_volume_root(root: Path, *, gid: int, mode: str = "2770") -> dict[str
     }
 
 
+
+TREE_MANIFEST_ALGORITHM = "fs2-tree-manifest/v1"
+
+
+def tree_manifest(root: Path) -> dict[str, Any]:
+    """Deterministically identify a directory tree.
+
+    A directory has no natural digest, so one is defined here rather than borrowed
+    from whatever produced it. Every regular file contributes its POSIX-relative
+    path, byte size and SHA-256; every symlink contributes its path and target.
+    Entries are sorted by path and serialized as canonical JSON, and the manifest
+    digest is the SHA-256 of those bytes. Sorting plus canonical JSON is what makes
+    it unambiguous: no separator can be confused with path content.
+
+    Returned alongside the digest are the real file count and the real byte total,
+    so a tree is never described using the identity of the archive it came from.
+    """
+
+    entries: list[dict[str, Any]] = []
+    total_bytes = 0
+    for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            entries.append({"path": relative, "kind": "symlink", "target": os.readlink(path)})
+            continue
+        if not path.is_file():
+            continue
+        digest = hashlib.sha256()
+        size = 0
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+                size += len(chunk)
+        entries.append({"path": relative, "kind": "file", "size_bytes": size, "sha256": digest.hexdigest()})
+        total_bytes += size
+
+    payload = {"algorithm": TREE_MANIFEST_ALGORITHM, "entries": entries}
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    return {
+        "tree_manifest_algorithm": TREE_MANIFEST_ALGORITHM,
+        "tree_manifest_sha256": hashlib.sha256(canonical).hexdigest(),
+        "tree_total_bytes": total_bytes,
+        "file_count": sum(1 for entry in entries if entry["kind"] == "file"),
+        "symlink_count": sum(1 for entry in entries if entry["kind"] == "symlink"),
+    }
+
+
 def _force_remove(path: Path) -> None:
     """Remove a tree whose contracted modes are deliberately non-writable."""
 
@@ -227,7 +274,11 @@ def install_wheel(
         if staging is not None:
             _force_remove(staging)
     _force_remove(previous)
-    return {"file_count": file_count, "atomic_promotion": True}
+    identity = tree_manifest(destination)
+    # file_count from the mode pass counts directories too; the manifest count is
+    # the authoritative number of files.
+    del file_count
+    return {"atomic_promotion": True, **identity}
 
 
 def verify_installed_tree(
@@ -240,6 +291,7 @@ def verify_installed_tree(
     gid: int,
     functional_proof: bool = True,
     python: str | None = None,
+    expect_tree_manifest_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Import the installed distribution in place and prove it works."""
 
@@ -248,6 +300,10 @@ def verify_installed_tree(
     _octal(directory_mode)
     if not tree.is_dir():
         raise InstallError("installed tree is missing")
+
+    identity = tree_manifest(tree)
+    if expect_tree_manifest_sha256 is not None and identity["tree_manifest_sha256"] != expect_tree_manifest_sha256:
+        raise InstallError("installed tree no longer matches its recorded manifest digest")
 
     violations = []
     file_count = 0
@@ -308,7 +364,7 @@ def verify_installed_tree(
         "installed_distribution": distribution,
         "installed_distribution_version": observed["version"],
         "python_version": observed["python"],
-        "file_count": file_count,
+        **identity,
         "world_readable": False,
         "import_verified": True,
         "functional_proof": observed["proof"],
@@ -348,6 +404,7 @@ def main(argv: list[str] | None = None) -> int:
     verify.add_argument("--file-mode", required=True)
     verify.add_argument("--directory-mode", required=True)
     verify.add_argument("--gid", type=int, required=True)
+    verify.add_argument("--expect-tree-manifest-sha256")
 
     args = parser.parse_args(argv)
     try:
@@ -368,6 +425,7 @@ def main(argv: list[str] | None = None) -> int:
                 file_mode=args.file_mode,
                 directory_mode=args.directory_mode,
                 gid=args.gid,
+                expect_tree_manifest_sha256=args.expect_tree_manifest_sha256,
             )
         else:
             result = verify_installed_tree(
@@ -377,6 +435,7 @@ def main(argv: list[str] | None = None) -> int:
                 file_mode=args.file_mode,
                 directory_mode=args.directory_mode,
                 gid=args.gid,
+                expect_tree_manifest_sha256=args.expect_tree_manifest_sha256,
             )
     except InstallError as error:
         json.dump({"state": "InstallFailed", "message": str(error)}, sys.stdout)

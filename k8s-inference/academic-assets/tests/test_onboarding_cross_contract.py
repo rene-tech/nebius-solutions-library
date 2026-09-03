@@ -59,6 +59,33 @@ class OnboardingBindingTests(unittest.TestCase):
                 self.assertEqual(expected["total_size_bytes"], artifact["size_bytes"])
                 self.assertIn(artifact["filename"], expected["required_files"])
 
+    def test_a_directory_binding_carries_tree_identity_not_archive_identity(self) -> None:
+        for asset_id, expected in self.by_asset.items():
+            binding = self.contract["assets"][asset_id]["delivery"]["runtime_binding"]
+            artifact = self.contract["assets"][asset_id]["artifact"]
+            with self.subTest(asset=asset_id):
+                if binding["mechanism"] == "subpath-directory-mount":
+                    self.assertEqual("tree-manifest", binding["content_identity_kind"])
+                    self.assertIsNone(binding["content_digest_sha256"])
+                    self.assertIsNone(binding["size_bytes"])
+                else:
+                    self.assertEqual("file-digest", binding["content_identity_kind"])
+                    self.assertEqual(artifact["sha256"], binding["content_digest_sha256"])
+                # The source archive is recorded separately either way.
+                self.assertEqual(artifact["sha256"], binding["source_artifact"]["sha256"])
+                self.assertEqual(artifact["size_bytes"], binding["source_artifact"]["size_bytes"])
+
+    def test_published_projection_never_labels_a_tree_with_archive_identity(self) -> None:
+        projection = load(PROJECTION)
+        for model in projection["models"]:
+            binding = model["runtime_binding"]
+            if binding["content_identity_kind"] != "tree-manifest":
+                continue
+            with self.subTest(model=model["model_id"]):
+                self.assertIsNotNone(binding["content_digest_sha256"])
+                self.assertNotEqual(binding["source_artifact"]["sha256"], binding["content_digest_sha256"])
+                self.assertNotEqual(binding["source_artifact"]["size_bytes"], binding["content_bytes"])
+
     def test_localizer_never_duplicates_or_embeds(self) -> None:
         for asset_id in self.by_asset:
             binding = self.contract["assets"][asset_id]["delivery"]["runtime_binding"]

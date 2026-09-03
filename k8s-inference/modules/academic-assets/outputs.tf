@@ -79,15 +79,18 @@ output "academic_assets" {
     runtime_bindings = {
       for key, asset in var.academic_assets.assets : key => (
         asset.runtime_binding == null ? null : {
-          model_id              = asset.model_id
-          artifact_id           = asset.runtime_binding.artifact_id
-          source_sub_path       = asset.runtime_binding.source_sub_path
-          consumer_path         = asset.runtime_binding.consumer_path
-          mechanism             = asset.runtime_binding.mechanism
-          content_digest_sha256 = asset.runtime_binding.content_digest_sha256
-          size_bytes            = asset.runtime_binding.size_bytes
-          claim                 = try(local.runtime_claim.metadata[0].name, null)
-          read_only             = true
+          model_id                   = asset.model_id
+          artifact_id                = asset.runtime_binding.artifact_id
+          source_sub_path            = asset.runtime_binding.source_sub_path
+          consumer_path              = asset.runtime_binding.consumer_path
+          mechanism                  = asset.runtime_binding.mechanism
+          content_identity_kind      = asset.runtime_binding.content_identity_kind
+          content_manifest_algorithm = asset.runtime_binding.content_manifest_algorithm
+          content_digest_sha256      = asset.runtime_binding.content_digest_sha256
+          size_bytes                 = asset.runtime_binding.size_bytes
+          source_artifact            = asset.runtime_binding.source_artifact
+          claim                      = var.academic_assets.runtime_claim.name
+          read_only                  = true
         }
       )
     }

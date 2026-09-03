@@ -392,6 +392,9 @@
         "python_version",
         "schema",
         "tenant_id",
+        "tree_manifest_algorithm",
+        "tree_manifest_sha256",
+        "tree_total_bytes",
         "world_readable"
       ],
       "properties": {
@@ -458,6 +461,19 @@
         },
         "evidence_digest": {
           "$ref": "#/$defs/sha256"
+        },
+        "tree_manifest_algorithm": {
+          "const": "fs2-tree-manifest/v1"
+        },
+        "tree_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Digest of the installed tree's own manifest, not of the archive it came from."
+        },
+        "tree_total_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Real byte total of the installed tree."
         }
       }
     }

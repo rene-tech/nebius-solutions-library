@@ -124,7 +124,16 @@
           "read_only": true,
           "duplicates_bytes": false,
           "embeds_bytes": false,
-          "note": "Model onboarding addresses this object as artifact alphafold3-parameters at /models/af3.bin.zst. The same verified bytes on the tenant-private claim are exposed there by a subPath mount, so the object is localized rather than copied; the private contract keeps its own asset id and volume-level mount root unchanged."
+          "note": "Model onboarding addresses this object as artifact alphafold3-parameters at /models/af3.bin.zst. It is a single file, so the file digest is its identity and the same verified bytes are localized by subPath rather than copied.",
+          "content_identity_kind": "file-digest",
+          "content_manifest_algorithm": null,
+          "content_digest_sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+          "size_bytes": 1020545840,
+          "source_artifact": {
+            "filename": "af3.bin.zst",
+            "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+            "size_bytes": 1020545840
+          }
         }
       },
       "runtime": {
@@ -249,7 +258,16 @@
           "read_only": true,
           "duplicates_bytes": false,
           "embeds_bytes": false,
-          "note": "The preinstalled tree is localized read-only for PYTHONPATH. Runtime wiring for native BindCraft belongs to the runtime image work; this only publishes where the bytes are."
+          "note": "The consumer reads the installed tree, not the wheel. The tree is identified by its own manifest digest, observed at install time; the wheel SHA-256 and size stay separate as the source artifact that produced it. Runtime wiring for native BindCraft belongs to the runtime image work; this only publishes where the bytes are.",
+          "content_identity_kind": "tree-manifest",
+          "content_manifest_algorithm": "fs2-tree-manifest/v1",
+          "content_digest_sha256": null,
+          "size_bytes": null,
+          "source_artifact": {
+            "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+            "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+            "size_bytes": 1667097173
+          }
         }
       },
       "runtime": {

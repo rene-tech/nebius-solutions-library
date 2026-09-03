@@ -12,6 +12,21 @@ locals {
     mountRoot = var.academic_assets.delivery.mount_root
     assetGid  = var.academic_assets.delivery.asset_gid
     readOnly  = true
+
+    # The renderer needs the exact bindings, not just a claim and a mount root:
+    # a subPath mount cannot be generated from those alone.
+    runtimeBindings = {
+      for key, asset in var.academic_assets.assets : key => {
+        modelId             = asset.model_id
+        artifactId          = asset.runtime_binding.artifact_id
+        sourceSubPath       = asset.runtime_binding.source_sub_path
+        consumerPath        = asset.runtime_binding.consumer_path
+        mechanism           = asset.runtime_binding.mechanism
+        contentIdentityKind = asset.runtime_binding.content_identity_kind
+        contentDigestSha256 = asset.runtime_binding.content_digest_sha256
+        readOnly            = true
+      } if asset.runtime_binding != null
+    }
   }
 }
 
