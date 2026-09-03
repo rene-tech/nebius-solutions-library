@@ -1,0 +1,7 @@
+{
+  "asset_id": "alphafold3",
+  "state": "LicenseAcceptancePending",
+  "artifact_state": "staged-quarantined",
+  "activation_allowed": false,
+  "required_action": "operator deployment promotion after exact licensed parameters and reference data are localized and ready"
+}

@@ -1,44 +1,1310 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "accelerator_requirement": {
+      "additionalProperties": false,
+      "properties": {
+        "class": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        },
+        "count": {
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "resource_name": {
+          "const": "nvidia.com/gpu"
+        }
+      },
+      "required": [
+        "class",
+        "resource_name",
+        "count"
+      ],
+      "type": "object"
+    },
+    "aggregate_tree": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset_relative_path": {
+          "maxLength": 1024,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9.][A-Za-z0-9._+/-]*$",
+          "type": "string"
+        },
+        "dataset_uri": {
+          "maxLength": 1200,
+          "pattern": "^file:///mnt/fs2-reference-data/data/datasets/[A-Za-z0-9._+/-]+$",
+          "type": "string"
+        },
+        "file_count": {
+          "maximum": 100000000,
+          "minimum": 4097,
+          "type": "integer"
+        },
+        "kind": {
+          "const": "aggregate-tree"
+        }
+      },
+      "required": [
+        "kind",
+        "dataset_relative_path",
+        "dataset_uri",
+        "file_count"
+      ],
+      "type": "object"
+    },
+    "artifact_requirement": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "aggregate_tree"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "file_manifest"
+              ]
+            },
+            "properties": {
+              "required_files": {
+                "const": [
+                  ".fs2-manifest-sha256"
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "aggregate_tree": {
+          "$ref": "#/$defs/aggregate_tree"
+        },
+        "artifact_id": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        },
+        "content_digest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "file_manifest": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "generation": {
+                "maxLength": 64,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "md5": {
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string"
+              },
+              "path": {
+                "maxLength": 512,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9.][A-Za-z0-9._+/-]*$",
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "size_bytes": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "path",
+              "size_bytes",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "handling": {
+          "enum": [
+            "standard",
+            "restricted-quarantine"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "weights",
+            "reference-data",
+            "runtime-dependency"
+          ]
+        },
+        "localization_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "required_files": {
+          "items": {
+            "maxLength": 512,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9.][A-Za-z0-9._+/-]*$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "source": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "huggingface",
+                "source-tree",
+                "operator-staged",
+                "third-party-mirror"
+              ]
+            },
+            "release_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repository": {
+              "maxLength": 96,
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]*/[A-Za-z0-9_][A-Za-z0-9._-]*$",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "revision": {
+              "pattern": "^[0-9a-f]{40}$",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "repository",
+            "revision",
+            "release_id"
+          ],
+          "type": "object"
+        },
+        "supply_state": {
+          "enum": [
+            "source-qualified",
+            "repository-bundled",
+            "poc-staged-quarantine",
+            "third-party-mirror-verified",
+            "license-acceptance-pending",
+            "upstream-unavailable",
+            "unresolved"
+          ]
+        },
+        "total_size_bytes": {
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "artifact_id",
+        "kind",
+        "source",
+        "required_files",
+        "supply_state",
+        "handling"
+      ],
+      "type": "object"
+    },
+    "model_id": {
+      "maxLength": 63,
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "type": "string"
+    },
+    "profile": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "variant_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "access": {
+                "required": [
+                  "condition",
+                  "materialization",
+                  "operational_activation",
+                  "formal_license_acceptance",
+                  "license_gate_scope"
+                ]
+              },
+              "execution_identity": {
+                "required": [
+                  "runtime_image_repository",
+                  "runtime_image_state"
+                ]
+              },
+              "interface": {
+                "required": [
+                  "variant_submit_endpoint",
+                  "default_submit_endpoint",
+                  "parameter_schema_sha256",
+                  "parameter_schema_definition"
+                ]
+              },
+              "policy": {
+                "required": [
+                  "fast_start"
+                ]
+              },
+              "resources": {
+                "required": [
+                  "accelerator_requirement",
+                  "cache_pvc"
+                ]
+              },
+              "workload": {
+                "required": [
+                  "parameter_schema_sha256",
+                  "storage"
+                ]
+              }
+            },
+            "required": [
+              "variant_id",
+              "default_variant",
+              "artifact_requirements"
+            ]
+          }
+        },
+        {
+          "else": {
+            "properties": {
+              "interface": {
+                "properties": {
+                  "default_submit_endpoint": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "default_variant": {
+                "const": true
+              }
+            },
+            "required": [
+              "default_variant"
+            ]
+          },
+          "then": {
+            "properties": {
+              "interface": {
+                "properties": {
+                  "default_submit_endpoint": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_identity": {
+                "properties": {
+                  "runtime_image_state": {
+                    "const": "build-required"
+                  }
+                },
+                "required": [
+                  "runtime_image_state"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "execution_identity": {
+                "properties": {
+                  "runtime_image_digest": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_identity": {
+                "properties": {
+                  "runtime_image_state": {
+                    "const": "digest-pinned"
+                  }
+                },
+                "required": [
+                  "runtime_image_state"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "execution_identity": {
+                "properties": {
+                  "runtime_image_digest": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "access": {
+                "properties": {
+                  "state": {
+                    "const": "license-acceptance-pending"
+                  }
+                },
+                "required": [
+                  "state"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "access": {
+                "properties": {
+                  "condition": {
+                    "const": "LicenseAcceptancePending"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "access": {
+                "properties": {
+                  "operational_activation": {
+                    "const": "user-authorized-academic-poc"
+                  }
+                },
+                "required": [
+                  "operational_activation"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "access": {
+                "properties": {
+                  "condition": {
+                    "const": "LicenseAcceptancePending"
+                  },
+                  "formal_license_acceptance": {
+                    "const": "pending-authorized-institution-representative"
+                  },
+                  "license_gate_scope": {
+                    "const": "production-promotion-only"
+                  },
+                  "materialization": {
+                    "const": "restricted-quarantine-poc-authorized"
+                  },
+                  "state": {
+                    "const": "license-acceptance-pending"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "description": "Candidate model-to-scientific-batch adapter contract. A profile is not a serving binding and cannot make a model invocable without independent access, build, semantic, hardware, and live-controller qualification.",
+      "properties": {
+        "access": {
+          "additionalProperties": false,
+          "properties": {
+            "condition": {
+              "enum": [
+                "LicenseAcceptancePending",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "credentials_embedded": {
+              "const": false
+            },
+            "formal_license_acceptance": {
+              "enum": [
+                "not-required",
+                "pending-authorized-institution-representative"
+              ]
+            },
+            "license_gate_scope": {
+              "enum": [
+                "not-applicable",
+                "materialization-and-execution",
+                "production-promotion-only"
+              ]
+            },
+            "materialization": {
+              "enum": [
+                "not-materialized",
+                "quarantine-required",
+                "restricted-quarantine-poc-authorized"
+              ]
+            },
+            "operational_activation": {
+              "enum": [
+                "candidate-not-activated",
+                "poc-quarantine-only",
+                "user-authorized-academic-poc"
+              ]
+            },
+            "profile": {
+              "enum": [
+                "standard",
+                "academic"
+              ]
+            },
+            "receipt_digest": {
+              "type": "null"
+            },
+            "state": {
+              "enum": [
+                "not-required",
+                "unverified",
+                "verified",
+                "blocked",
+                "license-acceptance-pending"
+              ]
+            }
+          },
+          "required": [
+            "profile",
+            "state",
+            "receipt_digest",
+            "credentials_embedded"
+          ],
+          "type": "object"
+        },
+        "artifact_requirements": {
+          "items": {
+            "$ref": "#/$defs/artifact_requirement"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "default_variant": {
+          "type": "boolean"
+        },
+        "display_name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "execution_identity": {
+          "additionalProperties": false,
+          "properties": {
+            "artifact_manifest_digest": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "execution_identity_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "model_revision": {
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            },
+            "runtime_image_digest": {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "runtime_image_repository": {
+              "maxLength": 253,
+              "pattern": "^[a-z0-9]+(?:[._-]+[a-z0-9]+)*(?:/[a-z0-9]+(?:[._-]+[a-z0-9]+)*)+$",
+              "type": "string"
+            },
+            "runtime_image_state": {
+              "enum": [
+                "build-required",
+                "digest-pinned"
+              ]
+            },
+            "runtime_recipe_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "workload_recipe_sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          },
+          "required": [
+            "model_revision",
+            "runtime_image_digest",
+            "runtime_recipe_sha256",
+            "workload_recipe_sha256",
+            "artifact_manifest_digest",
+            "execution_identity_sha256"
+          ],
+          "type": "object"
+        },
+        "execution_mode": {
+          "enum": [
+            "scientific-batch",
+            "hybrid"
+          ]
+        },
+        "interface": {
+          "additionalProperties": false,
+          "properties": {
+            "default_submit_endpoint": {
+              "maxLength": 256,
+              "pattern": "^/v1/models/[a-z0-9](?:[-a-z0-9]*[a-z0-9])?:submit$",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "mcp": {
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "maxLength": 240,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "discoverable": {
+                  "const": true
+                },
+                "invocable": {
+                  "const": false
+                },
+                "tool_name": {
+                  "maxLength": 128,
+                  "pattern": "^[a-z][a-z0-9_]*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "discoverable",
+                "invocable",
+                "tool_name",
+                "description"
+              ],
+              "type": "object"
+            },
+            "operations": {
+              "items": {
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "parameter_schema": {
+              "maxLength": 256,
+              "pattern": "^fs2-serve\\.nebius\\.ai/[a-z0-9-]+/v[1-9][0-9]*$",
+              "type": "string"
+            },
+            "parameter_schema_definition": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "properties": {
+                    "$schema": {
+                      "const": "https://json-schema.org/draft/2020-12/schema"
+                    },
+                    "additionalProperties": {
+                      "const": false
+                    },
+                    "type": {
+                      "const": "object"
+                    }
+                  },
+                  "required": [
+                    "$schema",
+                    "type",
+                    "additionalProperties"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "parameter_schema_sha256": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/sha256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "protocol": {
+              "const": "scientific-batch-v1"
+            },
+            "request_schema": {
+              "const": "fs2-serve.nebius.ai/scientific-run-request/v1"
+            },
+            "result_schema": {
+              "const": "fs2-serve.nebius.ai/scientific-run-result/v1"
+            },
+            "service_classes": {
+              "items": {
+                "enum": [
+                  "presentation",
+                  "interactive",
+                  "customer-batch",
+                  "bulk-backfill"
+                ]
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "submit_endpoint": {
+              "maxLength": 256,
+              "pattern": "^/v1/models/[a-z0-9](?:[-a-z0-9]*[a-z0-9])?:submit$",
+              "type": "string"
+            },
+            "variant_submit_endpoint": {
+              "maxLength": 256,
+              "pattern": "^/v1/models/[a-z0-9](?:[-a-z0-9]*[a-z0-9])?/variants/[a-z0-9](?:[-a-z0-9]*[a-z0-9])?:submit$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocol",
+            "request_schema",
+            "result_schema",
+            "parameter_schema",
+            "operations",
+            "service_classes",
+            "mcp"
+          ],
+          "type": "object"
+        },
+        "model_id": {
+          "$ref": "#/$defs/model_id"
+        },
+        "policy": {
+          "additionalProperties": false,
+          "properties": {
+            "commercial_use": {
+              "enum": [
+                "allowed",
+                "license-dependent",
+                "prohibited",
+                "blocked"
+              ]
+            },
+            "fast_start": {
+              "additionalProperties": false,
+              "properties": {
+                "cache_role": {
+                  "const": "auxiliary-compiler-jit-l1-plus"
+                },
+                "cache_strategy": {
+                  "const": "shared-pvc"
+                },
+                "maximum_level": {
+                  "const": "L1"
+                },
+                "qualified_level": {
+                  "const": "Off"
+                },
+                "requested_level": {
+                  "const": "Off"
+                },
+                "state": {
+                  "const": "candidate-unqualified"
+                }
+              },
+              "required": [
+                "requested_level",
+                "maximum_level",
+                "qualified_level",
+                "state",
+                "cache_strategy"
+              ],
+              "type": "object"
+            },
+            "limitations": {
+              "items": {
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "non_clinical": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "commercial_use",
+            "non_clinical",
+            "limitations"
+          ],
+          "type": "object"
+        },
+        "resources": {
+          "additionalProperties": false,
+          "properties": {
+            "accelerator_requirement": {
+              "$ref": "#/$defs/accelerator_requirement"
+            },
+            "cache_pvc": {
+              "additionalProperties": false,
+              "properties": {
+                "binding": {
+                  "const": "deployment-configured-claim"
+                },
+                "size_bytes": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "storage_class": {
+                  "maxLength": 63,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "size_bytes",
+                "storage_class",
+                "binding"
+              ],
+              "type": "object"
+            },
+            "compatible_pool_ids": {
+              "items": {
+                "maxLength": 63,
+                "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "gpu_count": {
+              "maximum": 8,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "gpu_topology": {
+              "enum": [
+                "single-gpu",
+                "single-node-multi-gpu"
+              ]
+            },
+            "host_architectures": {
+              "items": {
+                "enum": [
+                  "amd64",
+                  "arm64"
+                ]
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "required_node_labels": {
+              "additionalProperties": {
+                "maxLength": 63,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxProperties": 16,
+              "minProperties": 1,
+              "type": "object"
+            }
+          },
+          "required": [
+            "gpu_count",
+            "gpu_topology",
+            "host_architectures",
+            "compatible_pool_ids",
+            "required_node_labels"
+          ],
+          "type": "object"
+        },
+        "route_exposed": {
+          "type": "boolean"
+        },
+        "schema": {
+          "const": "fs2-serve.nebius.ai/scientific-workload-profile/v1"
+        },
+        "semantic_validation": {
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "enum": [
+                "candidate-unqualified",
+                "qualified",
+                "active"
+              ]
+            },
+            "validator_id": {
+              "maxLength": 128,
+              "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "validator_id",
+            "state"
+          ],
+          "type": "object"
+        },
+        "source": {
+          "additionalProperties": false,
+          "properties": {
+            "classification": {
+              "const": "candidate-input"
+            },
+            "kind": {
+              "enum": [
+                "git",
+                "huggingface"
+              ]
+            },
+            "repository": {
+              "maxLength": 96,
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]*/[A-Za-z0-9_][A-Za-z0-9._-]*$",
+              "type": "string"
+            },
+            "review_url": {
+              "maxLength": 2048,
+              "pattern": "^https://[^\\s]+$",
+              "type": "string"
+            },
+            "revision": {
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "repository",
+            "revision",
+            "review_url",
+            "classification"
+          ],
+          "type": "object"
+        },
+        "state": {
+          "enum": [
+            "candidate-unqualified",
+            "qualified",
+            "active"
+          ]
+        },
+        "variant_id": {
+          "$ref": "#/$defs/model_id"
+        },
+        "workload": {
+          "$ref": "#/$defs/workload"
+        }
+      },
+      "required": [
+        "schema",
+        "model_id",
+        "display_name",
+        "execution_mode",
+        "state",
+        "route_exposed",
+        "source",
+        "execution_identity",
+        "interface",
+        "access",
+        "resources",
+        "workload",
+        "semantic_validation",
+        "policy"
+      ],
+      "type": "object"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "stage": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "resources"
+            ]
+          },
+          "then": {
+            "required": [
+              "placement"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "admission_mode": {
+          "enum": [
+            "independent-jobs",
+            "gang-jobset"
+          ]
+        },
+        "checkpoint_mode": {
+          "enum": [
+            "none",
+            "restart",
+            "resume"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/stage_id"
+        },
+        "max_parallelism": {
+          "maximum": 1024,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "min_parallelism": {
+          "maximum": 1024,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "needs": {
+          "items": {
+            "$ref": "#/$defs/stage_id"
+          },
+          "maxItems": 32,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "placement": {
+          "$ref": "#/$defs/stage_placement"
+        },
+        "preemption_mode": {
+          "enum": [
+            "non_preemptible",
+            "restartable",
+            "checkpointable"
+          ]
+        },
+        "resource_class": {
+          "enum": [
+            "cpu",
+            "gpu"
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/stage_resources"
+        }
+      },
+      "required": [
+        "id",
+        "needs",
+        "resource_class",
+        "admission_mode",
+        "min_parallelism",
+        "max_parallelism",
+        "checkpoint_mode",
+        "preemption_mode"
+      ],
+      "type": "object"
+    },
+    "stage_id": {
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "type": "string"
+    },
+    "stage_placement": {
+      "additionalProperties": false,
+      "properties": {
+        "accelerator_requirement": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/accelerator_requirement"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "compatible_pool_ids": {
+          "items": {
+            "maxLength": 128,
+            "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "required_node_labels": {
+          "additionalProperties": {
+            "maxLength": 63,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxProperties": 16,
+          "type": "object"
+        }
+      },
+      "required": [
+        "accelerator_requirement",
+        "compatible_pool_ids",
+        "required_node_labels"
+      ],
+      "type": "object"
+    },
+    "stage_resources": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu_millis": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "ephemeral_storage_request_gib": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "gpu_count": {
+          "maximum": 8,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limits": {
+          "additionalProperties": false,
+          "properties": {
+            "cpu_millis": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "ephemeral_storage_bytes": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "memory_bytes": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "cpu_millis",
+            "memory_bytes",
+            "ephemeral_storage_bytes"
+          ],
+          "type": "object"
+        },
+        "memory_bytes": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cpu_millis",
+        "memory_bytes",
+        "ephemeral_storage_request_gib",
+        "gpu_count",
+        "limits"
+      ],
+      "type": "object"
+    },
+    "storage": {
+      "additionalProperties": false,
+      "properties": {
+        "access_mode": {
+          "enum": [
+            "ReadWriteOnce",
+            "ReadWriteMany"
+          ]
+        },
+        "id": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        },
+        "minimum_bytes": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "purpose": {
+          "enum": [
+            "reference-data",
+            "run-artifacts",
+            "model-artifacts"
+          ]
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "stages": {
+          "items": {
+            "$ref": "#/$defs/stage_id"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "id",
+        "purpose",
+        "minimum_bytes",
+        "access_mode",
+        "read_only",
+        "stages"
+      ],
+      "type": "object"
+    },
+    "workload": {
+      "additionalProperties": false,
+      "properties": {
+        "cancellation": {
+          "additionalProperties": false,
+          "properties": {
+            "grace_seconds": {
+              "maximum": 600,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "mode": {
+              "enum": [
+                "terminate-attempt",
+                "checkpoint-then-terminate"
+              ]
+            }
+          },
+          "required": [
+            "mode",
+            "grace_seconds"
+          ],
+          "type": "object"
+        },
+        "parameter_schema_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "retry": {
+          "additionalProperties": false,
+          "properties": {
+            "max_attempts": {
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "retryable_exit_codes": {
+              "items": {
+                "maximum": 255,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "maxItems": 64,
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "max_attempts",
+            "retryable_exit_codes"
+          ],
+          "type": "object"
+        },
+        "stages": {
+          "items": {
+            "$ref": "#/$defs/stage"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array"
+        },
+        "storage": {
+          "items": {
+            "$ref": "#/$defs/storage"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "stages",
+        "retry",
+        "cancellation"
+      ],
+      "type": "object"
+    }
+  },
   "$id": "https://fs2-serve.nebius.ai/schema/scientific-workload-profiles/v1",
-  "title": "Scientific workload profile set",
-  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "properties": {
+    "profiles": {
+      "items": {
+        "$ref": "#/$defs/profile"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "fs2-serve.nebius.ai/scientific-workload-profiles/v1"
+    }
+  },
   "required": [
     "schema",
     "profiles"
   ],
-  "properties": {
-    "schema": {
-      "const": "fs2-serve.nebius.ai/scientific-workload-profiles/v1"
-    },
-    "profiles": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": [
-          "schema",
-          "model_id",
-          "state",
-          "route_exposed"
-        ],
-        "properties": {
-          "schema": {
-            "const": "fs2-serve.nebius.ai/scientific-workload-profile/v1"
-          },
-          "model_id": {
-            "type": "string",
-            "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
-            "maxLength": 63
-          },
-          "state": {
-            "const": "candidate-unqualified"
-          },
-          "route_exposed": {
-            "const": false
-          }
-        }
-      }
-    }
-  }
+  "title": "Scientific workload profile set",
+  "type": "object"
 }

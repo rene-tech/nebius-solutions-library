@@ -476,7 +476,8 @@ def test_store_uses_only_migration_global_lock_and_bounded_skip_locked_janitors(
         "and (t.expires_at is null or t.expires_at>clock_timestamp())"
     ) in normalized
     assert (
-        "where o.status='queued' and o.available_at<=clock_timestamp() "
+        "where o.status='queued' and o.protocol<>'scientific-batch-v1' "
+        "and o.available_at<=clock_timestamp() "
         "and o.payload_expires_at>clock_timestamp() "
         "and (o.deadline_at is null or o.deadline_at>clock_timestamp()) "
         "and o.attempt<o.max_attempts"

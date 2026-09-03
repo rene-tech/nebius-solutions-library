@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://fs2-serve.nebius.ai/schema/scientific-source-candidate-receipts/v1",
   "title": "Scientific source candidate receipts",
-  "description": "Immutable upstream HEAD observations used only to start review. These receipts are not build, artifact, access, license, hardware, semantic, performance, or production qualification evidence.",
+  "description": "Source-qualified exact revisions used to start runtime review. These receipts are not build, artifact materialization, hardware, semantic, performance, or production qualification evidence.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -43,6 +43,11 @@
             "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
             "maxLength": 63
           },
+          "variant_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+            "maxLength": 63
+          },
           "upstream_name": {
             "type": "string",
             "minLength": 1,
@@ -54,12 +59,12 @@
           "status": {
             "const": "candidate"
           },
-          "qualification_state": {
-            "const": "unqualified"
-          },
-          "observation_method": {
-            "const": "git-ls-remote-head"
-          },
+        "qualification_state": {
+          "enum": ["unqualified", "source-qualified"]
+        },
+        "observation_method": {
+          "enum": ["git-ls-remote-head", "source-qualification-record"]
+        },
           "source": {
             "type": "object",
             "additionalProperties": false,
@@ -95,16 +100,34 @@
               "academic"
             ]
           },
-          "access_state": {
-            "const": "unverified"
-          },
+        "access_state": {
+          "enum": ["unverified", "not-required", "license-acceptance-pending"]
+        },
           "notes": {
             "type": "string",
             "minLength": 1,
             "maxLength": 1000
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {"required": ["variant_id"]},
+          "then": {
+            "properties": {
+              "qualification_state": {"const": "source-qualified"},
+              "observation_method": {"const": "source-qualification-record"}
+            }
+          },
+          "else": {
+            "properties": {
+              "qualification_state": {"const": "unqualified"},
+              "observation_method": {"const": "git-ls-remote-head"},
+              "access_state": {"const": "unverified"}
+            }
+          }
+        }
+      ]
     }
   }
 }

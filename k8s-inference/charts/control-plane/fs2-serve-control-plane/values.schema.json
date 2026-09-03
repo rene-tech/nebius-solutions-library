@@ -6,6 +6,7 @@
     "adminConsole",
     "adminConfiguration",
     "modelController",
+    "scientificBatch",
     "bootstrapAccess",
     "serviceAccounts",
     "catalog",
@@ -20,7 +21,8 @@
     "grafanaDashboard",
     "publicGateway",
     "publicLoadBalancer",
-    "publicTls"
+    "publicTls",
+    "scientificArtifacts"
   ],
   "properties": {
     "replicaCount": {
@@ -650,6 +652,58 @@
       },
       "additionalProperties": false
     },
+    "scientificBatch": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "writesEnabled",
+        "namespace",
+        "kubernetesApiUrl",
+        "schedulingContractConfigMapName",
+        "schedulingContractKey",
+        "executionMapConfigMapName",
+        "executionMapKey",
+        "workers",
+        "pollSeconds",
+        "leaseSeconds",
+        "apiTimeoutSeconds",
+        "tokenExpirationSeconds"
+      ],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "writesEnabled": {"type": "boolean"},
+        "namespace": {"const": "fs2-models"},
+        "kubernetesApiUrl": {
+          "type": "string",
+          "pattern": "^https://[a-z0-9.-]+(?::[0-9]+)?$",
+          "maxLength": 2048
+        },
+        "schedulingContractConfigMapName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "schedulingContractKey": {"const": "kueue-scheduling.json"},
+        "executionMapConfigMapName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "executionMapKey": {"const": "execution-map.json"},
+        "workers": {"type": "integer", "minimum": 1, "maximum": 32},
+        "pollSeconds": {
+          "type": "string",
+          "pattern": "^(?:0\\.(?:0[5-9]|[1-9][0-9]*)|[1-9](?:\\.[0-9]+)?|[1-5][0-9](?:\\.[0-9]+)?|60(?:\\.0+)?)$"
+        },
+        "leaseSeconds": {"type": "string", "pattern": "^(?:[5-9]|[1-9][0-9]|[12][0-9]{2}|300)$"},
+        "apiTimeoutSeconds": {
+          "type": "string",
+          "pattern": "^(?:0\\.[5-9][0-9]*|[1-9](?:\\.[0-9]+)?|[12][0-9](?:\\.[0-9]+)?|30(?:\\.0+)?)$"
+        },
+        "tokenExpirationSeconds": {"type": "integer", "minimum": 600, "maximum": 3600}
+      },
+      "additionalProperties": false
+    },
     "serviceAccounts": {
       "type": "object",
       "required": [
@@ -825,7 +879,8 @@
         "ledgerHmacKeyring",
         "tokenPepper",
         "routeAttestors",
-        "admin"
+        "admin",
+        "artifactStore"
       ],
       "properties": {
         "database": {
@@ -851,6 +906,26 @@
         },
         "admin": {
           "$ref": "#/$defs/secretKeyReference"
+        },
+        "artifactStore": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "key"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            }
+          }
         }
       },
       "additionalProperties": false
@@ -1197,19 +1272,19 @@
               "const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"
             },
             "contractPayloadSha256": {
-              "const": "3a977a1c29f338233eb017454ee3d07bf505c31db909bccc05a2524388ad3da2"
+              "const": "3e9cb0cf59dd28c74f94594ef20aa5aeaa87170f79d7f498b820fdf4a8c784af"
             },
             "migrationSetSha256": {
-              "const": "081ae3ea6ddc3a0efd8b86151352d7b2f2ebc8de4d07a1e078bcb24b1c0f66cf"
+              "const": "6926de8f73092cd53e0397a8b6f44e2a9e9a64e73ad4b273e08cc96b2a5c25dd"
             },
             "migrationCount": {
-              "const": 13
+              "const": 15
             },
             "firstMigrationVersion": {
               "const": "0001_initial.sql"
             },
             "lastMigrationVersion": {
-              "const": "0013_durable_dynamic_dispatch.sql"
+              "const": "0015_scientific_batch_controller.sql"
             },
             "namespaceRoleOwnershipSha256": {
               "const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"
@@ -1995,6 +2070,84 @@
               "type": "string",
               "minLength": 1
             }
+          }
+        }
+      }
+    },
+    "scientificArtifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "endpoint",
+        "bucket",
+        "region",
+        "addressingStyle",
+        "verifyTls",
+        "handleTtlSeconds",
+        "maxBytes",
+        "retentionSeconds",
+        "mediaTypes",
+        "egressCidrs"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "endpoint": {
+          "type": "string",
+          "pattern": "^https?://[^ ]+$",
+          "maxLength": 2048
+        },
+        "bucket": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "maxLength": 63
+        },
+        "addressingStyle": {
+          "enum": [
+            "path",
+            "virtual"
+          ]
+        },
+        "verifyTls": {
+          "type": "boolean"
+        },
+        "handleTtlSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 900
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 1099511627776
+        },
+        "retentionSeconds": {
+          "type": "integer",
+          "minimum": 86400,
+          "maximum": 315360000
+        },
+        "mediaTypes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.+-]*/[A-Za-z0-9][A-Za-z0-9.+_-]*$"
+          }
+        },
+        "egressCidrs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
           }
         }
       }

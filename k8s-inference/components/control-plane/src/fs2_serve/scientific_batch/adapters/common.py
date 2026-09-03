@@ -20,11 +20,13 @@ from pathlib import Path, PurePosixPath
 from typing import cast
 
 from ..catalog_adapter import ScientificStageExpansion, scientific_plan_from_catalog_profile
-from ..models import AdapterExecutionPlan, ServiceClass, StageInvocation
-
-# Re-exported so every adapter keeps importing these from one place; the
-# definitions live in the dependency-free primitives module because the same
-# localization code also runs inside a model runtime image.
+from ..models import (
+    AdapterExecutionPlan,
+    RuntimeArtifactMount,
+    ScientificInputArtifact,
+    ServiceClass,
+    StageInvocation,
+)
 from .primitives import ScientificAdapterError as ScientificAdapterError
 from .primitives import strict_object as strict_object
 
@@ -41,20 +43,39 @@ _RUNTIME_ARTIFACT_ROOT = PurePosixPath("/opt/fs2/artifacts")
 _RECIPE_SHARED_PATHS = (
     "components/control-plane/src/fs2_serve/scientific_batch/__init__.py",
     "components/control-plane/src/fs2_serve/scientific_batch/controller.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/compiler_cache.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/codec.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/execution.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/execution_map_builder.py",
     "components/control-plane/src/fs2_serve/scientific_batch/models.py",
     "components/control-plane/src/fs2_serve/scientific_batch/catalog_adapter.py",
     "components/control-plane/src/fs2_serve/scientific_batch/protocols.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/scheduling.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/service.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/__init__.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/common.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/adapters/secondary_structure.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/primitives.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/materialization.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/localization.py",
     "catalog/runtime/schema/scientific-run-request.schema.json",
     "catalog/runtime/schema/scientific-run-result.schema.json",
+    "catalog/runtime/schema/scientific-workload-profile.schema.json",
+    "catalog/runtime/schema/scientific-execution-targets.schema.json",
+    "catalog/runtime/schema/scientific-runtime-localizations.schema.json",
+    "catalog/runtime/contracts/scientific-execution-targets.json",
+    "model-onboarding/compile_model.py",
+    "model-onboarding/model-declaration.schema.json",
     "catalog/runtime/schema/scientific-artifact-localization.schema.json",
     "catalog/runtime/contracts/scientific-artifact-localization.json",
 )
 _RECIPE_MODEL_PATHS = {
+    "alphafold3": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/alphafold3.py",
+        "model-onboarding/declarations/cancer-immunotherapy/alphafold3.json",
+        "models/structure/runtime/alphafold3/adapter.py",
+    ),
+    "bindcraft": ("components/control-plane/src/fs2_serve/scientific_batch/adapters/bindcraft.py",),
     "boltzgen": (
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/boltzgen.py",
         "catalog/runtime/schema/boltzgen-parameters.schema.json",
@@ -67,6 +88,28 @@ _RECIPE_MODEL_PATHS = {
         "models/structure/batch-adapters/proteina-complexa/adapter.py",
         "models/structure/batch-adapters/proteina-complexa/contract.json",
     ),
+    "esmfold2": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/esmfold2.py",
+        "model-onboarding/declarations/cancer-immunotherapy/esmfold2.json",
+        "models/structure/runtime/esmfold2/adapter.py",
+    ),
+    "esmfold2-fast": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/esmfold2_fast.py",
+        "model-onboarding/declarations/cancer-immunotherapy/esmfold2-fast.json",
+        "models/structure/runtime/esmfold2_fast/adapter.py",
+    ),
+    "freebindcraft": ("components/control-plane/src/fs2_serve/scientific_batch/adapters/freebindcraft.py",),
+    "openfold3": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/openfold3.py",
+        "model-onboarding/declarations/cancer-immunotherapy/openfold3.json",
+        "models/structure/runtime/openfold3/adapter.py",
+    ),
+    "protenix-v2": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/protenix_v2.py",
+        "model-onboarding/declarations/cancer-immunotherapy/protenix-v2.json",
+        "models/structure/runtime/protenix_v2/adapter.py",
+    ),
+    "rfdiffusion-upstream": ("components/control-plane/src/fs2_serve/scientific_batch/adapters/rfdiffusion.py",),
 }
 
 
@@ -127,6 +170,8 @@ def runtime_recipe_sha256(solution_root: Path, model_id: str) -> str:
     digest = hashlib.sha256()
     for relative in sorted(paths):
         path = solution_root / relative
+        if not path.exists():
+            raise ScientificAdapterError(f"runtime recipe input is missing: {relative}")
         content = path.read_bytes()
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
@@ -235,6 +280,48 @@ def parse_public_request(value: object, *, maximum_input_bytes: int) -> PublicRu
     return PublicRunRequest(operation, service_class, pointer, cast(Mapping[str, object], parameters), context)
 
 
+def bind_compiler_input(
+    request: PublicRunRequest,
+    *,
+    variant_id: str,
+    expected_variant_id: str,
+    input_artifacts: tuple[ScientificInputArtifact, ...],
+    maximum_bytes: int,
+    allowed_media_types: frozenset[str] = frozenset({"application/json"}),
+    allowed_compressions: frozenset[str | None] = frozenset({None, "none"}),
+) -> ScientificInputArtifact:
+    """Bind a canonical request to one controller-verified JSON input artifact.
+
+    Public requests identify only the immutable input manifest. The controller
+    resolves that manifest and passes its verified entries here; adapters never
+    accept storage URLs or caller-selected mount paths.
+    """
+
+    if variant_id != expected_variant_id:
+        raise ScientificAdapterError("variant_id does not match the selected model adapter")
+    if len(input_artifacts) != 1:
+        raise ScientificAdapterError("input manifest must resolve to exactly one model input artifact")
+    artifact = input_artifacts[0]
+    if (
+        artifact.size_bytes < 1
+        or artifact.size_bytes > maximum_bytes
+        or artifact.media_type not in allowed_media_types
+        or artifact.compression not in allowed_compressions
+    ):
+        raise ScientificAdapterError("resolved model input must be one bounded uncompressed JSON artifact")
+    # The public pointer binds the manifest, while this entry binds the bytes
+    # localized by the controller. Keep both identities distinct on purpose.
+    if artifact.logical_artifact_id == request.input_manifest.artifact_id:
+        raise ScientificAdapterError("input entry must not reuse the input-manifest identity")
+    return artifact
+
+
+def raw_sha256(digest: str) -> str:
+    if not digest.startswith("sha256:") or _SHA256.fullmatch(digest[7:]) is None:
+        raise ScientificAdapterError("resolved input artifact digest is invalid")
+    return digest[7:]
+
+
 def profile_from_catalog(profile_set: object, model_id: str) -> Mapping[str, object]:
     root = strict_object(
         profile_set,
@@ -256,18 +343,25 @@ def assert_profile_identity(
     profile: Mapping[str, object],
     *,
     model_id: str,
+    variant_id: str | None = None,
     repository: str,
     revision: str,
     parameter_schema: str,
     request: PublicRunRequest,
 ) -> None:
+    state = profile.get("state")
+    route_exposed = profile.get("route_exposed")
+    legacy_candidate = "variant_id" not in profile
     if (
         profile.get("schema") != "fs2-serve.nebius.ai/scientific-workload-profile/v1"
         or profile.get("model_id") != model_id
-        or profile.get("state") != "candidate-unqualified"
-        or profile.get("route_exposed") is not False
+        or (not legacy_candidate and profile.get("variant_id") != variant_id)
+        or state not in {"candidate-unqualified", "qualified", "active"}
+        or not isinstance(route_exposed, bool)
+        or (state == "candidate-unqualified" and route_exposed)
+        or (state in {"qualified", "active"} and not route_exposed)
     ):
-        raise ScientificAdapterError("catalog workload profile identity or candidate state is invalid")
+        raise ScientificAdapterError("catalog workload profile identity or promotion state is invalid")
     source = strict_object(
         profile.get("source"),
         required=frozenset({"kind", "repository", "revision", "review_url", "classification"}),
@@ -277,22 +371,50 @@ def assert_profile_identity(
         raise ScientificAdapterError("catalog workload profile source identity does not match the adapter")
     interface = strict_object(
         profile.get("interface"),
-        required=frozenset(
-            {
-                "protocol",
-                "submit_endpoint",
-                "request_schema",
-                "result_schema",
-                "parameter_schema",
-                "operations",
-                "service_classes",
-                "mcp",
-            }
+        required=(
+            frozenset(
+                {
+                    "protocol",
+                    "submit_endpoint",
+                    "request_schema",
+                    "result_schema",
+                    "parameter_schema",
+                    "operations",
+                    "service_classes",
+                    "mcp",
+                }
+            )
+            if legacy_candidate
+            else frozenset(
+                {
+                    "protocol",
+                    "variant_submit_endpoint",
+                    "default_submit_endpoint",
+                    "request_schema",
+                    "result_schema",
+                    "parameter_schema",
+                    "parameter_schema_sha256",
+                    "parameter_schema_definition",
+                    "operations",
+                    "service_classes",
+                    "mcp",
+                }
+            )
         ),
         label="catalog profile interface",
     )
     if interface["request_schema"] != RUN_REQUEST_SCHEMA or interface["parameter_schema"] != parameter_schema:
         raise ScientificAdapterError("catalog profile does not use the adapter's canonical request contracts")
+    if not legacy_candidate:
+        if variant_id is None or interface["variant_submit_endpoint"] != (
+            f"/v1/models/{model_id}/variants/{variant_id}:submit"
+        ):
+            raise ScientificAdapterError("catalog profile variant route differs from the adapter")
+        expected_default_endpoint = f"/v1/models/{model_id}:submit" if profile.get("default_variant") is True else None
+        if interface["default_submit_endpoint"] != expected_default_endpoint:
+            raise ScientificAdapterError("catalog profile default route does not resolve to the selected variant")
+        if interface["parameter_schema_sha256"] != canonical_digest(interface["parameter_schema_definition"]):
+            raise ScientificAdapterError("catalog parameter schema digest does not match its definition")
     operations = interface["operations"]
     service_classes = interface["service_classes"]
     if not isinstance(operations, list) or not all(isinstance(value, str) for value in operations):
@@ -305,13 +427,111 @@ def assert_profile_identity(
         raise ScientificAdapterError("service_class is not allowed by the catalog profile")
     resources = strict_object(
         profile.get("resources"),
-        required=frozenset(
-            {"gpu_count", "gpu_topology", "host_architectures", "compatible_pool_ids", "required_node_labels"}
+        required=(
+            frozenset(
+                {"gpu_count", "gpu_topology", "host_architectures", "compatible_pool_ids", "required_node_labels"}
+            )
+            if legacy_candidate
+            else frozenset(
+                {
+                    "gpu_count",
+                    "gpu_topology",
+                    "host_architectures",
+                    "compatible_pool_ids",
+                    "required_node_labels",
+                    "accelerator_requirement",
+                    "cache_pvc",
+                }
+            )
         ),
         label="catalog profile resources",
     )
     if resources["gpu_count"] != 1 or resources["gpu_topology"] != "single-gpu":
-        raise ScientificAdapterError("primary adapters require one GPU per GPU workload unit")
+        raise ScientificAdapterError("scientific adapters require one GPU per GPU workload unit")
+    pools = resources["compatible_pool_ids"]
+    if not isinstance(pools, list) or not pools or len(pools) != len(set(pools)):
+        raise ScientificAdapterError("catalog profile requires ordered configured deployment pools")
+    if legacy_candidate:
+        return
+    accelerator = strict_object(
+        resources["accelerator_requirement"],
+        required=frozenset({"class", "resource_name", "count"}),
+        label="catalog profile accelerator requirement",
+    )
+    if accelerator.get("resource_name") != "nvidia.com/gpu" or accelerator.get("count") != 1:
+        raise ScientificAdapterError("catalog profile accelerator requirement is invalid")
+
+
+def assert_artifact_requirement(
+    profile: Mapping[str, object],
+    *,
+    artifact_id: str,
+    content_sha256: str | None,
+    required_file: str | None = None,
+) -> Mapping[str, object]:
+    """Bind an invocation to one exact compiler-produced artifact requirement."""
+
+    raw = profile.get("artifact_requirements")
+    if not isinstance(raw, list):
+        raise ScientificAdapterError("catalog profile artifact requirements are invalid")
+    matches = [item for item in raw if isinstance(item, Mapping) and item.get("artifact_id") == artifact_id]
+    if len(matches) != 1:
+        raise ScientificAdapterError(f"catalog profile must contain exactly one {artifact_id} artifact")
+    requirement = cast(Mapping[str, object], matches[0])
+    if content_sha256 is not None and requirement.get("content_digest_sha256") != content_sha256:
+        raise ScientificAdapterError(f"catalog profile {artifact_id} digest does not match the adapter")
+    files = requirement.get("required_files")
+    if required_file is not None and (not isinstance(files, list) or required_file not in files):
+        raise ScientificAdapterError(f"catalog profile {artifact_id} file inventory is incomplete")
+    return requirement
+
+
+def runtime_artifact_mount(
+    profile: Mapping[str, object],
+    *,
+    artifact_id: str,
+    mount_path: str,
+    sub_path: str | None = None,
+    expected_manifest_sha256: str | None = None,
+) -> RuntimeArtifactMount:
+    """Bind an adapter path to profile identity; the controller adds readiness evidence.
+
+    Localization receipts are live controller observations and must never be
+    invented by an adapter or baked into the public catalog. The immutable
+    content identity is frozen here; model-license authorization belongs to the
+    deployment profile, never to the request input's access context. The
+    controller verifies the observed localization before durable admission and
+    writes its readiness receipt into the attempt-local runtime marker.
+    """
+
+    requirement = assert_artifact_requirement(
+        profile,
+        artifact_id=artifact_id,
+        content_sha256=None,
+    )
+    content_sha256 = requirement.get("content_digest_sha256")
+    if not isinstance(content_sha256, str) or _SHA256.fullmatch(content_sha256) is None:
+        raise ScientificAdapterError(f"catalog profile {artifact_id} has no immutable artifact manifest digest")
+    profile_manifest_sha256 = requirement.get("localization_manifest_sha256")
+    if expected_manifest_sha256 is not None:
+        if _SHA256.fullmatch(expected_manifest_sha256) is None or profile_manifest_sha256 != expected_manifest_sha256:
+            raise ScientificAdapterError(
+                f"catalog profile {artifact_id} localization manifest does not match the adapter"
+            )
+    elif profile_manifest_sha256 is not None:
+        if not isinstance(profile_manifest_sha256, str) or _SHA256.fullmatch(profile_manifest_sha256) is None:
+            raise ScientificAdapterError(f"catalog profile {artifact_id} localization manifest is invalid")
+        expected_manifest_sha256 = profile_manifest_sha256
+    return RuntimeArtifactMount(
+        artifact_id=artifact_id,
+        mount_path=mount_path,
+        sub_path=sub_path,
+        read_only=True,
+        expected_content_sha256=content_sha256,
+        expected_manifest_sha256=expected_manifest_sha256,
+        authorization_receipt_sha256=None,
+        readiness_receipt_sha256=None,
+    )
 
 
 def input_root(artifact_id: str) -> str:

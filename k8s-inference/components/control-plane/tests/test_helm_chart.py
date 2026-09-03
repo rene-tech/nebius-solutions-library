@@ -826,8 +826,7 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
         "verbs": ["get", "list", "watch"],
     } in model_role["rules"]
     assert not any(
-        document["kind"] in {"ClusterRole", "ClusterRoleBinding"}
-        and "model-controller" in document["metadata"]["name"]
+        document["kind"] in {"ClusterRole", "ClusterRoleBinding"} and "model-controller" in document["metadata"]["name"]
         for document in documents
     )
     leader_role = named[("Role", "fs2-serve-control-plane-model-controller-leader")]
@@ -842,11 +841,131 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert next(rule for rule in egress if rule["ports"] == [{"port": 443, "protocol": "TCP"}])["to"] == [
         {"ipBlock": {"cidr": "10.0.0.1/32"}}
     ]
-    assert any(
-        rule["ports"] == [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}]
-        for rule in egress
-    )
+    assert any(rule["ports"] == [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}] for rule in egress)
     assert any(rule["ports"] == [{"port": 9090, "protocol": "TCP"}] for rule in egress)
+
+
+def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() -> None:
+    documents = render(
+        "--set",
+        "scientificBatch.enabled=true",
+        "--set",
+        "scientificBatch.writesEnabled=true",
+        "--set",
+        "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+        "--set",
+        "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set-string",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+        "--set-string",
+        "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
+    )
+    named = {(document["kind"], document["metadata"]["name"]): document for document in documents}
+    pod = gateway_deployment(documents)["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    environment = {item["name"]: item for item in container["env"]}
+    assert pod["automountServiceAccountToken"] is False
+    assert environment["FS2_SCIENTIFIC_BATCH_ENABLED"]["value"] == "true"
+    assert environment["FS2_SCIENTIFIC_BATCH_WRITES_ENABLED"]["value"] == "true"
+    assert environment["FS2_SCIENTIFIC_BATCH_CONTROLLER_ID"]["valueFrom"]["fieldRef"] == {"fieldPath": "metadata.uid"}
+    assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_FILE"]["value"].endswith("/kueue-scheduling.json")
+    assert environment["FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE"]["value"].endswith("/execution-map.json")
+    assert environment["FS2_SCIENTIFIC_ARTIFACTS_ENABLED"]["value"] == "true"
+    assert environment["FS2_ARTIFACT_STORE_CREDENTIALS_FILE"]["value"] == (
+        "/var/run/secrets/fs2-serve/artifact-store/credentials.json"
+    )
+    assert "FS2_ARTIFACT_STORE_ACCESS_KEY" not in environment
+    assert "FS2_ARTIFACT_STORE_SECRET_KEY" not in environment
+    volumes = {item["name"]: item for item in pod["volumes"]}
+    token = volumes["scientific-batch-kubernetes"]["projected"]["sources"]
+    assert token[0]["serviceAccountToken"] == {
+        "audience": "kubernetes.default.svc",
+        "expirationSeconds": 600,
+        "path": "token",
+    }
+    assert volumes["scientific-batch-scheduling"]["configMap"]["name"] == "scientific-scheduling-a1"
+    assert volumes["scientific-batch-execution"]["configMap"]["name"] == "scientific-execution-b2"
+
+    role = named[("Role", "fs2-serve-control-plane-scientific-batch")]
+    binding = named[("RoleBinding", "fs2-serve-control-plane-scientific-batch")]
+    assert role["metadata"]["namespace"] == "fs2-models"
+    assert role["rules"] == [
+        {"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["get", "create", "delete"]},
+        {
+            "apiGroups": ["jobset.x-k8s.io"],
+            "resources": ["jobsets"],
+            "verbs": ["get", "create", "delete"],
+        },
+        {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]},
+        {"apiGroups": ["kueue.x-k8s.io"], "resources": ["workloads"], "verbs": ["get", "list"]},
+    ]
+    assert binding["subjects"] == [
+        {"kind": "ServiceAccount", "name": "fs2-serve-control-plane-runtime", "namespace": "fs2-system"}
+    ]
+    flavor_role = named[("ClusterRole", "fs2-serve-control-plane-scientific-batch-flavors")]
+    assert flavor_role["rules"] == [
+        {"apiGroups": ["kueue.x-k8s.io"], "resources": ["resourceflavors"], "verbs": ["get"]}
+    ]
+    assert named[("ClusterRoleBinding", "fs2-serve-control-plane-scientific-batch-flavors")]["subjects"] == [
+        {"kind": "ServiceAccount", "name": "fs2-serve-control-plane-runtime", "namespace": "fs2-system"}
+    ]
+    tls_egress = [
+        rule
+        for rule in named[("NetworkPolicy", "fs2-serve-control-plane-runtime")]["spec"]["egress"]
+        if rule["ports"] == [{"port": 443, "protocol": "TCP"}]
+    ]
+    assert {rule["to"][0]["ipBlock"]["cidr"] for rule in tls_egress} >= {
+        "192.0.2.10/32",
+        "192.0.2.20/32",
+    }
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        (("--set", "scientificBatch.enabled=true"), "independent writesEnabled gate"),
+        (("--set", "scientificBatch.writesEnabled=true"), "requires scientificBatch.enabled"),
+        (
+            (
+                "--set",
+                "scientificBatch.enabled=true",
+                "--set",
+                "scientificBatch.writesEnabled=true",
+                "--set",
+                "scientificArtifacts.enabled=true",
+                "--set-string",
+                "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
+            ),
+            "immutable scheduling-contract and execution-map ConfigMaps",
+        ),
+        (
+            (
+                "--set",
+                "scientificBatch.enabled=true",
+                "--set",
+                "scientificBatch.writesEnabled=true",
+                "--set",
+                "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+                "--set",
+                "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
+                "--set-string",
+                "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+            ),
+            "requires scientificArtifacts.enabled",
+        ),
+    ],
+)
+def test_scientific_batch_consumer_rejects_partial_enablement(extra: tuple[str, ...], expected: str) -> None:
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and bounded adversarial values
+        render_command(*extra),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert expected in result.stderr
 
 
 def test_dynamic_model_writer_requires_delete_admission_gate() -> None:
@@ -2608,8 +2727,7 @@ def test_observability_adapter_accepts_installed_tempo_from_workloads_values_mer
     config_map = next(
         item
         for item in documents
-        if item["kind"] == "ConfigMap"
-        and item["metadata"]["name"] == "fs2-serve-control-plane-admin-observability"
+        if item["kind"] == "ConfigMap" and item["metadata"]["name"] == "fs2-serve-control-plane-admin-observability"
     )
     config = json.loads(config_map["data"]["config.json"])
     assert config["installed"] == {"alertmanager": False, "tempo": True}
@@ -2642,3 +2760,87 @@ def test_observability_link_requires_verified_allowlisted_https_route() -> None:
         )
         assert result.returncode != 0
         assert expected in result.stderr
+
+
+def _deployment(documents: list[dict]) -> dict:
+    return next(item for item in documents if item["kind"] == "Deployment")
+
+
+def test_scientific_artifact_routes_are_absent_until_object_storage_is_configured() -> None:
+    deployment = _deployment(render())
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    names = {item["name"] for item in container["env"]}
+    assert not [name for name in names if name.startswith("FS2_ARTIFACT_")]
+    assert "FS2_SCIENTIFIC_ARTIFACTS_ENABLED" not in names
+    mounts = {item["name"] for item in container["volumeMounts"]}
+    assert "artifact-store" not in mounts
+    volumes = {item["name"] for item in deployment["spec"]["template"]["spec"]["volumes"]}
+    assert "artifact-store" not in volumes
+
+
+def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> None:
+    documents = render(
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set",
+        "scientificArtifacts.egressCidrs[0]=203.0.113.0/24",
+    )
+    deployment = _deployment(documents)
+    pod = deployment["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    environment = {item["name"]: item.get("value") for item in container["env"]}
+
+    # Every artifact value must survive Helm's float64 number handling.
+    assert environment["FS2_ARTIFACT_MAX_BYTES"] == "1099511627776"
+    assert environment["FS2_ARTIFACT_RETENTION_SECONDS"] == "7776000"
+    assert environment["FS2_ARTIFACT_HANDLE_TTL_SECONDS"] == "600"
+    assert "e+" not in "".join(value or "" for value in environment.values())
+
+    # Credentials arrive as a read-only projected file, never as an env value.
+    assert "FS2_ARTIFACT_STORE_ACCESS_KEY" not in environment
+    assert "FS2_ARTIFACT_STORE_SECRET_KEY" not in environment
+    assert environment["FS2_ARTIFACT_STORE_CREDENTIALS_FILE"] == (
+        "/var/run/secrets/fs2-serve/artifact-store/credentials.json"
+    )
+    volume = next(item for item in pod["volumes"] if item["name"] == "artifact-store")
+    assert volume["secret"]["defaultMode"] == 0o400
+    mount = next(item for item in container["volumeMounts"] if item["name"] == "artifact-store")
+    assert mount["readOnly"] is True
+    assert mount["mountPath"] == "/var/run/secrets/fs2-serve/artifact-store"
+
+    # The rendered environment must construct the real Settings object.
+    from fs2_serve.settings import Settings
+
+    settings = Settings(
+        **{
+            key.removeprefix("FS2_").lower(): value
+            for key, value in environment.items()
+            if key.startswith("FS2_ARTIFACT") or key == "FS2_SCIENTIFIC_ARTIFACTS_ENABLED"
+        }
+    )
+    assert settings.scientific_artifacts_enabled is True
+    assert settings.artifact_max_bytes == 1099511627776
+    assert "chemical/x-pdb" in settings.artifact_media_types_set()
+
+
+def test_object_storage_egress_is_opt_in_and_scoped_to_tls() -> None:
+    without = render("--set", "scientificArtifacts.enabled=true")
+    policies = [item for item in without if item["kind"] == "NetworkPolicy"]
+    assert policies, "the chart must still render its default-deny policies"
+    assert "203.0.113.0/24" not in json.dumps(without)
+
+    with_egress = render(
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set",
+        "scientificArtifacts.egressCidrs[0]=203.0.113.0/24",
+    )
+    rules = [
+        rule
+        for item in with_egress
+        if item["kind"] == "NetworkPolicy"
+        for rule in item["spec"].get("egress", [])
+        if any(peer.get("ipBlock", {}).get("cidr") == "203.0.113.0/24" for peer in rule.get("to", []))
+    ]
+    assert len(rules) == 1
+    assert rules[0]["ports"] == [{"port": 443, "protocol": "TCP"}]

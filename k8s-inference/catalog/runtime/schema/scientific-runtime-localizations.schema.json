@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/scientific-runtime-localizations/v1",
+  "title": "Deployment evidence for localized scientific runtime artifacts",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "models"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/scientific-runtime-localizations/v1"},
+    "models": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["model_id", "runtime_artifacts"],
+        "properties": {
+          "model_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
+          "runtime_artifacts": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {"$ref": "#/$defs/runtimeArtifact"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^(?:sha256:)?[a-f0-9]{64}$"},
+    "runtimeArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "mount_path", "content_digest", "localization_receipt_digest"],
+      "properties": {
+        "artifact_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+        "mount_path": {"type": "string", "pattern": "^(?:/[^/\\\\]+)+$", "maxLength": 512},
+        "content_digest": {"$ref": "#/$defs/sha256"},
+        "localization_receipt_digest": {"$ref": "#/$defs/sha256"},
+        "file_manifest": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "size_bytes"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1, "maxLength": 512},
+              "sha256": {"$ref": "#/$defs/sha256"},
+              "size_bytes": {"type": "integer", "minimum": 1, "maximum": 137438953472}
+            }
+          }
+        },
+        "aggregate_tree": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["manifest_digest", "dataset_relative_path", "dataset_uri", "file_count", "node_accessibility"],
+          "properties": {
+            "manifest_digest": {"$ref": "#/$defs/sha256"},
+            "dataset_relative_path": {"type": "string", "minLength": 1, "maxLength": 1024},
+            "dataset_uri": {"type": "string", "pattern": "^file:///mnt/fs2-reference-data/data/", "maxLength": 1200},
+            "file_count": {"type": "integer", "minimum": 4097, "maximum": 100000000},
+            "node_accessibility": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["evidence_receipt_digest", "required_node_labels", "node_names"],
+              "properties": {
+                "evidence_receipt_digest": {"$ref": "#/$defs/sha256"},
+                "required_node_labels": {
+                  "const": {"storage.fs2.nebius/reference-data": "true"}
+                },
+                "node_names": {"const": []}
+              }
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {"required": ["file_manifest"], "not": {"required": ["aggregate_tree"]}},
+        {"required": ["aggregate_tree"], "not": {"required": ["file_manifest"]}}
+      ]
+    }
+  }
+}

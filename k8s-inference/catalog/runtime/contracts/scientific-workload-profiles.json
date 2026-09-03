@@ -1,151 +1,198 @@
 {
-  "schema": "fs2-serve.nebius.ai/scientific-workload-profiles/v1",
   "profiles": [
     {
-      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
-      "model_id": "boltzgen",
-      "display_name": "BoltzGen v0.3.2",
-      "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
-      "source": {
-        "kind": "git",
-        "repository": "HannesStark/boltzgen",
-        "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
-        "review_url": "https://github.com/HannesStark/boltzgen/tree/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
-        "classification": "candidate-input"
+      "access": {
+        "condition": "LicenseAcceptancePending",
+        "credentials_embedded": false,
+        "formal_license_acceptance": "pending-authorized-institution-representative",
+        "license_gate_scope": "production-promotion-only",
+        "materialization": "restricted-quarantine-poc-authorized",
+        "operational_activation": "user-authorized-academic-poc",
+        "profile": "academic",
+        "receipt_digest": null,
+        "state": "license-acceptance-pending"
       },
+      "artifact_requirements": [
+        {
+          "artifact_id": "alphafold3-parameters",
+          "content_digest_sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+          "file_manifest": [
+            {
+              "generation": "1780568696389861",
+              "path": "af3.bin.zst",
+              "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+              "size_bytes": 1020545840
+            }
+          ],
+          "handling": "restricted-quarantine",
+          "kind": "weights",
+          "required_files": [
+            "af3.bin.zst"
+          ],
+          "source": {
+            "kind": "operator-staged",
+            "release_id": "af3.bin.zst-generation-1780568696389861",
+            "repository": null,
+            "revision": null
+          },
+          "supply_state": "poc-staged-quarantine",
+          "total_size_bytes": 1020545840
+        },
+        {
+          "artifact_id": "alphafold3-public-databases-v3.0",
+          "handling": "restricted-quarantine",
+          "kind": "reference-data",
+          "required_files": [],
+          "source": {
+            "kind": "operator-staged",
+            "release_id": "v3.0-paper-snapshot-2022-09-28",
+            "repository": null,
+            "revision": null
+          },
+          "supply_state": "unresolved"
+        }
+      ],
+      "default_variant": true,
+      "display_name": "AlphaFold 3",
       "execution_identity": {
-        "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
-        "runtime_image_digest": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
-        "runtime_recipe_sha256": "8c0e57898ab4ccc2d59dfb280bea26570f5ab816abeb0001cb346087437c8dae",
-      "workload_recipe_sha256": "74bc6015176c892f35c33e9122588909f4cea106b73708cb6ba1d8b8efae4d84",
         "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "execution_identity_sha256": null,
+        "model_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+        "runtime_image_digest": null,
+        "runtime_image_repository": "cancer-immunotherapy/alphafold3",
+        "runtime_image_state": "build-required",
+        "runtime_recipe_sha256": "4ccdd138ebbe0c69783e1eea6b93faebf962f9bc55f4d802dd191bb95d5f1fe5",
+        "workload_recipe_sha256": "0b73c2a948bbc9cc0187d7bd5ef58b418b5bf45d95bd070066205d91de090a39"
       },
+      "execution_mode": "scientific-batch",
       "interface": {
-        "protocol": "scientific-batch-v1",
-        "submit_endpoint": "/v1/models/boltzgen:submit",
-        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
-        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
-        "parameter_schema": "fs2-serve.nebius.ai/boltzgen-parameters/v1",
-        "operations": [
-          "design-binders"
-        ],
-        "service_classes": [
-          "customer-batch",
-          "bulk-backfill"
-        ],
+        "default_submit_endpoint": "/v1/models/alphafold3:submit",
         "mcp": {
+          "description": "Submit an access-gated AlphaFold 3 scientific run.",
           "discoverable": true,
           "invocable": false,
-          "tool_name": "submit_boltzgen",
-          "description": "Submit a bounded asynchronous BoltzGen design campaign."
-        }
+          "tool_name": "submit_alphafold3"
+        },
+        "operations": [
+          "predict-complex-structure"
+        ],
+        "parameter_schema": "fs2-serve.nebius.ai/alphafold3-upstream-v3-0-4-parameters/v1",
+        "parameter_schema_definition": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "input_mode": {
+              "default": "raw",
+              "description": "raw runs the CPU data pipeline; enriched consumes a verified processed-JSON artifact and skips preprocessing.",
+              "enum": [
+                "raw",
+                "enriched"
+              ],
+              "type": "string"
+            },
+            "model_seeds": {
+              "items": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "num_diffusion_samples": {
+              "maximum": 16,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "raw_input_sha256": {
+              "description": "Required for enriched input; the original raw-input digest bound by the relocatable handoff.",
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "input_mode",
+            "model_seeds",
+            "num_diffusion_samples"
+          ],
+          "type": "object"
+        },
+        "parameter_schema_sha256": "d04949b4b8695cf1165b6ea6b0fb9f8b9090a2cd67267dd39872446aefc7dcca",
+        "protocol": "scientific-batch-v1",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "service_classes": [
+          "customer-batch"
+        ],
+        "variant_submit_endpoint": "/v1/models/alphafold3/variants/upstream-v3-0-4:submit"
       },
-      "access": {
-        "profile": "standard",
-        "state": "unverified",
-        "receipt_digest": null,
-        "credentials_embedded": false
+      "model_id": "alphafold3",
+      "policy": {
+        "commercial_use": "prohibited",
+        "fast_start": {
+          "cache_role": "auxiliary-compiler-jit-l1-plus",
+          "cache_strategy": "shared-pvc",
+          "maximum_level": "L1",
+          "qualified_level": "Off",
+          "requested_level": "Off",
+          "state": "candidate-unqualified"
+        },
+        "limitations": [
+          "A source revision observation is not workload, hardware, semantic, or license qualification.",
+          "Candidate contract only: no BatchRun controller, Kueue Job, route, or credential is generated.",
+          "Reference databases require at least one TiB of shared ReadWriteMany storage; GPU-node ephemeral disk is not used.",
+          "The official-loader-v2 H100 run passed after correcting private-volume permissions (405 arrays, 368384602 elements, 41.42-second minimal inference, five CIFs), but the tested bead2e image reports a development identity; rebuild to a final digest and repeat the semantic gate before route qualification.",
+          "The user-authorized academic PoC may stage and execute the exact parameter asset only in restricted quarantine; formal institutional acceptance remains required for production promotion."
+        ],
+        "non_clinical": true
       },
       "resources": {
+        "accelerator_requirement": {
+          "class": "nvidia-h100-sxm5-80gb",
+          "count": 1,
+          "resource_name": "nvidia.com/gpu"
+        },
+        "cache_pvc": {
+          "binding": "deployment-configured-claim",
+          "size_bytes": 34359738368,
+          "storage_class": "compute-csi-default-sc"
+        },
+        "compatible_pool_ids": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
         "gpu_count": 1,
         "gpu_topology": "single-gpu",
         "host_architectures": [
           "amd64"
         ],
-      "compatible_pool_ids": [
-        "h100-1x",
-        "h100-reserved-8x"
-      ],
-      "required_node_labels": {
-        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
         }
       },
+      "route_exposed": false,
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "semantic_validation": {
+        "state": "candidate-unqualified",
+        "validator_id": "alphafold3-upstream-v3-0-4"
+      },
+      "source": {
+        "classification": "candidate-input",
+        "kind": "git",
+        "repository": "google-deepmind/alphafold3",
+        "review_url": "https://github.com/google-deepmind/alphafold3/tree/85c4d20505fd5cef05eac22b534d4e793971ae69",
+        "revision": "85c4d20505fd5cef05eac22b534d4e793971ae69"
+      },
+      "state": "candidate-unqualified",
+      "variant_id": "upstream-v3-0-4",
       "workload": {
-        "stages": [
-          {
-          "id": "configure",
-          "needs": [],
-          "resource_class": "gpu",
-            "admission_mode": "independent-jobs",
-            "min_parallelism": 1,
-            "max_parallelism": 32,
-            "checkpoint_mode": "restart",
-          "preemption_mode": "restartable"
+        "cancellation": {
+          "grace_seconds": 60,
+          "mode": "terminate-attempt"
         },
-        {
-          "id": "design",
-          "needs": ["configure"],
-          "resource_class": "gpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "restart",
-          "preemption_mode": "restartable"
-        },
-        {
-          "id": "inverse-folding",
-          "needs": ["design"],
-          "resource_class": "gpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "restart",
-          "preemption_mode": "restartable"
-        },
-        {
-          "id": "folding",
-          "needs": ["inverse-folding"],
-          "resource_class": "gpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "restart",
-          "preemption_mode": "restartable"
-        },
-        {
-          "id": "design-folding",
-          "needs": ["folding"],
-          "resource_class": "gpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "restart",
-          "preemption_mode": "restartable"
-        },
-        {
-          "id": "affinity",
-          "needs": ["design-folding"],
-          "resource_class": "gpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "restart",
-          "preemption_mode": "restartable"
-        },
-        {
-          "id": "analysis",
-          "needs": ["folding"],
-          "resource_class": "cpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "none",
-          "preemption_mode": "non_preemptible"
-        },
-        {
-          "id": "filtering",
-          "needs": ["analysis"],
-          "resource_class": "cpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "none",
-          "preemption_mode": "non_preemptible"
-          }
-        ],
+        "parameter_schema_sha256": "d04949b4b8695cf1165b6ea6b0fb9f8b9090a2cd67267dd39872446aefc7dcca",
         "retry": {
           "max_attempts": 2,
           "retryable_exit_codes": [
@@ -153,136 +200,176 @@
             143
           ]
         },
-        "cancellation": {
-          "mode": "terminate-attempt",
-          "grace_seconds": 60
-        }
-      },
-      "semantic_validation": {
-        "validator_id": "boltzgen-v0-3-2",
-        "state": "candidate-unqualified"
-      },
-      "policy": {
-        "commercial_use": "allowed",
-        "non_clinical": true,
-        "limitations": [
-          "Candidate adapter only; an immutable locally smoke-tested image exists, but artifact readiness, H100 semantic receipt, route, and live readiness do not.",
-          "A preempted attempt restarts from committed inputs; BoltzGen partial attempt output is not represented as a resumable platform checkpoint.",
-          "The separately pinned inference molecule dictionary remains blocked on its terms receipt."
+        "stages": [
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "none",
+            "id": "data-pipeline",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [],
+            "placement": {
+              "accelerator_requirement": null,
+              "compatible_pool_ids": [],
+              "required_node_labels": {}
+            },
+            "preemption_mode": "non_preemptible",
+            "resource_class": "cpu",
+            "resources": {
+              "cpu_millis": 16000,
+              "ephemeral_storage_request_gib": 16,
+              "gpu_count": 0,
+              "limits": {
+                "cpu_millis": 64000,
+                "ephemeral_storage_bytes": 68719476736,
+                "memory_bytes": 274877906944
+              },
+              "memory_bytes": 68719476736
+            }
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "inference",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [
+              "data-pipeline"
+            ],
+            "placement": {
+              "accelerator_requirement": {
+                "class": "nvidia-h100-sxm5-80gb",
+                "count": 1,
+                "resource_name": "nvidia.com/gpu"
+              },
+              "compatible_pool_ids": [
+                "h100-reserved-8x",
+                "h100-1x"
+              ],
+              "required_node_labels": {
+                "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+              }
+            },
+            "preemption_mode": "restartable",
+            "resource_class": "gpu",
+            "resources": {
+              "cpu_millis": 8000,
+              "ephemeral_storage_request_gib": 16,
+              "gpu_count": 1,
+              "limits": {
+                "cpu_millis": 32000,
+                "ephemeral_storage_bytes": 68719476736,
+                "memory_bytes": 206158430208
+              },
+              "memory_bytes": 68719476736
+            }
+          }
+        ],
+        "storage": [
+          {
+            "access_mode": "ReadWriteMany",
+            "id": "alphafold3-reference-data",
+            "minimum_bytes": 1099511627776,
+            "purpose": "reference-data",
+            "read_only": true,
+            "stages": [
+              "data-pipeline"
+            ]
+          },
+          {
+            "access_mode": "ReadWriteMany",
+            "id": "alphafold3-run-artifacts",
+            "minimum_bytes": 107374182400,
+            "purpose": "run-artifacts",
+            "read_only": false,
+            "stages": [
+              "data-pipeline",
+              "inference"
+            ]
+          }
         ]
       }
     },
     {
-      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
-      "model_id": "proteina-complexa",
-      "display_name": "Proteina-Complexa",
-      "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
-      "source": {
-        "kind": "git",
-        "repository": "NVIDIA-BioNeMo/Proteina-Complexa",
-        "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
-        "review_url": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa/tree/54058860d43444c7289873f77d3e50b5b02348cd",
-        "classification": "candidate-input"
+      "access": {
+        "credentials_embedded": false,
+        "profile": "standard",
+        "receipt_digest": null,
+        "state": "unverified"
       },
+      "display_name": "BoltzGen v0.3.2",
       "execution_identity": {
-        "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
-        "runtime_image_digest": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
-        "runtime_recipe_sha256": "0757bcdd9491beaa6695e0ca15931436d2742626675c013e56ec0296be2992dd",
-        "workload_recipe_sha256": "1ea1d90228cff7efbc4c3e6f6c394be0e384e7870a2a94fa8897b81fe6bfa73b",
         "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "execution_identity_sha256": null,
+        "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "runtime_image_digest": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
+        "runtime_recipe_sha256": "c081ec3bf9e4cfad7e8a156b7ebf69b70f29642703eef72d0c4cab77a576cb84",
+        "workload_recipe_sha256": "74bc6015176c892f35c33e9122588909f4cea106b73708cb6ba1d8b8efae4d84"
       },
+      "execution_mode": "scientific-batch",
       "interface": {
-        "protocol": "scientific-batch-v1",
-        "submit_endpoint": "/v1/models/proteina-complexa:submit",
-        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
-        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
-        "parameter_schema": "fs2-serve.nebius.ai/proteina-complexa-parameters/v1",
+        "mcp": {
+          "description": "Submit a bounded asynchronous BoltzGen design campaign.",
+          "discoverable": true,
+          "invocable": false,
+          "tool_name": "submit_boltzgen"
+        },
         "operations": [
           "design-binders"
         ],
+        "parameter_schema": "fs2-serve.nebius.ai/boltzgen-parameters/v1",
+        "protocol": "scientific-batch-v1",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
         "service_classes": [
           "customer-batch",
           "bulk-backfill"
         ],
-        "mcp": {
-          "discoverable": true,
-          "invocable": false,
-          "tool_name": "submit_proteina_complexa",
-          "description": "Submit a bounded asynchronous Proteina-Complexa binder design run."
-        }
+        "submit_endpoint": "/v1/models/boltzgen:submit"
       },
-      "access": {
-        "profile": "standard",
-        "state": "unverified",
-        "receipt_digest": null,
-        "credentials_embedded": false
+      "model_id": "boltzgen",
+      "policy": {
+        "commercial_use": "allowed",
+        "limitations": [
+          "Candidate adapter only; an immutable locally smoke-tested image exists, but artifact readiness, H100 semantic receipt, route, and live readiness do not.",
+          "A preempted attempt restarts from committed inputs; BoltzGen partial attempt output is not represented as a resumable platform checkpoint.",
+          "The separately pinned inference molecule dictionary remains blocked on its terms receipt."
+        ],
+        "non_clinical": true
       },
       "resources": {
+        "compatible_pool_ids": [
+          "h100-1x",
+          "h100-reserved-8x"
+        ],
         "gpu_count": 1,
         "gpu_topology": "single-gpu",
         "host_architectures": [
           "amd64"
         ],
-      "compatible_pool_ids": [
-        "h100-1x",
-        "h100-reserved-8x"
-      ],
-      "required_node_labels": {
-        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
         }
       },
+      "route_exposed": false,
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "semantic_validation": {
+        "state": "candidate-unqualified",
+        "validator_id": "boltzgen-v0-3-2"
+      },
+      "source": {
+        "classification": "candidate-input",
+        "kind": "git",
+        "repository": "HannesStark/boltzgen",
+        "review_url": "https://github.com/HannesStark/boltzgen/tree/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0"
+      },
+      "state": "candidate-unqualified",
       "workload": {
-        "stages": [
-          {
-            "id": "generate",
-            "needs": [],
-            "resource_class": "gpu",
-            "admission_mode": "independent-jobs",
-            "min_parallelism": 1,
-            "max_parallelism": 1,
-            "checkpoint_mode": "restart",
-            "preemption_mode": "restartable"
-          },
-          {
-            "id": "filter",
-            "needs": [
-              "generate"
-            ],
-            "resource_class": "cpu",
-            "admission_mode": "independent-jobs",
-            "min_parallelism": 1,
-            "max_parallelism": 1,
-            "checkpoint_mode": "none",
-            "preemption_mode": "non_preemptible"
-          },
-          {
-            "id": "evaluate",
-            "needs": [
-              "filter"
-            ],
-            "resource_class": "gpu",
-            "admission_mode": "independent-jobs",
-            "min_parallelism": 1,
-            "max_parallelism": 1,
-            "checkpoint_mode": "restart",
-            "preemption_mode": "restartable"
-          },
-          {
-            "id": "analyze",
-            "needs": [
-              "evaluate"
-            ],
-            "resource_class": "cpu",
-            "admission_mode": "independent-jobs",
-            "min_parallelism": 1,
-            "max_parallelism": 1,
-            "checkpoint_mode": "none",
-            "preemption_mode": "non_preemptible"
-          }
-        ],
+        "cancellation": {
+          "grace_seconds": 60,
+          "mode": "terminate-attempt"
+        },
         "retry": {
           "max_attempts": 2,
           "retryable_exit_codes": [
@@ -290,23 +377,1512 @@
             143
           ]
         },
-        "cancellation": {
-          "mode": "terminate-attempt",
-          "grace_seconds": 60
+        "stages": [
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "configure",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [],
+            "preemption_mode": "restartable",
+            "resource_class": "gpu"
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "design",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [
+              "configure"
+            ],
+            "preemption_mode": "restartable",
+            "resource_class": "gpu"
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "inverse-folding",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [
+              "design"
+            ],
+            "preemption_mode": "restartable",
+            "resource_class": "gpu"
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "folding",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [
+              "inverse-folding"
+            ],
+            "preemption_mode": "restartable",
+            "resource_class": "gpu"
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "design-folding",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [
+              "folding"
+            ],
+            "preemption_mode": "restartable",
+            "resource_class": "gpu"
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "affinity",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [
+              "design-folding"
+            ],
+            "preemption_mode": "restartable",
+            "resource_class": "gpu"
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "none",
+            "id": "analysis",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [
+              "folding"
+            ],
+            "preemption_mode": "non_preemptible",
+            "resource_class": "cpu"
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "none",
+            "id": "filtering",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [
+              "analysis"
+            ],
+            "preemption_mode": "non_preemptible",
+            "resource_class": "cpu"
+          }
+        ]
+      }
+    },
+    {
+      "access": {
+        "condition": null,
+        "credentials_embedded": false,
+        "formal_license_acceptance": "not-required",
+        "license_gate_scope": "not-applicable",
+        "materialization": "not-materialized",
+        "operational_activation": "candidate-not-activated",
+        "profile": "standard",
+        "receipt_digest": null,
+        "state": "not-required"
+      },
+      "artifact_requirements": [
+        {
+          "artifact_id": "esmfold2-trunk",
+          "content_digest_sha256": "136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c",
+          "file_manifest": [
+            {
+              "path": "config.json",
+              "sha256": "e9ec2496ec433a1dce18627ed4bf3785b4ce0c1d69e4bb4663dad1ab895da012",
+              "size_bytes": 2337
+            },
+            {
+              "path": "model.safetensors",
+              "sha256": "138fd4350d6892b81ce6be7ff9bf5a93ae9d4d3751f46a27438a3f9f0dcefa0e",
+              "size_bytes": 939505228
+            }
+          ],
+          "handling": "standard",
+          "kind": "weights",
+          "required_files": [
+            "config.json",
+            "model.safetensors"
+          ],
+          "source": {
+            "kind": "huggingface",
+            "release_id": null,
+            "repository": "biohub/ESMFold2",
+            "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3"
+          },
+          "supply_state": "source-qualified",
+          "total_size_bytes": 939507565
+        },
+        {
+          "artifact_id": "esmc-6b",
+          "content_digest_sha256": "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "file_manifest": [
+            {
+              "path": "config.json",
+              "sha256": "c5566fab6a17fd674141331fe75de917b7904d99fb7a410d2b1593c21e576913",
+              "size_bytes": 341
+            },
+            {
+              "path": "model-00001-of-00006.safetensors",
+              "sha256": "bd90149ff223e6ac1a0cac6147a5ae0df20d3a21df4f65356a1f19cd14f4aa8a",
+              "size_bytes": 4864457920
+            },
+            {
+              "path": "model-00002-of-00006.safetensors",
+              "sha256": "f75e2144d8269fe2eb4b3e0823fb089b94f176d8024153e85b8fb573a42294fa",
+              "size_bytes": 4971211344
+            },
+            {
+              "path": "model-00003-of-00006.safetensors",
+              "sha256": "f699f01ecc9691d9c6470492765fe54b8b5d2e9f277c139e89427433ffdfe0b2",
+              "size_bytes": 4863752992
+            },
+            {
+              "path": "model-00004-of-00006.safetensors",
+              "sha256": "46add1b7be098bbfdc3073884851ba3057f1b33ea23a158b650a37007dabd13d",
+              "size_bytes": 4971211344
+            },
+            {
+              "path": "model-00005-of-00006.safetensors",
+              "sha256": "1e1cb62f060a34e18f54a31a76683ef888b8cec59e73315f5b31d25d45a1f88c",
+              "size_bytes": 4863752992
+            },
+            {
+              "path": "model-00006-of-00006.safetensors",
+              "sha256": "56c73e13ae96e777ce65eee99364056069ef93b646470f352f83c5f1037b1b18",
+              "size_bytes": 873762296
+            },
+            {
+              "path": "model.safetensors.index.json",
+              "sha256": "6846456e20e6ee2c37461f7bfc21d316d69bdaf165b925691afcb39e583244da",
+              "size_bytes": 97349
+            },
+            {
+              "path": "special_tokens_map.json",
+              "sha256": "0b7245ec86c8c3aeaf61523ba70dfa79be137e6283f127bd651adc30b4f15c74",
+              "size_bytes": 171
+            },
+            {
+              "path": "tokenizer.json",
+              "sha256": "8d3447b278176e65fb3ef0224472927bf5fee3be46ea2bd77fad0111423cee1f",
+              "size_bytes": 2879
+            },
+            {
+              "path": "tokenizer_config.json",
+              "sha256": "e8d8e40c9f92b334f0272e80bb65ed4043cb9836523cbae899e9859e8cbb8833",
+              "size_bytes": 1392
+            }
+          ],
+          "handling": "standard",
+          "kind": "weights",
+          "required_files": [
+            "config.json",
+            "model-00001-of-00006.safetensors",
+            "model-00002-of-00006.safetensors",
+            "model-00003-of-00006.safetensors",
+            "model-00004-of-00006.safetensors",
+            "model-00005-of-00006.safetensors",
+            "model-00006-of-00006.safetensors",
+            "model.safetensors.index.json",
+            "special_tokens_map.json",
+            "tokenizer.json",
+            "tokenizer_config.json"
+          ],
+          "source": {
+            "kind": "huggingface",
+            "release_id": null,
+            "repository": "biohub/ESMC-6B",
+            "revision": "45b0fa5d7fb06faefbd5e3b89bdcef35d564e79a"
+          },
+          "supply_state": "source-qualified",
+          "total_size_bytes": 25408251020
+        },
+        {
+          "artifact_id": "esmfold2-ccd",
+          "content_digest_sha256": "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+          "file_manifest": [
+            {
+              "path": "ccd.pkl",
+              "sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5",
+              "size_bytes": 417306584
+            }
+          ],
+          "handling": "standard",
+          "kind": "runtime-dependency",
+          "required_files": [
+            "ccd.pkl"
+          ],
+          "source": {
+            "kind": "huggingface",
+            "release_id": null,
+            "repository": "biohub/ESMFold2",
+            "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3"
+          },
+          "supply_state": "source-qualified",
+          "total_size_bytes": 417306584
+        }
+      ],
+      "default_variant": true,
+      "display_name": "ESMFold2",
+      "execution_identity": {
+        "artifact_manifest_digest": null,
+        "execution_identity_sha256": null,
+        "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "runtime_image_digest": null,
+        "runtime_image_repository": "cancer-immunotherapy/esmfold2",
+        "runtime_image_state": "build-required",
+        "runtime_recipe_sha256": "3b4682dabe0fdfbf6ff7da9b2489c9147ef250e4447c3955692f84d316661af9",
+        "workload_recipe_sha256": "70c4f42818bd3800e24d81ec2d3298149f4908b9c9f3e2db2b05c61a9e78b821"
+      },
+      "execution_mode": "scientific-batch",
+      "interface": {
+        "default_submit_endpoint": "/v1/models/esmfold2:submit",
+        "mcp": {
+          "description": "Submit a typed ESMFold2 structure-prediction run.",
+          "discoverable": true,
+          "invocable": false,
+          "tool_name": "submit_esmfold2_biohub"
+        },
+        "operations": [
+          "predict-structure"
+        ],
+        "parameter_schema": "fs2-serve.nebius.ai/esmfold2-biohub-v3-4-0-parameters/v1",
+        "parameter_schema_definition": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "single-sequence",
+                "precomputed-msa"
+              ]
+            },
+            "seed": {
+              "maximum": 2147483647,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sequence": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[ACDEFGHIKLMNPQRSTVWYX]+$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "sequence",
+            "mode"
+          ],
+          "type": "object"
+        },
+        "parameter_schema_sha256": "77e09c6c77e4074ed4d6c90015dc4d4623ff63ef7fe8272eca3177978454150c",
+        "protocol": "scientific-batch-v1",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "service_classes": [
+          "interactive",
+          "customer-batch"
+        ],
+        "variant_submit_endpoint": "/v1/models/esmfold2/variants/biohub-v3-4-0:submit"
+      },
+      "model_id": "esmfold2",
+      "policy": {
+        "commercial_use": "allowed",
+        "fast_start": {
+          "cache_strategy": "shared-pvc",
+          "maximum_level": "L1",
+          "qualified_level": "Off",
+          "requested_level": "Off",
+          "state": "candidate-unqualified"
+        },
+        "limitations": [
+          "A source revision observation is not workload, hardware, semantic, or license qualification.",
+          "Candidate contract only: no BatchRun controller, Kueue Job, route, or credential is generated.",
+          "The source and exact offline files are qualified inputs, but the required offline wrapper is not yet packaged in a digest-pinned image and no semantic or H100 receipt exists."
+        ],
+        "non_clinical": true
+      },
+      "resources": {
+        "accelerator_requirement": {
+          "class": "nvidia-h100-sxm5-80gb",
+          "count": 1,
+          "resource_name": "nvidia.com/gpu"
+        },
+        "cache_pvc": {
+          "binding": "deployment-configured-claim",
+          "size_bytes": 42949672960,
+          "storage_class": "compute-csi-default-sc"
+        },
+        "compatible_pool_ids": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
         }
       },
+      "route_exposed": false,
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
       "semantic_validation": {
-        "validator_id": "proteina-complexa-v1",
-        "state": "candidate-unqualified"
+        "state": "candidate-unqualified",
+        "validator_id": "esmfold2-biohub-v3-4-0"
       },
+      "source": {
+        "classification": "candidate-input",
+        "kind": "git",
+        "repository": "Biohub/esm",
+        "review_url": "https://github.com/Biohub/esm/tree/827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918"
+      },
+      "state": "candidate-unqualified",
+      "variant_id": "biohub-v3-4-0",
+      "workload": {
+        "cancellation": {
+          "grace_seconds": 30,
+          "mode": "terminate-attempt"
+        },
+        "parameter_schema_sha256": "77e09c6c77e4074ed4d6c90015dc4d4623ff63ef7fe8272eca3177978454150c",
+        "retry": {
+          "max_attempts": 3,
+          "retryable_exit_codes": [
+            137,
+            143
+          ]
+        },
+        "stages": [
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "prepare-input",
+            "max_parallelism": 64,
+            "min_parallelism": 1,
+            "needs": [],
+            "placement": {
+              "accelerator_requirement": null,
+              "compatible_pool_ids": [],
+              "required_node_labels": {}
+            },
+            "preemption_mode": "restartable",
+            "resource_class": "cpu",
+            "resources": {
+              "cpu_millis": 4000,
+              "ephemeral_storage_request_gib": 8,
+              "gpu_count": 0,
+              "limits": {
+                "cpu_millis": 8000,
+                "ephemeral_storage_bytes": 34359738368,
+                "memory_bytes": 34359738368
+              },
+              "memory_bytes": 17179869184
+            }
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "fold",
+            "max_parallelism": 64,
+            "min_parallelism": 1,
+            "needs": [
+              "prepare-input"
+            ],
+            "placement": {
+              "accelerator_requirement": {
+                "class": "nvidia-h100-sxm5-80gb",
+                "count": 1,
+                "resource_name": "nvidia.com/gpu"
+              },
+              "compatible_pool_ids": [
+                "h100-reserved-8x",
+                "h100-1x"
+              ],
+              "required_node_labels": {
+                "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+              }
+            },
+            "preemption_mode": "restartable",
+            "resource_class": "gpu",
+            "resources": {
+              "cpu_millis": 4000,
+              "ephemeral_storage_request_gib": 8,
+              "gpu_count": 1,
+              "limits": {
+                "cpu_millis": 16000,
+                "ephemeral_storage_bytes": 34359738368,
+                "memory_bytes": 103079215104
+              },
+              "memory_bytes": 34359738368
+            }
+          }
+        ],
+        "storage": []
+      }
+    },
+    {
+      "access": {
+        "condition": null,
+        "credentials_embedded": false,
+        "formal_license_acceptance": "not-required",
+        "license_gate_scope": "not-applicable",
+        "materialization": "not-materialized",
+        "operational_activation": "candidate-not-activated",
+        "profile": "standard",
+        "receipt_digest": null,
+        "state": "not-required"
+      },
+      "artifact_requirements": [
+        {
+          "artifact_id": "esmfold2-fast-trunk",
+          "content_digest_sha256": "19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63",
+          "file_manifest": [
+            {
+              "path": "config.json",
+              "sha256": "d24456b797ddcfb60ac6c53621b550db5e14b1575ee2d9ab5a380eb5b09902f2",
+              "size_bytes": 2338
+            },
+            {
+              "path": "model.safetensors",
+              "sha256": "60ca19f2898188beba92944365f7b909efd9c99212f5018af75cc47cd9a6184a",
+              "size_bytes": 755416924
+            }
+          ],
+          "handling": "standard",
+          "kind": "weights",
+          "required_files": [
+            "config.json",
+            "model.safetensors"
+          ],
+          "source": {
+            "kind": "huggingface",
+            "release_id": null,
+            "repository": "biohub/ESMFold2-Fast",
+            "revision": "c6c7958d63f5f2f1f0fed0bb9462316f8ccceea6"
+          },
+          "supply_state": "source-qualified",
+          "total_size_bytes": 755419262
+        },
+        {
+          "artifact_id": "esmc-6b",
+          "content_digest_sha256": "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "file_manifest": [
+            {
+              "path": "config.json",
+              "sha256": "c5566fab6a17fd674141331fe75de917b7904d99fb7a410d2b1593c21e576913",
+              "size_bytes": 341
+            },
+            {
+              "path": "model-00001-of-00006.safetensors",
+              "sha256": "bd90149ff223e6ac1a0cac6147a5ae0df20d3a21df4f65356a1f19cd14f4aa8a",
+              "size_bytes": 4864457920
+            },
+            {
+              "path": "model-00002-of-00006.safetensors",
+              "sha256": "f75e2144d8269fe2eb4b3e0823fb089b94f176d8024153e85b8fb573a42294fa",
+              "size_bytes": 4971211344
+            },
+            {
+              "path": "model-00003-of-00006.safetensors",
+              "sha256": "f699f01ecc9691d9c6470492765fe54b8b5d2e9f277c139e89427433ffdfe0b2",
+              "size_bytes": 4863752992
+            },
+            {
+              "path": "model-00004-of-00006.safetensors",
+              "sha256": "46add1b7be098bbfdc3073884851ba3057f1b33ea23a158b650a37007dabd13d",
+              "size_bytes": 4971211344
+            },
+            {
+              "path": "model-00005-of-00006.safetensors",
+              "sha256": "1e1cb62f060a34e18f54a31a76683ef888b8cec59e73315f5b31d25d45a1f88c",
+              "size_bytes": 4863752992
+            },
+            {
+              "path": "model-00006-of-00006.safetensors",
+              "sha256": "56c73e13ae96e777ce65eee99364056069ef93b646470f352f83c5f1037b1b18",
+              "size_bytes": 873762296
+            },
+            {
+              "path": "model.safetensors.index.json",
+              "sha256": "6846456e20e6ee2c37461f7bfc21d316d69bdaf165b925691afcb39e583244da",
+              "size_bytes": 97349
+            },
+            {
+              "path": "special_tokens_map.json",
+              "sha256": "0b7245ec86c8c3aeaf61523ba70dfa79be137e6283f127bd651adc30b4f15c74",
+              "size_bytes": 171
+            },
+            {
+              "path": "tokenizer.json",
+              "sha256": "8d3447b278176e65fb3ef0224472927bf5fee3be46ea2bd77fad0111423cee1f",
+              "size_bytes": 2879
+            },
+            {
+              "path": "tokenizer_config.json",
+              "sha256": "e8d8e40c9f92b334f0272e80bb65ed4043cb9836523cbae899e9859e8cbb8833",
+              "size_bytes": 1392
+            }
+          ],
+          "handling": "standard",
+          "kind": "weights",
+          "required_files": [
+            "config.json",
+            "model-00001-of-00006.safetensors",
+            "model-00002-of-00006.safetensors",
+            "model-00003-of-00006.safetensors",
+            "model-00004-of-00006.safetensors",
+            "model-00005-of-00006.safetensors",
+            "model-00006-of-00006.safetensors",
+            "model.safetensors.index.json",
+            "special_tokens_map.json",
+            "tokenizer.json",
+            "tokenizer_config.json"
+          ],
+          "source": {
+            "kind": "huggingface",
+            "release_id": null,
+            "repository": "biohub/ESMC-6B",
+            "revision": "45b0fa5d7fb06faefbd5e3b89bdcef35d564e79a"
+          },
+          "supply_state": "source-qualified",
+          "total_size_bytes": 25408251020
+        },
+        {
+          "artifact_id": "esmfold2-ccd",
+          "content_digest_sha256": "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+          "file_manifest": [
+            {
+              "path": "ccd.pkl",
+              "sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5",
+              "size_bytes": 417306584
+            }
+          ],
+          "handling": "standard",
+          "kind": "runtime-dependency",
+          "required_files": [
+            "ccd.pkl"
+          ],
+          "source": {
+            "kind": "huggingface",
+            "release_id": null,
+            "repository": "biohub/ESMFold2",
+            "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3"
+          },
+          "supply_state": "source-qualified",
+          "total_size_bytes": 417306584
+        }
+      ],
+      "default_variant": true,
+      "display_name": "ESMFold2-Fast",
+      "execution_identity": {
+        "artifact_manifest_digest": null,
+        "execution_identity_sha256": null,
+        "model_revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "runtime_image_digest": null,
+        "runtime_image_repository": "cancer-immunotherapy/esmfold2-fast",
+        "runtime_image_state": "build-required",
+        "runtime_recipe_sha256": "b2734a541c4b254dd31829d771f2c5f393fa9053f5f880265b4f46726790da0b",
+        "workload_recipe_sha256": "d58c9a6df6276a679de470917c237aa76d655a67159bc75f1adf333079fd2a5c"
+      },
+      "execution_mode": "scientific-batch",
+      "interface": {
+        "default_submit_endpoint": "/v1/models/esmfold2-fast:submit",
+        "mcp": {
+          "description": "Submit a protein-only single-sequence ESMFold2-Fast run.",
+          "discoverable": true,
+          "invocable": false,
+          "tool_name": "submit_esmfold2_fast"
+        },
+        "operations": [
+          "predict-protein-structure"
+        ],
+        "parameter_schema": "fs2-serve.nebius.ai/esmfold2-fast-biohub-v3-4-0-parameters/v1",
+        "parameter_schema_definition": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "const": "single-sequence"
+            },
+            "seed": {
+              "maximum": 2147483647,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sequence": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[ACDEFGHIKLMNPQRSTVWYX]+$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "sequence",
+            "mode"
+          ],
+          "type": "object"
+        },
+        "parameter_schema_sha256": "f204a328487f7dfc7ccc1f549c8c726e46a26b86dbffa59e3bdea49f96110725",
+        "protocol": "scientific-batch-v1",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "service_classes": [
+          "presentation",
+          "interactive",
+          "customer-batch"
+        ],
+        "variant_submit_endpoint": "/v1/models/esmfold2-fast/variants/biohub-v3-4-0:submit"
+      },
+      "model_id": "esmfold2-fast",
+      "policy": {
+        "commercial_use": "allowed",
+        "fast_start": {
+          "cache_strategy": "shared-pvc",
+          "maximum_level": "L1",
+          "qualified_level": "Off",
+          "requested_level": "Off",
+          "state": "candidate-unqualified"
+        },
+        "limitations": [
+          "A source revision observation is not workload, hardware, semantic, or license qualification.",
+          "Candidate contract only: no BatchRun controller, Kueue Job, route, or credential is generated.",
+          "Fast is protein-only and single-sequence; it does not accept MSA, ligand, nucleic-acid, modified-residue, or CCD inputs.",
+          "The required offline single-sequence wrapper is not yet packaged in a digest-pinned image; no semantic or H100 qualification exists."
+        ],
+        "non_clinical": true
+      },
+      "resources": {
+        "accelerator_requirement": {
+          "class": "nvidia-h100-sxm5-80gb",
+          "count": 1,
+          "resource_name": "nvidia.com/gpu"
+        },
+        "cache_pvc": {
+          "binding": "deployment-configured-claim",
+          "size_bytes": 42949672960,
+          "storage_class": "compute-csi-default-sc"
+        },
+        "compatible_pool_ids": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        }
+      },
+      "route_exposed": false,
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "semantic_validation": {
+        "state": "candidate-unqualified",
+        "validator_id": "esmfold2-fast-biohub-v3-4-0"
+      },
+      "source": {
+        "classification": "candidate-input",
+        "kind": "git",
+        "repository": "Biohub/esm",
+        "review_url": "https://github.com/Biohub/esm/tree/827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918"
+      },
+      "state": "candidate-unqualified",
+      "variant_id": "biohub-v3-4-0",
+      "workload": {
+        "cancellation": {
+          "grace_seconds": 30,
+          "mode": "terminate-attempt"
+        },
+        "parameter_schema_sha256": "f204a328487f7dfc7ccc1f549c8c726e46a26b86dbffa59e3bdea49f96110725",
+        "retry": {
+          "max_attempts": 3,
+          "retryable_exit_codes": [
+            137,
+            143
+          ]
+        },
+        "stages": [
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "prepare-input",
+            "max_parallelism": 64,
+            "min_parallelism": 1,
+            "needs": [],
+            "placement": {
+              "accelerator_requirement": null,
+              "compatible_pool_ids": [],
+              "required_node_labels": {}
+            },
+            "preemption_mode": "restartable",
+            "resource_class": "cpu",
+            "resources": {
+              "cpu_millis": 4000,
+              "ephemeral_storage_request_gib": 8,
+              "gpu_count": 0,
+              "limits": {
+                "cpu_millis": 8000,
+                "ephemeral_storage_bytes": 34359738368,
+                "memory_bytes": 34359738368
+              },
+              "memory_bytes": 17179869184
+            }
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "fold",
+            "max_parallelism": 128,
+            "min_parallelism": 1,
+            "needs": [
+              "prepare-input"
+            ],
+            "placement": {
+              "accelerator_requirement": {
+                "class": "nvidia-h100-sxm5-80gb",
+                "count": 1,
+                "resource_name": "nvidia.com/gpu"
+              },
+              "compatible_pool_ids": [
+                "h100-reserved-8x",
+                "h100-1x"
+              ],
+              "required_node_labels": {
+                "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+              }
+            },
+            "preemption_mode": "restartable",
+            "resource_class": "gpu",
+            "resources": {
+              "cpu_millis": 2000,
+              "ephemeral_storage_request_gib": 4,
+              "gpu_count": 1,
+              "limits": {
+                "cpu_millis": 8000,
+                "ephemeral_storage_bytes": 17179869184,
+                "memory_bytes": 68719476736
+              },
+              "memory_bytes": 17179869184
+            }
+          }
+        ],
+        "storage": []
+      }
+    },
+    {
+      "access": {
+        "condition": null,
+        "credentials_embedded": false,
+        "formal_license_acceptance": "not-required",
+        "license_gate_scope": "not-applicable",
+        "materialization": "not-materialized",
+        "operational_activation": "candidate-not-activated",
+        "profile": "standard",
+        "receipt_digest": null,
+        "state": "not-required"
+      },
+      "artifact_requirements": [
+        {
+          "artifact_id": "openfold3-openbind-0",
+          "content_digest_sha256": "f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+          "file_manifest": [
+            {
+              "path": "of3-ob-2025-06-30-174k.pt",
+              "sha256": "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8e29e4",
+              "size_bytes": 2287872989
+            }
+          ],
+          "handling": "standard",
+          "kind": "weights",
+          "required_files": [
+            "of3-ob-2025-06-30-174k.pt"
+          ],
+          "source": {
+            "kind": "operator-staged",
+            "release_id": "of3-ob-2025-06-30-174k",
+            "repository": null,
+            "revision": null
+          },
+          "supply_state": "source-qualified",
+          "total_size_bytes": 2287872989
+        },
+        {
+          "artifact_id": "openfold3-components-bcif",
+          "content_digest_sha256": "ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+          "file_manifest": [
+            {
+              "path": "components.bcif",
+              "sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c",
+              "size_bytes": 63393643
+            }
+          ],
+          "handling": "standard",
+          "kind": "reference-data",
+          "required_files": [
+            "components.bcif"
+          ],
+          "source": {
+            "kind": "operator-staged",
+            "release_id": "s3-etag-b251a30629b9c30d077a5b91aeefecb2-4",
+            "repository": null,
+            "revision": null
+          },
+          "supply_state": "source-qualified",
+          "total_size_bytes": 63393643
+        }
+      ],
+      "default_variant": false,
+      "display_name": "OpenFold3 OpenBind-0",
+      "execution_identity": {
+        "artifact_manifest_digest": null,
+        "execution_identity_sha256": null,
+        "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+        "runtime_image_digest": null,
+        "runtime_image_repository": "cancer-immunotherapy/openfold3-upstream",
+        "runtime_image_state": "build-required",
+        "runtime_recipe_sha256": "1cc6ca47ae68a830b55b39910ef134fcd68b39499e1fe3793b72667d4f2385f9",
+        "workload_recipe_sha256": "2631810766dd319f07dcc4a09c697a466be0a7671ffa39868085825c9670d39c"
+      },
+      "execution_mode": "scientific-batch",
+      "interface": {
+        "default_submit_endpoint": null,
+        "mcp": {
+          "description": "Submit an OpenFold3 OpenBind-0 scientific run.",
+          "discoverable": true,
+          "invocable": false,
+          "tool_name": "submit_openfold3_upstream"
+        },
+        "operations": [
+          "predict-complex-structure"
+        ],
+        "parameter_schema": "fs2-serve.nebius.ai/openfold3-upstream-openbind-v0-5-0-parameters/v1",
+        "parameter_schema_definition": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "model_seeds": {
+              "items": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "msa_mode": {
+              "const": "none"
+            }
+          },
+          "required": [
+            "model_seeds",
+            "msa_mode"
+          ],
+          "type": "object"
+        },
+        "parameter_schema_sha256": "e40f1e70795737f836d0609087ad7fafeb05006bf56b5f810ebc02c90e8d4047",
+        "protocol": "scientific-batch-v1",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "service_classes": [
+          "customer-batch"
+        ],
+        "variant_submit_endpoint": "/v1/models/openfold3/variants/upstream-openbind-v0-5-0:submit"
+      },
+      "model_id": "openfold3",
+      "policy": {
+        "commercial_use": "allowed",
+        "fast_start": {
+          "cache_role": "auxiliary-compiler-jit-l1-plus",
+          "cache_strategy": "shared-pvc",
+          "maximum_level": "L1",
+          "qualified_level": "Off",
+          "requested_level": "Off",
+          "state": "candidate-unqualified"
+        },
+        "limitations": [
+          "A source revision observation is not workload, hardware, semantic, or license qualification.",
+          "Candidate contract only: no BatchRun controller, Kueue Job, route, or credential is generated.",
+          "Covalent bonds and glycans must be rejected, not dropped or translated.",
+          "Reference databases require at least one TiB of shared ReadWriteMany storage.",
+          "The baked offline runner template and executable wrapper remain H100-unqualified until the corrected image passes semantic smoke; precomputed MSA is not admitted.",
+          "This upstream OpenBind-0 candidate is an explicit variant of canonical model ID openfold3; it does not replace the retained NIM record."
+        ],
+        "non_clinical": true
+      },
+      "resources": {
+        "accelerator_requirement": {
+          "class": "nvidia-h100-sxm5-80gb",
+          "count": 1,
+          "resource_name": "nvidia.com/gpu"
+        },
+        "cache_pvc": {
+          "binding": "deployment-configured-claim",
+          "size_bytes": 34359738368,
+          "storage_class": "compute-csi-default-sc"
+        },
+        "compatible_pool_ids": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        }
+      },
+      "route_exposed": false,
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "semantic_validation": {
+        "state": "candidate-unqualified",
+        "validator_id": "openfold3-upstream-openbind-v0-5-0"
+      },
+      "source": {
+        "classification": "candidate-input",
+        "kind": "git",
+        "repository": "aqlaboratory/openfold-3",
+        "review_url": "https://github.com/aqlaboratory/openfold-3/tree/c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+        "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86"
+      },
+      "state": "candidate-unqualified",
+      "variant_id": "upstream-openbind-v0-5-0",
+      "workload": {
+        "cancellation": {
+          "grace_seconds": 60,
+          "mode": "terminate-attempt"
+        },
+        "parameter_schema_sha256": "e40f1e70795737f836d0609087ad7fafeb05006bf56b5f810ebc02c90e8d4047",
+        "retry": {
+          "max_attempts": 2,
+          "retryable_exit_codes": [
+            137,
+            143
+          ]
+        },
+        "stages": [
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "none",
+            "id": "data-pipeline",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [],
+            "placement": {
+              "accelerator_requirement": null,
+              "compatible_pool_ids": [],
+              "required_node_labels": {}
+            },
+            "preemption_mode": "non_preemptible",
+            "resource_class": "cpu",
+            "resources": {
+              "cpu_millis": 16000,
+              "ephemeral_storage_request_gib": 16,
+              "gpu_count": 0,
+              "limits": {
+                "cpu_millis": 64000,
+                "ephemeral_storage_bytes": 68719476736,
+                "memory_bytes": 274877906944
+              },
+              "memory_bytes": 68719476736
+            }
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "inference",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [
+              "data-pipeline"
+            ],
+            "placement": {
+              "accelerator_requirement": {
+                "class": "nvidia-h100-sxm5-80gb",
+                "count": 1,
+                "resource_name": "nvidia.com/gpu"
+              },
+              "compatible_pool_ids": [
+                "h100-reserved-8x",
+                "h100-1x"
+              ],
+              "required_node_labels": {
+                "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+              }
+            },
+            "preemption_mode": "restartable",
+            "resource_class": "gpu",
+            "resources": {
+              "cpu_millis": 8000,
+              "ephemeral_storage_request_gib": 16,
+              "gpu_count": 1,
+              "limits": {
+                "cpu_millis": 32000,
+                "ephemeral_storage_bytes": 68719476736,
+                "memory_bytes": 206158430208
+              },
+              "memory_bytes": 68719476736
+            }
+          }
+        ],
+        "storage": [
+          {
+            "access_mode": "ReadWriteMany",
+            "id": "openfold3-reference-data",
+            "minimum_bytes": 1099511627776,
+            "purpose": "reference-data",
+            "read_only": true,
+            "stages": [
+              "data-pipeline"
+            ]
+          },
+          {
+            "access_mode": "ReadWriteMany",
+            "id": "openfold3-run-artifacts",
+            "minimum_bytes": 107374182400,
+            "purpose": "run-artifacts",
+            "read_only": false,
+            "stages": [
+              "data-pipeline",
+              "inference"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "access": {
+        "credentials_embedded": false,
+        "profile": "standard",
+        "receipt_digest": null,
+        "state": "unverified"
+      },
+      "display_name": "Proteina-Complexa",
+      "execution_identity": {
+        "artifact_manifest_digest": null,
+        "execution_identity_sha256": null,
+        "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+        "runtime_image_digest": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+        "runtime_recipe_sha256": "a017a24426d0049dd53f2e190fc9a472f8c0f5f5fb3b374e579f0b828984a6a0",
+        "workload_recipe_sha256": "1ea1d90228cff7efbc4c3e6f6c394be0e384e7870a2a94fa8897b81fe6bfa73b"
+      },
+      "execution_mode": "scientific-batch",
+      "interface": {
+        "mcp": {
+          "description": "Submit a bounded asynchronous Proteina-Complexa binder design run.",
+          "discoverable": true,
+          "invocable": false,
+          "tool_name": "submit_proteina_complexa"
+        },
+        "operations": [
+          "design-binders"
+        ],
+        "parameter_schema": "fs2-serve.nebius.ai/proteina-complexa-parameters/v1",
+        "protocol": "scientific-batch-v1",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "service_classes": [
+          "customer-batch",
+          "bulk-backfill"
+        ],
+        "submit_endpoint": "/v1/models/proteina-complexa:submit"
+      },
+      "model_id": "proteina-complexa",
       "policy": {
         "commercial_use": "license-dependent",
-        "non_clinical": true,
         "limitations": [
           "Candidate adapter only; an immutable locally smoke-tested image exists, but artifact readiness, H100 semantic receipt, route, and live readiness do not.",
           "Core self-refolding uses a controller-mounted AlphaFold2 or RoseTTAFold3 artifact; optional ESM2, ESMFold, and MPNN metrics are disabled until their exact artifacts pass readiness."
+        ],
+        "non_clinical": true
+      },
+      "resources": {
+        "compatible_pool_ids": [
+          "h100-1x",
+          "h100-reserved-8x"
+        ],
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        }
+      },
+      "route_exposed": false,
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "semantic_validation": {
+        "state": "candidate-unqualified",
+        "validator_id": "proteina-complexa-v1"
+      },
+      "source": {
+        "classification": "candidate-input",
+        "kind": "git",
+        "repository": "NVIDIA-BioNeMo/Proteina-Complexa",
+        "review_url": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa/tree/54058860d43444c7289873f77d3e50b5b02348cd",
+        "revision": "54058860d43444c7289873f77d3e50b5b02348cd"
+      },
+      "state": "candidate-unqualified",
+      "workload": {
+        "cancellation": {
+          "grace_seconds": 60,
+          "mode": "terminate-attempt"
+        },
+        "retry": {
+          "max_attempts": 2,
+          "retryable_exit_codes": [
+            137,
+            143
+          ]
+        },
+        "stages": [
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "generate",
+            "max_parallelism": 1,
+            "min_parallelism": 1,
+            "needs": [],
+            "preemption_mode": "restartable",
+            "resource_class": "gpu"
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "none",
+            "id": "filter",
+            "max_parallelism": 1,
+            "min_parallelism": 1,
+            "needs": [
+              "generate"
+            ],
+            "preemption_mode": "non_preemptible",
+            "resource_class": "cpu"
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "evaluate",
+            "max_parallelism": 1,
+            "min_parallelism": 1,
+            "needs": [
+              "filter"
+            ],
+            "preemption_mode": "restartable",
+            "resource_class": "gpu"
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "none",
+            "id": "analyze",
+            "max_parallelism": 1,
+            "min_parallelism": 1,
+            "needs": [
+              "evaluate"
+            ],
+            "preemption_mode": "non_preemptible",
+            "resource_class": "cpu"
+          }
         ]
       }
+    },
+    {
+      "access": {
+        "condition": null,
+        "credentials_embedded": false,
+        "formal_license_acceptance": "not-required",
+        "license_gate_scope": "not-applicable",
+        "materialization": "not-materialized",
+        "operational_activation": "candidate-not-activated",
+        "profile": "standard",
+        "receipt_digest": null,
+        "state": "not-required"
+      },
+      "artifact_requirements": [
+        {
+          "artifact_id": "protenix-v2",
+          "content_digest_sha256": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+          "file_manifest": [
+            {
+              "path": ".fs2-manifest-sha256",
+              "sha256": "ebf101faecd9e311292e40b2e53cce4983f7d49e38ef4dba0f20d16174dc39bb",
+              "size_bytes": 65
+            },
+            {
+              "md5": "49016ebf4775bf6b629bc4dc77b6673e",
+              "path": "checkpoint/protenix-v2.pt",
+              "sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+              "size_bytes": 1859785497
+            },
+            {
+              "path": "common/clusters-by-entity-40.txt",
+              "sha256": "1ab4af905e75b382eda8dec59917dc3608bee0729e36b9e71baf860bbe86850c",
+              "size_bytes": 21699572
+            },
+            {
+              "path": "common/components.cif",
+              "sha256": "bb31ae5cf6c8bc669924313077cb4231ee5ffefd3a20118cd14f3ec89f8bb6a5",
+              "size_bytes": 490777362
+            },
+            {
+              "path": "common/components.cif.rdkit_mol.pkl",
+              "sha256": "d1cfb71f5993a3ebea7c47877022d7f597bbfbaf86e28a4770e957da6c50cd35",
+              "size_bytes": 142498117
+            },
+            {
+              "path": "common/obsolete_release_date.csv",
+              "sha256": "a4f3f63ac5d7eebd78b07995cc669b9eccd6f5d8813c9492c9df02868893cf33",
+              "size_bytes": 134716
+            },
+            {
+              "path": "manifest.json",
+              "sha256": "8c1e3240cba92fa265ebfa7e3c806af2206d3ae9347444fe3075ab90e576444f",
+              "size_bytes": 1855
+            }
+          ],
+          "handling": "standard",
+          "kind": "weights",
+          "localization_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+          "required_files": [
+            ".fs2-manifest-sha256",
+            "checkpoint/protenix-v2.pt",
+            "common/clusters-by-entity-40.txt",
+            "common/components.cif",
+            "common/components.cif.rdkit_mol.pkl",
+            "common/obsolete_release_date.csv",
+            "manifest.json"
+          ],
+          "source": {
+            "kind": "third-party-mirror",
+            "release_id": "code-2475421477ab414b571149ad4a875c390ff8a35d_checkpoint-653edab28103133512575365130916e3fd23ecc3_common-2026-01-29",
+            "repository": "TMF001/protenix-v2-weights",
+            "revision": "653edab28103133512575365130916e3fd23ecc3"
+          },
+          "supply_state": "third-party-mirror-verified",
+          "total_size_bytes": 2514897184
+        }
+      ],
+      "default_variant": true,
+      "display_name": "Protenix v2",
+      "execution_identity": {
+        "artifact_manifest_digest": null,
+        "execution_identity_sha256": null,
+        "model_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+        "runtime_image_digest": null,
+        "runtime_image_repository": "cancer-immunotherapy/protenix-v2",
+        "runtime_image_state": "build-required",
+        "runtime_recipe_sha256": "2cae06149dbc7f1e708a44c87d898d1e83094b071f09dc9b4cf0ce95451c58ea",
+        "workload_recipe_sha256": "907cc5a26dab19b5bf72fd90d807f4232776361e75760e031b1c0737ea11316f"
+      },
+      "execution_mode": "scientific-batch",
+      "interface": {
+        "default_submit_endpoint": "/v1/models/protenix-v2:submit",
+        "mcp": {
+          "description": "Submit a typed Protenix v2 prediction after artifact admission.",
+          "discoverable": true,
+          "invocable": false,
+          "tool_name": "submit_protenix_v2"
+        },
+        "operations": [
+          "predict-complex-structure"
+        ],
+        "parameter_schema": "fs2-serve.nebius.ai/protenix-v2-upstream-v2-0-0-parameters/v1",
+        "parameter_schema_definition": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "checkpoint": {
+              "const": "protenix-v2"
+            },
+            "model_seeds": {
+              "items": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "msa_mode": {
+              "const": "none"
+            },
+            "sample_count": {
+              "maximum": 16,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "checkpoint",
+            "msa_mode",
+            "sample_count",
+            "model_seeds"
+          ],
+          "type": "object"
+        },
+        "parameter_schema_sha256": "de069b625c2137375e963a8a1696d96b5295987e9406e194c0d8b994307129cb",
+        "protocol": "scientific-batch-v1",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "service_classes": [
+          "customer-batch"
+        ],
+        "variant_submit_endpoint": "/v1/models/protenix-v2/variants/upstream-v2-0-0:submit"
+      },
+      "model_id": "protenix-v2",
+      "policy": {
+        "commercial_use": "allowed",
+        "fast_start": {
+          "cache_role": "auxiliary-compiler-jit-l1-plus",
+          "cache_strategy": "shared-pvc",
+          "maximum_level": "L1",
+          "qualified_level": "Off",
+          "requested_level": "Off",
+          "state": "candidate-unqualified"
+        },
+        "limitations": [
+          "A source revision observation is not workload, hardware, semantic, or license qualification.",
+          "CPU preparation must complete and commit its enriched JSON before GPU admission.",
+          "Candidate contract only: no BatchRun controller, Kueue Job, route, or credential is generated.",
+          "Checkpoint is verified against a third-party mirror, not publisher bytes; route remains unqualified until H100 evidence.",
+          "The lane remains fail-closed until the corrected image, all four common assets, and real H100 semantics are verified."
+        ],
+        "non_clinical": true
+      },
+      "resources": {
+        "accelerator_requirement": {
+          "class": "nvidia-h100-sxm5-80gb",
+          "count": 1,
+          "resource_name": "nvidia.com/gpu"
+        },
+        "cache_pvc": {
+          "binding": "deployment-configured-claim",
+          "size_bytes": 17179869184,
+          "storage_class": "compute-csi-default-sc"
+        },
+        "compatible_pool_ids": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        }
+      },
+      "route_exposed": false,
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "semantic_validation": {
+        "state": "candidate-unqualified",
+        "validator_id": "protenix-v2-upstream-v2-0-0"
+      },
+      "source": {
+        "classification": "candidate-input",
+        "kind": "git",
+        "repository": "bytedance/Protenix",
+        "review_url": "https://github.com/bytedance/Protenix/tree/2475421477ab414b571149ad4a875c390ff8a35d",
+        "revision": "2475421477ab414b571149ad4a875c390ff8a35d"
+      },
+      "state": "candidate-unqualified",
+      "variant_id": "upstream-v2-0-0",
+      "workload": {
+        "cancellation": {
+          "grace_seconds": 60,
+          "mode": "terminate-attempt"
+        },
+        "parameter_schema_sha256": "de069b625c2137375e963a8a1696d96b5295987e9406e194c0d8b994307129cb",
+        "retry": {
+          "max_attempts": 2,
+          "retryable_exit_codes": [
+            137,
+            143
+          ]
+        },
+        "stages": [
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "prepare-data",
+            "max_parallelism": 64,
+            "min_parallelism": 1,
+            "needs": [],
+            "placement": {
+              "accelerator_requirement": null,
+              "compatible_pool_ids": [],
+              "required_node_labels": {}
+            },
+            "preemption_mode": "restartable",
+            "resource_class": "cpu",
+            "resources": {
+              "cpu_millis": 4000,
+              "ephemeral_storage_request_gib": 8,
+              "gpu_count": 0,
+              "limits": {
+                "cpu_millis": 8000,
+                "ephemeral_storage_bytes": 34359738368,
+                "memory_bytes": 34359738368
+              },
+              "memory_bytes": 17179869184
+            }
+          },
+          {
+            "admission_mode": "independent-jobs",
+            "checkpoint_mode": "restart",
+            "id": "sample-structure",
+            "max_parallelism": 32,
+            "min_parallelism": 1,
+            "needs": [
+              "prepare-data"
+            ],
+            "placement": {
+              "accelerator_requirement": {
+                "class": "nvidia-h100-sxm5-80gb",
+                "count": 1,
+                "resource_name": "nvidia.com/gpu"
+              },
+              "compatible_pool_ids": [
+                "h100-reserved-8x",
+                "h100-1x"
+              ],
+              "required_node_labels": {
+                "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+              }
+            },
+            "preemption_mode": "restartable",
+            "resource_class": "gpu",
+            "resources": {
+              "cpu_millis": 8000,
+              "ephemeral_storage_request_gib": 16,
+              "gpu_count": 1,
+              "limits": {
+                "cpu_millis": 32000,
+                "ephemeral_storage_bytes": 68719476736,
+                "memory_bytes": 171798691840
+              },
+              "memory_bytes": 68719476736
+            }
+          }
+        ],
+        "storage": []
+      }
     }
-  ]
+  ],
+  "schema": "fs2-serve.nebius.ai/scientific-workload-profiles/v1"
 }

@@ -1,0 +1,270 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-execution-targets/v1",
+  "default_execution_namespace": "fs2-models",
+  "default_local_queue_name": "inference-models",
+  "default_cluster_queue_name": "inference-accelerators",
+  "default_service_account_name": "scientific-runner",
+  "default_active_deadline_seconds": 86400,
+  "default_runtime_artifact_claim": {
+    "name": "scientific-model-artifacts",
+    "namespace": "fs2-models"
+  },
+  "default_tolerations": [
+    {
+      "key": "dedicated",
+      "operator": "Equal",
+      "value": "fs2-inference",
+      "effect": "NoSchedule"
+    }
+  ],
+  "controller_service_account": {
+    "namespace": "fs2-system",
+    "name": "fs2-serve-control-plane-runtime"
+  },
+  "bindings": [
+    {
+      "model_id": "alphafold3",
+      "stage_id": "data-pipeline",
+      "execution_namespace": "fs2-academic-poc",
+      "local_queue_name": "academic-scientific",
+      "cluster_queue_name": "inference-accelerators",
+      "service_account_name": "fs2-academic-runner",
+      "node_selector": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+        "storage.fs2.nebius/reference-data": "true"
+      },
+      "tolerations": [
+        {
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference",
+          "effect": "NoSchedule"
+        }
+      ],
+      "mounts": [
+        {
+          "name": "alphafold3-databases",
+          "kind": "operator-host-path",
+          "artifact_id": "alphafold3-public-databases-v3.0",
+          "claim_name": null,
+          "claim_namespace": null,
+          "host_path": "/mnt/fs2-reference-data/data",
+          "operator_owned": true,
+          "mount_path": "/databases",
+          "sub_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}",
+          "aggregate_tree_policy": {
+            "dataset_relative_path_template": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}",
+            "dataset_uri_template": "file:///mnt/fs2-reference-data/data/datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}",
+            "manifest_marker": ".fs2-manifest-sha256",
+            "minimum_file_count": 4097,
+            "node_accessibility_receipt_required": true,
+            "required_node_selector": {
+              "storage.fs2.nebius/reference-data": "true"
+            }
+          },
+          "supplemental_groups": [1000],
+          "read_only": true
+        }
+      ]
+    },
+    {
+      "model_id": "alphafold3",
+      "stage_id": "inference",
+      "execution_namespace": "fs2-academic-poc",
+      "local_queue_name": "academic-scientific",
+      "cluster_queue_name": "inference-accelerators",
+      "service_account_name": "fs2-academic-runner",
+      "node_selector": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+      },
+      "tolerations": [
+        {
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference",
+          "effect": "NoSchedule"
+        }
+      ],
+      "mounts": [
+        {
+          "name": "alphafold3-parameters",
+          "kind": "private",
+          "artifact_id": "alphafold3-parameters",
+          "claim_name": "academic-assets-runtime-rwx",
+          "claim_namespace": "fs2-academic-poc",
+          "host_path": null,
+          "operator_owned": true,
+          "mount_path": "/models/af3.bin.zst",
+          "sub_path": "alphafold3/af3.bin.zst",
+          "aggregate_tree_policy": null,
+          "supplemental_groups": [65532],
+          "read_only": true
+        },
+        {
+          "name": "alphafold3-warm-cache",
+          "kind": "cache",
+          "artifact_id": null,
+          "claim_name": "scientific-alphafold3-cache",
+          "claim_namespace": "fs2-academic-poc",
+          "host_path": null,
+          "operator_owned": true,
+          "mount_path": "/cache/alphafold3",
+          "sub_path": null,
+          "aggregate_tree_policy": null,
+          "supplemental_groups": [],
+          "read_only": false
+        }
+      ],
+      "environment": {
+        "FS2_AF3_CACHE_ROOT": "/cache/alphafold3",
+        "FS2_AF3_JAX_CACHE_DIR": "/cache/alphafold3/jax",
+        "FS2_AF3_TRITON_CACHE_DIR": "/cache/alphafold3/triton",
+        "FS2_AF3_XDG_CACHE_DIR": "/cache/alphafold3/xdg"
+      },
+      "compiler_cache": {
+        "accelerator_sm": "sm90",
+        "run_as_user": 10001,
+        "run_as_group": 10001,
+        "sub_path_layout": "scientific-cache/v1/{model_id}/{stage_id}/{variant_id}/{runtime_image_sha256}/{artifact_set_sha256}/{accelerator_sm}",
+        "preparation": "root-init-chown-and-nonroot-write-read-probe"
+      }
+    },
+    {
+      "model_id": "openfold3",
+      "stage_id": "inference",
+      "execution_namespace": "fs2-models",
+      "local_queue_name": "inference-models",
+      "cluster_queue_name": "inference-accelerators",
+      "service_account_name": "scientific-runner",
+      "node_selector": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+      },
+      "tolerations": [
+        {
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference",
+          "effect": "NoSchedule"
+        }
+      ],
+      "mounts": [
+        {
+          "name": "openfold3-openbind-0",
+          "kind": "reference",
+          "artifact_id": "openfold3-openbind-0",
+          "claim_name": "scientific-model-artifacts",
+          "claim_namespace": "fs2-models",
+          "host_path": null,
+          "operator_owned": true,
+          "mount_path": "/models/openfold3",
+          "sub_path": "openfold3-openbind-0",
+          "aggregate_tree_policy": null,
+          "supplemental_groups": [],
+          "read_only": true
+        },
+        {
+          "name": "openfold3-components-bcif",
+          "kind": "reference",
+          "artifact_id": "openfold3-components-bcif",
+          "claim_name": "scientific-model-artifacts",
+          "claim_namespace": "fs2-models",
+          "host_path": null,
+          "operator_owned": true,
+          "mount_path": "/databases/openfold3",
+          "sub_path": "openfold3-components-bcif",
+          "aggregate_tree_policy": null,
+          "supplemental_groups": [],
+          "read_only": true
+        },
+        {
+          "name": "openfold3-warm-cache",
+          "kind": "cache",
+          "artifact_id": null,
+          "claim_name": "scientific-openfold3-cache",
+          "claim_namespace": "fs2-models",
+          "host_path": null,
+          "operator_owned": true,
+          "mount_path": "/cache/openfold3",
+          "sub_path": null,
+          "aggregate_tree_policy": null,
+          "supplemental_groups": [],
+          "read_only": false
+        }
+      ],
+      "environment": {
+        "TRITON_CACHE_DIR": "/cache/openfold3/triton",
+        "TORCH_EXTENSIONS_DIR": "/cache/openfold3/torch-extensions",
+        "XDG_CACHE_HOME": "/cache/openfold3/xdg"
+      },
+      "compiler_cache": {
+        "accelerator_sm": "sm90",
+        "run_as_user": 10001,
+        "run_as_group": 10001,
+        "sub_path_layout": "scientific-cache/v1/{model_id}/{stage_id}/{variant_id}/{runtime_image_sha256}/{artifact_set_sha256}/{accelerator_sm}",
+        "preparation": "root-init-chown-and-nonroot-write-read-probe"
+      }
+    },
+    {
+      "model_id": "protenix-v2",
+      "stage_id": "sample-structure",
+      "execution_namespace": "fs2-models",
+      "local_queue_name": "inference-models",
+      "cluster_queue_name": "inference-accelerators",
+      "service_account_name": "scientific-runner",
+      "node_selector": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+      },
+      "tolerations": [
+        {
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference",
+          "effect": "NoSchedule"
+        }
+      ],
+      "mounts": [
+        {
+          "name": "protenix-v2",
+          "kind": "reference",
+          "artifact_id": "protenix-v2",
+          "claim_name": "scientific-model-artifacts",
+          "claim_namespace": "fs2-models",
+          "host_path": null,
+          "operator_owned": true,
+          "mount_path": "/models/protenix-v2",
+          "sub_path": "protenix-v2",
+          "aggregate_tree_policy": null,
+          "supplemental_groups": [],
+          "read_only": true
+        },
+        {
+          "name": "protenix-warm-cache",
+          "kind": "cache",
+          "artifact_id": null,
+          "claim_name": "scientific-protenix-cache",
+          "claim_namespace": "fs2-models",
+          "host_path": null,
+          "operator_owned": true,
+          "mount_path": "/cache/protenix",
+          "sub_path": null,
+          "aggregate_tree_policy": null,
+          "supplemental_groups": [],
+          "read_only": false
+        }
+      ],
+      "environment": {
+        "TRITON_CACHE_DIR": "/cache/protenix/triton",
+        "CUEQ_TRITON_CACHE_DIR": "/cache/protenix/cueq-triton",
+        "TORCH_EXTENSIONS_DIR": "/cache/protenix/torch-extensions",
+        "XDG_CACHE_HOME": "/cache/protenix/xdg"
+      },
+      "compiler_cache": {
+        "accelerator_sm": "sm90",
+        "run_as_user": 10001,
+        "run_as_group": 10001,
+        "sub_path_layout": "scientific-cache/v1/{model_id}/{stage_id}/{variant_id}/{runtime_image_sha256}/{artifact_set_sha256}/{accelerator_sm}",
+        "preparation": "root-init-chown-and-nonroot-write-read-probe"
+      }
+    }
+  ]
+}

@@ -854,3 +854,52 @@ run "an_out_of_region_bucket_is_refused" {
 
   expect_failures = [var.scientific_artifacts]
 }
+
+run "generated_v3_execution_map_is_installed_immutably" {
+  command = plan
+
+  plan_options {
+    target = [kubernetes_config_map_v1.scientific_execution]
+  }
+
+  variables {
+    scientific_batch = {
+      enabled        = true
+      writes_enabled = false
+      namespace      = "fs2-models"
+      execution_map_config_map_json = jsonencode({
+        apiVersion = "v1"
+        kind       = "ConfigMap"
+        metadata = {
+          name      = "fs2-scientific-execution-4c13dfc8dac5"
+          namespace = "fs2-system"
+          labels    = { "app.kubernetes.io/component" = "scientific-execution" }
+          annotations = {
+            "fs2.nebius.ai/execution-map-sha256" = "4c13dfc8dac5ee1d3f08f11cf2845e588258a32350aacf440db7b035ee49cdc3"
+          }
+        }
+        immutable = true
+        data = {
+          "execution-map.json" = jsonencode({
+            schema = "fs2-serve.nebius.ai/scientific-execution-map/v3"
+            controller_service_account = {
+              namespace = "fs2-system"
+              name      = "fs2-serve-control-plane-runtime"
+            }
+            models = [{ model_id = "esmfold2" }]
+          })
+        }
+      })
+    }
+  }
+
+  assert {
+    condition = (
+      kubernetes_config_map_v1.scientific_execution[0].metadata[0].name ==
+      "fs2-scientific-execution-4c13dfc8dac5" &&
+      kubernetes_config_map_v1.scientific_execution[0].metadata[0].annotations["fs2.nebius.ai/execution-map-sha256"] ==
+      "4c13dfc8dac5ee1d3f08f11cf2845e588258a32350aacf440db7b035ee49cdc3"
+    )
+    error_message = "Terraform must install the untouched content-addressed execution map and project its exact name into Helm."
+  }
+}

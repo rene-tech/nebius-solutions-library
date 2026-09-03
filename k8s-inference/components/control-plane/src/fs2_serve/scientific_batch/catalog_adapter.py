@@ -10,6 +10,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
+from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
+
 from .models import (
     CheckpointMode,
     ExecutionMode,
@@ -149,3 +151,26 @@ def scientific_plan_from_catalog_profile(
         return ScientificBatchPlan(stages=tuple(stages))
     except ValueError as error:
         raise CatalogProfileAdapterError(f"catalog workload cannot form an internal stage plan: {error}") from error
+
+
+def validate_scientific_run_request(
+    profile: Mapping[str, object],
+    request: Mapping[str, object],
+    request_schema: Mapping[str, object],
+) -> None:
+    """Fail closed against the canonical envelope and model parameters."""
+
+    Draft202012Validator(request_schema).validate(request)
+    interface = _mapping(profile.get("interface"), "profile.interface")
+    operations = _string_tuple(interface.get("operations"), "profile.interface.operations")
+    service_classes = _string_tuple(interface.get("service_classes"), "profile.interface.service_classes")
+    if request.get("operation") not in operations:
+        raise CatalogProfileAdapterError("request.operation is not supported by this model variant")
+    if request.get("service_class") not in service_classes:
+        raise CatalogProfileAdapterError("request.service_class is not supported by this model variant")
+    parameter_schema = _mapping(
+        interface.get("parameter_schema_definition"),
+        "profile.interface.parameter_schema_definition",
+    )
+    parameters = _mapping(request.get("parameters"), "request.parameters")
+    Draft202012Validator(parameter_schema).validate(parameters)

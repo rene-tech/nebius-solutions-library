@@ -33,7 +33,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
 
     def test_all_scientific_schemas_are_valid_draft_2020_12(self) -> None:
         schemas = sorted(SCHEMA_ROOT.glob("scientific-*.schema.json"))
-        self.assertEqual(10, len(schemas))
+        self.assertEqual(13, len(schemas))
         for schema_path in schemas:
             with self.subTest(schema=schema_path.name):
                 Draft202012Validator.check_schema(self.load(schema_path))
@@ -202,47 +202,48 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             "scientific-source-candidate-receipts.schema.json", receipts
         )
         expected = {
-            "alphafold3": "c0f97eda2f1f482fd94d3a38bece18c7069b4a5c",
             "bindcraft": "efb5bfeb8b4b1a5944256f979c34e0c8e6a82d9d",
             "boltzgen": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
-            "esmfold2": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
-            "esmfold2-fast": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
             "mosaic": "70fec525423f5f87156a1a957b4a4048f9f8e676",
             "proteina-complexa": "54058860d43444c7289873f77d3e50b5b02348cd",
-            "protenix-v2": "4c355be4553512f72453ecbfb65e69f4c35d1413",
             "rfdiffusion-upstream": "86507b6538f51fce57b5a72477165f03999ed7ae",
         }
         actual = {
             item["model_id"]: item["source"]["revision"]
             for item in receipts["receipts"]
+            if "variant_id" not in item
         }
         self.assertEqual(expected, actual)
-        self.assertEqual(len(actual), len(receipts["receipts"]))
+        legacy = [item for item in receipts["receipts"] if "variant_id" not in item]
+        self.assertEqual(len(actual), len(legacy))
         self.assertTrue(
-            all(item["status"] == "candidate" for item in receipts["receipts"])
+            all(item["status"] == "candidate" for item in legacy)
         )
         self.assertTrue(
             all(
                 item["qualification_state"] == "unqualified"
-                for item in receipts["receipts"]
+                for item in legacy
             )
         )
         academic = {
             item["model_id"]
-            for item in receipts["receipts"]
+            for item in legacy
             if item["access_profile"] == "academic"
         }
-        self.assertEqual({"alphafold3", "bindcraft"}, academic)
+        self.assertEqual({"bindcraft"}, academic)
 
     def test_primary_profiles_are_schema_valid_candidate_only_and_unroutable(self) -> None:
         profiles = self.load(CONTRACT_ROOT / "scientific-workload-profiles.json")
         self.assert_valid("scientific-workload-profiles.schema.json", profiles)
         full_validator = self.validator("scientific-workload-profile.schema.json")
+        primary_profiles = [
+            profile for profile in profiles["profiles"] if "variant_id" not in profile
+        ]
         self.assertEqual(
             ["boltzgen", "proteina-complexa"],
-            [profile["model_id"] for profile in profiles["profiles"]],
+            [profile["model_id"] for profile in primary_profiles],
         )
-        for profile in profiles["profiles"]:
+        for profile in primary_profiles:
             with self.subTest(model_id=profile["model_id"]):
                 self.assertEqual([], list(full_validator.iter_errors(profile)))
                 self.assertEqual("candidate-unqualified", profile["state"])

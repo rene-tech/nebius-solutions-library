@@ -71,6 +71,16 @@ class ModelOnboardingCompilerTests(unittest.TestCase):
         self.assertEqual(profile["state"], "candidate-unqualified")
         self.assertFalse(profile["route_exposed"])
         self.assertFalse(profile["interface"]["mcp"]["invocable"])
+        self.assertEqual(
+            {
+                "requested_level": "Off",
+                "maximum_level": "L1",
+                "qualified_level": "Off",
+                "state": "candidate-unqualified",
+                "cache_strategy": "shared-pvc",
+            },
+            profile["policy"]["fast_start"],
+        )
         self.assertIsNone(profile["execution_identity"]["artifact_manifest_digest"])
         self.assertNotIn("command", profile)
         self.assertEqual(

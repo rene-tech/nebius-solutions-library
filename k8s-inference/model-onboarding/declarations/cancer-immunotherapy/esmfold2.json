@@ -1,0 +1,353 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "schema_version": 2,
+  "execution_mode": "scientific-batch",
+  "model": {
+    "id": "esmfold2",
+    "variant_id": "biohub-v3-4-0",
+    "default_variant": true,
+    "display_name": "ESMFold2",
+    "family": "scientific-protein",
+    "source": {
+      "kind": "git",
+      "repository": "Biohub/esm",
+      "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+      "review": {
+        "url": "https://github.com/Biohub/esm/tree/827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918",
+        "summary": "Qualified v3.4.0 source revision; runtime and H100 behavior remain unqualified."
+      },
+      "license": {
+        "id": "MIT",
+        "state": "verified",
+        "notes": "Code and published model card declare MIT."
+      },
+      "entitlement": {
+        "required": false,
+        "state": "not-required",
+        "credential_contract": null,
+        "notes": "The exact Biohub artifact repository is public and ungated."
+      }
+    },
+    "artifacts": [
+      {
+        "artifact_id": "esmfold2-trunk",
+        "kind": "weights",
+        "source": {
+          "kind": "huggingface",
+          "repository": "biohub/ESMFold2",
+          "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
+          "release_id": null
+        },
+        "required_files": [
+          "config.json",
+          "model.safetensors"
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard",
+        "content_digest_sha256": "136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c",
+        "total_size_bytes": 939507565,
+        "file_manifest": [
+          {
+            "path": "config.json",
+            "size_bytes": 2337,
+            "sha256": "e9ec2496ec433a1dce18627ed4bf3785b4ce0c1d69e4bb4663dad1ab895da012"
+          },
+          {
+            "path": "model.safetensors",
+            "size_bytes": 939505228,
+            "sha256": "138fd4350d6892b81ce6be7ff9bf5a93ae9d4d3751f46a27438a3f9f0dcefa0e"
+          }
+        ]
+      },
+      {
+        "artifact_id": "esmc-6b",
+        "kind": "weights",
+        "source": {
+          "kind": "huggingface",
+          "repository": "biohub/ESMC-6B",
+          "revision": "45b0fa5d7fb06faefbd5e3b89bdcef35d564e79a",
+          "release_id": null
+        },
+        "required_files": [
+          "config.json",
+          "model-00001-of-00006.safetensors",
+          "model-00002-of-00006.safetensors",
+          "model-00003-of-00006.safetensors",
+          "model-00004-of-00006.safetensors",
+          "model-00005-of-00006.safetensors",
+          "model-00006-of-00006.safetensors",
+          "model.safetensors.index.json",
+          "special_tokens_map.json",
+          "tokenizer.json",
+          "tokenizer_config.json"
+        ],
+        "content_digest_sha256": "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+        "total_size_bytes": 25408251020,
+        "file_manifest": [
+          {
+            "path": "config.json",
+            "size_bytes": 341,
+            "sha256": "c5566fab6a17fd674141331fe75de917b7904d99fb7a410d2b1593c21e576913"
+          },
+          {
+            "path": "model-00001-of-00006.safetensors",
+            "size_bytes": 4864457920,
+            "sha256": "bd90149ff223e6ac1a0cac6147a5ae0df20d3a21df4f65356a1f19cd14f4aa8a"
+          },
+          {
+            "path": "model-00002-of-00006.safetensors",
+            "size_bytes": 4971211344,
+            "sha256": "f75e2144d8269fe2eb4b3e0823fb089b94f176d8024153e85b8fb573a42294fa"
+          },
+          {
+            "path": "model-00003-of-00006.safetensors",
+            "size_bytes": 4863752992,
+            "sha256": "f699f01ecc9691d9c6470492765fe54b8b5d2e9f277c139e89427433ffdfe0b2"
+          },
+          {
+            "path": "model-00004-of-00006.safetensors",
+            "size_bytes": 4971211344,
+            "sha256": "46add1b7be098bbfdc3073884851ba3057f1b33ea23a158b650a37007dabd13d"
+          },
+          {
+            "path": "model-00005-of-00006.safetensors",
+            "size_bytes": 4863752992,
+            "sha256": "1e1cb62f060a34e18f54a31a76683ef888b8cec59e73315f5b31d25d45a1f88c"
+          },
+          {
+            "path": "model-00006-of-00006.safetensors",
+            "size_bytes": 873762296,
+            "sha256": "56c73e13ae96e777ce65eee99364056069ef93b646470f352f83c5f1037b1b18"
+          },
+          {
+            "path": "model.safetensors.index.json",
+            "size_bytes": 97349,
+            "sha256": "6846456e20e6ee2c37461f7bfc21d316d69bdaf165b925691afcb39e583244da"
+          },
+          {
+            "path": "special_tokens_map.json",
+            "size_bytes": 171,
+            "sha256": "0b7245ec86c8c3aeaf61523ba70dfa79be137e6283f127bd651adc30b4f15c74"
+          },
+          {
+            "path": "tokenizer.json",
+            "size_bytes": 2879,
+            "sha256": "8d3447b278176e65fb3ef0224472927bf5fee3be46ea2bd77fad0111423cee1f"
+          },
+          {
+            "path": "tokenizer_config.json",
+            "size_bytes": 1392,
+            "sha256": "e8d8e40c9f92b334f0272e80bb65ed4043cb9836523cbae899e9859e8cbb8833"
+          }
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard"
+      },
+      {
+        "artifact_id": "esmfold2-ccd",
+        "kind": "runtime-dependency",
+        "source": {
+          "kind": "huggingface",
+          "repository": "biohub/ESMFold2",
+          "revision": "8fc3ff471022fdce52c77030685eb775de0c00a3",
+          "release_id": null
+        },
+        "required_files": [
+          "ccd.pkl"
+        ],
+        "content_digest_sha256": "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+        "total_size_bytes": 417306584,
+        "file_manifest": [
+          {
+            "path": "ccd.pkl",
+            "size_bytes": 417306584,
+            "sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5"
+          }
+        ],
+        "supply_state": "source-qualified",
+        "handling": "standard"
+      }
+    ]
+  },
+  "runtime": {
+    "template": "scientific-batch",
+    "kind": "custom",
+    "version": "esm-3.4.0-candidate",
+    "image": {
+      "logical_repository": "cancer-immunotherapy/esmfold2",
+      "digest": null,
+      "state": "build-required"
+    },
+    "command": [
+      "/usr/local/bin/fs2-run-esmfold2"
+    ],
+    "args": [],
+    "environment": {
+      "HF_HUB_OFFLINE": "1",
+      "TRANSFORMERS_OFFLINE": "1"
+    }
+  },
+  "resources": {
+    "gpu_count": 1,
+    "gpu_topology": "single-gpu",
+    "cache_pvc": {
+      "size": "40Gi",
+      "storage_class": "compute-csi-default-sc"
+    },
+    "requests": {
+      "cpu": "4",
+      "memory": "32Gi",
+      "ephemeral_storage": "8Gi"
+    },
+    "limits": {
+      "cpu": "16",
+      "memory": "96Gi",
+      "ephemeral_storage": "32Gi"
+    }
+  },
+  "placement": {
+    "host_architectures": [
+      "amd64"
+    ],
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "accelerator_resource_name": "nvidia.com/gpu",
+    "compatible_pool_ids": [
+      "h100-reserved-8x",
+      "h100-1x"
+    ],
+    "required_node_labels": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+    }
+  },
+  "serving": null,
+  "batch": {
+    "protocol": "scientific-batch-v1",
+    "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+    "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+    "parameter_schema": {
+      "id": "fs2-serve.nebius.ai/esmfold2-biohub-v3-4-0-parameters/v1",
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sequence",
+          "mode"
+        ],
+        "properties": {
+          "sequence": {
+            "type": "string",
+            "pattern": "^[ACDEFGHIKLMNPQRSTVWYX]+$",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "mode": {
+            "enum": [
+              "single-sequence",
+              "precomputed-msa"
+            ]
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        }
+      }
+    },
+    "operations": [
+      "predict-structure"
+    ],
+    "service_classes": [
+      "interactive",
+      "customer-batch"
+    ],
+    "access_profile": "standard",
+    "access_state": "not-required",
+    "stages": [
+      {
+        "id": "prepare-input",
+        "needs": [],
+        "resource_class": "cpu",
+        "resources": {
+          "gpu_count": 0,
+          "requests": {
+            "cpu": "4",
+            "memory": "16Gi",
+            "ephemeral_storage": "8Gi"
+          },
+          "limits": {
+            "cpu": "8",
+            "memory": "32Gi",
+            "ephemeral_storage": "32Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 64,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      },
+      {
+        "id": "fold",
+        "needs": [
+          "prepare-input"
+        ],
+        "resource_class": "gpu",
+        "resources": {
+          "gpu_count": 1,
+          "requests": {
+            "cpu": "4",
+            "memory": "32Gi",
+            "ephemeral_storage": "8Gi"
+          },
+          "limits": {
+            "cpu": "16",
+            "memory": "96Gi",
+            "ephemeral_storage": "32Gi"
+          }
+        },
+        "admission_mode": "independent-jobs",
+        "min_parallelism": 1,
+        "max_parallelism": 64,
+        "checkpoint_mode": "restart",
+        "preemption_mode": "restartable"
+      }
+    ],
+    "storage": [],
+    "retry": {
+      "max_attempts": 3,
+      "retryable_exit_codes": [
+        137,
+        143
+      ]
+    },
+    "cancellation": {
+      "mode": "terminate-attempt",
+      "grace_seconds": 30
+    },
+    "semantic_validation": {
+      "validator_id": "esmfold2-biohub-v3-4-0",
+      "state": "candidate-unqualified"
+    },
+    "mcp": {
+      "tool_name": "submit_esmfold2_biohub",
+      "description": "Submit a typed ESMFold2 structure-prediction run."
+    }
+  },
+  "policy": {
+    "commercial_use": "allowed",
+    "non_clinical": true,
+    "limitations": [
+      "The source and exact offline files are qualified inputs, but the required offline wrapper is not yet packaged in a digest-pinned image and no semantic or H100 receipt exists."
+    ],
+    "fast_start": {
+      "requested_level": "Off",
+      "maximum_level": "L1",
+      "qualified_level": "Off",
+      "state": "candidate-unqualified",
+      "cache_strategy": "shared-pvc"
+    }
+  }
+}

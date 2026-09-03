@@ -220,6 +220,8 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
         "0011_admin_configuration.sql",
         "0012_model_deployments.sql",
         "0013_durable_dynamic_dispatch.sql",
+        "0014_scientific_artifact_results.sql",
+        "0015_scientific_batch_controller.sql",
     ]
     assert hashlib.sha256((migration_dir / "0005_terminal_accounting.sql").read_bytes()).hexdigest() == (
         "fedb6789a4839d42645c5ffb6905ce46525c213d81f15d9d987eacc109614197"
@@ -248,11 +250,17 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
     assert hashlib.sha256((migration_dir / "0013_durable_dynamic_dispatch.sql").read_bytes()).hexdigest() == (
         "4daf1a47abd864c04f30dc48149a0c74b46aac1332c12ef40df518b2dea8b9ad"
     )
+    assert hashlib.sha256((migration_dir / "0014_scientific_artifact_results.sql").read_bytes()).hexdigest() == (
+        "97be6f57c64944418fa9719a58bacd8040402d21fa874f7af3a773c02b68b675"
+    )
+    assert hashlib.sha256((migration_dir / "0015_scientific_batch_controller.sql").read_bytes()).hexdigest() == (
+        "48b41100f3c9b25595ee6e9835ad4d44d964161bf05fa3227d6697bf7f085578"
+    )
     dockerfile = (CONTROL_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert dockerfile.count("WORKDIR /workspace/k8s-inference/components/control-plane") == 2
     assert "COPY k8s-inference/components/control-plane/migrations ./migrations" in dockerfile
     assert "Settings.model_fields['migrations_dir'].default" in dockerfile
-    assert "migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 13" in dockerfile
+    assert "migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 15" in dockerfile
     assert "store.migrate" not in inspect.getsource(cli.build_runtime)
     assert "store.migrate" not in inspect.getsource(cli.maintain)
     assert "PostgresStore.migrate_database" in inspect.getsource(cli.migrate)
@@ -319,6 +327,8 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
             "fs2_serve/migrations/0011_admin_configuration.sql",
             "fs2_serve/migrations/0012_model_deployments.sql",
             "fs2_serve/migrations/0013_durable_dynamic_dispatch.sql",
+            "fs2_serve/migrations/0014_scientific_artifact_results.sql",
+            "fs2_serve/migrations/0015_scientific_batch_controller.sql",
         ]
         entry_point_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         assert len(entry_point_files) == 1
@@ -355,8 +365,9 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
         timeout=60,
     )
     assert (
-            "{serve,maintenance,migrate,wait-schema,bootstrap-access,validate,postgresql-release-contract,model-controller}"
-        in completed.stdout
+        "{serve,maintenance,migrate,wait-schema,bootstrap-access,validate,postgresql-release-contract,"
+        "model-controller,scientific-materialize,scientific-collect,scientific-prepare-workspace,"
+        "scientific-prepare-compiler-cache}" in completed.stdout
     )
     emitted_contract = subprocess.run(  # noqa: S603 - clean-wheel CLI and fixed command.
         [str(cli), "postgresql-release-contract"],
@@ -382,7 +393,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
                 "assert pathlib.Path(fs2_serve_catalog.__file__).resolve().is_relative_to(root);"
                 "migration_dir=Settings.model_fields['migrations_dir'].default;"
                 "assert migration_dir.parent == pathlib.Path(fs2_serve.__file__).resolve().parent;"
-                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 13;"
+                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 15;"
                 "assert Registry and load_gateway_catalog"
             ),
         ],

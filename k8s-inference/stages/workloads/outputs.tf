@@ -295,6 +295,11 @@ output "general_cpu_contract" {
   value       = terraform_data.general_cpu_contract.output
 }
 
+output "scientific_execution_delivery_contract" {
+  description = "Immutable execution/scheduling ConfigMap identities and deployment-owned compiler-cache claims."
+  value       = terraform_data.scientific_execution_delivery_contract.output
+}
+
 output "reference_data_contract" {
   description = "Same-region storage, private preprocessing and optional official staging-pipeline contract."
   value       = try(terraform_data.reference_data_contract[0].output, null)
