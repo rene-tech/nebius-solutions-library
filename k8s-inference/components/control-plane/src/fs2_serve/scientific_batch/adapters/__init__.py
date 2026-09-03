@@ -22,7 +22,13 @@ from ..models import (
     ScientificInputArtifact,
     StageInvocation,
 )
-from . import localization
+from . import (
+    esmfold2,
+    esmfold2_fast,
+    localization,
+    openfold3,
+    protenix_v2,
+)
 from .common import ScientificAdapterError, load_json_request, profile_from_catalog
 from .localization import (
     ArtifactLocalizationError,
@@ -196,7 +202,15 @@ def collect_stage_output(invocation: StageInvocation, workspace: Path) -> Collec
     return output
 
 
-for _module_name in ("proteina_complexa", "boltzgen", "bindcraft"):
+for _module_name in (
+    "proteina_complexa",
+    "boltzgen",
+    "bindcraft",
+    "esmfold2",
+    "esmfold2_fast",
+    "protenix_v2",
+    "openfold3",
+):
     _register_legacy_primary(_module_name)
 
 
@@ -212,13 +226,17 @@ __all__ = [
     "StageCollector",
     "collect_stage_output",
     "compile_adapter_run",
+    "esmfold2",
+    "esmfold2_fast",
     "load_localization_contracts",
     "load_localization_contracts_from_path",
     "load_json_request",
     "localization",
+    "openfold3",
     "preflight_stage_trees",
     "profile_from_catalog",
     "register_adapter",
+    "protenix_v2",
 ]
 
 for _module_name in ("proteina_complexa", "boltzgen", "bindcraft"):

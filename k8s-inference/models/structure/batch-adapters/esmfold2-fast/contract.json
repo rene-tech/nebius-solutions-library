@@ -1,0 +1,70 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-adapter-identity/v1",
+  "model_id": "esmfold2-fast",
+  "variant_id": "biohub-v3-4-0",
+  "module": "fs2_serve.scientific_batch.adapters.esmfold2_fast",
+  "source": {
+    "repository": "Biohub/esm",
+    "revision": "827ec128e4cdaf80f7d6f95fb367a08980b34918"
+  },
+  "runtime_image": {
+    "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast",
+    "tag": "827ec128e4cdaf80f7d6f95fb367a08980b34918-h100-r4",
+    "digest": "sha256:ba55b9bb418d9714b21634c9fd6281f678529042bc3d0b8f06f184fa314a2577",
+    "state": "build-only-not-semantic-qualified"
+  },
+  "activation": {
+    "profile_state": "candidate-unqualified",
+    "route_exposed": false,
+    "semantic_h100_qualified": false
+  },
+  "interface": {
+    "parameter_schema": "fs2-serve.nebius.ai/esmfold2-fast-biohub-v3-4-0-parameters/v1",
+    "operations": ["predict-protein-structure"],
+    "entrypoint": "/usr/local/bin/fs2-run-esmfold2",
+    "subcommands": ["prepare-input", "fold"]
+  },
+  "stages": [
+    {
+      "stage_id": "prepare-input",
+      "resource_class": "cpu",
+      "collector_id": "esmfold2-fast-prepare-collector-v1",
+      "validator_id": "esmfold2-fast-prepare-validator-v1",
+      "max_parallelism": 64,
+      "runtime_artifacts": []
+    },
+    {
+      "stage_id": "fold",
+      "resource_class": "gpu",
+      "collector_id": "esmfold2-fast-result-collector-v1",
+      "validator_id": "esmfold2-fast-biohub-v3-4-0",
+      "max_parallelism": 128,
+      "runtime_artifacts": ["esmfold2-fast-trunk", "esmc-6b", "esmfold2-ccd"]
+    }
+  ],
+  "runtime_artifacts": [
+    {
+      "artifact_id": "esmfold2-fast-trunk",
+      "mount_path": "/models/esmfold2-fast",
+      "content_sha256": "19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63"
+    },
+    {
+      "artifact_id": "esmc-6b",
+      "mount_path": "/models/esmc-6b",
+      "content_sha256": "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758"
+    },
+    {
+      "artifact_id": "esmfold2-ccd",
+      "mount_path": "/databases/esmfold2",
+      "runtime_path": "/databases/esmfold2/ccd.pkl",
+      "content_sha256": "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+      "file_sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5"
+    }
+  ],
+  "capabilities": {
+    "single_sequence": true,
+    "precomputed_msa": false,
+    "rejection": "All MSA modes are rejected before GPU allocation."
+  },
+  "seam": "Model-owned adapter and explicit allow-list branch only; scheduler, renderer, Terraform, Kueue, and activation remain external."
+}
