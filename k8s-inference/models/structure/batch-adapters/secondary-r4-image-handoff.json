@@ -31,7 +31,7 @@
     }
   ],
   "evidence": {
-    "source": "/home/tux/.local/state/fs2-cancer-images-structure-secondary-r20260902/published-e6d20c7c-r4",
+    "source": ".local/state/fs2-cancer-images-structure-secondary-r20260902/published-e6d20c7c-r4",
     "scope": "Published immutable registry manifests and real H100 CUDA/build-only startup checks; no exact-artifact semantic inference claim.",
     "activation_gate": "Promote only after immutable artifact localization, exact runtime cache delivery where declared, and successful semantic H100 inference."
   }
