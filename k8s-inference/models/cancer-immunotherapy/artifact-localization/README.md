@@ -145,9 +145,21 @@ install path is recorded as `promoted_from` with `runtime_bindable: false`. It i
 where the bytes were built, not a name that can only ever mean those bytes.
 Promotion shares the data by hard link rather than copying it, because the claim
 has gigabytes of headroom and the tree is 3.2 GB; the receipt reports linked and
-copied bytes separately so the claim is provable rather than assumed. A hard
-link makes `chmod` follow the inode, so a writable source is refused at both the
-linking step and the sealing step instead of being silently rewritten.
+copied bytes separately so the claim is provable rather than assumed.
+
+That only works from one mount. Two bind mounts of the same volume are separate
+mount namespaces, and `os.link` across them returns `EXDEV` even though the
+bytes share a filesystem, so mounting the source read-only alongside the
+destination — which looks like the safer design — would quietly write a second
+full copy. The claim is therefore mounted once and both paths are addressed
+beneath it, a copy is refused unless `--allow-copy` budgets for it, and a
+promotion whose source and destination are on different claims is refused
+outright rather than falling back.
+
+The source keeps its protection from the tool instead of from a read-only
+mount: the promotion only ever reads it, refuses any writable source file, and
+never chmods a shared inode, since `chmod` follows the inode and would rewrite
+the tree it was promoting from.
 
 Two properties of the academic claim decide how a staging job must be written:
 
@@ -200,8 +212,8 @@ python render_localization_jobs.py qualify \
 ```
 
 A tree another plane installed is promoted rather than staged. The Job mounts
-the installed tree read-only at `/source` and this tool's own generation root at
-`/trees`, shares the bytes by hard link, verifies the result under the
+the claim **once**, addresses the installed tree and the generation root beneath
+that single mount, shares the bytes by hard link, verifies the result under the
 producer's own algorithm, seals the marker inside and publishes by rename:
 
 ```bash

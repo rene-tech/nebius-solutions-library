@@ -223,7 +223,7 @@
           "consumer_paths": [
             "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
           ],
-          "directory_count": 796,
+          "directory_count": 779,
           "entry_count": 8697,
           "generation": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
           "generator_identity": [],
@@ -240,13 +240,13 @@
           "source_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
           "source_uri": "https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/pyrosetta-2026.29%2Breleasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
           "sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
-          "symlink_count": null,
+          "symlink_count": 0,
           "total_bytes": 3287122494,
           "visibility": "tenant-private",
           "volume_kind": "persistent-volume-claim"
         },
         "in_generation": true,
-        "manifest_digest": "b0f15625be401a308ef2b8865875eecbc4e0775721affa5a2c7d60c51f84cde7",
+        "manifest_digest": "ee24f7445426b0536da9781bc57a9ef33e4e1e98a3434afae31cdd84e7b473d3",
         "path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d/.fs2-runtime-tree.json",
         "relative_path": ".fs2-runtime-tree.json",
         "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
@@ -267,7 +267,7 @@
         "sub_path": "pyrosetta-bindcraft/site-packages"
       },
       "tree_identity": {
-        "directory_count": 796,
+        "directory_count": 779,
         "entry_count": 8697,
         "inventory_algorithm": "fs2-tree-manifest/v1",
         "inventory_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",

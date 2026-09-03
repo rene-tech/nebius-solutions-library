@@ -124,7 +124,7 @@
           "maximum": 64
         },
         "directory_count": {
-          "description": "Directories observed. Only a recursive algorithm describes them; a flat tree has none.",
+          "description": "Descendant directories the tree contains, excluding the tree root. This is a count of directories, never of paths carrying a directory-like mode: an installed tree also holds executable regular files at 0550, and counting those as directories overstates it. Only a recursive algorithm describes directories; a flat tree has none.",
           "type": "integer",
           "minimum": 0
         },

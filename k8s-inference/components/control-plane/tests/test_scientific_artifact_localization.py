@@ -9,6 +9,7 @@ tampered tree fails closed before any model argv runs.
 from __future__ import annotations
 
 import copy
+import errno
 import hashlib
 import importlib.util
 import io
@@ -264,7 +265,7 @@ def test_checked_in_contract_declares_both_primary_runtime_trees() -> None:
     assert pyrosetta.tree.inventory_algorithm == TREE_MANIFEST_ALGORITHM
     assert pyrosetta.tree.inventory_sha256 == PYROSETTA_TREE_SHA256
     assert pyrosetta.tree.entry_count == PYROSETTA_FILE_COUNT
-    assert pyrosetta.tree.directory_count == 796
+    assert pyrosetta.tree.directory_count == 779
     assert pyrosetta.tree.total_bytes == PYROSETTA_TOTAL_BYTES
 
     molecules = contracts[MOLECULES_ID]
@@ -2251,24 +2252,24 @@ def test_an_existing_generation_is_reverified_before_success(tmp_path: Path) -> 
     assert "does not verify" in third["rejection_reason"]
 
 
-def test_the_promotion_job_mounts_the_source_read_only_beside_its_generation_root() -> None:
-    """Promotion reads the installed tree and writes only into its own root."""
+def test_the_promotion_job_addresses_its_source_beneath_the_one_claim_mount() -> None:
+    """The source is protected by the tool now, not by a second read-only mount.
+
+    A read-only mount of the source would have been reassuring and wrong: it
+    puts the source in a different mount namespace from the destination, and a
+    hard link cannot cross that even on one filesystem. The protection that
+    replaces it is that the promotion only ever reads the source, refuses a
+    writable source file, and never chmods a shared inode.
+    """
 
     renderer = _renderer()
-    contract = json.loads(
-        (
-            Path(__file__).resolve().parents[3] / "catalog/runtime/contracts/scientific-artifact-localization.json"
-        ).read_text(encoding="utf-8")
-    )
-    artifact = next(
-        item for item in contract["artifacts"] if item["artifact_id"] == "bindcraft-pyrosetta-installed-tree"
-    )
+    artifact = _checked_in_artifact("bindcraft-pyrosetta-installed-tree")
     job = renderer.promote_job(
         name="promote",
         namespace="fs2-academic-poc",
         run_id="r",
         artifact=artifact,
-        image="registry.invalid/x@sha256:" + "0" * 64,
+        image=_RENDER_IMAGE,
         python="/usr/bin/python3",
         config_map="c",
         plane={"kind": "persistent-volume-claim", "claim": "academic-assets-runtime-rwx"},
@@ -2280,28 +2281,23 @@ def test_the_promotion_job_mounts_the_source_read_only_beside_its_generation_roo
         security_context={},
     )
     spec = job["spec"]["template"]["spec"]
-    volumes = {item["name"]: item for item in spec["volumes"]}
-    assert volumes["source"]["persistentVolumeClaim"]["readOnly"] is True
+    assert {item["name"] for item in spec["volumes"]} == {"verifier", "trees", "scratch"}
+
     mounts = {item["name"]: item for item in spec["containers"][0]["volumeMounts"]}
-    # The producing plane's tree is an input and is mounted read-only.
-    assert mounts["source"]["subPath"] == "pyrosetta-bindcraft/site-packages"
-    assert mounts["source"]["readOnly"] is True
-    # This tool writes only into the generation root it owns, and mounts the
-    # volume root rather than a prefix that does not exist on a first run.
     assert "subPath" not in mounts["trees"]
     assert mounts["trees"].get("readOnly") is not True
-    receipts = spec["initContainers"][0]["command"][-1]
-    assert "scientific-localization/private/.receipts" in receipts
 
     argv = spec["containers"][0]["command"]
-    assert argv[3] == "promote"
     generation = artifact["tree"]["inventory_sha256"]
-    assert argv[argv.index("--promote-from") + 1] == "/source"
+    assert argv[3] == "promote"
+    assert argv[argv.index("--promote-from") + 1] == f"/trees/{artifact['source_sub_path']}"
     assert argv[argv.index("--artifact-root") + 1].endswith("/bindcraft-pyrosetta-installed-tree")
     assert argv[argv.index("--sub-path") + 1] == (
         f"scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/{generation}"
     )
     assert argv[argv.index("--visibility") + 1] == "tenant-private"
+    # Zero copy is the default; a copy has to be asked for.
+    assert "--allow-copy" not in argv
 
 
 def test_a_staged_artifact_cannot_be_rendered_as_a_promotion() -> None:
@@ -3014,18 +3010,19 @@ def _published_marker(contract: LocalizationContract, *, sub_path: str, **volume
 
 
 def test_the_real_pyrosetta_declaration_seals_the_marker_the_handoff_pins() -> None:
-    """The checked-in contract leaves symlink_count unstated, and must stay so.
+    """The marker a promotion seals must be the one the handoff already pinned.
 
-    A marker is an identity a handoff pins before anything is published, so it
-    is derived from the contract and never from what a run observed. Sealing an
-    observed count that the contract does not state produced a different
-    document from the one the renderer promised, and admission then failed on a
-    tree that was in fact correct.
+    A marker is an identity a consumer is told to expect before anything is
+    published, so it is derived from the contract and never from what a run
+    observed. Sealing an observed value the contract does not state produced a
+    different document from the one the renderer promised, and admission then
+    failed on a tree that was in fact correct.
     """
 
     artifact = _checked_in_artifact("bindcraft-pyrosetta-installed-tree")
     contract = LocalizationContract.parse(artifact)
-    assert contract.tree.symlink_count is None, "the producing plane never published this count"
+    assert contract.tree.symlink_count == 0
+    assert contract.tree.directory_count == 779
 
     handoff = json.loads(
         (
@@ -3045,7 +3042,8 @@ def test_the_real_pyrosetta_declaration_seals_the_marker_the_handoff_pins() -> N
     )
     assert marker_sha256(sealed) == entry["marker"]["manifest_digest"]
     assert marker_bytes(sealed) == marker_bytes(entry["marker"]["document"])
-    assert sealed["symlink_count"] is None
+    assert sealed["symlink_count"] == 0
+    assert sealed["directory_count"] == 779
 
 
 def test_every_checked_in_artifact_seals_the_marker_its_handoff_row_pins() -> None:
@@ -3196,7 +3194,7 @@ def test_a_contract_that_omits_a_symlink_count_still_admits_a_tree_that_has_one(
     )
 
 
-def _manifest_contract(source: Path, tmp_path: Path, **tree: Any) -> LocalizationContract:
+def _manifest_artifact(source: Path, **tree: Any) -> dict[str, Any]:
     identity = tree_manifest_identity(source)
     artifact = _document(b"unused", {"a": b"b"}, artifact_id="pyrosetta-dirs")
     artifact["transform"] = "external-installed-tree"
@@ -3222,7 +3220,11 @@ def _manifest_contract(source: Path, tmp_path: Path, **tree: Any) -> Localizatio
             "mount_path": "/opt/fs2/academic/pyrosetta-dirs",
         }
     ]
-    return LocalizationContract.parse(artifact)
+    return artifact
+
+
+def _manifest_contract(source: Path, tmp_path: Path, **tree: Any) -> LocalizationContract:
+    return LocalizationContract.parse(_manifest_artifact(source, **tree))
 
 
 def test_the_manifest_algorithm_measures_directories_instead_of_trusting_the_contract(
@@ -3262,16 +3264,206 @@ def test_the_manifest_algorithm_measures_directories_instead_of_trusting_the_con
     assert "3 directories do not match the contracted 2" in (stale.rejection_reason or "")
 
 
-def test_the_checked_in_pyrosetta_declaration_pins_a_directory_count_that_is_now_enforced() -> None:
-    """The real contract states 796 directories, and that number is checked."""
+def test_a_mode_0550_path_count_is_not_a_directory_count(tmp_path: Path) -> None:
+    """The mistake that put 796 in the contract, measured rather than asserted.
+
+    An installed tree sets directories to 0550 and also carries executable
+    regular files at 0550. Counting paths by mode therefore overstates the
+    directories by exactly those files, which is how a real PyRosetta install
+    with 779 descendant directories came to be recorded as 796. This builds the
+    same shape and measures both numbers instead of reading either from a string.
+    """
+
+    root = tmp_path / "site-packages"
+    (root / "pkg" / "database").mkdir(parents=True)
+    (root / "pkg" / "__init__.py").write_bytes(b"code\n")
+    (root / "pkg" / "plain.txt").write_bytes(b"data\n")
+    (root / "pkg" / "database" / "tool").write_bytes(b"#!/bin/sh\n")
+    for path in sorted(root.rglob("*")):
+        # The exact modes an installed tree carries, which is the point here.
+        os.chmod(path, 0o550 if path.is_dir() else 0o440)  # noqa: S103
+    executable = root / "pkg" / "database" / "tool"
+    os.chmod(executable, 0o550)  # noqa: S103 - an executable regular file, not a directory
+
+    identity = tree_manifest_identity(root)
+    directories = sum(1 for path in root.rglob("*") if path.is_dir() and not path.is_symlink())
+    mode_0550 = sum(1 for path in root.rglob("*") if path.stat().st_mode & 0o777 == 0o550)
+
+    assert identity.directory_count == directories == 2
+    assert mode_0550 == directories + 1, "the extra 0550 path is an executable regular file"
+    assert identity.directory_count != mode_0550
+    # And the algorithm counts descendants, so the root is not one of them.
+    assert identity.directory_count == len([p for p in root.rglob("*") if p.is_dir()])
+    assert executable.is_file() and not executable.is_dir()
+
+
+def test_the_checked_in_pyrosetta_declaration_uses_the_descendant_directory_semantic() -> None:
+    """The number the contract states must be the number promotion will measure.
+
+    tree_manifest_identity counts descendant directories, so a contract carrying
+    a mode-0550 path count would verify nowhere: a real promotion measures 779
+    and a contract saying 796 is rejected after the bytes are already linked.
+    """
 
     contract = LocalizationContract.parse(_checked_in_artifact("bindcraft-pyrosetta-installed-tree"))
     assert contract.tree.inventory_algorithm == TREE_MANIFEST_ALGORITHM
-    assert contract.tree.directory_count == 796
-    # The academic plane's own record is where that number comes from.
-    state = json.loads(
-        (Path(__file__).resolve().parents[3] / "academic-assets/evidence/live-acceptance-state.json").read_text(
-            encoding="utf-8"
-        )
+    assert contract.tree.entry_count == 8697
+    assert contract.tree.directory_count == 779
+    assert contract.tree.symlink_count == 0
+    assert contract.tree.total_bytes == 3287122494
+    # 780 directories including the root, plus 16 executable regular files, is
+    # the 796 an earlier revision mistook for a directory count.
+    assert contract.tree.directory_count + 1 + 16 == 796
+    assert (
+        "779 descendant directories, excluding the tree root"
+        in (_checked_in_artifact("bindcraft-pyrosetta-installed-tree")["notes"])
     )
-    assert "796 directories" in state["semantic_evidence"]["installed_tree"]["modes"]
+
+
+# ---------------------------------------------------------------------------
+# Zero copy is a property of the mount, not a hope
+# ---------------------------------------------------------------------------
+
+
+def test_a_promotion_mounts_its_claim_once_so_links_can_actually_be_made() -> None:
+    """Two bind mounts of one volume are separate mount namespaces.
+
+    `os.link` across them returns EXDEV even though the bytes share a
+    filesystem, so a promotion rendered with the source and the destination on
+    different mounts would silently write a second full copy of a 3.2 GB tree
+    onto a claim with about 15 GiB free, and still report success.
+    """
+
+    renderer = _renderer()
+    artifact = _checked_in_artifact("bindcraft-pyrosetta-installed-tree")
+    job = renderer.promote_job(
+        name="promote",
+        namespace="fs2-academic-poc",
+        run_id="r",
+        artifact=artifact,
+        image=_RENDER_IMAGE,
+        python="/usr/bin/python3",
+        config_map="c",
+        plane={"kind": "persistent-volume-claim", "claim": "academic-assets-runtime-rwx"},
+        source_claim="academic-assets-runtime-rwx",
+        tree_prefix="scientific-localization/private",
+        node_selector={},
+        tolerations=[],
+        resources={},
+        security_context={},
+    )
+    spec = job["spec"]["template"]["spec"]
+    claims = [item for item in spec["volumes"] if "persistentVolumeClaim" in item]
+    assert len(claims) == 1, "the claim is mounted once, or a hard link cannot cross the mounts"
+
+    container = spec["containers"][0]
+    tree_mounts = [item for item in container["volumeMounts"] if item["name"] == "trees"]
+    assert len(tree_mounts) == 1 and "subPath" not in tree_mounts[0]
+
+    # Source and destination are both addressed beneath that one mount.
+    argv = container["command"]
+    source = argv[argv.index("--promote-from") + 1]
+    destination = argv[argv.index("--artifact-root") + 1]
+    root = tree_mounts[0]["mountPath"]
+    assert source.startswith(f"{root}/") and destination.startswith(f"{root}/")
+    assert source == f"{root}/{artifact['source_sub_path']}"
+    assert not destination.startswith(source), "the generation is not written inside its own source"
+
+
+def test_a_promotion_across_two_claims_is_refused_rather_than_silently_copied() -> None:
+    renderer = _renderer()
+    with pytest.raises(SystemExit, match="would force a full copy"):
+        renderer.promote_job(
+            name="promote",
+            namespace="fs2-academic-poc",
+            run_id="r",
+            artifact=_checked_in_artifact("bindcraft-pyrosetta-installed-tree"),
+            image=_RENDER_IMAGE,
+            python="/usr/bin/python3",
+            config_map="c",
+            plane={"kind": "persistent-volume-claim", "claim": "destination-pvc"},
+            source_claim="source-pvc",
+            tree_prefix="p",
+            node_selector={},
+            tolerations=[],
+            resources={},
+            security_context={},
+        )
+
+
+def test_a_link_that_cannot_be_made_fails_instead_of_copying_silently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The EXDEV a cross-mount promotion actually hits, forced here."""
+
+    source = _installed_tree(tmp_path / "producer")
+    real_link = os.link
+
+    def refuse(*args: Any, **kwargs: Any) -> None:
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    monkeypatch.setattr(os, "link", refuse)
+    with pytest.raises(ArtifactLocalizationError, match="requires zero copy"):
+        link_tree_into(source, prepare_staging_directory(tmp_path / "artifact"))
+
+    # Budgeted explicitly, the copy is allowed and reported as a copy.
+    linked = link_tree_into(source, prepare_staging_directory(tmp_path / "budgeted"), allow_copy=True)
+    assert linked.files_linked == 0
+    assert linked.files_copied == 2
+    assert linked.bytes_copied == tree_manifest_identity(source).total_bytes
+
+    monkeypatch.setattr(os, "link", real_link)
+    shared = link_tree_into(source, prepare_staging_directory(tmp_path / "shared"))
+    assert shared.files_copied == 0 and shared.bytes_copied == 0
+
+
+def test_a_promotion_receipt_proves_which_of_the_two_happened(tmp_path: Path) -> None:
+    """bytes_copied is the field that makes the zero-copy claim checkable."""
+
+    source = _installed_tree(tmp_path / "producer")
+    identity = tree_manifest_identity(source)
+    contract = _manifest_contract(source, tmp_path)
+    contract_path = tmp_path / "contract.json"
+    contract_path.write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/scientific-artifact-localization/v1",
+                "generated_at": "2026-09-03T00:00:00Z",
+                "artifacts": [_manifest_artifact(source)],
+            }
+        ),
+        encoding="utf-8",
+    )
+    receipt = tmp_path / "receipts" / "promote.json"
+    assert (
+        localization_main(
+            [
+                "promote",
+                "--contract",
+                str(contract_path),
+                "--artifact-id",
+                "pyrosetta-dirs",
+                "--promote-from",
+                str(source),
+                "--artifact-root",
+                str(tmp_path / "artifact"),
+                "--sub-path",
+                f"p/generations/pyrosetta-dirs/sha256/{identity.sha256}",
+                "--volume-kind",
+                "persistent-volume-claim",
+                "--namespace",
+                "fs2-academic-poc",
+                "--claim",
+                "academic-assets-runtime-rwx",
+                "--visibility",
+                "tenant-private",
+                "--receipt",
+                str(receipt),
+            ]
+        )
+        == 0
+    )
+    document = _assert_valid_receipt(receipt)
+    assert document["observation"]["bytes_copied"] == 0
+    assert document["observation"]["bytes_linked"] == identity.total_bytes
+    assert contract.tree.inventory_sha256 == identity.sha256

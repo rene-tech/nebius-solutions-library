@@ -1804,7 +1804,7 @@ class LinkedTree:
     symlinks: int
 
 
-def link_tree_into(source: Path, destination: Path) -> LinkedTree:
+def link_tree_into(source: Path, destination: Path, *, allow_copy: bool = False) -> LinkedTree:
     """Materialize a generation from an existing tree without copying its bytes.
 
     A hard link gives the generation its own immutable path into the very same
@@ -1814,8 +1814,13 @@ def link_tree_into(source: Path, destination: Path) -> LinkedTree:
     its own path would change both names at once, which is why this refuses a
     writable source file rather than linking it.
 
-    Copying is the fallback for a source on another filesystem, and the counts
-    come back so a caller can prove which happened rather than assume.
+    Copying is refused unless a caller explicitly budgets for it. A silent
+    fallback is worse than a failure here: two bind mounts of one volume are
+    separate mount namespaces, so ``os.link`` across them returns EXDEV even
+    though the bytes share a filesystem, and a promotion that quietly copied
+    would double a multi-gigabyte tree on a volume with no room for it while
+    still reporting success. The counts come back either way, so a caller can
+    prove which happened rather than assume.
     """
 
     resolved = _real_directory(source, "promotion source")
@@ -1849,8 +1854,16 @@ def link_tree_into(source: Path, destination: Path) -> LinkedTree:
             files_linked += 1
             bytes_linked += status.st_size
         except OSError as error:
-            if getattr(error, "errno", None) not in {errno.EXDEV, errno.EMLINK, errno.EPERM, errno.EOPNOTSUPP}:
+            reason = getattr(error, "errno", None)
+            if reason not in {errno.EXDEV, errno.EMLINK, errno.EPERM, errno.EOPNOTSUPP}:
                 raise ArtifactLocalizationError(f"could not link {relative} into the generation") from error
+            if not allow_copy:
+                raise ArtifactLocalizationError(
+                    f"{relative} cannot be shared by link ({errno.errorcode.get(reason, reason)}), and this "
+                    "promotion requires zero copy. Two bind mounts of one volume are separate mount "
+                    "namespaces even on a single filesystem: address the source and the destination "
+                    "beneath one mount, or pass --allow-copy and budget for a second full copy"
+                ) from error
             with path.open("rb") as handle, target.open("wb") as sink:
                 while True:
                     chunk = handle.read(_READ_CHUNK)
@@ -2392,6 +2405,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--source", help="inventory: JSON object describing where an unstaged tree came from")
     parser.add_argument(
+        "--allow-copy",
+        action="store_true",
+        help="promote: permit a full byte copy when the source cannot be shared by link",
+    )
+    parser.add_argument(
         "--promote-from",
         type=Path,
         help="promote: an existing tree to publish as a generation, shared by link rather than copied",
@@ -2495,7 +2513,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             # verify the result before anything is published.
             staging = prepare_staging_directory(options.artifact_root)
             owned_staging = staging
-            linked = link_tree_into(options.promote_from, staging)
+            linked = link_tree_into(options.promote_from, staging, allow_copy=options.allow_copy)
             options.mount = staging
             observation["files_linked"] = linked.files_linked
             observation["files_copied"] = linked.files_copied

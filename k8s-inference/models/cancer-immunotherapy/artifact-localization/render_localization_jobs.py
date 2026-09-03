@@ -768,11 +768,16 @@ def promote_job(
 ) -> dict[str, Any]:
     """Publish a tree another plane installed as an immutable generation.
 
-    Two mounts of the same claim: the installed tree read-only at ``/source``,
-    and the generation root this tool owns at ``/trees``. The bytes are shared by
-    hard link rather than copied, which is why both have to be one filesystem,
-    and the source is mounted read-only so a promotion cannot write into the tree
-    it is promoting from.
+    The claim is mounted **once**, at its own root, and both the installed tree
+    and the generation root are addressed beneath that single mount. Mounting it
+    twice would put the source and the destination in separate mount namespaces,
+    and ``os.link`` across those returns EXDEV even though the bytes share one
+    filesystem, so a promotion that looks zero-copy would quietly write a second
+    full copy of a multi-gigabyte tree onto a volume with no room for it.
+
+    The source is therefore not protected by a read-only mount any more, so it is
+    protected by the tool instead: the promotion only ever reads it, refuses any
+    source file that is writable, and never chmods a shared inode.
     """
 
     artifact_id = artifact["artifact_id"]
@@ -781,23 +786,24 @@ def promote_job(
     generation = artifact["tree"]["inventory_sha256"]
     sub_path = generation_sub_path(tree_prefix, artifact_id, generation)
     receipts = tree_path(tree_prefix, RECEIPTS_DIR)
+    if plane["kind"] != "persistent-volume-claim" or source_claim != plane["claim"]:
+        # Sharing bytes by link requires one mount, which requires one claim.
+        raise SystemExit(
+            f"a zero-copy promotion needs the installed tree and its generation on one mount: "
+            f"source claim {source_claim!r} and destination claim "
+            f"{plane.get('claim', plane['kind'])!r} differ, which would force a full copy"
+        )
     volumes = [
         {"name": "verifier", "configMap": {"name": config_map}},
-        {"name": "source", "persistentVolumeClaim": {"claimName": source_claim, "readOnly": True}},
         tree_volume(plane),
         {"name": "scratch", "emptyDir": {}},
     ]
     mounts = [
         {"name": "verifier", "mountPath": f"{PACKAGE_MOUNT}/{PACKAGE_NAME}", "readOnly": True},
-        {
-            "name": "source",
-            "mountPath": "/source",
-            "subPath": artifact["source_sub_path"],
-            "readOnly": True,
-        },
         {"name": "trees", "mountPath": TREE_ROOT},
         {"name": "scratch", "mountPath": "/scratch"},
     ]
+    source = f"{TREE_ROOT}/{artifact['source_sub_path']}"
     command = [
         python,
         "-m",
@@ -808,7 +814,7 @@ def promote_job(
         "--artifact-id",
         artifact_id,
         "--promote-from",
-        "/source",
+        source,
         "--artifact-root",
         tree_path(tree_prefix, GENERATIONS_DIR, artifact_id),
         "--sub-path",

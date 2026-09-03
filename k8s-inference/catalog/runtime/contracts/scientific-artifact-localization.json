@@ -270,7 +270,8 @@
           "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
         ],
         "entry_count": 8697,
-        "directory_count": 796,
+        "directory_count": 779,
+        "symlink_count": 0,
         "total_bytes": 3287122494,
         "entry_path_pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]*(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)*$",
         "inventory_algorithm": "fs2-tree-manifest/v1",
@@ -285,7 +286,7 @@
           "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
         }
       ],
-      "notes": "Installed and owned by the academic-assets plane, which identifies it with fs2-tree-manifest/v1: every file by SHA-256 and every symlink by target. This contract reuses that identity unchanged rather than measuring a second, weaker one, and never stages, copies or moves the bytes. The tree stays tenant-private at its installed sub-path under the licence chain; it is never mirrored into the public generations layout and never embedded in an image. The wheel is provenance for how the tree came to be, and is a different digest from the tree itself."
+      "notes": "Installed and owned by the academic-assets plane, which identifies it with fs2-tree-manifest/v1: every file by SHA-256 and every symlink by target. This contract reuses that identity unchanged rather than measuring a second, weaker one, and never stages, copies or moves the bytes. The tree stays tenant-private at its installed sub-path under the licence chain; it is never mirrored into the public generations layout and never embedded in an image. The wheel is provenance for how the tree came to be, and is a different digest from the tree itself. directory_count is 779 descendant directories, excluding the tree root: an earlier revision recorded 796, which is the number of paths at mode 0550 and counts the 780 directories including the root plus 16 executable regular files. A mode statistic is not a directory count, and the two differ by exactly those files."
     },
     {
       "artifact_id": "boltzgen-inference-molecules",
