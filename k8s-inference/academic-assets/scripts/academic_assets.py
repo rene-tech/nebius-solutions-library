@@ -459,6 +459,7 @@ def _validate_asset(asset_id: str, asset: dict[str, Any]) -> None:
         "read_only",
         "duplicates_bytes",
         "embeds_bytes",
+        "source_artifact_id",
         "content_identity_kind",
         "content_manifest_algorithm",
         "content_digest_sha256",
@@ -487,6 +488,12 @@ def _validate_asset(asset_id: str, asset: dict[str, Any]) -> None:
         if binding["size_bytes"] != artifact["size_bytes"]:
             raise IngestionError("InvalidInput", f"{asset_id} binding size is not the pinned artifact size")
     else:
+        # An installed tree is a different artifact from the archive that produced it.
+        if binding["artifact_id"] == binding["source_artifact_id"]:
+            raise IngestionError(
+                "InvalidInput",
+                f"{asset_id} the installed tree and its source archive must not share an artifact ID",
+            )
         if binding["content_manifest_algorithm"] != TREE_MANIFEST_ALGORITHM:
             raise IngestionError("InvalidInput", f"{asset_id} tree binding needs the contracted manifest algorithm")
         # Observed at install time, so it must not be pinned or borrowed here.
@@ -505,6 +512,7 @@ def _validate_asset(asset_id: str, asset: dict[str, Any]) -> None:
     ):
         raise IngestionError("InvalidInput", f"{asset_id} binding source artifact is not the pinned artifact")
     _require_nonempty_string(binding["artifact_id"], label=f"{asset_id} binding artifact_id")
+    _require_nonempty_string(binding["source_artifact_id"], label=f"{asset_id} binding source_artifact_id")
     if binding["mechanism"] not in {"subpath-file-mount", "subpath-directory-mount"}:
         raise IngestionError("InvalidInput", f"{asset_id} binding must localize by subPath mount")
     _require_bool(binding["read_only"], True, label=f"{asset_id} binding read_only")
@@ -799,6 +807,7 @@ def load_contract(path: Path) -> dict[str, Any]:
             "observed_at",
             "activation_policy",
             "environment_binding",
+            "execution",
             "quarantine_cache",
             "runtime_cache",
             "assets",
@@ -826,6 +835,28 @@ def load_contract(path: Path) -> dict[str, Any]:
     if path_value.startswith("/") or ".." in Path(path_value).parts:
         raise IngestionError("InvalidInput", "environment_binding.path must be repo-relative")
     _require_nonempty_string(binding["note"], label="environment_binding.note")
+
+    execution = contract["execution"]
+    if not isinstance(execution, dict):
+        raise IngestionError("InvalidInput", "execution must be an object")
+    validate_exact_keys(
+        execution,
+        {"mode", "namespace", "local_queue", "cluster_queue", "service_account", "rationale"},
+        label="execution",
+    )
+    if execution["mode"] != "asset-namespace-bound":
+        raise IngestionError("InvalidInput", "only asset-namespace-bound academic execution is supported")
+    for field in ("namespace", "local_queue", "cluster_queue", "service_account"):
+        _require_nonempty_string(execution[field], label=f"execution.{field}")
+    _require_nonempty_string(execution["rationale"], label="execution.rationale")
+    # A claim is mountable only from its own namespace, so this equality is the whole
+    # point: it makes a cross-namespace mount impossible to declare.
+    if execution["namespace"] != contract["runtime_cache"]["pvc_namespace"]:
+        raise IngestionError(
+            "InvalidInput",
+            "academic execution must run in the namespace holding the claim; a claim cannot be "
+            "mounted across namespaces",
+        )
 
     _validate_cache_target(contract["quarantine_cache"], label="quarantine_cache", runtime_mount_allowed=False)
     _validate_cache_target(contract["runtime_cache"], label="runtime_cache", runtime_mount_allowed=True)

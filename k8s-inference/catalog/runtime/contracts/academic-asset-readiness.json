@@ -7,9 +7,17 @@
     "namespace": "fs2-academic-poc",
     "world_readable": false
   },
+  "execution": {
+    "claim_namespace": "fs2-academic-poc",
+    "cross_namespace_mount": false,
+    "local_queue": "academic-scientific",
+    "mode": "asset-namespace-bound",
+    "namespace": "fs2-academic-poc",
+    "service_account": "fs2-academic-runner"
+  },
   "formal_license_state": "Pending",
   "generated_by": "academic-assets/scripts/project_catalog_readiness.py",
-  "generation": "live-tree-identity-20260903",
+  "generation": "live-execution-20260903",
   "models": [
     {
       "access_profile": "academic",
@@ -52,6 +60,7 @@
           "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
           "size_bytes": 1020545840
         },
+        "source_artifact_id": "alphafold3-parameters",
         "source_sub_path": "alphafold3/af3.bin.zst"
       },
       "runtime_environment_digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
@@ -99,7 +108,7 @@
       "license_id": "Rosetta-and-PyRosetta-Non-Commercial-License-Chain",
       "model_id": "bindcraft",
       "runtime_binding": {
-        "artifact_id": "bindcraft-pyrosetta",
+        "artifact_id": "bindcraft-pyrosetta-installed-tree",
         "consumer_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
         "content_bytes": 3287122494,
         "content_digest_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
@@ -114,6 +123,7 @@
           "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
           "size_bytes": 1667097173
         },
+        "source_artifact_id": "bindcraft-pyrosetta",
         "source_sub_path": "pyrosetta-bindcraft/site-packages"
       },
       "runtime_environment_digest": "sha256:fd76ade0c607f27677bc04be3c60749f400eedc941d9e72967e19a4cedff80c2",

@@ -1119,6 +1119,15 @@ variable "academic_assets" {
     # Non-secret readiness digest emitted by academic-assets/scripts/academic_assets.py.
     readiness_manifest_sha256 = optional(string, null)
 
+    execution = optional(object({
+      enabled                    = optional(bool, true)
+      local_queue                = optional(string, "academic-scientific")
+      cluster_queue              = optional(string, "inference-accelerators")
+      service_account            = optional(string, "fs2-academic-runner")
+      controller_namespace       = optional(string, "fs2-system")
+      controller_service_account = optional(string, "fs2-serve-control-plane")
+    }), {})
+
     assets = optional(map(object({
       model_id              = string
       relative_path         = string

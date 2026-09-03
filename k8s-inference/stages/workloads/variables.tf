@@ -1063,6 +1063,15 @@ variable "academic_assets" {
       general_shared_cache    = bool
       deny_egress_on_validate = bool
     })
+    execution = optional(object({
+      enabled                    = optional(bool, true)
+      local_queue                = optional(string, "academic-scientific")
+      cluster_queue              = optional(string, "inference-accelerators")
+      service_account            = optional(string, "fs2-academic-runner")
+      controller_namespace       = optional(string, "fs2-system")
+      controller_service_account = optional(string, "fs2-serve-control-plane")
+    }), {})
+
     assets = map(object({
       model_id              = string
       relative_path         = string

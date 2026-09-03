@@ -345,6 +345,16 @@ academic_assets = {
   # licensed bytes. The bytes stay group-readable only, never world-readable.
   asset_gid = 65532
 
+  # A claim is mountable only from its own namespace, so academic scientific Jobs
+  # run in the namespace above rather than the default model namespace, with their
+  # queue and permissions provisioned there.
+  execution = {
+    enabled         = true
+    local_queue     = "academic-scientific"
+    cluster_queue   = "inference-accelerators"
+    service_account = "fs2-academic-runner"
+  }
+
   # Optional qualification-only isolation; ordinary inference never depends on it.
   deny_egress_during_offline_validation = false
 
@@ -388,7 +398,7 @@ academic_assets = {
       # its own manifest identity observed at install time. The wheel stays recorded
       # separately as the source artifact that produced it.
       runtime_binding = {
-        artifact_id                = "bindcraft-pyrosetta"
+        artifact_id                = "bindcraft-pyrosetta-installed-tree"
         source_sub_path            = "pyrosetta-bindcraft/site-packages"
         consumer_path              = "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
         mechanism                  = "subpath-directory-mount"

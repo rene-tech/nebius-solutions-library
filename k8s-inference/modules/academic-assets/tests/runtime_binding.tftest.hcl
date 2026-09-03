@@ -247,3 +247,78 @@ run "an_unsafe_binding_is_refused" {
 
   expect_failures = [var.academic_assets]
 }
+
+run "execution_is_bound_to_the_namespace_that_holds_the_claim" {
+  command = plan
+
+  assert {
+    condition = (
+      output.academic_assets.execution.namespace ==
+      output.academic_assets.execution.claim_namespace
+    )
+    error_message = "A claim is mountable only from its own namespace, so execution must run there."
+  }
+
+  assert {
+    condition     = output.academic_assets.execution.cross_namespace_mount == false
+    error_message = "A cross-namespace claim mount must never be advertised as working."
+  }
+
+  assert {
+    condition = (
+      output.academic_assets.execution.local_queue_manifest.metadata.namespace ==
+      output.academic_assets.execution.claim_namespace
+    )
+    error_message = "The queue that admits academic work must live in the claim's namespace."
+  }
+
+  assert {
+    condition     = output.academic_assets.execution.local_queue_manifest.kind == "LocalQueue"
+    error_message = "Academic work is admitted through a Kueue LocalQueue."
+  }
+
+  assert {
+    condition = (
+      length(kubernetes_service_account_v1.academic_runner) == 1 &&
+      length(kubernetes_role_v1.academic_execution) == 1 &&
+      length(kubernetes_role_binding_v1.academic_execution) == 1
+    )
+    error_message = "Execution needs a runner identity and permissions in the claim's namespace."
+  }
+
+  assert {
+    condition     = kubernetes_role_v1.academic_execution[0].metadata[0].namespace == var.academic_assets.namespace
+    error_message = "The execution Role must be namespaced to the claim's namespace."
+  }
+}
+
+run "execution_can_be_switched_off_without_removing_the_assets" {
+  command = plan
+
+  variables {
+    academic_assets = merge(var.academic_assets, {
+      execution = {
+        enabled                    = false
+        local_queue                = "academic-scientific"
+        cluster_queue              = "inference-accelerators"
+        service_account            = "fs2-academic-runner"
+        controller_namespace       = "fs2-system"
+        controller_service_account = "fs2-serve-control-plane"
+      }
+    })
+  }
+
+  assert {
+    condition = (
+      length(kubernetes_service_account_v1.academic_runner) == 0 &&
+      length(kubernetes_role_v1.academic_execution) == 0 &&
+      output.academic_assets.execution.enabled == false
+    )
+    error_message = "Disabling execution must remove only the execution objects."
+  }
+
+  assert {
+    condition     = length(kubernetes_persistent_volume_claim_v1.academic_assets_runtime_disposable) == 1
+    error_message = "The claim itself must survive disabling execution."
+  }
+}

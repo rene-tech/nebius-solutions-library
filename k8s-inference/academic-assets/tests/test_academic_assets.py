@@ -546,6 +546,8 @@ class ContractAndSchemaTests(AcademicAssetTestCase):
         document = copy.deepcopy(self.contract_document)
         document["runtime_cache"]["pvc_namespace"] = document["quarantine_cache"]["pvc_namespace"]
         document["runtime_cache"]["pvc_name"] = document["quarantine_cache"]["pvc_name"]
+        # Execution follows the claim, so keep it consistent to reach the intended check.
+        document["execution"]["namespace"] = document["quarantine_cache"]["pvc_namespace"]
         self.write_contract(document)
         with self.assertRaises(aa.IngestionError) as caught:
             aa.load_contract(self.contract_path)

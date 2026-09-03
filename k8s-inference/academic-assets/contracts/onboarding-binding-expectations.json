@@ -1,6 +1,6 @@
 {
   "schema": "fs2-serve.nebius.ai/academic-onboarding-binding-expectations/v1",
-  "note": "What model onboarding expects of the licensed academic objects. Kept beside the private contract so a naming or path divergence between the two is a test failure rather than a runtime surprise. Onboarding owns its declarations; this file records only the interface both sides must agree on.",
+  "note": "What model onboarding expects of the licensed academic objects. Kept beside the private contract so a naming or path divergence between the two is a test failure rather than a runtime surprise. An installed tree and the archive that produced it are different artifacts and carry different IDs. Onboarding owns its declarations; this file records only the interface both sides must agree on.",
   "declaration_root": "model-onboarding/declarations/cancer-immunotherapy",
   "expectations": [
     {
@@ -8,26 +8,35 @@
       "model_id": "alphafold3",
       "declaration": "alphafold3.json",
       "artifact_id": "alphafold3-parameters",
-      "required_files": ["af3.bin.zst"],
+      "required_files": [
+        "af3.bin.zst"
+      ],
       "content_digest_sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
       "total_size_bytes": 1020545840,
       "release_id": "af3.bin.zst-generation-1780568696389861",
       "consumer_path": "/models/af3.bin.zst",
       "source_sub_path": "alphafold3/af3.bin.zst",
-      "mechanism": "subpath-file-mount"
+      "mechanism": "subpath-file-mount",
+      "source_artifact_id": "alphafold3-parameters",
+      "mounted_object": "file"
     },
     {
       "asset_id": "pyrosetta-bindcraft",
       "model_id": "bindcraft",
       "declaration": "bindcraft.json",
-      "artifact_id": "bindcraft-pyrosetta",
-      "required_files": ["pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl"],
+      "artifact_id": "bindcraft-pyrosetta-installed-tree",
+      "required_files": [
+        "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl"
+      ],
       "content_digest_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
       "total_size_bytes": 1667097173,
       "release_id": null,
       "consumer_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
       "source_sub_path": "pyrosetta-bindcraft/site-packages",
-      "mechanism": "subpath-directory-mount"
+      "mechanism": "subpath-directory-mount",
+      "source_artifact_id": "bindcraft-pyrosetta",
+      "mounted_object": "installed-tree",
+      "source_artifact_note": "bindcraft-pyrosetta is the wheel that produced the tree. It is provenance, not the mounted object."
     }
   ]
 }

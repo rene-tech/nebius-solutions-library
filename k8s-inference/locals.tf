@@ -317,6 +317,7 @@ locals {
       general_shared_cache    = false
       deny_egress_on_validate = var.academic_assets.deny_egress_during_offline_validation
     }
+    execution                 = var.academic_assets.execution
     assets                    = var.academic_assets.assets
     readiness_manifest_sha256 = var.academic_assets.readiness_manifest_sha256
   }

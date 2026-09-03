@@ -74,7 +74,11 @@ copied or embedded:
 | Private asset | Onboarding artifact | Source subPath on the claim | Consumer path | Identity |
 |---|---|---|---|---|
 | `alphafold3` | `alphafold3-parameters` | `alphafold3/af3.bin.zst` | `/models/af3.bin.zst` | file digest |
-| `pyrosetta-bindcraft` | `bindcraft-pyrosetta` | `pyrosetta-bindcraft/site-packages` | `/opt/fs2/academic/pyrosetta-bindcraft/site-packages` | tree manifest |
+| `pyrosetta-bindcraft` | `bindcraft-pyrosetta-installed-tree` | `pyrosetta-bindcraft/site-packages` | `/opt/fs2/academic/pyrosetta-bindcraft/site-packages` | tree manifest |
+
+The installed tree and the wheel are different artifacts and carry different IDs.
+`bindcraft-pyrosetta` is the wheel, recorded as provenance only; what a runtime
+mounts is `bindcraft-pyrosetta-installed-tree`.
 
 A directory has no natural digest, so one is defined rather than borrowed. Under
 `fs2-tree-manifest/v1` every file contributes its POSIX-relative path, size and
@@ -167,6 +171,18 @@ to an explicit `TF_DATA_DIR`, initialises the backend before reading state, rout
 each flag to the subcommand that accepts it, and addresses the resource matching
 the selected lifecycle. It is idempotent: addresses already in state are skipped,
 and objects that are not live are left for `apply` to create.
+
+## Where academic work runs
+
+A PersistentVolumeClaim can only be mounted by pods in its own namespace, so
+academic scientific Jobs run in the namespace that holds the claim rather than the
+default model namespace. Terraform provisions the Kueue LocalQueue, the runner
+service account and the namespace-scoped RBAC there, and the chart renders an
+executable Job template into that namespace with the real subPath mounts. Nothing
+claims that a claim can be mounted across namespaces, because it cannot.
+
+The alternative, a per-tenant execution namespace, would mean a second copy of the
+licensed bytes, so it is not used for this proof of concept.
 
 ## Portability
 

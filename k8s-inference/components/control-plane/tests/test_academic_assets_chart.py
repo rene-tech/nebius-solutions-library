@@ -141,6 +141,76 @@ def test_renderer_emits_no_mounts_without_bindings() -> None:
     assert mounts["volumeMounts"] == []
 
 
+BINDING_FLAGS = [
+    "--set",
+    "academicAssets.enabled=true",
+    "--set",
+    "academicAssets.execution.enabled=true",
+    "--set",
+    "academicAssets.runtimeBindings.af3.modelId=alphafold3",
+    "--set",
+    "academicAssets.runtimeBindings.af3.artifactId=alphafold3-parameters",
+    "--set",
+    "academicAssets.runtimeBindings.af3.sourceSubPath=alphafold3/af3.bin.zst",
+    "--set",
+    "academicAssets.runtimeBindings.af3.consumerPath=/models/af3.bin.zst",
+    "--set",
+    "academicAssets.runtimeBindings.af3.mechanism=subpath-file-mount",
+    "--set",
+    "academicAssets.runtimeBindings.af3.contentIdentityKind=file-digest",
+    "--set",
+    "academicAssets.runtimeBindings.af3.readOnly=true",
+]
+
+
+def execution_config_map(documents: list[dict]) -> dict | None:
+    for document in documents:
+        if document.get("kind") == "ConfigMap" and document["metadata"]["name"].endswith("-academic-execution"):
+            return document
+    return None
+
+
+def test_rendered_job_runs_in_the_namespace_that_holds_the_claim() -> None:
+    """A claim cannot be mounted from another namespace, so the Job must land here."""
+
+    config_map = execution_config_map(render(*BINDING_FLAGS))
+    assert config_map is not None
+    data = config_map["data"]
+    assert data["execution_namespace"] == data["claim_namespace"]
+    assert data["cross_namespace_mount"] == "false"
+
+    job = yaml.safe_load(data["job_template"])
+    assert job["kind"] == "Job"
+    assert job["metadata"]["namespace"] == data["claim_namespace"]
+
+    pod = job["spec"]["template"]["spec"]
+    claim = pod["volumes"][0]["persistentVolumeClaim"]
+    # Same-namespace by construction: a claimName has no namespace field.
+    assert claim["claimName"] == "academic-assets-runtime-rwx"
+    assert claim["readOnly"] is True
+    assert pod["securityContext"]["supplementalGroups"] == [65532]
+    assert pod["serviceAccountName"] == data["service_account"]
+    assert job["metadata"]["labels"]["kueue.x-k8s.io/queue-name"] == data["local_queue"]
+
+
+def test_rendered_job_mounts_every_binding_by_subpath() -> None:
+    config_map = execution_config_map(render(*BINDING_FLAGS))
+    assert config_map is not None
+    job = yaml.safe_load(config_map["data"]["job_template"])
+    mounts = job["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
+    assert mounts, "the rendered Job mounts nothing"
+    for mount in mounts:
+        assert mount["readOnly"] is True
+        assert mount["subPath"]
+    by_path = {mount["mountPath"]: mount for mount in mounts}
+    assert by_path["/models/af3.bin.zst"]["subPath"] == "alphafold3/af3.bin.zst"
+
+
+def test_no_execution_objects_without_the_feature() -> None:
+    assert execution_config_map(render()) is None
+    assert execution_config_map(render("--set", "academicAssets.enabled=true")) is None
+
+
 def test_control_plane_pods_never_mount_the_licensed_volume() -> None:
     """The API server has no reason to hold model weights."""
 

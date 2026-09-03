@@ -27,6 +27,15 @@ locals {
         readOnly            = true
       } if asset.runtime_binding != null
     }
+
+    # Academic Jobs run where the claim lives; a claim cannot be mounted from
+    # another namespace.
+    execution = {
+      enabled        = var.academic_assets.enabled && var.academic_assets.execution.enabled
+      namespace      = var.academic_assets.namespace
+      localQueue     = var.academic_assets.execution.local_queue
+      serviceAccount = var.academic_assets.execution.service_account
+    }
   }
 }
 

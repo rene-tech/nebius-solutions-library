@@ -76,6 +76,7 @@ def build_projection(contract: dict[str, Any], readiness: dict[str, Any]) -> dic
                 # by subPath, never copied or embedded.
                 "runtime_binding": {
                     "artifact_id": delivery["runtime_binding"]["artifact_id"],
+                    "source_artifact_id": delivery["runtime_binding"]["source_artifact_id"],
                     "source_sub_path": delivery["runtime_binding"]["source_sub_path"],
                     "consumer_path": delivery["runtime_binding"]["consumer_path"],
                     "mechanism": delivery["runtime_binding"]["mechanism"],
@@ -123,6 +124,14 @@ def build_projection(contract: dict[str, Any], readiness: dict[str, Any]) -> dic
         "request_time_license_receipt_required": contract["activation_policy"][
             "request_time_license_receipt_required"
         ],
+        "execution": {
+            "mode": contract["execution"]["mode"],
+            "namespace": contract["execution"]["namespace"],
+            "claim_namespace": runtime_cache["pvc_namespace"],
+            "cross_namespace_mount": False,
+            "local_queue": contract["execution"]["local_queue"],
+            "service_account": contract["execution"]["service_account"],
+        },
         "delivery": {
             "mode": "tenant-private-volume",
             "namespace": runtime_cache["pvc_namespace"],

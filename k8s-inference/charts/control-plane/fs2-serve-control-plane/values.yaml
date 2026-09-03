@@ -556,3 +556,10 @@ academicAssets:
   # Exact per-object bindings. A subPath mount cannot be derived from a claim and a
   # mount root alone, so the renderer consumes these directly.
   runtimeBindings: {}
+  # A claim is mountable only from its own namespace, so academic scientific Jobs
+  # run here rather than in the default model namespace.
+  execution:
+    enabled: false
+    namespace: fs2-academic-poc
+    localQueue: academic-scientific
+    serviceAccount: fs2-academic-runner

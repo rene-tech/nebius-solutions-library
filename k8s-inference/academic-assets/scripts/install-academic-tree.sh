@@ -96,6 +96,16 @@ kubectl "${kubectl_args[@]}" -n "${namespace}" wait --for=condition=complete \
 
 logs=$(kubectl "${kubectl_args[@]}" -n "${namespace}" logs "job/${job_name}" -c install)
 verify_json=$(printf '%s\n' "${logs}" | sed -n '/INSTALL_RESULT_BEGIN/,$p' | tail -n +2 | tail -1)
+# The receipt is assembled field by field, so a field the verifier gained but the
+# receipt never projected would only surface as a validation failure later.
+required_verified_fields='["installed_distribution","installed_distribution_version","python_version","file_count","tree_manifest_algorithm","tree_manifest_sha256","tree_total_bytes","evidence_digest"]'
+missing_fields=$(jq -r --argjson required "${required_verified_fields}" \
+  '. as $observed | [$required[] | . as $field | select(($observed | has($field)) | not)] | join(",")' \
+  <<<"${verify_json}" 2>/dev/null || echo "unparseable")
+if [[ -n ${missing_fields} ]]; then
+  echo "installer output is missing fields the receipt must project: ${missing_fields}" >&2
+  exit 74
+fi
 if ! jq -e '.import_verified == true' <<<"${verify_json}" >/dev/null 2>&1; then
   echo "installed tree verification did not pass" >&2
   printf '%s\n' "${logs}" | tail -20 >&2
@@ -120,6 +130,9 @@ jq -n \
     installed_distribution_version:$verified.installed_distribution_version,
     python_version:$verified.python_version,
     file_count:$verified.file_count,
+    tree_manifest_algorithm:$verified.tree_manifest_algorithm,
+    tree_manifest_sha256:$verified.tree_manifest_sha256,
+    tree_total_bytes:$verified.tree_total_bytes,
     file_mode:$file_mode, directory_mode:$directory_mode, asset_gid:$asset_gid,
     world_readable:false, atomic_promotion:true, import_verified:true,
     evidence_digest:$verified.evidence_digest}' >"${receipt_file}"

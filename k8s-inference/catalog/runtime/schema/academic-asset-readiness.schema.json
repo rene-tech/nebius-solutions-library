@@ -13,7 +13,8 @@
     "formal_license_state",
     "delivery",
     "models",
-    "request_time_license_receipt_required"
+    "request_time_license_receipt_required",
+    "execution"
   ],
   "$defs": {
     "modelId": {
@@ -384,7 +385,8 @@
               "content_manifest_algorithm",
               "content_digest_sha256",
               "content_bytes",
-              "source_artifact"
+              "source_artifact",
+              "source_artifact_id"
             ],
             "description": "Canonical localizer: how a model runtime addresses this object. The same verified bytes are exposed by a subPath mount, never duplicated or embedded.",
             "properties": {
@@ -469,6 +471,11 @@
                     "minimum": 1
                   }
                 }
+              },
+              "source_artifact_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The artifact that produced the mounted object. For an installed tree this is the archive, and it is deliberately a different ID from the mounted tree."
               }
             }
           }
@@ -478,6 +485,43 @@
     "request_time_license_receipt_required": {
       "const": false,
       "description": "Licence terms bind the one-time ingestion and deployment only; ordinary inference never requires a caller-supplied receipt."
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "namespace",
+        "claim_namespace",
+        "cross_namespace_mount",
+        "local_queue",
+        "service_account"
+      ],
+      "description": "Academic scientific work runs in the namespace holding the claim, because a claim cannot be mounted from another namespace.",
+      "properties": {
+        "mode": {
+          "const": "asset-namespace-bound"
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "claim_namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cross_namespace_mount": {
+          "const": false
+        },
+        "local_queue": {
+          "type": "string",
+          "minLength": 1
+        },
+        "service_account": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     }
   }
 }

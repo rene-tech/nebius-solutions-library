@@ -133,7 +133,8 @@
             "filename": "af3.bin.zst",
             "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
             "size_bytes": 1020545840
-          }
+          },
+          "source_artifact_id": "alphafold3-parameters"
         }
       },
       "runtime": {
@@ -251,14 +252,14 @@
           "request_time_license_receipt_required": false
         },
         "runtime_binding": {
-          "artifact_id": "bindcraft-pyrosetta",
+          "artifact_id": "bindcraft-pyrosetta-installed-tree",
           "source_sub_path": "pyrosetta-bindcraft/site-packages",
           "consumer_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
           "mechanism": "subpath-directory-mount",
           "read_only": true,
           "duplicates_bytes": false,
           "embeds_bytes": false,
-          "note": "The consumer reads the installed tree, not the wheel. The tree is identified by its own manifest digest, observed at install time; the wheel SHA-256 and size stay separate as the source artifact that produced it. Runtime wiring for native BindCraft belongs to the runtime image work; this only publishes where the bytes are.",
+          "note": "The consumer mounts the installed tree, addressed as artifact bindcraft-pyrosetta-installed-tree. That is a different artifact from the wheel bindcraft-pyrosetta, which is provenance only: it produced the tree and is recorded as the source artifact with its own digest and size. Runtime wiring for native BindCraft belongs to the runtime image work; this only publishes where the bytes are.",
           "content_identity_kind": "tree-manifest",
           "content_manifest_algorithm": "fs2-tree-manifest/v1",
           "content_digest_sha256": null,
@@ -267,7 +268,8 @@
             "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
             "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
             "size_bytes": 1667097173
-          }
+          },
+          "source_artifact_id": "bindcraft-pyrosetta"
         }
       },
       "runtime": {
@@ -392,5 +394,13 @@
       "registry_id"
     ],
     "note": "Project, region, cluster, volume and registry identities are properties of a deployment, not of this contract. They are observed per environment and recorded in generated acceptance state and in stage receipts, so the contract stays reusable across projects and regions."
+  },
+  "execution": {
+    "mode": "asset-namespace-bound",
+    "namespace": "fs2-academic-poc",
+    "local_queue": "academic-scientific",
+    "cluster_queue": "inference-accelerators",
+    "service_account": "fs2-academic-runner",
+    "rationale": "A PersistentVolumeClaim can only be mounted by pods in its own namespace, so academic scientific execution runs in the namespace that holds the claim rather than the default model namespace. The alternative, a per-tenant execution namespace with its own copy of the assets, is not used here because it would duplicate licensed bytes. Anything that claims to mount this claim from another namespace is wrong and is rejected."
   }
 }

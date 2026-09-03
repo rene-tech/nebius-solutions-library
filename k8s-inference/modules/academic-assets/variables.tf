@@ -48,6 +48,17 @@ variable "academic_assets" {
       general_shared_cache    = bool
       deny_egress_on_validate = bool
     })
+    # A claim is mountable only from its own namespace, so academic scientific work
+    # runs where the claim lives. The queue and RBAC it needs are provisioned there.
+    execution = optional(object({
+      enabled                    = optional(bool, true)
+      local_queue                = optional(string, "academic-scientific")
+      cluster_queue              = optional(string, "inference-accelerators")
+      service_account            = optional(string, "fs2-academic-runner")
+      controller_namespace       = optional(string, "fs2-system")
+      controller_service_account = optional(string, "fs2-serve-control-plane")
+    }), {})
+
     assets = map(object({
       model_id              = string
       relative_path         = string

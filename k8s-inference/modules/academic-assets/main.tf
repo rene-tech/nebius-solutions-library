@@ -250,3 +250,99 @@ resource "kubernetes_network_policy_v1" "academic_offline_validation" {
 
   depends_on = [kubernetes_namespace_v1.academic_assets]
 }
+
+# --- academic scientific execution ------------------------------------------
+# Jobs that mount the licensed claim must run in the claim's namespace, so the
+# queue and the permissions they need are provisioned there rather than assuming
+# the default model namespace can reach the volume.
+
+locals {
+  execution_enabled = local.enabled && var.academic_assets.execution.enabled
+
+  academic_local_queue_manifest = local.execution_enabled ? {
+    apiVersion = "kueue.x-k8s.io/v1beta2"
+    kind       = "LocalQueue"
+    metadata = {
+      name      = var.academic_assets.execution.local_queue
+      namespace = var.academic_assets.namespace
+      labels    = local.common_labels
+    }
+    spec = {
+      clusterQueue = var.academic_assets.execution.cluster_queue
+    }
+  } : null
+}
+
+resource "kubernetes_service_account_v1" "academic_runner" {
+  count = local.execution_enabled ? 1 : 0
+
+  metadata {
+    name      = var.academic_assets.execution.service_account
+    namespace = var.academic_assets.namespace
+    labels    = local.common_labels
+  }
+
+  automount_service_account_token = false
+
+  depends_on = [kubernetes_namespace_v1.academic_assets]
+}
+
+resource "kubernetes_role_v1" "academic_execution" {
+  count = local.execution_enabled ? 1 : 0
+
+  metadata {
+    name      = "fs2-academic-execution"
+    namespace = var.academic_assets.namespace
+    labels    = local.common_labels
+  }
+
+  rule {
+    api_groups = ["batch"]
+    resources  = ["jobs"]
+    verbs      = ["create", "get", "list", "watch", "delete"]
+  }
+
+  rule {
+    api_groups = [""]
+    resources  = ["pods", "pods/log"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  # Read-only on the claim: enough to resolve it, never to change it.
+  rule {
+    api_groups = [""]
+    resources  = ["persistentvolumeclaims"]
+    verbs      = ["get", "list", "watch"]
+  }
+
+  depends_on = [kubernetes_namespace_v1.academic_assets]
+}
+
+resource "kubernetes_role_binding_v1" "academic_execution" {
+  count = local.execution_enabled ? 1 : 0
+
+  metadata {
+    name      = "fs2-academic-execution"
+    namespace = var.academic_assets.namespace
+    labels    = local.common_labels
+  }
+
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Role"
+    name      = one(kubernetes_role_v1.academic_execution[*].metadata[0].name)
+  }
+
+  # The control plane creates the Jobs; they run as the namespace-local runner.
+  subject {
+    kind      = "ServiceAccount"
+    name      = var.academic_assets.execution.controller_service_account
+    namespace = var.academic_assets.execution.controller_namespace
+  }
+
+  subject {
+    kind      = "ServiceAccount"
+    name      = var.academic_assets.execution.service_account
+    namespace = var.academic_assets.namespace
+  }
+}

@@ -47,6 +47,7 @@ class OnboardingBindingTests(unittest.TestCase):
             binding = self.contract["assets"][asset_id]["delivery"]["runtime_binding"]
             with self.subTest(asset=asset_id):
                 self.assertEqual(expected["artifact_id"], binding["artifact_id"])
+                self.assertEqual(expected["source_artifact_id"], binding["source_artifact_id"])
                 self.assertEqual(expected["source_sub_path"], binding["source_sub_path"])
                 self.assertEqual(expected["consumer_path"], binding["consumer_path"])
                 self.assertEqual(expected["mechanism"], binding["mechanism"])
@@ -85,6 +86,46 @@ class OnboardingBindingTests(unittest.TestCase):
                 self.assertIsNotNone(binding["content_digest_sha256"])
                 self.assertNotEqual(binding["source_artifact"]["sha256"], binding["content_digest_sha256"])
                 self.assertNotEqual(binding["source_artifact"]["size_bytes"], binding["content_bytes"])
+
+    def test_an_installed_tree_is_a_different_artifact_from_its_archive(self) -> None:
+        """bindcraft-pyrosetta is wheel provenance; the mounted object has its own ID."""
+
+        binding = self.contract["assets"]["pyrosetta-bindcraft"]["delivery"]["runtime_binding"]
+        self.assertEqual("bindcraft-pyrosetta-installed-tree", binding["artifact_id"])
+        self.assertEqual("bindcraft-pyrosetta", binding["source_artifact_id"])
+        self.assertNotEqual(binding["artifact_id"], binding["source_artifact_id"])
+
+        # A single file is the same artifact whichever way it is addressed.
+        alphafold3 = self.contract["assets"]["alphafold3"]["delivery"]["runtime_binding"]
+        self.assertEqual(alphafold3["artifact_id"], alphafold3["source_artifact_id"])
+
+    def test_projection_keeps_the_two_ids_apart(self) -> None:
+        projection = load(PROJECTION)
+        by_model = {model["model_id"]: model for model in projection["models"]}
+        bindcraft = by_model["bindcraft"]["runtime_binding"]
+        self.assertEqual("bindcraft-pyrosetta-installed-tree", bindcraft["artifact_id"])
+        self.assertEqual("bindcraft-pyrosetta", bindcraft["source_artifact_id"])
+
+    def test_execution_runs_where_the_claim_lives(self) -> None:
+        projection = load(PROJECTION)
+        execution = projection["execution"]
+        self.assertEqual(execution["claim_namespace"], execution["namespace"])
+        self.assertFalse(execution["cross_namespace_mount"])
+        self.assertEqual(self.contract["execution"]["namespace"], execution["namespace"])
+
+    def test_contract_refuses_execution_outside_the_claim_namespace(self) -> None:
+        import copy
+        import json as _json
+        import tempfile
+
+        document = copy.deepcopy(json.loads(CONTRACT.read_text()))
+        document["execution"]["namespace"] = "fs2-models"
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            _json.dump(document, handle)
+            path = Path(handle.name)
+        with self.assertRaises(aa.IngestionError) as caught:
+            aa.load_contract(path)
+        self.assertIn("cannot be", caught.exception.message)
 
     def test_localizer_never_duplicates_or_embeds(self) -> None:
         for asset_id in self.by_asset:

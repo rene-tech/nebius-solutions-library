@@ -69,6 +69,20 @@ output "academic_assets" {
       world_readable      = var.academic_assets.delivery.world_readable
     }
 
+    execution = {
+      enabled = local.execution_enabled
+      # Equal to the claim namespace by construction; a claim cannot be mounted
+      # from anywhere else.
+      namespace             = var.academic_assets.namespace
+      claim_namespace       = var.academic_assets.namespace
+      cross_namespace_mount = false
+      local_queue           = local.execution_enabled ? var.academic_assets.execution.local_queue : null
+      cluster_queue         = local.execution_enabled ? var.academic_assets.execution.cluster_queue : null
+      service_account       = one(kubernetes_service_account_v1.academic_runner[*].metadata[0].name)
+      role                  = one(kubernetes_role_v1.academic_execution[*].metadata[0].name)
+      local_queue_manifest  = local.academic_local_queue_manifest
+    }
+
     embeds_licensed_bytes = var.academic_assets.delivery.embed_licensed_bytes
     tenant_id             = var.academic_assets.tenant_id
     institution_id        = var.academic_assets.institution_id

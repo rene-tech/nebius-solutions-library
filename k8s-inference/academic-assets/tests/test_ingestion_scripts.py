@@ -649,3 +649,126 @@ class AdoptionBackendTests(unittest.TestCase):
         self.assertIn("4 already managed", result.stdout)
         self.assertNotIn("importing", result.stdout)
         self.assertEqual([], [call for call in self.recorded() if "import" in call.split("|")])
+
+
+class InstallReceiptShellTests(AcademicAssetTestCase):
+    """Runs the real installer script end to end against a stub cluster.
+
+    The receipt is assembled field by field in shell, so a field the Python
+    installer emits but the shell never projects is invisible to unit tests and
+    only fails when a fresh install tries to record it. This drives the actual
+    script and then records the receipt through the real validator.
+    """
+
+    INSTALLER = ASSET_ROOT / "scripts" / "install-academic-tree.sh"
+    TREE_DIGEST = "a" * 63 + "b"
+    TREE_BYTES = 3287122494
+    FILE_COUNT = 8697
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.bin_dir = self.workspace / "bin"
+        self.bin_dir.mkdir()
+        self.kubeconfig = self.workspace / "kubeconfig"
+        self.kubeconfig.write_text("stub\n")
+
+    def write_stub_kubectl(self, **overrides: object) -> None:
+        """A cluster that returns exactly what install_tree.py verify emits."""
+        verified = {
+            "installed_distribution": "pyrosetta",
+            "installed_distribution_version": "2026.29+releasequarterly.80a0635615",
+            "python_version": "3.10.21",
+            "file_count": self.FILE_COUNT,
+            "tree_manifest_algorithm": "fs2-tree-manifest/v1",
+            "tree_manifest_sha256": self.TREE_DIGEST,
+            "tree_total_bytes": self.TREE_BYTES,
+            "world_readable": False,
+            "import_verified": True,
+            "functional_proof": {"pose_residues": 10, "score": 29.967244},
+            "evidence_digest": "d" * 64,
+        }
+        verified.update(overrides)
+        stub = self.bin_dir / "kubectl"
+        stub.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, sys\n"
+            "args = sys.argv[1:]\n"
+            "if 'logs' in args:\n"
+            "    print('{\"atomic_promotion\": true}')\n"
+            "    print('INSTALL_RESULT_BEGIN')\n"
+            f"    print(json.dumps({verified!r}))\n"
+            "    sys.exit(0)\n"
+            "if 'create' in args and 'configmap' in args:\n"
+            "    print(json.dumps({'apiVersion': 'v1', 'kind': 'ConfigMap', 'metadata': {'name': 'x'}}))\n"
+            "    sys.exit(0)\n"
+            "sys.exit(0)\n"
+        )
+        stub.chmod(0o755)
+
+    def run_installer(self) -> subprocess.CompletedProcess[str]:
+        environment = dict(os.environ)
+        environment.update(
+            {
+                "PATH": f"{self.bin_dir}:{environment['PATH']}",
+                "FS2_ACADEMIC_CONTRACT": str(self.contract_path),
+                "FS2_ACADEMIC_ASSET_STATE_DIR": str(self.state_dir),
+                "FS2_ACADEMIC_ASSET_ID": "pyrosetta-bindcraft",
+                "FS2_ACADEMIC_KUBECONFIG": str(self.kubeconfig),
+                "FS2_ACADEMIC_KUBE_CONTEXT": "stub-context",
+                "FS2_ACADEMIC_INSTALL_TIMEOUT": "5",
+            }
+        )
+        return subprocess.run(
+            ["bash", str(self.INSTALLER)], env=environment, capture_output=True, text=True, check=False
+        )
+
+    def prepare_state(self, generation: str) -> None:
+        self.ingest(generation)
+        self.record("pyrosetta-bindcraft", "cache", self.cache_receipt("pyrosetta-bindcraft"))
+
+    def test_shell_receipt_carries_the_tree_identity_and_validates(self) -> None:
+        self.prepare_state("shell-install")
+        self.write_stub_kubectl()
+        result = self.run_installer()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("InstallReady", result.stdout)
+
+        recorded = json.loads(
+            (
+                self.state_dir / "generations" / "shell-install" / "receipts" / "pyrosetta-bindcraft" / "install.json"
+            ).read_text()
+        )
+        self.assertEqual("fs2-tree-manifest/v1", recorded["tree_manifest_algorithm"])
+        self.assertEqual(self.TREE_DIGEST, recorded["tree_manifest_sha256"])
+        self.assertEqual(self.TREE_BYTES, recorded["tree_total_bytes"])
+        self.assertEqual(self.FILE_COUNT, recorded["file_count"])
+
+        from jsonschema import Draft202012Validator
+
+        schema = json.loads((ASSET_ROOT / "schemas" / "stage-receipt.schema.json").read_text())
+        self.assertEqual([], [str(e) for e in Draft202012Validator(schema).iter_errors(recorded)])
+
+        code, projection = self.run_cli("status", "--state-dir", str(self.state_dir))
+        self.assertEqual(0, code)
+        pyrosetta = self.asset(projection, "pyrosetta-bindcraft")
+        self.assertEqual("InstallReady", pyrosetta["install_status"])
+        self.assertEqual(self.TREE_DIGEST, pyrosetta["binding_content_digest_sha256"])
+
+    def test_installer_fails_loudly_when_a_projected_field_is_missing(self) -> None:
+        """The exact regression: verify gains a field the receipt never projects."""
+
+        self.prepare_state("shell-missing-field")
+        self.write_stub_kubectl()
+        stub = self.bin_dir / "kubectl"
+        # The stub embeds a Python repr, so patch that spelling.
+        stub.write_text(stub.read_text().replace("'tree_manifest_sha256'", "'unused_field'"))
+        result = self.run_installer()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("missing fields", result.stderr)
+
+    def test_recorded_shell_receipt_never_borrows_the_wheel_identity(self) -> None:
+        self.prepare_state("shell-identity")
+        artifact = self.contract_document["assets"]["pyrosetta-bindcraft"]["artifact"]
+        self.write_stub_kubectl(tree_manifest_sha256=artifact["sha256"])
+        result = self.run_installer()
+        self.assertNotEqual(0, result.returncode)

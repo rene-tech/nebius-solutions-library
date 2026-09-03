@@ -1886,7 +1886,8 @@
         "mountRoot",
         "assetGid",
         "readOnly",
-        "runtimeBindings"
+        "runtimeBindings",
+        "execution"
       ],
       "properties": {
         "enabled": {
@@ -1966,6 +1967,33 @@
               "readOnly": {
                 "const": true
               }
+            }
+          }
+        },
+        "execution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "namespace",
+            "localQueue",
+            "serviceAccount"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "namespace": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            },
+            "localQueue": {
+              "type": "string",
+              "minLength": 1
+            },
+            "serviceAccount": {
+              "type": "string",
+              "minLength": 1
             }
           }
         }
