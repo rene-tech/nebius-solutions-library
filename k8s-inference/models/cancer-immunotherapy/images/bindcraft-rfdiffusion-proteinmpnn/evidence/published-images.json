@@ -12,11 +12,11 @@
         "https://slsa.dev/provenance/v1",
         "https://spdx.dev/Document"
       ],
-      "digest": "sha256:fcc5b0da20f8bee01e78ad042ba597f7596cd52322a542ff4e48c855abae0177",
-      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:fcc5b0da20f8bee01e78ad042ba597f7596cd52322a542ff4e48c855abae0177",
+      "digest": "sha256:5ea7696fbcfdf35bb80f5662bb4d9bc1d40744f51b37a0a897babec8ef688892",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:5ea7696fbcfdf35bb80f5662bb4d9bc1d40744f51b37a0a897babec8ef688892",
       "id": "bindcraft-academic",
-      "manifest_sha256": "fcc5b0da20f8bee01e78ad042ba597f7596cd52322a542ff4e48c855abae0177",
-      "pull_stdout_sha256": "ced3ca29711659bb296f126b5604fda658ee7608be23218ada6e0dfdea8e82e9",
+      "manifest_sha256": "5ea7696fbcfdf35bb80f5662bb4d9bc1d40744f51b37a0a897babec8ef688892",
+      "pull_stdout_sha256": "6469c2f45eb7a9a1d9891593c7e36c9964bc4c48f5f4d7888163186306cd5522",
       "smoke": [
         {
           "command": [
@@ -27,7 +27,7 @@
             "linux/amd64",
             "--network",
             "none",
-            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:fcc5b0da20f8bee01e78ad042ba597f7596cd52322a542ff4e48c855abae0177",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:5ea7696fbcfdf35bb80f5662bb4d9bc1d40744f51b37a0a897babec8ef688892",
             "--fs2-image-smoke"
           ],
           "last_line": "{\"cuda_available\": false, \"cuda_build\": \"12.1\", \"embedded_model_artifacts\": false, \"embedded_pyrosetta\": false, \"gpu_evidence\": {}, \"gpu_required_imports_deferred\": [], \"imports\": {\"Bio\": \"1.85\", \"colabdesign\": \"imported\", \"jax\": \"0.4.28\", \"jaxlib\": \"0.4.28+cuda12.cudnn89\", \"torch\": \"2.3.0\"}, \"runtime\": \"bindcraft-academic\", \"schema\": \"fs2.nebius.ai/runtime-image-smoke/v1\", \"source_revision\": \"7cd4ace1b7407adf66a50dfefa47de2270f5e4a9\"}",
@@ -39,7 +39,7 @@
         "repository": "https://github.com/martinpacesa/BindCraft",
         "revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
       },
-      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r12"
+      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r13"
     },
     {
       "attestation_manifests": 1,
@@ -184,6 +184,6 @@
     }
   ],
   "platform": "linux/amd64",
-  "recorded_at": "2026-09-03T02:43:20.345178Z",
+  "recorded_at": "2026-09-03T02:50:44.808606Z",
   "schema": "fs2.nebius.ai/cancer-runtime-image-publication/v1"
 }
