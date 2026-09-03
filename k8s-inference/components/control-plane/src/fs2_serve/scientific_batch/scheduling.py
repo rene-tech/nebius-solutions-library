@@ -72,6 +72,7 @@ class SchedulingContractResolver:
         tenant_id: str,
         profile: Mapping[str, Any],
         plan: ScientificBatchPlan,
+        workload_namespace: str | None = None,
         captured_at: datetime | None = None,
     ) -> SchedulingSnapshot:
         try:
@@ -121,6 +122,11 @@ class SchedulingContractResolver:
             raise SchedulingContractError("model is not routed to the selected Kueue LocalQueue")
         if route_tenants and tenant_id not in route_tenants:
             raise SchedulingContractError("tenant is not routed to the selected Kueue LocalQueue")
+        resolved_workload_namespace = workload_namespace or route_namespace
+        if resolved_workload_namespace != route_namespace:
+            raise SchedulingContractError(
+                "scientific execution namespace differs from the routed Kueue LocalQueue namespace"
+            )
         cluster_queue = _object(self.cluster_queues.get(cluster_queue_name), "Kueue ClusterQueue")
         cluster_metadata = _object(cluster_queue.get("metadata"), "Kueue ClusterQueue metadata")
         cluster_spec = _object(cluster_queue.get("spec"), "Kueue ClusterQueue spec")
@@ -207,6 +213,7 @@ class SchedulingContractResolver:
             service_class=selected_class,
             tenant_queue=local_queue_name,
             model_lane=model_id,
-            workload_namespace=route_namespace,
+            workload_namespace=resolved_workload_namespace,
+            route_namespace=route_namespace,
             stages=decisions,
         )

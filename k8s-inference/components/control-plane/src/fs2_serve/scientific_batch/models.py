@@ -28,6 +28,10 @@ _CONTROLLER_MOUNT_ROOT = PurePosixPath("/mnt/fs2-scientific")
 _RUNTIME_MOUNT_ROOTS = tuple(
     PurePosixPath(value) for value in ("/models", "/databases", "/opt/fs2/artifacts", "/opt/fs2/academic")
 )
+_RUNTIME_EXACT_MOUNT_PATHS = {
+    PurePosixPath("/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights"),
+    PurePosixPath("/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble"),
+}
 
 
 class BatchStatus(StrEnum):
@@ -422,7 +426,10 @@ class RuntimeArtifactMount:
         if _ARTIFACT_ID_RE.fullmatch(self.artifact_id) is None:
             raise ValueError("runtime mount artifact_id must be a logical artifact ID")
         mount = PurePosixPath(self.mount_path)
-        if not mount.is_absolute() or not any(root == mount or root in mount.parents for root in _RUNTIME_MOUNT_ROOTS):
+        if not mount.is_absolute() or not (
+            any(root == mount or root in mount.parents for root in _RUNTIME_MOUNT_ROOTS)
+            or mount in _RUNTIME_EXACT_MOUNT_PATHS
+        ):
             raise ValueError("runtime artifact mount must use an approved image root")
         if any(part in {"", ".", ".."} for part in mount.parts[1:]):
             raise ValueError("runtime artifact mount path is not canonical")
@@ -487,8 +494,11 @@ class StageInvocation:
         if len(set(self.runtime_artifacts)) != len(self.runtime_artifacts):
             raise ValueError("stage runtime artifact IDs must be unique")
         mounted = tuple(item.artifact_id for item in self.runtime_mounts)
-        if self.runtime_mounts and (len(set(mounted)) != len(mounted) or set(mounted) != set(self.runtime_artifacts)):
-            raise ValueError("explicit runtime mounts must exactly bind every stage runtime artifact")
+        if self.runtime_mounts and set(mounted) != set(self.runtime_artifacts):
+            raise ValueError("explicit runtime mounts must exactly cover every stage runtime artifact")
+        mount_targets = tuple(item.mount_path for item in self.runtime_mounts)
+        if len(set(mount_targets)) != len(mount_targets):
+            raise ValueError("runtime artifact mount targets must be unique")
         marker_path = f"{self.working_directory}/.fs2/runtime-localization.json"
         if self.runtime_mounts and self.runtime_artifacts and marker_path not in self.argv:
             raise ValueError("runtime artifact stages must pass the canonical localization marker to argv")
@@ -723,6 +733,7 @@ class SchedulingSnapshot:
     tenant_queue: str
     model_lane: str
     workload_namespace: str
+    route_namespace: str
     stages: tuple[StageSchedulingDecision, ...]
 
     def __post_init__(self) -> None:
@@ -736,6 +747,7 @@ class SchedulingSnapshot:
             (self.tenant_queue, "tenant_queue"),
             (self.model_lane, "model_lane"),
             (self.workload_namespace, "workload_namespace"),
+            (self.route_namespace, "route_namespace"),
         ):
             if not value or len(value) > 128 or _POOL_RE.fullmatch(value) is None:
                 raise ValueError(f"{label} must be a bounded provider-neutral queue identity")
@@ -755,6 +767,7 @@ class SchedulingSnapshot:
             "tenant_queue": self.tenant_queue,
             "model_lane": self.model_lane,
             "workload_namespace": self.workload_namespace,
+            "route_namespace": self.route_namespace,
             "stages": [
                 {
                     "stage_id": item.stage_id,
@@ -784,10 +797,15 @@ class WorkloadRef:
     name: str
     kind: WorkloadKind
     uid: str | None = None
+    route_namespace: str | None = None
 
     def __post_init__(self) -> None:
         _check_name(self.namespace, "namespace")
         _check_name(self.name, "workload name")
+        if self.route_namespace is None:
+            object.__setattr__(self, "route_namespace", self.namespace)
+        else:
+            _check_name(self.route_namespace, "route namespace")
 
 
 @dataclass(frozen=True, slots=True)
@@ -861,9 +879,7 @@ class ScientificAttemptState:
             raise ValueError("only terminal attempts carry completed_at")
         if self.resource_released and self.outcome is AttemptOutcome.ACTIVE:
             raise ValueError("an active attempt cannot have released its workload resource")
-        if self.deletion_requested and (
-            self.outcome is AttemptOutcome.ACTIVE or self.workload.uid is None
-        ):
+        if self.deletion_requested and (self.outcome is AttemptOutcome.ACTIVE or self.workload.uid is None):
             raise ValueError("only a terminal applied attempt can have deletion pending")
         if self.resource_released and self.workload.uid is not None and not self.deletion_requested:
             raise ValueError("an applied workload is released only after a persisted delete request")
@@ -1093,6 +1109,7 @@ class WorkloadResource:
     name: str
     kind: WorkloadKind
     scheduling: StageSchedulingDecision
+    route_namespace: str | None = None
     gang_size: int | None = None
     invocation: StageInvocation | None = None
     materializations: tuple[ResolvedArtifactMaterialization, ...] = ()
@@ -1101,6 +1118,10 @@ class WorkloadResource:
 
     def __post_init__(self) -> None:
         _check_name(self.namespace, "namespace")
+        if self.route_namespace is None:
+            object.__setattr__(self, "route_namespace", self.namespace)
+        else:
+            _check_name(self.route_namespace, "route namespace")
         _check_name(self.name, "workload name")
         _check_name(self.stage_id, "stage_id")
         _check_name(self.model_id, "model_id")
@@ -1134,7 +1155,12 @@ class WorkloadResource:
 
     @property
     def ref(self) -> WorkloadRef:
-        return WorkloadRef(namespace=self.namespace, name=self.name, kind=self.kind)
+        return WorkloadRef(
+            namespace=self.namespace,
+            name=self.name,
+            kind=self.kind,
+            route_namespace=self.route_namespace,
+        )
 
 
 @dataclass(frozen=True, slots=True)

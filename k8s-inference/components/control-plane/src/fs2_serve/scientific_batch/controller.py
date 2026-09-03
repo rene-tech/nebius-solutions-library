@@ -100,8 +100,8 @@ class ScientificBatchController:
     ) -> ScientificBatchState:
         """Bind a frozen admission snapshot to an existing durable Operation."""
 
-        if scheduling.workload_namespace != self.namespace:
-            raise ValueError("routed Kueue LocalQueue namespace differs from the controller namespace")
+        if scheduling.workload_namespace != scheduling.route_namespace:
+            raise ValueError("workload namespace differs from the routed Kueue LocalQueue namespace")
         return await self.repository.create(
             operation_id=operation_id,
             tenant_id=tenant_id,
@@ -223,6 +223,7 @@ class ScientificBatchController:
                         namespace=record.scheduling.workload_namespace,
                         name=workload_name(record.operation_id, spec.stage_id, shard_id, attempt_number),
                         kind=kind,
+                        route_namespace=record.scheduling.route_namespace,
                     ),
                     started_at=now,
                 )
@@ -311,6 +312,7 @@ class ScientificBatchController:
                     name=attempt.workload.name,
                     kind=attempt.workload.kind,
                     scheduling=record.scheduling.stage(spec.stage_id),
+                    route_namespace=attempt.workload.route_namespace,
                     gang_size=spec.gang_size,
                     invocation=invocation,
                     materializations=materializations,
@@ -481,7 +483,10 @@ class ScientificBatchController:
         events: list[BatchEventDraft] = []
 
         for attempt in active_attempts:
-            observation = await self.cluster.observe(attempt.workload)
+            observation = await self.cluster.observe(
+                attempt.workload,
+                scheduling=record.scheduling.stage(attempt.stage_id),
+            )
             if observation.ref != attempt.workload or observation.attempt_id != attempt.attempt_id:
                 events.append(
                     self._event(
@@ -495,6 +500,7 @@ class ScientificBatchController:
                 )
                 continue
 
+            observation = self._fence_same_workload_requeue(attempt, observation)
             next_attempt, phase_events = self._ingest_observation(record, attempt, observation)
             events.extend(phase_events)
             if next_attempt != attempt:
@@ -540,6 +546,47 @@ class ScientificBatchController:
         next_stage = replace(stage, attempts=tuple(updated))
         if changed or events:
             await self._write(claim, record, self._replace_stage(record, next_stage), tuple(events), now=now)
+
+    @staticmethod
+    def _fence_same_workload_requeue(
+        attempt: ScientificAttemptState,
+        observation: WorkloadObservation,
+    ) -> WorkloadObservation:
+        """Turn reservation loss/reassignment into delete-and-new-attempt retry.
+
+        Kueue clears ``status.admission`` while evicting and may reserve the
+        same Workload again. A controller attempt is immutable, so accepting
+        that second reservation would lose the first assignment evidence and
+        retain the original queue deadline. Once a reservation is durable,
+        any pending loss, reassignment, or Workload recreation is therefore a
+        preemption boundary. The first assignment remains on the attempt; its
+        Job or JobSet is deleted before retry creates a fresh attempt.
+        """
+
+        if attempt.scheduling_admission is None:
+            return observation
+        failure_code: str | None = None
+        if attempt.kueue_workload_uid is not None and observation.kueue_workload_uid not in {
+            None,
+            attempt.kueue_workload_uid,
+        }:
+            failure_code = "kueue_workload_recreated"
+        elif observation.scheduling_admission not in {None, attempt.scheduling_admission}:
+            failure_code = "kueue_same_workload_rereserved"
+        elif observation.state is WorkloadState.PENDING and observation.scheduling_admission is None:
+            failure_code = "kueue_reservation_lost"
+        if failure_code is None:
+            return observation
+        return replace(
+            observation,
+            state=WorkloadState.PREEMPTED,
+            phases=(LifecyclePhase.PREEMPTED,),
+            scheduling_admission=None,
+            kueue_workload_uid=None,
+            pod_uids=(),
+            failure_kind=FailureKind.PREEMPTION,
+            failure_code=failure_code,
+        )
 
     def _ingest_observation(
         self,

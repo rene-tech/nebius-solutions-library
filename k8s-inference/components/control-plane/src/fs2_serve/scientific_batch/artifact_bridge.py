@@ -418,6 +418,8 @@ class ArtifactServiceBridge:
             "service_class": state.scheduling.service_class.value,
             "tenant_queue": state.scheduling.tenant_queue,
             "model_lane": state.scheduling.model_lane,
+            "workload_namespace": state.scheduling.workload_namespace,
+            "route_namespace": state.scheduling.route_namespace,
             "stages": [
                 {
                     "stage_id": item.stage_id,

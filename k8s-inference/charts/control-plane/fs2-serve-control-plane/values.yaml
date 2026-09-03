@@ -105,6 +105,11 @@ scientificBatch:
   schedulingContractKey: kueue-scheduling.json
   executionMapConfigMapName: ""
   executionMapKey: execution-map.json
+  # Rendered into the immutable ConfigMap above by this release. Runtime
+  # onboarding supplies exact digest-bound model/stage entries.
+  executionMap:
+    schema: fs2-serve.nebius.ai/scientific-execution-map/v3
+    models: []
   workers: 2
   pollSeconds: "0.25"
   leaseSeconds: "30"
@@ -235,6 +240,11 @@ secrets:
   admin:
     name: fs2-serve-admin
     key: token
+  # JSON object with access_key_id and secret_access_key. Only consumed when
+  # scientificArtifacts.enabled is true.
+  artifactStore:
+    name: fs2-serve-artifact-store
+    key: credentials.json
 
 config:
   # Required public HTTPS origins; empty defaults fail validation.
@@ -284,11 +294,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 3e9cb0cf59dd28c74f94594ef20aa5aeaa87170f79d7f498b820fdf4a8c784af
-    migrationSetSha256: 6926de8f73092cd53e0397a8b6f44e2a9e9a64e73ad4b273e08cc96b2a5c25dd
-    migrationCount: 15
+    contractPayloadSha256: 0e5b4432885ffc0dcdaec8edde2c0bc8ec8662478bacaa59670b2bffb30c8fe1
+    migrationSetSha256: 72ae1b37e07a9b2cdf16f60d79b338dc669ef4d5b26c7277021b60f81c62fa44
+    migrationCount: 16
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0015_scientific_batch_controller.sql
+    lastMigrationVersion: 0016_scientific_batch_state_v7.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:

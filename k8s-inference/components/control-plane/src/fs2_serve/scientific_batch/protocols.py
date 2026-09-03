@@ -18,6 +18,7 @@ from .models import (
     ScientificAttemptState,
     ScientificBatchPlan,
     ScientificBatchState,
+    StageSchedulingDecision,
     VerifiedInputManifest,
     WorkloadObservation,
     WorkloadRef,
@@ -113,7 +114,12 @@ class ScientificBatchCluster(Protocol):
 
     async def apply(self, resource: WorkloadResource, *, controller_fence: int) -> WorkloadRef: ...
 
-    async def observe(self, ref: WorkloadRef) -> WorkloadObservation: ...
+    async def observe(
+        self,
+        ref: WorkloadRef,
+        *,
+        scheduling: StageSchedulingDecision,
+    ) -> WorkloadObservation: ...
 
     async def delete(self, ref: WorkloadRef, *, controller_fence: int) -> None: ...
 

@@ -1,0 +1,13 @@
+{{- if .Values.scientificBatch.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.scientificBatch.executionMapConfigMapName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+immutable: true
+data:
+  {{ .Values.scientificBatch.executionMapKey }}: |
+    {{- .Values.scientificBatch.executionMap | toJson | nindent 4 }}
+{{- end }}
