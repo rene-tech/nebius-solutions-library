@@ -24,7 +24,8 @@ Usage: adopt-live-resources.sh [options]
   --apply                 perform the imports (default: print the plan)
   --chdir DIR             Terraform working directory (default: the workloads stage)
   --data-dir DIR          exact TF_DATA_DIR for this run (recommended; isolates state)
-  --var-file FILE         Terraform var file, repeatable (passed to import only)
+  --var-file FILE         Terraform var file, repeatable (passed to policy discovery
+                          and import, never to state inspection)
   --backend-config VALUE  backend configuration, repeatable (passed to init only)
   --state FILE            explicit state file (passed to state and import)
   --module-prefix PREFIX  module address holding the resources (default module.academic_assets;
@@ -32,6 +33,8 @@ Usage: adopt-live-resources.sh [options]
   --runtime-lifecycle L   retained (default) or disposable; selects which claim resource
                           the import addresses, matching the tfvars contract
   --legacy-lifecycle L    retained (default) or disposable for the quarantine claim
+  --network-policy MODE   auto (default), enabled, or disabled; auto reads the
+                          configured offline-validation policy from Terraform
   --no-init               skip terraform init (only when the caller already ran it)
   --kubeconfig FILE       kubeconfig used for the liveness probe
   --context NAME          kube context used for the liveness probe
@@ -54,6 +57,7 @@ context="${FS2_ACADEMIC_KUBE_CONTEXT:-}"
 module_prefix="module.academic_assets"
 runtime_lifecycle="retained"
 legacy_lifecycle="retained"
+network_policy="auto"
 module_prefix_set=false
 # Each Terraform subcommand accepts a different set of flags. Keeping them apart
 # is what stops an invalid argument from aborting adoption midway:
@@ -63,18 +67,24 @@ module_prefix_set=false
 backend_args=()
 state_args=()
 import_args=()
+variable_args=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply) apply=true; shift ;;
     --chdir) chdir="$2"; shift 2 ;;
     --data-dir) data_dir="$2"; shift 2 ;;
-    --var-file) import_args+=("-var-file=$2"); shift 2 ;;
+    --var-file)
+      import_args+=("-var-file=$2")
+      variable_args+=("-var-file=$2")
+      shift 2
+      ;;
     --backend-config) backend_args+=("-backend-config=$2"); shift 2 ;;
     --state) state_args+=("-state=$2"); import_args+=("-state=$2"); shift 2 ;;
     --module-prefix) module_prefix="$2"; module_prefix_set=true; shift 2 ;;
     --runtime-lifecycle) runtime_lifecycle="$2"; shift 2 ;;
     --legacy-lifecycle) legacy_lifecycle="$2"; shift 2 ;;
+    --network-policy) network_policy="$2"; shift 2 ;;
     --no-init) run_init=false; shift ;;
     --kubeconfig) kubeconfig="$2"; shift 2 ;;
     --context) context="$2"; shift 2 ;;
@@ -111,6 +121,34 @@ for selected in "${runtime_lifecycle}" "${legacy_lifecycle}"; do
   esac
 done
 
+case "${network_policy}" in
+  auto)
+    # The policy is optional in the module. Resolve its configured count before
+    # importing anything so adoption cannot succeed for three resources and then
+    # fail on an address that does not exist in configuration.
+    network_policy=$(printf '%s\n' \
+      'try(var.academic_assets.delivery.deny_egress_on_validate, false)' | \
+      terraform -chdir="${chdir}" console \
+        "${variable_args[@]+"${variable_args[@]}"}")
+    network_policy=${network_policy//[[:space:]]/}
+    ;;
+  enabled | disabled) ;;
+  *)
+    echo "network-policy must be auto, enabled, or disabled, got: ${network_policy}" >&2
+    exit 2
+    ;;
+esac
+
+case "${network_policy}" in
+  true) network_policy="enabled" ;;
+  false) network_policy="disabled" ;;
+  enabled | disabled) ;;
+  *)
+    echo "could not resolve the configured offline-validation policy: ${network_policy}" >&2
+    exit 2
+    ;;
+esac
+
 # Resources are mutually exclusive by lifecycle, so the import has to name the one
 # that actually exists in configuration.
 runtime_resource="kubernetes_persistent_volume_claim_v1.academic_assets_runtime_${runtime_lifecycle}[0]"
@@ -138,8 +176,12 @@ targets=(
   "${prefix}${namespace_resource}|namespace||${namespace}|${namespace}"
   "${prefix}${runtime_resource}|pvc|${namespace}|${runtime_pvc}|${namespace}/${runtime_pvc}"
   "${prefix}${legacy_resource}|pvc|${legacy_namespace}|${legacy_pvc}|${legacy_namespace}/${legacy_pvc}"
-  "${prefix}${policy_resource}|networkpolicy|${namespace}|academic-offline-validation-deny-egress|${namespace}/academic-offline-validation-deny-egress"
 )
+if [ "${network_policy}" = "enabled" ]; then
+  targets+=("${prefix}${policy_resource}|networkpolicy|${namespace}|academic-offline-validation-deny-egress|${namespace}/academic-offline-validation-deny-egress")
+else
+  echo "skip (disabled in configuration): ${prefix}${policy_resource}"
+fi
 
 already=0
 missing=0

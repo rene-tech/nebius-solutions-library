@@ -510,7 +510,13 @@ class AdoptionBackendTests(unittest.TestCase):
         self._write_stub("terraform", exit_for_state_show=1)
         self._write_stub("kubectl", exit_for_state_show=0)
 
-    def _write_stub(self, name: str, *, exit_for_state_show: int) -> None:
+    def _write_stub(
+        self,
+        name: str,
+        *,
+        exit_for_state_show: int,
+        network_policy_enabled: bool = True,
+    ) -> None:
         stub = self.bin_dir / name
         stub.write_text(
             "#!/usr/bin/env python3\n"
@@ -519,6 +525,10 @@ class AdoptionBackendTests(unittest.TestCase):
             f"if {name!r} == 'terraform':\n"
             "    with log.open('a') as handle:\n"
             "        handle.write('|'.join(sys.argv[1:]) + ' TF_DATA_DIR=' + os.environ.get('TF_DATA_DIR','') + '\\n')\n"
+            "    if 'console' in sys.argv:\n"
+            "        sys.stdin.read()\n"
+            f"        print({'true' if network_policy_enabled else 'false'!r})\n"
+            "        sys.exit(0)\n"
             "    if 'state' in sys.argv:\n"
             f"        sys.exit({exit_for_state_show})\n"
             "    sys.exit(0)\n"
@@ -629,6 +639,17 @@ class AdoptionBackendTests(unittest.TestCase):
         printed = result.stdout.replace("\\", "")
         self.assertIn("kubernetes_persistent_volume_claim_v1.academic_assets_runtime_retained[0]", printed)
         self.assertNotIn("module.academic_assets.", printed)
+
+    def test_disabled_optional_policy_is_not_imported(self) -> None:
+        self._write_stub(
+            "terraform", exit_for_state_show=1, network_policy_enabled=False
+        )
+        result = self.run_adopt("--data-dir", str(self.data_dir), "--apply")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("disabled in configuration", result.stdout)
+        imports = [c for c in self.recorded() if "import" in c.split("|")]
+        self.assertEqual(3, len(imports))
+        self.assertFalse(any("academic_offline_validation" in call for call in imports))
 
     def test_an_unknown_lifecycle_is_refused(self) -> None:
         result = self.run_adopt("--data-dir", str(self.data_dir), "--runtime-lifecycle", "permanent")
