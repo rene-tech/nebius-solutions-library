@@ -1,0 +1,255 @@
+{
+  "schema": "fs2-serve.nebius.ai/boltzgen-h100-qualification-evidence/v1",
+  "status": "passed",
+  "scope": "BoltzGen v0.3.2 configure and full-default design stage for one PD-L1 binder",
+  "observed_at": "2026-09-03T07:34:56Z",
+  "cluster": {
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "context": "k8s-inference-h100",
+    "namespace": "fs2-models",
+    "pool_id": "h100-1x",
+    "capacity_choice": "preemptible",
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "gpu_count_per_attempt": 1,
+    "private_resource_ids": "recorded-in-agent-task-deck-evidence",
+    "b300_used": false,
+    "quota_or_limit_changed": false
+  },
+  "runtime": {
+    "source_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+    "image_config_digest": "sha256:e7f33739f36417d447a0871d4abdd8431f1f64f07baf3543b2c4073c207c08cd",
+    "image_size_bytes": 3640249795,
+    "cuda": "12.6",
+    "pytorch": "2.7.1+cu126",
+    "cuequivariance": "0.10.0",
+    "optimized_kernels_observed": true,
+    "sbom_sha256": "f8a1202c8cdc78ea61c223b45d85c9cf8252ac35b1bec979e8ca8c18be238356",
+    "fixed_version_available_critical_findings": 0
+  },
+  "artifacts": {
+    "boltzgen-checkpoints": {
+      "generation": "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+      "marker_sha256": "723ada21585427b7cec08ddeccbba3279e74bd3c4660c8d12cc0d33e3f36a44f",
+      "entry_count": 6,
+      "total_bytes": 10234382415,
+      "read_only_mount": true
+    },
+    "boltzgen-inference-molecules": {
+      "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+      "marker_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+      "entry_count": 45227,
+      "total_bytes": 1820698819,
+      "read_only_mount": true
+    }
+  },
+  "request": {
+    "request_sha256": "71d3584742548893cefb27fd34cb10bb62335130ee2127e6a4e889277f2d9e26",
+    "input_artifact_sha256": "74e4d125b60b884938b858dab6b14405a071bed940c6931605170a172dcd765c",
+    "input_artifact_bytes": 143360,
+    "target_sha256": "93aeba8e72dcb98589f5da5ac5379f0c81f676cbf704a77a7d977faeb6c7ed19",
+    "target_bytes": 139547,
+    "operation": "design-binders",
+    "protocol": "protein-anything",
+    "budget": 1,
+    "num_designs": 1,
+    "diffusion_step_override": null
+  },
+  "scheduling": {
+    "local_queue": "inference-models",
+    "cluster_queue": "inference-accelerators",
+    "resource_flavor": "inference-h100-1x",
+    "priority_class": "batch",
+    "priority_value": -100,
+    "admission_wait_seconds": 0,
+    "identities_on_job_and_pod": [
+      "operation_id",
+      "batch_id",
+      "attempt_id",
+      "model_id",
+      "runtime_image_digest",
+      "checkpoint_generation",
+      "molecule_generation"
+    ]
+  },
+  "cold": {
+    "attempt_id": "attempt-cold-04",
+    "operation_id": "boltzgen-qual-cold-r20260903",
+    "job": {
+      "uid": "9282e6e9-7361-4121-836c-b3d080b2e3b1",
+      "created_at": "2026-09-03T07:29:53Z",
+      "completed_at": "2026-09-03T07:34:56Z",
+      "exit_code": 0
+    },
+    "workload": {
+      "uid": "a7f1c8a9-abde-469b-9076-0760a62c434f",
+      "created_at": "2026-09-03T07:29:53Z",
+      "admitted_at": "2026-09-03T07:29:54Z"
+    },
+    "pod": {
+      "uid": "b49ed8f7-145e-4ed6-afaa-3ca108b1fbe7",
+      "created_at": "2026-09-03T07:29:54Z",
+      "scheduled_at": "2026-09-03T07:32:16Z",
+      "container_started_at": "2026-09-03T07:33:36Z",
+      "container_finished_at": "2026-09-03T07:34:53Z",
+      "image_id_matches_lock": true
+    },
+    "node": {
+      "public_alias": "preemptible-h100-cold-node",
+      "uid": "a09a9ae0-4c63-4cc5-aaf5-dd1c17753999",
+      "boot_id": "5ed399e6-41bc-4864-83d7-f2b14c469590",
+      "registered_at": "2026-09-03T07:31:46Z",
+      "ready_at": "2026-09-03T07:32:04Z",
+      "new_for_attempt": true
+    },
+    "gpu": {
+      "uuid": "GPU-9f92df2a-946c-12b6-7b4f-67746cc5f113",
+      "name": "NVIDIA H100 80GB HBM3",
+      "driver_version": "580.159.04",
+      "device_capability": [9, 0]
+    },
+    "phase_timestamps": {
+      "apply_at": "2026-09-03T07:29:50Z",
+      "scale_triggered_at": "2026-09-03T07:30:24Z",
+      "image_pull_started_at": "2026-09-03T07:32:17Z",
+      "image_pull_completed_at": "2026-09-03T07:33:26Z",
+      "semantic_completion_at": "2026-09-03T07:34:53.290529Z"
+    },
+    "timings_seconds": {
+      "admission_to_scale_trigger": 30,
+      "admission_to_node_ready": 130,
+      "admission_to_scheduled": 142,
+      "image_pull": 69.576,
+      "admission_to_container_start": 222,
+      "artifact_verification": 10.694,
+      "gpu_probe": 9.318,
+      "configure": 3.144,
+      "model_ready_from_design_start": 33.433,
+      "first_result_from_design_start": 50.496,
+      "design_completion": 53.599,
+      "container_work_completion": 76.897,
+      "admission_to_semantic_completion": 299.291
+    },
+    "result": {
+      "structure_sha256": "e687eb501e3e68ced71573321d2ff78570f57c30082831b26e975cafc95c72b7",
+      "structure_bytes": 138694,
+      "metadata_sha256": "178007f30c1abb0bc3fd75ed2bef7f4cc3acefa2286d1bbad9bece6c82abf524",
+      "metadata_bytes": 1079,
+      "target_chain": "B",
+      "target_residues": 127,
+      "binder_chain": "A",
+      "binder_residues": 75,
+      "closest_binding_face_ca_angstrom": 5.394,
+      "binder_residues_within_12_angstrom": 28,
+      "failed_examples": 0,
+      "validator": "independent-gemmi-numpy-pdl1-design-stage-v1"
+    }
+  },
+  "prepared": {
+    "attempt_id": "attempt-prepared-02",
+    "operation_id": "boltzgen-qual-prepared-r20260903",
+    "job": {
+      "uid": "33d62200-7add-4ed3-89e2-15de50304321",
+      "created_at": "2026-09-03T07:27:10Z",
+      "completed_at": "2026-09-03T07:28:29Z",
+      "exit_code": 0
+    },
+    "workload": {
+      "uid": "58d644b3-87bf-4ce4-941f-2e26a730ed74",
+      "created_at": "2026-09-03T07:27:10Z",
+      "admitted_at": "2026-09-03T07:27:10Z"
+    },
+    "pod": {
+      "uid": "8c96e386-8142-4025-b847-97b9f05628b3",
+      "created_at": "2026-09-03T07:27:10Z",
+      "scheduled_at": "2026-09-03T07:27:11Z",
+      "container_started_at": "2026-09-03T07:27:11Z",
+      "semantic_completion_at": "2026-09-03T07:28:26.453561Z",
+      "image_already_present": true
+    },
+    "node": {
+      "public_alias": "preemptible-h100-prepared-node",
+      "uid": "477506f8-cbc8-481c-9f14-fafa7b619175",
+      "boot_id": "28774317-ebc5-4c41-9055-029e6bcb7726",
+      "registered_at": "2026-09-03T07:20:33Z",
+      "ready_at": "2026-09-03T07:20:53Z"
+    },
+    "gpu": {
+      "uuid": "GPU-ca448efd-123b-043e-158a-fad96b228351",
+      "name": "NVIDIA H100 80GB HBM3",
+      "driver_version": "580.159.04",
+      "device_capability": [9, 0]
+    },
+    "timings_seconds": {
+      "admission_to_container_start": 1,
+      "image_pull": 0,
+      "artifact_verification": 8.984,
+      "gpu_probe": 6.672,
+      "configure": 3.226,
+      "model_ready_from_design_start": 34.241,
+      "first_result_from_design_start": 52.396,
+      "design_completion": 55.575,
+      "container_work_completion": 74.606,
+      "admission_to_semantic_completion": 76.454
+    },
+    "result": {
+      "structure_sha256": "65dc3eb2ca8104a5cb52b2f4108058e6da406d3c5569253bbf94ce4300bf891c",
+      "structure_bytes": 127404,
+      "metadata_sha256": "0a9561a97823f7f17308fb92abccebc5856d569ffa49ab197f9bc2093a432893",
+      "metadata_bytes": 1074,
+      "target_chain": "B",
+      "target_residues": 127,
+      "binder_chain": "A",
+      "binder_residues": 60,
+      "closest_binding_face_ca_angstrom": 5.412,
+      "binder_residues_within_12_angstrom": 22,
+      "failed_examples": 0,
+      "validator": "independent-gemmi-numpy-pdl1-design-stage-v1"
+    }
+  },
+  "harness_findings_before_pass": [
+    {
+      "attempt": "attempt-cold-02",
+      "runtime_inference_started": false,
+      "finding": "target projection retained RCSB label_asym_id B while auth_asym_id was A; projection now normalizes both and is regression-tested"
+    },
+    {
+      "attempt": "attempt-cold-03",
+      "runtime_inference_completed": true,
+      "finding": "validator incorrectly required request chain C although the runtime canonicalizes the designed chain"
+    },
+    {
+      "attempt": "attempt-prepared-01",
+      "runtime_inference_completed": true,
+      "finding": "validator incorrectly assigned biological identity by output chain name; it now requires one exact PD-L1 sequence slice plus one design-masked physical binder"
+    }
+  ],
+  "cleanup": {
+    "checked_at": "2026-09-03T07:35:10Z",
+    "task_jobs_remaining": 0,
+    "task_pods_remaining": 0,
+    "task_configmaps_remaining": 0,
+    "task_network_policies_remaining": 0,
+    "immutable_public_generations_retained": [
+      "boltzgen-checkpoints",
+      "boltzgen-inference-molecules"
+    ],
+    "elastic_nodes_owned_by_autoscaler": true
+  },
+  "shared_workloads_after": {
+    "qwen_reserved_h100_ready": "1/1",
+    "qwen_burst_h100_ready": "0/0",
+    "cosmos_burst_h100_ready": "0/0",
+    "control_plane_ready": "2/2",
+    "admin_console_ready": "2/2",
+    "shared_service_deployed_or_rolled": false
+  },
+  "route": {
+    "exposed": false,
+    "remaining_dependencies": [
+      "catalog and controller owners must consume the exact qualified image and artifact generations",
+      "inverse folding, folding, affinity, analysis, filtering, result collection, and public route acceptance remain outside this design-stage qualification"
+    ]
+  }
+}

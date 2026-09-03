@@ -1,0 +1,22 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design-binders",
+  "service_class": "customer-batch",
+  "input_manifest": {
+    "artifact_id": "boltzgen.qual.pdl1.r20260903",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "size_bytes": 1,
+    "media_type": "application/x-tar"
+  },
+  "parameters": {
+    "protocol": "protein-anything",
+    "batches": [
+      {
+        "shard_id": "pdl1-face",
+        "num_designs": 1,
+        "budget": 1,
+        "reuse_completed": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "artifact_id": "boltzgen-checkpoints",
+  "cluster": {
+    "cluster_id": "recorded-in-agent-task-deck-evidence",
+    "context": "k8s-inference-h100",
+    "namespace": "fs2-models",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "tenant_id": "recorded-in-agent-task-deck-evidence"
+  },
+  "entry_count": 6,
+  "files": [
+    {
+      "bytes": 2061914091,
+      "crc32": "dad354eb",
+      "path": "boltz2_aff.ckpt",
+      "sha256": "6dc13d488015666d3c3fdffd29fab54d72e4f2597b654f996cdcf5937feab090",
+      "transfer": "verified-existing"
+    },
+    {
+      "bytes": 2087255089,
+      "crc32": "2e7dc341",
+      "path": "boltz2_conf_final.ckpt",
+      "sha256": "525a51ef306da7282a54d23a4a5b91212fc60d0ff6b23b56dd6351de3b387530",
+      "transfer": "verified-existing"
+    },
+    {
+      "bytes": 1930858014,
+      "crc32": "acce4550",
+      "path": "boltzgen1_adherence.ckpt",
+      "sha256": "ac7078b3dc13064c68e0c3fd542e5bc538c33558bf6607f65e499eb336ca5e5d",
+      "transfer": "verified-existing"
+    },
+    {
+      "bytes": 1930847192,
+      "crc32": "be0d60a9",
+      "path": "boltzgen1_diverse.ckpt",
+      "sha256": "360af8bd6e59527ff6ec25dd81253967f3bd3567d200053b10680634751f8e3c",
+      "transfer": "verified-existing"
+    },
+    {
+      "bytes": 12582656,
+      "crc32": "41426856",
+      "path": "boltzgen1_ifold.ckpt",
+      "sha256": "dd4cf108c94471bdc3a326b7b180fa3854dc019110fae780208c30b50bd56578",
+      "transfer": "verified-existing"
+    },
+    {
+      "bytes": 2210925373,
+      "crc32": "9b420992",
+      "path": "boltzgen1_structuretrained_small.ckpt",
+      "range_workers": 8,
+      "seconds": 87.995,
+      "sha256": "e2455b6ff5156218ef3999be894d1a8e4574f0531cefcd9d67d9c1d2d015937b",
+      "transfer": "parallel-resumed"
+    }
+  ],
+  "generation": "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+  "host_root": "/mnt/fs2-reference-data/data",
+  "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+  "job": {
+    "completed_at": "2026-09-03T06:44:35Z",
+    "created_at": "2026-09-03T06:42:55Z",
+    "image": "python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea",
+    "name": "fs2-boltzgen-localize-checkpoints-codex-r20260903",
+    "uid": "119aec6b-c28f-4004-8c9f-c2245eeb9071"
+  },
+  "marker_sha256": "723ada21585427b7cec08ddeccbba3279e74bd3c4660c8d12cc0d33e3f36a44f",
+  "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
+  "node": {
+    "accelerator_class": "nvidia-h100-sxm5-80gb",
+    "capacity_choice": "regular-capacity-block",
+    "name": "h100-reserved-localization-node",
+    "pool_id": "h100-reserved-8x"
+  },
+  "pod": {
+    "exit_code": 0,
+    "finished_at": "2026-09-03T06:44:32Z",
+    "image_id": "docker.io/library/python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea",
+    "name": "fs2-boltzgen-localize-checkpoints-codex-r20260903-h6rds",
+    "started_at": "2026-09-03T06:42:56Z",
+    "uid": "33b27768-69c9-4908-b4c9-a3e31f95cff4"
+  },
+  "reused_bytes": 8266726674,
+  "schema": "fs2-serve.nebius.ai/boltzgen-checkpoint-localization/v1",
+  "source_revision": "c1be29e1f82ffcc72264f64b993c43fb4e0d17f0",
+  "source_uri": "hf://boltzgen/boltzgen-1",
+  "state": "published",
+  "sub_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+  "total_bytes": 10234382415
+}
