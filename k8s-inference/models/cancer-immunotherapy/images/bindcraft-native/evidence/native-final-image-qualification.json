@@ -93,7 +93,7 @@
   },
   "source_identity_in_published_image": {
     "method": "SHA-256 of each runtime file read from the pulled digest reference, compared to the repository working tree",
-    "match": true,
+    "match": "pending r18 publication",
     "files": [
       {
         "path": "/opt/fs2/bindcraft/runtime_entrypoint.py",
@@ -103,8 +103,8 @@
       },
       {
         "path": "/opt/fs2/bindcraft/tree_identity.py",
-        "sha256": "9a4d944ea802af83b6a340a2234a70d5e493bf7a57284e773ee9a762b9b7be35",
-        "size_bytes": 7145,
+        "sha256": "4a526f07fb5e7bfd5ac59ebc2ca9291ac03b9cdaa496e14f12534d841a5da452",
+        "size_bytes": 8394,
         "repository_path": "runtime/tree_identity.py"
       },
       {
@@ -125,8 +125,7 @@
         "size_bytes": 336,
         "repository_path": "models/structure/runtime/bindcraft-native/bin/bindcraft-batch"
       }
-    ],
-    "verified_against": "sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850"
+    ]
   },
   "controller_interface": {
     "requirement": "--runtime-localization-marker <absolute path> accepted on both subcommands",

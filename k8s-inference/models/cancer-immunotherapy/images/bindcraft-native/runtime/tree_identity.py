@@ -46,6 +46,14 @@ FLAT_INVENTORY_ALGORITHM = "fs2-flat-tree-inventory/v1"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 FLAT_ENTRY_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,254}$")
 
+# The artifact plane publishes a generation's marker inside the generation it
+# describes, because a consumer that mounts only the generation sub-path cannot
+# see a sibling file. It is excluded from both identities by this one reserved
+# name, exactly as the producer excludes it, so the marker never moves a
+# published digest. No other dotfile is admitted: the entry-name pattern rejects
+# a leading dot, so a marker at any other path fails closed.
+RUNTIME_MARKER_NAME = ".fs2-runtime-tree.json"
+
 READ_CHUNK = 1 << 20
 
 
@@ -66,6 +74,8 @@ def tree_manifest(root: Path) -> dict[str, Any]:
     total_bytes = 0
     for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
         relative = path.relative_to(root).as_posix()
+        if relative == RUNTIME_MARKER_NAME:
+            continue
         if path.is_symlink():
             entries.append({"path": relative, "kind": "symlink", "target": os.readlink(path)})
             continue
@@ -99,6 +109,8 @@ def flat_tree_inventory(root: Path) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     total_bytes = 0
     for child in sorted(root.iterdir(), key=lambda item: item.name):
+        if child.name == RUNTIME_MARKER_NAME:
+            continue
         if child.is_symlink() or not child.is_file():
             raise TreeIdentityError("flat tree may contain only regular files")
         if FLAT_ENTRY_NAME.fullmatch(child.name) is None:
@@ -124,6 +136,19 @@ def flat_tree_inventory(root: Path) -> dict[str, Any]:
     }
 
 
+def tree_ownership(root: Path) -> dict[str, Any]:
+    """Record who owns the mounted root, so a receipt can name the state it read.
+
+    A Pod can reach a correctly delivered tree through its supplemental group and
+    a wrongly chowned one through its primary group, passing either way. Without
+    this the run cannot distinguish them and a green result gets mistaken for a
+    conforming delivery.
+    """
+
+    status = root.stat()
+    return {"uid": status.st_uid, "gid": status.st_gid, "mode": oct(status.st_mode & 0o7777)}
+
+
 def verify_tree(root: Path, *, artifact_id: str, expected_tree_manifest_sha256: str) -> dict[str, Any]:
     """Admit a nested tree only if its full content is the pinned identity."""
 
@@ -142,6 +167,7 @@ def verify_tree(root: Path, *, artifact_id: str, expected_tree_manifest_sha256: 
         "file_count": observed["file_count"],
         "symlink_count": observed["symlink_count"],
         "total_bytes": observed["tree_total_bytes"],
+        "ownership": tree_ownership(root),
         "entries": observed["entries"],
     }
 
@@ -163,4 +189,5 @@ def verify_flat_tree(root: Path, *, artifact_id: str, expected_inventory_sha256:
         "inventory_sha256": observed["inventory_sha256"],
         "entry_count": observed["entry_count"],
         "total_bytes": observed["total_bytes"],
+        "ownership": tree_ownership(root),
     }

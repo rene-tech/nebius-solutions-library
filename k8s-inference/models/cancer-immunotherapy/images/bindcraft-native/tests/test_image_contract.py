@@ -200,16 +200,17 @@ class ImageLockTests(unittest.TestCase):
             self.assertIn(pyrosetta_patch.PATCHED_IMPORT, patched)
             self.assertIn(pyrosetta_patch.PATCHED_CALL, patched)
 
-    def test_final_tag_is_r17_and_names_the_digest_it_supersedes(self) -> None:
+    def test_final_tag_is_r18_and_names_the_digest_it_supersedes(self) -> None:
         image = build_images.load_lock()["images"][0]
-        self.assertEqual(image["build_tag_suffix"], "-cuda121-r17")
-        self.assertTrue(image["target"].endswith(image["source"]["revision"] + "-cuda121-r17"))
-        # r16 was correct in behaviour but attested a revision that survived only
-        # on a superseded branch, so its source could not be resolved back.
+        self.assertEqual(image["build_tag_suffix"], "-cuda121-r18")
+        self.assertTrue(image["target"].endswith(image["source"]["revision"] + "-cuda121-r18"))
+        # r17 was reconstructible but could not read the accepted localization
+        # generations: it rejected the marker the artifact plane writes inside
+        # every one of them.
         self.assertEqual(
             image["supersedes"],
             "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@"
-            "sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d",
+            "sha256:aefd9b1cfd3002182b0b19a147e86cb138b39af315f1b061bf4a10c119654850",
         )
 
     def test_the_adapter_wrapper_is_consumed_as_a_build_context(self) -> None:
@@ -391,6 +392,72 @@ class ArtifactGateTests(unittest.TestCase):
                 artifact_gate.verify_from_environment()
 
 
+class AcceptedLocalizationHandoffTests(unittest.TestCase):
+    """Hold this runtime to the artifact plane's accepted handoff, not to a guess.
+
+    While the handoff was unavailable this package invented one. It is now on
+    main, so these read the real document and fail if the runtime drifts from it.
+    """
+
+    HANDOFF = (
+        build_images.REPOSITORY_ROOT
+        / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
+    )
+
+    def bindcraft_artifacts(self) -> dict[str, dict]:
+        document = json.loads(self.HANDOFF.read_text(encoding="utf-8"))
+        chosen = {}
+        for artifact in document["artifacts"]:
+            for consumer in artifact["consumers"]:
+                if consumer.get("model_id") == "bindcraft":
+                    chosen[artifact["artifact_id"]] = artifact
+        return chosen
+
+    def test_the_handoff_binds_exactly_this_runtime_s_four_mount_paths(self) -> None:
+        artifacts = self.bindcraft_artifacts()
+        self.assertEqual(len(artifacts), 4)
+        mounted = {
+            consumer["mount_path"]
+            for artifact in artifacts.values()
+            for consumer in artifact["consumers"]
+            if consumer.get("model_id") == "bindcraft"
+        }
+        self.assertEqual(mounted, set(renderer.MOUNT_PATH_BY_ROLE.values()))
+
+    def test_the_licensed_identity_the_image_pins_is_the_accepted_one(self) -> None:
+        licensed = self.bindcraft_artifacts()["bindcraft-pyrosetta-installed-tree"]
+        identity = licensed["tree_identity"]
+        self.assertEqual(identity["inventory_algorithm"], tree_identity.TREE_MANIFEST_ALGORITHM)
+        self.assertEqual(
+            identity["inventory_sha256"], bindcraft_runner.PYROSETTA_TREE_MANIFEST_SHA256
+        )
+        self.assertEqual(licensed["visibility"], "tenant-private")
+        self.assertEqual(licensed["volume"]["kind"], "persistent-volume-claim")
+
+    def test_the_three_public_trees_are_host_plane_flat_inventories(self) -> None:
+        artifacts = self.bindcraft_artifacts()
+        public = {name: value for name, value in artifacts.items() if value["visibility"] == "public"}
+        self.assertEqual(len(public), 3)
+        for name, artifact in public.items():
+            self.assertEqual(
+                artifact["tree_identity"]["inventory_algorithm"],
+                tree_identity.FLAT_INVENTORY_ALGORITHM,
+                name,
+            )
+            self.assertEqual(artifact["volume"]["kind"], "host-path", name)
+            self.assertEqual(artifact["volume"]["plane"], "reference-data-host", name)
+            self.assertEqual(
+                artifact["volume"]["node_selector"], {"storage.fs2.nebius/reference-data": "true"}, name
+            )
+
+    def test_every_accepted_generation_carries_the_marker_this_runtime_excludes(self) -> None:
+        # This is why the exclusion is mandatory rather than an optimisation.
+        for name, artifact in self.bindcraft_artifacts().items():
+            marker = artifact["marker"]
+            self.assertTrue(marker["in_generation"], name)
+            self.assertEqual(marker["relative_path"], tree_identity.RUNTIME_MARKER_NAME, name)
+
+
 class TreeIdentityTests(unittest.TestCase):
     def nested(self, root: Path) -> None:
         (root / "pkg").mkdir()
@@ -415,6 +482,65 @@ class TreeIdentityTests(unittest.TestCase):
             self.assertEqual(mine["tree_manifest_sha256"], theirs["tree_manifest_sha256"])
             self.assertEqual(mine["tree_total_bytes"], theirs["tree_total_bytes"])
             self.assertEqual(mine["file_count"], theirs["file_count"])
+
+    def test_the_in_generation_marker_never_moves_a_published_digest(self) -> None:
+        """The artifact plane writes a marker inside every generation it publishes.
+
+        Both identities must exclude it by that one reserved name, exactly as the
+        producer does, or this runtime rejects every accepted generation: the
+        published digests were computed over the contracted content only.
+        """
+
+        self.assertEqual(tree_identity.RUNTIME_MARKER_NAME, ".fs2-runtime-tree.json")
+        marker = b'{"schema":"fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"}\n'
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            self.flat(root)
+            expected = tree_identity.flat_tree_inventory(root)["inventory_sha256"]
+            entries = tree_identity.flat_tree_inventory(root)["entry_count"]
+            (root / tree_identity.RUNTIME_MARKER_NAME).write_bytes(marker)
+            receipt = tree_identity.verify_flat_tree(
+                root, artifact_id="mpnn", expected_inventory_sha256=expected
+            )
+            self.assertEqual(receipt["entry_count"], entries)
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            self.nested(root)
+            expected = tree_identity.tree_manifest(root)["tree_manifest_sha256"]
+            (root / tree_identity.RUNTIME_MARKER_NAME).write_bytes(marker)
+            tree_identity.verify_tree(
+                root, artifact_id="licensed", expected_tree_manifest_sha256=expected
+            )
+
+    def test_no_other_dotfile_is_admitted(self) -> None:
+        # Only the one reserved name is excluded; anything else with a leading
+        # dot fails closed rather than being silently skipped.
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            self.flat(root)
+            (root / ".fs2-other.json").write_bytes(b"{}\n")
+            with self.assertRaisesRegex(tree_identity.TreeIdentityError, "safe flat-root names"):
+                tree_identity.flat_tree_inventory(root)
+
+    def test_every_receipt_records_the_mounted_root_ownership(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            self.flat(root)
+            flat = tree_identity.verify_flat_tree(
+                root,
+                artifact_id="mpnn",
+                expected_inventory_sha256=tree_identity.flat_tree_inventory(root)["inventory_sha256"],
+            )
+            self.assertEqual({"uid", "gid", "mode"}, set(flat["ownership"]))
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            self.nested(root)
+            nested = tree_identity.verify_tree(
+                root,
+                artifact_id="licensed",
+                expected_tree_manifest_sha256=tree_identity.tree_manifest(root)["tree_manifest_sha256"],
+            )
+            self.assertEqual({"uid", "gid", "mode"}, set(nested["ownership"]))
 
     def test_verify_tree_rejects_a_single_changed_byte(self) -> None:
         with tempfile.TemporaryDirectory() as name:
