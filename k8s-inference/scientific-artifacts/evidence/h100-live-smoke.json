@@ -1,0 +1,73 @@
+{
+  "bucket": "k8s-inference-h100-r927c465c6d-scientific-artifacts",
+  "deletion_proven": true,
+  "endpoint": "https://storage.eu-north1.nebius.cloud",
+  "handle_ttl_seconds": 600,
+  "object_key": "scientific/v1/tenants/fs2-acceptance/operations/5c9e0b73-4a26-4f81-b0d3-8e27a91f6c40/stages/semantic-validation/shards/0/attempts/1/output/sha256/aaf413e651aa13992e4396d55358bfac917ec910812a5b6cb96c0aedfda19a7f",
+  "observed_at": "2026-09-03T03:46:01+00:00",
+  "passed": true,
+  "region": "eu-north1",
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-store-smoke/v1",
+  "steps": {
+    "cleanup": {
+      "deleted_versions": [
+        "scientific/v1/tenants/fs2-acceptance/operations/5c9e0b73-4a26-4f81-b0d3-8e27a91f6c40/stages/semantic-validation/shards/0/attempts/1/output/sha256/aaf413e651aa13992e4396d55358bfac917ec910812a5b6cb96c0aedfda19a7f@1",
+        "scientific/v1/tenants/fs2-acceptance/operations/5c9e0b73-4a26-4f81-b0d3-8e27a91f6c40/stages/semantic-validation/shards/0/attempts/1/output/sha256/aaf413e651aa13992e4396d55358bfac917ec910812a5b6cb96c0aedfda19a7f@1"
+      ],
+      "kept": false,
+      "required_probes": [
+        "current",
+        "previously_signed_handle",
+        "written_version"
+      ],
+      "residual": [],
+      "residual_reclaimed_by": "expire-noncurrent-versions,remove-expired-delete-markers",
+      "verified_absent": {
+        "current": {
+          "absent": true,
+          "status": 404
+        },
+        "previously_signed_handle": {
+          "absent": true,
+          "status": 404
+        },
+        "written_version": {
+          "absent": true,
+          "status": 404
+        }
+      }
+    },
+    "finalize": {
+      "content_type": "application/json",
+      "declared_bytes": 37,
+      "declared_sha256": "aaf413e651aa13992e4396d55358bfac917ec910812a5b6cb96c0aedfda19a7f",
+      "digest_matches": true,
+      "size_matches": true,
+      "stored_bytes": 37,
+      "stored_sha256": "aaf413e651aa13992e4396d55358bfac917ec910812a5b6cb96c0aedfda19a7f",
+      "version_id": "1"
+    },
+    "outside_scope_put": {
+      "denied": true,
+      "key": "reference-data/blobs/sha256/aaf413e651aa13992e4396d55358bfac917ec910812a5b6cb96c0aedfda19a7f",
+      "status": 403
+    },
+    "signed_get": {
+      "bytes": 37,
+      "digest_matches": true,
+      "sha256": "aaf413e651aa13992e4396d55358bfac917ec910812a5b6cb96c0aedfda19a7f",
+      "status": 200
+    },
+    "signed_put": {
+      "bytes": 37,
+      "key": "scientific/v1/tenants/fs2-acceptance/operations/5c9e0b73-4a26-4f81-b0d3-8e27a91f6c40/stages/semantic-validation/shards/0/attempts/1/output/sha256/aaf413e651aa13992e4396d55358bfac917ec910812a5b6cb96c0aedfda19a7f",
+      "status": 200
+    },
+    "tenant_isolation": {
+      "disjoint": true,
+      "other_tenant_key": "scientific/v1/tenants/isolation-probe/operations/5c9e0b73-4a26-4f81-b0d3-8e27a91f6c40/stages/semantic-validation/shards/0/attempts/1/output/sha256/aaf413e651aa13992e4396d55358bfac917ec910812a5b6cb96c0aedfda19a7f",
+      "tenant": "fs2-acceptance",
+      "tenant_prefix": "scientific/v1/tenants/fs2-acceptance/"
+    }
+  }
+}

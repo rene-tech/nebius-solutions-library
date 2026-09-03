@@ -1,0 +1,194 @@
+{
+  "bucket": {
+    "lifecycle_rule_ids": [
+      "abort-incomplete-multipart-uploads",
+      "expire-noncurrent-versions",
+      "remove-expired-delete-markers"
+    ],
+    "max_size_bytes": 4398046511104,
+    "name": "k8s-inference-h100-r927c465c6d-scientific-artifacts",
+    "secret_delivery": "MYSTERY_BOX",
+    "verified_from": "nebius storage bucket get (live API, not Terraform state)",
+    "versioning_policy": "ENABLED",
+    "writer_paths": [
+      "scientific/v1/*"
+    ],
+    "writer_role": "storage.object-editor"
+  },
+  "commit": "79647d5126333767714e02baa8b65289eb98b287",
+  "credential_rotation": {
+    "key_replaced": true,
+    "kubernetes_secret_annotations": {
+      "fs2.nebius.ai/artifact-store-credential-generation": {
+        "generation_1": "1",
+        "generation_2": "2"
+      },
+      "fs2.nebius.ai/artifact-store-credential-revision": {
+        "generation_1": "27037682",
+        "generation_2": "43814898"
+      },
+      "generation_2_plan": "updated in place, 0 added / 1 changed / 0 destroyed",
+      "secret_resource_version": {
+        "generation_1": "2147253",
+        "generation_2": "2147473"
+      }
+    },
+    "method": "terraform apply -replace on the task-owned access key, against the live project",
+    "previous_design_revision_after": 1,
+    "previous_design_revision_before": 1,
+    "previous_design_would_not_have_rotated": true,
+    "previous_key_after_rotation": "signed PUT rejected with HTTP 403",
+    "resource_version_after": 0,
+    "resource_version_before": 0,
+    "rollout_identity_after": 27037682,
+    "rollout_identity_before": 19020617,
+    "rollout_identity_changed_on_generation_bump": true,
+    "rollout_identity_changed_on_key_replacement": true,
+    "rollout_identity_generation_2": 43814898,
+    "rotated_key_smoke_passed": true,
+    "secret_present_in_terraform_state": false
+  },
+  "exact_sha_plans": {
+    "command": "./inference-stack plan --var-file <h100>/terraform.tfvars --run-root <h100>/run",
+    "commit": "79647d5126333767714e02baa8b65289eb98b287",
+    "layers": {
+      "configuration": {
+        "actions": {
+          "update": 1
+        },
+        "applied": false,
+        "changed_addresses": [
+          "terraform_data.deployment_contract"
+        ],
+        "destroy": 0,
+        "plan_json": "configuration.plan.json",
+        "replace": 0
+      },
+      "foundation": {
+        "actions": {
+          "delete/create": 2,
+          "no-op": 27,
+          "update": 1
+        },
+        "applied": false,
+        "changed_addresses": [
+          "kubernetes_config_map_v1.cluster_contract",
+          "terraform_data.cluster_contract",
+          "terraform_data.kueue_deployment_admission_ready"
+        ],
+        "destroy": 0,
+        "plan_json": "foundation-plan.plan.json",
+        "replace": 2
+      },
+      "infrastructure": {
+        "actions": {
+          "no-op": 34
+        },
+        "applied": true,
+        "changed_addresses": [],
+        "destroy": 0,
+        "plan_json": "infrastructure-plan.plan.json",
+        "replace": 0
+      },
+      "workloads": {
+        "actions": null,
+        "apply": "withheld until the controller, scheduler and image contracts are integrated and reviewed",
+        "blocked_by": "The wrapper refuses to plan workloads while the foundation plan is non-empty, and the foundation plan at this SHA is the pre-existing source_commit provenance replacement that the reviewer instructed must not be applied. Reaching an exact-SHA workloads plan needs one foundation apply of those two carriers.",
+        "destroy": null,
+        "last_measured": {
+          "actions": {
+            "create": 2,
+            "no-op": 80,
+            "update": 13
+          },
+          "at_provenance": "49ffc01b",
+          "created": [
+            "kubernetes_secret_v1.scientific_artifact_store[0]",
+            "terraform_data.scientific_artifacts_contract"
+          ],
+          "destroy": 0,
+          "replace": 0
+        },
+        "plan_json": null,
+        "replace": null
+      }
+    },
+    "retained_plan_files": {
+      "configuration": "scientific-artifact-store-plan-configuration-79647d512633.json",
+      "foundation": "scientific-artifact-store-plan-foundation-79647d512633.json",
+      "infrastructure": "scientific-artifact-store-plan-infrastructure-79647d512633.json"
+    },
+    "zero_destroy_and_replace": {
+      "configuration": true,
+      "foundation": false,
+      "infrastructure": true
+    }
+  },
+  "foundation_provenance_apply_at_49ffc01b": {
+    "changed_fields": [
+      "source_commit",
+      "accelerator_pool_contract_sha256"
+    ],
+    "cluster_contract_configmap_uid": "77651f35-8025-4e9a-90c7-964a7eb13b42 -> 85c07e1d-0929-47c0-ba6d-e2554daca610",
+    "consumers": "the ConfigMap is read only by the workloads Terraform stage at plan time; no running workload mounts it",
+    "continuity_after_apply": {
+      "clusterqueue inference-accelerators": "1 admitted, 0 pending",
+      "clusterqueue reference-data-cpu": "3 admitted, 0 pending",
+      "fs2-serve-control-plane": "2/2 ready",
+      "fs2-serve-control-plane-admin-console": "2/2 ready",
+      "fs2-serve-control-plane-model-controller": "2/2 ready",
+      "public /readyz": 200
+    },
+    "kueue_admission_ready_id": "c09f7f32-836b-f3ed-d20d-268e048f1e18 -> f934b293-53e8-7233-a3e8-0d802e349219",
+    "not_repeated_at_this_sha": "the equivalent plan exists at this SHA and was deliberately not applied",
+    "state_serial": "232 -> 238",
+    "why": "The wrapper records the deploy commit and stages/foundation keys two contract carriers on it. Pre-existing repository design, untouched by this task; it fires on any commit advance."
+  },
+  "identifier_policy": "Exact cloud resource IDs and absolute state paths are deliberately not checked in; the unredacted receipts live in the retained run root.",
+  "live_smoke": {
+    "absence_rule": "an exact 404 for every required probe; 403 is refused as proof",
+    "deletion_proven": true,
+    "finalize_digest_matches": true,
+    "finalize_size_matches": true,
+    "observed_at": "2026-09-03T03:46:01+00:00",
+    "outside_scope_put_status": 403,
+    "passed": true,
+    "receipt": "scientific-artifacts/evidence/h100-live-smoke.json",
+    "required_absence_probes": [
+      "current",
+      "previously_signed_handle",
+      "written_version"
+    ],
+    "signed_get_status": 200,
+    "signed_put_status": 200,
+    "tenant_prefixes_disjoint": true,
+    "verified_absent_after_cleanup": {
+      "current": {
+        "absent": true,
+        "status": 404
+      },
+      "previously_signed_handle": {
+        "absent": true,
+        "status": 404
+      },
+      "written_version": {
+        "absent": true,
+        "status": 404
+      }
+    }
+  },
+  "provenance_note": "These plans and this smoke were produced from a clean worktree at the commit named above. A commit cannot contain artifacts generated from its own hash, so the checked-in copy of this receipt lands in the immediately following commit and the SHA-exact originals are retained in the run root.",
+  "recorded_at": "2026-09-03T03:46:18+00:00",
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-store-evidence/v2",
+  "secret_safety_scope": "The no-secret claim covers the scientific artifact store credential only. The foundation and workloads stages legitimately consume pre-existing Grafana and NVCR inputs supplied by the operator environment; this task neither adds nor changes them.",
+  "target": {
+    "cluster": "k8s-inference-h100",
+    "gpu_usage": "none; the store is object-storage only and allocated no GPU",
+    "kube_context": "k8s-inference-h100",
+    "nebius_profile": "sandbox",
+    "project": "<project-id: see retained run-root receipt>",
+    "region": "eu-north1",
+    "run_root": "<state-root>/.local/state/k8s-inference-dual-acceptance/h100/run"
+  },
+  "working_tree": "clean"
+}

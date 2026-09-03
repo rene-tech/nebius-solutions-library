@@ -148,10 +148,17 @@ one-day noncurrent-version and delete-marker rules exist.
 
 ## Evidence
 
-`evidence/h100-deployment-20260903.json` records the live run against
-`project-e00rene` / `k8s-inference-h100` in `eu-north1`: resource IDs, the
-bucket policy and lifecycle as the cloud reports them, the four-layer wrapper
-plan action counts, the credential rotation, and cleanup.
-`evidence/h100-live-smoke-20260903.json` is the raw smoke receipt. Neither
-contains credential material. The same two documents are written into the
-retained run root beside the deployment state.
+`evidence/h100-deployment.json` records the live run against `project-e00rene` /
+`k8s-inference-h100` in `eu-north1`: the bucket policy and lifecycle as the
+cloud reports them, the exact-SHA wrapper plan action counts, the real key
+rotation, and the cleanup proof. `evidence/h100-live-smoke.json` is the raw
+smoke receipt. Neither contains credential material, and both are redacted of
+cloud IDs and absolute paths; the unredacted originals plus the saved plan JSON
+for each stage are retained in the run root.
+
+The configuration and infrastructure layers plan clean at the recorded commit.
+The foundation layer plans two replacements there, of the cluster-contract
+ConfigMap and the Kueue admission-ready marker. Both are keyed on
+`source_commit` by `stages/foundation`, which this task does not touch, so they
+fire on any commit advance; the workloads layer cannot be planned until one of
+those foundation applies has happened.
