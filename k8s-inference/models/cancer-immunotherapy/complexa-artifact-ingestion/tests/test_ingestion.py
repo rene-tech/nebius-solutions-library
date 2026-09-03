@@ -30,22 +30,41 @@ REPO = ROOT.parents[2]
 ADAPTERS = REPO / "components/control-plane/src/fs2_serve/scientific_batch/adapters"
 
 
-def localization_adapters() -> Path | None:
-    """Where the reviewed successor's verifier lives, if it is available here.
+def _has_adapters(candidate: Path) -> bool:
+    return (candidate / "localization.py").is_file() and (candidate / "primitives.py").is_file()
+
+
+def localization_source() -> tuple[Path | None, str]:
+    """Where the reviewed successor's verifier comes from, and on what authority.
 
     The promoter is deliberately not vendored: it belongs to the localization
-    remediation task. Until that lands on this branch the promotion tests skip
-    rather than test a copy, because a copy is exactly the thing the content
-    addressing exists to prevent.
+    remediation task, and a vendored copy is exactly what content addressing
+    exists to prevent.
+
+    Once that core is committed in this tree it is the *only* source. The
+    environment override cannot shadow it, so a green run can never be a run
+    against some other checkout's uncommitted code, and the promotion and
+    reclaim tests can no longer be skipped. The override exists solely for the
+    window before the core lands, and it is reported as such.
     """
 
+    if _has_adapters(ADAPTERS):
+        return ADAPTERS, "in-tree"
     override = os.environ.get("FS2_LOCALIZATION_ADAPTERS")
-    candidates = [Path(override)] if override else []
-    candidates.append(ADAPTERS)
-    for candidate in candidates:
-        if (candidate / "localization.py").is_file() and (candidate / "primitives.py").is_file():
-            return candidate
-    return None
+    if override and _has_adapters(Path(override)):
+        return Path(override), "override"
+    return None, "absent"
+
+
+def localization_adapters() -> Path | None:
+    return localization_source()[0]
+
+
+def adapter_digests(adapters: Path) -> dict[str, str]:
+    return {
+        name: hashlib.sha256((adapters / name).read_bytes()).hexdigest()
+        for name in ("localization.py", "primitives.py")
+    }
 
 
 def build_package(parent: Path, adapters: Path) -> Path:
@@ -413,6 +432,56 @@ class RendererTests(unittest.TestCase):
         self.assertIn("complexa-protein", command)
         self.assertIn("--continue-on-artifact-error", command)
         self.assertIn("/claim/a/b/.receipts/staging.r1.json", command)
+
+
+class LocalizationSourceTests(unittest.TestCase):
+    """The promotion and reclaim suites must not be skippable once the core lands."""
+
+    def test_the_in_tree_core_cannot_be_shadowed_by_the_override(self) -> None:
+        if not _has_adapters(ADAPTERS):
+            self.skipTest("the localization core is not committed in this tree yet")
+        original = os.environ.get("FS2_LOCALIZATION_ADAPTERS")
+        os.environ["FS2_LOCALIZATION_ADAPTERS"] = "/nonexistent/elsewhere"
+        try:
+            adapters, origin = localization_source()
+        finally:
+            if original is None:
+                os.environ.pop("FS2_LOCALIZATION_ADAPTERS", None)
+            else:
+                os.environ["FS2_LOCALIZATION_ADAPTERS"] = original
+        self.assertEqual(origin, "in-tree")
+        self.assertEqual(adapters, ADAPTERS)
+
+    def test_promotion_and_reclaim_do_not_skip_once_the_core_is_in_tree(self) -> None:
+        if not _has_adapters(ADAPTERS):
+            self.skipTest("the localization core is not committed in this tree yet")
+        self.assertNotEqual(localization_source()[1], "absent")
+        for suite in (PromotionTests, ReclaimTests):
+            self.assertFalse(getattr(suite, "__unittest_skip__", False),
+                             f"{suite.__name__} must run against the committed core")
+
+    def test_the_committed_evidence_names_the_code_that_ran(self) -> None:
+        # Whatever produced the live receipts has to be identified in-tree, so a
+        # reader can tell which localization core the published generations were
+        # promoted by rather than inferring it.
+        identity = json.loads((ROOT / "evidence" / "code-identity.json").read_text())
+        self.assertIn("localization_core", identity)
+        core = identity["localization_core"]
+        for field in ("state", "localization_py_sha256", "primitives_py_sha256", "configmap_sha256"):
+            self.assertIn(field, core)
+        self.assertIn(core["state"], {"uncommitted-worktree", "committed-in-tree"})
+        for field in ("localization_py_sha256", "primitives_py_sha256", "configmap_sha256"):
+            self.assertRegex(core[field], r"^[0-9a-f]{64}$")
+
+    def test_the_recorded_core_matches_the_source_actually_resolved(self) -> None:
+        adapters, origin = localization_source()
+        if origin != "in-tree":
+            self.skipTest("only meaningful once the core is committed in this tree")
+        identity = json.loads((ROOT / "evidence" / "code-identity.json").read_text())["localization_core"]
+        self.assertEqual(identity["state"], "committed-in-tree")
+        digests = adapter_digests(adapters)
+        self.assertEqual(identity["localization_py_sha256"], digests["localization.py"])
+        self.assertEqual(identity["primitives_py_sha256"], digests["primitives.py"])
 
 
 CATALOG = REPO / "model-artifacts"
@@ -954,7 +1023,93 @@ class ReclaimTests(PromotionBase):
         out = self.tmp / "reclaim.json"
         self.assertEqual(self.reclaim(receipt, staging, out), 1)
         self.assertTrue((outside / "a.ckpt").is_file())
-        self.assertIn("outside the staging root", json.loads(out.read_text())["refused"][0]["error"])
+        self.assertTrue((staging / "demo" / "a.ckpt").is_file())
+        self.assertIn("names source_root", json.loads(out.read_text())["refused"][0]["error"])
+
+    def test_same_size_corruption_of_a_published_file_blocks_release(self) -> None:
+        # The adversarial case a size check cannot see: the length is right and
+        # the marker still describes what *should* be there, so only rehashing
+        # the bytes catches it. This is the last gate before the ingress copy is
+        # destroyed, so it has to catch it.
+        receipt, staging, _ = self.promoted({"a.ckpt": blob(4_096, 149)})
+        entry = json.loads(receipt.read_text())["generations"][0]
+        published = Path(entry["published_path"])
+        published.chmod(0o755)
+        target = published / "a.ckpt"
+        target.chmod(0o644)
+        replacement = bytearray(blob(4_096, 149))
+        replacement[2_048] ^= 0xFF  # one flipped bit, identical length
+        target.write_bytes(bytes(replacement))
+        self.assertEqual(target.stat().st_size, entry["files"][0]["bytes"])
+
+        out = self.tmp / "reclaim.json"
+        self.assertEqual(self.reclaim(receipt, staging, out), 1)
+        self.assertTrue((staging / "demo" / "a.ckpt").is_file())
+        self.assertIn("reads back as sha256", json.loads(out.read_text())["refused"][0]["error"])
+
+    def test_a_broadened_source_root_blocks_release(self) -> None:
+        # A receipt that names the staging root itself would take every
+        # artifact's ingress and the receipts directory with it.
+        receipt, staging, _ = self.promoted({"a.ckpt": blob(1_500, 151)})
+        document = json.loads(receipt.read_text())
+        document["generations"][0]["source_root"] = str(staging)
+        receipt.write_text(json.dumps(document))
+        sibling = staging / "other-artifact"
+        sibling.mkdir()
+        (sibling / "keep.ckpt").write_bytes(b"another artifact's bytes")
+
+        out = self.tmp / "reclaim.json"
+        self.assertEqual(self.reclaim(receipt, staging, out), 1)
+        self.assertTrue((sibling / "keep.ckpt").is_file())
+        self.assertTrue((staging / "demo" / "a.ckpt").is_file())
+        self.assertIn("names source_root", json.loads(out.read_text())["refused"][0]["error"])
+
+    def test_a_sibling_source_root_inside_the_staging_root_blocks_release(self) -> None:
+        # Containment is not sufficient: this path is inside the staging root
+        # and still belongs to a different artifact.
+        receipt, staging, _ = self.promoted({"a.ckpt": blob(1_700, 157)})
+        document = json.loads(receipt.read_text())
+        document["generations"][0]["source_root"] = str(staging / "someone-else")
+        receipt.write_text(json.dumps(document))
+        victim = staging / "someone-else"
+        victim.mkdir()
+        (victim / "keep.ckpt").write_bytes(b"not ours")
+
+        out = self.tmp / "reclaim.json"
+        self.assertEqual(self.reclaim(receipt, staging, out), 1)
+        self.assertTrue((victim / "keep.ckpt").is_file())
+        self.assertIn("names source_root", json.loads(out.read_text())["refused"][0]["error"])
+
+    def test_a_traversing_artifact_id_blocks_release(self) -> None:
+        receipt, staging, _ = self.promoted({"a.ckpt": blob(1_300, 163)})
+        document = json.loads(receipt.read_text())
+        document["generations"][0]["artifact_id"] = "../escape"
+        document["generations"][0].pop("source_root", None)
+        receipt.write_text(json.dumps(document))
+        out = self.tmp / "reclaim.json"
+        self.assertEqual(self.reclaim(receipt, staging, out), 1)
+        self.assertIn("illegal artifact_id", json.loads(out.read_text())["refused"][0]["error"])
+
+    def test_a_receipt_without_a_usable_digest_blocks_release(self) -> None:
+        # Rehashing is the gate, so a receipt that carries nothing to compare
+        # against must fail rather than fall back to a size check.
+        receipt, staging, _ = self.promoted({"a.ckpt": blob(1_900, 167)})
+        document = json.loads(receipt.read_text())
+        document["generations"][0]["files"][0].pop("sha256")
+        receipt.write_text(json.dumps(document))
+        out = self.tmp / "reclaim.json"
+        self.assertEqual(self.reclaim(receipt, staging, out), 1)
+        self.assertTrue((staging / "demo" / "a.ckpt").is_file())
+        self.assertIn("no usable sha256", json.loads(out.read_text())["refused"][0]["error"])
+
+    def test_the_receipt_records_every_rehashed_published_file(self) -> None:
+        receipt, staging, _ = self.promoted({"a.ckpt": blob(2_300, 173), "b.ckpt": blob(1_100, 179)})
+        out = self.tmp / "reclaim.json"
+        self.assertEqual(self.reclaim(receipt, staging, out), 0)
+        rehashed = json.loads(out.read_text())["released"][0]["published_files_rehashed"]
+        self.assertEqual(sorted(item["path"] for item in rehashed), ["a.ckpt", "b.ckpt"])
+        for item in rehashed:
+            self.assertRegex(item["sha256"], r"^[0-9a-f]{64}$")
 
     def test_a_truncated_published_file_blocks_release(self) -> None:
         receipt, staging, _ = self.promoted({"a.ckpt": blob(2_600, 127)})

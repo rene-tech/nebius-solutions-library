@@ -1,0 +1,124 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "labels": {
+      "fs2.nebius.ai/component": "complexa-artifact-ingestion",
+      "fs2.nebius.ai/role": "reclaim",
+      "fs2.nebius.ai/run-id": "r20260903dry"
+    },
+    "name": "fs2-complexa-reclaim-r20260903dry",
+    "namespace": "fs2-academic-poc"
+  },
+  "spec": {
+    "activeDeadlineSeconds": 3600,
+    "backoffLimit": 0,
+    "completions": 1,
+    "parallelism": 1,
+    "template": {
+      "metadata": {
+        "labels": {
+          "fs2.nebius.ai/component": "complexa-artifact-ingestion",
+          "fs2.nebius.ai/role": "reclaim",
+          "fs2.nebius.ai/run-id": "r20260903dry"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "command": [
+              "python3",
+              "/opt/fs2-ingestion/reclaim_staging.py",
+              "--promotion-receipt",
+              "/reference/scientific-localization/public/.receipts/promotion.r20260903b.json",
+              "--staging-root",
+              "/claim/scientific-ingestion/fs2-proteina-complexa-r20260903/staging",
+              "--receipt",
+              "/claim/scientific-ingestion/fs2-proteina-complexa-r20260903/staging/.receipts/reclaim.r20260903dry.json",
+              "--dry-run"
+            ],
+            "env": [
+              {
+                "name": "PYTHONUNBUFFERED",
+                "value": "1"
+              }
+            ],
+            "image": "python:3.11-slim",
+            "name": "reclaim",
+            "resources": {
+              "limits": {
+                "cpu": "200m",
+                "memory": "256Mi"
+              },
+              "requests": {
+                "cpu": "200m",
+                "memory": "256Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true,
+              "runAsGroup": 65532,
+              "runAsUser": 65532
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/claim",
+                "name": "claim"
+              },
+              {
+                "mountPath": "/reference",
+                "name": "reference",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/opt/fs2-ingestion",
+                "name": "tool",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "nodeSelector": {
+          "capacity.fs2.nebius/pool": "system",
+          "storage.fs2.nebius/shared-cache": "true"
+        },
+        "restartPolicy": "Never",
+        "securityContext": {
+          "runAsNonRoot": true,
+          "supplementalGroups": [
+            65532,
+            1000
+          ]
+        },
+        "volumes": [
+          {
+            "name": "claim",
+            "persistentVolumeClaim": {
+              "claimName": "academic-assets-runtime-rwx"
+            }
+          },
+          {
+            "hostPath": {
+              "path": "/mnt/fs2-reference-data/data",
+              "type": "Directory"
+            },
+            "name": "reference"
+          },
+          {
+            "configMap": {
+              "defaultMode": 365,
+              "name": "fs2-complexa-tools-r20260903b"
+            },
+            "name": "tool"
+          }
+        ]
+      }
+    }
+  }
+}

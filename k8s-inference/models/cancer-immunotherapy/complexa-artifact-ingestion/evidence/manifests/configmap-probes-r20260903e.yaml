@@ -1,0 +1,488 @@
+apiVersion: v1
+data:
+  complexa_loader_probe.py: |
+    #!/usr/bin/env python3
+    """Prove the runtime can actually load a published generation, not just mount it.
+
+    Verifying a tree proves the bytes. This proves the model's own loader accepts
+    them, which is a different claim and the one that was silently unproven before:
+    a checkpoint can be byte-perfect and still fail to open because it was saved by
+    an incompatible serializer or is not a checkpoint at all.
+
+    The probe refuses a mount without its terminal marker before it reads anything,
+    so a regression cannot pass by loading from somewhere unexpected.
+    """
+
+    from __future__ import annotations
+
+    import argparse
+    import hashlib
+    import json
+    import sys
+    import time
+    from pathlib import Path
+    from typing import Any
+
+    MARKER_NAME = ".fs2-runtime-tree.json"
+
+
+    def read_marker(mount: Path, expect_generation: str | None) -> dict[str, Any]:
+        marker = mount / MARKER_NAME
+        if marker.is_symlink() or not marker.is_file():
+            raise SystemExit(f"{mount}: no terminal marker; this is not a published generation")
+        document = json.loads(marker.read_text())
+        generation = document.get("generation")
+        # The generation directory is named by the digest of its own content, so the
+        # marker disagreeing with the path it sits in means one of them is lying.
+        if mount.name != generation:
+            raise SystemExit(f"{mount}: marker names generation {generation!r}, path says {mount.name!r}")
+        if expect_generation and generation != expect_generation:
+            raise SystemExit(f"{mount}: expected generation {expect_generation}, mounted {generation}")
+        if not document.get("read_only", False):
+            raise SystemExit(f"{mount}: marker does not describe a read-only generation")
+        return document
+
+
+    def describe(value: Any, depth: int = 0) -> dict[str, Any]:
+        """Summarize a loaded checkpoint without holding another copy of it."""
+
+        import torch
+
+        if isinstance(value, torch.Tensor):
+            return {"kind": "tensor", "dtype": str(value.dtype), "shape": list(value.shape),
+                    "elements": int(value.numel())}
+        if isinstance(value, dict):
+            tensors = 0
+            elements = 0
+            for item in value.values():
+                if isinstance(item, torch.Tensor):
+                    tensors += 1
+                    elements += int(item.numel())
+                elif isinstance(item, dict) and depth < 3:
+                    nested = describe(item, depth + 1)
+                    tensors += int(nested.get("tensors", 0))
+                    elements += int(nested.get("elements", 0))
+            return {"kind": "mapping", "keys": sorted(value)[:24], "key_count": len(value),
+                    "tensors": tensors, "elements": elements}
+        return {"kind": type(value).__name__}
+
+
+    def load(path: Path, *, weights_only: bool, mmap: bool) -> tuple[Any, str]:
+        import torch
+
+        try:
+            return torch.load(path, map_location="cpu", weights_only=weights_only, mmap=mmap), \
+                f"weights_only={weights_only},mmap={mmap}"
+        except Exception:  # noqa: BLE001 - the fallback below is the point
+            if not weights_only:
+                raise
+            # A training checkpoint carries optimizer and hyper-parameter objects that
+            # the restricted unpickler refuses. Falling back is safe here because the
+            # bytes were already digest-verified before publication.
+            return torch.load(path, map_location="cpu", weights_only=False, mmap=mmap), \
+                f"weights_only=False,mmap={mmap}"
+
+
+    def main(argv: list[str] | None = None) -> int:
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument("--mount", type=Path, action="append", required=True, dest="mounts")
+        parser.add_argument("--expect-generation", action="append", default=[], dest="expected")
+        parser.add_argument("--spot-check-bytes", type=int, default=8 * 1024 * 1024,
+                            help="prefix hashed per file as a cheap content spot check")
+        parser.add_argument("--report", type=Path)
+        options = parser.parse_args(argv)
+
+        import torch
+
+        report: dict[str, Any] = {
+            "schema": "fs2-serve.nebius.ai/scientific-loader-probe/v1",
+            "torch_version": torch.__version__,
+            "artifacts": [],
+        }
+        failures = 0
+
+        for index, mount in enumerate(options.mounts):
+            expected = options.expected[index] if index < len(options.expected) else None
+            marker = read_marker(mount, expected)
+            entry: dict[str, Any] = {
+                "mount": str(mount),
+                "artifact_id": marker["artifact_id"],
+                "generation": marker["generation"],
+                "source_uri": marker.get("source_uri"),
+                "source_revision": marker.get("source_revision"),
+                "files": [],
+            }
+            for path in sorted(item for item in mount.iterdir() if item.name != MARKER_NAME):
+                started = time.monotonic()
+                try:
+                    value, mode = load(path, weights_only=True, mmap=True)
+                except Exception as error:  # noqa: BLE001 - report, do not abort the run
+                    failures += 1
+                    entry["files"].append({"path": path.name, "loaded": False, "error": str(error)[:400]})
+                    print(f"{mount.name}/{path.name}: FAILED to load: {error}", flush=True)
+                    continue
+                summary = describe(value)
+                prefix = hashlib.sha256(path.open("rb").read(options.spot_check_bytes)).hexdigest()
+                record = {
+                    "path": path.name,
+                    "bytes": path.stat().st_size,
+                    "loaded": True,
+                    "load_mode": mode,
+                    "load_seconds": round(time.monotonic() - started, 3),
+                    "prefix_sha256": prefix,
+                    "prefix_bytes": min(options.spot_check_bytes, path.stat().st_size),
+                    **summary,
+                }
+                entry["files"].append(record)
+                print(f"{mount.name}/{path.name}: loaded {record['bytes']} bytes as {summary['kind']}"
+                      f" with {summary.get('tensors', 0)} tensors / {summary.get('elements', 0)} elements"
+                      f" in {record['load_seconds']}s ({mode})", flush=True)
+                del value
+            report["artifacts"].append(entry)
+
+        report["failures"] = failures
+        if options.report:
+            options.report.parent.mkdir(parents=True, exist_ok=True)
+            options.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        print(json.dumps({"failures": failures,
+                          "artifacts": [item["artifact_id"] for item in report["artifacts"]]}), flush=True)
+        return 1 if failures else 0
+
+
+    if __name__ == "__main__":
+        sys.exit(main())
+  generation_visibility_probe.py: |
+    #!/usr/bin/env python3
+    """Prove a published generation is readable, and correct, from a consumer node.
+
+    Publication happened on a storage-capable CPU node. The models run on H100
+    nodes. Those are different machines reaching the reference plane through
+    different mounts, and "it was written correctly" is not the same claim as "the
+    node that will consume it can read exactly those bytes". This probe makes the
+    second claim, from the consumer node class, with no write access at all.
+
+    It re-hashes every contracted file in full rather than trusting sizes or the
+    marker, because a shared filesystem exposed to a second client is precisely
+    where a partially visible or stale file would show up.
+    """
+
+    from __future__ import annotations
+
+    import argparse
+    import hashlib
+    import json
+    import os
+    import socket
+    import sys
+    import time
+    from pathlib import Path
+    from typing import Any
+
+    MARKER_NAME = ".fs2-runtime-tree.json"
+    CHUNK = 8 * 1024 * 1024
+    SCHEMA = "fs2-serve.nebius.ai/scientific-generation-visibility/v1"
+
+
+    def node_digest() -> str:
+        """A stable, non-identifying stand-in for the node.
+
+        These receipts are committed to a public repository and the downward API
+        hands a pod the opaque instance ID, so the raw value stays out. A truncated
+        digest still answers the only question this field was ever for: whether two
+        receipts came from the same machine.
+        """
+
+        raw = os.environ.get("FS2_NODE_NAME") or socket.gethostname()
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+    def hash_file(path: Path) -> tuple[int, str]:
+        digest = hashlib.sha256()
+        size = 0
+        with path.open("rb") as handle:
+            while True:
+                block = handle.read(CHUNK)
+                if not block:
+                    break
+                digest.update(block)
+                size += len(block)
+        return size, digest.hexdigest()
+
+
+    def check(root: Path, artifact: dict[str, Any], generation: str) -> dict[str, Any]:
+        artifact_id = artifact["artifact_id"]
+        mount = root / artifact_id / "sha256" / generation
+        problems: list[str] = []
+        if mount.is_symlink() or not mount.is_dir():
+            return {"artifact_id": artifact_id, "generation": generation, "mount": str(mount),
+                    "visible": False, "problems": ["generation directory is not visible from this node"]}
+
+        if os.access(mount, os.W_OK):
+            problems.append("generation directory is writable from a consumer node")
+
+        marker_record: dict[str, Any] = {}
+        marker = mount / MARKER_NAME
+        if not marker.is_file() or marker.is_symlink():
+            problems.append("terminal marker is missing")
+        else:
+            payload = marker.read_bytes()
+            document = json.loads(payload)
+            marker_record = {
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "generation": document.get("generation"),
+                "artifact_id": document.get("artifact_id"),
+                "source_uri": document.get("source_uri"),
+                "source_revision": document.get("source_revision"),
+                "inventory_algorithm": document.get("inventory_algorithm"),
+                "host_root": document.get("host_root"),
+                "total_bytes": document.get("total_bytes"),
+                "entry_count": document.get("entry_count"),
+            }
+            if document.get("generation") != generation:
+                problems.append(f"marker names generation {document.get('generation')!r}")
+            if document.get("artifact_id") != artifact_id:
+                problems.append(f"marker names artifact {document.get('artifact_id')!r}")
+            if document.get("source_revision") != artifact["source"]["revision"]:
+                problems.append("marker source revision disagrees with the contract")
+
+        present = sorted(item.name for item in mount.iterdir() if item.name != MARKER_NAME)
+        expected = sorted(entry["path"] for entry in artifact["files"])
+        if present != expected:
+            problems.append(f"holds {present}, contract declares {expected}")
+
+        files: list[dict[str, Any]] = []
+        for entry in artifact["files"]:
+            path = mount / entry["path"]
+            if path.is_symlink() or not path.is_file():
+                problems.append(f"{entry['path']} is not a regular file")
+                continue
+            started = time.monotonic()
+            size, digest = hash_file(path)
+            seconds = time.monotonic() - started
+            matched = size == entry["bytes"] and digest == entry["sha256"]
+            if not matched:
+                problems.append(f"{entry['path']} reads back as {size} bytes / {digest}")
+            if os.access(path, os.W_OK):
+                problems.append(f"{entry['path']} is writable from a consumer node")
+            files.append({
+                "path": entry["path"], "bytes": size, "sha256": digest, "matches_contract": matched,
+                "read_seconds": round(seconds, 3),
+                "read_mb_per_second": round(size / seconds / 1e6, 1) if seconds > 0 else None,
+            })
+
+        return {
+            "artifact_id": artifact_id,
+            "generation": generation,
+            "mount": str(mount),
+            "visible": True,
+            "marker": marker_record,
+            "files": files,
+            "problems": problems,
+        }
+
+
+    def main(argv: list[str] | None = None) -> int:
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument("--contract", type=Path, required=True)
+        parser.add_argument("--generations-root", type=Path, required=True)
+        parser.add_argument("--expect", action="append", required=True, metavar="ARTIFACT_ID=GENERATION")
+        parser.add_argument("--report", type=Path)
+        options = parser.parse_args(argv)
+
+        contract = json.loads(options.contract.read_text())
+        by_id = {artifact["artifact_id"]: artifact for artifact in contract["artifacts"]}
+
+        results: list[dict[str, Any]] = []
+        for item in options.expect:
+            artifact_id, separator, generation = item.partition("=")
+            if not separator:
+                raise SystemExit("--expect takes ARTIFACT_ID=GENERATION")
+            if artifact_id not in by_id:
+                raise SystemExit(f"contract declares no artifact {artifact_id}")
+            result = check(options.generations_root, by_id[artifact_id], generation)
+            results.append(result)
+            state = "OK" if not result["problems"] else "PROBLEM"
+            print(f"{artifact_id}: {state} {result['mount']}", flush=True)
+            for problem in result["problems"]:
+                print(f"  - {problem}", flush=True)
+            for record in result.get("files", []):
+                print(f"  {record['path']}: {record['bytes']} bytes, sha256 {record['sha256'][:16]}…, "
+                      f"matches={record['matches_contract']}, {record['read_mb_per_second']} MB/s", flush=True)
+
+        problems = sum(len(item["problems"]) for item in results)
+        document = {
+            "schema": SCHEMA,
+            "node_digest": node_digest(),
+            "generations_root": str(options.generations_root),
+            "artifacts": results,
+            "problems": problems,
+        }
+        if options.report:
+            options.report.parent.mkdir(parents=True, exist_ok=True)
+            options.report.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+        print(json.dumps({"problems": problems, "node_digest": document["node_digest"]}), flush=True)
+        return 1 if problems else 0
+
+
+    if __name__ == "__main__":
+        sys.exit(main())
+  ingestion-contract.json: |
+    {
+      "schema": "fs2-serve.nebius.ai/scientific-file-ingestion/v1",
+      "notes": [
+        "Source identities are consumed verbatim from the accepted public artifact catalog now on main: k8s-inference/model-artifacts/manifest-complexa-{protein,ligand,ame}.json and manifest-rosettafold3-checkpoint.json. The catalog is the authority on what these artifacts are; only those identities were taken from it, never its cache-path contract.",
+        "They are restated here rather than read from the catalog because the staging job runs in-cluster from a ConfigMap and cannot read the repository. That duplication is checked: tests/test_ingestion.py CatalogAgreementTests compares every revision, file digest, byte count, licence and resolved URL against the catalog, so drift fails closed instead of quietly producing two answers.",
+        "These artifacts are published upstream as individually addressable files, not as an archive, so the archive/tree duality that governs safe-extract-tar artifacts does not apply. The downloaded set of verified files IS the tree.",
+        "tree.inventory_sha256 is deliberately absent. A generation is named by a digest measured from real bytes, which cannot be predicted from upstream metadata, and a contract that declared one up front would be asserting an identity it has not seen. The measured value lives in the promotion receipt and the binding handoff under evidence/, which is where a consumer pins it."
+      ],
+      "artifacts": [
+        {
+          "artifact_id": "complexa-protein",
+          "transform": "fetch-files",
+          "model_id": "proteina-complexa-protein-target-160m-v1",
+          "source": {
+            "uri": "hf://nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1",
+            "revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+            "resolver": "huggingface-resolve",
+            "license_id": "NVIDIA-Open-Model-License-2024-06",
+            "entitlement_state": "not-required"
+          },
+          "files": [
+            {
+              "path": "complexa.ckpt",
+              "bytes": 2934289381,
+              "sha256": "589db1741f29838c7961386f6b873087238c72682e56189b89e0ae02610c19e9"
+            },
+            {
+              "path": "complexa_ae.ckpt",
+              "bytes": 4100101779,
+              "sha256": "35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816"
+            }
+          ],
+          "tree": {
+            "mount_paths": ["/opt/fs2/artifacts/complexa-protein"],
+            "entry_count": 2,
+            "total_bytes": 7034391160,
+            "entry_path_pattern": "^complexa(_ae)?\\.ckpt$",
+            "inventory_algorithm": "fs2-tree-inventory/v2"
+          },
+          "consumers": [
+            {
+              "model_id": "proteina-complexa",
+              "reads": ["/opt/fs2/artifacts/complexa-protein/complexa.ckpt", "/opt/fs2/artifacts/complexa-protein/complexa_ae.ckpt"]
+            }
+          ]
+        },
+        {
+          "artifact_id": "complexa-ligand",
+          "transform": "fetch-files",
+          "model_id": "proteina-complexa-ligand-target-160m-v1",
+          "source": {
+            "uri": "hf://nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1",
+            "revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+            "resolver": "huggingface-resolve",
+            "license_id": "NVIDIA-Open-Model-License-2024-06",
+            "entitlement_state": "not-required"
+          },
+          "files": [
+            {
+              "path": "complexa_ligand.ckpt",
+              "bytes": 1790554392,
+              "sha256": "8175213eac5ec6433fed1756d055ce3f867129bfdb033040e1a0560ca558bfe5"
+            },
+            {
+              "path": "complexa_ligand_ae.ckpt",
+              "bytes": 4100184649,
+              "sha256": "898da17022cdeaaaea7caace41c8b6fe7bfcb78be4876b0113127eb9bb1527e6"
+            }
+          ],
+          "tree": {
+            "mount_paths": ["/opt/fs2/artifacts/complexa-ligand"],
+            "entry_count": 2,
+            "total_bytes": 5890739041,
+            "entry_path_pattern": "^complexa_ligand(_ae)?\\.ckpt$",
+            "inventory_algorithm": "fs2-tree-inventory/v2"
+          },
+          "consumers": [
+            {
+              "model_id": "proteina-complexa",
+              "reads": ["/opt/fs2/artifacts/complexa-ligand/complexa_ligand.ckpt", "/opt/fs2/artifacts/complexa-ligand/complexa_ligand_ae.ckpt"]
+            }
+          ]
+        },
+        {
+          "artifact_id": "complexa-ame",
+          "transform": "fetch-files",
+          "model_id": "proteina-complexa-ame-160m-v1",
+          "source": {
+            "uri": "hf://nvidia/NV-Proteina-Complexa-AME-160M-v1",
+            "revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+            "resolver": "huggingface-resolve",
+            "license_id": "NVIDIA-Open-Model-License-2024-06",
+            "entitlement_state": "not-required"
+          },
+          "files": [
+            {
+              "path": "complexa_ame.ckpt",
+              "bytes": 1792013880,
+              "sha256": "d11319693d024d0427abc356a86350a694a1cb7dceb8db642c8041e5a20a9f7b"
+            },
+            {
+              "path": "complexa_ame_ae.ckpt",
+              "bytes": 4100197925,
+              "sha256": "63b1358c5459e968628094fdc9a2a6a95ac003606fcf7b1a3a21174458a69734"
+            }
+          ],
+          "tree": {
+            "mount_paths": ["/opt/fs2/artifacts/complexa-ame"],
+            "entry_count": 2,
+            "total_bytes": 5892211805,
+            "entry_path_pattern": "^complexa_ame(_ae)?\\.ckpt$",
+            "inventory_algorithm": "fs2-tree-inventory/v2"
+          },
+          "consumers": [
+            {
+              "model_id": "proteina-complexa",
+              "reads": ["/opt/fs2/artifacts/complexa-ame/complexa_ame.ckpt", "/opt/fs2/artifacts/complexa-ame/complexa_ame_ae.ckpt"]
+            }
+          ]
+        },
+        {
+          "artifact_id": "rosettafold3-checkpoint",
+          "transform": "fetch-files",
+          "model_id": "rosettafold3-foundry-2024-01",
+          "source": {
+            "uri": "https://files.ipd.uw.edu/pub/rf3/",
+            "revision": "foundry-production-b02eed6a-checksum-lock",
+            "resolver": "direct-https",
+            "license_id": "BSD-3-Clause",
+            "entitlement_state": "not-required"
+          },
+          "files": [
+            {
+              "path": "rf3_foundry_01_24_latest_remapped.ckpt",
+              "bytes": 3038876446,
+              "sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0"
+            }
+          ],
+          "tree": {
+            "mount_paths": ["/opt/fs2/artifacts/rosettafold3-checkpoint"],
+            "entry_count": 1,
+            "total_bytes": 3038876446,
+            "entry_path_pattern": "^rf3_foundry_01_24_latest_remapped\\.ckpt$",
+            "inventory_algorithm": "fs2-tree-inventory/v2"
+          },
+          "consumers": [
+            {
+              "model_id": "proteina-complexa",
+              "reads": ["/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt"],
+              "role": "reward-and-evaluation"
+            }
+          ]
+        }
+      ]
+    }
+kind: ConfigMap
+metadata:
+  name: fs2-complexa-probes-r20260903e
+  namespace: fs2-academic-poc

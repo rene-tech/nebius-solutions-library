@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: fs2-complexa-loader-r20260903, namespace: fs2-academic-poc, labels: {fs2.nebius.ai/run-id: loader-r20260903}}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+  template:
+    metadata: {labels: {fs2.nebius.ai/run-id: loader-r20260903}}
+    spec:
+      restartPolicy: Never
+      nodeName: computeinstance-e00yq05c7pmqsy2grw
+      securityContext: {supplementalGroups: [1000]}
+      containers:
+      - name: probe
+        image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca
+        command:
+        - python
+        - /opt/probe/complexa_loader_probe.py
+        - --mount
+        - /reference/scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536
+        - --mount
+        - /reference/scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5
+        - --mount
+        - /reference/scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a
+        - --mount
+        - /reference/scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce
+        env: [{name: PYTHONUNBUFFERED, value: "1"}]
+        volumeMounts:
+        - {name: reference, mountPath: /reference, readOnly: true}
+        - {name: probe, mountPath: /opt/probe, readOnly: true}
+        resources: {requests: {cpu: "1", memory: 16Gi}, limits: {cpu: "1", memory: 16Gi}}
+      volumes:
+      - {name: reference, hostPath: {path: /mnt/fs2-reference-data/data, type: Directory}}
+      - {name: probe, configMap: {name: fs2-complexa-loader-probe, defaultMode: 0555}}

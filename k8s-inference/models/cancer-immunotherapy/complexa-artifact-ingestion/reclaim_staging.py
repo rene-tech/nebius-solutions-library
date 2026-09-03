@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -29,22 +30,49 @@ class ReclaimError(RuntimeError):
     """A safety gate refused to release source bytes."""
 
 
-def within(child: Path, parent: Path) -> bool:
-    try:
-        child.resolve().relative_to(parent.resolve())
-    except ValueError:
-        return False
-    return True
+CHUNK = 8 * 1024 * 1024
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
-def confirm_published(entry: dict[str, Any], marker_name: str) -> int:
-    """Look at the generation, not at the claim that it exists.
+def expected_source_root(staging_root: Path, artifact_id: str) -> Path:
+    """The only directory this task may release for a given artifact.
 
-    A published generation is named by the digest of its own content, so the
-    cheap checks here are strong ones: the path is the digest, the marker inside
-    it is byte-identical to the one the promoter recorded, and the file set still
-    weighs exactly what the contract said. Rehashing gigabytes would add nothing
-    the marker digest does not already pin.
+    Nothing is derived from the receipt here. A receipt is an input, and an
+    input that can name the directory to delete is an input that can be made to
+    name the wrong one, so the path is computed from the staging root and the
+    artifact identity and the receipt's own value is then required to match it
+    exactly. Containment alone is not enough: the staging root also holds the
+    receipts directory and any sibling artifact's bytes.
+    """
+
+    if "/" in artifact_id or artifact_id in {"", ".", ".."} or artifact_id.startswith("."):
+        raise ReclaimError(f"illegal artifact_id {artifact_id!r}")
+    return staging_root / artifact_id
+
+
+def hash_file(path: Path) -> tuple[int, str]:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as handle:
+        while True:
+            block = handle.read(CHUNK)
+            if not block:
+                break
+            digest.update(block)
+            size += len(block)
+    return size, digest.hexdigest()
+
+
+def confirm_published(entry: dict[str, Any], marker_name: str) -> tuple[int, list[dict[str, Any]]]:
+    """Read the generation and prove it, byte for byte, before anything is deleted.
+
+    The size of a file is not its identity. Corruption that preserves length --
+    a partially rewritten block, a torn write, a silently truncated-and-padded
+    replica -- passes a size check and a marker check alike, because the marker
+    describes what *should* be there rather than what is. This is the last gate
+    before bytes that cost hours to fetch are destroyed, so every file the
+    receipt names is rehashed in full and compared against the digest the
+    receipt recorded.
     """
 
     published = Path(entry["published_path"])
@@ -67,18 +95,28 @@ def confirm_published(entry: dict[str, Any], marker_name: str) -> int:
     expected = sorted(item["path"] for item in entry["files"])
     if present != expected:
         raise ReclaimError(f"{published}: holds {present}, the receipt promoted {expected}")
+
     total = 0
+    verified: list[dict[str, Any]] = []
     for item in entry["files"]:
+        recorded = item.get("sha256", "")
+        if not SHA256.fullmatch(recorded):
+            raise ReclaimError(f"{published}/{item['path']}: receipt carries no usable sha256")
         candidate = published / item["path"]
         if candidate.is_symlink() or not candidate.is_file():
             raise ReclaimError(f"{candidate}: is not a regular file in the published generation")
-        size = candidate.stat().st_size
+        size, actual = hash_file(candidate)
         if size != item["bytes"]:
             raise ReclaimError(f"{candidate}: holds {size} bytes, the receipt promoted {item['bytes']}")
+        if actual != recorded:
+            raise ReclaimError(
+                f"{candidate}: reads back as sha256 {actual}, the receipt promoted {recorded}"
+            )
         total += size
+        verified.append({"path": item["path"], "bytes": size, "sha256": actual})
     if total != entry["total_bytes"]:
         raise ReclaimError(f"{published}: holds {total} bytes, the receipt promoted {entry['total_bytes']}")
-    return total
+    return total, verified
 
 
 def directory_bytes(root: Path) -> int:
@@ -103,11 +141,18 @@ def main(argv: list[str] | None = None) -> int:
 
     for entry in promotion.get("generations", []):
         artifact_id = entry["artifact_id"]
-        source = Path(entry.get("source_root") or (options.staging_root / artifact_id))
         try:
-            if not within(source, options.staging_root):
-                raise ReclaimError(f"{source} is outside the staging root {options.staging_root}")
-            total = confirm_published(entry, entry.get("marker_name", ".fs2-runtime-tree.json"))
+            required = expected_source_root(options.staging_root, artifact_id)
+            declared = entry.get("source_root")
+            # The receipt must agree with the path this task computed, exactly.
+            # A broadened or rewritten source_root is the difference between
+            # releasing one artifact's ingress and releasing the staging root.
+            if declared is not None and Path(declared) != required:
+                raise ReclaimError(
+                    f"receipt names source_root {declared!r}, this artifact's ingress is {required}"
+                )
+            source = required
+            total, verified = confirm_published(entry, entry.get("marker_name", ".fs2-runtime-tree.json"))
             if not source.exists():
                 log(f"{artifact_id}: ingress already released")
                 continue
@@ -126,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
                 "generation": entry["generation"],
                 "published_path": entry["published_path"],
                 "published_bytes": total,
+                "published_files_rehashed": verified,
                 "dry_run": bool(options.dry_run),
             })
         except (ReclaimError, OSError, KeyError, ValueError) as error:

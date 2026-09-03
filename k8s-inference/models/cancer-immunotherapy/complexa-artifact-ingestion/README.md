@@ -32,12 +32,16 @@ pinned digest is.
 
 ## Two planes, and why the pipeline has three steps
 
-The tenant-private academic claim is **ingress only**. It is where bytes from the
-public internet land, because it is the volume a downloading pod can write. The
-**canonical** home for these public checkpoints is the Terraform-managed
-reference plane at `/mnt/fs2-reference-data/data`, which is where the models look
-and which has room to spare. Nothing public stays on the academic claim; only
-PyRosetta remains tenant-private there.
+The tenant-private academic claim is **ingress only** for these artifacts. It is
+where bytes from the public internet land, because it is the volume a downloading
+pod can write. The **canonical** home for these public checkpoints is the
+Terraform-managed reference plane at `/mnt/fs2-reference-data/data`.
+
+Nothing public stays on the academic claim. What does stay there is
+tenant-private and is **not** touched by this task: **both AlphaFold 3 and
+PyRosetta** remain tenant-private on that claim, under their own ownership and
+their own entitlements. Neither is copied to the reference plane, neither is
+made public, and no step here reads, moves, or re-permissions either of them.
 
 **Staging** (`fetch_artifacts.py`) downloads into a task-owned private directory
 on the ingress claim and publishes each file under its contracted name only after
@@ -201,7 +205,32 @@ and reclaim receipts beside it record what happened and when.
 
 The 21,856,218,452 ingress bytes were released after the generations were
 confirmed, returning the academic claim to its pre-ingestion 35.6 GiB free with
-the AlphaFold 3, PyRosetta, and localization trees untouched.
+the tenant-private AlphaFold 3 and PyRosetta trees, and the localization trees,
+untouched.
+
+## What this does not claim
+
+The outcome above is an **artifact outcome**: bytes of a known identity exist at
+a known immutable path and can be read and opened. Nothing more is asserted.
+
+- **No runtime or API readiness.** No model was served, no endpoint or route was
+  created, no request was issued against any of these checkpoints, and no
+  request-level receipt exists. Opening a checkpoint with `torch.load` is not
+  the same as a model being ready, and this task does not claim the latter.
+- **No RF3 readiness.** `rosettafold3-checkpoint` is staged and readable. It has
+  not been run, evaluated, or wired to any reward or evaluation path, and no
+  claim is made about its behaviour.
+- **Deployment-bound, not request-bound.** Every result here comes from Jobs
+  that mount a filesystem. The evidence binds images by kubelet-resolved digest
+  and records exit codes, but it is deployment-time evidence about bytes, not
+  serving-time evidence about a model.
+- **Promotion is pending re-binding.** The generations were promoted by a
+  localization core that was uncommitted at the time (`evidence/code-identity.json`
+  records its exact digests). The corrected successor is under review and has not
+  been consumed. Until it is accepted and merged, and promotion and reclaim are
+  re-run bound to that committed code, no claim is made that these generations
+  were produced by reviewer-accepted code.
+- **No PyRosetta binding receipt yet.** That is part of the same re-binding.
 
 ## Checks
 

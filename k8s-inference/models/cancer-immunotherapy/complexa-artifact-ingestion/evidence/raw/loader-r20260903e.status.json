@@ -1,0 +1,26 @@
+{
+  "container": "probe",
+  "exit_code": 0,
+  "finished_at": "2026-09-03T05:12:47Z",
+  "kubelet_resolved_image": "sha256:b455d68551fec946c4d56f3d12adf80a5e0e89118a4526ed0dc6d61944d7d462",
+  "kubelet_resolved_imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+  "namespace": "fs2-academic-poc",
+  "node": "computeinstance-e00yq05c7pmqsy2grw",
+  "node_selector": null,
+  "phase": "Succeeded",
+  "pod": "fs2-complexa-loader-evidence-r20260903e-qc8ll",
+  "reason": "Completed",
+  "resources": {
+    "limits": {
+      "cpu": "1",
+      "memory": "16Gi"
+    },
+    "requests": {
+      "cpu": "1",
+      "memory": "16Gi"
+    }
+  },
+  "spec_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+  "started_at": "2026-09-03T05:12:39Z",
+  "tolerations": []
+}

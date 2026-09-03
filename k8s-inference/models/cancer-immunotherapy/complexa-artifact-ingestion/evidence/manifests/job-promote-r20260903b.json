@@ -1,0 +1,188 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "labels": {
+      "fs2.nebius.ai/component": "complexa-artifact-ingestion",
+      "fs2.nebius.ai/role": "promote",
+      "fs2.nebius.ai/run-id": "r20260903b"
+    },
+    "name": "fs2-complexa-promote-r20260903b",
+    "namespace": "fs2-academic-poc"
+  },
+  "spec": {
+    "activeDeadlineSeconds": 10800,
+    "backoffLimit": 0,
+    "completions": 1,
+    "parallelism": 1,
+    "template": {
+      "metadata": {
+        "labels": {
+          "fs2.nebius.ai/component": "complexa-artifact-ingestion",
+          "fs2.nebius.ai/role": "promote",
+          "fs2.nebius.ai/run-id": "r20260903b"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "command": [
+              "python3",
+              "-c",
+              "print('promotion complete')"
+            ],
+            "image": "python:3.11-slim",
+            "name": "done",
+            "resources": {
+              "limits": {
+                "cpu": "100m",
+                "memory": "128Mi"
+              },
+              "requests": {
+                "cpu": "100m",
+                "memory": "128Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true,
+              "runAsGroup": 65532,
+              "runAsUser": 65532
+            }
+          }
+        ],
+        "initContainers": [
+          {
+            "command": [
+              "python3",
+              "/opt/fs2-ingestion/promote_generations.py",
+              "--contract",
+              "/opt/fs2-ingestion/ingestion-contract.json",
+              "--staging-root",
+              "/claim/scientific-ingestion/fs2-proteina-complexa-r20260903/staging",
+              "--generations-root",
+              "/reference/scientific-localization/public/generations",
+              "--localization-package-parent",
+              "/opt/fs2-localization",
+              "--tree-sub-path",
+              "scientific-localization/public/generations",
+              "--volume-kind",
+              "host-path",
+              "--host-root",
+              "/mnt/fs2-reference-data/data",
+              "--visibility",
+              "public",
+              "--allow-cross-filesystem-copy",
+              "--receipt",
+              "/reference/scientific-localization/public/.receipts/promotion.r20260903b.json",
+              "--artifact-id",
+              "complexa-protein",
+              "--artifact-id",
+              "complexa-ligand",
+              "--artifact-id",
+              "complexa-ame",
+              "--artifact-id",
+              "rosettafold3-checkpoint"
+            ],
+            "env": [
+              {
+                "name": "PYTHONUNBUFFERED",
+                "value": "1"
+              }
+            ],
+            "image": "python:3.11-slim",
+            "name": "promote",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true,
+              "runAsGroup": 1000,
+              "runAsUser": 1000
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/claim",
+                "name": "claim",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/reference",
+                "name": "reference"
+              },
+              {
+                "mountPath": "/opt/fs2-ingestion",
+                "name": "tool",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/opt/fs2-localization/fs2_localization",
+                "name": "verifier",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "nodeSelector": {
+          "capacity.fs2.nebius/pool": "system",
+          "storage.fs2.nebius/shared-cache": "true"
+        },
+        "restartPolicy": "Never",
+        "securityContext": {
+          "runAsNonRoot": true,
+          "supplementalGroups": [
+            65532,
+            1000
+          ]
+        },
+        "volumes": [
+          {
+            "name": "claim",
+            "persistentVolumeClaim": {
+              "claimName": "academic-assets-runtime-rwx"
+            }
+          },
+          {
+            "hostPath": {
+              "path": "/mnt/fs2-reference-data/data",
+              "type": "Directory"
+            },
+            "name": "reference"
+          },
+          {
+            "configMap": {
+              "defaultMode": 365,
+              "name": "fs2-complexa-tools-r20260903b"
+            },
+            "name": "tool"
+          },
+          {
+            "configMap": {
+              "defaultMode": 365,
+              "name": "fs2-complexa-verifier-r20260903a"
+            },
+            "name": "verifier"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "container": "probe",
+  "exit_code": 0,
+  "finished_at": "2026-09-03T05:12:17Z",
+  "kubelet_resolved_image": "docker.io/library/python:3.11-slim",
+  "kubelet_resolved_imageID": "docker.io/library/python@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534",
+  "namespace": "fs2-academic-poc",
+  "node": "computeinstance-e00m0hsph76ajt9sdb",
+  "node_selector": {
+    "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+    "storage.fs2.nebius/reference-data": "true"
+  },
+  "phase": "Succeeded",
+  "pod": "fs2-complexa-h100-evidence-r20260903e-dgbmz",
+  "reason": "Completed",
+  "resources": {
+    "limits": {
+      "cpu": "4",
+      "memory": "2Gi"
+    },
+    "requests": {
+      "cpu": "4",
+      "memory": "2Gi"
+    }
+  },
+  "spec_image": "python:3.11-slim",
+  "started_at": "2026-09-03T05:11:54Z",
+  "tolerations": [
+    {
+      "effect": "NoSchedule",
+      "key": "dedicated",
+      "operator": "Equal",
+      "value": "fs2-inference"
+    }
+  ]
+}

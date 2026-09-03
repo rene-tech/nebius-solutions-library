@@ -1,0 +1,144 @@
+{
+  "artifacts": [
+    {
+      "artifact_id": "complexa-protein",
+      "files": [
+        {
+          "bytes": 2934289381,
+          "matches_contract": true,
+          "path": "complexa.ckpt",
+          "read_mb_per_second": 1030.0,
+          "read_seconds": 2.849,
+          "sha256": "589db1741f29838c7961386f6b873087238c72682e56189b89e0ae02610c19e9"
+        },
+        {
+          "bytes": 4100101779,
+          "matches_contract": true,
+          "path": "complexa_ae.ckpt",
+          "read_mb_per_second": 971.5,
+          "read_seconds": 4.221,
+          "sha256": "35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816"
+        }
+      ],
+      "generation": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+      "marker": {
+        "artifact_id": "complexa-protein",
+        "entry_count": 2,
+        "generation": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "inventory_algorithm": "fs2-tree-inventory/v2",
+        "sha256": "b84403b26e5ac4acd2ea3203d3ea7936e8ef009a9ac1c19fbcfddd7c40667851",
+        "source_revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+        "source_uri": "hf://nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1",
+        "total_bytes": 7034391160
+      },
+      "mount": "/reference/scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+      "problems": [],
+      "visible": true
+    },
+    {
+      "artifact_id": "complexa-ligand",
+      "files": [
+        {
+          "bytes": 1790554392,
+          "matches_contract": true,
+          "path": "complexa_ligand.ckpt",
+          "read_mb_per_second": 954.0,
+          "read_seconds": 1.877,
+          "sha256": "8175213eac5ec6433fed1756d055ce3f867129bfdb033040e1a0560ca558bfe5"
+        },
+        {
+          "bytes": 4100184649,
+          "matches_contract": true,
+          "path": "complexa_ligand_ae.ckpt",
+          "read_mb_per_second": 965.4,
+          "read_seconds": 4.247,
+          "sha256": "898da17022cdeaaaea7caace41c8b6fe7bfcb78be4876b0113127eb9bb1527e6"
+        }
+      ],
+      "generation": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+      "marker": {
+        "artifact_id": "complexa-ligand",
+        "entry_count": 2,
+        "generation": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "inventory_algorithm": "fs2-tree-inventory/v2",
+        "sha256": "868551c2ec89d8296155ac5e5e0a674205cbc851c301ed58f32014d7fe404177",
+        "source_revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+        "source_uri": "hf://nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1",
+        "total_bytes": 5890739041
+      },
+      "mount": "/reference/scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+      "problems": [],
+      "visible": true
+    },
+    {
+      "artifact_id": "complexa-ame",
+      "files": [
+        {
+          "bytes": 1792013880,
+          "matches_contract": true,
+          "path": "complexa_ame.ckpt",
+          "read_mb_per_second": 960.1,
+          "read_seconds": 1.867,
+          "sha256": "d11319693d024d0427abc356a86350a694a1cb7dceb8db642c8041e5a20a9f7b"
+        },
+        {
+          "bytes": 4100197925,
+          "matches_contract": true,
+          "path": "complexa_ame_ae.ckpt",
+          "read_mb_per_second": 966.3,
+          "read_seconds": 4.243,
+          "sha256": "63b1358c5459e968628094fdc9a2a6a95ac003606fcf7b1a3a21174458a69734"
+        }
+      ],
+      "generation": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+      "marker": {
+        "artifact_id": "complexa-ame",
+        "entry_count": 2,
+        "generation": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "inventory_algorithm": "fs2-tree-inventory/v2",
+        "sha256": "18199cf0468000baefa7ed0cb604a2a7c64d0228ddf8d8e5579d6c1e543267db",
+        "source_revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+        "source_uri": "hf://nvidia/NV-Proteina-Complexa-AME-160M-v1",
+        "total_bytes": 5892211805
+      },
+      "mount": "/reference/scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+      "problems": [],
+      "visible": true
+    },
+    {
+      "artifact_id": "rosettafold3-checkpoint",
+      "files": [
+        {
+          "bytes": 3038876446,
+          "matches_contract": true,
+          "path": "rf3_foundry_01_24_latest_remapped.ckpt",
+          "read_mb_per_second": 955.0,
+          "read_seconds": 3.182,
+          "sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0"
+        }
+      ],
+      "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "marker": {
+        "artifact_id": "rosettafold3-checkpoint",
+        "entry_count": 1,
+        "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "inventory_algorithm": "fs2-tree-inventory/v2",
+        "sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822",
+        "source_revision": "foundry-production-b02eed6a-checksum-lock",
+        "source_uri": "https://files.ipd.uw.edu/pub/rf3/",
+        "total_bytes": 3038876446
+      },
+      "mount": "/reference/scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "problems": [],
+      "visible": true
+    }
+  ],
+  "generations_root": "/reference/scientific-localization/public/generations",
+  "node_digest": "5e3ad019c6df4d8b",
+  "problems": 0,
+  "schema": "fs2-serve.nebius.ai/scientific-generation-visibility/v1"
+}

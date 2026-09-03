@@ -1,0 +1,126 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "labels": {
+      "fs2.nebius.ai/component": "complexa-artifact-ingestion",
+      "fs2.nebius.ai/role": "stage",
+      "fs2.nebius.ai/run-id": "r20260903a"
+    },
+    "name": "fs2-complexa-stage-r20260903a",
+    "namespace": "fs2-academic-poc"
+  },
+  "spec": {
+    "activeDeadlineSeconds": 10800,
+    "backoffLimit": 0,
+    "completions": 1,
+    "parallelism": 1,
+    "template": {
+      "metadata": {
+        "labels": {
+          "fs2.nebius.ai/component": "complexa-artifact-ingestion",
+          "fs2.nebius.ai/role": "stage",
+          "fs2.nebius.ai/run-id": "r20260903a"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "command": [
+              "python3",
+              "/opt/fs2-ingestion/fetch_artifacts.py",
+              "--contract",
+              "/opt/fs2-ingestion/ingestion-contract.json",
+              "--staging-root",
+              "/claim/scientific-ingestion/fs2-proteina-complexa-r20260903/staging",
+              "--receipt",
+              "/claim/scientific-ingestion/fs2-proteina-complexa-r20260903/staging/.receipts/staging.r20260903a.json",
+              "--namespace",
+              "fs2-academic-poc",
+              "--claim",
+              "academic-assets-runtime-rwx",
+              "--sub-path",
+              "scientific-ingestion/fs2-proteina-complexa-r20260903/staging",
+              "--retries",
+              "8",
+              "--artifact-id",
+              "complexa-protein",
+              "--artifact-id",
+              "complexa-ligand",
+              "--artifact-id",
+              "complexa-ame",
+              "--artifact-id",
+              "rosettafold3-checkpoint",
+              "--continue-on-artifact-error"
+            ],
+            "env": [
+              {
+                "name": "PYTHONUNBUFFERED",
+                "value": "1"
+              }
+            ],
+            "image": "python:3.11-slim",
+            "name": "stage",
+            "resources": {
+              "limits": {
+                "cpu": "1",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/claim",
+                "name": "claim"
+              },
+              {
+                "mountPath": "/opt/fs2-ingestion",
+                "name": "tool",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "nodeSelector": {
+          "storage.fs2.nebius/shared-cache": "true"
+        },
+        "restartPolicy": "Never",
+        "securityContext": {
+          "runAsGroup": 65532,
+          "runAsNonRoot": true,
+          "runAsUser": 65532,
+          "supplementalGroups": [
+            65532
+          ]
+        },
+        "volumes": [
+          {
+            "name": "claim",
+            "persistentVolumeClaim": {
+              "claimName": "academic-assets-runtime-rwx"
+            }
+          },
+          {
+            "configMap": {
+              "defaultMode": 365,
+              "name": "fs2-complexa-ingestion-r20260903a"
+            },
+            "name": "tool"
+          }
+        ]
+      }
+    }
+  }
+}

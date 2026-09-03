@@ -1,0 +1,223 @@
+{
+  "artifacts": [
+    {
+      "artifact_id": "complexa-protein",
+      "files": [
+        {
+          "bytes": 2934289381,
+          "elements": 415220798,
+          "key_count": 12,
+          "keys": [
+            "callbacks",
+            "epoch",
+            "global_step",
+            "hparams_name",
+            "hyper_parameters",
+            "loops",
+            "lr_schedulers",
+            "nflops",
+            "nsamples_processed",
+            "optimizer_states",
+            "pytorch-lightning_version",
+            "state_dict"
+          ],
+          "kind": "mapping",
+          "load_mode": "weights_only=False,mmap=True",
+          "load_seconds": 1.59,
+          "loaded": true,
+          "path": "complexa.ckpt",
+          "prefix_bytes": 8388608,
+          "prefix_sha256": "80df6f7cb0d71111526e8c4edb7b2aa212b43b7c4b454dff3f117771938347ed",
+          "tensors": 1286
+        },
+        {
+          "bytes": 4100101779,
+          "elements": 256178440,
+          "key_count": 11,
+          "keys": [
+            "callbacks",
+            "epoch",
+            "global_step",
+            "hparams_name",
+            "hyper_parameters",
+            "loops",
+            "lr_schedulers",
+            "nsamples_processed",
+            "optimizer_states",
+            "pytorch-lightning_version",
+            "state_dict"
+          ],
+          "kind": "mapping",
+          "load_mode": "weights_only=False,mmap=True",
+          "load_seconds": 1.919,
+          "loaded": true,
+          "path": "complexa_ae.ckpt",
+          "prefix_bytes": 8388608,
+          "prefix_sha256": "60568d4e59a2227fc6e3b3ae869a10afd7ca6bf5bf063d4198bf8da750e86f10",
+          "tensors": 773
+        }
+      ],
+      "generation": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+      "mount": "/reference/scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+      "source_revision": "ffed199e32612b98ffa04f4640d34d37b137fca5",
+      "source_uri": "hf://nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1"
+    },
+    {
+      "artifact_id": "complexa-ligand",
+      "files": [
+        {
+          "bytes": 1790554392,
+          "elements": 425740672,
+          "key_count": 12,
+          "keys": [
+            "callbacks",
+            "epoch",
+            "global_step",
+            "hparams_name",
+            "hyper_parameters",
+            "loops",
+            "lr_schedulers",
+            "nflops",
+            "nsamples_processed",
+            "optimizer_states",
+            "pytorch-lightning_version",
+            "state_dict"
+          ],
+          "kind": "mapping",
+          "load_mode": "weights_only=False,mmap=True",
+          "load_seconds": 0.34,
+          "loaded": true,
+          "path": "complexa_ligand.ckpt",
+          "prefix_bytes": 8388608,
+          "prefix_sha256": "2a43b1dca539559ee38e4b58d03d0a40ebe60986233c2e1a0667a64ec3d46709",
+          "tensors": 1655
+        },
+        {
+          "bytes": 4100184649,
+          "elements": 256178450,
+          "key_count": 11,
+          "keys": [
+            "callbacks",
+            "epoch",
+            "global_step",
+            "hparams_name",
+            "hyper_parameters",
+            "loops",
+            "lr_schedulers",
+            "nsamples_processed",
+            "optimizer_states",
+            "pytorch-lightning_version",
+            "state_dict"
+          ],
+          "kind": "mapping",
+          "load_mode": "weights_only=False,mmap=True",
+          "load_seconds": 0.417,
+          "loaded": true,
+          "path": "complexa_ligand_ae.ckpt",
+          "prefix_bytes": 8388608,
+          "prefix_sha256": "8de6505c59d9bc6a54611baa3cd1b93454c2c56cb31880df5b5d2e2240562061",
+          "tensors": 783
+        }
+      ],
+      "generation": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+      "mount": "/reference/scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+      "source_revision": "bc90c8b2c701ceb52d5faef72600b6b5be880244",
+      "source_uri": "hf://nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1"
+    },
+    {
+      "artifact_id": "complexa-ame",
+      "files": [
+        {
+          "bytes": 1792013880,
+          "elements": 426015438,
+          "key_count": 12,
+          "keys": [
+            "callbacks",
+            "epoch",
+            "global_step",
+            "hparams_name",
+            "hyper_parameters",
+            "loops",
+            "lr_schedulers",
+            "nflops",
+            "nsamples_processed",
+            "optimizer_states",
+            "pytorch-lightning_version",
+            "state_dict"
+          ],
+          "kind": "mapping",
+          "load_mode": "weights_only=False,mmap=True",
+          "load_seconds": 0.328,
+          "loaded": true,
+          "path": "complexa_ame.ckpt",
+          "prefix_bytes": 8388608,
+          "prefix_sha256": "a358c114733a2bdd008b567e5043ba00dfefb49a1867b15691e79a6319d0178a",
+          "tensors": 1611
+        },
+        {
+          "bytes": 4100197925,
+          "elements": 256178486,
+          "key_count": 11,
+          "keys": [
+            "callbacks",
+            "epoch",
+            "global_step",
+            "hparams_name",
+            "hyper_parameters",
+            "loops",
+            "lr_schedulers",
+            "nsamples_processed",
+            "optimizer_states",
+            "pytorch-lightning_version",
+            "state_dict"
+          ],
+          "kind": "mapping",
+          "load_mode": "weights_only=False,mmap=True",
+          "load_seconds": 0.48,
+          "loaded": true,
+          "path": "complexa_ame_ae.ckpt",
+          "prefix_bytes": 8388608,
+          "prefix_sha256": "6301f666e96aa83b670707d5418aa0734d5d224e997662e2cd5f7533faaf8a06",
+          "tensors": 819
+        }
+      ],
+      "generation": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+      "mount": "/reference/scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+      "source_revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+      "source_uri": "hf://nvidia/NV-Proteina-Complexa-AME-160M-v1"
+    },
+    {
+      "artifact_id": "rosettafold3-checkpoint",
+      "files": [
+        {
+          "bytes": 3038876446,
+          "elements": 758644597,
+          "key_count": 6,
+          "keys": [
+            "current_epoch",
+            "global_step",
+            "model",
+            "optimizer",
+            "scheduler_cfg",
+            "train_cfg"
+          ],
+          "kind": "mapping",
+          "load_mode": "weights_only=False,mmap=True",
+          "load_seconds": 0.991,
+          "loaded": true,
+          "path": "rf3_foundry_01_24_latest_remapped.ckpt",
+          "prefix_bytes": 8388608,
+          "prefix_sha256": "a21aab5767951616887ad2bd94c0bca6d9f3cd5a942a89f71c16991d0657c326",
+          "tensors": 8867
+        }
+      ],
+      "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "mount": "/reference/scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+      "source_revision": "foundry-production-b02eed6a-checksum-lock",
+      "source_uri": "https://files.ipd.uw.edu/pub/rf3/"
+    }
+  ],
+  "failures": 0,
+  "schema": "fs2-serve.nebius.ai/scientific-loader-probe/v1",
+  "torch_version": "2.7.0+cu126"
+}

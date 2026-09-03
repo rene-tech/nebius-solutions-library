@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: fs2-complexa-h100-evidence-r20260903e, namespace: fs2-academic-poc, labels: {fs2.nebius.ai/run-id: h100ev-r20260903e}}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+  template:
+    metadata: {labels: {fs2.nebius.ai/run-id: h100ev-r20260903e}}
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        storage.fs2.nebius/reference-data: "true"
+      tolerations:
+      - {key: dedicated, operator: Equal, value: fs2-inference, effect: NoSchedule}
+      securityContext: {runAsUser: 1000, runAsGroup: 1000, runAsNonRoot: true, supplementalGroups: [1000]}
+      containers:
+      - name: probe
+        image: python:3.11-slim
+        command: ["sh","-c","python3 /opt/probe/generation_visibility_probe.py --contract /opt/probe/ingestion-contract.json --generations-root /reference/scientific-localization/public/generations --expect complexa-protein=eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536 --expect complexa-ligand=61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5 --expect complexa-ame=d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a --expect rosettafold3-checkpoint=d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce --report /out/report.json; rc=$?; echo '@@@REPORT@@@'; cat /out/report.json; echo '@@@ENDREPORT@@@'; exit $rc"]
+        env:
+        - {name: PYTHONUNBUFFERED, value: "1"}
+        - {name: FS2_NODE_NAME, valueFrom: {fieldRef: {fieldPath: spec.nodeName}}}
+        volumeMounts:
+        - {name: reference, mountPath: /reference, readOnly: true}
+        - {name: probe, mountPath: /opt/probe, readOnly: true}
+        - {name: out, mountPath: /out}
+        resources: {requests: {cpu: "4", memory: 2Gi}, limits: {cpu: "4", memory: 2Gi}}
+        securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+      volumes:
+      - {name: reference, hostPath: {path: /mnt/fs2-reference-data/data, type: Directory}}
+      - {name: probe, configMap: {name: fs2-complexa-probes-r20260903e, defaultMode: 0555}}
+      - {name: out, emptyDir: {sizeLimit: 16Mi}}
