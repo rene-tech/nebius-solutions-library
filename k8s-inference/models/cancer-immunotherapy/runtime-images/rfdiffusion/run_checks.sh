@@ -8,8 +8,10 @@ cd "${HERE}"
 
 echo "== python compile =="
 python3 -m py_compile runtime_entrypoint.py build_rfdiffusion.py fetch_verified.py \
+  contract/generate_golden_argv.py \
   qualification/stage_checkpoint.py qualification/render_job.py \
-  qualification/validate_result.py tests/test_rfdiffusion_runtime.py
+  qualification/stage_target.py qualification/validate_result.py \
+  tests/test_rfdiffusion_runtime.py tests/test_adapter_contract.py
 echo "ok"
 
 echo
@@ -33,8 +35,12 @@ echo "== lock and runtime inputs agree, tag is derived from the pinned identitie
 python3 build_rfdiffusion.py --check
 
 echo
-echo "== offline contract tests =="
-python3 -m unittest discover -s tests -v
+echo "== adapter-to-image golden argv is current =="
+python3 contract/generate_golden_argv.py --check
+
+echo
+echo "== offline contract tests (ResourceWarning is an error) =="
+python3 -W error::ResourceWarning -m unittest discover -s tests -v
 
 echo
 echo "ALL OFFLINE CHECKS PASSED"

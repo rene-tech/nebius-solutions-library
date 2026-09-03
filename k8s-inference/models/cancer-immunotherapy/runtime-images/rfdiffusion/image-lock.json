@@ -16,16 +16,16 @@
     "license": "BSD-3-Clause",
     "license_state": "verified",
     "license_covers_weights": true,
-    "build_commit": "76d1e7da005d0e57aa9cbe319298cc7e974cc7ca",
-    "attestation_vcs_revision": "76d1e7da005d0e57aa9cbe319298cc7e974cc7ca"
+    "build_commit": null,
+    "attestation_vcs_revision": null
   },
   "image": {
     "id": "rfdiffusion",
     "platform": "linux/amd64",
     "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
     "repository": "rfdiffusion",
-    "tag_suffix": "-cuda121-r9",
-    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r9",
+    "tag_suffix": "-cuda121-r10",
+    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r10",
     "dockerfile": "Dockerfile",
     "build_context": ".",
     "python": "3.10.14",
@@ -43,7 +43,7 @@
     "runtime_inputs": {
       "Dockerfile": "1126ee31a234fa6424ee0396120df5de5c9618a7db1a7005e4ceacae67bcb034",
       "requirements.lock": "11c21670e7d55838dda6eb41ed18deb325e8f996938cf8b03959ecda10307ff6",
-      "runtime_entrypoint.py": "05dd555abc3a5740a6b9b57e83e2227262ad9066ff4968c05969a4e79e96dfd0",
+      "runtime_entrypoint.py": "cc0cee7c88988f79c16b5419538132bbdbbaeff0174f6d808aced72fa67d43bc",
       "fetch_verified.py": "a13a92f56907bf8d6f3b2301f2aea420a3a82c1a7eacaab5a0b4a40ce7a0ee96"
     },
     "runtime_input_policy": "Every file that enters the image is sha256-pinned here and re-verified by build_rfdiffusion.py before the build starts, so the published layers can be tied back to the checked-in runtime.",
@@ -58,13 +58,16 @@
       "other_families": "unqualified-pending-per-family-evidence",
       "architecture_policy": "Qualified on H100 (sm90) only. torch 2.3.0/cu121 and the prebuilt DGL cu121 wheel ship a fixed set of compiled kernels and this runtime has audited neither the cubin nor the PTX they carry, so no portability claim is made for any other GPU family. Nothing in the image hard-codes a device selector, so another family needs per-family evidence rather than a code change; until that evidence exists it is unqualified. Accelerator breadth belongs in the Terraform resource profiles, not in a binary property of this image."
     },
-    "published_digest": "sha256:c63e82292d69609eef1d4624ae9a68ef9d106377bb61334d6dda5ff0f04a4563",
-    "published_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:c63e82292d69609eef1d4624ae9a68ef9d106377bb61334d6dda5ff0f04a4563",
-    "attestation_predicate_types": [
-      "https://slsa.dev/provenance/v1",
-      "https://spdx.dev/Document"
-    ],
+    "published_digest": null,
+    "published_reference": null,
+    "attestation_predicate_types": null,
     "supersedes": [
+      {
+        "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r9",
+        "digest": "sha256:c63e82292d69609eef1d4624ae9a68ef9d106377bb61334d6dda5ff0f04a4563",
+        "deployable": false,
+        "reason": "Correctly attested (SLSA names clean commit 76d1e7da) and genuinely H100-qualified for design-backbone on two nodes. Superseded so that one digest carries both operations: r9 has no scaffold-motif receipt, and its runtime leaked the upstream stdout pipe because Popen was not used as a context manager. r9's design-backbone evidence remains valid for r9 and does not transfer to this image."
+      },
       {
         "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r8",
         "digest": "sha256:9aae23f0465c77e47a07d6afc820a1173bd5d2474c818423356e06efb799c0f6",
@@ -137,6 +140,11 @@
         "traj/<prefix>_<index>_pX0_traj.pdb"
       ],
       "cuda_evidence": "the .trb run metadata carries torch.cuda.get_device_name(); a recorded device of CPU is a failed run, not a degraded one"
+    },
+    "contract_freeze": {
+      "state": "frozen-for-adapter-reconciliation",
+      "detail": "The scientific batch adapter owner is reconciling the obsolete /opt/fs2/bin/rfdiffusion-batch contract to this image's CLI and translating their typed public request into the internal rfdiffusion-parameters/v1 schema. The CLI, the internal schema and the adapter id are frozen for the duration; any change ships as a new fixture and a new adapter id, never as a redefinition. Enforced by tests/test_adapter_contract.py::FrozenContractTests.",
+      "handoff": "contract/README.md plus contract/fixtures/*/golden-argv.json"
     }
   },
   "weight_policy": {
@@ -156,12 +164,22 @@
       "catalog_manifest_content_digest": "a6f25ea4df457270825f01fd0477bf2b9dcc17f817b59ab06ad9d640de8e1540",
       "baked_into_image": false,
       "note": "ActiveSite_ckpt.pt has the identical byte size, so this artifact is always matched on sha256 and never on size."
+    },
+    {
+      "id": "rfdiffusion-motif-target-1ubq",
+      "artifact_id": "artifact.rfdiffusion.target.1ubq",
+      "file": "targets/1UBQ.pdb",
+      "sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+      "bytes": 78570,
+      "source": "k8s-inference/catalog/runtime/packaged-repository/nim-fast-start/faststart-v2/rfdiffusion-native/fixtures/1UBQ.pdb",
+      "baked_into_image": false,
+      "note": "Scaffold-motif target, already carried on main as the RFdiffusion validator input. Motif A23-34 is the ubiquitin alpha-helix and has a complete N/CA/C backbone."
     }
   ],
   "artifact_delivery": {
-    "state": "transitional-task-scoped",
-    "canonical_plane": "unavailable",
-    "detail": "The canonical regional artifact plane (model-artifacts/) and the scientific-localization generations plane are both still on sibling branches and publish no RFdiffusion root on main. Qualification therefore reads an explicitly transitional copy on the shared qualification claim. The copy is evidence, not artifact delivery: the runtime resolves the checkpoint by sha256, so it binds to the canonical plane unchanged once that plane publishes.",
+    "state": "catalog-accepted-localization-pending",
+    "canonical_plane": "partially-available",
+    "detail": "The rfdiffusion-checkpoints catalog entry is now accepted on main (commit 9d48fe0e) and this runtime's checkpoint identity matches it exactly: 0fcf7d7c..., 483616107 bytes, from the files.ipd.uw.edu URL the catalog names. What is still pending is live content-addressed localization and promotion onto the shared plane: nothing has published an RFdiffusion generation there yet. Qualification therefore reads a task-owned generation on the shared qualification claim, staged with the localization plane's own inventory algorithm and marker schema so it is portable without restaging. Because the runtime resolves artifacts by sha256 through the input manifest's relative paths, no image change is needed when the canonical plane publishes.",
     "transitional_claim": "fs2-runtime-qualification-artifacts-r20260902",
     "generation": {
       "artifact_id": "rfdiffusion-base-checkpoint",
@@ -180,29 +198,14 @@
     "conflict": "The artifact catalog's consumer layout binds rfdiffusion-checkpoints at /models/rfdiffusion-checkpoints, while the superseded r6/r7 images hard-coded FS2_ARTIFACT_ROOT=/models/rfdiffusion. This runtime resolves the conflict by not hard-coding either: the checkpoint is located through the input manifest's relative path under --artifact-root, so the same image works at any mount point the plane chooses."
   },
   "qualification": {
-    "state": "h100-semantic-qualified",
-    "qualified_digest": "sha256:c63e82292d69609eef1d4624ae9a68ef9d106377bb61334d6dda5ff0f04a4563",
+    "state": "pending-live-h100-run",
+    "route_exposed": false,
+    "route_state": "closed",
     "qualified_accelerator": "nvidia-h100-sxm5-80gb (sm90)",
     "other_accelerators": "not-qualified; each family needs its own evidence",
-    "route_exposed": false,
-    "evidence": [
-      "evidence/h100-run-receipt.json",
-      "evidence/h100-semantic-qualification.json",
-      "evidence/h100-semantic-qualification-warm.json",
-      "evidence/design/design_8100.pdb"
-    ],
-    "evidence_transfer_policy": "Evidence is bound to an exact image digest. No receipt from r6, r7 or r8 transfers to this image, and no receipt here transfers to a later one.",
-    "kubelet_image_id_verified": true,
-    "criteria_met": {
-      "cuda_execution": "upstream .trb recorded NVIDIA H100 80GB HBM3 on both runs",
-      "parseable_structure": "76 residues, 304 atoms, complete N/CA/C backbone on every residue",
-      "requested_contig_length": "76 residues designed against contig 76-76",
-      "all_glycine_unconditional_backbone": "glycine_fraction 1.0",
-      "physical_geometry": "max CA-CA deviation 0.125 A from 3.8 A; 30.5 A extent",
-      "terminal_success_after_upstream": "envelope reports succeeded only after marker verification",
-      "determinism": "identical output sha256 78600be2... from seed 8100 on two different H100 nodes"
-    },
-    "scope": "One bounded unconditional monomer design, run twice. No motif-scaffolding run, no throughput, contention, elasticity or snapshot measurement. The scaffold-motif operation is implemented and covered by offline tests but has no live receipt."
+    "evidence": [],
+    "evidence_transfer_policy": "Evidence is bound to an exact image digest. No receipt from r6, r7, r8 or r9 transfers to this image.",
+    "scope": "one design-backbone and one scaffold-motif run; no throughput, contention, elasticity or snapshot measurement"
   },
   "upstream_contract_defects": [
     {

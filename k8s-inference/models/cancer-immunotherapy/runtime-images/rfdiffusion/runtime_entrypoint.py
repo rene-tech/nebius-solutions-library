@@ -818,17 +818,19 @@ def run_upstream(
     tail: list[str] = []
     started = time.monotonic()
 
-    with log_path.open("w", encoding="utf-8") as log_handle:
-        process = subprocess.Popen(  # noqa: S603 - argv vector, shell=False
-            list(argv),
-            cwd=str(cwd),
-            env=environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            shell=False,
-        )
+    # Popen as a context manager closes the stdout pipe and reaps the child even when
+    # the loop below raises, so a timeout or a verification failure cannot leak a file
+    # descriptor into a long-lived process.
+    with log_path.open("w", encoding="utf-8") as log_handle, subprocess.Popen(  # noqa: S603 - argv vector, shell=False
+        list(argv),
+        cwd=str(cwd),
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        shell=False,
+    ) as process:
         assert process.stdout is not None
         try:
             for line in process.stdout:

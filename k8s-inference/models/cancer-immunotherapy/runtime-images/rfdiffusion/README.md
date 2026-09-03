@@ -24,7 +24,7 @@ sources; where it was not, the reasons are recorded in `image-lock.json` under
 | DGL | `2.3.0+cu121`, wheel `sha256:0423c4e8…` |
 | Checkpoint | `Base_ckpt.pt`, `sha256:0fcf7d7c…`, 483,616,107 bytes, BSD-3-Clause |
 | Registry | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion` |
-| Tag | `9273ef67…-cuda121-r9` |
+| Tag | `9273ef67…-cuda121-r10` |
 
 `v1.1.0` was resolved from the GitHub tags API rather than copied forward. The
 superseded runtime at `models/structure/runtime/rfdiffusion` pins `86507b65`, which
@@ -58,6 +58,14 @@ Both prior images are refused as a basis, for provenance rather than for behavio
 it refuses a dirty tree, and after pushing it reads the SLSA provenance back out of
 the registry and fails unless the recorded VCS revision equals the commit the build
 ran from. It already refused one image on exactly that gate.
+
+## Adapter handoff
+
+The scientific batch adapter owner keeps the typed public request schema and
+translates it into this image's CLI. **That CLI and the internal
+`rfdiffusion-parameters/v1` schema are frozen while they work** — see
+`contract/README.md` for the handoff, `contract/fixtures/*/golden-argv.json` for the
+exact argv each request produces, and `FrozenContractTests` for the enforcement.
 
 ## Layout
 
@@ -168,10 +176,19 @@ using the `fs2-flat-tree-inventory/v1` digest and the localization plane's
 `.fs2-runtime-tree.json` marker schema, so the tree moves to that plane without
 restaging. Promotion is atomic and never overwrites an existing generation.
 
-Artifact delivery is `transitional-task-scoped`: neither the regional artifact plane
-nor the generations plane is on `main` yet, so qualification reads a task-owned copy
-on the shared qualification claim. Because the runtime resolves the checkpoint by
-sha256, it binds to the canonical plane unchanged once that plane publishes.
+Artifact delivery is `catalog-accepted-localization-pending`. The
+`rfdiffusion-checkpoints` catalog entry is now **accepted on main** (`9d48fe0e`), and
+this runtime's checkpoint identity matches it exactly — `0fcf7d7c…`, 483,616,107
+bytes, from the `files.ipd.uw.edu` URL the catalog names. What is still pending is
+**live content-addressed localization and promotion**: nothing has published an
+RFdiffusion generation onto the shared plane yet, so qualification reads a task-owned
+generation on the shared qualification claim, staged with the localization plane's own
+inventory algorithm and marker schema so it is portable without restaging. Because the
+runtime resolves artifacts by sha256 through the manifest's relative paths, no image
+change is needed when the canonical plane publishes.
+
+**The route is closed.** `route_exposed` is `false` and this runtime is not servable
+until the adapter/controller execution contract is reconciled (see `contract/`).
 
 ## Cache level
 
@@ -184,7 +201,7 @@ restore, and nothing here is described as one.
 ## Checks
 
 ```bash
-./run_checks.sh                                   # offline: compile, lock, 49 contract tests
+./run_checks.sh                                   # offline: compile, lock, golden-argv drift, 63 contract tests
 python3 build_rfdiffusion.py --check              # lock and runtime inputs agree
 python3 build_rfdiffusion.py --no-push            # build locally, no attestations
 python3 build_rfdiffusion.py --record             # publish and record the digest
