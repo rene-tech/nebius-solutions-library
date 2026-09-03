@@ -114,6 +114,13 @@
               "n": 3,
               "p95": 2.0
             },
+            "schedule_to_semantic_complete_seconds": {
+              "max": 67.0,
+              "mean": 66.0,
+              "min": 64.0,
+              "n": 3,
+              "p95": 67.0
+            },
             "teardown_seconds": {
               "max": 6.765,
               "mean": 6.243,
@@ -211,6 +218,13 @@
               "n": 3,
               "p95": 305.0
             },
+            "schedule_to_semantic_complete_seconds": {
+              "max": 345.0,
+              "mean": 245.333,
+              "min": 193.0,
+              "n": 3,
+              "p95": 345.0
+            },
             "teardown_seconds": {
               "max": 0.0,
               "mean": 0.0,
@@ -302,6 +316,13 @@
               "min": 1.0,
               "n": 3,
               "p95": 2.0
+            },
+            "schedule_to_semantic_complete_seconds": {
+              "max": 45.0,
+              "mean": 44.0,
+              "min": 42.0,
+              "n": 3,
+              "p95": 45.0
             },
             "teardown_seconds": {
               "max": 0.0,
@@ -400,6 +421,13 @@
               "n": 3,
               "p95": 305.0
             },
+            "schedule_to_semantic_complete_seconds": {
+              "max": 520.0,
+              "mean": 419.333,
+              "min": 367.0,
+              "n": 3,
+              "p95": 520.0
+            },
             "teardown_seconds": {
               "max": 3.57,
               "mean": 3.524,
@@ -492,6 +520,13 @@
               "n": 3,
               "p95": 154.0
             },
+            "schedule_to_semantic_complete_seconds": {
+              "max": 371.0,
+              "mean": 274.667,
+              "min": 222.0,
+              "n": 3,
+              "p95": 371.0
+            },
             "teardown_seconds": {
               "max": 3.623,
               "mean": 3.134,
@@ -549,6 +584,136 @@
               "boltzgen-baseline-t03"
             ]
           }
+        },
+        "warm-jit": {
+          "compilation": {
+            "first_step_seconds": {
+              "mosaic-warm-jit-t01": 85.34,
+              "mosaic-warm-jit-t02": 8.76,
+              "mosaic-warm-jit-t03": 8.24,
+              "mosaic-warm-jit-t04": 8.35
+            },
+            "one_time_compilation": {
+              "model_start_seconds": {
+                "max": 217.099,
+                "mean": 217.099,
+                "min": 217.099,
+                "n": 1,
+                "p95": 217.099
+              },
+              "qualified_level": "L1",
+              "trials": [
+                "mosaic-warm-jit-t01"
+              ]
+            },
+            "rule": "a trial whose first optimizer step is at least 4x the cohort's fastest first step had to compile; the rest reused cached executables",
+            "steady_state": {
+              "model_start_seconds": {
+                "max": 76.845,
+                "mean": 75.587,
+                "min": 74.435,
+                "n": 3,
+                "p95": 76.845
+              },
+              "qualified_level": "L2",
+              "trials": [
+                "mosaic-warm-jit-t02",
+                "mosaic-warm-jit-t03",
+                "mosaic-warm-jit-t04"
+              ]
+            }
+          },
+          "gpu_device_kind": [
+            "NVIDIA H100 80GB HBM3"
+          ],
+          "image_state": [
+            "node-cached"
+          ],
+          "label": "prepared-node, ownership remediated, persistent XLA compilation cache",
+          "meets_three_trial_requirement": true,
+          "nodes_used": [
+            "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+            "ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
+          ],
+          "nvidia_driver_version": [
+            "580.159.04-1ubuntu1"
+          ],
+          "phases_seconds": {
+            "capacity_wait_seconds": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "n": 4,
+              "p95": 0.0
+            },
+            "compute_to_first_result_seconds": {
+              "max": 75.295,
+              "mean": 29.679,
+              "min": 14.278,
+              "n": 4,
+              "p95": 75.295
+            },
+            "end_to_end_seconds": {
+              "max": 221.0,
+              "mean": 113.75,
+              "min": 77.0,
+              "n": 4,
+              "p95": 221.0
+            },
+            "model_start_seconds": {
+              "max": 217.099,
+              "mean": 110.965,
+              "min": 74.435,
+              "n": 4,
+              "p95": 217.099
+            },
+            "runtime_init_and_artifact_load_seconds": {
+              "max": 140.804,
+              "mean": 79.785,
+              "min": 58.044,
+              "n": 4,
+              "p95": 140.804
+            },
+            "sandbox_and_volume_setup_seconds": {
+              "max": 2.0,
+              "mean": 1.5,
+              "min": 1.0,
+              "n": 4,
+              "p95": 2.0
+            },
+            "schedule_to_semantic_complete_seconds": {
+              "max": 221.0,
+              "mean": 113.75,
+              "min": 77.0,
+              "n": 4,
+              "p95": 221.0
+            },
+            "teardown_seconds": {
+              "max": 3.901,
+              "mean": 2.785,
+              "min": 2.155,
+              "n": 4,
+              "p95": 3.901
+            },
+            "time_to_first_semantic_result_seconds": {
+              "max": 216.099,
+              "mean": 109.465,
+              "min": 72.435,
+              "n": 4,
+              "p95": 216.099
+            }
+          },
+          "qualified_level_all_trials": "L1",
+          "trial_ids": [
+            "mosaic-warm-jit-t01",
+            "mosaic-warm-jit-t02",
+            "mosaic-warm-jit-t03",
+            "mosaic-warm-jit-t04"
+          ],
+          "trials_complete": 4,
+          "trials_semantically_passed": 4,
+          "trials_submitted": 4,
+          "volume_ownership_contention": {}
         }
       }
     }
@@ -573,8 +738,8 @@
   },
   "schema": "fs2.nebius.ai/fast-start-live-campaign-summary/v1",
   "totals": {
-    "complete": 15,
-    "semantically_passed": 15,
-    "trials": 15
+    "complete": 19,
+    "semantically_passed": 19,
+    "trials": 19
   }
 }

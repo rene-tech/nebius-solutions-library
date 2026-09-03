@@ -1,0 +1,37 @@
+2026-09-03T04:47:52.810302063Z /opt/venv/lib/python3.12/site-packages/pytorch_lightning/utilities/migration/utils.py:56: The loaded checkpoint was produced with Lightning v2.5.0.post0, which is newer than your current Lightning version: v2.5.0
+2026-09-03T04:48:26.578326629Z Loading data
+2026-09-03T04:48:26.579695465Z Checking input data.
+2026-09-03T04:48:26.613031103Z Processing 1 inputs with 1 threads.
+2026-09-03T04:48:26.615161482Z Found explicit empty MSA for some proteins, will run these in single sequence mode. Keep in mind that the model predictions will be suboptimal without an MSA.
+2026-09-03T04:48:26.620534838Z Found explicit empty MSA for some proteins, will run these in single sequence mode. Keep in mind that the model predictions will be suboptimal without an MSA.
+2026-09-03T04:48:26.627493643Z 
+  0%|          | 0/1 [00:00<?, ?it/s]
+100%|██████████| 1/1 [00:00<00:00, 74.48it/s]
+2026-09-03T04:48:26.628251394Z Something odd happened with manifest, trying to reload.
+2026-09-03T04:48:26.656387202Z /opt/venv/lib/python3.12/site-packages/torch/utils/data/dataloader.py:665: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+2026-09-03T04:48:26.656398954Z   warnings.warn(warn_msg)
+2026-09-03T04:48:28.481120574Z n_msa 1
+2026-09-03T04:49:06.543438861Z E0903 04:49:06.543251     257 cuda_timer.cc:88] Delay kernel timed out: measured time has sub-optimal accuracy. There may be a missing warmup execution, please investigate in Nsight Systems.
+2026-09-03T04:49:53.804212258Z 0 loss: 15.49 .boltz2.0.target_contact:-4.38 .boltz2.1.intra_contact:-7.09 .boltz2.2.plddt: 0.70 .boltz2.3.sequence_recovery: 0.04 loss: 15.49 nnz: 18.55 time: 85.34
+2026-09-03T04:49:54.102363349Z 1 loss: 14.72 .boltz2.0.target_contact:-4.27 .boltz2.1.intra_contact:-6.59 .boltz2.2.plddt: 0.60 .boltz2.3.sequence_recovery: 0.06 loss: 14.72 nnz: 18.12 time: 0.30
+2026-09-03T04:49:54.356132305Z 2 loss: 14.29 .boltz2.0.target_contact:-4.15 .boltz2.1.intra_contact:-6.44 .boltz2.2.plddt: 0.60 .boltz2.3.sequence_recovery: 0.07 loss: 14.29 nnz: 17.35 time: 0.25
+2026-09-03T04:49:54.611752927Z 3 loss: 14.05 .boltz2.0.target_contact:-4.04 .boltz2.1.intra_contact:-6.38 .boltz2.2.plddt: 0.62 .boltz2.3.sequence_recovery: 0.06 loss: 14.05 nnz: 16.77 time: 0.25
+2026-09-03T04:49:54.868260308Z 4 loss: 13.85 .boltz2.0.target_contact:-4.00 .boltz2.1.intra_contact:-6.30 .boltz2.2.plddt: 0.58 .boltz2.3.sequence_recovery: 0.07 loss: 13.85 nnz: 16.38 time: 0.26
+2026-09-03T04:49:55.120501831Z 5 loss: 13.68 .boltz2.0.target_contact:-3.96 .boltz2.1.intra_contact:-6.26 .boltz2.2.plddt: 0.61 .boltz2.3.sequence_recovery: 0.07 loss: 13.68 nnz: 16.02 time: 0.25
+2026-09-03T04:49:55.372252096Z 6 loss: 13.54 .boltz2.0.target_contact:-3.91 .boltz2.1.intra_contact:-6.23 .boltz2.2.plddt: 0.62 .boltz2.3.sequence_recovery: 0.08 loss: 13.54 nnz: 15.72 time: 0.25
+2026-09-03T04:49:55.623611766Z 7 loss: 13.44 .boltz2.0.target_contact:-3.87 .boltz2.1.intra_contact:-6.21 .boltz2.2.plddt: 0.62 .boltz2.3.sequence_recovery: 0.08 loss: 13.44 nnz: 15.32 time: 0.25
+2026-09-03T04:49:55.875642594Z 8 loss: 13.33 .boltz2.0.target_contact:-3.83 .boltz2.1.intra_contact:-6.21 .boltz2.2.plddt: 0.58 .boltz2.3.sequence_recovery: 0.08 loss: 13.33 nnz: 15.05 time: 0.25
+2026-09-03T04:49:56.126961973Z 9 loss: 13.22 .boltz2.0.target_contact:-3.77 .boltz2.1.intra_contact:-6.23 .boltz2.2.plddt: 0.68 .boltz2.3.sequence_recovery: 0.08 loss: 13.22 nnz: 14.82 time: 0.25
+2026-09-03T04:49:56.378521191Z 10 loss: 13.12 .boltz2.0.target_contact:-3.68 .boltz2.1.intra_contact:-6.32 .boltz2.2.plddt: 0.72 .boltz2.3.sequence_recovery: 0.08 loss: 13.12 nnz: 14.53 time: 0.25
+2026-09-03T04:49:56.631242373Z 11 loss: 13.03 .boltz2.0.target_contact:-3.70 .boltz2.1.intra_contact:-6.23 .boltz2.2.plddt: 0.75 .boltz2.3.sequence_recovery: 0.09 loss: 13.03 nnz: 14.10 time: 0.25
+2026-09-03T04:49:56.886645294Z 12 loss: 12.97 .boltz2.0.target_contact:-3.56 .boltz2.1.intra_contact:-6.49 .boltz2.2.plddt: 0.88 .boltz2.3.sequence_recovery: 0.09 loss: 12.97 nnz: 14.30 time: 0.25
+2026-09-03T04:49:57.137748968Z 13 loss: 12.91 .boltz2.0.target_contact:-3.67 .boltz2.1.intra_contact:-6.22 .boltz2.2.plddt: 0.77 .boltz2.3.sequence_recovery: 0.10 loss: 12.91 nnz: 13.70 time: 0.25
+2026-09-03T04:49:57.391253970Z 14 loss: 13.18 .boltz2.0.target_contact:-3.54 .boltz2.1.intra_contact:-6.76 .boltz2.2.plddt: 0.90 .boltz2.3.sequence_recovery: 0.10 loss: 13.18 nnz: 14.82 time: 0.25
+2026-09-03T04:49:57.642932384Z 15 loss: 12.89 .boltz2.0.target_contact:-3.61 .boltz2.1.intra_contact:-6.30 .boltz2.2.plddt: 0.76 .boltz2.3.sequence_recovery: 0.10 loss: 12.89 nnz: 13.78 time: 0.25
+2026-09-03T04:49:57.894866399Z 16 loss: 12.88 .boltz2.0.target_contact:-3.48 .boltz2.1.intra_contact:-6.61 .boltz2.2.plddt: 0.88 .boltz2.3.sequence_recovery: 0.11 loss: 12.88 nnz: 14.10 time: 0.25
+2026-09-03T04:49:58.147052935Z 17 loss: 12.61 .boltz2.0.target_contact:-3.44 .boltz2.1.intra_contact:-6.46 .boltz2.2.plddt: 0.84 .boltz2.3.sequence_recovery: 0.11 loss: 12.61 nnz: 13.80 time: 0.25
+2026-09-03T04:49:58.398849220Z 18 loss: 12.46 .boltz2.0.target_contact:-3.37 .boltz2.1.intra_contact:-6.54 .boltz2.2.plddt: 0.91 .boltz2.3.sequence_recovery: 0.13 loss: 12.46 nnz: 13.80 time: 0.25
+2026-09-03T04:49:58.650667611Z 19 loss: 12.38 .boltz2.0.target_contact:-3.36 .boltz2.1.intra_contact:-6.48 .boltz2.2.plddt: 0.90 .boltz2.3.sequence_recovery: 0.13 loss: 12.38 nnz: 13.72 time: 0.25
+2026-09-03T04:49:58.780374576Z n_msa 1
+2026-09-03T04:50:53.535293286Z n_msa 1
+2026-09-03T04:51:09.098891411Z {"backend_id": "mosaic-boltz2-proteinmpnn-v1", "candidate_sequence": "VGLALYCLWPELFDGDAEEHHDEEALSEGKLPNEAFLAIL", "gpu": "NVIDIA H100 80GB HBM3", "seed": 7300, "shard_index": 0, "status": "succeeded"}
