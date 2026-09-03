@@ -3,7 +3,7 @@
   "retrieved_at": "2026-09-02",
   "workload": "cancer-immunotherapy",
   "use_class": "academic-non-commercial",
-  "evidence_policy": "Read-only primary-source research. Every revision, license and gate below was retrieved from the cited upstream source on retrieved_at. Nothing in this manifest asserts that any model was deployed, benchmarked or qualified on hardware; H100 fit states distinguish documented upstream support from untested expectation.",
+  "evidence_policy": "Read-only primary-source research remains authoritative for every source, revision and license conclusion recorded on retrieved_at. This manifest does not assert end-to-end model deployment or platform readiness. Explicitly labeled follow-up operational evidence may qualify one exact prerequisite or immutable runtime digest without broadening that claim to the full model lane.",
   "discovery": {
     "method": "Read-only inspection on 2026-09-02 using the operator-provided acceptance kubeconfig, context k8s-inference-h100. Only get and list verbs were used. No object was created, patched or deleted, and no secret value was read; secrets were enumerated by name and type only.",
     "cluster": {
@@ -596,11 +596,11 @@
       "role": "secondary",
       "resolution": {
         "state": "resolved",
-        "rationale": "A release tagged v2.0.0 exists and its notes name the model protenix-v2 explicitly, so the name is real and not an inferred version number. The code shipped; the weights did not. This is a resolved identity with an unavailable artifact, which is a different state from an ambiguous name.",
+        "rationale": "The v2.0.0 release and exact source commit name protenix-v2 explicitly. The publisher URI remains inaccessible from the operator region, but the immutable TMF001/protenix-v2-weights mirror candidate has now passed independent byte hashing and a strict 4,174-key/464,442,431-parameter shape comparison against the exact v2 source architecture. It remains explicitly a third-party mirror that has not been byte-compared with the publisher object.",
         "rejected_candidates": [
           {
-            "candidate": "TMF001/protenix-v2-weights and nabbo/protenix_v2",
-            "reason": "Third-party HuggingFace re-uploads; the ByteDance repository and its own weight fetcher are authoritative."
+            "candidate": "nabbo/protenix_v2",
+            "reason": "An unaffiliated re-upload that was not part of the checksum and exact source-architecture verification recorded for TMF001/protenix-v2-weights."
           }
         ]
       },
@@ -629,17 +629,17 @@
       "weights": [
         {
           "artifact_id": "protenix-v2",
-          "host": "upstream-http",
-          "locator": "https://protenix.tos-cn-beijing.volces.com/checkpoint/protenix-v2.pt",
-          "revision": "not obtainable at retrieval; no published checksum exists because the object has never been publicly served",
+          "host": "huggingface",
+          "locator": "TMF001/protenix-v2-weights",
+          "revision": "653edab28103133512575365130916e3fd23ecc3",
           "files": [
             "protenix-v2.pt"
           ],
-          "size_note": "464.44M parameters; training data cutoff 2021-09-30",
-          "license": "Apache-2.0 per the repository, but the license is moot while the artifact is not served",
+          "size_note": "1,859,785,497 bytes; safe offline torch inspection found top-level model with exactly 4,174 keys and 464,442,431 parameters, matching the exact v2 source architecture; training data cutoff 2021-09-30",
+          "license": "Apache-2.0 per the canonical source and mirror declaration",
           "commercial_use": "permitted",
           "redistribution": "permitted-with-attribution",
-          "gate": "approval-required"
+          "gate": "none"
         },
         {
           "artifact_id": "protenix-base-20250630-v1.0.0",
@@ -672,7 +672,7 @@
       ],
       "runtime_recommendation": {
         "choice": "open-runtime",
-        "rationale": "A conventional PyPI-installable PyTorch inference package with a documented CLI and a published model registry; no NIM exists and none is needed. Pin the substitute checkpoint explicitly, because the package will happily run a different model than the one the customer asked for if the name is left to a default.",
+        "rationale": "A conventional PyPI-installable PyTorch inference package with a documented CLI and a published model registry; no NIM exists and none is needed. Use the distinctly identified protenix-v2 cache artifact for the requested v2 lane, retain the v1 checkpoint only as a separately named comparison lane, and preserve the mirror provenance limitation in readiness receipts.",
         "nim_available": false,
         "base_image_hint": "PyTorch CUDA base plus protenix==2.0.0; Python 3.11 or newer",
         "serving_shape": "both"
@@ -687,7 +687,7 @@
       },
       "semantic_validator": {
         "fixture": "Upstream example 7r6r, a protein-DNA complex of roughly 243 tokens whose alignments ship in the repository, so the acceptance run is fully offline with no external MSA call.",
-        "invocation": "protenix pred -i examples/example.json -o ./acceptance -s 101 -n protenix_base_20250630_v1.0.0 --use_default_params true",
+        "invocation": "protenix pred -i examples/example.json -o ./acceptance -s 101 -n protenix-v2 --use_default_params true",
         "success_criteria": [
           "Output mmCIF parses with three chains, one protein and two DNA strands.",
           "Summary confidence shows plddt above 80, ptm above 0.7 and iptm above 0.7 with no clash flag.",
@@ -699,17 +699,17 @@
       },
       "access_gates": [
         {
-          "gate_id": "protenix-v2-weights-restricted",
-          "action": "The v2 checkpoint object returns HTTP 403 AccessDenied while sibling v1 and v0.5.0 objects on the same bucket return 206. The maintainers stated on 2026-04-09 that release is under internal review with no timeline, and the tracking issue was still open on 2026-08-31. There is no form, contact or credential that unlocks it; the exact step is to re-probe the object URL on a schedule and treat a 200 as the trigger to onboard v2.",
+          "gate_id": "protenix-v2-publisher-byte-comparison-unavailable",
+          "action": "The canonical ByteDance object still returns HTTP 403 from the operator region and no publisher digest is published. Use only the immutable TMF001 mirror commit after its recorded checksum and exact source-architecture verification, label it mirror-verified-not-publisher-byte-compared, and periodically re-probe the official URI so a future publisher-byte comparison can supersede this limited provenance state.",
           "grantor": "ByteDance",
-          "blocking": true,
-          "credential_handling": "No credential exists. Do not substitute an unaffiliated re-upload of this checkpoint; its provenance cannot be verified against any publisher checksum."
+          "blocking": false,
+          "credential_handling": "No credential exists and none is stored. The third-party mirror relation must remain visible in every catalog declaration and cache receipt."
         }
       ],
       "blockers": [
-        "The protenix-v2 checkpoint is not publicly served and has not been for roughly five months. Independently confirmed at retrieval: HTTP 403 AccessDenied for protenix-v2.pt against HTTP 206 for both v1.0.0 checkpoints on the same bucket.",
+        "The canonical protenix-v2 publisher object still returns HTTP 403 from the operator region and no publisher checksum exists, so the verified mirror cannot be claimed byte-identical to publisher bytes.",
         "Even if released, protenix-v2 asserts a hard 2560-token ceiling in its inference runner, which is half the token budget of AlphaFold3 and is a real capability regression for large complexes.",
-        "Recommended substitute is protenix_base_20250630_v1.0.0, which is obtainable, Apache-2.0 and carries a later 2025-06-30 training cutoff. Onboarding must label it as a substitute rather than silently reporting it as Protenix v2."
+        "The mirror has passed offline byte and architecture verification but has not yet passed a real H100 semantic inference; cache availability must not be reported as deployed model readiness."
       ],
       "sources": [
         {
@@ -727,6 +727,10 @@
         {
           "url": "https://protenix.tos-cn-beijing.volces.com/checkpoint/protenix-v2.pt",
           "established": "Direct probe at retrieval returning HTTP 403 AccessDenied with error code 14006, against HTTP 206 for the two v1.0.0 checkpoints on the same host."
+        },
+        {
+          "url": "https://huggingface.co/TMF001/protenix-v2-weights/tree/653edab28103133512575365130916e3fd23ecc3",
+          "established": "Explicit third-party mirror identity and immutable repository revision; the LFS object is 1,859,785,497 bytes with SHA-256 8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599. Local safe offline inspection additionally verified MD5 49016ebf4775bf6b629bc4dc77b6673e and an exact 4,174-key/464,442,431-parameter shape match to source revision 2475421477ab414b571149ad4a875c390ff8a35d."
         }
       ]
     },
@@ -792,7 +796,7 @@
         "choice": "custom-workflow-container",
         "rationale": "No NIM exists. The pipeline couples JAX AlphaFold2, PyTorch ProteinMPNN and a licensed PyRosetta build behind one Python entry point and emits a filtered CSV of designs. It must be containerised and run as a job.",
         "nim_available": false,
-        "base_image_hint": "built via the upstream install script pinned to a CUDA version; PyRosetta is installed from the Rosetta Commons channel and requires the license to be in place first",
+        "base_image_hint": "built via the upstream install script pinned to a CUDA version; the exact PyRosetta 2026.29 installed tree is supplied read-only from the tenant-private academic-assets plane and is never embedded in the image",
         "serving_shape": "batch-job"
       },
       "h100_fit": {
@@ -819,14 +823,14 @@
       "access_gates": [
         {
           "gate_id": "pyrosetta-academic-license",
-          "action": "PyRosetta is a hard unconditional import in this pipeline and there is no upstream flag to disable it. For this academic proof of concept the free academic tier applies. The exact one-time step is to obtain a Rosetta licence and a PyRosetta licence for the academic institution through the University of Washington CoMotion express licensing portal at https://els2.comotion.uw.edu/product/pyrosetta, which is free of charge for academic, non-profit and government entities. Both licences are required: PyRosetta is only licensed to entities that already hold a Rosetta licence. Licensing questions go to license@uw.edu. Until the licence is in place, run the FreeBindCraft lane instead and label its scoring fields as placeholders.",
+          "action": "Operational academic-PoC authorization is recorded. The exact PyRosetta 2026.29 CPython 3.10 wheel was installed into the tenant-private academic-assets plane and passed offline import plus real pose-scoring validation. Native BindCraft consumes only the exact read-only installed-tree identity; neither the wheel nor installed files may enter this public cache or an image. Formal Rosetta and PyRosetta institutional acceptance remains a later non-PoC advisory and must be completed by an authorized representative before broader organizational or commercial use.",
           "grantor": "University of Washington CoMotion, on behalf of Rosetta Commons",
-          "blocking": true,
-          "credential_handling": "The PyRosetta channel credentials belong in a cluster secret consumed at image build time. Never commit them, and never bake them into a pushed image layer."
+          "blocking": false,
+          "credential_handling": "No credential is consumed at runtime or committed. Licensed wheel and installed-tree bytes stay in the tenant-private academic-assets plane, are mounted read-only by exact tree identity, and are never baked into a pushed image layer or copied into the public cache."
         }
       ],
       "blockers": [
-        "Native BindCraft cannot run until the free academic PyRosetta and Rosetta licences are issued. This is a licence-acceptance step, not a technical one.",
+        "Native BindCraft still needs its own packaged runtime and end-to-end semantic run; the PyRosetta prerequisite itself is privately installed and offline-tested for the authorized academic PoC.",
         "The published release tag is diverged from the default branch and points at a commit nine months older than the release it names. Pinning the tag would silently ship the wrong code, so onboarding must pin a commit SHA.",
         "No official container image and no NIM exist. The community images on public registries are unofficial and most likely bake in PyRosetta, so they are not an acceptable supply-chain root."
       ],
@@ -1198,7 +1202,7 @@
         "vram_note": "An 80 GB card handles up to 5120 tokens with memory preallocation enabled. Larger inputs need the documented unified-memory setting, which spills to host memory at a speed cost. Published H100 timings run from roughly 34 seconds at 1024 tokens to about 1416 seconds at 5120 tokens.",
         "multi_gpu": "single-gpu-only",
         "cpu_or_host_dependency": "The data pipeline is the dominant infrastructure cost and never touches the GPU. It needs nine genetic and structural databases totalling roughly 252 GB compressed and 630 GB unpacked, up to a terabyte of fast local disk, and at least 64 GB of RAM, with more for deep alignments.",
-        "evidence": "The upstream documentation officially supports a single H100 80GB alongside the A100 80GB, states that numerical accuracy was verified on both, requires compute capability 8.0 or above, and publishes an H100 timing table. This is the only model on the request list with documented, benchmarked H100 support from its own upstream."
+        "evidence": "The upstream documentation officially supports a single H100 80GB alongside the A100 80GB, states that numerical accuracy was verified on both, requires compute capability 8.0 or above, and publishes an H100 timing table. Follow-up runtime evidence additionally records successful parameter loading and semantic inference on a real H100 with accepted r6 image digest sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e. This qualifies that runtime digest, not the still-unwired full platform lane."
       },
       "semantic_validator": {
         "fixture": "Two shipped examples, run in order. First the ubiquitin monomer for a mechanical check, then the barnase-barstar complex, which is the one that matters because it exercises the interface confidence metrics an antibody-antigen user will actually consume. Both are small enough to run in minutes.",
@@ -1215,16 +1219,16 @@
       "access_gates": [
         {
           "gate_id": "alphafold3-parameters-terms",
-          "action": "There is no longer a request form: DeepMind removed the approval workflow in July 2026 and the parameter file now downloads directly and unauthenticated, which this task confirmed. The legal gate did not move with the technical one. The terms restrict use to non-commercial organisations such as universities, non-profits and research institutes, which this academic proof of concept satisfies. The exact one-time step is that the academic institution's authorised representative accepts the parameters terms of use and downloads the file themselves, because the terms state the parameters may only be used if received directly from Google. Nebius may then operate that institution's own copy under the agents and contractors provision, provided the copy is not shared beyond that organisation.",
+          "action": "Operational academic-PoC authorization is recorded. The exact Google object generation 1780568696389861 was received directly from Google, privately installed, loaded, and semantically tested on H100 with accepted r6 runtime digest sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e. It remains tenant-private and excluded from the public cache and every image. Formal institutional acceptance by an authorized representative remains a later non-PoC advisory before use outside this explicitly authorized PoC scope.",
           "grantor": "Google DeepMind",
-          "blocking": true,
+          "blocking": false,
           "credential_handling": "Never commit the parameter file and never bake it into a shared image. The terms designate the parameters as confidential information, so on a shared cluster the volume holding them must be restricted to this tenant's namespace and excluded from any shared model cache that other tenants can read."
         }
       ],
       "blockers": [
         "Weights and outputs are both restricted to non-commercial use. This is acceptable for the stated academic proof of concept, but the lane cannot carry over to commercial work without a separate commercial licence, which DeepMind does not offer through this channel.",
-        "The parameters are designated confidential information, which conflicts with placing them in a shared multi-tenant model cache. Isolation must be designed in rather than retrofitted.",
-        "The alignment pipeline needs on the order of a terabyte of fast local disk and 64 GB or more of RAM. The observed GPU nodes expose only about 277 GiB of ephemeral storage and have no large local NVMe, so the databases cannot live on node-local disk. They must be placed on the shared filesystem alongside the existing model cache volumes, whose current claims are 128Gi each and would need to be sized up substantially. This is the largest infrastructure commitment of any model on the request list."
+        "The parameters are confidential licensed bytes and must remain on the tenant-private academic plane; the accepted r6 runtime image contains none of them.",
+        "The alignment pipeline still requires the Terraform-managed regional reference database plane because the H100 nodes have no local NVMe. Runtime qualification does not by itself make the full CPU-to-GPU platform lane ready."
       ],
       "sources": [
         {

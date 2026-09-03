@@ -1,0 +1,52 @@
+{
+  "content": {
+    "digest": "b8831a6b22eefd8222d123fb9675815d004a6cec4c9bfe990e48ccb1fb529900",
+    "expanded_bytes": 10234382415,
+    "files": [
+      {
+        "bytes": 2061914091,
+        "path": "boltz2_aff.ckpt",
+        "sha256": "6dc13d488015666d3c3fdffd29fab54d72e4f2597b654f996cdcf5937feab090"
+      },
+      {
+        "bytes": 2087255089,
+        "path": "boltz2_conf_final.ckpt",
+        "sha256": "525a51ef306da7282a54d23a4a5b91212fc60d0ff6b23b56dd6351de3b387530"
+      },
+      {
+        "bytes": 1930858014,
+        "path": "boltzgen1_adherence.ckpt",
+        "sha256": "ac7078b3dc13064c68e0c3fd542e5bc538c33558bf6607f65e499eb336ca5e5d"
+      },
+      {
+        "bytes": 1930847192,
+        "path": "boltzgen1_diverse.ckpt",
+        "sha256": "360af8bd6e59527ff6ec25dd81253967f3bd3567d200053b10680634751f8e3c"
+      },
+      {
+        "bytes": 12582656,
+        "path": "boltzgen1_ifold.ckpt",
+        "sha256": "dd4cf108c94471bdc3a326b7b180fa3854dc019110fae780208c30b50bd56578"
+      },
+      {
+        "bytes": 2210925373,
+        "path": "boltzgen1_structuretrained_small.ckpt",
+        "sha256": "e2455b6ff5156218ef3999be894d1a8e4574f0531cefcd9d67d9c1d2d015937b"
+      }
+    ]
+  },
+  "entitlement_state": "not-required",
+  "kind": "weights",
+  "license": {
+    "id": "MIT",
+    "state": "verified"
+  },
+  "model_id": "boltzgen-1",
+  "owner": "cancer-immunotherapy",
+  "retention": "retained-platform",
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "source": {
+    "revision": "c1be29e1f82ffcc72264f64b993c43fb4e0d17f0",
+    "uri": "hf://boltzgen/boltzgen-1"
+  }
+}

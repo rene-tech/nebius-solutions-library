@@ -1,0 +1,11 @@
+# Model bytes and resumable downloader state must never enter Git.
+cache/
+.staging/
+*.part
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.bin
+*.tar
+*.zip

@@ -1,0 +1,57 @@
+{
+  "artifact_id": "openfold3-components-bcif",
+  "binarycif_inspection": {
+    "blocks": [
+      {
+        "categories": [
+          {
+            "column_count": 25,
+            "name": "_chem_comp",
+            "row_count": 49282
+          },
+          {
+            "column_count": 24,
+            "name": "_chem_comp_atom",
+            "row_count": 2350325
+          },
+          {
+            "column_count": 7,
+            "name": "_chem_comp_bond",
+            "row_count": 2444753
+          }
+        ],
+        "header": "components"
+      }
+    ],
+    "encoder": "biotite",
+    "format": "BinaryCIF",
+    "version": "0.3.0"
+  },
+  "limitations": [
+    "This is offline source and structure verification, not a regional-cache publication receipt.",
+    "No OpenFold3 H100 semantic inference was performed by this verification."
+  ],
+  "object": {
+    "bytes": 63393643,
+    "etag": "b251a30629b9c30d077a5b91aeefecb2-4",
+    "last_modified": "2026-01-28T09:08:32Z",
+    "revision": "s3://openfold3-data/components.bcif#etag-b251a30629b9c30d077a5b91aeefecb2-4",
+    "sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c",
+    "url": "https://openfold3-data.s3.us-west-2.amazonaws.com/components.bcif"
+  },
+  "observed_at": "2026-09-02T22:54:09Z",
+  "runtime_layout": {
+    "checkpoint": "/models/openfold3/of3-ob-2025-06-30-174k.pt",
+    "components_bcif": "/databases/openfold3/components.bcif",
+    "read_only": true
+  },
+  "schema": "fs2-serve.nebius.ai/public-artifact-source-verification/v1",
+  "upstream_source": {
+    "ccd_bucket": "openfold3-data",
+    "ccd_key": "components.bcif",
+    "repository": "aqlaboratory/openfold-3",
+    "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+    "setup_path": "openfold3/setup_openfold.py",
+    "setup_sha256": "3c456b12a9410ed87a586979014e118c073a922590d7d78b9b408ca2d0d8a080"
+  }
+}

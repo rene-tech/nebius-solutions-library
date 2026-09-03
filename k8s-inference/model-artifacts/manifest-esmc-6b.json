@@ -1,0 +1,77 @@
+{
+  "content": {
+    "digest": "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+    "expanded_bytes": 25408251020,
+    "files": [
+      {
+        "bytes": 341,
+        "path": "config.json",
+        "sha256": "c5566fab6a17fd674141331fe75de917b7904d99fb7a410d2b1593c21e576913"
+      },
+      {
+        "bytes": 4864457920,
+        "path": "model-00001-of-00006.safetensors",
+        "sha256": "bd90149ff223e6ac1a0cac6147a5ae0df20d3a21df4f65356a1f19cd14f4aa8a"
+      },
+      {
+        "bytes": 4971211344,
+        "path": "model-00002-of-00006.safetensors",
+        "sha256": "f75e2144d8269fe2eb4b3e0823fb089b94f176d8024153e85b8fb573a42294fa"
+      },
+      {
+        "bytes": 4863752992,
+        "path": "model-00003-of-00006.safetensors",
+        "sha256": "f699f01ecc9691d9c6470492765fe54b8b5d2e9f277c139e89427433ffdfe0b2"
+      },
+      {
+        "bytes": 4971211344,
+        "path": "model-00004-of-00006.safetensors",
+        "sha256": "46add1b7be098bbfdc3073884851ba3057f1b33ea23a158b650a37007dabd13d"
+      },
+      {
+        "bytes": 4863752992,
+        "path": "model-00005-of-00006.safetensors",
+        "sha256": "1e1cb62f060a34e18f54a31a76683ef888b8cec59e73315f5b31d25d45a1f88c"
+      },
+      {
+        "bytes": 873762296,
+        "path": "model-00006-of-00006.safetensors",
+        "sha256": "56c73e13ae96e777ce65eee99364056069ef93b646470f352f83c5f1037b1b18"
+      },
+      {
+        "bytes": 97349,
+        "path": "model.safetensors.index.json",
+        "sha256": "6846456e20e6ee2c37461f7bfc21d316d69bdaf165b925691afcb39e583244da"
+      },
+      {
+        "bytes": 171,
+        "path": "special_tokens_map.json",
+        "sha256": "0b7245ec86c8c3aeaf61523ba70dfa79be137e6283f127bd651adc30b4f15c74"
+      },
+      {
+        "bytes": 2879,
+        "path": "tokenizer.json",
+        "sha256": "8d3447b278176e65fb3ef0224472927bf5fee3be46ea2bd77fad0111423cee1f"
+      },
+      {
+        "bytes": 1392,
+        "path": "tokenizer_config.json",
+        "sha256": "e8d8e40c9f92b334f0272e80bb65ed4043cb9836523cbae899e9859e8cbb8833"
+      }
+    ]
+  },
+  "entitlement_state": "not-required",
+  "kind": "weights",
+  "license": {
+    "id": "MIT-and-third-party-notices",
+    "state": "verified"
+  },
+  "model_id": "esmc-6b",
+  "owner": "cancer-immunotherapy",
+  "retention": "retained-platform",
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "source": {
+    "revision": "45b0fa5d7fb06faefbd5e3b89bdcef35d564e79a",
+    "uri": "hf://biohub/ESMC-6B"
+  }
+}

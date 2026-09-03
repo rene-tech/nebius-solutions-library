@@ -1,0 +1,32 @@
+{
+  "content": {
+    "digest": "bb5d47194561eeaf219b420c731abd858058c3602d581c34babdbcd10c3c72ae",
+    "expanded_bytes": 5892211805,
+    "files": [
+      {
+        "bytes": 1792013880,
+        "path": "complexa_ame.ckpt",
+        "sha256": "d11319693d024d0427abc356a86350a694a1cb7dceb8db642c8041e5a20a9f7b"
+      },
+      {
+        "bytes": 4100197925,
+        "path": "complexa_ame_ae.ckpt",
+        "sha256": "63b1358c5459e968628094fdc9a2a6a95ac003606fcf7b1a3a21174458a69734"
+      }
+    ]
+  },
+  "entitlement_state": "not-required",
+  "kind": "weights",
+  "license": {
+    "id": "NVIDIA-Open-Model-License-2024-06",
+    "state": "verified"
+  },
+  "model_id": "proteina-complexa-ame-160m-v1",
+  "owner": "cancer-immunotherapy",
+  "retention": "retained-platform",
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "source": {
+    "revision": "9743d749a8754080a32fda857d95579dfa4dabae",
+    "uri": "hf://nvidia/NV-Proteina-Complexa-AME-160M-v1"
+  }
+}

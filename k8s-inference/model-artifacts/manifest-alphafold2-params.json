@@ -1,0 +1,27 @@
+{
+  "content": {
+    "digest": "b2fec032b5b9dab74dbeb7489d425b4fb4124742a3b368272bfa1555fe06650a",
+    "expanded_bytes": 5587968000,
+    "files": [
+      {
+        "bytes": 5587968000,
+        "path": "alphafold_params_2022-12-06.tar",
+        "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3"
+      }
+    ]
+  },
+  "entitlement_state": "not-required",
+  "kind": "weights",
+  "license": {
+    "id": "CC-BY-4.0",
+    "state": "verified"
+  },
+  "model_id": "alphafold2-params-2022-12-06",
+  "owner": "cancer-immunotherapy",
+  "retention": "retained-platform",
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "source": {
+    "revision": "gcs-generation-1670353726160664",
+    "uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar"
+  }
+}
