@@ -1,79 +1,18 @@
 {
-  "schema": "fs2-serve.nebius.ai/academic-assets-cache-staging-evidence/v1",
-  "observed_at": "2026-09-02T21:07:00Z",
   "authorization": {
-    "artifact_acquisition_and_private_quarantine": true,
-    "source": "explicit user instruction in task fs2-cancer-immunotherapy-academic-assets-ingestion-r20260902",
-    "license_terms_acceptance_recorded": false,
     "accepted_by_role": null,
+    "artifact_acquisition_and_private_quarantine": true,
     "distribution_scope": null,
-    "note": "The agent did not and cannot accept organization terms on the user's behalf. A truthful user-supplied receipt is still required."
+    "license_terms_acceptance_recorded": false,
+    "note": "The agent did not and cannot accept organization terms on the user's behalf. A truthful user-supplied receipt is still required.",
+    "source": "explicit user instruction in task fs2-cancer-immunotherapy-academic-assets-ingestion-r20260902"
   },
-  "target": {
-    "project_id": "project-e00rene",
-    "project_name": "scientific-ai-platform1",
-    "region": "eu-north1",
-    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
-    "cluster_context": "k8s-inference-h100",
-    "kubeconfig": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
-    "gpu_used": false
-  },
-  "source_artifacts": {
-    "alphafold3": {
-      "source": "Google direct object documented by the official AlphaFold3 repository",
-      "object_generation": "1780568696389861",
-      "last_modified": "2026-06-04T10:24:56Z",
-      "size_bytes": 1020545840,
-      "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
-      "validators": ["verified TLS", "object size", "zstd magic", "zstd full-stream test", "SHA-256"]
-    },
-    "pyrosetta-bindcraft": {
-      "source": "official RosettaCommons release.cxx11thread.serialization wheel",
-      "bindcraft_version": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
-      "package_version": "2026.29+releasequarterly.80a0635615",
-      "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
-      "size_bytes": 1667097173,
-      "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
-      "validators": ["verified TLS", "wheel metadata", "Zip integrity", "SHA-256"],
-      "tls_bypass_used": false
-    }
-  },
-  "private_cache": {
-    "filesystem_id": "computefilesystem-e00hdb1drrgsenr2j7",
-    "filesystem_name": "k8s-inference-h100-cache",
-    "filesystem_type": "NETWORK_SSD",
-    "filesystem_state": "READY",
-    "pvc_namespace": "fs2-models",
-    "pvc_name": "cancer-immunotherapy-academic-assets-rwx-v1",
-    "pvc_uid": "0c67bc71-1735-4823-a932-478e5b8f85cb",
-    "pv_name": "pvc-0c67bc71-1735-4823-a932-478e5b8f85cb",
-    "pv_uid": "bff85aff-44b9-4f57-bb41-64f2e6b04c46",
-    "storage_class": "csi-mounted-fs-path-sc",
-    "csi_driver": "mounted-fs-path.csi.nebius.ai",
-    "access_mode": "ReadWriteMany",
-    "phase": "Bound",
-    "licensed_path_recorded": false,
-    "content_state": "QuarantinedUnactivated",
-    "active_cache_receipt": false
-  },
-  "transfer": {
-    "loader_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:e40c69a6363d1b873780869e3d8301121c7da410435f5d76481986cf2994b571",
-    "loader_service_account_token": false,
-    "loader_run_as_user": 65532,
-    "loader_gpu_request": 0,
-    "cached_bytes_rehashed": true,
-    "remaining_loader_pods": 0,
-    "cleanup": "both deterministic task-owned loader pods deleted after verification"
-  },
-  "readiness": {
-    "generation": "quarantined-20260902-1",
-    "alphafold3": "MissingLicenseAcceptance",
-    "pyrosetta-bindcraft": "MissingLicenseAcceptance",
-    "artifact_stage": "verified",
-    "private_cache_stage": "missing",
-    "reason": "source bytes are verified and privately quarantined, but no user-authored license acceptance receipt exists; cache/runtime/deployment/semantic readiness is not activated",
-    "openfold3": "IndependentFallback",
-    "open-binder": "IndependentFallback"
+  "confidentiality": {
+    "agent_authored_license_acceptance_retained": false,
+    "credentials_in_git_logs_or_receipts": false,
+    "licensed_bytes_in_git_images_or_receipts": false,
+    "model_outputs_recorded": false,
+    "signed_urls_recorded": false
   },
   "corrective_revocations": [
     {
@@ -89,28 +28,103 @@
       "revoked_at": "2026-09-02T21:06:32Z"
     }
   ],
-  "shared_service_safety": {
-    "shared_service_deployed": false,
-    "runtime_image_built_or_pushed": false,
-    "model_deployed": false,
-    "control_plane_image_unchanged": "sha256:e40c69a6363d1b873780869e3d8301121c7da410435f5d76481986cf2994b571",
-    "admin_console_image_unchanged": "sha256:75bf54476e194a3a26732620b59a850e37921fa7ada3c7080b0008dfecdf8d6a",
-    "hot_qwen_image_unchanged": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+  "observed_at": "2026-09-02T21:07:00Z",
+  "private_cache": {
+    "access_mode": "ReadWriteMany",
+    "active_cache_receipt": false,
+    "content_state": "QuarantinedUnactivated",
+    "csi_driver": "mounted-fs-path.csi.nebius.ai",
+    "filesystem_id": "withheld",
+    "filesystem_name": "withheld",
+    "filesystem_state": "READY",
+    "filesystem_type": "NETWORK_SSD",
+    "licensed_path_recorded": false,
+    "phase": "Bound",
+    "pv_name": "withheld",
+    "pv_uid": "withheld",
+    "pvc_name": "cancer-immunotherapy-academic-assets-rwx-v1",
+    "pvc_namespace": "fs2-models",
+    "pvc_uid": "withheld",
+    "storage_class": "csi-mounted-fs-path-sc"
   },
-  "confidentiality": {
-    "credentials_in_git_logs_or_receipts": false,
-    "licensed_bytes_in_git_images_or_receipts": false,
-    "agent_authored_license_acceptance_retained": false,
-    "signed_urls_recorded": false,
-    "model_outputs_recorded": false
+  "public_export_note": "Deployment identities are withheld from this public export: registry, filesystem, volume, project, cluster and context values identify one live environment and are recorded only in the private Task Deck evidence. Resource kinds, sizes, digests and semantic results are retained because they are the evidence.",
+  "readiness": {
+    "alphafold3": "MissingLicenseAcceptance",
+    "artifact_stage": "verified",
+    "generation": "quarantined-20260902-1",
+    "open-binder": "IndependentFallback",
+    "openfold3": "IndependentFallback",
+    "private_cache_stage": "missing",
+    "pyrosetta-bindcraft": "MissingLicenseAcceptance",
+    "reason": "source bytes are verified and privately quarantined, but no user-authored license acceptance receipt exists; cache/runtime/deployment/semantic readiness is not activated"
   },
   "reproducible_commands": {
-    "download": "curl --fail --location --proto '=https' --tlsv1.2 --output <owner-only-path> <contract-source-url>",
-    "source_identity": "stat --format=%s <owner-only-path> && sha256sum <owner-only-path>",
     "alphafold3_structure": "zstd --test --quiet -- <owner-only-path>",
+    "cluster_selector": "kubectl --kubeconfig \"$FS2_ACADEMIC_KUBECONFIG\" --context \"$FS2_ACADEMIC_KUBE_CONTEXT\"",
+    "download": "curl --fail --location --proto '=https' --tlsv1.2 --output <owner-only-path> <contract-source-url>",
+    "note": "environment references provide owner-only paths; no credential, signed URL, or licensed path is an argument or receipt field",
     "offline_suite": "academic-assets/run_checks.sh",
     "one_step_ingestion": "academic-assets/scripts/ingest-approved-assets.sh",
-    "cluster_selector": "kubectl --kubeconfig /home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig --context k8s-inference-h100",
-    "note": "environment references provide owner-only paths; no credential, signed URL, or licensed path is an argument or receipt field"
+    "source_identity": "stat --format=%s <owner-only-path> && sha256sum <owner-only-path>"
+  },
+  "schema": "fs2-serve.nebius.ai/academic-assets-cache-staging-evidence/v1",
+  "shared_service_safety": {
+    "admin_console_image_unchanged": "sha256:75bf54476e194a3a26732620b59a850e37921fa7ada3c7080b0008dfecdf8d6a",
+    "control_plane_image_unchanged": "sha256:e40c69a6363d1b873780869e3d8301121c7da410435f5d76481986cf2994b571",
+    "hot_qwen_image_unchanged": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+    "model_deployed": false,
+    "runtime_image_built_or_pushed": false,
+    "shared_service_deployed": false
+  },
+  "source_artifacts": {
+    "alphafold3": {
+      "last_modified": "2026-06-04T10:24:56Z",
+      "object_generation": "1780568696389861",
+      "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+      "size_bytes": 1020545840,
+      "source": "Google direct object documented by the official AlphaFold3 repository",
+      "validators": [
+        "verified TLS",
+        "object size",
+        "zstd magic",
+        "zstd full-stream test",
+        "SHA-256"
+      ]
+    },
+    "pyrosetta-bindcraft": {
+      "bindcraft_version": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
+      "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+      "package_version": "2026.29+releasequarterly.80a0635615",
+      "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+      "size_bytes": 1667097173,
+      "source": "official RosettaCommons release.cxx11thread.serialization wheel",
+      "tls_bypass_used": false,
+      "validators": [
+        "verified TLS",
+        "wheel metadata",
+        "Zip integrity",
+        "SHA-256"
+      ]
+    }
+  },
+  "target": {
+    "cluster_context": "withheld",
+    "cluster_id_export": "withheld",
+    "export_note": "Opaque cloud resource IDs are deliberately not exported. They are recorded in the owner-only private state and in stage receipts, which are never committed.",
+    "gpu_used": false,
+    "kubeconfig": "$FS2_ACADEMIC_KUBECONFIG",
+    "project_id": "withheld",
+    "project_name": "withheld",
+    "region": "eu-north1"
+  },
+  "transfer": {
+    "cached_bytes_rehashed": true,
+    "cleanup": "both deterministic task-owned loader pods deleted after verification",
+    "loader_gpu_request": 0,
+    "loader_image_digest": "sha256:e40c69a6363d1b873780869e3d8301121c7da410435f5d76481986cf2994b571",
+    "loader_image_note": "Platform control-plane image, pinned by digest. The repository path is not exported.",
+    "loader_run_as_user": 65532,
+    "loader_service_account_token": false,
+    "remaining_loader_pods": 0
   }
 }

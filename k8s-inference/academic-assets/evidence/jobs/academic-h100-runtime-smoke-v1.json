@@ -1,4 +1,5 @@
 {
+  "_public_export_note": "Registry account paths and Kubernetes object UUIDs are redacted. Image digests, timestamps, resource requests and results are retained as the evidence.",
   "apiVersion": "batch/v1",
   "kind": "Job",
   "metadata": {
@@ -11,7 +12,7 @@
     },
     "name": "academic-h100-runtime-smoke-v1",
     "namespace": "fs2-academic-poc",
-    "uid": "97fc55c3-087d-4e04-8b31-d79360855b1c"
+    "uid": "00000000-0000-0000-0000-000000000000"
   },
   "spec": {
     "backoffLimit": 1,
@@ -22,7 +23,7 @@
     "podReplacementPolicy": "TerminatingOrFailed",
     "selector": {
       "matchLabels": {
-        "batch.kubernetes.io/controller-uid": "97fc55c3-087d-4e04-8b31-d79360855b1c"
+        "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000"
       }
     },
     "suspend": false,
@@ -30,9 +31,9 @@
       "metadata": {
         "labels": {
           "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion",
-          "batch.kubernetes.io/controller-uid": "97fc55c3-087d-4e04-8b31-d79360855b1c",
+          "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000",
           "batch.kubernetes.io/job-name": "academic-h100-runtime-smoke-v1",
-          "controller-uid": "97fc55c3-087d-4e04-8b31-d79360855b1c",
+          "controller-uid": "00000000-0000-0000-0000-000000000000",
           "job-name": "academic-h100-runtime-smoke-v1"
         }
       },

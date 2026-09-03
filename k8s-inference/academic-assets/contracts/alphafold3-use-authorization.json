@@ -7,7 +7,7 @@
   "authorization_id": "fs2-cancer-immunotherapy-academic-poc-2026-09-02",
   "tenant_id": "tenant-academic",
   "scope": "academic-noncommercial",
-  "provenance": "Explicit platform-owner instruction recorded in Agent Task Deck task fs2-cancer-immunotherapy-academic-assets-ingestion-r20260902 on 2026-09-02, confirming this proof of concept is academic and authorizing PyRosetta and AlphaFold 3 installation, operation and tenant prediction execution on the project-e00rene H100 cluster.",
+  "provenance": "Explicit platform-owner instruction recorded in Agent Task Deck task fs2-cancer-immunotherapy-academic-assets-ingestion-r20260902 on 2026-09-02, confirming this proof of concept is academic and authorizing PyRosetta and AlphaFold 3 installation, operation and tenant prediction execution on the the target project H100 cluster.",
   "supersedes_formal_acceptance": false,
   "permitted_operations": [
     "verify-artifact",

@@ -1,4 +1,5 @@
 {
+  "_public_export_note": "Registry account paths and Kubernetes object UUIDs are redacted. Image digests, timestamps, resource requests and results are retained as the evidence.",
   "apiVersion": "batch/v1",
   "kind": "Job",
   "metadata": {
@@ -11,7 +12,7 @@
     },
     "name": "academic-pyrosetta-offline-import-v2",
     "namespace": "fs2-academic-poc",
-    "uid": "dde00a04-c1c6-4ba7-b320-e360caed7f28"
+    "uid": "00000000-0000-0000-0000-000000000000"
   },
   "spec": {
     "backoffLimit": 0,
@@ -22,7 +23,7 @@
     "podReplacementPolicy": "TerminatingOrFailed",
     "selector": {
       "matchLabels": {
-        "batch.kubernetes.io/controller-uid": "dde00a04-c1c6-4ba7-b320-e360caed7f28"
+        "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000"
       }
     },
     "suspend": false,
@@ -30,9 +31,9 @@
       "metadata": {
         "labels": {
           "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion",
-          "batch.kubernetes.io/controller-uid": "dde00a04-c1c6-4ba7-b320-e360caed7f28",
+          "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000",
           "batch.kubernetes.io/job-name": "academic-pyrosetta-offline-import-v2",
-          "controller-uid": "dde00a04-c1c6-4ba7-b320-e360caed7f28",
+          "controller-uid": "00000000-0000-0000-0000-000000000000",
           "fs2.nebius.ai/offline-validation": "true",
           "job-name": "academic-pyrosetta-offline-import-v2"
         }

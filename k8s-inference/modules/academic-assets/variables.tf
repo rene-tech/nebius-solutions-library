@@ -53,6 +53,18 @@ variable "academic_assets" {
       relative_path         = string
       install_relative_path = optional(string, null)
       read_only             = optional(bool, true)
+
+      # Exactly how a model runtime addresses this object. Without it the module
+      # cannot state a mount, so the output reports the binding as absent rather
+      # than deriving a path that would be wrong for an installed tree.
+      runtime_binding = optional(object({
+        artifact_id           = string
+        source_sub_path       = string
+        consumer_path         = string
+        mechanism             = string
+        content_digest_sha256 = optional(string, null)
+        size_bytes            = optional(number, null)
+      }), null)
     }))
     readiness_manifest_sha256 = optional(string, null)
   })
@@ -103,5 +115,18 @@ variable "academic_assets" {
   validation {
     condition     = alltrue([for key, asset in var.academic_assets.assets : asset.read_only])
     error_message = "Runtime pods mount licensed academic assets read-only."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, asset in var.academic_assets.assets :
+      asset.runtime_binding == null || (
+        startswith(asset.runtime_binding.consumer_path, "/") &&
+        !startswith(asset.runtime_binding.source_sub_path, "/") &&
+        !strcontains(asset.runtime_binding.source_sub_path, "..") &&
+        contains(["subpath-file-mount", "subpath-directory-mount"], asset.runtime_binding.mechanism)
+      )
+    ])
+    error_message = "A runtime binding must localize a safe relative subPath at an absolute consumer path by subPath mount."
   }
 }

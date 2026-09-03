@@ -1,66 +1,68 @@
 {
-  "schema": "fs2-serve.nebius.ai/academic-assets-discovery/v1",
-  "observed_at": "2026-09-02T20:31:00Z",
-  "mode": "read-only",
-  "target": {
-    "project_id": "project-e00rene",
-    "project_name": "scientific-ai-platform1",
-    "region": "eu-north1",
-    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
-    "cluster_name": "k8s-inference-h100",
-    "kubeconfig": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
-    "context": "k8s-inference-h100"
+  "cluster_cache": {
+    "cache_claim_identities": [
+      "fs2-models/cosmos3-nano-cache-rwx-8d453c7f",
+      "fs2-models/qwen3-8b-cache-rwx-7af24455"
+    ],
+    "filesystem_id": "withheld",
+    "filesystem_name": "withheld",
+    "matching_native_asset_claims": 0,
+    "note": "No debug pod or new mount was created; the no-live-mutation gate was preserved."
+  },
+  "container_metadata": {
+    "distinct_alternatives_observed": [
+      "openfold3/alphafold2"
+    ],
+    "matching_native_images": 0
   },
   "local_filesystem": {
-    "roots_checked": [
-      "/home/tux",
-      "/mnt"
-    ],
+    "matching_licensed_artifacts": 0,
+    "notes": "One unrelated AlphaFold3 notebook name matched; no PyRosetta package or AlphaFold3 parameter file was found.",
     "patterns": [
       "*pyrosetta*",
       "af3.bin.zst",
       "*alphafold3*"
     ],
-    "matching_licensed_artifacts": 0,
-    "notes": "One unrelated AlphaFold3 notebook name matched; no PyRosetta package or AlphaFold3 parameter file was found."
-  },
-  "container_metadata": {
-    "matching_native_images": 0,
-    "distinct_alternatives_observed": [
-      "openfold3/alphafold2"
+    "roots_checked": [
+      "<operator-home>",
+      "/mnt"
     ]
   },
-  "private_registry": {
-    "registry_id": "registry-e00akg9ndpx77eaexh",
-    "name": "k8s-inference-h100",
-    "fqdn": "cr.eu-north1.nebius.cloud",
-    "total_images": 55,
-    "matching_image_manifests": 0,
-    "name_patterns": [
-      "pyrosetta",
-      "alphafold3",
-      "bindcraft",
-      "openfold3"
-    ]
-  },
+  "mode": "read-only",
+  "mutation_performed": false,
   "object_storage": {
     "bucket_count": 0,
     "matching_objects": 0,
     "note": "No project buckets exist, so no object enumeration was possible or required."
   },
-  "cluster_cache": {
-    "filesystem_id": "computefilesystem-e00hdb1drrgsenr2j7",
-    "filesystem_name": "k8s-inference-h100-cache",
-    "cache_claim_identities": [
-      "fs2-models/cosmos3-nano-cache-rwx-8d453c7f",
-      "fs2-models/qwen3-8b-cache-rwx-7af24455"
+  "observed_at": "2026-09-02T20:31:00Z",
+  "private_registry": {
+    "fqdn": "cr.eu-north1.nebius.cloud",
+    "matching_image_manifests": 0,
+    "name": "withheld",
+    "name_patterns": [
+      "pyrosetta",
+      "alphafold3",
+      "bindcraft",
+      "openfold3"
     ],
-    "matching_native_asset_claims": 0,
-    "note": "No debug pod or new mount was created; the no-live-mutation gate was preserved."
+    "registry_id": "withheld",
+    "total_images": 55
   },
-  "mutation_performed": false,
+  "public_export_note": "Deployment identities are withheld from this public export: registry, filesystem, volume, project, cluster and context values identify one live environment and are recorded only in the private Task Deck evidence. Resource kinds, sizes, digests and semantic results are retained because they are the evidence.",
   "result": {
     "alphafold3": "MissingArtifact",
     "pyrosetta-bindcraft": "MissingArtifact"
+  },
+  "schema": "fs2-serve.nebius.ai/academic-assets-discovery/v1",
+  "target": {
+    "cluster_id_export": "withheld",
+    "cluster_name": "withheld",
+    "context": "withheld",
+    "export_note": "Opaque cloud resource IDs are deliberately not exported. They are recorded in the owner-only private state and in stage receipts, which are never committed.",
+    "kubeconfig": "$FS2_ACADEMIC_KUBECONFIG",
+    "project_id": "withheld",
+    "project_name": "withheld",
+    "region": "eu-north1"
   }
 }

@@ -1,4 +1,5 @@
 {
+  "_public_export_note": "Registry account paths and Kubernetes object UUIDs are redacted. Image digests, timestamps, resource requests and results are retained as the evidence.",
   "apiVersion": "batch/v1",
   "kind": "Job",
   "metadata": {
@@ -11,7 +12,7 @@
     },
     "name": "academic-assets-stage-v1",
     "namespace": "fs2-academic-poc",
-    "uid": "4bff73b7-ca22-4dae-8115-e99143e68247"
+    "uid": "00000000-0000-0000-0000-000000000000"
   },
   "spec": {
     "backoffLimit": 2,
@@ -22,7 +23,7 @@
     "podReplacementPolicy": "TerminatingOrFailed",
     "selector": {
       "matchLabels": {
-        "batch.kubernetes.io/controller-uid": "4bff73b7-ca22-4dae-8115-e99143e68247"
+        "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000"
       }
     },
     "suspend": false,
@@ -30,9 +31,9 @@
       "metadata": {
         "labels": {
           "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion",
-          "batch.kubernetes.io/controller-uid": "4bff73b7-ca22-4dae-8115-e99143e68247",
+          "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000",
           "batch.kubernetes.io/job-name": "academic-assets-stage-v1",
-          "controller-uid": "4bff73b7-ca22-4dae-8115-e99143e68247",
+          "controller-uid": "00000000-0000-0000-0000-000000000000",
           "job-name": "academic-assets-stage-v1"
         }
       },

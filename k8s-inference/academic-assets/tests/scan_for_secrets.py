@@ -14,7 +14,16 @@ from pathlib import Path
 
 LICENSED_SUFFIXES = {".whl", ".conda", ".bin", ".zst", ".pkl", ".pt", ".safetensors"}
 SKIP_DIRECTORIES = {".git", "__pycache__", "private-state", ".pytest_cache", "node_modules"}
+# These files carry deliberate probe values that prove the detectors fire.
+DETECTOR_FIXTURES = {"tests/test_public_evidence.py", "tests/public_identity_classes.py"}
 MAX_SCAN_BYTES = 2 * 1024 * 1024
+
+# One definition of what must never be exported, shared with the evidence tests
+# and applied across the whole component: contracts, evidence, manifests, scripts
+# and fixtures alike. Unredacted deployment binding lives only in the ignored
+# owner-private state.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from public_identity_classes import IDENTITY_VALUE_PATTERNS as EXPORT_PATTERNS  # noqa: E402
 
 SECRET_PATTERNS = (
     ("private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
@@ -46,7 +55,9 @@ def scan(root: Path) -> list[str]:
             continue
         if path.resolve() == Path(__file__).resolve():
             continue
-        for label, pattern in SECRET_PATTERNS:
+        if relative.as_posix() in DETECTOR_FIXTURES:
+            continue
+        for label, pattern in SECRET_PATTERNS + EXPORT_PATTERNS:
             if pattern.search(text):
                 findings.append(f"{relative}: {label}")
     return findings

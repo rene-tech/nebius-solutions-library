@@ -1044,7 +1044,7 @@ variable "academic_assets" {
       storage_gib   = number
       storage_class = string
       access_mode   = string
-      lifecycle     = optional(string, "retained")
+      lifecycle     = optional(string, "disposable")
     })
     legacy_quarantine_claim = object({
       enabled     = bool
@@ -1068,8 +1068,53 @@ variable "academic_assets" {
       relative_path         = string
       install_relative_path = optional(string, null)
       read_only             = optional(bool, true)
+      runtime_binding = optional(object({
+        artifact_id           = string
+        source_sub_path       = string
+        consumer_path         = string
+        mechanism             = string
+        content_digest_sha256 = optional(string, null)
+        size_bytes            = optional(number, null)
+      }), null)
     }))
     readiness_manifest_sha256 = optional(string, null)
   })
   nullable = false
+
+  # Opt-in, and disposable when opted in, matching the root facade. A default keeps
+  # the stage usable by callers and tests that do not exercise academic assets.
+  default = {
+    enabled        = false
+    project_id     = ""
+    region         = ""
+    tenant_id      = "tenant-academic"
+    institution_id = null
+    namespace      = "fs2-academic-poc"
+    runtime_claim = {
+      name          = "academic-assets-runtime-rwx"
+      storage_gib   = 128
+      storage_class = "csi-mounted-fs-path-sc"
+      access_mode   = "ReadWriteMany"
+      lifecycle     = "disposable"
+    }
+    legacy_quarantine_claim = {
+      enabled     = false
+      namespace   = "fs2-models"
+      name        = "cancer-immunotherapy-academic-assets-rwx-v1"
+      storage_gib = 128
+      retain      = false
+    }
+    delivery = {
+      mode                    = "tenant-private-volume"
+      mount_root              = "/opt/fs2/academic"
+      asset_gid               = 65532
+      consumer_access         = "supplemental-group"
+      world_readable          = false
+      embed_licensed_bytes    = false
+      general_shared_cache    = false
+      deny_egress_on_validate = true
+    }
+    assets                    = {}
+    readiness_manifest_sha256 = null
+  }
 }

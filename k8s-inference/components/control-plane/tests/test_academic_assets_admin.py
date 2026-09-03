@@ -188,3 +188,58 @@ def test_catalog_backed_adapter_fails_closed_when_undelivered(tmp_path: Path) ->
     adapter = CatalogAcademicAssetAdminAdapter(tmp_path)
     with pytest.raises(AdminAdapterUnavailableError):
         asyncio.run(adapter.snapshot())
+
+
+def test_build_runtime_wires_the_catalog_backed_adapter() -> None:
+    """Without this the endpoint silently falls back to the unavailable adapter."""
+
+    import ast
+    import inspect
+
+    from fs2_serve import cli
+
+    source = inspect.getsource(cli.build_runtime)
+    tree = ast.parse(source.lstrip())
+    constructed: list[ast.Call] = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "AdminReadService"
+    ]
+    assert constructed, "build_runtime no longer constructs the admin read service"
+    for call in constructed:
+        keywords = {keyword.arg for keyword in call.keywords}
+        assert "academic_assets" in keywords, (
+            "AdminReadService is built without academic_assets, so the operator endpoint "
+            "would always report the academic surface as unavailable"
+        )
+
+
+def test_wired_adapter_reads_the_delivered_catalog_projection() -> None:
+    """The adapter build_runtime installs must serve the real projection."""
+
+    import asyncio
+    import shutil
+    import tempfile
+
+    from fs2_serve.academic_assets import CatalogAcademicAssetAdminAdapter
+
+    with tempfile.TemporaryDirectory() as directory:
+        catalog_root = Path(directory)
+        contracts = catalog_root / "contracts"
+        contracts.mkdir()
+        shutil.copy(CATALOG_PROJECTION, contracts / "academic-asset-readiness.json")
+        snapshot = asyncio.run(CatalogAcademicAssetAdminAdapter(catalog_root).snapshot())
+
+    assert snapshot.data.items, "the wired adapter returned no academic assets"
+    assert snapshot.data.request_time_license_receipt_required is False
+    for item in snapshot.data.items:
+        assert item.delivery.embed_in_image is False
+
+
+def test_admin_service_defaults_to_unavailable_only_when_not_wired() -> None:
+    """The fallback must remain a fallback, not the production path."""
+
+    from fs2_serve.academic_assets import CatalogAcademicAssetAdminAdapter
+    from fs2_serve.admin import UnavailableAcademicAssetAdminAdapter
+
+    assert not issubclass(CatalogAcademicAssetAdminAdapter, UnavailableAcademicAssetAdminAdapter)

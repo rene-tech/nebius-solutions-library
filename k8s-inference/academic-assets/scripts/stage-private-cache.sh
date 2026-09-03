@@ -17,7 +17,7 @@ asset_root=$(cd "${script_dir}/.." && pwd)
 
 : "${FS2_ACADEMIC_ASSET_STATE_DIR:?set to the owner-only private ingestion state directory}"
 : "${FS2_ACADEMIC_ASSET_ID:?set to a contracted asset ID}"
-: "${FS2_ACADEMIC_KUBECONFIG:=/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig}"
+: "${FS2_ACADEMIC_KUBECONFIG:=${KUBECONFIG:-${HOME}/.kube/config}}"
 : "${FS2_ACADEMIC_KUBE_CONTEXT:=k8s-inference-h100}"
 
 contract="${FS2_ACADEMIC_CONTRACT:-${asset_root}/contracts/academic-assets.json}"

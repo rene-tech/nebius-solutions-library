@@ -1124,6 +1124,17 @@ variable "academic_assets" {
       relative_path         = string
       install_relative_path = optional(string, null)
       read_only             = optional(bool, true)
+
+      # How model onboarding addresses this object. Declared here so the rendered
+      # mount is the contracted one rather than a path derived from the asset key.
+      runtime_binding = optional(object({
+        artifact_id           = string
+        source_sub_path       = string
+        consumer_path         = string
+        mechanism             = string
+        content_digest_sha256 = optional(string, null)
+        size_bytes            = optional(number, null)
+      }), null)
     })), {})
   })
   default = {}

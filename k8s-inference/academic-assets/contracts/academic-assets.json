@@ -144,7 +144,7 @@
           "description": "Run the official AlphaFold 3 parameter loader inside the published runtime image built from the pinned upstream revision, against the mounted af3.bin.zst, using one explicit --model_dir. A decompress-and-digest check alone is byte-integrity evidence, not a parameter load, and is recorded separately as such."
         },
         "runtime_image": {
-          "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3",
+          "repository": "withheld",
           "tag": "v3.0.4",
           "source_tag": "v3.0.4",
           "contains_licensed_bytes": false,
@@ -154,7 +154,8 @@
           "revalidation_required": false,
           "digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
           "role": "historical-semantic-evidence",
-          "final_wrapper": false
+          "final_wrapper": false,
+          "repository_note": "The concrete registry account path is a deployment binding supplied at deploy time and is not exported. The immutable digest below is the authoritative identity."
         }
       }
     },

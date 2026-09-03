@@ -608,6 +608,7 @@ def _validate_asset(asset_id: str, asset: dict[str, Any]) -> None:
         }
         optional_image = {
             "digest",
+            "repository_note",
             "packaged_distribution_version",
             "expected_distribution_version",
             "identity_mismatch",

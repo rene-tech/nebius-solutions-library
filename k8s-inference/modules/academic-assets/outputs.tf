@@ -73,13 +73,28 @@ output "academic_assets" {
     tenant_id             = var.academic_assets.tenant_id
     institution_id        = var.academic_assets.institution_id
 
-    asset_mounts = {
-      for key, asset in var.academic_assets.assets : key => {
-        model_id   = asset.model_id
-        mount_path = "${var.academic_assets.delivery.mount_root}/${key}"
-        source     = asset.relative_path
-      }
+    # The exact binding a runtime consumes. Deriving a path from the asset key
+    # would be wrong for an installed tree, so an asset without a declared binding
+    # reports null instead of an invented mount.
+    runtime_bindings = {
+      for key, asset in var.academic_assets.assets : key => (
+        asset.runtime_binding == null ? null : {
+          model_id              = asset.model_id
+          artifact_id           = asset.runtime_binding.artifact_id
+          source_sub_path       = asset.runtime_binding.source_sub_path
+          consumer_path         = asset.runtime_binding.consumer_path
+          mechanism             = asset.runtime_binding.mechanism
+          content_digest_sha256 = asset.runtime_binding.content_digest_sha256
+          size_bytes            = asset.runtime_binding.size_bytes
+          claim                 = try(local.runtime_claim.metadata[0].name, null)
+          read_only             = true
+        }
+      )
     }
+
+    assets_without_a_declared_binding = sort([
+      for key, asset in var.academic_assets.assets : key if asset.runtime_binding == null
+    ])
   }
 }
 

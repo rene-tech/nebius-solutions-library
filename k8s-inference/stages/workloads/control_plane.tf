@@ -7,6 +7,10 @@ locals {
       digest     = var.control_plane_image.digest
       pullPolicy = "IfNotPresent"
     }
+    # Publish the tenant-private academic delivery contract to the chart so a model
+    # runtime learns which claim to mount, where, and which group grants read
+    # access. The control plane itself never mounts licensed bytes.
+    academicAssets = local.academic_chart_values
     catalog = {
       delivery                          = "image"
       imagePath                         = "/opt/fs2/catalog"

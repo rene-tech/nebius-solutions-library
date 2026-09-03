@@ -359,11 +359,32 @@ academic_assets = {
     alphafold3 = {
       model_id      = "alphafold3"
       relative_path = "alphafold3/af3.bin.zst"
+
+      # Model onboarding addresses the parameters as artifact alphafold3-parameters
+      # at /models/af3.bin.zst. The same bytes are localized there by subPath.
+      runtime_binding = {
+        artifact_id           = "alphafold3-parameters"
+        source_sub_path       = "alphafold3/af3.bin.zst"
+        consumer_path         = "/models/af3.bin.zst"
+        mechanism             = "subpath-file-mount"
+        content_digest_sha256 = "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff"
+        size_bytes            = 1020545840
+      }
     }
     pyrosetta-bindcraft = {
       model_id              = "bindcraft"
       relative_path         = "pyrosetta-bindcraft/pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl"
       install_relative_path = "pyrosetta-bindcraft/site-packages"
+
+      # The consumer reads the preinstalled tree, not the wheel.
+      runtime_binding = {
+        artifact_id           = "bindcraft-pyrosetta"
+        source_sub_path       = "pyrosetta-bindcraft/site-packages"
+        consumer_path         = "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+        mechanism             = "subpath-directory-mount"
+        content_digest_sha256 = "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242"
+        size_bytes            = 1667097173
+      }
     }
   }
 }

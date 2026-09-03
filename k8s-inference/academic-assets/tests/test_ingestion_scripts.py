@@ -336,8 +336,8 @@ class StagingScriptExecutionTests(AcademicAssetTestCase):
     validator.
     """
 
-    PVC_UID = "4d074d97-3391-46b9-9eea-ae57abc85d06"
-    VOLUME = "pvc-4d074d97-3391-46b9-9eea-ae57abc85d06"
+    PVC_UID = "11111111-2222-3333-4444-555555555555"
+    VOLUME = "pvc-11111111-2222-3333-4444-555555555555"
 
     def setUp(self) -> None:
         super().setUp()
