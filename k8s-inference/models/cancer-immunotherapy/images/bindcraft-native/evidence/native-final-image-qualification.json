@@ -442,9 +442,20 @@
     "polling_stopped": "no further probes will be run. The requirement note in data/handoffs/fs2-bindcraft-image-requirements-to-artifact-localization-20260903.md asks the publisher to ping this task, which is cheaper than repeated cluster probes",
     "required_receipt_fields": {
       "why": "a green run cannot distinguish a repaired claim from a damaged one, because the Pod reaches a repaired tree through supplemental group 65532 and the damaged tree through its primary group 10001. The receipt has to say which it ran against or the result is unreadable later.",
-      "runtime_tree_ownership": "REQUIRED and not yet collectable from the image: uid, gid and mode of each of the four admitted tree roots, measured on the node at run time, recorded per role",
+      "runtime_tree_ownership": "REQUIRED and required-to-be-present: carried as an explicit not-measured with null per-role values until a run fills it, never omitted. An absent field reads as satisfied; an explicit null reads as nobody checked, which is what stops a green run being cited as contract evidence.",
       "how_to_collect_without_a_rebuild": "run the same read-only ownership probe used on 2026-09-03 against the mounted roots in the run's namespace immediately before or after the design Job, and copy its output into this field; the probe mounts the claims read-only and requests no accelerator",
       "contract_conformance_claim": "may only be asserted when the measured gid is 65532 with consumer access by supplemental group; a run against gid 10001 is a valid semantic run and NOT evidence of the delivery contract"
+    },
+    "runtime_tree_ownership": {
+      "state": "not-measured",
+      "reason": "no live acceptance run has been executed, so there is nothing to measure",
+      "per_role": {
+        "pyrosetta-site-packages": null,
+        "alphafold2-params": null,
+        "colabdesign-mpnn-weights-vanilla": null,
+        "colabdesign-mpnn-weights-soluble": null
+      },
+      "contract_conformance": "unproven"
     }
   },
   "cleanup": {
@@ -496,7 +507,8 @@
       },
       {
         "change": "have tree_identity record each admitted tree root's uid, gid and mode in its receipt",
-        "benefit": "makes runtime_tree_ownership a first-class field the run produces itself, instead of a separate probe a human must remember to correlate"
+        "benefit": "makes runtime_tree_ownership a first-class field the run produces itself. This removes a hazard rather than a chore: a human-copied probe is most likely to be forgotten on the very run someone later cites as contract evidence, and once the runtime emits it the receipt cannot be silently incomplete",
+        "raised_by": "fs2-bindcraft-scientific-batch-adapter-successor-r20260903"
       }
     ],
     "cost": "one non-overwriting rebuild to r18 and a re-verification pass; no behavioural change to the design stage"

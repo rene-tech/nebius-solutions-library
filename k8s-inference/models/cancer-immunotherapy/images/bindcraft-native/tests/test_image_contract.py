@@ -96,6 +96,37 @@ class ImageLockTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(raw).hexdigest(), entry["sha256"], repository_path)
             self.assertEqual(len(raw), entry["size_bytes"], repository_path)
 
+    def test_the_receipt_never_omits_the_measured_tree_ownership(self) -> None:
+        """An absent field reads as satisfied; an explicit null reads as unchecked.
+
+        Both this renderer's Pod and the adapter's reach a repaired tree through
+        supplemental group 65532 and the currently damaged tree through primary
+        group 10001, so a passing run cannot distinguish them. The receipt has to
+        state which claim state produced it, and it has to state that even when
+        nobody measured, or a later reader will take a green run for a passing
+        delivery contract.
+        """
+
+        evidence = json.loads(
+            (ROOT / "evidence" / "native-final-image-qualification.json").read_text(encoding="utf-8")
+        )
+        live = evidence["live_semantic_acceptance"]
+        ownership = live["runtime_tree_ownership"]
+        self.assertEqual(set(ownership["per_role"]), bindcraft_runner.REQUIRED_TREE_ROLES)
+        measured = ownership["state"] == "measured"
+        if not measured:
+            self.assertEqual(ownership["state"], "not-measured")
+            self.assertTrue(all(value is None for value in ownership["per_role"].values()))
+            self.assertEqual(ownership["contract_conformance"], "unproven")
+            # A run cannot be claimed while nothing was measured.
+            self.assertEqual(live["state"], "not executed")
+        else:
+            for role, value in ownership["per_role"].items():
+                self.assertEqual({"uid", "gid", "mode"}, set(value), role)
+            conformant = all(value["gid"] == renderer.ACADEMIC_ASSET_GID
+                             for value in ownership["per_role"].values())
+            self.assertEqual(ownership["contract_conformance"], "proven" if conformant else "unproven")
+
     def test_the_image_declares_every_tree_it_expects_from_outside_itself(self) -> None:
         external = build_images.load_lock()["images"][0]["external_artifacts"]
         joined = " ".join(external).lower()
