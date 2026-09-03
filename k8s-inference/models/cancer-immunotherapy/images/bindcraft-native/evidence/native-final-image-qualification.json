@@ -330,22 +330,25 @@
     "blocker": "the canonical immutable four-tree localization generation is not published yet",
     "instruction": "do not bind the mutable scientific-localization/public/<artifact_id> paths or its three-tree handoff; wait for the immutable /sha256/<tree> four-tree handoff with in-generation stable terminal markers and recursive PyRosetta identity",
     "observed_state_of_the_claim": {
-      "checked_at": "2026-09-03T04:22:00Z",
-      "rechecked": "twice, 17 minutes apart, with the same result",
+      "checked_at": "2026-09-03T05:05:00Z",
+      "rechecked": "three times across roughly an hour, with an identical result each time",
       "sha256_generation_root": "absent",
+      "localization_sha256_or_generations_root": "absent",
       "scientific_localization_children": [
         "public"
       ],
-      "public_markers": "present but empty",
-      "generations_or_immutable_root": "absent",
-      "public_receipts": [
+      "public_children": [
+        ".receipts",
         "alphafold2-params-bindcraft",
         "alphafold2-params",
         "boltzgen-inference-molecules",
         "colabdesign-mpnn-weights-soluble",
-        "colabdesign-mpnn-weights-vanilla"
+        "colabdesign-mpnn-weights-vanilla",
+        "markers"
       ],
-      "scientific_ingestion": "holds only a partial Proteina-Complexa checkpoint download, unrelated to BindCraft"
+      "public_markers": "present but empty",
+      "scientific_ingestion": "only fs2-proteina-complexa-r20260903, unrelated to BindCraft",
+      "conclusion": "the immutable four-tree generation does not exist; only the superseded mutable layout is present, and this task must not bind it"
     },
     "ready_to_run": "qualification/render_semantic_job.py renders the whole run from the handoff document; nothing else is outstanding on the image side",
     "handoff_requirements": [
@@ -359,7 +362,8 @@
       "subpaths_used": "synthetic sha256/<placeholder> roots, so the blocked mutable layout was neither named nor read",
       "purpose": "proves the two-stage Job shape - init design container with one GPU, aggregate main container without one, four read-only subPath mounts - is API-valid, so the live run cannot be delayed by a manifest error once the generation lands"
     },
-    "requirements_communicated": "the localization owner is not a reachable session, so the three requirements were written to data/handoffs/fs2-bindcraft-image-requirements-to-artifact-localization-20260903.md with the measured identities to compare against after re-publication"
+    "requirements_communicated": "the localization owner is not a reachable session, so the three requirements were written to data/handoffs/fs2-bindcraft-image-requirements-to-artifact-localization-20260903.md with the measured identities to compare against after re-publication",
+    "polling_stopped": "no further probes will be run. The requirement note in data/handoffs/fs2-bindcraft-image-requirements-to-artifact-localization-20260903.md asks the publisher to ping this task, which is cheaper than repeated cluster probes"
   },
   "cleanup": {
     "task_owned_pods_deleted": [
