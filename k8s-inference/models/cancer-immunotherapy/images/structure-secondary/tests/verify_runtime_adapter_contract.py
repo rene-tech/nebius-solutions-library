@@ -9,6 +9,7 @@ successor, not by this publisher.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import inspect
 import json
@@ -18,85 +19,39 @@ import subprocess
 import sys
 import tempfile
 from unittest import mock
-from uuid import UUID
 
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_SHA256 = "a" * 64
-PROTENIX_CONTENT_SHA256 = (
-    "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48"
+PUBLISHED_IMAGE_SOURCE_REVISION = "e6d20c7cb3abf5e172852f17a20c7e100daa1245"
+EXPECTED_ADAPTER_REVISION = "0ad6ffe9126c6e70fe3dbdff6e0936e0544dd9b2"
+EXPECTED_ADAPTER_BASE_REVISION = "a1ecc219f5e319be87cfa20d5a79af1e3674c6f0"
+MODEL_CONTRACT_PATHS = {
+    "esmfold2": "models/structure/batch-adapters/esmfold2/contract.json",
+    "esmfold2-fast": "models/structure/batch-adapters/esmfold2-fast/contract.json",
+    "protenix-v2": "models/structure/batch-adapters/protenix-v2/contract.json",
+    "openfold3": "models/structure/batch-adapters/openfold3/contract.json",
+}
+HANDOFF_PATH = "models/structure/batch-adapters/secondary-r4-image-handoff.json"
+RUNTIME_BYTE_FILES = (
+    "python-runtime-launcher.sh",
+    "run_esmfold2.py",
+    "run_protenix.py",
+    "run_openfold3.py",
+    "runtime_localization.py",
+    "handoff_contract.py",
+    "result_contract.py",
+    "confidence.schema.json",
+    "openfold3-runner-base.yaml",
 )
-PROTENIX_MANIFEST_SHA256 = (
-    "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7"
+CACHE_ENVIRONMENT_KEYS = frozenset(
+    {
+        "TRITON_CACHE_DIR",
+        "CUEQ_TRITON_CACHE_DIR",
+        "TORCH_EXTENSIONS_DIR",
+        "XDG_CACHE_HOME",
+    }
 )
-EXPECTED_REPOSITORIES = {
-    "esmfold2": "cancer-immunotherapy/esmfold2",
-    "esmfold2-fast": "cancer-immunotherapy/esmfold2-fast",
-    "protenix-v2": "cancer-immunotherapy/protenix-v2",
-    "openfold3": "cancer-immunotherapy/openfold3-upstream",
-}
-EXPECTED_ARTIFACTS = {
-    "esmfold2": {
-        "esmfold2-trunk": (
-            "136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c",
-            "/models/esmfold2",
-        ),
-        "esmc-6b": (
-            "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
-            "/models/esmc-6b",
-        ),
-        "esmfold2-ccd": (
-            "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
-            "/databases/esmfold2",
-        ),
-    },
-    "esmfold2-fast": {
-        "esmfold2-fast-trunk": (
-            "19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63",
-            "/models/esmfold2-fast",
-        ),
-        "esmc-6b": (
-            "8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
-            "/models/esmc-6b",
-        ),
-        "esmfold2-ccd": (
-            "b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
-            "/databases/esmfold2",
-        ),
-    },
-    "protenix-v2": {
-        "protenix-v2": (PROTENIX_CONTENT_SHA256, "/models/protenix-v2"),
-    },
-    "openfold3": {
-        "openfold3-openbind-0": (
-            "f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
-            "/models/openfold3",
-        ),
-        "openfold3-components-bcif": (
-            "ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
-            "/databases/openfold3",
-        ),
-    },
-}
-EXPECTED_DEPLOYMENT_CACHES = {
-    ("protenix-v2", "sample-structure"): {
-        "mount_path": "/cache/protenix",
-        "environment": {
-            "TRITON_CACHE_DIR": "/cache/protenix/triton",
-            "CUEQ_TRITON_CACHE_DIR": "/cache/protenix/cueq-triton",
-            "TORCH_EXTENSIONS_DIR": "/cache/protenix/torch-extensions",
-            "XDG_CACHE_HOME": "/cache/protenix/xdg",
-        },
-    },
-    ("openfold3", "inference"): {
-        "mount_path": "/cache/openfold3",
-        "environment": {
-            "TRITON_CACHE_DIR": "/cache/openfold3/triton",
-            "TORCH_EXTENSIONS_DIR": "/cache/openfold3/torch-extensions",
-            "XDG_CACHE_HOME": "/cache/openfold3/xdg",
-        },
-    },
-}
 
 
 def _git(worktree: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -120,24 +75,128 @@ def _load_wrapper(name: str):
     return module
 
 
-def _profile(profiles: list[object], model_id: str) -> dict[str, object]:
-    matches = [
-        item
-        for item in profiles
-        if isinstance(item, dict) and item.get("model_id") == model_id
-    ]
-    if len(matches) != 1:
-        raise RuntimeError(
-            f"expected one actual adapter profile for {model_id}, got {len(matches)}"
+def _read_object(path: Path, *, label: str) -> dict[str, object]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"{label} is not readable JSON: {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError(f"{label} must contain one JSON object: {path}")
+    return value
+
+
+def _load_model_contracts(worktree: Path) -> dict[str, dict[str, object]]:
+    root = worktree / "k8s-inference"
+    contracts: dict[str, dict[str, object]] = {}
+    for model_id, relative in MODEL_CONTRACT_PATHS.items():
+        contract = _read_object(root / relative, label=f"{model_id} adapter contract")
+        if (
+            contract.get("schema")
+            != "fs2-serve.nebius.ai/scientific-adapter-identity/v1"
+            or contract.get("model_id") != model_id
+        ):
+            raise RuntimeError(f"{model_id} model-owned adapter contract identity is invalid")
+        contracts[model_id] = contract
+    return contracts
+
+
+def _candidate_profile_from_contract(contract: dict[str, object]) -> dict[str, object]:
+    """Build only the fail-closed catalog seam needed to compile real argv.
+
+    This is deliberately not a shared runtime profile or activation document.
+    Every identity and stage bound here originates in the model-owned adapter
+    contract from the exact adapter commit under review.
+    """
+
+    model_id = contract.get("model_id")
+    source = contract.get("source")
+    interface = contract.get("interface")
+    stages = contract.get("stages")
+    if (
+        not isinstance(model_id, str)
+        or not isinstance(source, dict)
+        or not isinstance(interface, dict)
+        or not isinstance(stages, list)
+        or not stages
+    ):
+        raise RuntimeError(f"{model_id!r} model-owned adapter contract is incomplete")
+    operations = interface.get("operations")
+    if not isinstance(operations, list) or not operations or not all(
+        isinstance(item, str) for item in operations
+    ):
+        raise RuntimeError(f"{model_id} model-owned adapter operations are invalid")
+    profile_stages: list[dict[str, object]] = []
+    previous: str | None = None
+    for raw in stages:
+        if not isinstance(raw, dict):
+            raise RuntimeError(f"{model_id} model-owned stage is not an object")
+        stage_id = raw.get("stage_id")
+        resource_class = raw.get("resource_class")
+        maximum = raw.get("max_parallelism")
+        if (
+            not isinstance(stage_id, str)
+            or resource_class not in {"cpu", "gpu"}
+            or isinstance(maximum, bool)
+            or not isinstance(maximum, int)
+            or maximum < 1
+        ):
+            raise RuntimeError(f"{model_id} model-owned stage bounds are invalid")
+        profile_stages.append(
+            {
+                "id": stage_id,
+                "needs": [] if previous is None else [previous],
+                "resource_class": resource_class,
+                "admission_mode": "independent-jobs",
+                "min_parallelism": 1,
+                "max_parallelism": maximum,
+                "checkpoint_mode": "none" if resource_class == "cpu" else "restart",
+                "preemption_mode": (
+                    "non_preemptible" if resource_class == "cpu" else "restartable"
+                ),
+            }
         )
-    return matches[0]
+        previous = stage_id
+    return {
+        "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+        "model_id": model_id,
+        "state": "candidate-unqualified",
+        "route_exposed": False,
+        "source": {
+            "kind": "git",
+            "repository": source.get("repository"),
+            "revision": source.get("revision"),
+            "review_url": "https://invalid.fs2.local/build-only-contract",
+            "classification": "candidate-source",
+        },
+        "interface": {
+            "protocol": "staged-batch-v1",
+            "submit_endpoint": "/v1/scientific/runs",
+            "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+            "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+            "parameter_schema": interface.get("parameter_schema"),
+            "operations": operations,
+            "service_classes": ["customer-batch"],
+            "mcp": False,
+        },
+        "resources": {
+            "gpu_count": 1,
+            "gpu_topology": "single-gpu",
+            "host_architectures": ["amd64"],
+            "compatible_pool_ids": [],
+            "required_node_labels": {},
+        },
+        "workload": {
+            "stages": profile_stages,
+            "retry": {"max_attempts": 1},
+        },
+    }
 
 
-def _request(profile: dict[str, object], parameters: dict[str, object]) -> dict[str, object]:
-    interface = profile.get("interface")
+def _request(contract: dict[str, object], parameters: dict[str, object]) -> dict[str, object]:
+    interface = contract.get("interface")
     operations = interface.get("operations") if isinstance(interface, dict) else None
     if not isinstance(operations, list) or not operations or not isinstance(operations[0], str):
-        raise RuntimeError("actual adapter profile has no operation")
+        raise RuntimeError("model-owned adapter contract has no operation")
     return {
         "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
         "operation": operations[0],
@@ -194,6 +253,7 @@ def _execute_runtime_marker(
     *,
     model_id: str,
     variant_id: str,
+    artifacts: dict[str, dict[str, object]],
     destination: Path,
 ) -> None:
     marker_path = destination / f"{model_id}-{invocation.stage_id}.json"
@@ -208,16 +268,18 @@ def _execute_runtime_marker(
         "stage_id": invocation.stage_id,
         "artifacts": [
             {
-                "artifact_id": mount.artifact_id,
-                "mount_path": mount.mount_path,
-                "content_digest": f"sha256:{mount.expected_content_sha256}",
+                "artifact_id": artifact_id,
+                "mount_path": artifacts[artifact_id]["mount_path"],
+                "content_digest": f"sha256:{artifacts[artifact_id]['content_sha256']}",
                 "localization_receipt_digest": f"sha256:{receipt}",
-                "sub_path": mount.sub_path,
-                "expected_manifest_sha256": mount.expected_manifest_sha256,
+                "sub_path": artifacts[artifact_id].get("sub_path"),
+                "expected_manifest_sha256": artifacts[artifact_id].get(
+                    "localization_manifest_sha256"
+                ),
                 "readiness_receipt_sha256": receipt,
-                "authorization_receipt_sha256": mount.authorization_receipt_sha256,
+                "authorization_receipt_sha256": None,
             }
-            for mount in invocation.runtime_mounts
+            for artifact_id in invocation.runtime_artifacts
         ],
     }
     marker_path.write_text(
@@ -237,161 +299,280 @@ def _execute_runtime_marker(
         wrapper._validate_runtime_localization_args(invocation.argv[1], parsed_args)
 
 
-def _compile(module, profile, request, *, model_id: str, models_module):
-    kwargs: dict[str, object] = {"operation_id": f"adapter-contract-{model_id}"}
-    if "variant_id" in inspect.signature(module.compile_run).parameters:
-        kwargs["variant_id"] = module.VARIANT_ID
-        kwargs["access_context"] = models_module.ArtifactAccessContext(
-            profile="public", receipt_digest=None, tenant_id="adapter-contract-tenant"
+def _compile(module, profile, request, *, model_id: str):
+    signature = inspect.signature(module.compile_run)
+    if tuple(signature.parameters) != ("profile", "request_value", "operation_id"):
+        raise RuntimeError(
+            f"{model_id} adapter compile_run has an unexpected public signature"
         )
-        kwargs["input_artifacts"] = (
-            models_module.ScientificInputArtifact(
-                logical_artifact_id="model-input",
-                semantic_type="request/v1",
-                artifact_id=UUID("00000000-0000-4000-8000-000000000001"),
-                digest="sha256:" + RAW_SHA256,
-                size_bytes=100,
-                media_type="application/json",
-                compression=None,
-            ),
-        )
-    return module.compile_run(profile, request, **kwargs)
+    return module.compile_run(
+        profile,
+        request,
+        operation_id=f"adapter-contract-{model_id}",
+    )
 
 
-def _validate_profile_and_mounts(model_id, profile, plan, failures: list[str]) -> None:
-    identity = profile.get("execution_identity")
-    repository = (
-        identity.get("runtime_image_repository")
-        if isinstance(identity, dict)
-        else None
-    )
-    if repository != EXPECTED_REPOSITORIES[model_id]:
-        failures.append(
-            f"{model_id} runtime repository {repository!r} is not "
-            f"{EXPECTED_REPOSITORIES[model_id]!r}"
-        )
-    requirements = profile.get("artifact_requirements")
-    artifacts = (
-        {
-            item["artifact_id"]: item
-            for item in requirements
-            if isinstance(item, dict)
-            and isinstance(item.get("artifact_id"), str)
-        }
-        if isinstance(requirements, list)
-        else {}
-    )
-    mounts = {
-        mount.artifact_id: mount
-        for invocation in plan.invocations
-        for mount in getattr(invocation, "runtime_mounts", ())
-    }
-    for artifact_id, (digest, mount_path) in EXPECTED_ARTIFACTS[model_id].items():
-        artifact = artifacts.get(artifact_id)
-        if artifact is None or artifact.get("content_digest_sha256") != digest:
-            failures.append(
-                f"{model_id} profile lacks exact artifact identity {artifact_id}"
+def _contract_artifacts(
+    contract: dict[str, object], *, model_id: str
+) -> dict[str, dict[str, object]]:
+    raw = contract.get("runtime_artifacts")
+    if not isinstance(raw, list):
+        raise RuntimeError(f"{model_id} model-owned runtime_artifacts must be an array")
+    artifacts: dict[str, dict[str, object]] = {}
+    for item in raw:
+        if not isinstance(item, dict) or not isinstance(item.get("artifact_id"), str):
+            raise RuntimeError(f"{model_id} model-owned runtime artifact is invalid")
+        artifact_id = item["artifact_id"]
+        if artifact_id in artifacts:
+            raise RuntimeError(f"{model_id} model-owned runtime artifact is duplicated")
+        if not isinstance(item.get("mount_path"), str) or not isinstance(
+            item.get("content_sha256"), str
+        ):
+            raise RuntimeError(
+                f"{model_id} model-owned runtime artifact {artifact_id} lacks identity"
             )
-        mount = mounts.get(artifact_id)
-        if mount is None:
-            failures.append(f"{model_id} plan lacks runtime mount {artifact_id}")
-            continue
-        if mount.mount_path != mount_path:
-            failures.append(
-                f"{model_id} mount {artifact_id} path {mount.mount_path!r} is not {mount_path!r}"
-            )
-        if getattr(mount, "expected_content_sha256", None) != digest:
-            failures.append(f"{model_id} mount {artifact_id} lacks exact content digest")
-        if getattr(mount, "authorization_receipt_sha256", None) is not None:
-            failures.append(f"{model_id} retained request-time receipt gating")
-    if model_id == "protenix-v2":
-        artifact = artifacts.get("protenix-v2", {})
-        if artifact.get("localization_manifest_sha256") != PROTENIX_MANIFEST_SHA256:
-            failures.append("Protenix profile lacks exact localization manifest digest")
-        mount = mounts.get("protenix-v2")
-        if mount is not None and getattr(
-            mount, "artifact_manifest_sha256", None
-        ) != PROTENIX_MANIFEST_SHA256:
-            failures.append("Protenix mount lacks exact localization manifest digest")
+        artifacts[artifact_id] = item
+    return artifacts
 
 
-def _validate_deployment_caches(worktree: Path, failures: list[str]) -> dict[str, object]:
-    path = (
-        worktree
-        / "k8s-inference/catalog/runtime/contracts/scientific-execution-targets.json"
-    )
-    try:
-        bindings = json.loads(path.read_text(encoding="utf-8"))["bindings"]
-    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        failures.append(f"runtime deployment cache contract is unavailable: {exc}")
+def _lock_content_sha256(item: dict[str, object]) -> object:
+    return item.get("content_digest", item.get("localized_content_digest_sha256"))
+
+
+def _validate_contract_and_plan(
+    model_id: str,
+    module,
+    contract: dict[str, object],
+    image: dict[str, object],
+    handoff_image: dict[str, object],
+    plan,
+    failures: list[str],
+) -> dict[str, object]:
+    source = contract.get("source")
+    interface = contract.get("interface")
+    runtime_image = contract.get("runtime_image")
+    activation = contract.get("activation")
+    stages = contract.get("stages")
+    if not all(
+        isinstance(value, dict)
+        for value in (source, interface, runtime_image, activation)
+    ) or not isinstance(stages, list):
+        failures.append(f"{model_id} model-owned contract is incomplete")
         return {}
-    evidence: dict[str, object] = {}
-    for (model_id, stage_id), expected in EXPECTED_DEPLOYMENT_CACHES.items():
-        matches = [
-            item
-            for item in bindings
-            if isinstance(item, dict)
-            and item.get("model_id") == model_id
-            and item.get("stage_id") == stage_id
-        ]
-        label = f"{model_id}/{stage_id}"
-        if len(matches) != 1:
-            failures.append(f"{label} requires one deployment cache binding")
-            evidence[label] = {"valid": False}
-            continue
-        binding = matches[0]
-        mounts = binding.get("mounts")
-        caches = (
-            [
-                item
-                for item in mounts
-                if isinstance(item, dict) and item.get("kind") == "cache"
-            ]
-            if isinstance(mounts, list)
-            else []
-        )
-        mount = caches[0] if len(caches) == 1 else None
-        namespace = binding.get("execution_namespace")
-        mount_valid = bool(
-            mount
-            and mount.get("mount_path") == expected["mount_path"]
-            and mount.get("operator_owned") is True
-            and mount.get("read_only") is False
-            and isinstance(mount.get("claim_name"), str)
-            and mount.get("claim_name")
-            and mount.get("claim_namespace") == namespace
-            and mount.get("artifact_id") is None
-            and mount.get("host_path") is None
-            and mount.get("sub_path") is None
-        )
-        environment = binding.get("environment")
-        environment_valid = isinstance(environment, dict) and all(
-            environment.get(key) == value
-            for key, value in expected["environment"].items()
-        )
-        if not mount_valid:
-            failures.append(f"{label} lacks exact persistent nonroot cache mount")
-        if not environment_valid:
-            failures.append(f"{label} lacks exact compiler-cache environment")
-        evidence[label] = {
-            "valid": mount_valid and environment_valid,
-            "mount": mount,
-            "environment": environment,
-        }
-    esm_caches = [
-        item
-        for item in bindings
-        if isinstance(item, dict)
-        and item.get("model_id") in {"esmfold2", "esmfold2-fast"}
-        and isinstance(item.get("mounts"), list)
-        and any(
-            isinstance(mount, dict) and mount.get("kind") == "cache"
-            for mount in item["mounts"]
-        )
+    if (
+        module.MODEL_ID != model_id
+        or module.VARIANT_ID != contract.get("variant_id")
+        or module.SOURCE_REPOSITORY != source.get("repository")
+        or module.SOURCE_REVISION != source.get("revision")
+        or module.PARAMETER_SCHEMA != interface.get("parameter_schema")
+    ):
+        failures.append(f"{model_id} adapter module differs from its model-owned contract")
+    if image.get("source", {}).get("revision") != source.get("revision"):
+        failures.append(f"{model_id} image source revision differs from the adapter contract")
+
+    repository = runtime_image.get("repository")
+    relative_repository = image.get("repository")
+    repository_suffix = f"/{relative_repository}"
+    if not isinstance(repository, str) or not repository.endswith(repository_suffix):
+        failures.append(f"{model_id} runtime image repository differs from the image lock")
+        registry_root = None
+    else:
+        registry_root = repository[: -len(repository_suffix)]
+    for field in ("tag", "digest"):
+        lock_field = "published_digest" if field == "digest" else field
+        if runtime_image.get(field) != image.get(lock_field):
+            failures.append(f"{model_id} runtime image {field} differs from the image lock")
+        if handoff_image.get(field) != image.get(lock_field):
+            failures.append(f"{model_id} handoff image {field} differs from the image lock")
+    if handoff_image.get("repository") != repository:
+        failures.append(f"{model_id} handoff repository differs from its contract")
+    if (
+        runtime_image.get("state") != "build-only-not-semantic-qualified"
+        or activation.get("profile_state") != "candidate-unqualified"
+        or activation.get("route_exposed") is not False
+        or activation.get("semantic_h100_qualified") is not False
+        or image.get("deployable") is not False
+    ):
+        failures.append(f"{model_id} contract overstates activation or deployability")
+
+    entrypoint = interface.get("entrypoint")
+    subcommands = interface.get("subcommands")
+    if (
+        entrypoint != image.get("runtime_contract", {}).get("entrypoint")
+        or subcommands != image.get("runtime_contract", {}).get("subcommands")
+    ):
+        failures.append(f"{model_id} CLI identity differs from the image lock")
+    actual_stage_ids = [item.stage_id for item in plan.invocations]
+    contract_stage_ids = [
+        item.get("stage_id") if isinstance(item, dict) else None for item in stages
     ]
-    if esm_caches:
-        failures.append("ESM declares an unproven deployment compiler cache")
-    evidence["esm_compiler_cache"] = "not-declared" if not esm_caches else "invalid"
+    if actual_stage_ids != contract_stage_ids:
+        failures.append(f"{model_id} generated stages differ from its model-owned contract")
+
+    artifacts = _contract_artifacts(contract, model_id=model_id)
+    declared_by_stage: dict[str, tuple[str, ...]] = {}
+    for raw_stage in stages:
+        if not isinstance(raw_stage, dict) or not isinstance(raw_stage.get("stage_id"), str):
+            continue
+        raw_artifacts = raw_stage.get("runtime_artifacts")
+        if not isinstance(raw_artifacts, list) or not all(
+            isinstance(item, str) for item in raw_artifacts
+        ):
+            failures.append(f"{model_id} stage runtime_artifacts are invalid")
+            continue
+        declared_by_stage[raw_stage["stage_id"]] = tuple(raw_artifacts)
+    for invocation in plan.invocations:
+        if invocation.argv[0] != entrypoint or invocation.argv[1] not in (subcommands or []):
+            failures.append(f"{model_id} generated argv escapes its wrapper contract")
+        if invocation.runtime_artifacts != declared_by_stage.get(invocation.stage_id):
+            failures.append(
+                f"{model_id}/{invocation.stage_id} runtime_artifacts seam differs from contract"
+            )
+    module_stages = getattr(module, "STAGE_EXECUTION_CONTRACTS", {})
+    for stage_id, declared in declared_by_stage.items():
+        module_stage = module_stages.get(stage_id)
+        if not isinstance(module_stage, dict) and not hasattr(module_stage, "get"):
+            failures.append(f"{model_id}/{stage_id} module stage contract is absent")
+            continue
+        contract_stage = next(
+            item for item in stages if isinstance(item, dict) and item.get("stage_id") == stage_id
+        )
+        if (
+            tuple(module_stage.get("runtime_artifacts", ())) != declared
+            or module_stage.get("collector_id") != contract_stage.get("collector_id")
+            or module_stage.get("validator_id") != contract_stage.get("validator_id")
+        ):
+            failures.append(f"{model_id}/{stage_id} module stage identity differs")
+
+    lock_artifacts = {
+        item.get("id"): item
+        for item in image.get("external_artifacts", [])
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    observed = {
+        artifact_id
+        for invocation in plan.invocations
+        for artifact_id in invocation.runtime_artifacts
+    }
+    if observed != set(artifacts) or set(lock_artifacts) != set(artifacts):
+        failures.append(f"{model_id} runtime artifact closure differs across contracts")
+    for artifact_id, artifact in artifacts.items():
+        lock_artifact = lock_artifacts.get(artifact_id, {})
+        if (
+            lock_artifact.get("mount") != artifact.get("mount_path")
+            or _lock_content_sha256(lock_artifact) != artifact.get("content_sha256")
+            or lock_artifact.get("runtime_path") != artifact.get("runtime_path")
+        ):
+            failures.append(f"{model_id} artifact {artifact_id} differs from the image lock")
+        if artifact.get("localization_manifest_sha256") is not None and (
+            lock_artifact.get("localization_manifest_sha256")
+            != artifact.get("localization_manifest_sha256")
+        ):
+            failures.append(f"{model_id} artifact {artifact_id} manifest digest differs")
+        if artifact.get("file_sha256") is not None and (
+            lock_artifact.get("sha256") != artifact.get("file_sha256")
+        ):
+            failures.append(f"{model_id} artifact {artifact_id} file digest differs")
+    return {
+        "registry_root": registry_root,
+        "artifact_contracts": artifacts,
+        "runtime_artifacts_seam": declared_by_stage,
+    }
+
+
+def _validate_cache_contract(
+    model_id: str,
+    contract: dict[str, object],
+    image: dict[str, object],
+    plan,
+    failures: list[str],
+) -> dict[str, object]:
+    declared = contract.get("runtime_cache")
+    image_runtime = image.get("runtime_contract")
+    if not isinstance(image_runtime, dict):
+        failures.append(f"{model_id} image runtime contract is absent")
+        return {}
+    if declared is None:
+        if image_runtime.get("writable_cache_mounts") or image_runtime.get(
+            "cache_environment"
+        ):
+            failures.append(f"{model_id} image lock has an undeclared compiler cache")
+        for invocation in plan.invocations:
+            if CACHE_ENVIRONMENT_KEYS.intersection(dict(invocation.environment)):
+                failures.append(f"{model_id} generated argv has an undeclared cache environment")
+        return {
+            "declared": False,
+            "delivery_state": "not-required",
+            "activation_qualified": False,
+        }
+    if not isinstance(declared, dict):
+        failures.append(f"{model_id} runtime_cache contract is invalid")
+        return {}
+    mount_path = declared.get("mount_path")
+    environment = declared.get("environment")
+    if (
+        image_runtime.get("writable_cache_mounts") != [mount_path]
+        or image_runtime.get("cache_environment") != environment
+        or declared.get("qualified_level") != "Off"
+        or not isinstance(environment, dict)
+        or not environment
+    ):
+        failures.append(f"{model_id} cache declaration differs from the image contract")
+        return {
+            "declared": True,
+            "delivery_state": "pending-external-activation",
+            "activation_qualified": False,
+        }
+    exact_environment_stages: list[str] = []
+    for invocation in plan.invocations:
+        invocation_environment = dict(invocation.environment)
+        observed = {
+            key: invocation_environment[key]
+            for key in CACHE_ENVIRONMENT_KEYS
+            if key in invocation_environment
+        }
+        if observed and observed != environment:
+            failures.append(f"{model_id}/{invocation.stage_id} cache environment differs")
+        if observed == environment:
+            exact_environment_stages.append(invocation.stage_id)
+    if not exact_environment_stages:
+        failures.append(f"{model_id} generated plan never binds its compiler-cache environment")
+    return {
+        "declared": True,
+        "mount_path": mount_path,
+        "environment": environment,
+        "generated_environment_stages": exact_environment_stages,
+        "delivery_state": "pending-external-activation",
+        "activation_qualified": False,
+    }
+
+
+def _validate_published_runtime_bytes(
+    repo: Path, failures: list[str]
+) -> dict[str, object]:
+    runtime_root = ROOT.relative_to(repo)
+    evidence: dict[str, object] = {}
+    for filename in RUNTIME_BYTE_FILES:
+        relative = (runtime_root / filename).as_posix()
+        current = (ROOT / filename).read_bytes()
+        result = subprocess.run(
+            ["git", "-C", str(repo), "show", f"{PUBLISHED_IMAGE_SOURCE_REVISION}:{relative}"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            failures.append(f"published runtime byte source is unavailable: {relative}")
+            continue
+        current_sha256 = hashlib.sha256(current).hexdigest()
+        published_sha256 = hashlib.sha256(result.stdout).hexdigest()
+        if current != result.stdout:
+            failures.append(f"published r4 runtime bytes changed without an image rebuild: {relative}")
+        evidence[filename] = {
+            "sha256": current_sha256,
+            "published_sha256": published_sha256,
+            "unchanged": current == result.stdout,
+        }
     return evidence
 
 
@@ -401,16 +582,11 @@ def main() -> None:
     args = parser.parse_args()
     worktree = args.adapter_worktree.resolve()
     control_plane = worktree / "k8s-inference/components/control-plane/src"
-    profile_path = (
-        worktree
-        / "k8s-inference/catalog/runtime/contracts/scientific-workload-profiles.json"
-    )
-    if not control_plane.is_dir() or not profile_path.is_file():
-        raise SystemExit(
-            "adapter-worktree does not contain the runtime control-plane/profile set"
-        )
+    if not control_plane.is_dir():
+        raise SystemExit("adapter-worktree does not contain the runtime control-plane")
 
     revision = _git(worktree, "rev-parse", "HEAD").stdout.strip()
+    parent_revision = _git(worktree, "rev-parse", "HEAD^").stdout.strip()
     dirty = _git(worktree, "status", "--porcelain").stdout
     branch = _git(worktree, "branch", "--show-current").stdout.strip()
     branch_remote = (
@@ -425,6 +601,10 @@ def main() -> None:
         if branch
         else ""
     )
+    if not branch_remote and branch:
+        branch_remote = "origin"
+    if not branch_merge_ref and branch:
+        branch_merge_ref = f"refs/heads/{branch}"
     remote_revision = ""
     if branch_remote and branch_merge_ref:
         remote_result = _git(
@@ -439,13 +619,13 @@ def main() -> None:
             remote_revision = remote_result.stdout.split()[0]
     task_repo = Path(_git(ROOT, "rev-parse", "--show-toplevel").stdout.strip())
     current_main = _git(task_repo, "rev-parse", "origin/main").stdout.strip()
-    based_on_current_main = (
+    adapter_integrated_in_current_main = (
         _git(
             worktree,
             "merge-base",
             "--is-ancestor",
-            current_main,
             revision,
+            current_main,
             check=False,
         ).returncode
         == 0
@@ -453,7 +633,6 @@ def main() -> None:
 
     sys.path.insert(0, str(control_plane))
     sys.path.insert(0, str(ROOT))
-    from fs2_serve.scientific_batch import models as runtime_models
     from fs2_serve.scientific_batch.adapters import (
         esmfold2,
         esmfold2_fast,
@@ -466,6 +645,32 @@ def main() -> None:
         "esmfold2-fast": esmfold2_fast,
         "protenix-v2": protenix_v2,
         "openfold3": openfold3,
+    }
+    contracts = _load_model_contracts(worktree)
+    profiles = {
+        model_id: _candidate_profile_from_contract(contract)
+        for model_id, contract in contracts.items()
+    }
+    image_lock = _read_object(ROOT / "image-lock.json", label="image lock")
+    raw_images = image_lock.get("images")
+    if not isinstance(raw_images, list):
+        raise SystemExit("image lock images must be an array")
+    images = {
+        item.get("id"): item
+        for item in raw_images
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    handoff = _read_object(
+        worktree / "k8s-inference" / HANDOFF_PATH,
+        label="secondary r4 image handoff",
+    )
+    raw_handoff_images = handoff.get("images")
+    if not isinstance(raw_handoff_images, list):
+        raise SystemExit("secondary r4 image handoff images must be an array")
+    handoff_images = {
+        item.get("model_id"): item
+        for item in raw_handoff_images
+        if isinstance(item, dict) and isinstance(item.get("model_id"), str)
     }
     parameters = {
         "esmfold2": {"sequence": "ACDEFGHIK", "mode": "single-sequence", "seed": 11},
@@ -482,9 +687,17 @@ def main() -> None:
         },
         "openfold3": {"model_seeds": [11, 29], "msa_mode": "none"},
     }
-    profiles = json.loads(profile_path.read_text(encoding="utf-8"))["profiles"]
-    actual_profiles = {model_id: _profile(profiles, model_id) for model_id in modules}
     failures: list[str] = []
+    if revision != EXPECTED_ADAPTER_REVISION:
+        failures.append(
+            "adapter worktree is not the exact accepted narrow successor "
+            f"(expected={EXPECTED_ADAPTER_REVISION}, actual={revision})"
+        )
+    if parent_revision != EXPECTED_ADAPTER_BASE_REVISION:
+        failures.append(
+            "accepted adapter is not one commit on the frozen integration base "
+            f"(expected={EXPECTED_ADAPTER_BASE_REVISION}, actual={parent_revision})"
+        )
     if dirty:
         failures.append("adapter worktree is dirty; evidence needs a concrete commit")
     if remote_revision != revision:
@@ -492,21 +705,31 @@ def main() -> None:
             "adapter commit is not the exact clean pushed branch head "
             f"(local={revision}, remote={remote_revision or 'unavailable'})"
         )
-    if not based_on_current_main:
+    if not adapter_integrated_in_current_main:
         failures.append(
-            "adapter commit is not based on current image-task origin/main "
-            f"{current_main}"
+            "adapter commit is not contained in current image-task origin/main "
+            f"{current_main}; integrate the narrow adapter before the image successor"
         )
+    if (
+        handoff.get("schema") != "fs2.nebius.ai/secondary-r4-image-handoff/v1"
+        or handoff.get("state") != "build-only-not-activated"
+        or handoff.get("image_source_commit") != PUBLISHED_IMAGE_SOURCE_REVISION
+        or handoff.get("semantic_h100_qualification") is not False
+        or handoff.get("route_activation_allowed") is not False
+        or set(handoff_images) != set(modules)
+    ):
+        failures.append("secondary r4 handoff overstates or differs from build-only scope")
+    if set(images) != set(modules):
+        failures.append("image lock does not contain exactly the four task-owned models")
 
     plans: dict[str, object] = {}
     for model_id, module in modules.items():
         try:
             plans[model_id] = _compile(
                 module,
-                actual_profiles[model_id],
-                _request(actual_profiles[model_id], parameters[model_id]),
+                profiles[model_id],
+                _request(contracts[model_id], parameters[model_id]),
                 model_id=model_id,
-                models_module=runtime_models,
             )
         except Exception as exc:  # noqa: BLE001 - aggregate all lane failures
             failures.append(
@@ -522,18 +745,46 @@ def main() -> None:
     }
     evidence: dict[str, object] = {
         "adapter_revision": revision,
+        "expected_adapter_revision": EXPECTED_ADAPTER_REVISION,
+        "adapter_parent_revision": parent_revision,
+        "expected_adapter_base_revision": EXPECTED_ADAPTER_BASE_REVISION,
         "adapter_branch": branch,
         "adapter_remote_revision": remote_revision or None,
         "adapter_is_exact_pushed_head": remote_revision == revision,
         "required_main_revision": current_main,
-        "adapter_based_on_required_main": based_on_current_main,
-        "deployment_caches": _validate_deployment_caches(worktree, failures),
+        "adapter_integrated_in_required_main": adapter_integrated_in_current_main,
+        "profile_source": "model-owned-contract-derived-candidate-fixture",
+        "shared_profile_required": False,
+        "shared_execution_target_required": False,
+        "localization_delivery_state": "pending-external-activation",
+        "published_runtime_bytes": _validate_published_runtime_bytes(
+            task_repo, failures
+        ),
         "models": {},
     }
     with tempfile.TemporaryDirectory() as temporary:
         marker_root = Path(temporary)
         for model_id, plan in plans.items():
             validated_stages: list[str] = []
+            model_contract_evidence = _validate_contract_and_plan(
+                model_id,
+                modules[model_id],
+                contracts[model_id],
+                images.get(model_id, {}),
+                handoff_images.get(model_id, {}),
+                plan,
+                failures,
+            )
+            cache_evidence = _validate_cache_contract(
+                model_id,
+                contracts[model_id],
+                images.get(model_id, {}),
+                plan,
+                failures,
+            )
+            contract_artifacts = _contract_artifacts(
+                contracts[model_id], model_id=model_id
+            )
             for invocation in plan.invocations:
                 try:
                     parsed_args = _execute_parser(wrappers[model_id], invocation)
@@ -544,6 +795,7 @@ def main() -> None:
                             parsed_args,
                             model_id=model_id,
                             variant_id=plan.variant_id,
+                            artifacts=contract_artifacts,
                             destination=marker_root,
                         )
                         validated_stages.append(invocation.stage_id)
@@ -552,26 +804,24 @@ def main() -> None:
                         f"{model_id} {invocation.stage_id} actual argv/marker failed: "
                         f"{type(exc).__name__}: {exc}"
                     )
-            _validate_profile_and_mounts(
-                model_id, actual_profiles[model_id], plan, failures
-            )
             evidence["models"][model_id] = {
+                "contract": model_contract_evidence,
+                "cache": cache_evidence,
                 "argv": [list(item.argv) for item in plan.invocations],
                 "validated_runtime_localization_marker_stages": validated_stages,
-                "runtime_mounts": [
+                "runtime_artifacts": [
                     {
-                        "artifact_id": mount.artifact_id,
-                        "mount_path": mount.mount_path,
-                        "sub_path": getattr(mount, "sub_path", None),
-                        "expected_content_sha256": getattr(
-                            mount, "expected_content_sha256", None
-                        ),
-                        "artifact_manifest_sha256": getattr(
-                            mount, "artifact_manifest_sha256", None
-                        ),
+                        "artifact_id": artifact_id,
+                        "mount_path": contract_artifacts[artifact_id]["mount_path"],
+                        "expected_content_sha256": contract_artifacts[artifact_id][
+                            "content_sha256"
+                        ],
+                        "artifact_manifest_sha256": contract_artifacts[
+                            artifact_id
+                        ].get("localization_manifest_sha256"),
                     }
                     for invocation in plan.invocations
-                    for mount in getattr(invocation, "runtime_mounts", ())
+                    for artifact_id in invocation.runtime_artifacts
                 ],
             }
 

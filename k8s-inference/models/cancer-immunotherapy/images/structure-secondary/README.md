@@ -293,31 +293,43 @@ fixtures—through these parsers:
 
 ```bash
 python3 tests/verify_runtime_adapter_contract.py \
-  --adapter-worktree /path/to/fs2-cancer-immunotherapy-runtime-onboarding-r20260902
+  --adapter-worktree /path/to/fs2-secondary-adapters-clean-codex-r20260903
 ```
 
 The parser-shape unit fixtures are not cross-contract evidence. The integration
-gate requires the adapter commit to be the exact clean pushed branch head on
-current main, imports that concrete external commit, compiles all four real plans,
-executes their exact argv through these parsers, and validates exact artifact
-mount identities and each controller-issued runtime-localization marker. The
-shared marker validator requires the exact model, variant, stage, artifact IDs,
-mount roots, aggregate content digests, optional manifest digests and subpaths;
-it also cross-checks readiness/localization and request-context receipts. It
-requires canonical ESM trunk identities,
-both Protenix localization digests, both OpenFold content digests, Protenix's
-multi-seed CSV surface, and OpenFold preparation with no reference-data mount.
+gate requires the adapter commit to be the exact clean pushed branch head and
+contained in current main. It imports that concrete commit, derives a fail-closed
+candidate compile fixture from each of the four model-owned adapter contracts,
+compiles all four real plans through the current `runtime_artifacts` seam,
+executes their exact argv through the image parsers, and validates exact
+artifact mount identities and marker shape against the wrapper's immutable
+expectations. It does not read the shared workload profiles or the removed
+`scientific-execution-targets.json` map. The marker validator requires the exact
+model, variant, stage, artifact IDs, mount roots, aggregate content digests,
+optional manifest digests and subpaths. This gate requires canonical ESM trunk
+identities, both Protenix localization digests, both OpenFold content digests,
+Protenix's multi-seed CSV surface, and OpenFold preparation with no
+reference-data mount.
 AlphaFold3's separate clean successor retains its own generated-argv,
 database-promotion, stable-selector storage, academic namespace, and nonroot
 persistent-cache gates; passing this four-image publisher never substitutes for
 those independent gates.
 
 The post-publication cross-contract gate passed against exact clean pushed
-adapter successor `6ab3d2e362ee69b70c1a3ca70df186076fc4adc2`, based on frozen
-main `a1ecc219f5e319be87cfa20d5a79af1e3674c6f0`. It executed every generated
-ESMFold2, ESMFold2-Fast, Protenix v2, and OpenFold3 argv through the actual
-image parsers and returned `failures=[]`; no image bytes or public CLI changed,
-so the existing r4 digests remain the immutable candidates.
+adapter successor `0ad6ffe9126c6e70fe3dbdff6e0936e0544dd9b2`, one narrow commit
+on frozen main `a1ecc219f5e319be87cfa20d5a79af1e3674c6f0` and integrated by
+main `3f8f4b4e8f0a03b0e7fbf0091dc17354a914ae32`. It executed every
+generated ESMFold2, ESMFold2-Fast, Protenix v2, and OpenFold3 argv through
+the actual image parsers and returned `failures=[]`. The verifier also
+byte-compared every runtime launcher, wrapper, and helper to published source
+`e6d20c7c`; no image bytes or public CLI changed, so the existing r4 digests
+remain immutable non-deployable candidates.
+
+The Protenix and OpenFold model-owned contracts declare their exact cache mount
+roots and environment, and generated argv carries those environment values.
+The verifier records cache and localization delivery as
+`pending-external-activation`: it does not assert that a PVC, localization
+receipt, route, or other deployment resource exists.
 
 The build script consumes lock v2 `repository` and `tag` fields. Those
 repositories exactly match the runtime catalog: `cancer-immunotherapy/esmfold2`,
@@ -396,5 +408,6 @@ are the `-h100-r3` manifests rejected by direct-command H100 testing. The
 historical AF3 image evidence is owned by the dedicated AF3 successor and is not
 repeated here. The corrected `-h100-r4` publication passed the direct-executable,
 build, no-runtime-nvcc, and layer-history gates. These immutable digests remain
-non-deployable candidates pending the final current-main adapter gate, live
-localization/cache receipts, and exact-artifact offline semantic H100 runs.
+non-deployable candidates after the narrow adapter gate passed; live
+localization/cache activation and exact-artifact offline semantic H100 runs
+remain required before deployment or admission.

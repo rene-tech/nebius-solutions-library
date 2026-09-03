@@ -1783,6 +1783,23 @@ for seed in seeds:
         )
         self.assertIn('"ls-remote"', verifier)
         self.assertIn("adapter commit is not the exact clean pushed branch head", verifier)
+        self.assertIn("MODEL_CONTRACT_PATHS", verifier)
+        self.assertIn("_candidate_profile_from_contract", verifier)
+        self.assertIn("invocation.runtime_artifacts", verifier)
+        self.assertIn("pending-external-activation", verifier)
+        self.assertIn("PUBLISHED_IMAGE_SOURCE_REVISION", verifier)
+        self.assertIn(
+            'EXPECTED_ADAPTER_REVISION = "0ad6ffe9126c6e70fe3dbdff6e0936e0544dd9b2"',
+            verifier,
+        )
+        self.assertIn(
+            'EXPECTED_ADAPTER_BASE_REVISION = "a1ecc219f5e319be87cfa20d5a79af1e3674c6f0"',
+            verifier,
+        )
+        self.assertIn("_validate_published_runtime_bytes", verifier)
+        self.assertNotIn("scientific-workload-profiles.json", verifier)
+        self.assertNotIn("scientific-execution-targets.json", verifier)
+        self.assertNotIn("runtime_mounts", verifier)
         self.assertIn(".repository", script)
         self.assertIn(".tag", script)
         self.assertNotIn("'.target'", script)
@@ -1794,6 +1811,7 @@ for seed in seeds:
         self.assertIn(
             "refs/heads/main:refs/remotes/origin/main", script
         )
+
         self.assertIn("merge-base --is-ancestor", script)
         self.assertIn("refusing stale-base build", script)
         self.assertIn("refusing uncommitted-source build", script)
@@ -1823,6 +1841,14 @@ for seed in seeds:
         self.assertEqual(blocked.returncode, 2)
         self.assertIn("concrete runtime adapter worktree is required", blocked.stdout)
         self.assertNotIn("SOURCE id=", blocked.stdout)
+
+    def test_narrow_adapter_evidence_is_build_only_and_external_activation_stays_open(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("0ad6ffe9126c6e70fe3dbdff6e0936e0544dd9b2", readme)
+        self.assertIn("model-owned adapter contracts", readme)
+        self.assertIn("pending-external-activation", readme)
+        self.assertIn("immutable non-deployable candidates", readme)
+        self.assertIn("remain required before deployment or admission", readme)
 
     def test_shell_entrypoints_are_syntactically_valid(self) -> None:
         for name in (
