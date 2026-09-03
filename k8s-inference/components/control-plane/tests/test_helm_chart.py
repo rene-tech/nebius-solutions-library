@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 from types import MappingProxyType
@@ -896,7 +897,6 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "path": "token",
     }
     assert volumes["scientific-batch-scheduling"]["configMap"]["name"] == "scientific-scheduling-a1"
-    assert volumes["scientific-batch-execution"]["configMap"]["name"] == "scientific-execution-b2"
 
     role = namespaced[("Role", "fs2-serve-control-plane-scientific-batch", "fs2-models")]
     binding = namespaced[("RoleBinding", "fs2-serve-control-plane-scientific-batch", "fs2-models")]
@@ -918,13 +918,40 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     academic_binding = namespaced[("RoleBinding", "fs2-serve-control-plane-scientific-batch", "fs2-academic-poc")]
     assert academic_role["rules"] == role["rules"]
     assert academic_binding["subjects"] == binding["subjects"]
-    execution_map = named[("ConfigMap", "scientific-execution-b2")]
+    execution_map = next(
+        document
+        for document in documents
+        if document["kind"] == "ConfigMap"
+        and document.get("metadata", {}).get("labels", {}).get("app.kubernetes.io/component")
+        == "scientific-execution-map"
+    )
     assert execution_map["immutable"] is True
-    rendered_map = json.loads(execution_map["data"]["execution-map.json"])
+    rendered_map_json = execution_map["data"]["execution-map.json"]
+    rendered_map = json.loads(rendered_map_json)
     assert rendered_map["schema"] == "fs2-serve.nebius.ai/scientific-execution-map/v3"
+    execution_map_sha256 = hashlib.sha256(rendered_map_json.encode()).hexdigest()
+    execution_map_name = f"scientific-execution-b2-{execution_map_sha256[:12]}"
+    assert execution_map["metadata"]["name"] == execution_map_name
+    assert volumes["scientific-batch-execution"]["configMap"]["name"] == execution_map_name
+    assert execution_map["metadata"]["annotations"] == {
+        "fs2-serve.nebius.ai/resource-owner": "helm/fs2-serve-control-plane",
+        "fs2-serve.nebius.ai/execution-map-schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+        "fs2-serve.nebius.ai/execution-map-sha256": execution_map_sha256,
+    }
     assert {model["workload_namespace"] for model in rendered_map["models"]} == {
         "fs2-models",
         "fs2-academic-poc",
+    }
+    dependency_map = next(
+        document
+        for document in documents
+        if document["kind"] == "ConfigMap" and document["metadata"]["name"].endswith("-dependency-contract")
+    )
+    dependency_contract = json.loads(dependency_map["data"]["dependency-contract.json"])
+    assert dependency_contract["scientific_batch"]["execution_map"] == {
+        "name": execution_map_name,
+        "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+        "sha256": execution_map_sha256,
     }
     for workload_namespace in ("fs2-models", "fs2-academic-poc"):
         workload_network = namespaced[
@@ -949,6 +976,40 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "192.0.2.10/32",
         "192.0.2.20/32",
     }
+
+
+def test_scientific_execution_map_has_one_helm_owner_and_no_terraform_writer() -> None:
+    templates = CHART / "templates"
+    helm_owners = [
+        path.relative_to(SOLUTION_ROOT).as_posix()
+        for path in templates.glob("*.yaml")
+        if "kind: ConfigMap" in path.read_text()
+        and 'include "fs2-serve.scientificExecutionMapName" .' in path.read_text()
+        and "fs2-serve.nebius.ai/resource-owner: helm/fs2-serve-control-plane" in path.read_text()
+    ]
+    assert helm_owners == ["charts/control-plane/fs2-serve-control-plane/templates/scientific-execution-map.yaml"]
+
+    resource_pattern = re.compile(
+        r'^resource\s+"(?:kubernetes_config_map(?:_v1)?|kubernetes_manifest)"\s+"[^"]+"\s*\{.*?^\}',
+        re.MULTILINE | re.DOTALL,
+    )
+    terraform_writers: list[str] = []
+    legacy_contracts: list[str] = []
+    for path in SOLUTION_ROOT.rglob("*.tf"):
+        if ".terraform" in path.parts:
+            continue
+        source = path.read_text()
+        relative = path.relative_to(SOLUTION_ROOT).as_posix()
+        if "fs2-serve.nebius.ai/scientific-execution-map/v1" in source:
+            legacy_contracts.append(relative)
+        for resource in resource_pattern.findall(source):
+            if any(
+                marker in resource
+                for marker in ("scientific_execution_map", "scientific-execution-map", "execution-map.json")
+            ):
+                terraform_writers.append(relative)
+    assert legacy_contracts == []
+    assert terraform_writers == []
 
 
 @pytest.mark.parametrize(

@@ -40,6 +40,13 @@ data:
           "reporting": {"namespace": {{ .Values.grafanaDashboard.namespace | quote }}, "name": "fs2-serve-database-reporting", "key": "url"}
         }
       },
+      "scientific_batch": {
+        "execution_map": {{- if .Values.scientificBatch.enabled }} {
+          "name": {{ include "fs2-serve.scientificExecutionMapName" . | quote }},
+          "schema": {{ .Values.scientificBatch.executionMap.schema | quote }},
+          "sha256": {{ .Values.scientificBatch.executionMap | toJson | sha256sum | quote }}
+        }{{- else }} null{{- end }}
+      },
       "grafana": {
         "resource_owner": "fs2-observability",
         "namespace": {{ .Values.grafanaDashboard.namespace | quote }},
