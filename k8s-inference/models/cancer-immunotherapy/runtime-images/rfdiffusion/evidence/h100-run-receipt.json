@@ -1,0 +1,177 @@
+{
+  "schema": "fs2.nebius.ai/rfdiffusion-h100-run-receipt/v2",
+  "recorded_at": "2026-09-03T05:47:00Z",
+  "owner_task": "fs2-rfdiffusion-final-image-h100-successor-r20260903",
+  "runtime_image": {
+    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+    "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r12",
+    "digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+    "attestation_vcs_revision": "bfdeee8ceb964c978e4b72e8c5a65bfe44daaee9",
+    "attestation_predicate_types": [
+      "https://slsa.dev/provenance/v1",
+      "https://spdx.dev/Document"
+    ],
+    "kubelet_image_id_matched_published_digest_on_every_run": true
+  },
+  "environment": {
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "context": "k8s-inference-h100",
+    "namespace": "fs2-models",
+    "kube_system_namespace_uid": "5e8135da-4a78-4669-863d-455840d0700b",
+    "local_queue": "inference-models",
+    "cluster_queue": "inference-accelerators",
+    "b300_touched": false
+  },
+  "artifact_delivery_as_run": {
+    "model": "mixed-plane-capable renderer, one plane in use",
+    "planes_mounted": [
+      {
+        "name": "public",
+        "kind": "persistent-volume-claim",
+        "claim": "fs2-runtime-qualification-artifacts-r20260902",
+        "sub_path": "rfdiffusion",
+        "mount_path": "/opt/fs2/artifacts/public",
+        "read_only": true
+      }
+    ],
+    "honest_caveat": "This is NOT the foundation's public plane. The accepted foundation puts public artifacts on the hostPath /mnt/fs2-reference-data/data behind the node label storage.fs2.nebius/reference-data=true, under prefix scientific-localization/public. That plane has published no RFdiffusion generation and the localization contract carries no rfdiffusion artifact, so nothing canonical exists to bind. The claim used here is a task-owned interim and is neither of the two real planes.",
+    "checkpoint": {
+      "artifact_id": "artifact.rfdiffusion.base-ckpt",
+      "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+      "size_bytes": 483616107,
+      "digest_verified_in_container_each_run": true,
+      "generation": "5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab"
+    },
+    "motif_target": {
+      "artifact_id": "artifact.rfdiffusion.target.1ubq",
+      "sha256": "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161",
+      "size_bytes": 78570
+    }
+  },
+  "runs": [
+    {
+      "operation": "design-backbone",
+      "job": "fs2-rfd-r12-design-backbone",
+      "pod": "fs2-rfd-r12-design-backbone-vhn9f",
+      "pod_uid": "23ddaa6d-b4d2-4114-9c32-8e151deb1b67",
+      "node": "computeinstance-e00pwgcqf990qy867k",
+      "node_uid": "8abdaa14-88a5-4336-88cc-fd2007d05a96",
+      "accelerator": {
+        "class": "nvidia-h100-sxm5-80gb",
+        "pool_id": "h100-1x",
+        "instance_type": "gpu-h100-sxm",
+        "gpus_requested": 1,
+        "device_reported_by_upstream": "NVIDIA H100 80GB HBM3"
+      },
+      "admission": "Kueue LocalQueue inference-models",
+      "exit_code": 0,
+      "container_started_at": "2026-09-03T05:45:34Z",
+      "container_finished_at": "2026-09-03T05:46:07Z",
+      "image_pull_seconds": 0.291,
+      "cache_level": {
+        "declared_by_plan": "artifact-local",
+        "observed": "image-and-artifact-local",
+        "detail": "Layers were resident from an earlier run on this node; the 291 ms pull is not a cold pull. The cold-start measurements for this runtime are in the r9 receipt and remain valid as scale, not as qualification of this digest.",
+        "gpu_snapshot_used": false
+      },
+      "phases_seconds": {
+        "validate_request": 0.005,
+        "resolve_checkpoint": 0.356,
+        "resolve_inputs": 0.0,
+        "upstream_execute": 33.411,
+        "verify_artifacts": 0.068,
+        "write_envelope": 0.003,
+        "adapter_total": 33.844
+      },
+      "model_ready_seconds": 13.028,
+      "upstream_design_seconds": 19.096,
+      "result": {
+        "residues": 76,
+        "chains": [
+          "A"
+        ],
+        "glycine_fraction": 1.0,
+        "max_ca_ca_deviation_angstrom": 0.125,
+        "max_extent_angstrom": 30.5,
+        "pdb_sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806"
+      }
+    },
+    {
+      "operation": "scaffold-motif",
+      "job": "fs2-rfd-r12-scaffold-motif",
+      "pod": "fs2-rfd-r12-scaffold-motif-6qzqm",
+      "pod_uid": "d7e4f5a3-d462-4ba6-acc6-6f53ee77f37b",
+      "node": "computeinstance-e00rb3a26wtq7cjf88",
+      "node_uid": "107cb526-94bc-48b4-95c7-496cdbcc6951",
+      "accelerator": {
+        "class": "nvidia-h100-sxm5-80gb",
+        "pool_id": "h100-1x",
+        "instance_type": "gpu-h100-sxm",
+        "gpus_requested": 1,
+        "device_reported_by_upstream": "NVIDIA H100 80GB HBM3"
+      },
+      "admission": "Kueue LocalQueue inference-models",
+      "exit_code": 0,
+      "container_started_at": "2026-09-03T05:45:37Z",
+      "container_finished_at": "2026-09-03T05:46:10Z",
+      "image_pull_seconds": 0.285,
+      "cache_level": {
+        "declared_by_plan": "artifact-local",
+        "observed": "image-and-artifact-local",
+        "gpu_snapshot_used": false
+      },
+      "phases_seconds": {
+        "validate_request": 0.003,
+        "resolve_checkpoint": 0.381,
+        "resolve_inputs": 0.004,
+        "upstream_execute": 32.473,
+        "verify_artifacts": 0.061,
+        "write_envelope": 0.002,
+        "adapter_total": 32.924
+      },
+      "model_ready_seconds": 11.983,
+      "upstream_design_seconds": 19.611,
+      "request": {
+        "contigs": [
+          "10-10/A23-34/10-10"
+        ],
+        "seed": 9100,
+        "diffuser_T": 50,
+        "motif": "1UBQ chain A residues 23-34, the ubiquitin alpha-helix"
+      },
+      "result": {
+        "residues": 32,
+        "chains": [
+          "A"
+        ],
+        "glycine_fraction": 0.625,
+        "max_ca_ca_deviation_angstrom": 0.137,
+        "max_extent_angstrom": 38.36,
+        "pdb_sha256": "ed7d8d33ae73d2e6ffdfd86703e6569e18353fe9985f824973153b4270c520d4",
+        "motif": {
+          "positions_preserved": 12,
+          "sequence": "ILE GLU ASN VAL LYS ALA LYS ILE GLN ASP LYS GLU",
+          "ca_rmsd_angstrom_superposed": 0.1129,
+          "ca_rmsd_angstrom_unaligned": 47.9563,
+          "rigid_body_rotation_degrees": 0.978,
+          "rigid_body_translation_angstrom": 47.9561,
+          "superposition": "horn-quaternion-optimal-superposition",
+          "upstream_reported_sampled_motif_rmsd": "~0.19 (backbone N/CA/C; this value is CA-only)",
+          "recomputed_independently_by_the_gate": true
+        }
+      }
+    }
+  ],
+  "determinism": {
+    "design_backbone": "Seed 8100 has now produced the byte-identical structure 78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806 from three independently built images (r6 on the mixed branch, r9 and r12 here) across four different H100 nodes.",
+    "scaffold_motif": "Seed 9100 produced the same motif geometry on r10 and r12: superposed CA RMSD 0.1129 A and a 47.956 A rigid-body offset in both."
+  },
+  "preserved_workloads": {
+    "checked_after_all_runs": true,
+    "fs2-models/qwen3-8b-b300-hot-h100-reserved-8x": "1/1 available",
+    "fs2-models/qwen3-8b-b300-burst-h100-1x": "0/0, unchanged",
+    "fs2-models/cosmos3-nano-burst-h100-1x": "0/0, unchanged",
+    "detail": "No shared service, Deployment, route, queue or Terraform resource was modified."
+  }
+}

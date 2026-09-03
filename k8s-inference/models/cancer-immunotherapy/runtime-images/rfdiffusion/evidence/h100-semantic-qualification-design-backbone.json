@@ -1,0 +1,101 @@
+{
+  "accelerator": {
+    "cuda_execution_confirmed": true,
+    "devices": [
+      "NVIDIA H100 80GB HBM3"
+    ],
+    "evidence": "upstream .trb run metadata records torch.cuda.get_device_name()"
+  },
+  "cache_level": {
+    "declared": "artifact-local",
+    "gpu_snapshot_used": false,
+    "note": "Declared by the submitting plan from observed image/artifact residency. This is an image and filesystem cache level only. No GPU memory snapshot or CRIU restore is used by this runtime.",
+    "source": "submitter-declared"
+  },
+  "checkpoint": {
+    "artifact_id": "artifact.rfdiffusion.base-ckpt",
+    "digest_verified": true,
+    "path": "/opt/fs2/artifacts/public/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab/Base_ckpt.pt",
+    "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+    "size_bytes": 483616107
+  },
+  "designs": [
+    {
+      "design_index": 8100,
+      "motif": null,
+      "run_metadata": {
+        "device": "NVIDIA H100 80GB HBM3",
+        "motif_positions": 0,
+        "seconds": 19.096,
+        "sha256": "a081d204fe58e28e7dee707509af72298d30322cbced3ce9a84ec3fe3fa2c419"
+      },
+      "seed": 8100,
+      "structure": {
+        "atoms": 304,
+        "bytes": 20368,
+        "chains": [
+          "A"
+        ],
+        "glycine_fraction": 1.0,
+        "max_ca_ca_deviation_angstrom": 0.125,
+        "max_extent_angstrom": 30.5,
+        "residue_counts": {
+          "GLY": 76
+        },
+        "residues": 76,
+        "sha256": "78600be2f90811a2b5168c9f196825bb58468249b211ac176842f2cedb1d9806"
+      },
+      "trajectory_files": [
+        "designs/traj/design_8100_Xt-1_traj.pdb",
+        "designs/traj/design_8100_pX0_traj.pdb"
+      ]
+    }
+  ],
+  "operation": "design-backbone",
+  "phases_seconds": {
+    "resolve_checkpoint": 0.356,
+    "resolve_inputs": 0.0,
+    "upstream_execute": 33.411,
+    "validate_request": 0.005,
+    "verify_artifacts": 0.068,
+    "write_envelope": 0.003
+  },
+  "request": {
+    "contigs": [
+      "76-76"
+    ],
+    "diffuser_T": 50,
+    "hotspot_residues": [],
+    "length": null,
+    "num_designs": 1,
+    "operation": "design-backbone",
+    "requested_residues": {
+      "maximum": 76,
+      "minimum": 76
+    },
+    "seed": 8100
+  },
+  "runtime_image_digest": "sha256:3f18dd9c4aac4fec472e2b0419988676eb938ccf2801760226fa822a6738a1b8",
+  "schema": "fs2.nebius.ai/rfdiffusion-h100-semantic-qualification/v1",
+  "status": "passed",
+  "total_seconds": 33.844,
+  "upstream": {
+    "log_path": "/workspace/fs2-rfd-r12-design-backbone/upstream.log",
+    "model_ready_seconds": 13.028,
+    "returncode": 0
+  },
+  "upstream_argv": [
+    "/opt/conda/bin/python",
+    "/opt/rfdiffusion/scripts/run_inference.py",
+    "inference.output_prefix=/workspace/fs2-rfd-r12-design-backbone/designs/design",
+    "inference.ckpt_override_path=/opt/fs2/artifacts/public/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab/Base_ckpt.pt",
+    "inference.num_designs=1",
+    "inference.design_startnum=8100",
+    "inference.deterministic=True",
+    "diffuser.T=50",
+    "contigmap.contigs=[76-76]",
+    "inference.schedule_directory_path=/tmp/fs2-rfdiffusion/schedules",
+    "hydra.run.dir=/tmp/fs2-rfdiffusion/hydra",
+    "hydra.output_subdir=null"
+  ]
+}

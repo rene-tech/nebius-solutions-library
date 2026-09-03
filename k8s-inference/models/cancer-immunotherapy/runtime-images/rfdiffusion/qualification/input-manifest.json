@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "artifact": {
+        "artifact_id": "artifact.rfdiffusion.base-ckpt",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "path": "Base_ckpt.pt",
+        "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
+        "size_bytes": 483616107
+      },
+      "name": "base_checkpoint",
+      "semantic_type": "rfdiffusion-checkpoint/v1"
+    }
+  ],
+  "manifest_id": "manifest.rfdiffusion.base.01",
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1"
+}
