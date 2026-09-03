@@ -37,7 +37,14 @@ from fs2_serve.fast_start_identity import (
     RuntimePlacementIdentity,
     mechanism_config_digest,
 )
-from fs2_serve.fast_start_mechanisms import FastStartMechanism
+from fs2_serve.fast_start_mechanisms import (
+    FastStartMechanism,
+    GpuResidentQualification,
+    HostMemoryResidencyQualification,
+    RegionalCacheQualification,
+    ResidencyHolder,
+    RetainedCompileCache,
+)
 from fs2_serve.model_deployment import (
     CacheTier,
     FastStartEvidence,
@@ -794,3 +801,154 @@ def test_pinning_a_cold_start_mechanism_is_a_deliberate_spec_change() -> None:
     for refused in ("node-local-restore", "shared-restore", "modelexpress"):
         with pytest.raises(ValueError, match="not selectable"):
             ModelDeploymentSpec.model_validate({**wire, "cache": {**wire["cache"], "mechanism": refused}})
+
+
+H100_CAPABILITY_SELECTOR = {
+    "local-nvme.fs2.nebius/eligible": "false",
+    "snapshot.fs2.nebius/eligible": "false",
+}
+PLACEHOLDER_DIGEST = "sha256:" + "0" * 64
+
+
+def _self_digested(model: Any, **fields: Any) -> Any:
+    """Build a mechanism declaration with its own canonical configDigest."""
+
+    digest_value = model.model_construct(config_digest=PLACEHOLDER_DIGEST, **fields).expected_config_digest()
+    return model(config_digest=digest_value, **fields)
+
+
+def _regional_cache_declaration(pool_refs: Sequence[str], **overrides: Any) -> RegionalCacheQualification:
+    fields: dict[str, Any] = {
+        "image_mirror_registry": "registry.example",
+        "payload_claim_name": "qwen-cache-rwx",
+        "payload_content_path": "/models/qwen/payload",
+        "payload_bytes": 16397461266,
+        "compile_cache": RetainedCompileCache(
+            claim_name="fsm-compile-cache-rwx",
+            sub_path="qwen/driver-580-sm90",
+            abi="driver-580-sm90",
+            mount_path="/runtime-cache",
+            size_limit_bytes=1 << 34,
+        ),
+        "pool_refs": list(pool_refs),
+    }
+    fields.update(overrides)
+    return _self_digested(RegionalCacheQualification, **fields)
+
+
+def _host_memory_declaration(pool_refs: Sequence[str], **overrides: Any) -> HostMemoryResidencyQualification:
+    fields: dict[str, Any] = {
+        "residency_mode": "locked-payload-residency",
+        "payload_claim_name": "qwen-cache-rwx",
+        "payload_content_path": "/models/qwen/payload",
+        "payload_digest": digest("a"),
+        "payload_bytes": 16397461266,
+        "reserved_bytes": 19327352832,
+        "node_allocatable_bytes": 1648745732096,
+        "holder": ResidencyHolder(
+            name="fsm-hostmem-qwen",
+            namespace="fs2-models",
+            receipt_claim_name="fsm-residency-receipt-rwx",
+            receipt_mount_path="/residency",
+        ),
+        "receipt_max_age_seconds": 180,
+        "pool_refs": list(pool_refs),
+    }
+    fields.update(overrides)
+    return _self_digested(HostMemoryResidencyQualification, **fields)
+
+
+def _gpu_resident_declaration(pool_refs: Sequence[str], **overrides: Any) -> GpuResidentQualification:
+    fields: dict[str, Any] = {
+        "residency_mode": "standby-engine",
+        "standby_replicas": 1,
+        "accelerators_per_standby_replica": 1,
+        "minimum_hot_replicas": 1,
+        "promotion_probe_period_seconds": 1,
+        "pool_refs": list(pool_refs),
+    }
+    fields.update(overrides)
+    return _self_digested(GpuResidentQualification, **fields)
+
+
+def _declared_envelope(
+    *,
+    mechanism: str,
+    cache_tier: CacheTier = CacheTier.SHARED_FILESYSTEM,
+    pool_refs: Sequence[str] = ("pool-a",),
+    **declaration_overrides: Any,
+) -> tuple[ModelDeploymentSpec, InfrastructureEnvelope]:
+    """A spec that pins ``mechanism`` and an envelope that declares it."""
+
+    base = envelope()
+    qualification = base.qualifications["qwen.3-8b"]
+    pools = {
+        key: value.model_copy(update={"node_selector": {**value.node_selector, **H100_CAPABILITY_SELECTOR}})
+        for key, value in base.pools.items()
+    }
+    declarations: dict[str, Any] = {}
+    if mechanism == FastStartMechanism.REGIONAL_CACHE.value:
+        declarations["regional_cache"] = _regional_cache_declaration(pool_refs, **declaration_overrides)
+    elif mechanism == FastStartMechanism.HOST_MEMORY_RESIDENCY.value:
+        declarations["host_memory_residency"] = _host_memory_declaration(pool_refs, **declaration_overrides)
+    elif mechanism == FastStartMechanism.GPU_RESIDENT.value:
+        declarations["gpu_resident"] = _gpu_resident_declaration(pool_refs, **declaration_overrides)
+    updated = InfrastructureEnvelope(
+        **{
+            **base.model_dump(),
+            "pools": {key: value.model_dump() for key, value in pools.items()},
+            "qualifications": {
+                "qwen.3-8b": {
+                    **qualification.model_dump(),
+                    "template_cache_tiers": {digest("c"): cache_tier.value},
+                    **{key: value.model_dump() for key, value in declarations.items()},
+                }
+            },
+        }
+    )
+    spec = model_spec()
+    wire = spec.model_dump(mode="json", by_alias=True)
+    wire["cache"] = {**wire["cache"], "tier": cache_tier.value, "mechanism": mechanism}
+    return ModelDeploymentSpec.model_validate(wire), updated
+
+
+def _codes(spec: ModelDeploymentSpec, infrastructure: InfrastructureEnvelope) -> set[str]:
+    decision = validate_model_deployment(spec, infrastructure, evaluation_time=NOW)
+    return {issue.code for issue in decision.issues}
+
+
+def test_a_pinned_mechanism_needs_a_reviewed_declaration_from_terraform() -> None:
+    spec, infrastructure = _declared_envelope(mechanism="regional-cache")
+    assert "fast_start_mechanism_declaration_required" not in _codes(spec, infrastructure)
+
+    undeclared = InfrastructureEnvelope(
+        **{
+            **infrastructure.model_dump(),
+            "qualifications": {
+                "qwen.3-8b": {
+                    **infrastructure.qualifications["qwen.3-8b"].model_dump(),
+                    "regional_cache": None,
+                }
+            },
+        }
+    )
+    decision = validate_model_deployment(spec, undeclared, evaluation_time=NOW)
+    assert "fast_start_mechanism_declaration_required" in {issue.code for issue in decision.issues}
+    # The gap is Terraform's to close, and the exact input is named.
+    assert "fast_start_mechanisms.qwen.3-8b.regional-cache" in decision.terraform_inputs
+
+
+def test_a_retained_payload_mechanism_needs_the_shared_filesystem_tier() -> None:
+    spec, infrastructure = _declared_envelope(mechanism="regional-cache", cache_tier=CacheTier.NODE_LOCAL)
+    assert "fast_start_mechanism_cache_tier_incompatible" in _codes(spec, infrastructure)
+
+
+def test_a_pinned_mechanism_must_be_declared_for_every_placement_pool() -> None:
+    spec, infrastructure = _declared_envelope(mechanism="host-memory-residency", pool_refs=("pool-b",))
+    assert "fast_start_mechanism_pool_unqualified" in _codes(spec, infrastructure)
+
+
+def test_gpu_resident_is_refused_when_the_hot_floor_cannot_afford_it() -> None:
+    spec, infrastructure = _declared_envelope(mechanism="gpu-resident", minimum_hot_replicas=2)
+    codes = _codes(spec, infrastructure)
+    assert "gpu_resident_hot_floor_required" in codes

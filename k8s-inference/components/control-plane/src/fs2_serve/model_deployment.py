@@ -39,7 +39,14 @@ from .fast_start_identity import (
     RuntimeEvidenceIdentity,
     StartupScenario,
 )
-from .fast_start_mechanisms import SELECTABLE_MECHANISMS, FastStartMechanism
+from .fast_start_mechanisms import (
+    DECLARED_MECHANISMS,
+    SELECTABLE_MECHANISMS,
+    FastStartMechanism,
+    GpuResidentQualification,
+    HostMemoryResidencyQualification,
+    RegionalCacheQualification,
+)
 from .models import KubernetesModel
 
 API_VERSION = "inference.fs2.nebius.ai/v1alpha1"
@@ -629,6 +636,40 @@ class ModelQualification(KubernetesModel):
     fast_start_evidence: list[FastStartEvidence] = Field(default_factory=list, max_length=256)
     fast_start_runtime_contracts: list[FastStartRuntimeContract] = Field(default_factory=list, max_length=64)
     model_express: ModelExpressQualification | None = None
+    regional_cache: RegionalCacheQualification | None = None
+    host_memory_residency: HostMemoryResidencyQualification | None = None
+    gpu_resident: GpuResidentQualification | None = None
+
+    def mechanism_declaration(
+        self,
+        mechanism: FastStartMechanism,
+    ) -> RegionalCacheQualification | HostMemoryResidencyQualification | GpuResidentQualification | None:
+        """Return the reviewed declaration for one mechanism, if any."""
+
+        if mechanism is FastStartMechanism.REGIONAL_CACHE:
+            return self.regional_cache
+        if mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY:
+            return self.host_memory_residency
+        if mechanism is FastStartMechanism.GPU_RESIDENT:
+            return self.gpu_resident
+        return None
+
+    @model_validator(mode="after")
+    def exact_mechanism_declarations(self) -> ModelQualification:
+        residency = self.host_memory_residency
+        regional = self.regional_cache
+        if residency is not None and regional is not None:
+            if (
+                residency.residency_mode != "runtime-sleep-offload"
+                and residency.payload_content_path != regional.payload_content_path
+            ):
+                raise ValueError("host-memory residency must hold the same retained payload as the regional cache")
+        if (
+            self.gpu_resident is not None
+            and self.gpu_resident.accelerators_per_standby_replica > self.max_accelerators_per_replica
+        ):
+            raise ValueError("a gpu-resident standby replica cannot exceed the qualified accelerator count")
+        return self
 
     @model_validator(mode="after")
     def exact_artifacts(self) -> ModelQualification:
@@ -702,6 +743,13 @@ class InfrastructureEnvelope(KubernetesModel):
             for item in self.qualifications.values()
         ):
             raise ValueError("ModelExpress v0.5.1 requires one accelerator class per model binding")
+        for item in self.qualifications.values():
+            for mechanism in DECLARED_MECHANISMS:
+                declaration = item.mechanism_declaration(mechanism)
+                if declaration is None:
+                    continue
+                if not set(declaration.pool_refs).issubset(self.pools):
+                    raise ValueError("fast-start mechanism declaration references a pool outside the envelope")
         if any(
             re.fullmatch(r"^[a-z][a-z0-9-]{0,63}$", name) is None or not math.isfinite(cost) or cost < 0
             for name, cost in self.fast_start_mechanism_hourly_costs.items()
@@ -987,6 +1035,66 @@ def validate_model_deployment(
                     owner="live-control-plane",
                 )
             )
+
+    mechanism = spec.cache.mechanism
+    if mechanism is not None and mechanism in DECLARED_MECHANISMS:
+        declaration = qualification.mechanism_declaration(mechanism) if qualification is not None else None
+        if declaration is None:
+            issues.append(
+                _issue(
+                    "fast_start_mechanism_declaration_required",
+                    "$.spec.cache.mechanism",
+                    "the selected cold-start mechanism has no reviewed declaration for this model",
+                    owner="terraform",
+                )
+            )
+            terraform_inputs.add(f"fast_start_mechanisms.{spec.model_ref}.{mechanism.value}")
+        else:
+            for index, pool_ref in enumerate(spec.placement.pool_refs):
+                if pool_ref not in declaration.pool_refs:
+                    issues.append(
+                        _issue(
+                            "fast_start_mechanism_pool_unqualified",
+                            f"$.spec.placement.poolRefs[{index}]",
+                            "the selected cold-start mechanism is not declared for this pool",
+                            owner="live-control-plane",
+                        )
+                    )
+            if (
+                mechanism in (FastStartMechanism.REGIONAL_CACHE, FastStartMechanism.HOST_MEMORY_RESIDENCY)
+                and spec.cache.tier is not CacheTier.SHARED_FILESYSTEM
+            ):
+                issues.append(
+                    _issue(
+                        "fast_start_mechanism_cache_tier_incompatible",
+                        "$.spec.cache.tier",
+                        "a retained regional payload needs the SharedFilesystem cache tier",
+                        owner="live-control-plane",
+                    )
+                )
+            if isinstance(declaration, GpuResidentQualification):
+                # A parked standby replica holds an accelerator for as long as
+                # it waits. Make that dependency explicit here instead of
+                # letting the autoscaler meet it as unexplained reserved
+                # capacity.
+                if spec.availability.min_replicas < declaration.minimum_hot_replicas:
+                    issues.append(
+                        _issue(
+                            "gpu_resident_hot_floor_required",
+                            "$.spec.availability.minReplicas",
+                            "gpu-resident needs a hot floor at least as large as its declared minimum",
+                            owner="live-control-plane",
+                        )
+                    )
+                if spec.availability.max_replicas < declaration.minimum_hot_replicas + declaration.standby_replicas:
+                    issues.append(
+                        _issue(
+                            "gpu_resident_capacity_required",
+                            "$.spec.availability.maxReplicas",
+                            "gpu-resident needs replica headroom for its parked standby replicas",
+                            owner="live-control-plane",
+                        )
+                    )
 
     pool_replica_capacity = {
         pool.pool_id: (pool.accelerators_per_node // spec.placement.accelerators_per_replica) * pool.max_nodes
