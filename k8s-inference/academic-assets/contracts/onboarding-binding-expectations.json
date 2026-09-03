@@ -13,6 +13,11 @@
       ],
       "content_digest_sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
       "total_size_bytes": 1020545840,
+      "source_required_files": [
+        "af3.bin.zst"
+      ],
+      "source_content_digest_sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+      "source_total_size_bytes": 1020545840,
       "release_id": "af3.bin.zst-generation-1780568696389861",
       "consumer_path": "/models/af3.bin.zst",
       "source_sub_path": "alphafold3/af3.bin.zst",
@@ -26,11 +31,16 @@
       "declaration": "bindcraft.json",
       "artifact_id": "bindcraft-pyrosetta-installed-tree",
       "required_files": [
+        "pyrosetta/__init__.py"
+      ],
+      "content_digest_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+      "total_size_bytes": 3287122494,
+      "source_required_files": [
         "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl"
       ],
-      "content_digest_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
-      "total_size_bytes": 1667097173,
-      "release_id": null,
+      "source_content_digest_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+      "source_total_size_bytes": 1667097173,
+      "release_id": "pyrosetta-2026.29-cp310-installed-tree",
       "consumer_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
       "source_sub_path": "pyrosetta-bindcraft/site-packages",
       "mechanism": "subpath-directory-mount",

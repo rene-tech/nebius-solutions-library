@@ -52,13 +52,19 @@ class OnboardingBindingTests(unittest.TestCase):
                 self.assertEqual(expected["consumer_path"], binding["consumer_path"])
                 self.assertEqual(expected["mechanism"], binding["mechanism"])
 
-    def test_binding_points_at_the_same_verified_bytes(self) -> None:
+    def test_binding_and_source_artifact_identities_are_not_conflated(self) -> None:
+        projection = load(PROJECTION)
+        projected_by_model = {model["model_id"]: model for model in projection["models"]}
         for asset_id, expected in self.by_asset.items():
             artifact = self.contract["assets"][asset_id]["artifact"]
+            model_id = self.contract["assets"][asset_id]["model_id"]
+            binding = projected_by_model[model_id]["runtime_binding"]
             with self.subTest(asset=asset_id):
-                self.assertEqual(expected["content_digest_sha256"], artifact["sha256"])
-                self.assertEqual(expected["total_size_bytes"], artifact["size_bytes"])
-                self.assertIn(artifact["filename"], expected["required_files"])
+                self.assertEqual(expected["source_content_digest_sha256"], artifact["sha256"])
+                self.assertEqual(expected["source_total_size_bytes"], artifact["size_bytes"])
+                self.assertIn(artifact["filename"], expected["source_required_files"])
+                self.assertEqual(expected["content_digest_sha256"], binding["content_digest_sha256"])
+                self.assertEqual(expected["total_size_bytes"], binding["content_bytes"])
 
     def test_a_directory_binding_carries_tree_identity_not_archive_identity(self) -> None:
         for asset_id, expected in self.by_asset.items():
