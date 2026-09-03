@@ -1,0 +1,731 @@
+{
+  "schema": "fs2.nebius.ai/proteina-complexa-h100-run-receipt/v1",
+  "owner_task": "fs2-complexa-final-h100-qualification-r20260903",
+  "model_id": "proteina-complexa",
+  "collected_at": "2026-09-03T06:29:10Z",
+  "source": {
+    "repository": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+    "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+    "archive_sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b",
+    "equivalence": "equivalent: 632/632 files match"
+  },
+  "image": {
+    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+    "published_digest": "sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd-batch-v1",
+    "provenance": {
+      "mode": "slsa-provenance-max-attached-at-push",
+      "vcs_revision": "cb8d6bea1bd15ae4cd68f588e718c14333acbac2",
+      "requirement": "the attached SLSA provenance must name the exact clean commit of this repository that carries these build inputs; a dirty tree or an uncommitted build input invalidates the publication"
+    },
+    "entrypoint_sha256": "81cf6cb493cc37dfc2cd04753e18ef97f72b37f4094526aa76a5aa0a8f14093f"
+  },
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "tenant": "tenant-e00f3wdfzwfjgbcyfv",
+    "parent_project": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_resource_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "namespace": "fs2-academic-poc",
+    "kubeconfig": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+    "capacity_choice": "existing capacity-block H100 nodes; no new or preemptible capacity was created because the predecessor Jobs were already complete and this successor only collected their evidence"
+  },
+  "execution_plan": {
+    "path": "qualification/generated-plan.json",
+    "sha256": "7012ee66c058206a20e747e5e2bb971e0a897a49cc23475a6193dcb3de3307dd",
+    "shell_free": true
+  },
+  "artifact_delivery": {
+    "state": "immutable-public-generations",
+    "plane": "shared reference-data host plane",
+    "host_root": "/mnt/fs2-reference-data/data",
+    "generation_root": "scientific-localization/public/generations",
+    "volume_kind": "host-path",
+    "visibility": "public",
+    "node_requirement": "storage.fs2.nebius/reference-data=true, present on every GPU node in this cluster",
+    "promoted_by": "fs2-proteina-complexa-public-artifact-live-ingestion-r20260903, terminal run r20260903b, four generations, zero failures",
+    "promotion_receipt": "scientific-localization/public/complexa-ingestion/receipts/promotion.r20260903b.json",
+    "licence_separation": "Complexa and RosettaFold3 are public and host-path, so this consumer never touches the tenant-private academic claim and never places a public byte on it. No mixed-plane machinery is needed because no licensed tree is read.",
+    "admission": "the runtime entrypoint reproduces the plane's own admission rules: marker schema, artifact, generation, sub-path, plane, visibility, licence and inventory algorithm, the marker document digest published by the promotion receipt, and a fs2-tree-inventory/v2 digest recomputed from the mounted bytes",
+    "supersedes": "an earlier revision of this task staged the same file identities into its own claim because the ingestion successor had removed its staging tree mid-run; that path is abandoned in favour of the promoted generations"
+  },
+  "dependency_bindings": {
+    "alphafold2": {
+      "artifact_id": "alphafold2-params",
+      "binding": "AF2_DIR=/opt/fs2/artifacts/alphafold2-params",
+      "generation": {
+        "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+        "marker_sha256": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+        "sub_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+        "entry_count": 16,
+        "total_bytes": 5587956571,
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1"
+      },
+      "qualification_state": "published-and-node-verified; not mounted, marker-verified, or exercised by these reward-free runs"
+    },
+    "rosettafold3": {
+      "artifact_id": "rosettafold3-checkpoint",
+      "binding": "RF3_CKPT_PATH and RF3_EXEC_PATH",
+      "generation": {
+        "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "marker_sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822",
+        "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "entry_count": 1,
+        "total_bytes": 3038876446,
+        "inventory_algorithm": "fs2-tree-inventory/v2"
+      },
+      "qualification_state": "mounted and marker/inventory-verified by every variant; not exercised because these runs were reward-free"
+    }
+  },
+  "gpu_snapshot": {
+    "captured": false,
+    "restored": false,
+    "reason": "no device snapshot was captured or restored; the cache levels reported here are image and artifact locality only"
+  },
+  "variants": [
+    {
+      "variant": "protein",
+      "task_name": "02_PDL1",
+      "target_structure": "/opt/fs2/source/assets/target_data/bindcraft_targets/PD-L1.pdb",
+      "run_id": "fs2-cxq-a1-protein",
+      "terminal_state": "PASS",
+      "upstream_exit_code": 0,
+      "cuda_used_by_upstream": true,
+      "device": {
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "compute_capability": "9.0",
+        "total_memory_bytes": 85017493504,
+        "torch_version": "2.7.0+cu126",
+        "torch_cuda_version": "12.6",
+        "architecture_policy": "capability-driven; no device-name allowlist"
+      },
+      "node": {
+        "resource_id": "computeinstance-e00m0hsph76ajt9sdb",
+        "name_sha256": "sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+        "gpu_name": "H100",
+        "accelerator_class": "nvidia-h100-sxm5-80gb",
+        "capacity_source": "capacity-block",
+        "instance_type": "gpu-h100-sxm",
+        "driver_version": "580.159.04-1ubuntu1",
+        "allocatable_gpu": "8"
+      },
+      "kubernetes_resources": {
+        "job": "fs2-cxq-a1-protein",
+        "job_uid": "7be1467b-26a4-4e2d-be74-148134e8abe1",
+        "pod": "fs2-cxq-a1-protein-v45gb",
+        "pod_uid": "73c8e959-b68a-46fe-a322-d4473032c6c9"
+      },
+      "container_id": "containerd://24cadde6d851ef3c27194ea81cd2cf1141b80eee7c59ee9284b3e75514cdbf1f",
+      "image": "sha256:f67b474f24484a69cc1b202737865fe0cb4c130693b9b1b534de27d20c5c7d52",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+      "checkpoint_pair": [
+        {
+          "label": "protein score checkpoint",
+          "path": "/opt/fs2/artifacts/complexa-protein/complexa.ckpt",
+          "bytes": 2934289381,
+          "sha256": "589db1741f29838c7961386f6b873087238c72682e56189b89e0ae02610c19e9",
+          "content_digest_verified": true,
+          "digest_seconds": 2.126
+        },
+        {
+          "label": "protein partial autoencoder",
+          "path": "/opt/fs2/artifacts/complexa-protein/complexa_ae.ckpt",
+          "bytes": 4100101779,
+          "sha256": "35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816",
+          "content_digest_verified": true,
+          "digest_seconds": 3.009
+        }
+      ],
+      "rosettafold3": {
+        "artifact_id": "rosettafold3-checkpoint",
+        "bound": true,
+        "digest_seconds": 2.321,
+        "digest_verified": true,
+        "directory_count": 0,
+        "entry_count": 1,
+        "exercised": false,
+        "expected_bytes": 3038876446,
+        "expected_sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0",
+        "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "inventory_algorithm": "fs2-tree-inventory/v2",
+        "label": "rosettafold3 checkpoint",
+        "license_id": "BSD-3-Clause",
+        "marker_sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822",
+        "mount": "/opt/fs2/artifacts/rosettafold3-checkpoint",
+        "observed_bytes": 3038876446,
+        "observed_sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0",
+        "path": "/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt",
+        "recomputed_generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "role": "reward-and-evaluation",
+        "seconds": 1.086,
+        "source_revision": "foundry-production-b02eed6a-checksum-lock",
+        "source_uri": "https://files.ipd.uw.edu/pub/rf3/",
+        "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "total_bytes": 3038876446,
+        "visibility": "public",
+        "volume_kind": "host-path"
+      },
+      "artifact_verification_seconds": 10.911,
+      "phases": {
+        "compute_seconds": 12.328,
+        "interpreter_and_import_seconds": 12.466,
+        "lora_reapplied": false,
+        "model_load_seconds": 8.232,
+        "sampling_seconds": 12.328,
+        "upstream_process_seconds": 34.632,
+        "upstream_reported_generation_seconds": 20.56
+      },
+      "kubernetes_timings": {
+        "job_created_at": "2026-09-03T05:57:47Z",
+        "container_started_at": "2026-09-03T05:59:32Z",
+        "container_finished_at": "2026-09-03T06:00:19Z",
+        "schedule_to_container_start_seconds": 105.0,
+        "container_runtime_seconds": 47.0,
+        "schedule_to_semantic_complete_seconds": 152.0
+      },
+      "image_phase": {
+        "already_present_on_node": false,
+        "pulled_during_this_run": true,
+        "observed_cache_level": "cold",
+        "events": [
+          {
+            "reason": "Scheduled",
+            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-a1-protein-v45gb to computeinstance-e00m0hsph76ajt9sdb"
+          },
+          {
+            "reason": "Pulling",
+            "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23\""
+          },
+          {
+            "reason": "Pulled",
+            "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23\" in 1m34.821s (1m34.821s including waiting). Image size: 4372295394 bytes."
+          },
+          {
+            "reason": "Created",
+            "message": "Container created"
+          },
+          {
+            "reason": "Started",
+            "message": "Container started"
+          }
+        ]
+      },
+      "cache_level": "cold",
+      "asset_link": null,
+      "produced": {
+        "structures": 1,
+        "chain_lengths": {
+          "job_0_n_243_id_0_single_orig0.pdb": {
+            "A": 115,
+            "B": 128
+          }
+        },
+        "observed_ligand_residues": [],
+        "reward_rows": 1
+      },
+      "output_artifacts": [
+        {
+          "path": "hydra/.hydra/config.yaml",
+          "bytes": 18179,
+          "sha256": "675d272ecb1b0c3f1db3d57c58cee6db52061f4c2523f714b3c77ff14b31d2ef"
+        },
+        {
+          "path": "hydra/.hydra/hydra.yaml",
+          "bytes": 4229,
+          "sha256": "572e3c8dd003b05181f18375022da73a35ec17335938d35383ad0caf2848eefc"
+        },
+        {
+          "path": "hydra/.hydra/overrides.yaml",
+          "bytes": 459,
+          "sha256": "bbed48cd5ff2a7255706406c5dad4715238dd20d84d249e8e63e6d4c2545a5fd"
+        },
+        {
+          "path": "hydra/generate.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "job_0_n_243_id_0_single_orig0/job_0_n_243_id_0_single_orig0.pdb",
+          "bytes": 156333,
+          "sha256": "dbc355ee84b656a3241c3e30eb40035188f0f410b545a801fab2816ab5104c61"
+        },
+        {
+          "path": "result.json",
+          "bytes": 9930,
+          "sha256": "2979482b007d34a1d914730a9b8689498fd3f83b42637913629fe0668dfb3736"
+        },
+        {
+          "path": "rewards_search_binder_local_pipeline_0.csv",
+          "bytes": 800,
+          "sha256": "411f62570d06cd36d64990fb5b749895a58774f37a2450a16db641dc9b4e8a81"
+        },
+        {
+          "path": "timing_0.csv",
+          "bytes": 37,
+          "sha256": "8f811d0d22e27c49745aa7893e061c70a98b1375a8bbfb6266ec2754f280fc3b"
+        },
+        {
+          "path": "upstream.log",
+          "bytes": 10234,
+          "sha256": "8c0dab1a1e1c75c3c978506b902fa5be7aaeb66247d32e7d93e3e23f68d16a1b"
+        }
+      ],
+      "argv": [
+        "/opt/venv/bin/python",
+        "-m",
+        "proteinfoundation.generate",
+        "--config-path=/opt/fs2/source/configs",
+        "--config-name=search_binder_local_pipeline",
+        "++ckpt_path=/opt/fs2/artifacts/complexa-protein",
+        "++ckpt_name=complexa.ckpt",
+        "++autoencoder_ckpt_path=/opt/fs2/artifacts/complexa-protein/complexa_ae.ckpt",
+        "++generation.task_name=02_PDL1",
+        "++generation.dataloader.batch_size=1",
+        "++generation.dataloader.dataset.nres.nsamples=1",
+        "++generation.args.nsteps=400",
+        "++seed=20260903",
+        "++root_path=/workspace/protein",
+        "++save_timing=true",
+        "hydra.job.chdir=False",
+        "hydra.run.dir=/workspace/protein/hydra",
+        "++generation.search.algorithm=single-pass",
+        "++generation.reward_model=null"
+      ]
+    },
+    {
+      "variant": "ligand",
+      "task_name": "39_7V11_LIGAND",
+      "target_structure": "/opt/fs2/source/assets/target_data/ligand_targets/7v11_ligand_centered.pdb",
+      "run_id": "fs2-cxq-a1-ligand",
+      "terminal_state": "PASS",
+      "upstream_exit_code": 0,
+      "cuda_used_by_upstream": true,
+      "device": {
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "compute_capability": "9.0",
+        "total_memory_bytes": 85017493504,
+        "torch_version": "2.7.0+cu126",
+        "torch_cuda_version": "12.6",
+        "architecture_policy": "capability-driven; no device-name allowlist"
+      },
+      "node": {
+        "resource_id": "computeinstance-e00p3acr87k9k4mckj",
+        "name_sha256": "sha256:ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9",
+        "gpu_name": "H100",
+        "accelerator_class": "nvidia-h100-sxm5-80gb",
+        "capacity_source": "capacity-block",
+        "instance_type": "gpu-h100-sxm",
+        "driver_version": "580.159.04-1ubuntu1",
+        "allocatable_gpu": "8"
+      },
+      "kubernetes_resources": {
+        "job": "fs2-cxq-a1-ligand",
+        "job_uid": "ab5ad749-d81e-4eb5-b9db-8a8dad7b3b24",
+        "pod": "fs2-cxq-a1-ligand-p82rz",
+        "pod_uid": "18a9a016-5732-425b-b8af-d70c1b225048"
+      },
+      "container_id": "containerd://a5058c5d0d5585fdded9fdecf1835944e9c0195a2d84735bf79de47b8b05e04c",
+      "image": "sha256:f67b474f24484a69cc1b202737865fe0cb4c130693b9b1b534de27d20c5c7d52",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+      "checkpoint_pair": [
+        {
+          "label": "ligand score checkpoint",
+          "path": "/opt/fs2/artifacts/complexa-ligand/complexa_ligand.ckpt",
+          "bytes": 1790554392,
+          "sha256": "8175213eac5ec6433fed1756d055ce3f867129bfdb033040e1a0560ca558bfe5",
+          "content_digest_verified": true,
+          "digest_seconds": 1.233
+        },
+        {
+          "label": "ligand partial autoencoder",
+          "path": "/opt/fs2/artifacts/complexa-ligand/complexa_ligand_ae.ckpt",
+          "bytes": 4100184649,
+          "sha256": "898da17022cdeaaaea7caace41c8b6fe7bfcb78be4876b0113127eb9bb1527e6",
+          "content_digest_verified": true,
+          "digest_seconds": 2.822
+        }
+      ],
+      "rosettafold3": {
+        "artifact_id": "rosettafold3-checkpoint",
+        "bound": true,
+        "digest_seconds": 2.133,
+        "digest_verified": true,
+        "directory_count": 0,
+        "entry_count": 1,
+        "exercised": false,
+        "expected_bytes": 3038876446,
+        "expected_sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0",
+        "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "inventory_algorithm": "fs2-tree-inventory/v2",
+        "label": "rosettafold3 checkpoint",
+        "license_id": "BSD-3-Clause",
+        "marker_sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822",
+        "mount": "/opt/fs2/artifacts/rosettafold3-checkpoint",
+        "observed_bytes": 3038876446,
+        "observed_sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0",
+        "path": "/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt",
+        "recomputed_generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "role": "reward-and-evaluation",
+        "seconds": 1.196,
+        "source_revision": "foundry-production-b02eed6a-checksum-lock",
+        "source_uri": "https://files.ipd.uw.edu/pub/rf3/",
+        "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "total_bytes": 3038876446,
+        "visibility": "public",
+        "volume_kind": "host-path"
+      },
+      "artifact_verification_seconds": 10.658,
+      "phases": {
+        "checkpoint_load_to_lora_seconds": 8.083,
+        "compute_seconds": 12.332,
+        "interpreter_and_import_seconds": 12.177,
+        "lora_reapplied": true,
+        "model_load_seconds": 12.768,
+        "sampling_seconds": 12.332,
+        "upstream_process_seconds": 38.687,
+        "upstream_reported_generation_seconds": 25.1
+      },
+      "kubernetes_timings": {
+        "job_created_at": "2026-09-03T05:57:47Z",
+        "container_started_at": "2026-09-03T05:59:29Z",
+        "container_finished_at": "2026-09-03T06:00:20Z",
+        "schedule_to_container_start_seconds": 102.0,
+        "container_runtime_seconds": 51.0,
+        "schedule_to_semantic_complete_seconds": 153.0
+      },
+      "image_phase": {
+        "already_present_on_node": false,
+        "pulled_during_this_run": true,
+        "observed_cache_level": "cold",
+        "events": [
+          {
+            "reason": "Scheduled",
+            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-a1-ligand-p82rz to computeinstance-e00p3acr87k9k4mckj"
+          },
+          {
+            "reason": "Pulling",
+            "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23\""
+          },
+          {
+            "reason": "Pulled",
+            "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23\" in 1m38.115s (1m38.115s including waiting). Image size: 4372295394 bytes."
+          },
+          {
+            "reason": "Created",
+            "message": "Container created"
+          },
+          {
+            "reason": "Started",
+            "message": "Container started"
+          }
+        ]
+      },
+      "cache_level": "cold",
+      "asset_link": null,
+      "produced": {
+        "structures": 2,
+        "chain_lengths": {
+          "job_0_n_100_id_0_single_orig0_binder.pdb": {
+            "B": 100
+          }
+        },
+        "observed_ligand_residues": [
+          "OQO"
+        ],
+        "reward_rows": 1
+      },
+      "output_artifacts": [
+        {
+          "path": "hydra/.hydra/config.yaml",
+          "bytes": 6494,
+          "sha256": "7d615a2869280bb439ce7f23d0ebfd10be2544c6a42701ec741eee69096890b4"
+        },
+        {
+          "path": "hydra/.hydra/hydra.yaml",
+          "bytes": 4269,
+          "sha256": "359783347b6d39029888eeb4f6e6bbc255dd34b002ffbbc388eb237b822d0e16"
+        },
+        {
+          "path": "hydra/.hydra/overrides.yaml",
+          "bytes": 477,
+          "sha256": "00ee3c70aa26f4554f2f55ae3be0c0342a2c2822e1b225537225ed26a3694c2a"
+        },
+        {
+          "path": "hydra/generate.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "job_0_n_100_id_0_single_orig0/job_0_n_100_id_0_single_orig0.pdb",
+          "bytes": 60016,
+          "sha256": "4f135a82aac4e2506e702987f54fc6ee47b90d9856a4a727d8faba996acc42bd"
+        },
+        {
+          "path": "job_0_n_100_id_0_single_orig0/job_0_n_100_id_0_single_orig0_binder.pdb",
+          "bytes": 56217,
+          "sha256": "df8341972a712509f1fda5772b27cd6d4b6e0b8213b4cc7fce4c6463dd784b89"
+        },
+        {
+          "path": "result.json",
+          "bytes": 10901,
+          "sha256": "9f4bdf78f1df8148220363b3387a0348c7e8a497cb6c7cfd096139e994c42576"
+        },
+        {
+          "path": "rewards_search_ligand_binder_local_pipeline_0.csv",
+          "bytes": 413,
+          "sha256": "beeaac60067f71a038b17dd08a7aca24469673ef5941ab59c983b0d3a2a83166"
+        },
+        {
+          "path": "timing_0.csv",
+          "bytes": 37,
+          "sha256": "5decf9caa3c4b1ff88011cbf5862021f7a4c1da573fb3065b3c0ef09de3c5da1"
+        },
+        {
+          "path": "upstream.log",
+          "bytes": 31981,
+          "sha256": "9bee93ffaeacbbad2eba9aa4a761b46a03f4fee78996863b613eaeca78b98ebc"
+        }
+      ],
+      "argv": [
+        "/opt/venv/bin/python",
+        "-m",
+        "proteinfoundation.generate",
+        "--config-path=/opt/fs2/source/configs",
+        "--config-name=search_ligand_binder_local_pipeline",
+        "++ckpt_path=/opt/fs2/artifacts/complexa-ligand",
+        "++ckpt_name=complexa_ligand.ckpt",
+        "++autoencoder_ckpt_path=/opt/fs2/artifacts/complexa-ligand/complexa_ligand_ae.ckpt",
+        "++generation.task_name=39_7V11_LIGAND",
+        "++generation.dataloader.batch_size=1",
+        "++generation.dataloader.dataset.nres.nsamples=1",
+        "++generation.args.nsteps=400",
+        "++seed=20260903",
+        "++root_path=/workspace/ligand",
+        "++save_timing=true",
+        "hydra.job.chdir=False",
+        "hydra.run.dir=/workspace/ligand/hydra",
+        "++generation.search.algorithm=single-pass",
+        "++generation.reward_model=null"
+      ]
+    },
+    {
+      "variant": "ame",
+      "task_name": "M0024_1nzy_og",
+      "target_structure": "/opt/fs2/source/assets/target_data/ame_input_structures/M0024_1nzy.pdb",
+      "run_id": "fs2-cxq-a1-ame",
+      "terminal_state": "PASS",
+      "upstream_exit_code": 0,
+      "cuda_used_by_upstream": true,
+      "device": {
+        "device_name": "NVIDIA H100 80GB HBM3",
+        "compute_capability": "9.0",
+        "total_memory_bytes": 85017493504,
+        "torch_version": "2.7.0+cu126",
+        "torch_cuda_version": "12.6",
+        "architecture_policy": "capability-driven; no device-name allowlist"
+      },
+      "node": {
+        "resource_id": "computeinstance-e00m0hsph76ajt9sdb",
+        "name_sha256": "sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+        "gpu_name": "H100",
+        "accelerator_class": "nvidia-h100-sxm5-80gb",
+        "capacity_source": "capacity-block",
+        "instance_type": "gpu-h100-sxm",
+        "driver_version": "580.159.04-1ubuntu1",
+        "allocatable_gpu": "8"
+      },
+      "kubernetes_resources": {
+        "job": "fs2-cxq-a1-ame",
+        "job_uid": "2e0c6168-3f7a-4a2f-88e6-6e8115c81f8f",
+        "pod": "fs2-cxq-a1-ame-fzxcr",
+        "pod_uid": "bc5fe4b2-b782-4242-b10e-4414ae7f6489"
+      },
+      "container_id": "containerd://c79b351d7f8ba1d6692514c8c588ccac25a8a71e32166829faccc4c840d12ba9",
+      "image": "sha256:f67b474f24484a69cc1b202737865fe0cb4c130693b9b1b534de27d20c5c7d52",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+      "checkpoint_pair": [
+        {
+          "label": "ame score checkpoint",
+          "path": "/opt/fs2/artifacts/complexa-ame/complexa_ame.ckpt",
+          "bytes": 1792013880,
+          "sha256": "d11319693d024d0427abc356a86350a694a1cb7dceb8db642c8041e5a20a9f7b",
+          "content_digest_verified": true,
+          "digest_seconds": 1.357
+        },
+        {
+          "label": "ame partial autoencoder",
+          "path": "/opt/fs2/artifacts/complexa-ame/complexa_ame_ae.ckpt",
+          "bytes": 4100197925,
+          "sha256": "63b1358c5459e968628094fdc9a2a6a95ac003606fcf7b1a3a21174458a69734",
+          "content_digest_verified": true,
+          "digest_seconds": 3.083
+        }
+      ],
+      "rosettafold3": {
+        "artifact_id": "rosettafold3-checkpoint",
+        "bound": true,
+        "digest_seconds": 2.32,
+        "digest_verified": true,
+        "directory_count": 0,
+        "entry_count": 1,
+        "exercised": false,
+        "expected_bytes": 3038876446,
+        "expected_sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0",
+        "generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "inventory_algorithm": "fs2-tree-inventory/v2",
+        "label": "rosettafold3 checkpoint",
+        "license_id": "BSD-3-Clause",
+        "marker_sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822",
+        "mount": "/opt/fs2/artifacts/rosettafold3-checkpoint",
+        "observed_bytes": 3038876446,
+        "observed_sha256": "364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0",
+        "path": "/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt",
+        "recomputed_generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "role": "reward-and-evaluation",
+        "seconds": 1.169,
+        "source_revision": "foundry-production-b02eed6a-checksum-lock",
+        "source_uri": "https://files.ipd.uw.edu/pub/rf3/",
+        "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+        "total_bytes": 3038876446,
+        "visibility": "public",
+        "volume_kind": "host-path"
+      },
+      "artifact_verification_seconds": 10.137,
+      "phases": {
+        "checkpoint_load_to_lora_seconds": 7.273,
+        "compute_seconds": 12.894,
+        "interpreter_and_import_seconds": 12.527,
+        "lora_reapplied": true,
+        "model_load_seconds": 11.686,
+        "sampling_seconds": 12.894,
+        "upstream_process_seconds": 38.707,
+        "upstream_reported_generation_seconds": 24.58
+      },
+      "kubernetes_timings": {
+        "job_created_at": "2026-09-03T05:57:47Z",
+        "container_started_at": "2026-09-03T05:59:32Z",
+        "container_finished_at": "2026-09-03T06:00:23Z",
+        "schedule_to_container_start_seconds": 105.0,
+        "container_runtime_seconds": 51.0,
+        "schedule_to_semantic_complete_seconds": 156.0
+      },
+      "image_phase": {
+        "already_present_on_node": false,
+        "pulled_during_this_run": true,
+        "observed_cache_level": "cold",
+        "events": [
+          {
+            "reason": "Scheduled",
+            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-a1-ame-fzxcr to computeinstance-e00m0hsph76ajt9sdb"
+          },
+          {
+            "reason": "Pulling",
+            "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23\""
+          },
+          {
+            "reason": "Pulled",
+            "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23\" in 1m34.266s (1m34.266s including waiting). Image size: 4372295394 bytes."
+          },
+          {
+            "reason": "Created",
+            "message": "Container created"
+          },
+          {
+            "reason": "Started",
+            "message": "Container started"
+          }
+        ]
+      },
+      "cache_level": "cold",
+      "asset_link": null,
+      "produced": {
+        "structures": 2,
+        "chain_lengths": {
+          "job_0_n_180_id_0_single_orig0_binder.pdb": {
+            "B": 180
+          }
+        },
+        "observed_ligand_residues": [
+          "BCA"
+        ],
+        "reward_rows": 1
+      },
+      "output_artifacts": [
+        {
+          "path": "hydra/.hydra/config.yaml",
+          "bytes": 22658,
+          "sha256": "c7f3918be75a40d8158af42ea8ddee3f0cea4882ce862d8891f086f5dd9cadcc"
+        },
+        {
+          "path": "hydra/.hydra/hydra.yaml",
+          "bytes": 4218,
+          "sha256": "cd81b90f9bed4486ce91e28f17e0b0b5e77428c6fd98310da4cdc509fd0d35fc"
+        },
+        {
+          "path": "hydra/.hydra/overrides.yaml",
+          "bytes": 461,
+          "sha256": "9a180d140105b99ee1a8d0670d79be367a823889dc81f7dbf94b714376cd74d8"
+        },
+        {
+          "path": "hydra/generate.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "job_0_n_180_id_0_single_orig0/job_0_n_180_id_0_single_orig0.pdb",
+          "bytes": 109269,
+          "sha256": "cac356ddff3697c62af29bf63442f1476f5c9a38e1cf49316659f585070d2409"
+        },
+        {
+          "path": "job_0_n_180_id_0_single_orig0/job_0_n_180_id_0_single_orig0_binder.pdb",
+          "bytes": 105222,
+          "sha256": "621967dcd4eda748657cd25f71d06a38a0eb57e5ca2b7d355a10253412219f58"
+        },
+        {
+          "path": "result.json",
+          "bytes": 10919,
+          "sha256": "42c5e0a802898c9b69793865b61ccd3f664df3065d891a2052e24cff8541bd75"
+        },
+        {
+          "path": "rewards_search_ame_local_pipeline_0.csv",
+          "bytes": 611,
+          "sha256": "9f813b6a1e6e2cf81dc8521d6821b90fe6b42c87ac910f46c1ec5ff0b31c656a"
+        },
+        {
+          "path": "timing_0.csv",
+          "bytes": 37,
+          "sha256": "72a751756acb2a0eb550a2db2d600de8052a9bad4f330f27f2acc0dfc72d479a"
+        },
+        {
+          "path": "upstream.log",
+          "bytes": 50053,
+          "sha256": "c3a5a91666931f3da811621cb3d7559772b44baa0f54127ca05f5d7bbef0516f"
+        }
+      ],
+      "argv": [
+        "/opt/venv/bin/python",
+        "-m",
+        "proteinfoundation.generate",
+        "--config-path=/opt/fs2/source/configs",
+        "--config-name=search_ame_local_pipeline",
+        "++ckpt_path=/opt/fs2/artifacts/complexa-ame",
+        "++ckpt_name=complexa_ame.ckpt",
+        "++autoencoder_ckpt_path=/opt/fs2/artifacts/complexa-ame/complexa_ame_ae.ckpt",
+        "++generation.task_name=M0024_1nzy_og",
+        "++generation.dataloader.batch_size=1",
+        "++generation.dataloader.dataset.nres.nsamples=1",
+        "++generation.args.nsteps=400",
+        "++seed=20260903",
+        "++root_path=/workspace/ame",
+        "++save_timing=true",
+        "hydra.job.chdir=False",
+        "hydra.run.dir=/workspace/ame/hydra",
+        "++generation.search.algorithm=single-pass",
+        "++generation.reward_model=null"
+      ]
+    }
+  ]
+}

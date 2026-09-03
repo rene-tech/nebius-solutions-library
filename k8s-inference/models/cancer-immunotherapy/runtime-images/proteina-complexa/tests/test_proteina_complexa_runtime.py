@@ -14,6 +14,7 @@ so a validator cannot pass by rejecting everything.
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import math
 import os
@@ -118,6 +119,23 @@ class PinnedIdentityTests(unittest.TestCase):
         )
         self.assertEqual(pinned["source"]["revision"], ENTRY.SOURCE_REVISION)
 
+    def test_registry_attestation_matches_the_accepted_image_and_build_commit(self) -> None:
+        provenance = json.loads(
+            (ROOT / "evidence/registry-provenance.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            LOCK["image"]["published_digest"], provenance["image"]["index_digest"]
+        )
+        self.assertEqual(
+            LOCK["image"]["provenance"]["vcs_revision"],
+            provenance["slsa"]["vcs"]["revision"],
+        )
+        self.assertEqual(
+            LOCK["source"]["archive_sha256"],
+            provenance["slsa"]["source"]["archive_sha256"],
+        )
+        self.assertTrue(provenance["verification"]["attestation_is_attached_to_platform_manifest"])
+
     def test_lock_never_claims_a_gpu_snapshot(self) -> None:
         snapshot = ENTRY.describe()["gpu_snapshot"]
         self.assertFalse(snapshot["captured"])
@@ -125,8 +143,11 @@ class PinnedIdentityTests(unittest.TestCase):
 
     def test_lock_does_not_report_the_runtime_as_servable(self) -> None:
         qualification = LOCK["image"]["qualification"]
+        self.assertEqual("qualified-h100-all-variants", qualification["state"])
         self.assertFalse(qualification["servable"])
         self.assertFalse(qualification["route_exposed"])
+        for relative_path in qualification["evidence"]:
+            self.assertTrue((ROOT / relative_path).is_file(), relative_path)
 
     def test_superseded_digests_are_not_deployable(self) -> None:
         superseded = LOCK["image"]["supersedes"]
@@ -879,16 +900,112 @@ class RewardModelTests(unittest.TestCase):
         self.assertEqual("rosettafold3", rewards["ame"]["model"])
         self.assertEqual("alphafold2", rewards["protein"]["model"])
 
-    def test_alphafold2_is_recorded_as_not_exercisable_here(self) -> None:
+    def test_alphafold2_generation_is_bound_but_reward_path_is_unqualified(self) -> None:
         protein = LOCK["image"]["reward_models"]["protein"]
         self.assertFalse(protein["exercisable_here"])
-        self.assertIn("generation", protein["reason"])
+        self.assertEqual("published-and-node-verified", protein["availability"])
+        artifact = next(
+            item for item in LOCK["external_artifacts"]
+            if item["artifact_id"] == "alphafold2-params"
+        )
+        self.assertEqual(
+            "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+            artifact["generation"]["generation"],
+        )
+        self.assertEqual(
+            "fs2-flat-tree-inventory/v1", artifact["generation"]["inventory_algorithm"]
+        )
+        self.assertEqual(
+            "AF2_DIR=/opt/fs2/artifacts/alphafold2-params", artifact["binding"]
+        )
+        self.assertIn("reward-free", protein["reason"])
 
     def test_an_rf3_request_for_a_variant_names_rosettafold3(self) -> None:
         request = ENTRY.normalise_request(
             {"variant": "ame", "reward_model": "upstream-default", "search_algorithm": "single-pass"}
         )
         self.assertEqual("upstream-default", request["reward_model"])
+
+
+class QualificationEvidenceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.runs = json.loads(
+            (ROOT / "evidence/h100-run-receipt.json").read_text(encoding="utf-8")
+        )
+        self.semantic = json.loads(
+            (ROOT / "evidence/h100-semantic-qualification.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+    def test_all_three_variants_have_exact_h100_pass_receipts(self) -> None:
+        self.assertEqual(
+            hashlib.sha256((ROOT / "qualification/generated-plan.json").read_bytes()).hexdigest(),
+            self.runs["execution_plan"]["sha256"],
+        )
+        self.assertTrue(self.runs["execution_plan"]["shell_free"])
+        variants = {item["variant"]: item for item in self.runs["variants"]}
+        self.assertEqual({"protein", "ligand", "ame"}, set(variants))
+        for name, item in variants.items():
+            self.assertEqual("PASS", item["terminal_state"], name)
+            self.assertEqual(0, item["upstream_exit_code"], name)
+            self.assertTrue(item["cuda_used_by_upstream"], name)
+            self.assertEqual("H100", item["node"]["gpu_name"], name)
+            self.assertEqual("nvidia-h100-sxm5-80gb", item["node"]["accelerator_class"], name)
+            self.assertEqual("capacity-block", item["node"]["capacity_source"], name)
+            self.assertGreater(
+                item["kubernetes_timings"]["schedule_to_semantic_complete_seconds"],
+                item["kubernetes_timings"]["container_runtime_seconds"],
+                name,
+            )
+            self.assertEqual("cold", item["image_phase"]["observed_cache_level"], name)
+            self.assertTrue(item["rosettafold3"]["bound"], name)
+            self.assertFalse(item["rosettafold3"]["exercised"], name)
+            artifact_paths = {artifact["path"] for artifact in item["output_artifacts"]}
+            self.assertIn("result.json", artifact_paths, name)
+            self.assertTrue(
+                any(path.endswith(".pdb") for path in artifact_paths), name
+            )
+            for artifact in item["output_artifacts"]:
+                self.assertRegex(artifact["sha256"], r"^[0-9a-f]{64}$", name)
+                if artifact["path"] == "result.json" or artifact["path"].endswith(".pdb"):
+                    self.assertGreater(artifact["bytes"], 0, name)
+            self.assertEqual("/opt/venv/bin/python", item["argv"][0], name)
+            self.assertFalse(any(token in item["argv"] for token in ("bash", "sh", "-c")), name)
+
+    def test_independent_semantic_gate_passed_without_failures(self) -> None:
+        self.assertTrue(self.semantic["all_variants_passed"])
+        self.assertEqual(
+            LOCK["image"]["published_digest"], self.semantic["image_digest"]
+        )
+        self.assertEqual(
+            {"protein", "ligand", "ame"},
+            {item["variant"] for item in self.semantic["variants"]},
+        )
+        for item in self.semantic["variants"]:
+            self.assertTrue(item["passed"], item["variant"])
+            self.assertEqual([], item["failures"], item["variant"])
+
+    def test_dependency_states_and_snapshot_posture_are_truthful(self) -> None:
+        self.assertEqual(
+            {
+                "captured": False,
+                "restored": False,
+                "reason": "no device snapshot was captured or restored; the cache levels "
+                "reported here are image and artifact locality only",
+            },
+            self.runs["gpu_snapshot"],
+        )
+        bindings = self.runs["dependency_bindings"]
+        self.assertEqual(
+            "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+            bindings["alphafold2"]["generation"]["generation"],
+        )
+        self.assertIn("not mounted", bindings["alphafold2"]["qualification_state"])
+        self.assertIn(
+            "not exercised", bindings["rosettafold3"]["qualification_state"]
+        )
+        self.assertFalse(self.semantic["servable"])
 
 
 if __name__ == "__main__":

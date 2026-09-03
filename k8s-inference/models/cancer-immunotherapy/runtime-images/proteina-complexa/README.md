@@ -199,14 +199,53 @@ needs an upstream patch.
 
 `render_plan.py --reward-model upstream-default --variant ligand --variant ame`
 renders the RosettaFold3 runs. It refuses `--variant protein` with a reward
-model, because the protein pipeline's reward is AlphaFold2 and no
-`alphafold2-params` generation is published on this plane — the merged
-localization contract declares that artifact with a `proteina-complexa`
-consumer bound by `AF2_DIR`, but its binding handoff still reports
-`generations_published: false`.
+model because availability is not qualification: the exact public
+`alphafold2-params` generation is
+`cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4`
+and the controller binding is
+`AF2_DIR=/opt/fs2/artifacts/alphafold2-params`, but the accepted reward-free
+run did not mount, marker-verify, or exercise it. That generation uses
+`fs2-flat-tree-inventory/v1`, while the image's baked admission path covers
+the `fs2-tree-inventory/v2` Complexa and RF3 generations. The AlphaFold2
+reward route therefore remains explicitly unqualified.
 
 Run the offline suite with `./run_checks.sh`. Live evidence lands in
 `evidence/`.
+
+### Accepted H100 result
+
+The accepted image is
+`proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23`.
+Its attached BuildKit SLSA statement names clean repository revision
+`cb8d6bea1bd15ae4cd68f588e718c14333acbac2`; the tag, index, platform
+manifest and attestation-manifest digests are recorded in
+`evidence/registry-provenance.json`.
+
+The predecessor submitted all three Jobs together on the existing
+`k8s-inference-h100` capacity-block pool. This successor collected their
+persisted artifacts and independently re-ran `validate_result.py`; it did not
+repeat the GPU work.
+
+| Variant | Target | Model load | Sampling | Container runtime | Schedule to semantic complete | Observed image cache |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| protein | PD-L1 / `02_PDL1` | 8.232 s | 12.328 s | 47 s | 152 s | cold pull |
+| ligand | 7V11 / OQO | 12.768 s | 12.332 s | 51 s | 153 s | cold pull |
+| AME | 1nzy / BCA | 11.686 s | 12.894 s | 51 s | 156 s | cold pull |
+
+Every run used CUDA on an H100 SXM5 80 GB device, exited zero, selected its
+exact score-model/autoencoder pair, completed the upstream default 400 sampling
+steps, and produced a structure that passed the independent geometry,
+sequence-diversity, binder-length and ligand checks. The roughly 102-105 s
+before container start was the observed 4.37 GB image pull, not model compute.
+
+RF3 generation `d909fe65…3164bce` was mounted, marker-verified,
+inventory-recomputed and content-hashed in every run, but no reward model was
+requested, so RF3 was not exercised. AlphaFold2 generation
+`cdbb7c7c…27f5ac4` was separately observed on the live public plane and is
+bound for the controller by `AF2_DIR`, but was neither mounted nor exercised
+by these runs. No GPU snapshot was captured or restored. The runtime therefore
+has all-variant H100 model qualification but remains non-servable until the
+controller route passes end to end.
 
 ### Why the predecessor digests are not enough
 

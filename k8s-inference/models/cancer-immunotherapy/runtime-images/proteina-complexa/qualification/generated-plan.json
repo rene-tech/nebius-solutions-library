@@ -1,0 +1,599 @@
+{
+  "schema": "fs2.nebius.ai/proteina-complexa-qualification-plan/v1",
+  "owner_task": "fs2-complexa-final-h100-qualification-r20260903",
+  "rendered_from": {
+    "image_lock": "proteina-complexa/image-lock.json",
+    "entrypoint_sha256": "81cf6cb493cc37dfc2cd04753e18ef97f72b37f4094526aa76a5aa0a8f14093f",
+    "entrypoint_source": "baked",
+    "image_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23"
+  },
+  "namespace": "fs2-academic-poc",
+  "run_prefix": "fs2-cxq-a1",
+  "requests": {
+    "protein": {
+      "schema": "fs2-serve.nebius.ai/proteina-complexa-batch-request/v1",
+      "run_id": "fs2-cxq-a1-protein",
+      "variant": "protein",
+      "task_name": "02_PDL1",
+      "samples": 1,
+      "batch_size": 1,
+      "nsteps": 400,
+      "seed": 20260903,
+      "reward_model": "none",
+      "search_algorithm": "single-pass",
+      "verify_content_digests": true
+    },
+    "ligand": {
+      "schema": "fs2-serve.nebius.ai/proteina-complexa-batch-request/v1",
+      "run_id": "fs2-cxq-a1-ligand",
+      "variant": "ligand",
+      "task_name": "39_7V11_LIGAND",
+      "samples": 1,
+      "batch_size": 1,
+      "nsteps": 400,
+      "seed": 20260903,
+      "reward_model": "none",
+      "search_algorithm": "single-pass",
+      "verify_content_digests": true
+    },
+    "ame": {
+      "schema": "fs2-serve.nebius.ai/proteina-complexa-batch-request/v1",
+      "run_id": "fs2-cxq-a1-ame",
+      "variant": "ame",
+      "task_name": "M0024_1nzy_og",
+      "samples": 1,
+      "batch_size": 1,
+      "nsteps": 400,
+      "seed": 20260903,
+      "reward_model": "none",
+      "search_algorithm": "single-pass",
+      "verify_content_digests": true
+    }
+  },
+  "manifests": [
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "fs2-cxq-a1-contract",
+        "namespace": "fs2-academic-poc",
+        "labels": {
+          "fs2.nebius.ai/owner-task": "fs2-complexa-final-h100-qualification-r20260903"
+        }
+      },
+      "data": {
+        "request-protein.json": "{\n  \"schema\": \"fs2-serve.nebius.ai/proteina-complexa-batch-request/v1\",\n  \"run_id\": \"fs2-cxq-a1-protein\",\n  \"variant\": \"protein\",\n  \"task_name\": \"02_PDL1\",\n  \"samples\": 1,\n  \"batch_size\": 1,\n  \"nsteps\": 400,\n  \"seed\": 20260903,\n  \"reward_model\": \"none\",\n  \"search_algorithm\": \"single-pass\",\n  \"verify_content_digests\": true\n}\n",
+        "request-ligand.json": "{\n  \"schema\": \"fs2-serve.nebius.ai/proteina-complexa-batch-request/v1\",\n  \"run_id\": \"fs2-cxq-a1-ligand\",\n  \"variant\": \"ligand\",\n  \"task_name\": \"39_7V11_LIGAND\",\n  \"samples\": 1,\n  \"batch_size\": 1,\n  \"nsteps\": 400,\n  \"seed\": 20260903,\n  \"reward_model\": \"none\",\n  \"search_algorithm\": \"single-pass\",\n  \"verify_content_digests\": true\n}\n",
+        "request-ame.json": "{\n  \"schema\": \"fs2-serve.nebius.ai/proteina-complexa-batch-request/v1\",\n  \"run_id\": \"fs2-cxq-a1-ame\",\n  \"variant\": \"ame\",\n  \"task_name\": \"M0024_1nzy_og\",\n  \"samples\": 1,\n  \"batch_size\": 1,\n  \"nsteps\": 400,\n  \"seed\": 20260903,\n  \"reward_model\": \"none\",\n  \"search_algorithm\": \"single-pass\",\n  \"verify_content_digests\": true\n}\n"
+      }
+    },
+    {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "metadata": {
+        "name": "fs2-cxq-a1-protein",
+        "namespace": "fs2-academic-poc",
+        "labels": {
+          "fs2.nebius.ai/owner-task": "fs2-complexa-final-h100-qualification-r20260903",
+          "fs2.nebius.ai/model": "proteina-complexa",
+          "fs2.nebius.ai/variant": "protein"
+        }
+      },
+      "spec": {
+        "backoffLimit": 0,
+        "ttlSecondsAfterFinished": 86400,
+        "template": {
+          "metadata": {
+            "labels": {
+              "fs2.nebius.ai/owner-task": "fs2-complexa-final-h100-qualification-r20260903",
+              "fs2.nebius.ai/variant": "protein"
+            }
+          },
+          "spec": {
+            "restartPolicy": "Never",
+            "securityContext": {
+              "fsGroup": 10001,
+              "fsGroupChangePolicy": "OnRootMismatch",
+              "supplementalGroups": [
+                1000
+              ]
+            },
+            "nodeSelector": {
+              "nebius.com/gpu": "true",
+              "storage.fs2.nebius/reference-data": "true"
+            },
+            "tolerations": [
+              {
+                "key": "dedicated",
+                "operator": "Equal",
+                "value": "fs2-inference",
+                "effect": "NoSchedule"
+              }
+            ],
+            "containers": [
+              {
+                "name": "complexa",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+                "imagePullPolicy": "IfNotPresent",
+                "workingDir": "/workspace",
+                "command": [
+                  "python",
+                  "/opt/fs2/complexa/runtime_entrypoint.py",
+                  "run",
+                  "--request",
+                  "/opt/fs2/requests/request-protein.json",
+                  "--output-root",
+                  "/workspace/protein",
+                  "--cache-level",
+                  "cold"
+                ],
+                "env": [
+                  {
+                    "name": "HOME",
+                    "value": "/tmp/fs2-home"
+                  },
+                  {
+                    "name": "HF_HOME",
+                    "value": "/tmp/fs2-home/huggingface"
+                  },
+                  {
+                    "name": "XDG_CACHE_HOME",
+                    "value": "/tmp/fs2-home/xdg"
+                  },
+                  {
+                    "name": "MPLCONFIGDIR",
+                    "value": "/tmp/fs2-home/matplotlib"
+                  },
+                  {
+                    "name": "NUMBA_CACHE_DIR",
+                    "value": "/tmp/fs2-home/numba"
+                  },
+                  {
+                    "name": "TRITON_CACHE_DIR",
+                    "value": "/tmp/fs2-home/triton"
+                  },
+                  {
+                    "name": "DATA_PATH",
+                    "value": "/opt/fs2/source/assets"
+                  },
+                  {
+                    "name": "RF3_EXEC_PATH",
+                    "value": "/opt/venv/bin/rf3"
+                  },
+                  {
+                    "name": "RF3_CKPT_PATH",
+                    "value": "/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt"
+                  },
+                  {
+                    "name": "PYTHONUNBUFFERED",
+                    "value": "1"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "8",
+                    "memory": "96Gi",
+                    "nvidia.com/gpu": "1"
+                  },
+                  "limits": {
+                    "cpu": "8",
+                    "memory": "96Gi",
+                    "nvidia.com/gpu": "1"
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "trees",
+                    "mountPath": "/opt/fs2/artifacts/complexa-protein",
+                    "subPath": "scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "trees",
+                    "mountPath": "/opt/fs2/artifacts/rosettafold3-checkpoint",
+                    "subPath": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "contract",
+                    "mountPath": "/opt/fs2/requests",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "outputs",
+                    "mountPath": "/workspace",
+                    "subPath": "fs2-cxq-a1"
+                  },
+                  {
+                    "name": "cache",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "trees",
+                "hostPath": {
+                  "path": "/mnt/fs2-reference-data/data",
+                  "type": "Directory"
+                }
+              },
+              {
+                "name": "outputs",
+                "persistentVolumeClaim": {
+                  "claimName": "fs2-cxq-out-r20260903"
+                }
+              },
+              {
+                "name": "contract",
+                "configMap": {
+                  "name": "fs2-cxq-a1-contract",
+                  "defaultMode": 365
+                }
+              },
+              {
+                "name": "cache",
+                "emptyDir": {
+                  "sizeLimit": "32Gi"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "metadata": {
+        "name": "fs2-cxq-a1-ligand",
+        "namespace": "fs2-academic-poc",
+        "labels": {
+          "fs2.nebius.ai/owner-task": "fs2-complexa-final-h100-qualification-r20260903",
+          "fs2.nebius.ai/model": "proteina-complexa",
+          "fs2.nebius.ai/variant": "ligand"
+        }
+      },
+      "spec": {
+        "backoffLimit": 0,
+        "ttlSecondsAfterFinished": 86400,
+        "template": {
+          "metadata": {
+            "labels": {
+              "fs2.nebius.ai/owner-task": "fs2-complexa-final-h100-qualification-r20260903",
+              "fs2.nebius.ai/variant": "ligand"
+            }
+          },
+          "spec": {
+            "restartPolicy": "Never",
+            "securityContext": {
+              "fsGroup": 10001,
+              "fsGroupChangePolicy": "OnRootMismatch",
+              "supplementalGroups": [
+                1000
+              ]
+            },
+            "nodeSelector": {
+              "nebius.com/gpu": "true",
+              "storage.fs2.nebius/reference-data": "true"
+            },
+            "tolerations": [
+              {
+                "key": "dedicated",
+                "operator": "Equal",
+                "value": "fs2-inference",
+                "effect": "NoSchedule"
+              }
+            ],
+            "containers": [
+              {
+                "name": "complexa",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+                "imagePullPolicy": "IfNotPresent",
+                "workingDir": "/workspace",
+                "command": [
+                  "python",
+                  "/opt/fs2/complexa/runtime_entrypoint.py",
+                  "run",
+                  "--request",
+                  "/opt/fs2/requests/request-ligand.json",
+                  "--output-root",
+                  "/workspace/ligand",
+                  "--cache-level",
+                  "cold"
+                ],
+                "env": [
+                  {
+                    "name": "HOME",
+                    "value": "/tmp/fs2-home"
+                  },
+                  {
+                    "name": "HF_HOME",
+                    "value": "/tmp/fs2-home/huggingface"
+                  },
+                  {
+                    "name": "XDG_CACHE_HOME",
+                    "value": "/tmp/fs2-home/xdg"
+                  },
+                  {
+                    "name": "MPLCONFIGDIR",
+                    "value": "/tmp/fs2-home/matplotlib"
+                  },
+                  {
+                    "name": "NUMBA_CACHE_DIR",
+                    "value": "/tmp/fs2-home/numba"
+                  },
+                  {
+                    "name": "TRITON_CACHE_DIR",
+                    "value": "/tmp/fs2-home/triton"
+                  },
+                  {
+                    "name": "DATA_PATH",
+                    "value": "/opt/fs2/source/assets"
+                  },
+                  {
+                    "name": "RF3_EXEC_PATH",
+                    "value": "/opt/venv/bin/rf3"
+                  },
+                  {
+                    "name": "RF3_CKPT_PATH",
+                    "value": "/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt"
+                  },
+                  {
+                    "name": "PYTHONUNBUFFERED",
+                    "value": "1"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "8",
+                    "memory": "96Gi",
+                    "nvidia.com/gpu": "1"
+                  },
+                  "limits": {
+                    "cpu": "8",
+                    "memory": "96Gi",
+                    "nvidia.com/gpu": "1"
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "trees",
+                    "mountPath": "/opt/fs2/artifacts/complexa-ligand",
+                    "subPath": "scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "trees",
+                    "mountPath": "/opt/fs2/artifacts/rosettafold3-checkpoint",
+                    "subPath": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "contract",
+                    "mountPath": "/opt/fs2/requests",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "outputs",
+                    "mountPath": "/workspace",
+                    "subPath": "fs2-cxq-a1"
+                  },
+                  {
+                    "name": "cache",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "trees",
+                "hostPath": {
+                  "path": "/mnt/fs2-reference-data/data",
+                  "type": "Directory"
+                }
+              },
+              {
+                "name": "outputs",
+                "persistentVolumeClaim": {
+                  "claimName": "fs2-cxq-out-r20260903"
+                }
+              },
+              {
+                "name": "contract",
+                "configMap": {
+                  "name": "fs2-cxq-a1-contract",
+                  "defaultMode": 365
+                }
+              },
+              {
+                "name": "cache",
+                "emptyDir": {
+                  "sizeLimit": "32Gi"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "metadata": {
+        "name": "fs2-cxq-a1-ame",
+        "namespace": "fs2-academic-poc",
+        "labels": {
+          "fs2.nebius.ai/owner-task": "fs2-complexa-final-h100-qualification-r20260903",
+          "fs2.nebius.ai/model": "proteina-complexa",
+          "fs2.nebius.ai/variant": "ame"
+        }
+      },
+      "spec": {
+        "backoffLimit": 0,
+        "ttlSecondsAfterFinished": 86400,
+        "template": {
+          "metadata": {
+            "labels": {
+              "fs2.nebius.ai/owner-task": "fs2-complexa-final-h100-qualification-r20260903",
+              "fs2.nebius.ai/variant": "ame"
+            }
+          },
+          "spec": {
+            "restartPolicy": "Never",
+            "securityContext": {
+              "fsGroup": 10001,
+              "fsGroupChangePolicy": "OnRootMismatch",
+              "supplementalGroups": [
+                1000
+              ]
+            },
+            "nodeSelector": {
+              "nebius.com/gpu": "true",
+              "storage.fs2.nebius/reference-data": "true"
+            },
+            "tolerations": [
+              {
+                "key": "dedicated",
+                "operator": "Equal",
+                "value": "fs2-inference",
+                "effect": "NoSchedule"
+              }
+            ],
+            "containers": [
+              {
+                "name": "complexa",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+                "imagePullPolicy": "IfNotPresent",
+                "workingDir": "/workspace",
+                "command": [
+                  "python",
+                  "/opt/fs2/complexa/runtime_entrypoint.py",
+                  "run",
+                  "--request",
+                  "/opt/fs2/requests/request-ame.json",
+                  "--output-root",
+                  "/workspace/ame",
+                  "--cache-level",
+                  "cold"
+                ],
+                "env": [
+                  {
+                    "name": "HOME",
+                    "value": "/tmp/fs2-home"
+                  },
+                  {
+                    "name": "HF_HOME",
+                    "value": "/tmp/fs2-home/huggingface"
+                  },
+                  {
+                    "name": "XDG_CACHE_HOME",
+                    "value": "/tmp/fs2-home/xdg"
+                  },
+                  {
+                    "name": "MPLCONFIGDIR",
+                    "value": "/tmp/fs2-home/matplotlib"
+                  },
+                  {
+                    "name": "NUMBA_CACHE_DIR",
+                    "value": "/tmp/fs2-home/numba"
+                  },
+                  {
+                    "name": "TRITON_CACHE_DIR",
+                    "value": "/tmp/fs2-home/triton"
+                  },
+                  {
+                    "name": "DATA_PATH",
+                    "value": "/opt/fs2/source/assets"
+                  },
+                  {
+                    "name": "RF3_EXEC_PATH",
+                    "value": "/opt/venv/bin/rf3"
+                  },
+                  {
+                    "name": "RF3_CKPT_PATH",
+                    "value": "/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt"
+                  },
+                  {
+                    "name": "PYTHONUNBUFFERED",
+                    "value": "1"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "8",
+                    "memory": "96Gi",
+                    "nvidia.com/gpu": "1"
+                  },
+                  "limits": {
+                    "cpu": "8",
+                    "memory": "96Gi",
+                    "nvidia.com/gpu": "1"
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "trees",
+                    "mountPath": "/opt/fs2/artifacts/complexa-ame",
+                    "subPath": "scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "trees",
+                    "mountPath": "/opt/fs2/artifacts/rosettafold3-checkpoint",
+                    "subPath": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "contract",
+                    "mountPath": "/opt/fs2/requests",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "outputs",
+                    "mountPath": "/workspace",
+                    "subPath": "fs2-cxq-a1"
+                  },
+                  {
+                    "name": "cache",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "trees",
+                "hostPath": {
+                  "path": "/mnt/fs2-reference-data/data",
+                  "type": "Directory"
+                }
+              },
+              {
+                "name": "outputs",
+                "persistentVolumeClaim": {
+                  "claimName": "fs2-cxq-out-r20260903"
+                }
+              },
+              {
+                "name": "contract",
+                "configMap": {
+                  "name": "fs2-cxq-a1-contract",
+                  "defaultMode": 365
+                }
+              },
+              {
+                "name": "cache",
+                "emptyDir": {
+                  "sizeLimit": "32Gi"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

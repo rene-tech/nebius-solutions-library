@@ -51,7 +51,7 @@
     "runtime_entrypoint": {
       "path": "runtime_entrypoint.py",
       "container_path": "/opt/fs2/complexa/runtime_entrypoint.py",
-      "sha256": null
+      "sha256": "81cf6cb493cc37dfc2cd04753e18ef97f72b37f4094526aa76a5aa0a8f14093f"
     },
     "smoke": [
       [
@@ -66,10 +66,10 @@
         "describe"
       ]
     ],
-    "published_digest": null,
+    "published_digest": "sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
     "provenance": {
       "mode": "slsa-provenance-max-attached-at-push",
-      "vcs_revision": null,
+      "vcs_revision": "cb8d6bea1bd15ae4cd68f588e718c14333acbac2",
       "requirement": "the attached SLSA provenance must name the exact clean commit of this repository that carries these build inputs; a dirty tree or an uncommitted build input invalidates the publication"
     },
     "supersedes": [
@@ -102,8 +102,20 @@
       "corrects": "the predecessor digests pointed HF_HOME and XDG_CACHE_HOME at /opt/fs2/artifacts, which is the read-only external artifact mount"
     },
     "qualification": {
-      "state": "pending",
-      "evidence": [],
+      "state": "qualified-h100-all-variants",
+      "evidence": [
+        "evidence/h100-run-receipt.json",
+        "evidence/h100-semantic-qualification.json",
+        "evidence/registry-provenance.json",
+        "evidence/dependency-generation-observation.json",
+        "evidence/live-plan-match.json",
+        "evidence/cleanup.json"
+      ],
+      "variants": [
+        "protein",
+        "ligand",
+        "ame"
+      ],
       "route_exposed": false,
       "servable": false,
       "servable_gate": "all three variants qualified on real H100 AND the scientific batch controller route exercised end to end. The controller route is owned by another workstream and is not deployed here, so this runtime is never reported as servable by this task."
@@ -118,7 +130,8 @@
         "model": "alphafold2",
         "binding": "AF2_DIR",
         "exercisable_here": false,
-        "reason": "no alphafold2-params generation is published on the plane"
+        "availability": "published-and-node-verified",
+        "reason": "the exact alphafold2-params generation is available for controller binding, but the accepted d36fc qualification deliberately ran reward-free and neither mounted nor exercised AlphaFold2. The baked entrypoint verifies the fs2-tree-inventory/v2 Complexa and RF3 generations; the AlphaFold2 tree uses fs2-flat-tree-inventory/v1, so its reward path remains unqualified rather than being inferred from availability."
       },
       "ligand": {
         "model": "rosettafold3",
@@ -135,7 +148,7 @@
   "weight_policy": {
     "embedded": false,
     "external_root": "/opt/fs2/artifacts",
-    "notes": "no Complexa checkpoint is baked into the image. The six public checkpoints and the RosettaFold3 checkpoint are mounted from the regional artifact plane at /opt/fs2/artifacts/<artifact id>/. runtime_probe.py fails the build if any weight-shaped file appears inside the source tree."
+    "notes": "no checkpoint or parameter file is baked into the image. The six public Complexa checkpoints, the RosettaFold3 checkpoint, and the separately bound AlphaFold2 parameter generation live on the regional artifact plane. The accepted reward-free qualification mounted the Complexa pair and RF3 only; runtime_probe.py fails the build if any weight-shaped file appears inside the source tree."
   },
   "external_artifacts": [
     {
@@ -284,15 +297,30 @@
     {
       "artifact_id": "alphafold2-params",
       "model_id": "alphafold2-multimer-v3-params",
+      "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar",
+      "source_revision": "gcs-generation-1670353726160664",
+      "source_sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
       "license_id": "CC-BY-4.0",
       "entitlement_state": "not-required",
-      "mount_path": "/opt/fs2/artifacts/alphafold2",
-      "role": "reward and evaluation folding model for the protein-binder pipeline, reached through ColabDesign. Not required by, and not mounted for, the reward-free qualification runs.",
+      "mount_path": "/opt/fs2/artifacts/alphafold2-params",
+      "binding": "AF2_DIR=/opt/fs2/artifacts/alphafold2-params",
+      "role": "reward and evaluation folding model for the protein-binder pipeline, reached through ColabDesign. It is available for the controller handoff but was not required, mounted, marker-verified, or exercised by the accepted reward-free qualification runs.",
       "files": [],
-      "generation": null,
+      "generation": {
+        "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+        "marker_sha256": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+        "sub_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+        "entry_count": 16,
+        "total_bytes": 5587956571,
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1"
+      },
       "plane": {
-        "state": "not-published",
-        "note": "no generation for this artifact exists on the localization plane; the merged contract declares alphafold2-params with a proteina-complexa consumer bound by AF2_DIR, but its binding handoff reports generations_published: false, so the AlphaFold2 reward path for the protein pipeline cannot be exercised here"
+        "volume_kind": "host-path",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "visibility": "public",
+        "node_requirement": "storage.fs2.nebius/reference-data=true",
+        "owner_uid_gid": 1000,
+        "live_state": "verified on computeinstance-e00yq05c7pmqsy2grw on 2026-09-03; the in-generation marker digest and sixteen payload entries match the checked-in localization evidence"
       }
     },
     {

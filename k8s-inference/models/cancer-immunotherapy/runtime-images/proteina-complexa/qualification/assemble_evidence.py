@@ -17,6 +17,7 @@ Two documents are produced, mirroring the merged Mosaic qualification:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,6 +49,28 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _artifact(lock: dict[str, Any], artifact_id: str) -> dict[str, Any]:
+    return next(
+        item for item in lock["external_artifacts"] if item["artifact_id"] == artifact_id
+    )
+
+
+def _output_inventory(root: Path | None) -> list[dict[str, Any]]:
+    if root is None:
+        return []
+    inventory = []
+    for path in sorted(value for value in root.rglob("*") if value.is_file()):
+        payload = path.read_bytes()
+        inventory.append(
+            {
+                "path": path.relative_to(root).as_posix(),
+                "bytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
+    return inventory
+
+
 def build_run_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
     lock = _load(str(LOCK))
     runs = _load(arguments.runs)
@@ -58,6 +81,7 @@ def build_run_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
     for run in runs["runs"]:
         name = run["variant"]
         envelope = envelopes.get(name, {})
+        output_root = Path(arguments.outputs) / name if arguments.outputs else None
         verification = envelope.get("artifact_verification") or {}
         variants.append(
             {
@@ -80,6 +104,12 @@ def build_run_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
                     )
                 },
                 "node": run["node"],
+                "kubernetes_resources": {
+                    "job": run["job"],
+                    "job_uid": run.get("job_uid"),
+                    "pod": run.get("pod"),
+                    "pod_uid": run.get("pod_uid"),
+                },
                 "container_id": run["container_id"],
                 "image": run["image"],
                 "image_id": run["image_id"],
@@ -109,6 +139,7 @@ def build_run_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
                     ),
                     "reward_rows": (envelope.get("validation") or {}).get("reward_rows"),
                 },
+                "output_artifacts": _output_inventory(output_root),
                 "argv": envelope.get("argv"),
             }
         )
@@ -133,12 +164,38 @@ def build_run_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
         },
         "cluster": {
             "context": "k8s-inference-h100",
+            "tenant": "tenant-e00f3wdfzwfjgbcyfv",
             "parent_project": "project-e00rene",
             "region": "eu-north1",
+            "cluster_resource_id": "mk8scluster-e00j5z9te7x5dd9g6a",
             "namespace": runs["namespace"],
             "kubeconfig": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+            "capacity_choice": "existing capacity-block H100 nodes; no new or "
+            "preemptible capacity was created because the predecessor Jobs were "
+            "already complete and this successor only collected their evidence",
+        },
+        "execution_plan": {
+            "path": "qualification/generated-plan.json",
+            "sha256": runs["plan_sha256"],
+            "shell_free": True,
         },
         "artifact_delivery": lock["artifact_delivery"],
+        "dependency_bindings": {
+            "alphafold2": {
+                "artifact_id": "alphafold2-params",
+                "binding": _artifact(lock, "alphafold2-params")["binding"],
+                "generation": _artifact(lock, "alphafold2-params")["generation"],
+                "qualification_state": "published-and-node-verified; not mounted, "
+                "marker-verified, or exercised by these reward-free runs",
+            },
+            "rosettafold3": {
+                "artifact_id": "rosettafold3-checkpoint",
+                "binding": "RF3_CKPT_PATH and RF3_EXEC_PATH",
+                "generation": _artifact(lock, "rosettafold3-checkpoint")["generation"],
+                "qualification_state": "mounted and marker/inventory-verified by every "
+                "variant; not exercised because these runs were reward-free",
+            },
+        },
         "gpu_snapshot": {
             "captured": False,
             "restored": False,

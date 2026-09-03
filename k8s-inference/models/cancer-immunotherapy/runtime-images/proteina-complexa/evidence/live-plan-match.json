@@ -1,0 +1,28 @@
+{
+  "schema": "fs2.nebius.ai/live-qualification-plan-match/v1",
+  "checked_at": "2026-09-03T06:28:27Z",
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "resource_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "namespace": "fs2-academic-poc"
+  },
+  "plan": "qualification/generated-plan.json",
+  "config_map": "fs2-cxq-a1-contract",
+  "jobs": [
+    "fs2-cxq-a1-ame",
+    "fs2-cxq-a1-ligand",
+    "fs2-cxq-a1-protein"
+  ],
+  "comparison": {
+    "config_map_data_equal": true,
+    "job_contracts_equal": true,
+    "ignored_server_fields": [
+      "batch controller identity labels",
+      "resourceVersion",
+      "uid",
+      "managedFields",
+      "status"
+    ],
+    "canonical_contract_sha256": "055168b9d0306927334c0916941703d9b15f517dc4a67623dfacf124e8b378c6"
+  }
+}

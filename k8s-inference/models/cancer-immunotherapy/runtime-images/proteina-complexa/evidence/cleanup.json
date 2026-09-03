@@ -1,0 +1,68 @@
+{
+  "schema": "fs2.nebius.ai/task-owned-resource-cleanup/v1",
+  "completed_at": "2026-09-03T06:30:49Z",
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "resource_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "namespace": "fs2-academic-poc"
+  },
+  "selector": "fs2.nebius.ai/owner-task=fs2-complexa-final-h100-qualification-r20260903",
+  "deleted": {
+    "jobs": [
+      {
+        "name": "fs2-cxq-a1-ame",
+        "uid": "2e0c6168-3f7a-4a2f-88e6-6e8115c81f8f"
+      },
+      {
+        "name": "fs2-cxq-a1-ligand",
+        "uid": "ab5ad749-d81e-4eb5-b9db-8a8dad7b3b24"
+      },
+      {
+        "name": "fs2-cxq-a1-protein",
+        "uid": "7be1467b-26a4-4e2d-be74-148134e8abe1"
+      }
+    ],
+    "pods": [
+      "fs2-cxq-a1-ame-fzxcr",
+      "fs2-cxq-a1-ligand-p82rz",
+      "fs2-cxq-a1-protein-v45gb",
+      "fs2-cxq-artifact-inspector",
+      "fs2-cxq-collector",
+      "fs2-cxq-fetch",
+      "fs2-cxq-prune"
+    ],
+    "config_maps": [
+      "fs2-cxq-a1-contract",
+      "fs2-cxq-r3-contract",
+      "fs2-cxq-r4-contract",
+      "fs2-cxq-r5-contract"
+    ],
+    "persistent_volume_claim": {
+      "name": "fs2-cxq-out-r20260903",
+      "uid": "9684d513-f156-40b1-9932-6a9046c9a441",
+      "capacity": "128Gi",
+      "lifecycle": "task-owned-temporary",
+      "recovery": "deleted with its temporary output; the committed run receipt retains per-file byte counts and SHA-256 identities, but the raw PVC is not recoverable from this task"
+    }
+  },
+  "post_cleanup": {
+    "matching_resources": [],
+    "h100_nodes_ready": [
+      "computeinstance-e00m0hsph76ajt9sdb",
+      "computeinstance-e00p3acr87k9k4mckj"
+    ],
+    "preserved_workloads": {
+      "qwen3-8b-b300-hot-h100-reserved-8x": {
+        "ready_replicas": 1,
+        "pod_phase": "Running",
+        "image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+      },
+      "cosmos3-nano-burst-h100-1x": {
+        "ready_replicas": 0,
+        "image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587"
+      }
+    },
+    "shared_controller_deployed": false,
+    "b300_touched": false
+  }
+}

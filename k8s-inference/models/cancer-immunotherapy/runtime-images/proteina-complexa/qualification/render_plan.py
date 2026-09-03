@@ -53,8 +53,12 @@ VARIANT_TASKS = {
 
 # The upstream default reward model differs per pipeline: the protein binder
 # pipeline scores with AlphaFold2 through ColabDesign, while the ligand and AME
-# pipelines score and evaluate with RosettaFold3. Only the RosettaFold3 variants
-# can prove RF3, so an RF3 run is offered for those two.
+# pipelines score and evaluate with RosettaFold3. The exact AlphaFold2 generation
+# is published and recorded in image-lock.json, but this accepted image's baked
+# admission code handles the fs2-tree-inventory/v2 Complexa/RF3 trees, not the
+# fs2-flat-tree-inventory/v1 AlphaFold2 tree. Keep the protein reward path closed
+# until that distinct admission path is exercised; availability is not runtime
+# qualification.
 RF3_REWARD_VARIANTS = ("ligand", "ame")
 
 
@@ -127,9 +131,10 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
         if unprovable:
             raise SystemExit(
                 "the upstream default reward model for "
-                f"{unprovable} is AlphaFold2, not RosettaFold3, and no AlphaFold2 "
-                "generation is published on this plane; restrict the run to "
-                f"{list(RF3_REWARD_VARIANTS)} to prove RosettaFold3"
+                f"{unprovable} is AlphaFold2, not RosettaFold3. Its exact generation "
+                "is published, but the accepted image has not admitted or exercised "
+                "that fs2-flat-tree-inventory/v1 reward dependency; restrict the run "
+                f"to {list(RF3_REWARD_VARIANTS)} to prove RosettaFold3"
             )
     requests = {
         variant: request_document(variant, f"{arguments.run_prefix}-{variant}", arguments)

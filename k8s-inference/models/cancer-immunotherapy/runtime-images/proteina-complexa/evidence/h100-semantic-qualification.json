@@ -1,0 +1,175 @@
+{
+  "schema": "fs2.nebius.ai/proteina-complexa-semantic-qualification/v1",
+  "owner_task": "fs2-complexa-final-h100-qualification-r20260903",
+  "model_id": "proteina-complexa",
+  "collected_at": "2026-09-03T06:29:10Z",
+  "image_digest": "sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+  "source_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+  "gate": {
+    "judged_by": "qualification/validate_result.py, which re-derives every verdict from the produced artifacts and never imports the runtime entrypoint",
+    "requirements": [
+      "upstream exited zero and the result envelope reports PASS",
+      "the upstream log shows Lightning using CUDA",
+      "the exact pinned checkpoint pair appears in the argv and no other variant's checkpoint does",
+      "both checkpoint markers verified, content digests included",
+      "LoRA re-applied for ligand and AME, absent for protein",
+      "a sampling phase was measured",
+      "at least one produced chain has protein-like C-alpha geometry",
+      "chains of 20+ residues carry at least five distinct amino-acid types",
+      "the designed binder falls inside the target's declared length envelope",
+      "the expected ligand residue is present for ligand and AME"
+    ]
+  },
+  "all_variants_passed": true,
+  "variants": [
+    {
+      "variant": "protein",
+      "passed": true,
+      "checkpoint_pair": [
+        "complexa.ckpt",
+        "complexa_ae.ckpt"
+      ],
+      "content_digests_verified": true,
+      "cuda_marker_in_log": true,
+      "phases": {
+        "interpreter_and_import_seconds": 12.466,
+        "model_load_seconds": 8.232,
+        "sampling_seconds": 12.328,
+        "compute_seconds": 12.328,
+        "upstream_reported_generation_seconds": 20.56,
+        "upstream_process_seconds": 34.632,
+        "lora_reapplied": false
+      },
+      "chain_lengths": {
+        "job_0_n_243_id_0_single_orig0.pdb": {
+          "A": 115,
+          "B": 128
+        }
+      },
+      "chain_distinct_residues": {
+        "job_0_n_243_id_0_single_orig0.pdb": {
+          "A": 20,
+          "B": 16
+        }
+      },
+      "binder_length_envelope": [
+        64,
+        155
+      ],
+      "expected_ligands": null,
+      "observed_non_standard_residues": null,
+      "rosettafold3_bound": true,
+      "rosettafold3_exercised": false,
+      "failures": []
+    },
+    {
+      "variant": "ligand",
+      "passed": true,
+      "checkpoint_pair": [
+        "complexa_ligand.ckpt",
+        "complexa_ligand_ae.ckpt"
+      ],
+      "content_digests_verified": true,
+      "cuda_marker_in_log": true,
+      "phases": {
+        "interpreter_and_import_seconds": 12.177,
+        "model_load_seconds": 12.768,
+        "sampling_seconds": 12.332,
+        "compute_seconds": 12.332,
+        "upstream_reported_generation_seconds": 25.1,
+        "upstream_process_seconds": 38.687,
+        "lora_reapplied": true
+      },
+      "chain_lengths": {
+        "job_0_n_100_id_0_single_orig0.pdb": {
+          "B": 100,
+          "A": 0
+        },
+        "job_0_n_100_id_0_single_orig0_binder.pdb": {
+          "B": 100
+        }
+      },
+      "chain_distinct_residues": {
+        "job_0_n_100_id_0_single_orig0.pdb": {
+          "B": 18
+        },
+        "job_0_n_100_id_0_single_orig0_binder.pdb": {
+          "B": 18
+        }
+      },
+      "binder_length_envelope": [
+        100
+      ],
+      "expected_ligands": [
+        "OQO"
+      ],
+      "observed_non_standard_residues": [
+        "OQO"
+      ],
+      "rosettafold3_bound": true,
+      "rosettafold3_exercised": false,
+      "failures": []
+    },
+    {
+      "variant": "ame",
+      "passed": true,
+      "checkpoint_pair": [
+        "complexa_ame.ckpt",
+        "complexa_ame_ae.ckpt"
+      ],
+      "content_digests_verified": true,
+      "cuda_marker_in_log": true,
+      "phases": {
+        "interpreter_and_import_seconds": 12.527,
+        "model_load_seconds": 11.686,
+        "sampling_seconds": 12.894,
+        "compute_seconds": 12.894,
+        "upstream_reported_generation_seconds": 24.58,
+        "upstream_process_seconds": 38.707,
+        "lora_reapplied": true
+      },
+      "chain_lengths": {
+        "job_0_n_180_id_0_single_orig0.pdb": {
+          "B": 180,
+          "A": 0
+        },
+        "job_0_n_180_id_0_single_orig0_binder.pdb": {
+          "B": 180
+        }
+      },
+      "chain_distinct_residues": {
+        "job_0_n_180_id_0_single_orig0.pdb": {
+          "B": 17
+        },
+        "job_0_n_180_id_0_single_orig0_binder.pdb": {
+          "B": 17
+        }
+      },
+      "binder_length_envelope": [
+        180
+      ],
+      "expected_ligands": [
+        "BCA"
+      ],
+      "observed_non_standard_residues": [
+        "BCA"
+      ],
+      "rosettafold3_bound": true,
+      "rosettafold3_exercised": false,
+      "failures": []
+    }
+  ],
+  "scope": {
+    "covered": "one bounded single-sample generation per variant at the upstream default 400 sampling steps, reward-free so the Complexa score model is isolated from the AlphaFold2 and RosettaFold3 reward models",
+    "not_covered": [
+      "throughput, batch scaling and multi-GPU behaviour",
+      "the AlphaFold2 reward path for the protein pipeline and the RosettaFold3 reward path for ligand and AME; RF3 is bound and marker-verified on every run but not exercised",
+      "the filter, evaluate and analyze pipeline stages, which need foldseek, mmseqs, sc and dssp -- none of which are in this image",
+      "fast-start tiers, GPU snapshot and restore, preemption and contention",
+      "the scientific batch controller route"
+    ]
+  },
+  "servable": false,
+  "servable_gate": "all three variants qualified on real H100 AND the scientific batch controller route exercised end to end. The controller route is owned by another workstream and is not deployed here, so this runtime is never reported as servable by this task.",
+  "contract_proving_verdict": null
+}

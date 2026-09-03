@@ -100,6 +100,7 @@ def collect(namespace: str, job_name: str, variant: str) -> dict[str, Any]:
         raw = _json("get", "node", node_name)
         labels = raw["metadata"]["labels"]
         node = {
+            "resource_id": node_name,
             "name_sha256": _hashed(node_name),
             "gpu_name": labels.get("nebius.com/gpu-name"),
             "accelerator_class": labels.get("accelerator.fs2.nebius/class"),
@@ -137,6 +138,9 @@ def collect(namespace: str, job_name: str, variant: str) -> dict[str, Any]:
     return {
         "variant": variant,
         "job": job_name,
+        "job_uid": job["metadata"]["uid"],
+        "pod": pod["metadata"]["name"],
+        "pod_uid": pod["metadata"]["uid"],
         "pod_name_sha256": _hashed(pod["metadata"]["name"]),
         "container_id": container.get("containerID"),
         "image": container.get("image"),
@@ -169,7 +173,9 @@ def main() -> int:
     parser.add_argument("--skip-apply", action="store_true")
     arguments = parser.parse_args()
 
-    plan = json.loads(Path(arguments.plan).read_text(encoding="utf-8"))
+    plan_path = Path(arguments.plan)
+    plan_bytes = plan_path.read_bytes()
+    plan = json.loads(plan_bytes)
     namespace = plan["namespace"]
     jobs = [
         (item["metadata"]["name"], item["metadata"]["labels"]["fs2.nebius.ai/variant"])
@@ -201,6 +207,7 @@ def main() -> int:
         .isoformat(timespec="seconds")
         .replace("+00:00", "Z"),
         "namespace": namespace,
+        "plan_sha256": hashlib.sha256(plan_bytes).hexdigest(),
         "image_reference": plan["rendered_from"]["image_reference"],
         "entrypoint_sha256": plan["rendered_from"]["entrypoint_sha256"],
         "runs": outcomes,
