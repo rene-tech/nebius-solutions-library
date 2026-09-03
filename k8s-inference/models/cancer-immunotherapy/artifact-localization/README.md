@@ -118,6 +118,13 @@ it, which is a different claim and the one that was silently false before:
 Both refuse a directory that still contains an archive before doing anything
 else, so a regression cannot pass by loading from somewhere unexpected.
 
+Every probe reports `node_digest` rather than the node. The downward API gives a
+pod the opaque Nebius instance ID, and these receipts are checked into a public
+repository, so the raw value may not appear here; `tests/test_public_export.py`
+enforces that. A truncated SHA-256 of the node name still tells a reader whether
+two receipts came from the same machine, which is all this field was ever for.
+The instance ID stays in the private run record.
+
 ## Binding handoff
 
 `render_localization_jobs.py handoff` emits

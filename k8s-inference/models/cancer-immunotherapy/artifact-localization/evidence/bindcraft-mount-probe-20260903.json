@@ -36,7 +36,7 @@
       "sha256": "f3f705752e625a173ac5ea4d2b2e46bd10ff13905a73bcc1ca2ecd3420b361e1"
     }
   },
-  "node": "computeinstance-e00yq05c7pmqsy2grw",
+  "node_digest": "89d4e9197704f712",
   "runtime_environment": {
     "FS2_ARTIFACT_KIND": "bindcraft-af2-params",
     "FS2_ARTIFACT_MANIFEST": "/models/alphafold2/manifest.json",

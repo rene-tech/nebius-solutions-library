@@ -4,7 +4,7 @@
   "duration_seconds": 0.329,
   "entry_count": 45227,
   "moldir": "/opt/fs2/artifacts/boltzgen-inference-molecules",
-  "node": "computeinstance-e00m0hsph76ajt9sdb",
+  "node_digest": "5e3ad019c6df4d8b",
   "probed_molecules": [
     {
       "atom_count": 23,

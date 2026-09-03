@@ -12,6 +12,7 @@ same multimer model the evaluation stage selects.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import time
@@ -20,6 +21,19 @@ from pathlib import Path
 # ColabDesign builds the binder model with use_multimer=True, so these are the
 # parameter sets an evaluate stage actually opens.
 PROBE_MODELS = ("model_1_multimer_v3", "model_1_ptm")
+
+
+def node_digest() -> str:
+    """Correlate receipts by node without naming the node.
+
+    The downward API supplies the opaque Nebius instance ID, which may not enter
+    this repository's public export. A digest still answers the only question a
+    reader asks of this field, which is whether two receipts came from the same
+    machine; the instance ID itself belongs in the private run record.
+    """
+
+    node = os.environ.get("FS2_NODE_NAME", "")
+    return hashlib.sha256(node.encode("utf-8")).hexdigest()[:16] if node else ""
 
 
 def main() -> int:
@@ -32,7 +46,7 @@ def main() -> int:
     report: dict[str, object] = {
         "schema": "fs2-serve.nebius.ai/proteina-af2dir-probe/v1",
         "af2_dir": options.af2_dir,
-        "node": os.environ.get("FS2_NODE_NAME", ""),
+        "node_digest": node_digest(),
     }
 
     if not options.af2_dir:

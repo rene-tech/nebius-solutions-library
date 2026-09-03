@@ -11,6 +11,7 @@ BoltzGen's own loader, and reports what it got.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pickle  # noqa: S403 - the dictionary is a pinned, digest-verified artifact
@@ -21,6 +22,19 @@ from pathlib import Path
 # Chemical Component Dictionary codes are one to five characters. Sampling
 # across that range catches a tree staged with a three-character assumption.
 PROBE_CODES = ("I", "CL", "ZN", "MG", "HEM", "ATP", "NAD", "GLC", "HOH", "A1LV8")
+
+
+def node_digest() -> str:
+    """Correlate receipts by node without naming the node.
+
+    The downward API supplies the opaque Nebius instance ID, which may not enter
+    this repository's public export. A digest still answers the only question a
+    reader asks of this field, which is whether two receipts came from the same
+    machine; the instance ID itself belongs in the private run record.
+    """
+
+    node = os.environ.get("FS2_NODE_NAME", "")
+    return hashlib.sha256(node.encode("utf-8")).hexdigest()[:16] if node else ""
 
 
 def main() -> int:
@@ -34,7 +48,7 @@ def main() -> int:
     report: dict[str, object] = {
         "schema": "fs2-serve.nebius.ai/boltzgen-moldir-probe/v1",
         "moldir": str(moldir),
-        "node": os.environ.get("FS2_NODE_NAME", ""),
+        "node_digest": node_digest(),
     }
 
     if not moldir.is_dir():

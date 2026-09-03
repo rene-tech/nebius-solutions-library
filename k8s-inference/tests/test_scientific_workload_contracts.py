@@ -512,6 +512,30 @@ class ScientificWorkloadContractTests(unittest.TestCase):
             del candidate[field]
             self.assertTrue(list(validator.iter_errors(candidate)))
 
+    def test_probes_correlate_nodes_by_digest_and_never_publish_the_node_name(self) -> None:
+        """These receipts are checked into a public repository.
+
+        `spec.nodeName` is an opaque Nebius instance ID here, so a probe that
+        copied it into its report leaked a private resource ID on every run.
+        Catch that at the probe, not only at the export gate, which can see it
+        only once a leaking receipt is already committed.
+        """
+
+        localization = ROOT / "models/cancer-immunotherapy/artifact-localization"
+        probes = sorted((localization / "probes").glob("*_probe.py"))
+        self.assertEqual(3, len(probes))
+        for probe in probes:
+            with self.subTest(probe=probe.name):
+                source = probe.read_text(encoding="utf-8")
+                self.assertIn('"node_digest": node_digest()', source)
+                self.assertNotIn('"node": os.environ', source)
+
+        for receipt_path in sorted((localization / "evidence").glob("*probe*.json")):
+            with self.subTest(evidence=receipt_path.name):
+                report = self.load(receipt_path)
+                self.assertNotIn("node", report)
+                self.assertRegex(report["node_digest"], r"^[0-9a-f]{16}$")
+
 
 if __name__ == "__main__":
     unittest.main()

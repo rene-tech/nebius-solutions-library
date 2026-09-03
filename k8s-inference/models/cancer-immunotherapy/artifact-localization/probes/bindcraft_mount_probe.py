@@ -25,6 +25,19 @@ from pathlib import Path
 MPNN_MODEL = "v_48_020"
 
 
+def node_digest() -> str:
+    """Correlate receipts by node without naming the node.
+
+    The downward API supplies the opaque Nebius instance ID, which may not enter
+    this repository's public export. A digest still answers the only question a
+    reader asks of this field, which is whether two receipts came from the same
+    machine; the instance ID itself belongs in the private run record.
+    """
+
+    node = os.environ.get("FS2_NODE_NAME", "")
+    return hashlib.sha256(node.encode("utf-8")).hexdigest()[:16] if node else ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path)
@@ -33,7 +46,7 @@ def main() -> int:
     started = time.monotonic()
     report: dict[str, object] = {
         "schema": "fs2-serve.nebius.ai/bindcraft-mount-probe/v1",
-        "node": os.environ.get("FS2_NODE_NAME", ""),
+        "node_digest": node_digest(),
         "runtime_environment": {
             key: os.environ.get(key, "")
             for key in ("FS2_ARTIFACT_KIND", "FS2_ARTIFACT_ROOT", "FS2_ARTIFACT_MANIFEST", "FS2_SOURCE_REVISION")
