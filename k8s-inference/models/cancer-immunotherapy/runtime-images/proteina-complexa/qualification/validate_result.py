@@ -59,12 +59,18 @@ def _summarise(path: Path) -> dict[str, Any]:
     residues: dict[tuple[str, str], str] = {}
     trace: dict[str, list[tuple[float, float, float]]] = {}
     names: set[str] = set()
+    chain_standard: dict[str, int] = {}
     for line in path.read_text(encoding="utf-8", errors="strict").splitlines():
         if not line.startswith(("ATOM", "HETATM")) or len(line) < 54:
             continue
         name = line[17:20].strip()
         chain = line[21:22]
-        residues[(chain, line[22:27])] = name
+        key = (chain, line[22:27])
+        if key not in residues:
+            chain_standard.setdefault(chain, 0)
+            if name in STANDARD:
+                chain_standard[chain] += 1
+        residues[key] = name
         names.add(name)
         point = (float(line[30:38]), float(line[38:46]), float(line[46:54]))
         if not all(math.isfinite(value) for value in point):
@@ -79,6 +85,7 @@ def _summarise(path: Path) -> dict[str, Any]:
     return {
         "residues": len(residues),
         "standard": sum(1 for value in residues.values() if value in STANDARD),
+        "chain_standard": chain_standard,
         "residue_names": names,
         "mean_ca_step": steps,
         "chains": sorted(trace),
@@ -165,9 +172,11 @@ def validate(variant: str, root: Path) -> dict[str, Any]:
         failures.append("no PDB structure was produced")
     protein_like = 0
     observed_ligands: set[str] = set()
+    chain_lengths: dict[str, dict[str, int]] = {}
     for path in structures:
         summary = _summarise(path)
         observed_ligands.update(summary["residue_names"] - STANDARD)
+        chain_lengths[path.name] = summary["chain_standard"]
         if summary["standard"] < 1:
             continue
         bad = {
@@ -180,8 +189,25 @@ def validate(variant: str, root: Path) -> dict[str, Any]:
         else:
             protein_like += 1
     checks["protein_like_structures"] = protein_like
+    checks["chain_lengths"] = chain_lengths
     if protein_like < 1:
         failures.append("no produced structure has a protein-like backbone")
+
+    # The designed binder must actually be in the target's declared length
+    # envelope, measured per chain: the binder pipelines write the supplied
+    # target and the designed binder into one file.
+    declared = (envelope.get("target") or {}).get("binder_length") or []
+    if isinstance(declared, (int, float)):
+        declared = [declared]
+    declared = [int(value) for value in declared if value is not None]
+    checks["binder_length_envelope"] = declared
+    if len(declared) > 1 and chain_lengths:
+        low, high = min(declared), max(declared)
+        for name, chains in chain_lengths.items():
+            if not any(low <= count <= high for count in chains.values()):
+                failures.append(
+                    f"{name} has no chain within the binder envelope {low}-{high}: {chains}"
+                )
 
     if EXPECTED[variant]["ligand"]:
         expected_ligands = {

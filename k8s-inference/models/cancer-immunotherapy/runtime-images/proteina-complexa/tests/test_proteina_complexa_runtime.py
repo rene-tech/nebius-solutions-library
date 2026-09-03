@@ -352,6 +352,41 @@ class OutputValidationTests(unittest.TestCase):
         )
         self.assertTrue(report["geometry_findings"])
 
+    def test_target_and_binder_in_one_file_are_measured_per_chain(self) -> None:
+        """The binder pipelines write the target and the binder into one file.
+
+        A whole-file residue count is the sum of both. Observed live on H100:
+        the PD-L1 run produced one structure with a 115-residue target chain
+        and a 69-residue binder chain, and a whole-file count of 184 was
+        rejected against the 64-155 envelope even though the binder was in
+        range.
+        """
+        path = self.directory / "sample.pdb"
+        path.write_text(_pdb(115, chain="A") + _pdb(69, chain="B"))
+        self._rewards()
+        report = ENTRY.validate_outputs(
+            "protein",
+            ENTRY.VARIANTS["protein"],
+            ENTRY.normalise_request({"variant": "protein"}),
+            self._target(),
+            self.directory,
+        )
+        self.assertEqual([], report["geometry_findings"])
+        self.assertEqual({"A": 115, "B": 69}, report["chain_lengths"]["sample.pdb"])
+
+    def test_a_file_where_no_chain_fits_the_envelope_is_flagged(self) -> None:
+        path = self.directory / "sample.pdb"
+        path.write_text(_pdb(300, chain="A") + _pdb(400, chain="B"))
+        self._rewards()
+        report = ENTRY.validate_outputs(
+            "protein",
+            ENTRY.VARIANTS["protein"],
+            ENTRY.normalise_request({"variant": "protein"}),
+            self._target(),
+            self.directory,
+        )
+        self.assertTrue(report["geometry_findings"])
+
     def test_a_run_that_produced_no_structure_is_rejected(self) -> None:
         self._rewards()
         with self.assertRaises(ENTRY.RuntimeFailure):
@@ -464,15 +499,33 @@ class ArgvContractTests(unittest.TestCase):
                 self.assertNotIn(f"++ckpt_name={spec['checkpoint']['name']}", joined)
                 self.assertNotIn(spec["autoencoder"]["name"], joined)
 
-    def test_absolute_target_override_is_always_passed(self) -> None:
-        for name, variant in ENTRY.VARIANTS.items():
-            argv = self._argv(name)
-            namespace = variant["target_namespace"]
-            self.assertTrue(
-                any(item.startswith(f"++generation.{namespace}.") and ".target_path=/" in item
-                    for item in argv),
-                f"{name} must override target_path with an absolute path",
-            )
+    def test_no_override_key_violates_hydra_grammar(self) -> None:
+        """Hydra only admits key segments starting with a letter or underscore.
+
+        Most upstream task names begin with a digit, so an override such as
+        ``++generation.target_dict_cfg.02_PDL1.target_path=...`` is a parse
+        error.  A live run proved this: the protein and ligand variants died in
+        Hydra's lexer while AME, whose task name starts with a letter, ran.
+        """
+        segment = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+        for name in ENTRY.VARIANTS:
+            for item in self._argv(name):
+                if not item.startswith(("++", "~")) or "=" not in item:
+                    continue
+                key = item.split("=", 1)[0].lstrip("+~")
+                for part in key.split("."):
+                    self.assertRegex(part, segment, f"{name}: unparseable key {key!r}")
+
+    def test_target_paths_are_reached_through_the_asset_link(self) -> None:
+        work = Path(tempfile.mkdtemp(prefix="fs2-cxq-assets-"))
+        source = Path(ENTRY.SOURCE_ROOT)
+        if not (source / "assets").is_dir():
+            self.skipTest("the in-image asset root is only present inside the image")
+        record = ENTRY.link_assets(work)
+        self.assertTrue((work / "assets").is_symlink())
+        self.assertEqual(str(source / "assets"), record["target"])
+        # Idempotent: a second call on the same directory must not fail.
+        ENTRY.link_assets(work)
 
     def test_hydra_is_forbidden_from_changing_directory(self) -> None:
         self.assertIn("hydra.job.chdir=False", self._argv("protein"))
@@ -481,6 +534,22 @@ class ArgvContractTests(unittest.TestCase):
         argv = self._argv("ligand")
         self.assertIn("++generation.search.algorithm=single-pass", argv)
         self.assertIn("++generation.reward_model=null", argv)
+
+    def test_reward_model_is_assigned_and_never_deleted(self) -> None:
+        """A delete aborts composition when the node is already null.
+
+        The AME pipeline ships reward_model: null, so
+        "~generation.reward_model" fails with "Could not delete from config".
+        Observed live on H100: the AME variant exited 1 during composition
+        while protein and ligand, whose configs carry a reward dict, survived.
+        """
+        for name in ENTRY.VARIANTS:
+            argv = self._argv(name)
+            self.assertNotIn("~generation.reward_model", argv, name)
+            self.assertFalse(
+                any(item.startswith("~") for item in argv),
+                f"{name} must not delete any config node: {argv}",
+            )
 
     def test_upstream_reward_run_keeps_the_reward_model(self) -> None:
         argv = self._argv("ligand", reward_model="upstream-default", search_algorithm="best-of-n")
@@ -573,6 +642,24 @@ class DefectRegistryTests(unittest.TestCase):
         ids = {item["id"] for item in LOCK["upstream_contract_defects"]}
         self.assertIn("relative-target-path", ids)
         self.assertIn("cli-requires-writable-dotenv", ids)
+
+
+class OutputDiscoveryTests(unittest.TestCase):
+    """Discovery must never walk out of the output tree through a symlink."""
+
+    def test_a_symlinked_directory_is_not_treated_as_output(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="fs2-cxq-walk-"))
+        (root / "job_0").mkdir()
+        (root / "job_0" / "sample.pdb").write_text(_pdb(20))
+        foreign = Path(tempfile.mkdtemp(prefix="fs2-cxq-foreign-"))
+        (foreign / "target_data").mkdir()
+        for index in range(5):
+            (foreign / "target_data" / f"target_{index}.pdb").write_text(_pdb(30))
+        (root / "assets").symlink_to(foreign)
+
+        discovered = ENTRY.discover_structures(root)
+        self.assertEqual(1, len(discovered), discovered)
+        self.assertEqual("sample.pdb", discovered[0].name)
 
 
 if __name__ == "__main__":

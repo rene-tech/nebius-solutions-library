@@ -221,8 +221,8 @@
   "upstream_contract_defects": [
     {
       "id": "relative-target-path",
-      "detail": "the target dictionaries in configs/targets/*.yaml and configs/design_tasks/ame_dict_v2.yaml carry relative target_path values (./assets/target_data/...). Any process whose working directory is not the source root fails inside the conditional-feature constructor with FileNotFoundError, which is what a container workingDir of /workspace produces.",
-      "handled_by": "runtime_entrypoint.resolve_target resolves the declared path against /opt/fs2/source and passes an absolute ++<namespace>.<task>.target_path override, so the contract does not depend on cwd",
+      "detail": "the target dictionaries in configs/targets/*.yaml and configs/design_tasks/ame_dict_v2.yaml carry relative target_path values (./assets/target_data/...), resolved against the process working directory. A container workingDir of /workspace therefore fails inside the conditional-feature constructor with FileNotFoundError. An absolute Hydra override is not an available fix: most upstream task names begin with a digit (02_PDL1, 39_7V11_LIGAND) and Hydra's override grammar only admits key segments starting with a letter or underscore, so ++generation.target_dict_cfg.02_PDL1.target_path=... is a lexer error. Observed live on H100: with the override in place the protein and ligand variants died in Hydra's lexer while AME, whose task name starts with a letter, ran to completion.",
+      "handled_by": "the runtime entrypoint independently resolves and existence-checks the target against /opt/fs2/source, then symlinks the in-image asset root into a scratch working directory outside the output root and runs upstream there, so upstream's own relative path resolves. Output discovery uses os.walk with followlinks=False so the asset tree can never be mistaken for generated output.",
       "upstream_change_required": false
     },
     {

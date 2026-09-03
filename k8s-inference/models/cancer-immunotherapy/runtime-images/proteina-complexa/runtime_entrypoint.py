@@ -14,13 +14,18 @@ path.  It owns five responsibilities that the upstream project does not:
    presence and exact byte count before a GPU is touched; content digests are
    verified when asked for.  A missing or short artifact fails the run instead
    of producing a plausible-looking structure from a truncated checkpoint.
-3. **Absolute target resolution.**  Upstream's target dictionaries carry
-   *relative* ``target_path`` values (``./assets/target_data/...``), so a run
-   only resolves its target when the process happens to be started from the
-   source tree.  Under a container ``workingDir`` of ``/workspace`` the
-   conditional-feature constructor raises ``FileNotFoundError``.  This module
-   resolves each target against the in-image source root and passes an
-   absolute override, which makes the contract independent of ``cwd``.
+3. **Target resolution.**  Upstream's target dictionaries carry *relative*
+   ``target_path`` values (``./assets/target_data/...``), so a run only
+   resolves its target when the process happens to be started from the source
+   tree.  Under a container ``workingDir`` of ``/workspace`` the
+   conditional-feature constructor raises ``FileNotFoundError``.  Passing an
+   absolute Hydra override is not available as a fix: most upstream task names
+   begin with a digit (``02_PDL1``, ``39_7V11_LIGAND``) and Hydra's override
+   grammar only admits key segments that start with a letter or underscore, so
+   ``++generation.target_dict_cfg.02_PDL1.target_path=...`` is a parse error.
+   Instead the run directory gets an ``assets`` symlink to the in-image asset
+   root, which makes upstream's own relative path resolve, and the target is
+   independently resolved and checked for existence before launch.
 4. **Phase timing and truthful cache reporting.**  Upstream reports one
    ``Total generation time``.  The controller needs the split between
    interpreter import, checkpoint load and sampling, which is recovered from
@@ -261,6 +266,35 @@ def resolve_target(variant: dict[str, Any], task_name: str) -> dict[str, Any]:
     }
 
 
+def link_assets(work_directory: Path) -> dict[str, Any]:
+    """Make upstream's relative ``./assets/...`` target paths resolve.
+
+    The upstream target dictionaries declare ``./assets/target_data/...``,
+    resolved against the process working directory.  A symlink to the in-image
+    asset root turns those declarations into real files without touching
+    upstream configs and without an override Hydra cannot parse.
+
+    The link lives in a scratch working directory, never in the output root:
+    the asset tree contains dozens of target structures, and a link to it
+    inside the output root would be walked by output discovery and counted as
+    generated output.
+    """
+    work_directory.mkdir(parents=True, exist_ok=True)
+    link = work_directory / "assets"
+    target = SOURCE_ROOT / "assets"
+    if not target.is_dir():
+        raise _fail(f"in-image asset root is missing: {target}")
+    if link.is_symlink():
+        if link.readlink() != target:
+            link.unlink()
+            link.symlink_to(target)
+    elif link.exists():
+        raise _fail(f"{link} exists and is not the expected symlink")
+    else:
+        link.symlink_to(target)
+    return {"link": str(link), "target": str(target)}
+
+
 def cuda_preflight() -> dict[str, Any]:
     """Record the device identity this process can actually see."""
     import torch
@@ -294,7 +328,6 @@ def build_argv(
     artifact_dir: Path,
     output_root: Path,
 ) -> list[str]:
-    namespace = variant["target_namespace"]
     task = target["task_name"]
     argv = [
         sys.executable,
@@ -306,7 +339,10 @@ def build_argv(
         f"++ckpt_name={variant['checkpoint']['name']}",
         f"++autoencoder_ckpt_path={artifact_dir / variant['autoencoder']['name']}",
         f"++generation.task_name={task}",
-        f"++generation.{namespace}.{task}.target_path={target['target_path']}",
+        # No target_path override: Hydra's override grammar rejects key
+        # segments that begin with a digit, and most upstream task names do.
+        # The run directory's ``assets`` symlink is what makes upstream's own
+        # relative target_path resolve. See link_assets().
         f"++generation.dataloader.batch_size={request['batch_size']}",
         f"++generation.dataloader.dataset.nres.nsamples={request['samples']}",
         f"++generation.args.nsteps={request['nsteps']}",
@@ -324,9 +360,12 @@ def build_argv(
         # AlphaFold2 (protein) or RosettaFold3 (ligand, AME) into the sampling
         # loop, and a reward failure would be indistinguishable from a Complexa
         # failure.
+        # Only an assignment, never a delete: the AME pipeline already ships
+        # reward_model: null, and "~generation.reward_model" then aborts
+        # composition with "Could not delete from config". Assignment composes
+        # cleanly whether the node is a dict or already null.
         argv += [
             "++generation.search.algorithm=single-pass",
-            "~generation.reward_model",
             "++generation.reward_model=null",
         ]
     else:
@@ -429,6 +468,16 @@ def inspect_structure(path: Path) -> dict[str, Any]:
     if not standard:
         raise _fail(f"structure contains no standard amino-acid residue: {path}")
 
+    # Per chain, because the binder pipelines write the target and the designed
+    # binder into one file: a whole-file residue count is the sum of both and
+    # says nothing about the binder's length.
+    per_chain: dict[str, dict[str, int]] = {}
+    for (chain, _number), name in residues.items():
+        bucket = per_chain.setdefault(chain, {"residues": 0, "standard": 0})
+        bucket["residues"] += 1
+        if name in STANDARD_RESIDUES:
+            bucket["standard"] += 1
+
     spans: dict[str, Any] = {}
     for chain, trace in ca_by_chain.items():
         if len(trace) < 2:
@@ -458,6 +507,7 @@ def inspect_structure(path: Path) -> dict[str, Any]:
         "residue_count": len(residues),
         "standard_residue_count": len(standard),
         "chains": sorted(chains),
+        "chain_residues": per_chain,
         "residue_names": sorted(residue_names),
         "ca_traces": spans,
     }
@@ -478,6 +528,19 @@ def validate_backbone(structures: list[dict[str, Any]]) -> list[str]:
     return notes
 
 
+def discover_structures(output_root: Path) -> list[Path]:
+    """Find produced PDBs without ever following a symlink out of the tree."""
+    found: list[Path] = []
+    for base, directories, files in os.walk(output_root, followlinks=False):
+        directories[:] = [
+            name for name in directories if not Path(base, name).is_symlink()
+        ]
+        found.extend(
+            Path(base, name) for name in files if name.endswith(".pdb")
+        )
+    return sorted(found)
+
+
 def validate_outputs(
     variant_name: str,
     variant: dict[str, Any],
@@ -486,7 +549,7 @@ def validate_outputs(
     output_root: Path,
 ) -> dict[str, Any]:
     """Model-specific semantic validation of the produced artifacts."""
-    pdbs = sorted(output_root.rglob("*.pdb"))
+    pdbs = discover_structures(output_root)
     if not pdbs:
         raise _fail(f"generation produced no PDB structure under {output_root}")
     structures = [inspect_structure(path) for path in pdbs]
@@ -521,6 +584,12 @@ def validate_outputs(
     envelope = [int(value) for value in envelope if value is not None]
     length_pool = binder_pdbs or structures
     observed_lengths = [item["standard_residue_count"] for item in length_pool]
+    chain_lengths = {
+        Path(item["path"]).name: {
+            chain: counts["standard"] for chain, counts in item["chain_residues"].items()
+        }
+        for item in length_pool
+    }
     # A two-element envelope is a real upstream ``[min, max]`` binder-length
     # range and is enforced.  A single-element envelope is upstream's
     # ``UniformInt(low=N, high=null)`` shape, whose sampled length is not a
@@ -529,16 +598,21 @@ def validate_outputs(
     if envelope:
         low = min(envelope)
         high = max(envelope) if len(envelope) > 1 else None
-        for length in observed_lengths:
-            if length < 1:
-                raise _fail("a produced structure has no standard residues")
-            if high is not None and not (low <= length <= high):
-                findings.append(
-                    f"binder length {length} is outside the target envelope {low}-{high}"
-                )
-            elif high is None and length != low:
+        for name, chains in chain_lengths.items():
+            if not any(count > 0 for count in chains.values()):
+                raise _fail(f"{name} has no standard residues in any chain")
+            if high is not None:
+                # The designed binder is whichever chain lands in the declared
+                # envelope; the other chain is the supplied target.
+                if not any(low <= count <= high for count in chains.values()):
+                    findings.append(
+                        f"{name} has no chain within the target binder envelope "
+                        f"{low}-{high}; per-chain standard residues {chains}"
+                    )
+            elif not any(count == low for count in chains.values()):
                 length_notes.append(
-                    f"binder length {length} differs from the single declared length {low}"
+                    f"{name} has no chain of exactly the declared length {low}; "
+                    f"per-chain standard residues {chains}"
                 )
 
     rewards = sorted(output_root.glob("rewards_*.csv"))
@@ -564,6 +638,7 @@ def validate_outputs(
         "expected_ligand_residues": target["ligand_residues"],
         "observed_ligand_residues": sorted(set(ligand_hits)),
         "binder_lengths": observed_lengths,
+        "chain_lengths": chain_lengths,
         "binder_length_envelope": envelope,
         "rewards_csv": [str(path) for path in rewards],
         "reward_rows": reward_rows,
@@ -722,6 +797,8 @@ def run(arguments: argparse.Namespace) -> int:
         result["cuda"] = cuda_preflight()
         target = resolve_target(variant, request["task_name"])
         result["target"] = target
+        work_root = Path(arguments.work_dir)
+        result["asset_link"] = link_assets(work_root)
 
         environment = dict(os.environ)
         environment.update(variant["environment"])
@@ -745,7 +822,7 @@ def run(arguments: argparse.Namespace) -> int:
         with upstream_log.open("wb") as sink:
             process = subprocess.Popen(
                 argv,
-                cwd=str(output_root),
+                cwd=str(work_root),
                 env=environment,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -823,6 +900,12 @@ def main(argv: list[str] | None = None) -> int:
         "--artifact-dir",
         default=None,
         help="override the checkpoint-pair directory (defaults to FS2_ARTIFACT_ROOT/<artifact id>)",
+    )
+    runner.add_argument(
+        "--work-dir",
+        default="/tmp/fs2-complexa-run",
+        help="writable scratch directory used as the upstream working directory; "
+        "it holds the assets symlink and is deliberately outside the output root",
     )
     runner.add_argument(
         "--cache-level",

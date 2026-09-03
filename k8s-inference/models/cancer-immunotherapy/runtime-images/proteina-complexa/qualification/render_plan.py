@@ -26,10 +26,16 @@ ENTRYPOINT = HERE.parent / "runtime_entrypoint.py"
 
 NAMESPACE = "fs2-academic-poc"
 OWNER_TASK = "fs2-complexa-final-h100-qualification-r20260903"
-ARTIFACT_CLAIM = "academic-assets-runtime-rwx"
-ARTIFACT_SUBPATH = "scientific-ingestion/fs2-proteina-complexa-r20260903/staging"
+# Checkpoints live in this task's own claim, staged and byte-verified by
+# qualification/stage_artifacts.py. The public-artifact ingestion successor owns
+# the canonical content-addressed generations, but that task is unmerged and
+# removed its staging tree while this qualification was running, so depending on
+# it is not reproducible. The pinned file identities are identical either way.
+ARTIFACT_CLAIM = "fs2-cxq-out-r20260903"
+ARTIFACT_SUBPATH = "checkpoints"
 OUTPUT_CLAIM = "fs2-cxq-out-r20260903"
 ENTRYPOINT_PATH = "/opt/fs2/complexa/runtime_entrypoint.py"
+REQUEST_MOUNT = "/opt/fs2/requests"
 
 VARIANT_TASKS = {
     "protein": "02_PDL1",
@@ -82,6 +88,20 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
         for variant in VARIANT_TASKS
     }
 
+    # The requests always arrive through a ConfigMap mounted at /opt/fs2/requests.
+    # The entrypoint itself normally comes from the image. It is only overlaid
+    # from the ConfigMap when --entrypoint-source configmap is passed, which is
+    # how the contract was proven against a predecessor digest that had no
+    # entrypoint baked in. Overlaying it onto /opt/fs2/complexa shadows the
+    # baked-in file, so the two modes are mutually exclusive by construction.
+    overlay = arguments.entrypoint_source == "configmap"
+    data = {
+        f"request-{variant}.json": json.dumps(document, indent=2) + "\n"
+        for variant, document in requests.items()
+    }
+    if overlay:
+        data["runtime_entrypoint.py"] = entrypoint_source
+
     config_map: dict[str, Any] = {
         "apiVersion": "v1",
         "kind": "ConfigMap",
@@ -90,12 +110,26 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
             "namespace": NAMESPACE,
             "labels": {"fs2.nebius.ai/owner-task": OWNER_TASK},
         },
-        "data": {
-            "runtime_entrypoint.py": entrypoint_source,
-            **{f"request-{variant}.json": json.dumps(document, indent=2) + "\n"
-               for variant, document in requests.items()},
-        },
+        "data": data,
     }
+
+    # read-only belongs on the mount, never on the claim. A PersistentVolumeClaim
+    # marked readOnly attaches the whole volume read-only, so when the checkpoints
+    # and the outputs live in one claim the output mount inherits that and the run
+    # dies with EROFS. When they are one claim, share a single volume and let each
+    # mount carry its own mode.
+    shared_claim = ARTIFACT_CLAIM == OUTPUT_CLAIM
+    artifact_volume = "store" if shared_claim else "checkpoints"
+    output_volume = "store" if shared_claim else "outputs"
+    if shared_claim:
+        claim_volumes = [
+            {"name": "store", "persistentVolumeClaim": {"claimName": OUTPUT_CLAIM}}
+        ]
+    else:
+        claim_volumes = [
+            {"name": "checkpoints", "persistentVolumeClaim": {"claimName": ARTIFACT_CLAIM}},
+            {"name": "outputs", "persistentVolumeClaim": {"claimName": OUTPUT_CLAIM}},
+        ]
 
     jobs = []
     for variant in VARIANT_TASKS:
@@ -126,6 +160,15 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
                         },
                         "spec": {
                             "restartPolicy": "Never",
+                            # The RWX volume root is root-owned, so the non-root
+                            # runtime user cannot create its output directory
+                            # without a supplemental group. OnRootMismatch keeps
+                            # this from becoming a recursive ownership walk over
+                            # the ~31 GiB checkpoint tree on every cold start.
+                            "securityContext": {
+                                "fsGroup": 10001,
+                                "fsGroupChangePolicy": "OnRootMismatch",
+                            },
                             # Capability-driven placement: the accelerator class
                             # label, not a hard-coded H100-only node name.
                             "nodeSelector": {"nebius.com/gpu": "true"},
@@ -148,7 +191,7 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
                                         ENTRYPOINT_PATH,
                                         "run",
                                         "--request",
-                                        f"/opt/fs2/complexa/request-{variant}.json",
+                                        f"{REQUEST_MOUNT}/request-{variant}.json",
                                         "--output-root",
                                         f"/workspace/{variant}",
                                         "--cache-level",
@@ -186,24 +229,36 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
                                     },
                                     "volumeMounts": [
                                         {
-                                            "name": "checkpoints",
+                                            "name": artifact_volume,
                                             "mountPath": f"/opt/fs2/artifacts/{artifact_id}",
                                             "subPath": f"{ARTIFACT_SUBPATH}/{artifact_id}",
                                             "readOnly": True,
                                         },
                                         {
-                                            "name": "checkpoints",
+                                            "name": artifact_volume,
                                             "mountPath": "/opt/fs2/artifacts/rosettafold3",
                                             "subPath": f"{ARTIFACT_SUBPATH}/rosettafold3-checkpoint",
                                             "readOnly": True,
                                         },
                                         {
                                             "name": "contract",
-                                            "mountPath": "/opt/fs2/complexa",
+                                            "mountPath": REQUEST_MOUNT,
                                             "readOnly": True,
                                         },
+                                        *(
+                                            [
+                                                {
+                                                    "name": "contract",
+                                                    "mountPath": ENTRYPOINT_PATH,
+                                                    "subPath": "runtime_entrypoint.py",
+                                                    "readOnly": True,
+                                                }
+                                            ]
+                                            if overlay
+                                            else []
+                                        ),
                                         {
-                                            "name": "outputs",
+                                            "name": output_volume,
                                             "mountPath": "/workspace",
                                             "subPath": arguments.run_prefix,
                                         },
@@ -212,23 +267,13 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
                                 }
                             ],
                             "volumes": [
-                                {
-                                    "name": "checkpoints",
-                                    "persistentVolumeClaim": {
-                                        "claimName": ARTIFACT_CLAIM,
-                                        "readOnly": True,
-                                    },
-                                },
+                                *claim_volumes,
                                 {
                                     "name": "contract",
                                     "configMap": {
                                         "name": f"{arguments.run_prefix}-contract",
                                         "defaultMode": 0o555,
                                     },
-                                },
-                                {
-                                    "name": "outputs",
-                                    "persistentVolumeClaim": {"claimName": OUTPUT_CLAIM},
                                 },
                                 {"name": "cache", "emptyDir": {"sizeLimit": "32Gi"}},
                             ],
@@ -244,6 +289,7 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
         "rendered_from": {
             "image_lock": str(IMAGE_LOCK.relative_to(IMAGE_LOCK.parents[1])),
             "entrypoint_sha256": _sha256(ENTRYPOINT),
+            "entrypoint_source": arguments.entrypoint_source,
             "image_reference": reference,
         },
         "namespace": NAMESPACE,
@@ -269,6 +315,14 @@ def main() -> int:
         choices=["cold", "image-local", "artifact-local", "warm", "unknown"],
     )
     parser.add_argument("--verify-digests", action="store_true")
+    parser.add_argument(
+        "--entrypoint-source",
+        default="baked",
+        choices=["baked", "configmap"],
+        help="'baked' runs the entrypoint from the image; 'configmap' overlays this "
+        "checkout's copy, which is only for proving the contract against a digest "
+        "that has no entrypoint baked in",
+    )
     parser.add_argument("--output", default=str(HERE / "generated-plan.json"))
     arguments = parser.parse_args()
 
