@@ -1,0 +1,283 @@
+{
+  "schema": "fs2.nebius.ai/proteina-complexa-independent-merge-review/v1",
+  "reviewer_task": "fs2-complexa-h100-independent-fable-review-r20260903",
+  "reviewer": "claude-fable-5-1-xhigh",
+  "reviewed_at": "2026-09-03",
+  "candidate_audited": "70163421aad9a463365d4440a21c5ce6739132eb",
+  "candidate_implementation_commit": "378275aa212c6ea089a7d90f4deccb33012096b7",
+  "verdict": "BLOCK the audited candidate; ACCEPT the corrected successor on this branch",
+  "verdict_basis": "The three H100 runs are real and the image provenance chain verifies exactly, end to end, from upstream archive to registry attestation. The published semantic gate, however, did not enforce what its own requirement list claimed: a 162-byte two-atom PDB passed the entire ligand gate with exit 0 and no failures. Three published claims also overstated or miscited their evidence. None of that is repairable by re-reading the candidate; it needed code and document corrections, which this branch carries.",
+  "independently_verified_sound": {
+    "note": "Re-derived by this reviewer, not accepted from the candidate or from the peer gate.",
+    "upstream_source_archive": {
+      "url": "https://codeload.github.com/NVIDIA-BioNeMo/Proteina-Complexa/tar.gz/54058860d43444c7289873f77d3e50b5b02348cd",
+      "downloaded_bytes": 3880947,
+      "sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b",
+      "file_count": 632,
+      "matches_lock_and_evidence": true
+    },
+    "registry_chain_via_crane": {
+      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd-batch-v1",
+      "index_digest": "sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+      "platform_manifest_digest": "sha256:75eb31a22b8566e3a3016fceee173cd3705145ee34acbe6edb1ffedce0cb035f",
+      "attestation_manifest_digest": "sha256:e8b3265bc60e5edd93ed6843bd913d60bcdabab657d37b627d631bef4a9b6082",
+      "attestation_is_attached_to_platform_manifest": true,
+      "matches_registry_provenance_json": true
+    },
+    "slsa_attestation": {
+      "vcs_revision": "cb8d6bea1bd15ae4cd68f588e718c14333acbac2",
+      "is_ancestor_of_this_branch": true,
+      "build_inputs_unchanged_since_that_revision": true,
+      "inputs_checked": [
+        "Dockerfile",
+        "runtime_entrypoint.py",
+        "requirements.lock"
+      ],
+      "base_images_digest_pinned": true
+    },
+    "committed_digests_recomputed": {
+      "runtime_entrypoint.py": "81cf6cb493cc37dfc2cd04753e18ef97f72b37f4094526aa76a5aa0a8f14093f",
+      "qualification/generated-plan.json": "7012ee66c058206a20e747e5e2bb971e0a897a49cc23475a6193dcb3de3307dd",
+      "requirements.lock": "0fb7e8443b5d46a20692e560e8834d6c78a53f31881492c0dcee740ecc2a71ed",
+      "all_match_the_receipt_and_lock": true
+    },
+    "plan_reproducibility": "qualification/generated-plan.json re-renders byte-for-byte from the corrected render_plan.py at the published digest, run prefix fs2-cxq-a1, cache level cold.",
+    "cleanup_truth_live": {
+      "context": "k8s-inference-h100",
+      "namespace": "fs2-academic-poc",
+      "owner_task_selector_matches": 0,
+      "fs2_cxq_residue": "none",
+      "h100_nodes_ready": [
+        "computeinstance-e00m0hsph76ajt9sdb",
+        "computeinstance-e00p3acr87k9k4mckj"
+      ],
+      "preserved_workloads_confirmed": {
+        "qwen3-8b-b300-hot-h100-reserved-8x": "1/1 ready, as the cleanup evidence states",
+        "cosmos3-nano-burst-h100-1x": "0/0, as the cleanup evidence states"
+      }
+    },
+    "no_secrets": "No credential, key, token or kubeconfig content in the candidate diff.",
+    "no_false_snapshot_claim": "gpu_snapshot.captured and .restored are both false and scope.not_covered says so.",
+    "gpu_portability": "No device-name allowlist anywhere. TORCH_CUDA_ARCH_LIST spans 7.5 through 9.0+PTX, node selection is capability-based (nebius.com/gpu), and the lock states sm_100 is out of scope. The claim holds."
+  },
+  "blockers_found_and_corrected": [
+    {
+      "id": "B1a",
+      "file": "qualification/validate_result.py",
+      "defect": "The binder-length envelope was skipped whenever the target declared a single length.",
+      "impact": "Ligand declares [100] and AME declares [180], so the rule ran for one of three variants while the evidence presented it unconditionally.",
+      "fix": "Enforced for any non-empty declaration; a single value is an exact envelope.",
+      "regression_test": "SingleValuedBinderEnvelopeTests"
+    },
+    {
+      "id": "B1b",
+      "file": "qualification/validate_result.py",
+      "defect": "A structure counted as protein-like when no C-alpha pair existed to measure; an empty spacing map read as nothing-out-of-range.",
+      "impact": "One alanine C-alpha satisfied 'at least one produced chain has protein-like C-alpha geometry'.",
+      "fix": "MIN_CA_FOR_BACKBONE = 2; absence of a measurable trace is now a failure, not a pass.",
+      "regression_test": "BackboneEvidenceTests, TwoAtomCounterexampleTests"
+    },
+    {
+      "id": "B1c",
+      "file": "qualification/validate_result.py",
+      "defect": "Only the mean C-alpha step was bounded.",
+      "impact": "A trace alternating 1.0 A and 6.6 A steps passes on a ~3.7 A mean. Reproduced.",
+      "fix": "Hard floor of 2.5 A on every step, plus a 90% in-range fraction that still tolerates one real chain break.",
+      "regression_test": "PerStepGeometryTests, including a tolerated single chain break"
+    },
+    {
+      "id": "B2",
+      "file": "qualification/validate_result.py",
+      "defect": "content_digests_verified was copied from the envelope, and the per-marker digest check was gated on that same flag. Two absent byte counts also compared equal.",
+      "impact": "A run that hashed nothing passed the requirement 'both checkpoint markers verified, content digests included'.",
+      "fix": "Fails closed unless the flag is exactly True; per-marker digest check is unconditional; absent byte counts fail.",
+      "regression_test": "ContentDigestTests"
+    },
+    {
+      "id": "B3",
+      "file": "image-lock.json",
+      "defect": "image.supersedes[1].reused_for cited 'evidence/h100-run-receipt.json contract_proving_runs'. That key has never existed in the receipt; contract_proving_verdict is null.",
+      "impact": "The claim of a first real Complexa forward inference on the predecessor digest was unbacked, and sat in tension with the .reason in the same object.",
+      "fix": "Claim withdrawn rather than restated. No qualification claim rests on that digest.",
+      "regression_test": "PublishedEvidenceBindingTests.test_no_committed_claim_cites_a_receipt_key_that_does_not_exist"
+    },
+    {
+      "id": "B4",
+      "file": "run_checks.sh, tests/",
+      "defect": "validate_result.py had zero executable coverage; run_checks.sh only byte-compiled it.",
+      "impact": "This is why B1 and B2 were publishable. Every negative test the candidate leaned on exercised the entrypoint's rules, not the validator's separately written ones.",
+      "fix": "tests/test_validate_result_gate.py executes the validator, in-process and via its command line. run_checks.sh now runs unittest discovery and independently re-proves the counterexample is refused.",
+      "regression_test": "the whole module, 44 tests"
+    },
+    {
+      "id": "D6",
+      "file": "qualification/validate_result.py",
+      "defect": "The other-variant checkpoint check was filename-deep and never validated ++ckpt_path.",
+      "impact": "++ckpt_path=.../complexa-ame with ++ckpt_name=complexa.ckpt qualified as the protein variant while reading AME artifacts.",
+      "fix": "The argv must name this variant's own complexa-<variant> directory and no other's.",
+      "regression_test": "CheckpointDirectoryTests"
+    }
+  ],
+  "overclaims_corrected": [
+    {
+      "id": "D1",
+      "where": "gate.judged_by, in the evidence and in assemble_evidence.py",
+      "was": "the validator 're-derives every verdict from the produced artifacts'",
+      "reality": "Only the CUDA marker and the structural facts parsed from the PDBs are re-derived. Exit code, terminal state, argv, the artifact-verification markers and every phase number are read back from result.json, which the entrypoint authors about itself.",
+      "now": "The published text states the split and says the gate cannot independently re-measure the read-back fields."
+    },
+    {
+      "id": "D2",
+      "where": "gate.requirements",
+      "was": "'a sampling phase was measured'",
+      "reality": "sampling_seconds is generation_seconds minus model_load, and compute_seconds is literally the same variable, which is why they are equal in all three variants. Only model_load and upstream_process are measured spans. The code also checked compute_seconds, not the sampling figure the requirement named.",
+      "now": "The requirement says the figure is derived, and all three phase values must be positive numbers. A negative duration no longer reads as measured."
+    },
+    {
+      "id": "D3",
+      "where": "assemble_evidence.py gate.requirements",
+      "was": "a prose literal with no link to the enforcing code, already stale against the validator's own docstring",
+      "now": "Rewritten to match the code, and a test asserts the committed list is byte-identical to what the generator emits."
+    },
+    {
+      "id": "D4",
+      "where": "tests asserting image_digest",
+      "was": "assemble_evidence sets image_digest from the lock and the test compared the two, a tautology",
+      "now": "A test binds each variant's live image_id from the run receipt to the published digest. All three match."
+    },
+    {
+      "id": "D5",
+      "where": "validate_result.py",
+      "was": "a PDB with zero standard residues was skipped before the geometry rule ran, while the entrypoint hard-fails on that case",
+      "now": "Geometry is judged for every file carrying a measurable trace, so a poly-UNK trace with exploded spacing cannot escape by being skipped."
+    },
+    {
+      "id": "D7",
+      "where": "README.md",
+      "was": "'produced a structure that passed the independent geometry, sequence-diversity, binder-length and ligand checks'",
+      "reality": "binder-length was not checked for ligand or AME.",
+      "now": "The claim is narrowed and the later enforcement is stated separately."
+    },
+    {
+      "id": "D8",
+      "where": "validate_result.py and assemble_evidence.py",
+      "was": "a verdict covering one variant could be published as all_variants_passed",
+      "now": "The verdict records covers_all_variants and the generator refuses to publish otherwise."
+    }
+  ],
+  "hardening_applied": [
+    {
+      "id": "S1",
+      "file": "qualification/render_plan.py",
+      "issue": "--image accepted any string containing a slash, so a mutable tag silently defeated digest pinning and the receipt would record it as pinned.",
+      "fix": "A non-digest reference is now refused."
+    },
+    {
+      "id": "S2",
+      "file": "qualification/render_plan.py",
+      "issue": "--verify-digests was store_true, so the only cryptographic content check in the runtime defaulted OFF. Combined with the CRC32 inventory below, a default plan had no content check at all.",
+      "fix": "Defaults on, with an explicit --no-verify-digests opt-out. The committed plan still re-renders byte-for-byte."
+    }
+  ],
+  "deferred_to_the_next_rebuild": {
+    "why": "runtime_entrypoint.py is baked into the published image and is one of the three inputs the SLSA attestation covers. Editing it here would falsify build_inputs_unchanged_since_vcs_revision and force a rebuild, which this review is not authorised to do. These are recorded, not patched.",
+    "findings": [
+      {
+        "id": "E1",
+        "severity": "high",
+        "location": "runtime_entrypoint.py tree_inventory_v2, ~line 341",
+        "finding": "The per-file identity in the content-addressed inventory is {bytes, crc32}. CRC32 is affine over GF(2), so a same-length payload with a matching CRC32 is solved for directly.",
+        "verified_by_this_reviewer": "Constructed two distinct 64-byte payloads with identical length and identical CRC32 (0x54092d47) and different SHA-256, in milliseconds, by Gaussian elimination over GF(2).",
+        "consequence": "The docstring's claim that the inventory 'cannot be forged' is false. With verify_content_digests off, an equal-length substituted checkpoint passes generation and marker verification and is then unpickled by torch.load on the GPU.",
+        "partial_mitigation_applied_here": "The plan now requests digest verification by default and the gate fails closed without it, so the practical path is closed for plans rendered from this tree. The inventory itself still needs a content hash.",
+        "suggested_fix": "Replace crc32 with a truncated SHA-256 in the inventory row."
+      },
+      {
+        "id": "E2",
+        "severity": "high",
+        "location": "runtime_entrypoint.py run(), contract parse at ~1088 vs try at 1111",
+        "finding": "Contract ingestion runs outside the try/finally that writes result.json, so a malformed contract produces no result envelope at all, not even terminal_state FAILED.",
+        "consequence": "A ConfigMap typo is indistinguishable to a controller from a node failure or an image-pull failure."
+      },
+      {
+        "id": "E3",
+        "severity": "medium-high",
+        "location": "runtime_entrypoint.py ~1139 and ~1154",
+        "finding": "rosettafold3.exercised is assigned from the request and the variant table before the subprocess is launched. It is predicted, never measured.",
+        "consequence": "A reward run whose RF3 stage silently no-ops would still publish exercised: true. Not triggered by the accepted runs, which were reward-free and correctly record exercised: false."
+      },
+      {
+        "id": "E4",
+        "severity": "medium",
+        "location": "runtime_entrypoint.py ~1008 and ~645",
+        "finding": "search_algorithm is the only contract field reaching a Hydra override with no allowlist and no str() coercion. Not command injection, since Popen takes a list, but OmegaConf resolves interpolations, so a value could pull an env value into the config dump and the log."
+      },
+      {
+        "id": "E5",
+        "severity": "medium",
+        "location": "runtime_entrypoint.py tree_inventory_v2, ~328-334",
+        "finding": "Entries failing the safe-segment pattern are skipped with continue rather than failing verification, so a dot-prefixed or space-containing file is invisible to the digest, the entry count and the byte total while the envelope reports the mount is exactly the pinned generation."
+      },
+      {
+        "id": "E6",
+        "severity": "medium",
+        "location": "runtime_entrypoint.py ~386-392 and ~428-434",
+        "finding": "host_root, volume_kind, visibility and read_only are asserted from the marker and pinned constants, never measured against the actual mount. An --artifact-dir pointing at an emptyDir with a copied marker passes and is then reported as a read-only public host-path plane."
+      },
+      {
+        "id": "E7",
+        "severity": "medium",
+        "location": "runtime_entrypoint.py ~725-742",
+        "finding": "sampling subtracts two intervals with different start anchors, so pre-load overhead is folded into sampling, and there is no non-negativity guard. Phase accounting cannot close against upstream_process_seconds and nothing asserts that it does."
+      },
+      {
+        "id": "E8",
+        "severity": "medium",
+        "location": "runtime_entrypoint.py ~1207-1221",
+        "finding": "The subprocess is not scoped by a context manager or try/finally and has no timeout. A write failure mid-stream leaves an orphaned GPU process holding device memory after PID 1 exits."
+      },
+      {
+        "id": "E9",
+        "severity": "low",
+        "location": "runtime_entrypoint.py ~592",
+        "finding": "architecture_policy says 'capability-driven'. Compute capability is recorded but never used as an admission criterion; admission is availability-driven. No accelerator is wrongly excluded, so this is evidence wording, not a portability defect."
+      },
+      {
+        "id": "E10",
+        "severity": "low",
+        "location": "Dockerfile ~42-43",
+        "finding": "The header calls the dependency set hash-locked. uv pip sync against requirements.lock is fully hashed, but four build packages are installed without --no-deps and without hashes into the same venv that is copied into the runtime image."
+      },
+      {
+        "id": "E11",
+        "severity": "low",
+        "location": "runtime_entrypoint.py ~713-714",
+        "finding": "loguru timestamps are parsed as UTC while loguru emits local time. The container is UTC today, so this does not currently fire, but a base-image change would make interpreter_and_import_seconds nonsense."
+      },
+      {
+        "id": "E12",
+        "severity": "informational",
+        "location": "evidence/h100-run-receipt.json cluster.kubeconfig",
+        "finding": "An operator's local home path is pinned into committed evidence. No secret material."
+      }
+    ]
+  },
+  "limitations": [
+    "The raw run artifacts were reclaimed with the task-owned PVC before this review began, so the corrected gate could not be re-run against the original PDB files. It is proven instead against fixtures reconstructed from the committed run receipt, which is the strongest available evidence and is why the positive fixtures read out of evidence/.",
+    "The kubelet events for the three qualification pods had aged out of the namespace by the time this review reached the cluster, so the image pulls could not be re-confirmed from live state by this reviewer. The peer gate fs2-live-scientific-evidence-fable-gate-r20260903 confirmed them while they survived, and the receipt is internally consistent with them.",
+    "No GPU work was repeated. This review created, mutated and deleted no cluster resource; every live interaction was a read.",
+    "Entrypoint findings E1 to E12 are recorded, not fixed, because the entrypoint is a build input of the published image."
+  ],
+  "test_evidence": {
+    "run_checks.sh": "PASS, exit 0, 119 tests, plus a shell-level re-proof that the two-atom counterexample is refused",
+    "tests/test_validate_result_gate.py": "PASS, 44 tests",
+    "tests/test_proteina_complexa_runtime.py": "PASS, 79 tests, unchanged",
+    "control_plane_full_suite": "PASS, 789 passed, 35 skipped",
+    "control_plane_adapter_tests": "PASS, 17 passed (test_scientific_primary_adapters.py, test_scientific_batch_catalog_adapter.py)"
+  },
+  "deployment": {
+    "performed": false,
+    "reason": "Nothing here is deployable. The change is confined to a host-side qualification harness, its tests and its evidence documents. No image was built or published, no Helm release, no Terraform apply, no cluster mutation, no GPU workload. B300 was not read or touched. The published image digest is unchanged and remains the one the three qualified runs used.",
+    "shared_service_lineage": "Not applicable: no shared service is rolled by this branch."
+  }
+}

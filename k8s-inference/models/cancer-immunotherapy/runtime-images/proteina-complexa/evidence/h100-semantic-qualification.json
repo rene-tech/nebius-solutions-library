@@ -6,19 +6,22 @@
   "image_digest": "sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
   "source_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
   "gate": {
-    "judged_by": "qualification/validate_result.py, which re-derives every verdict from the produced artifacts and never imports the runtime entrypoint",
+    "judged_by": "qualification/validate_result.py, which never imports the runtime entrypoint. Re-derived from the raw artifacts: the CUDA marker read out of upstream.log, and every structural fact -- chain lengths, residue diversity, backbone geometry and ligand presence -- parsed from the produced PDB files. Read back from result.json, which the runtime entrypoint authors about itself: the exit code, terminal state, argv, the artifact-verification markers with their digest flags, and every phase number. Those read-back fields are checked for internal consistency and are failed closed when absent or negative, but this gate cannot independently re-measure them.",
     "requirements": [
       "upstream exited zero and the result envelope reports PASS",
       "the upstream log shows Lightning using CUDA",
       "the exact pinned checkpoint pair appears in the argv and no other variant's checkpoint does",
-      "both checkpoint markers verified, content digests included",
+      "the argv names this variant's own complexa-<variant> artifact directory and no other variant's, so a run cannot read one variant's checkpoints while qualifying as another",
+      "the run reports verified checkpoint content digests, failed closed when it does not, and both markers carry a matching observed and expected byte count with their content digest verified",
       "LoRA re-applied for ligand and AME, absent for protein",
-      "a sampling phase was measured",
-      "at least one produced chain has protein-like C-alpha geometry",
-      "chains of 20+ residues carry at least five distinct amino-acid types",
-      "the designed binder falls inside the target's declared length envelope",
+      "a measured model-load span is present, together with a sampling/compute figure that is derived by subtracting model load from the upstream reported generation span rather than measured directly",
+      "at least one produced structure has a measurable protein-like C-alpha geometry: some chain carries at least two C-alpha atoms, no two consecutive C-alpha atoms are closer than 2.5 A, and at least 90% of each chain's steps fall in the 2.5-4.6 A range, so an alternating collapsed and exploded trace cannot pass on its mean alone",
+      "chains of 20+ standard residues carry at least five distinct amino-acid types",
+      "the designed binder falls inside the target's declared binder-length envelope, including the single-valued envelope that ligand and AME declare",
       "the expected ligand residue is present for ligand and AME"
-    ]
+    ],
+    "reverified_at": "2026-09-03",
+    "reverification": "The published gate was independently re-audited by fs2-complexa-h100-independent-fable-review-r20260903 and found to under-enforce what this list claimed: a 162-byte two-atom PDB passed the whole ligand gate. The gate was corrected and the requirement list rewritten to match the code. The three H100 runs below are unchanged; their raw outputs were already reclaimed with the task PVC, so the corrected gate could not be re-run against the original artifacts. It is instead proven against fixtures reconstructed from this receipt in tests/test_validate_result_gate.py, which also proves the counterexample now fails."
   },
   "all_variants_passed": true,
   "variants": [

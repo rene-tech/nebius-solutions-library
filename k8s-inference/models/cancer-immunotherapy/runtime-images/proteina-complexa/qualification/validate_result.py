@@ -13,11 +13,28 @@ A variant passes only when all of the following hold:
 * the upstream log shows Lightning actually using CUDA
 * the exact pinned checkpoint pair for that variant, and no other variant's
   checkpoint, appears in the recorded argv
+* the run reports that it verified checkpoint content digests, both markers
+  carry a matching observed and expected byte count, and both digests verified
 * LoRA re-application matches the variant (required for ligand and AME,
   forbidden for protein)
-* at least one non-degenerate protein structure was produced, and for the two
-  ligand-bearing variants the expected ligand residue is present
-* a compute phase was measured
+* a model-load span and a sampling/compute figure are present
+* at least one produced structure has a measurable protein-like backbone: some
+  chain carries at least two C-alpha atoms and every measured chain's mean
+  C-alpha step is in range
+* every chain of 20+ standard residues carries at least five distinct
+  amino-acid types
+* some chain in every produced structure falls inside the target's declared
+  binder-length envelope, including a single-valued envelope
+* for the two ligand-bearing variants the expected ligand residue is present
+
+Scope of the independence claim.  Re-derived from raw artifacts: the CUDA
+marker (from upstream.log) and everything structural -- chain lengths, residue
+diversity, backbone geometry, ligand presence -- parsed from the produced PDBs.
+Read back from result.json, which the runtime entrypoint authors about itself:
+the exit code, terminal state, argv, the artifact-verification markers and
+their digest flags, and every phase number.  Those fields are cross-checked for
+internal consistency here, but this validator cannot independently re-measure
+them, and no claim in this repository should say otherwise.
 """
 
 from __future__ import annotations
@@ -38,6 +55,12 @@ EXPECTED = {
     "ame": {"lora": True, "ligand": True},
 }
 CA_MIN_A, CA_MAX_A = 2.5, 4.6
+# A mean in range hides an alternating trace: steps of 1.0 and 6.6 A average
+# 3.8.  Two C-alphas closer than CA_MIN_A are a physical impossibility, so that
+# bound is absolute, while a step longer than CA_MAX_A is a legitimate chain
+# break -- tolerated up to a fraction, never as the general case.
+CA_IN_RANGE_MIN = 0.9
+MIN_CA_FOR_BACKBONE = 2
 MIN_CHAIN_FOR_DIVERSITY = 20
 MIN_DISTINCT_RESIDUES = 5
 STANDARD = frozenset(
@@ -82,10 +105,17 @@ def _summarise(path: Path) -> dict[str, Any]:
         if line[12:16].strip() == "CA":
             trace.setdefault(chain, []).append(point)
     steps = {}
+    spans: dict[str, dict[str, float]] = {}
     for chain, points in trace.items():
         if len(points) > 1:
             distances = [math.dist(points[i], points[i + 1]) for i in range(len(points) - 1)]
             steps[chain] = sum(distances) / len(distances)
+            inside = sum(1 for value in distances if CA_MIN_A <= value <= CA_MAX_A)
+            spans[chain] = {
+                "min": min(distances),
+                "max": max(distances),
+                "in_range": inside / len(distances),
+            }
     return {
         "residues": len(residues),
         "standard": sum(1 for value in residues.values() if value in STANDARD),
@@ -93,6 +123,8 @@ def _summarise(path: Path) -> dict[str, Any]:
         "chain_distinct": {key: len(value) for key, value in chain_kinds.items()},
         "residue_names": names,
         "mean_ca_step": steps,
+        "ca_spans": spans,
+        "ca_counts": {chain: len(points) for chain, points in trace.items()},
         "chains": sorted(trace),
     }
 
@@ -136,17 +168,43 @@ def validate(variant: str, root: Path) -> dict[str, Any]:
             if f"++ckpt_name={name}" in argv or f"/{name}" in argv:
                 failures.append(f"argv leaks the {other} checkpoint {name}")
 
+    # The plan selects a checkpoint *directory* as well as a file name, so the
+    # directory must be checked too.  Otherwise
+    # ``++ckpt_path=.../complexa-ame ++ckpt_name=complexa.ckpt`` qualifies as
+    # the protein variant while reading the AME artifact.
+    if f"complexa-{variant}" not in argv:
+        failures.append(f"argv does not reference the complexa-{variant} artifact directory")
+    for other in ("protein", "ligand", "ame"):
+        if other != variant and f"complexa-{other}" in argv:
+            failures.append(f"argv references the {other} artifact directory")
+
     verification = envelope.get("artifact_verification") or {}
     markers = verification.get("markers") or []
     checks["markers_verified"] = len(markers)
     checks["content_digests_verified"] = verification.get("content_digests_verified")
     if len(markers) != 2:
         failures.append(f"expected two verified checkpoint markers, got {len(markers)}")
+    # Fail closed.  This flag is the runtime's own report of whether it hashed
+    # the checkpoints at all, and it is a copy of the request field
+    # verify_content_digests, which defaults to false.  A run that hashed
+    # nothing must never qualify, and the per-marker check below must not be
+    # gated on the same flag it is meant to corroborate.
+    if verification.get("content_digests_verified") is not True:
+        failures.append(
+            "the run did not verify checkpoint content digests "
+            f"(content_digests_verified={verification.get('content_digests_verified')!r})"
+        )
     for marker in markers:
-        if marker.get("observed_bytes") != marker.get("expected_bytes"):
-            failures.append(f"{marker.get('label')} byte count did not match")
-        if verification.get("content_digests_verified") and not marker.get("digest_verified"):
-            failures.append(f"{marker.get('label')} content digest was not verified")
+        label = marker.get("label")
+        observed = marker.get("observed_bytes")
+        expected = marker.get("expected_bytes")
+        if observed is None or expected is None:
+            # Two absent counts must not compare equal and pass.
+            failures.append(f"{label} carries no observed and expected byte count")
+        elif observed != expected:
+            failures.append(f"{label} byte count did not match")
+        if not marker.get("digest_verified"):
+            failures.append(f"{label} content digest was not verified")
 
     rf3 = verification.get("rosettafold3") or {}
     checks["rosettafold3_bound"] = rf3.get("bound")
@@ -165,8 +223,19 @@ def validate(variant: str, root: Path) -> dict[str, Any]:
             "lora_reapplied",
         )
     }
-    if not phases.get("compute_seconds"):
-        failures.append("no compute phase was measured")
+    # compute_seconds is the runtime's alias for sampling_seconds, and both are
+    # derived by subtracting the measured model-load span from the upstream
+    # reported generation span.  Require the measured span they rest on too.
+    # A duration must be a positive number.  ``not -99.0`` is False, so a
+    # negative span used to read as "measured".
+    for key, label in (
+        ("compute_seconds", "compute phase"),
+        ("sampling_seconds", "sampling phase"),
+        ("model_load_seconds", "model-load span"),
+    ):
+        value = phases.get(key)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+            failures.append(f"no {label} was recorded ({key}={value!r})")
     expected_lora = EXPECTED[variant]["lora"]
     if bool(phases.get("lora_reapplied")) != expected_lora:
         failures.append(
@@ -194,8 +263,9 @@ def validate(variant: str, root: Path) -> dict[str, Any]:
                         f"{distinct} distinct amino-acid type(s)"
                     )
         chain_diversity[path.name] = summary["chain_distinct"]
-        if summary["standard"] < 1:
-            continue
+        # Geometry is judged for every file carrying a measurable trace, even
+        # one with no standard residue: a poly-UNK trace with exploded spacing
+        # must not escape by being skipped.
         bad = {
             chain: round(step, 3)
             for chain, step in summary["mean_ca_step"].items()
@@ -203,7 +273,31 @@ def validate(variant: str, root: Path) -> dict[str, Any]:
         }
         if bad:
             failures.append(f"{path.name} has non-protein C-alpha spacing {bad}")
-        else:
+        # Individual steps, not just their mean.
+        for chain, span in summary["ca_spans"].items():
+            if span["min"] < CA_MIN_A:
+                failures.append(
+                    f"{path.name} chain {chain} has two C-alpha atoms "
+                    f"{span['min']:.3f} A apart, closer than {CA_MIN_A} A"
+                )
+                bad[chain] = round(span["min"], 3)
+            if span["in_range"] < CA_IN_RANGE_MIN:
+                failures.append(
+                    f"{path.name} chain {chain} has only "
+                    f"{span['in_range'] * 100:.0f}% of its C-alpha steps in range"
+                )
+                bad[chain] = round(span["in_range"], 3)
+        if summary["standard"] < 1:
+            continue
+        # An empty spacing map means no C-alpha pair existed to measure.  That
+        # is absence of evidence, never evidence of a protein-like backbone.
+        traced = max(summary["ca_counts"].values(), default=0)
+        if traced < MIN_CA_FOR_BACKBONE:
+            failures.append(
+                f"{path.name} has no chain with at least {MIN_CA_FOR_BACKBONE} "
+                f"C-alpha atoms, so no backbone geometry could be measured"
+            )
+        elif not bad:
             protein_like += 1
     checks["protein_like_structures"] = protein_like
     checks["chain_lengths"] = chain_lengths
@@ -219,12 +313,16 @@ def validate(variant: str, root: Path) -> dict[str, Any]:
         declared = [declared]
     declared = [int(value) for value in declared if value is not None]
     checks["binder_length_envelope"] = declared
-    if len(declared) > 1 and chain_lengths:
+    # A single declared length is an exact envelope, not an absent one.  The
+    # ligand and AME pipelines declare exactly one length, so skipping this for
+    # len(declared) == 1 left two of the three variants unchecked.
+    if declared and chain_lengths:
         low, high = min(declared), max(declared)
+        span = f"{low}" if low == high else f"{low}-{high}"
         for name, chains in chain_lengths.items():
             if not any(low <= count <= high for count in chains.values()):
                 failures.append(
-                    f"{name} has no chain within the binder envelope {low}-{high}: {chains}"
+                    f"{name} has no chain within the binder envelope {span}: {chains}"
                 )
 
     if EXPECTED[variant]["ligand"]:
@@ -261,6 +359,10 @@ def main() -> int:
         "source_revision": LOCK["source"]["revision"],
         "image_digest": LOCK["image"]["published_digest"],
         "variants": reports,
+        "variants_requested": sorted(variants),
+        # all_passed is scoped to the variants actually judged.  Publishing it
+        # as "all variants passed" is only honest when all three were judged.
+        "covers_all_variants": sorted(variants) == ["ame", "ligand", "protein"],
         "all_passed": all(item["passed"] for item in reports),
     }
     payload = json.dumps(verdict, indent=2, default=sorted) + "\n"

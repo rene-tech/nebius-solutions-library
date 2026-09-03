@@ -115,6 +115,13 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit(
             "no image digest: pass --image or record image.published_digest in image-lock.json"
         )
+    # Refuse a mutable tag.  A tag reference here would silently defeat the
+    # digest pinning this lock exists to guarantee, and the run receipt would
+    # then record that tag as though it were pinned.
+    if "@sha256:" not in digest and not digest.startswith("sha256:"):
+        raise SystemExit(
+            f"--image must be digest-pinned (sha256:... or repo@sha256:...), got {digest!r}"
+        )
     reference = (
         digest
         if "/" in digest
@@ -381,7 +388,14 @@ def main() -> int:
         default="image-local",
         choices=["cold", "image-local", "artifact-local", "warm", "unknown"],
     )
-    parser.add_argument("--verify-digests", action="store_true")
+    # Default ON.  The in-image tree inventory identifies each file by length
+    # and CRC32, which is forgeable by construction: a same-length payload with
+    # a matching CRC32 is solved for directly, not searched.  The SHA-256 pass
+    # this flag enables is the only cryptographic content check in the runtime,
+    # so a plan must have to opt *out* of it, never silently omit it.
+    parser.add_argument(
+        "--verify-digests", action=argparse.BooleanOptionalAction, default=True
+    )
     parser.add_argument(
         "--reward-model",
         default="none",

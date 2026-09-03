@@ -194,7 +194,7 @@ needs an upstream patch.
 | --- | --- |
 | `render_plan.py` | render the ConfigMap and the variant Jobs as pure data |
 | `submit_plan.py` | apply the plan, then collect node, image-phase and schedule-to-complete evidence |
-| `validate_result.py` | re-derive the verdict from the artifacts without importing the entrypoint |
+| `validate_result.py` | judge the run without importing the entrypoint: structure and CUDA marker re-derived from raw artifacts, envelope fields failed closed |
 | `assemble_evidence.py` | turn the receipts and the verdict into the two evidence documents |
 
 `render_plan.py --reward-model upstream-default --variant ligand --variant ame`
@@ -235,8 +235,12 @@ repeat the GPU work.
 Every run used CUDA on an H100 SXM5 80 GB device, exited zero, selected its
 exact score-model/autoencoder pair, completed the upstream default 400 sampling
 steps, and produced a structure that passed the independent geometry,
-sequence-diversity, binder-length and ligand checks. The roughly 102-105 s
-before container start was the observed 4.37 GB image pull, not model compute.
+sequence-diversity and ligand checks. The roughly 102-105 s before container
+start was the observed 4.37 GB image pull, not model compute.
+
+The binder-length envelope is a later addition: as published, the gate skipped
+it for ligand and AME. It is enforced for all three variants now, and the
+recorded chain lengths satisfy it (protein 115 in 64-155, ligand 100, AME 180).
 
 RF3 generation `d909fe65…3164bce` was mounted, marker-verified,
 inventory-recomputed and content-hashed in every run, but no reward model was
@@ -246,6 +250,67 @@ bound for the controller by `AF2_DIR`, but was neither mounted nor exercised
 by these runs. No GPU snapshot was captured or restored. The runtime therefore
 has all-variant H100 model qualification but remains non-servable until the
 controller route passes end to end.
+
+### Independent review, 2026-09-03
+
+`fs2-complexa-h100-independent-fable-review-r20260903` audited candidate
+`70163421` and found the published semantic gate materially weaker than the
+requirement list it shipped. The finding was reproduced from two directions:
+a 162-byte, two-atom PDB passed the entire ligand gate with exit 0 and no
+failures, and a separate audit passed all three variants on wholly fabricated
+artifacts. The three real H100 runs are unaffected -- their outputs are not
+degenerate, and the image and registry provenance verified exactly -- but the
+gate could not have caught a bad run, and several published claims overstated
+what it checked.
+
+Corrected in `qualification/validate_result.py`:
+
+* the binder-length envelope was skipped whenever the target declared a single
+  length, which is the case for ligand and AME, so it was enforced for one of
+  three variants
+* a structure counted as protein-like when no C-alpha pair existed to measure,
+  because an empty spacing map read as "nothing out of range"
+* only the *mean* C-alpha step was bounded, so a trace alternating 1.0 A and
+  6.6 A steps passed on a 3.7 A mean; individual steps are now bounded, with a
+  hard floor at 2.5 A and a 90% in-range fraction that still tolerates a real
+  chain break
+* `content_digests_verified` was copied from the envelope and the per-marker
+  digest check was gated on that same flag, so a run that hashed nothing
+  passed; both now fail closed, and two absent byte counts no longer compare
+  equal
+* a zero-standard-residue file was skipped before the geometry rule ran
+* phase durations were accepted when negative, and the requirement named
+  sampling while the code checked `compute_seconds`
+* the argv check was filename-deep, so `++ckpt_path=.../complexa-ame` with
+  `++ckpt_name=complexa.ckpt` qualified as the protein variant
+* a single-variant verdict could be published as `all_variants_passed`;
+  `assemble_evidence.py` now refuses that
+
+Corrected in the evidence and the lock:
+
+* `gate.judged_by` claimed the validator "re-derives every verdict from the
+  produced artifacts". Only the CUDA marker and the structural facts are
+  re-derived; exit code, terminal state, argv, markers and every phase number
+  are read back from `result.json`, which the entrypoint authors about itself.
+  The published text now says so, and a test holds it to that.
+* `gate.requirements` was a prose literal with no link to the enforcing code.
+  It now matches the code, and a test asserts the committed list is identical
+  to what `assemble_evidence.py` emits.
+* `image.supersedes[1]` cited a contract-proving section of the run receipt
+  that has never existed. The claim is withdrawn rather than restated.
+
+`qualification/render_plan.py` additionally refuses an image reference that is
+not digest-pinned, which previously would have defeated the lock silently.
+
+Two limitations are worth stating plainly. The raw run artifacts were reclaimed
+with the task PVC before this review, so the corrected gate could not be re-run
+against the original PDBs; it is proven instead against fixtures rebuilt from
+the committed receipt, which is why `tests/test_validate_result_gate.py` reads
+its positive fixtures out of `evidence/`. And `runtime_entrypoint.py` is baked
+into the published image, so it was deliberately left untouched: editing it
+would break `build_inputs_unchanged_since_vcs_revision` and force a rebuild.
+Entrypoint-side findings are recorded in `evidence/independent-review.json` for
+the next rebuild rather than patched here.
 
 ### Why the predecessor digests are not enough
 

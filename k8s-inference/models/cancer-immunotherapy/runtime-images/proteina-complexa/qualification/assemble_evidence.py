@@ -231,6 +231,14 @@ def build_qualification(arguments: argparse.Namespace) -> dict[str, Any]:
     verdict = _load(arguments.verdict)
     proving = _load(arguments.contract_proving_verdict)
 
+    # all_variants_passed must never be published from a verdict that judged
+    # fewer than all three variants.
+    if not verdict.get("covers_all_variants", False):
+        raise SystemExit(
+            "refusing to publish all_variants_passed: the verdict covers "
+            f"{verdict.get('variants_requested')}, not all three variants"
+        )
+
     return {
         "schema": "fs2.nebius.ai/proteina-complexa-semantic-qualification/v1",
         "owner_task": lock["owner_task"],
@@ -239,19 +247,40 @@ def build_qualification(arguments: argparse.Namespace) -> dict[str, Any]:
         "image_digest": lock["image"]["published_digest"],
         "source_revision": lock["source"]["revision"],
         "gate": {
-            "judged_by": "qualification/validate_result.py, which re-derives every verdict "
-            "from the produced artifacts and never imports the runtime entrypoint",
+            "judged_by": "qualification/validate_result.py, which never imports the runtime "
+            "entrypoint. Re-derived from the raw artifacts: the CUDA marker read out of "
+            "upstream.log, and every structural fact -- chain lengths, residue "
+            "diversity, backbone geometry and ligand presence -- parsed from the "
+            "produced PDB files. Read back from result.json, which the runtime "
+            "entrypoint authors about itself: the exit code, terminal state, argv, the "
+            "artifact-verification markers with their digest flags, and every phase "
+            "number. Those read-back fields are checked for internal consistency and "
+            "are failed closed when absent or negative, but this gate cannot "
+            "independently re-measure them.",
             "requirements": [
                 "upstream exited zero and the result envelope reports PASS",
                 "the upstream log shows Lightning using CUDA",
                 "the exact pinned checkpoint pair appears in the argv and no other "
                 "variant's checkpoint does",
-                "both checkpoint markers verified, content digests included",
+                "the argv names this variant's own complexa-<variant> artifact directory "
+                "and no other variant's, so a run cannot read one variant's checkpoints "
+                "while qualifying as another",
+                "the run reports verified checkpoint content digests, failed closed when it "
+                "does not, and both markers carry a matching observed and expected byte "
+                "count with their content digest verified",
                 "LoRA re-applied for ligand and AME, absent for protein",
-                "a sampling phase was measured",
-                "at least one produced chain has protein-like C-alpha geometry",
-                "chains of 20+ residues carry at least five distinct amino-acid types",
-                "the designed binder falls inside the target's declared length envelope",
+                "a measured model-load span is present, together with a sampling/compute "
+                "figure that is derived by subtracting model load from the upstream "
+                "reported generation span rather than measured directly",
+                "at least one produced structure has a measurable protein-like C-alpha "
+                "geometry: some chain carries at least two C-alpha atoms, no two "
+                "consecutive C-alpha atoms are closer than 2.5 A, and at least 90% of each "
+                "chain's steps fall in the 2.5-4.6 A range, so an alternating collapsed and "
+                "exploded trace cannot pass on its mean alone",
+                "chains of 20+ standard residues carry at least five distinct amino-acid "
+                "types",
+                "the designed binder falls inside the target's declared binder-length "
+                "envelope, including the single-valued envelope that ligand and AME declare",
                 "the expected ligand residue is present for ligand and AME",
             ],
         },
