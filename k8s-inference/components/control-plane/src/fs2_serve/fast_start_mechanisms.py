@@ -9,9 +9,8 @@ provide.
 Nothing here can raise a level.  A mechanism is operator detail; the level
 comes from evidence alone.
 
-This slice carries the vocabulary, the availability rule, and the reviewed
-per-model declaration for each implemented mechanism.  The render adapters that
-configure a Pod from a declaration follow in their own change.
+The render adapters land one mechanism at a time.  ``regional-cache`` is
+first: it costs no reserved capacity, so it is the cheapest acceleration step.
 """
 
 from __future__ import annotations
@@ -28,6 +27,7 @@ from pydantic import Field, model_validator
 from .models import KubernetesModel
 
 SHA256_DIGEST_PATTERN = r"^sha256:[a-f0-9]{64}$"
+IMAGE_DIGEST_PATTERN = r"^[^\s@]+@sha256:[a-f0-9]{64}$"
 DNS_SUBDOMAIN_PATTERN = r"^[a-z0-9](?:[a-z0-9-]{0,251}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,251}[a-z0-9])?)*$"
 CONTENT_PATH_PATTERN = r"^/(?:[A-Za-z0-9._-]+/?)+$"
 MECHANISM_NAME_PATTERN = r"^[a-z][a-z0-9-]*$"
@@ -39,6 +39,10 @@ REASON_PATTERN = r"^[A-Za-z][A-Za-z0-9]*$"
 # uses rather than by a separate hand-maintained capability list.
 LOCAL_NVME_ELIGIBLE_LABEL = "local-nvme.fs2.nebius/eligible"
 SNAPSHOT_ELIGIBLE_LABEL = "snapshot.fs2.nebius/eligible"
+
+# Mechanism-owned Pod annotations.
+MECHANISM_ANNOTATION = "fast-start.fs2.nebius/mechanism"
+MECHANISM_CONFIG_DIGEST_ANNOTATION = "fast-start.fs2.nebius/mechanism-config-digest"
 
 # A residency holder trades host RAM for start latency.  Refuse a declaration
 # that would quietly consume a large share of a shared node.
@@ -354,3 +358,240 @@ class GpuResidentQualification(_SelfDigestModel):
     @property
     def reserved_accelerators(self) -> int:
         return self.standby_replicas * self.accelerators_per_standby_replica
+
+
+def _container(pod_spec: Mapping[str, Any], name: str | None) -> dict[str, Any]:
+    containers = pod_spec.get("containers")
+    if not isinstance(containers, list) or not containers:
+        raise FastStartMechanismError("the rendered Pod must declare at least one container")
+    if name is None:
+        first = containers[0]
+        if not isinstance(first, dict):
+            raise FastStartMechanismError("the rendered runtime container must be an object")
+        return first
+    for item in containers:
+        if isinstance(item, dict) and item.get("name") == name:
+            return item
+    raise FastStartMechanismError("the rendered Pod does not contain the named runtime container")
+
+
+def _volumes(pod_spec: dict[str, Any]) -> list[dict[str, Any]]:
+    volumes = pod_spec.setdefault("volumes", [])
+    if not isinstance(volumes, list) or any(not isinstance(item, dict) for item in volumes):
+        raise FastStartMechanismError("rendered Pod volumes must be a list of objects")
+    return volumes
+
+
+def _volume_mounts(container: dict[str, Any]) -> list[dict[str, Any]]:
+    mounts = container.setdefault("volumeMounts", [])
+    if not isinstance(mounts, list) or any(not isinstance(item, dict) for item in mounts):
+        raise FastStartMechanismError("rendered container volumeMounts must be a list of objects")
+    return mounts
+
+
+def _replace_volume(pod_spec: dict[str, Any], volume: Mapping[str, Any]) -> None:
+    volumes = _volumes(pod_spec)
+    remaining = [item for item in volumes if item.get("name") != volume["name"]]
+    remaining.append(dict(volume))
+    pod_spec["volumes"] = remaining
+
+
+def _annotate(metadata: dict[str, Any], values: Mapping[str, str]) -> None:
+    annotations = metadata.setdefault("annotations", {})
+    if not isinstance(annotations, dict):
+        raise FastStartMechanismError("rendered Pod annotations must be an object")
+    annotations.update(values)
+
+
+def _label(metadata: dict[str, Any], values: Mapping[str, str]) -> None:
+    labels = metadata.setdefault("labels", {})
+    if not isinstance(labels, dict):
+        raise FastStartMechanismError("rendered Pod labels must be an object")
+    labels.update(values)
+
+
+def _set_env(container: dict[str, Any], values: Mapping[str, str]) -> None:
+    existing = container.setdefault("env", [])
+    if not isinstance(existing, list) or any(not isinstance(item, dict) for item in existing):
+        raise FastStartMechanismError("rendered container env must be a list of objects")
+    managed = set(values)
+    retained = [item for item in existing if item.get("name") not in managed]
+    container["env"] = [*retained, *({"name": name, "value": value} for name, value in sorted(values.items()))]
+
+
+def _mount_path_of(container: Mapping[str, Any], volume_name: str) -> str | None:
+    mounts = container.get("volumeMounts")
+    if not isinstance(mounts, list):
+        return None
+    for item in mounts:
+        if isinstance(item, dict) and item.get("name") == volume_name:
+            path = item.get("mountPath")
+            return path if isinstance(path, str) else None
+    return None
+
+
+WARM_PAGE_CACHE_SCRIPT = r"""
+import concurrent.futures as futures
+import json
+import os
+import sys
+import time
+
+root = os.environ["FS2_WARM_ROOT"]
+budget = int(os.environ["FS2_WARM_BYTES_LIMIT"])
+workers = int(os.environ["FS2_WARM_WORKERS"])
+deadline = time.monotonic() + float(os.environ["FS2_WARM_TIMEOUT_SECONDS"])
+chunk = 8 << 20
+
+paths = []
+for directory, _unused, names in os.walk(root):
+    for name in sorted(names):
+        candidate = os.path.join(directory, name)
+        if os.path.islink(candidate) or not os.path.isfile(candidate):
+            continue
+        paths.append((candidate, os.path.getsize(candidate)))
+paths.sort(key=lambda item: (-item[1], item[0]))
+
+selected = []
+planned = 0
+for candidate, size in paths:
+    if planned >= budget:
+        break
+    take = min(size, budget - planned)
+    selected.append((candidate, take))
+    planned += take
+
+
+def warm(entry):
+    path, limit = entry
+    read = 0
+    with open(path, "rb", buffering=0) as handle:
+        while read < limit:
+            if time.monotonic() > deadline:
+                return read
+            block = handle.read(min(chunk, limit - read))
+            if not block:
+                break
+            read += len(block)
+    return read
+
+
+started = time.monotonic()
+total = 0
+with futures.ThreadPoolExecutor(max_workers=workers) as pool:
+    for value in pool.map(warm, selected):
+        total += value
+elapsed = time.monotonic() - started
+json.dump(
+    {
+        "schema": "fs2-serve.nebius.ai/fast-start-warm-page-cache/v1",
+        "root": root,
+        "files": len(selected),
+        "planned_bytes": planned,
+        "read_bytes": total,
+        "seconds": round(elapsed, 3),
+        "complete": total >= planned,
+    },
+    sys.stdout,
+)
+sys.stdout.write("\n")
+"""
+
+
+def configure_regional_cache(
+    *,
+    pod_spec: dict[str, Any],
+    pod_metadata: dict[str, Any],
+    qualification: RegionalCacheQualification,
+    runtime_image: str,
+    runtime_container_name: str | None = None,
+    compile_cache_volume_name: str = "runtime-cache",
+) -> None:
+    """Serve from the in-region mirror, retain the compile cache, warm the pages.
+
+    The runtime image must already be the in-region mirror's digest; a foreign
+    registry is rejected rather than pulled across regions while claiming a
+    regional-cache path.  The compile-cache volume is switched from a discarded
+    ``emptyDir`` to the retained claim under an ABI-scoped sub-path, and an init
+    container pre-reads the immutable payload so its pages are warm.
+    """
+
+    if re.fullmatch(IMAGE_DIGEST_PATTERN, runtime_image) is None:
+        raise FastStartMechanismError("regional-cache requires a digest-pinned runtime image")
+    registry = runtime_image.split("/", 1)[0]
+    if registry != qualification.image_mirror_registry:
+        raise FastStartMechanismError("regional-cache requires the runtime image to come from the in-region mirror")
+
+    container = _container(pod_spec, runtime_container_name)
+    cache = qualification.compile_cache
+    _replace_volume(
+        pod_spec,
+        {
+            "name": compile_cache_volume_name,
+            "persistentVolumeClaim": {"claimName": cache.claim_name},
+        },
+    )
+    mounts = _volume_mounts(container)
+    retained_mounts = [item for item in mounts if item.get("name") != compile_cache_volume_name]
+    retained_mounts.append(
+        {
+            "name": compile_cache_volume_name,
+            "mountPath": cache.mount_path,
+            "subPath": cache.sub_path,
+        }
+    )
+    container["volumeMounts"] = retained_mounts
+    _set_env(
+        container,
+        {
+            "VLLM_CACHE_ROOT": f"{cache.mount_path.rstrip('/')}/vllm",
+            "TRITON_CACHE_DIR": f"{cache.mount_path.rstrip('/')}/triton",
+            "TORCHINDUCTOR_CACHE_DIR": f"{cache.mount_path.rstrip('/')}/inductor",
+            "FS2_FAST_START_MECHANISM": FastStartMechanism.REGIONAL_CACHE.value,
+        },
+    )
+
+    warm = qualification.warm_page_cache
+    if warm is not None:
+        payload_mount = _mount_path_of(container, "model")
+        if payload_mount is None:
+            raise FastStartMechanismError("regional-cache page warming needs the retained payload mounted")
+        init_containers = pod_spec.setdefault("initContainers", [])
+        if not isinstance(init_containers, list):
+            raise FastStartMechanismError("rendered Pod initContainers must be a list")
+        init_containers[:] = [
+            item
+            for item in init_containers
+            if not (isinstance(item, dict) and item.get("name") == "fs2-warm-page-cache")
+        ]
+        init_containers.append(
+            {
+                "name": "fs2-warm-page-cache",
+                "image": runtime_image,
+                "command": ["python3", "-c", WARM_PAGE_CACHE_SCRIPT],
+                "env": [
+                    {"name": "FS2_WARM_ROOT", "value": qualification.payload_content_path},
+                    {"name": "FS2_WARM_BYTES_LIMIT", "value": str(warm.read_bytes_limit)},
+                    {"name": "FS2_WARM_WORKERS", "value": str(warm.workers)},
+                    {"name": "FS2_WARM_TIMEOUT_SECONDS", "value": str(warm.timeout_seconds)},
+                ],
+                "resources": {
+                    "requests": {"cpu": "2", "memory": "1Gi"},
+                    "limits": {"cpu": str(min(warm.workers, 16)), "memory": "4Gi"},
+                },
+                "securityContext": {
+                    "allowPrivilegeEscalation": False,
+                    "capabilities": {"drop": ["ALL"]},
+                },
+                "volumeMounts": [{"name": "model", "mountPath": payload_mount, "readOnly": True}],
+            }
+        )
+
+    _annotate(
+        pod_metadata,
+        {
+            MECHANISM_ANNOTATION: FastStartMechanism.REGIONAL_CACHE.value,
+            MECHANISM_CONFIG_DIGEST_ANNOTATION: qualification.config_digest,
+            "fast-start.fs2.nebius/retained-compile-cache-abi": cache.abi,
+        },
+    )

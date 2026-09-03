@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import copy
+from typing import Any
+
 import pytest
 
 from fs2_serve.fast_start_identity import mechanism_config_digest
@@ -14,9 +17,13 @@ from fs2_serve.fast_start_mechanisms import (
     RegionalCacheQualification,
     ResidencyHolder,
     RetainedCompileCache,
+    WarmPageCacheReadAhead,
     assess_pool_mechanisms,
+    configure_regional_cache,
     unavailable_mechanisms,
 )
+
+QWEN_IMAGE = "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:" + "22" * 32
 
 # The exact scheduling selector Terraform renders for the retained H100 pool,
 # copied from the live ModelDeployment render on cluster k8s-inference-h100.
@@ -124,6 +131,11 @@ def _regional_cache(**overrides: object) -> RegionalCacheQualification:
         "payload_content_path": "/models/qwen3-8b/payload",
         "payload_bytes": 16397461266,
         "compile_cache": compile_cache,
+        "warm_page_cache": WarmPageCacheReadAhead(
+            workers=16,
+            read_bytes_limit=16397461266,
+            timeout_seconds=600,
+        ),
         "pool_refs": ["h100-reserved-8x"],
     }
     fields.update(overrides)
@@ -258,3 +270,120 @@ def test_gpu_resident_states_its_accelerator_price_and_hot_floor() -> None:
     assert declaration.minimum_hot_replicas == 1
     with pytest.raises(ValueError, match="at least one hot replica"):
         _gpu_resident(residency_mode="warm-engine-hot-floor", minimum_hot_replicas=0)
+
+
+CONVENTIONAL_POD_SPEC: dict[str, object] = {
+    "containers": [
+        {
+            "name": "vllm",
+            "image": QWEN_IMAGE,
+            "env": [
+                {"name": "VLLM_CACHE_ROOT", "value": "/runtime-cache/vllm"},
+                {"name": "TRITON_CACHE_DIR", "value": "/runtime-cache/triton"},
+            ],
+            "volumeMounts": [
+                {"name": "model", "mountPath": "/models", "readOnly": True},
+                {"name": "runtime-cache", "mountPath": "/runtime-cache"},
+            ],
+        }
+    ],
+    "volumes": [
+        {"name": "model", "persistentVolumeClaim": {"claimName": "qwen3-8b-cache-rwx-7af24455"}},
+        # The live render discards the JIT cache with the Pod. That discarded
+        # cache is exactly what regional-cache retains.
+        {"name": "runtime-cache", "emptyDir": {"sizeLimit": "16Gi"}},
+    ],
+}
+
+
+def _conventional() -> tuple[dict[str, Any], dict[str, Any]]:
+    return copy.deepcopy(CONVENTIONAL_POD_SPEC), {"labels": {}, "annotations": {}}
+
+
+def test_regional_cache_retains_the_compile_cache_the_conventional_render_discards() -> None:
+    pod_spec, metadata = _conventional()
+    configure_regional_cache(
+        pod_spec=pod_spec,
+        pod_metadata=metadata,
+        qualification=_regional_cache(),
+        runtime_image=QWEN_IMAGE,
+        runtime_container_name="vllm",
+    )
+    volumes = {item["name"]: item for item in pod_spec["volumes"]}
+    assert "emptyDir" not in volumes["runtime-cache"]
+    assert volumes["runtime-cache"]["persistentVolumeClaim"] == {"claimName": "fsm-compile-cache-rwx"}
+
+    container = pod_spec["containers"][0]
+    mount = next(item for item in container["volumeMounts"] if item["name"] == "runtime-cache")
+    # The ABI is in the subPath, so a driver or architecture change cannot read
+    # a cache built by an incompatible stack.
+    assert mount["subPath"] == "qwen3-8b/driver-580.159.04-sm90"
+    environment = {item["name"]: item["value"] for item in container["env"]}
+    assert environment["VLLM_CACHE_ROOT"] == "/runtime-cache/vllm"
+    assert environment["TORCHINDUCTOR_CACHE_DIR"] == "/runtime-cache/inductor"
+    assert environment["FS2_FAST_START_MECHANISM"] == "regional-cache"
+    assert metadata["annotations"]["fast-start.fs2.nebius/mechanism"] == "regional-cache"
+
+
+def test_regional_cache_warms_the_retained_payload_pages() -> None:
+    pod_spec, metadata = _conventional()
+    configure_regional_cache(
+        pod_spec=pod_spec,
+        pod_metadata=metadata,
+        qualification=_regional_cache(),
+        runtime_image=QWEN_IMAGE,
+        runtime_container_name="vllm",
+    )
+    warm = next(item for item in pod_spec["initContainers"] if item["name"] == "fs2-warm-page-cache")
+    assert warm["image"] == QWEN_IMAGE
+    environment = {item["name"]: item["value"] for item in warm["env"]}
+    assert environment["FS2_WARM_ROOT"] == "/models/qwen3-8b/payload"
+    assert warm["volumeMounts"] == [{"name": "model", "mountPath": "/models", "readOnly": True}]
+    compile(warm["command"][2], "warm-page-cache", "exec")
+
+
+def test_regional_cache_is_idempotent_and_omits_warming_when_undeclared() -> None:
+    declaration = _regional_cache()
+    pod_spec, metadata = _conventional()
+    for _ in range(2):
+        configure_regional_cache(
+            pod_spec=pod_spec,
+            pod_metadata=metadata,
+            qualification=declaration,
+            runtime_image=QWEN_IMAGE,
+            runtime_container_name="vllm",
+        )
+    assert len([item for item in pod_spec["initContainers"] if item["name"] == "fs2-warm-page-cache"]) == 1
+    assert len([item for item in pod_spec["volumes"] if item["name"] == "runtime-cache"]) == 1
+
+    unwarmed = _regional_cache(warm_page_cache=None)
+    pod_spec, metadata = _conventional()
+    configure_regional_cache(
+        pod_spec=pod_spec,
+        pod_metadata=metadata,
+        qualification=unwarmed,
+        runtime_image=QWEN_IMAGE,
+        runtime_container_name="vllm",
+    )
+    assert "initContainers" not in pod_spec
+
+
+def test_regional_cache_refuses_an_image_that_is_not_the_in_region_mirror() -> None:
+    pod_spec, metadata = _conventional()
+    foreign = "docker.io/library/vllm@sha256:" + "cd" * 32
+    with pytest.raises(FastStartMechanismError, match="in-region mirror"):
+        configure_regional_cache(
+            pod_spec=pod_spec,
+            pod_metadata=metadata,
+            qualification=_regional_cache(),
+            runtime_image=foreign,
+            runtime_container_name="vllm",
+        )
+    with pytest.raises(FastStartMechanismError, match="digest-pinned"):
+        configure_regional_cache(
+            pod_spec=pod_spec,
+            pod_metadata=metadata,
+            qualification=_regional_cache(),
+            runtime_image="cr.eu-north1.nebius.cloud/fs2-models/vllm-openai:latest",
+            runtime_container_name="vllm",
+        )
