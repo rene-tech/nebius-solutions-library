@@ -1858,11 +1858,28 @@ def link_tree_into(source: Path, destination: Path, *, allow_copy: bool = False)
             if reason not in {errno.EXDEV, errno.EMLINK, errno.EPERM, errno.EOPNOTSUPP}:
                 raise ArtifactLocalizationError(f"could not link {relative} into the generation") from error
             if not allow_copy:
+                # Name the actual cause. These fail for different reasons and
+                # want different fixes, and a message that guesses sends the
+                # reader to the wrong one.
+                cause = {
+                    errno.EXDEV: (
+                        "the source and the destination are on different mounts. Two bind mounts of one "
+                        "volume are separate mount namespaces even on a single filesystem, so address "
+                        "both beneath one mount"
+                    ),
+                    errno.EPERM: (
+                        f"the kernel refused the link. With fs.protected_hardlinks enabled a process may "
+                        f"only hard-link a file it owns or can write, and this file is owned by "
+                        f"uid {status.st_uid} with mode {status.st_mode & 0o777:04o}, so run the promotion "
+                        f"as that owner"
+                    ),
+                    errno.EMLINK: "the source file already has the maximum number of links",
+                    errno.EOPNOTSUPP: "the filesystem does not support hard links here",
+                }.get(reason, "the link could not be made")
                 raise ArtifactLocalizationError(
-                    f"{relative} cannot be shared by link ({errno.errorcode.get(reason, reason)}), and this "
-                    "promotion requires zero copy. Two bind mounts of one volume are separate mount "
-                    "namespaces even on a single filesystem: address the source and the destination "
-                    "beneath one mount, or pass --allow-copy and budget for a second full copy"
+                    f"{relative} cannot be shared by link "
+                    f"({errno.errorcode.get(reason, reason)}): {cause}. This promotion requires zero copy; "
+                    "pass --allow-copy only if a second full copy is budgeted"
                 ) from error
             with path.open("rb") as handle, target.open("wb") as sink:
                 while True:

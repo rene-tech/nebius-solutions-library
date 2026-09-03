@@ -1,0 +1,72 @@
+{
+  "archives_present": [],
+  "boltzgen_import": "ok",
+  "duration_seconds": 0.33,
+  "entry_count": 45227,
+  "moldir": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+  "node_digest": "5e3ad019c6df4d8b",
+  "probed_molecules": [
+    {
+      "atom_count": 23,
+      "bytes": 28635,
+      "code": "I",
+      "type": "Mol"
+    },
+    {
+      "atom_count": 1,
+      "bytes": 432,
+      "code": "CL",
+      "type": "Mol"
+    },
+    {
+      "atom_count": 1,
+      "bytes": 433,
+      "code": "ZN",
+      "type": "Mol"
+    },
+    {
+      "atom_count": 1,
+      "bytes": 433,
+      "code": "MG",
+      "type": "Mol"
+    },
+    {
+      "atom_count": 43,
+      "bytes": 78274,
+      "code": "HEM",
+      "type": "Mol"
+    },
+    {
+      "atom_count": 31,
+      "bytes": 45746,
+      "code": "ATP",
+      "type": "Mol"
+    },
+    {
+      "atom_count": 44,
+      "bytes": 82211,
+      "code": "NAD",
+      "type": "Mol"
+    },
+    {
+      "atom_count": 12,
+      "bytes": 13060,
+      "code": "GLC",
+      "type": "Mol"
+    },
+    {
+      "atom_count": 1,
+      "bytes": 5125,
+      "code": "HOH",
+      "type": "Mol"
+    },
+    {
+      "atom_count": 30,
+      "bytes": 41933,
+      "code": "A1LV8",
+      "type": "Mol"
+    }
+  ],
+  "schema": "fs2-serve.nebius.ai/boltzgen-moldir-probe/v1",
+  "state": "passed"
+}

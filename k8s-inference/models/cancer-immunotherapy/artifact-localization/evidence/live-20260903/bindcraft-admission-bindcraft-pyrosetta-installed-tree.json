@@ -1,0 +1,33 @@
+{
+  "manifest_digest": "ee24f7445426b0536da9781bc57a9ef33e4e1e98a3434afae31cdd84e7b473d3",
+  "marker": {
+    "artifact_id": "bindcraft-pyrosetta-installed-tree",
+    "artifact_kind": "bindcraft-pyrosetta",
+    "claim": "academic-assets-runtime-rwx",
+    "consumer_paths": [
+      "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+    ],
+    "directory_count": 779,
+    "entry_count": 8697,
+    "generation": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+    "generator_identity": [],
+    "host_root": "",
+    "inventory_algorithm": "fs2-tree-manifest/v1",
+    "inventory_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+    "license_id": "Rosetta-and-PyRosetta-Non-Commercial-License-Chain",
+    "namespace": "fs2-academic-poc",
+    "read_only": true,
+    "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1",
+    "source_bytes": 1667097173,
+    "source_filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+    "source_revision": "2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64",
+    "source_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+    "source_uri": "https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/pyrosetta-2026.29%2Breleasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+    "sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+    "symlink_count": 0,
+    "total_bytes": 3287122494,
+    "visibility": "tenant-private",
+    "volume_kind": "persistent-volume-claim"
+  },
+  "state": "admitted"
+}

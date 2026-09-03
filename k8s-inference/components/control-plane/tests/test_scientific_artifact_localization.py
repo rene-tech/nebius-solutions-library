@@ -3691,3 +3691,37 @@ def test_the_academic_record_states_the_counts_unambiguously() -> None:
     assert contract.tree.directory_count == installed["directory_count_descendants"]
     assert contract.tree.symlink_count == installed["symlink_count"]
     assert contract.tree.entry_count == installed["files_installed"]
+
+
+def test_a_refused_link_names_the_cause_the_operator_has_to_act_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """EXDEV and EPERM want different fixes, so the message must tell them apart.
+
+    A live promotion hit EPERM, not EXDEV: the claim was mounted once, but with
+    fs.protected_hardlinks a process may only hard-link a file it owns or can
+    write, and the installed tree is owned by another account. A message that
+    talked only about mounts sent the reader to a fix that was already applied.
+    """
+
+    source = _installed_tree(tmp_path / "producer")
+    for code, expected in (
+        (errno.EXDEV, "different mounts"),
+        (errno.EPERM, "only hard-link a file it owns"),
+        (errno.EMLINK, "maximum number of links"),
+    ):
+
+        def refuse(*args: Any, _code: int = code, **kwargs: Any) -> None:
+            raise OSError(_code, os.strerror(_code))
+
+        monkeypatch.setattr(os, "link", refuse)
+        with pytest.raises(ArtifactLocalizationError, match=expected):
+            link_tree_into(source, prepare_staging_directory(tmp_path / f"a{code}"))
+
+    # The EPERM message names the owner and mode a reader has to match.
+    def refuse_eperm(*args: Any, **kwargs: Any) -> None:
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "link", refuse_eperm)
+    with pytest.raises(ArtifactLocalizationError, match=r"uid \d+ with mode 0440"):
+        link_tree_into(source, prepare_staging_directory(tmp_path / "owner"))

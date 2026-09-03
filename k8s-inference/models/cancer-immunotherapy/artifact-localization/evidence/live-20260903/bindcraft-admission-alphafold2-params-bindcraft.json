@@ -1,0 +1,43 @@
+{
+  "manifest_digest": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+  "marker": {
+    "artifact_id": "alphafold2-params-bindcraft",
+    "artifact_kind": "alphafold2-params-bindcraft",
+    "claim": "",
+    "consumer_paths": [
+      "/models/alphafold2"
+    ],
+    "directory_count": 0,
+    "entry_count": 17,
+    "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+    "generator_identity": [
+      {
+        "generator": "external-model-artifact-manifest/v1",
+        "generator_inputs": {
+          "artifact_kind": "bindcraft-af2-params",
+          "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
+        },
+        "path": "manifest.json",
+        "sha256": "9d0b7e45378ed707cfc31585f3ae960282dc76f3e2c4f60b545b02dbc728423b"
+      }
+    ],
+    "host_root": "/mnt/fs2-reference-data/data",
+    "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+    "inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+    "license_id": "CC-BY-4.0",
+    "namespace": "",
+    "read_only": true,
+    "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1",
+    "source_bytes": 5587968000,
+    "source_filename": "alphafold_params_2022-12-06.tar",
+    "source_revision": "gcs-generation-1670353726160664",
+    "source_sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+    "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar",
+    "sub_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+    "symlink_count": null,
+    "total_bytes": 5587959437,
+    "visibility": "public",
+    "volume_kind": "host-path"
+  },
+  "state": "admitted"
+}

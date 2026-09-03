@@ -1,0 +1,27 @@
+{
+  "archive_provenance": {
+    "bytes": 1667097173,
+    "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+    "license_id": "Rosetta-and-PyRosetta-Non-Commercial-License-Chain",
+    "present_in_mount": false,
+    "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+    "source_revision": "2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64",
+    "source_uri": "https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/pyrosetta-2026.29%2Breleasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl"
+  },
+  "artifact_id": "bindcraft-pyrosetta-installed-tree",
+  "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+  "observation": {
+    "duration_seconds": 1.149
+  },
+  "observed_at": "2026-09-03T12:46:43Z",
+  "rejection_reason": "promote-failed: pyrosetta-2026.29+releasequarterly.80a0635615.dist-info/INSTALLER cannot be shared by link (EPERM), and this promotion requires zero copy. Two bind mounts of one volume are separate mount namespaces even on a single filesystem: address the source and the destination beneath one mount, or pass --allow-copy and budget for a second full copy",
+  "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+  "state": "rejected",
+  "tree_identity": {
+    "entry_count": 0,
+    "inventory_algorithm": "fs2-tree-manifest/v1",
+    "inventory_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "probe_entries_verified": 0,
+    "total_bytes": 0
+  }
+}

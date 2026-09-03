@@ -1,0 +1,113 @@
+{
+  "artifacts": {
+    "alphafold2-params": {
+      "admission": "complexa-admission.json",
+      "blocker": "proteina-complexa image lacks ptxas; artifact admitted, image defect",
+      "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+      "manifest_digest": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+      "plane": "reference-data-host",
+      "probe": "complexa-ptxas-failure.log",
+      "state": "admitted",
+      "visibility": "public"
+    },
+    "alphafold2-params-bindcraft": {
+      "admission": "bindcraft-admission-alphafold2-params-bindcraft.json",
+      "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+      "manifest_digest": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+      "plane": "reference-data-host",
+      "probe": "bindcraft-mount-probe.json",
+      "state": "qualified",
+      "visibility": "public"
+    },
+    "bindcraft-pyrosetta-installed-tree": {
+      "admission": "bindcraft-admission-bindcraft-pyrosetta-installed-tree.json",
+      "generation": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+      "manifest_digest": "ee24f7445426b0536da9781bc57a9ef33e4e1e98a3434afae31cdd84e7b473d3",
+      "note": "promoted by hard link: 8697 files / 3287122494 bytes linked, 0 copied; claim free space unchanged at 35.1 GiB",
+      "plane": "tenant-private-academic",
+      "promotion": "pyrosetta-promote-receipt.json",
+      "state": "promoted+admitted",
+      "visibility": "tenant-private"
+    },
+    "boltzgen-inference-molecules": {
+      "admission": "boltzgen-admission.json",
+      "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+      "manifest_digest": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+      "plane": "reference-data-host",
+      "probe": "boltzgen-moldir-probe.json",
+      "state": "qualified",
+      "visibility": "public"
+    },
+    "colabdesign-mpnn-weights-soluble": {
+      "admission": "bindcraft-admission-colabdesign-mpnn-weights-soluble.json",
+      "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+      "manifest_digest": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
+      "plane": "reference-data-host",
+      "probe": "bindcraft-mount-probe.json",
+      "state": "qualified",
+      "visibility": "public"
+    },
+    "colabdesign-mpnn-weights-vanilla": {
+      "admission": "bindcraft-admission-colabdesign-mpnn-weights-vanilla.json",
+      "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+      "manifest_digest": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
+      "plane": "reference-data-host",
+      "probe": "bindcraft-mount-probe.json",
+      "state": "qualified",
+      "visibility": "public"
+    }
+  },
+  "authorization": "explicit owner authorization to run live on 2026-09-03",
+  "cleanup": "all task-owned Jobs, ConfigMaps and diagnostic Pods deleted; staged generations retained as the deliverable; no B300, quota, Qwen, Cosmos or control-plane change",
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "project": "project-e00rene",
+    "region": "eu-north1"
+  },
+  "images": {
+    "bindcraft": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1",
+    "boltzgen": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+    "proteina-complexa": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+    "verifier-host": "docker.io/library/python@sha256:fd76ade0c607f27677bc04be3c60749f400eedc941d9e72967e19a4cedff80c2"
+  },
+  "models": {
+    "bindcraft": {
+      "note": "all four trees admitted across two planes in one Job; image artifact_gate admitted /models/alphafold2 and both MPNN weight sets loaded distinctly",
+      "state": "qualified"
+    },
+    "boltzgen": {
+      "note": "marker admitted and BoltzGen's own loader read 10 real CCD molecules on an H100 node with 1 GPU",
+      "state": "qualified"
+    },
+    "proteina-complexa": {
+      "note": "AF2 tree admitted; the published image cannot run because ptxas is absent",
+      "state": "artifact-admitted-image-blocked"
+    }
+  },
+  "observed_at": "2026-09-03T12:44:00Z",
+  "planes": {
+    "public": {
+      "filesystem": "shared across all five labelled nodes, verified identical listing and free space",
+      "host_root": "/mnt/fs2-reference-data/data",
+      "kind": "host-path",
+      "node_selector": {
+        "storage.fs2.nebius/reference-data": "true"
+      },
+      "state": "provisioned"
+    },
+    "tenant-private": {
+      "claim": "academic-assets-runtime-rwx",
+      "filesystem": "virtiofs",
+      "free_gib_after": 35.1,
+      "free_gib_before": 35.1,
+      "kind": "persistent-volume-claim",
+      "namespace": "fs2-academic-poc",
+      "state": "provisioned"
+    }
+  },
+  "preserved_failures": {
+    "complexa-ptxas-failure.log": "Reproduces the known image defect: jaxlib cannot find ptxas. The artifact is admitted; the image is not runnable. Retained rather than retried.",
+    "pyrosetta-promote-eperm-rejected.json": "First promotion attempt ran as uid 10001 and was refused with EPERM. The claim was mounted once, so this was not EXDEV: with fs.protected_hardlinks a process may only hard-link a file it owns or can write, and the installed tree is owned by uid 65532 mode 0440. Retried as that owner and it succeeded with zero copy. Reflink was also measured and is ENOTSUP on virtiofs."
+  },
+  "schema": "fs2-serve.nebius.ai/scientific-localization-live-qualification/v1"
+}

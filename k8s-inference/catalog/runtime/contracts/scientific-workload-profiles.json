@@ -18,7 +18,7 @@
       "execution_identity": {
         "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
         "runtime_image_digest": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
-        "runtime_recipe_sha256": "356a900ff5333f407ae9edba9f636425b47ab17e58d13c472d8b56f14e7019df",
+        "runtime_recipe_sha256": "0db86c3c4ce9da6c0d3ea4267886bee40da3fd598f3b74aa72d3921e95ed841d",
         "workload_recipe_sha256": "74bc6015176c892f35c33e9122588909f4cea106b73708cb6ba1d8b8efae4d84",
         "artifact_manifest_digest": null,
         "execution_identity_sha256": null
@@ -189,7 +189,7 @@
       "execution_identity": {
         "model_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
         "runtime_image_digest": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
-        "runtime_recipe_sha256": "f90701209a825f8a1def47357276aae08748a4f2af0d4cfcbd6806d42a553e2e",
+        "runtime_recipe_sha256": "46e483d2a2c177acb3ae30f115b8afd9c40547e9d8f11383f4fc887ae28a67be",
         "workload_recipe_sha256": "1ea1d90228cff7efbc4c3e6f6c394be0e384e7870a2a94fa8897b81fe6bfa73b",
         "artifact_manifest_digest": null,
         "execution_identity_sha256": null
