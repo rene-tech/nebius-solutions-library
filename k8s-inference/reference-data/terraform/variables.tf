@@ -235,3 +235,49 @@ variable "pipeline" {
     error_message = "enabled pipeline requires the exact official AlphaFold3 bundle, a digest-pinned image, and bounded CPU-only resources."
   }
 }
+
+variable "preprocess" {
+  description = <<-EOT
+    Raw-input / MSA preprocessing stage sizing. This is the AlphaFold 3 data
+    pipeline, not the bulk reference-data stager: it runs jackhmmer and nhmmer
+    over the genetic databases and needs materially more CPU and memory. It
+    must meet the requirement recorded in reference-data/model-requirements.json.
+    Placement comes from the same dedicated CPU pool contract as staging, so
+    only sizing is configurable and no node name or accelerator generation is
+    ever named here.
+  EOT
+  type = object({
+    cpu                     = optional(string, "16")
+    memory                  = optional(string, "64Gi")
+    ephemeral_storage       = optional(string, "32Gi")
+    active_deadline_seconds = optional(number, 21600)
+    backoff_limit           = optional(number, 2)
+    threads                 = optional(number, 16)
+  })
+  default = {}
+  validation {
+    condition = (
+      can(regex("^[1-9][0-9]*$", var.preprocess.cpu)) &&
+      can(regex("^[1-9][0-9]*(Mi|Gi)$", var.preprocess.memory)) &&
+      can(regex("^[1-9][0-9]*(Mi|Gi)$", var.preprocess.ephemeral_storage))
+    )
+    error_message = "preprocess cpu must be whole cores and memory/ephemeral_storage must be Mi or Gi quantities."
+  }
+  validation {
+    condition = (
+      var.preprocess.active_deadline_seconds >= 60 &&
+      var.preprocess.active_deadline_seconds <= 604800 &&
+      var.preprocess.backoff_limit >= 0 &&
+      var.preprocess.backoff_limit <= 10
+    )
+    error_message = "preprocess active_deadline_seconds must be 60-604800 and backoff_limit 0-10."
+  }
+  validation {
+    condition = (
+      var.preprocess.threads >= 1 &&
+      var.preprocess.threads <= 128 &&
+      var.preprocess.threads <= tonumber(var.preprocess.cpu)
+    )
+    error_message = "preprocess threads must be 1-128 and must not exceed the preprocess CPU request."
+  }
+}

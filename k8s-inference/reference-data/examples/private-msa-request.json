@@ -19,7 +19,7 @@
     "kind": "colabfold-search",
     "database_root": "/reference-data/datasets/colabfold-mmseqs-2025-08/uniref30-2302-envdb-202108-pdb100-230517-taxonomy-20250804/sha256/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
     "output_format": "a3m",
-    "threads": 16
+    "threads": 6
   },
   "privacy": {
     "network_mode": "private-only",
@@ -32,8 +32,8 @@
   },
   "execution": {
     "image": "registry.example.invalid/private-msa@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-    "cpu": "16",
-    "memory": "64Gi",
+    "cpu": "6",
+    "memory": "24Gi",
     "ephemeral_storage": "32Gi",
     "active_deadline_seconds": 21600,
     "backoff_limit": 2

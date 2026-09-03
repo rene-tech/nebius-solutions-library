@@ -64,3 +64,35 @@ output "dynamic_configuration" {
     } : null
   }
 }
+
+output "placement_contract" {
+  description = <<-EOT
+    The tfvars-derived placement and sizing contract mounted into reference
+    and preprocessing stages. It is the only source of node placement and
+    resource sizing for those stages.
+  EOT
+  value = {
+    config_map = local.placement_config_map
+    contract   = local.placement_contract
+  }
+}
+
+output "handoff_contract" {
+  description = <<-EOT
+    The single public reference-data handoff. Consumers bind these exact field
+    names; a bounded receipt is published per bundle revision at
+    receipts/<bundle_id>/<revision>.json under the shared filesystem root.
+  EOT
+  value       = local.handoff_contract
+}
+
+output "raw_input_capacity" {
+  description = <<-EOT
+    The AlphaFold 3 raw data-pipeline capacity requirement, the sizing declared
+    in root terraform.tfvars, and whether the declared CPU pool and Kueue quota
+    can admit it. The bulk reference-data stager is sized separately and much
+    smaller; a false runnable_on_declared_pool means the data-pipeline lane
+    needs a fitting CPU class before it can be advertised as runnable.
+  EOT
+  value       = local.raw_input_capacity
+}

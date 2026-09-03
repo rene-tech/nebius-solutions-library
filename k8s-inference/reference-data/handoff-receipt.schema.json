@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schemas/reference-data-terminal-receipt/v1",
+  "title": "Reference-data terminal handoff receipt",
+  "description": "The single public handoff contract between reference-data staging and every consuming runtime, controller or Terraform stage. It is bounded: it carries the aggregate tree digest, an independent manifest digest and an inventory digest with counts, never a file list, so a consumer never enumerates a reference database.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "bundle_id", "revision", "created_at", "storage", "content", "placement"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1"},
+    "bundle_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+    "revision": {"type": "string", "minLength": 1, "maxLength": 160},
+    "created_at": {"type": "string", "format": "date-time"},
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host_root", "mount_path", "dataset_sub_path", "read_only"],
+      "properties": {
+        "host_root": {
+          "type": "string",
+          "pattern": "^/[^\\u0000]*$",
+          "description": "Canonical shared reference-data filesystem root on the node."
+        },
+        "mount_path": {"type": "string", "pattern": "^/[^\\u0000]*$"},
+        "dataset_sub_path": {
+          "type": "string",
+          "pattern": "^datasets/[a-z0-9][a-z0-9._-]{0,127}/[^/]{1,160}/sha256/[a-f0-9]{64}$",
+          "description": "Canonical dataset path relative to host_root. Its /sha256/<64hex> component is the exact aggregate tree digest."
+        },
+        "read_only": {"const": true}
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tree_sha256", "manifest_sha256", "inventory_sha256",
+        "inventory_marker", "file_count", "expanded_bytes", "inline_inventory"
+      ],
+      "properties": {
+        "tree_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Aggregate tree digest over the canonical path/bytes/sha256 inventory. Equal to the dataset_sub_path /sha256/ component."
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Independent digest of the publication manifest document. Never equal to tree_sha256."
+        },
+        "inventory_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Digest of the separate content-addressed inventory document holding the full file list."
+        },
+        "inventory_marker": {
+          "const": ".fs2-manifest-sha256",
+          "description": "Readiness marker file inside the published tree; its content equals manifest_sha256."
+        },
+        "file_count": {"type": "integer", "minimum": 1},
+        "expanded_bytes": {"type": "integer", "minimum": 1},
+        "inline_inventory": {
+          "type": "boolean",
+          "description": "True only when file_count is at most 4096, the largest inventory a consumer may enumerate."
+        }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_class", "pool", "node_selector", "tolerations"],
+      "properties": {
+        "resource_class": {"const": "cpu"},
+        "pool": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"},
+        "node_selector": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"type": "string", "minLength": 1},
+          "propertyNames": {"not": {"enum": ["kubernetes.io/hostname", "metadata.name"]}},
+          "description": "Stable portable node labels. Never a node name and never an accelerator selector."
+        },
+        "tolerations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "operator", "value", "effect"],
+            "properties": {
+              "key": {"type": "string", "minLength": 1},
+              "operator": {"const": "Equal"},
+              "value": {"type": "string", "minLength": 1},
+              "effect": {"enum": ["NoSchedule", "NoExecute", "PreferNoSchedule"]}
+            }
+          }
+        }
+      }
+    }
+  }
+}

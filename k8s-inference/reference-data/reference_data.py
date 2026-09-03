@@ -35,6 +35,16 @@ MANIFEST_SCHEMA = "fs2-serve.nebius.ai/reference-data-manifest/v1"
 ACCESS_SCHEMA = "fs2-serve.nebius.ai/reference-data-access-receipt/v1"
 REQUEST_SCHEMA = "fs2-serve.nebius.ai/private-preprocess-request/v1"
 RESULT_SCHEMA = "fs2-serve.nebius.ai/private-preprocess-result/v1"
+SOURCE_INDEX_SCHEMA = "fs2-serve.nebius.ai/reference-data-source-index/v1"
+PLACEMENT_SCHEMA = "fs2-serve.nebius.ai/reference-data-placement-contract/v1"
+PLAN_SCHEMA = "fs2-serve.nebius.ai/reference-data-localization-plan/v1"
+INVENTORY_SCHEMA = "fs2-serve.nebius.ai/reference-data-inventory/v1"
+RECEIPT_SCHEMA = "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1"
+CANONICAL_HOST_ROOT = "/mnt/fs2-reference-data/data"
+# A consuming controller must be able to validate a terminal receipt without
+# enumerating a reference database, so an inventory longer than this is
+# published as a separate content-addressed document and referenced by digest.
+MAX_INLINE_INVENTORY_FILES = 4096
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 IMAGE_RE = re.compile(r"^[^@\s]+@sha256:[a-f0-9]{64}$")
@@ -299,6 +309,448 @@ def validate_access_receipt(document: Any, bundle: Mapping[str, Any]) -> str:
     return sha256_bytes(canonical_json(document))
 
 
+def default_placement_path() -> Path:
+    """The reviewed in-repo placement contract used when none is mounted."""
+    return Path(__file__).with_name("placement-contract.json")
+
+
+LABEL_KEY_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9._-]{0,251}[A-Za-z0-9])?(/[A-Za-z0-9]([A-Za-z0-9._-]{0,61}[A-Za-z0-9])?)?$")
+RESOURCE_NAME_RE = re.compile(r"^[a-z0-9.-]+/[A-Za-z0-9][A-Za-z0-9._-]*$")
+# Placement must stay portable: an accelerator generation belongs in a label
+# value, never in a label key, and a node identity is never a placement input.
+FORBIDDEN_SELECTOR_KEYS = frozenset({"kubernetes.io/hostname", "metadata.name"})
+HARDWARE_KEY_RE = re.compile(r"(?i)(h100|h200|b200|b300|a100|l40|l4|v100|gh200|sxm|hgx)")
+GPU_SELECTOR_KEYS = frozenset({"workload.fs2.nebius/gpu", "nebius.com/gpu", "accelerator.fs2.nebius/class"})
+QUANTITY_SUFFIX = {"Mi": 1, "Gi": 1024}
+
+
+def parse_cpu_millicores(value: str, context: str) -> int:
+    text_value = str(value)
+    if CPU_RE.fullmatch(text_value):
+        return int(text_value) * 1000
+    if re.fullmatch(r"[1-9][0-9]*m", text_value):
+        return int(text_value[:-1])
+    raise ContractError(f"{context} is not a valid CPU quantity")
+
+
+def parse_memory_mib(value: str, context: str) -> int:
+    text_value = str(value)
+    if not MEMORY_RE.fullmatch(text_value):
+        raise ContractError(f"{context} is not a valid Mi/Gi quantity")
+    return int(text_value[:-2]) * QUANTITY_SUFFIX[text_value[-2:]]
+
+
+def _validate_node_selector(value: Any, context: str) -> dict[str, str]:
+    selector = _expect_object(value, context)
+    if not selector:
+        raise ContractError(f"{context} must select at least one stable node label")
+    for key, label_value in selector.items():
+        if key in FORBIDDEN_SELECTOR_KEYS:
+            raise ContractError(f"{context} must not pin a node identity ({key})")
+        if not LABEL_KEY_RE.fullmatch(str(key)) or HARDWARE_KEY_RE.search(str(key)):
+            raise ContractError(f"{context} label key {key!r} is not a stable portable label")
+        if not isinstance(label_value, str) or not label_value:
+            raise ContractError(f"{context} label {key!r} must have a non-empty string value")
+    return selector
+
+
+def _validate_tolerations(value: Any, context: str) -> list[dict[str, str]]:
+    if not isinstance(value, list) or not value:
+        raise ContractError(f"{context} must declare at least one toleration")
+    tolerations: list[dict[str, str]] = []
+    for index, item in enumerate(value):
+        toleration = _expect_object(item, f"{context}[{index}]")
+        fields = {"key", "operator", "value", "effect"}
+        _expect_keys(toleration, fields, fields, f"{context}[{index}]")
+        if not LABEL_KEY_RE.fullmatch(str(toleration["key"])):
+            raise ContractError(f"{context}[{index}] key is not a valid taint key")
+        if toleration["operator"] != "Equal":
+            raise ContractError(f"{context}[{index}] must use the Equal operator")
+        if not isinstance(toleration["value"], str) or not toleration["value"]:
+            raise ContractError(f"{context}[{index}] value must be a non-empty string")
+        if toleration["effect"] not in {"NoSchedule", "NoExecute", "PreferNoSchedule"}:
+            raise ContractError(f"{context}[{index}] effect is invalid")
+        tolerations.append({key: str(toleration[key]) for key in sorted(fields)})
+    return tolerations
+
+
+def validate_placement_contract(document: Any) -> dict[str, Any]:
+    """Validate the tfvars-derived placement and sizing contract.
+
+    The contract is the only source of node placement and resource sizing for
+    reference-data and preprocessing stages, so nothing downstream needs a
+    literal node name, accelerator generation or hand-written pod field.
+    """
+    contract = _expect_object(document, "placement contract")
+    required = {"schema", "generated_at", "pools", "stages"}
+    _expect_keys(contract, required, required, "placement contract")
+    if contract["schema"] != PLACEMENT_SCHEMA:
+        raise ContractError(f"placement contract schema must be {PLACEMENT_SCHEMA}")
+    _expect_datetime(contract["generated_at"], "placement contract generated_at")
+    pools = _expect_object(contract["pools"], "placement contract pools")
+    if not pools:
+        raise ContractError("placement contract must declare at least one pool")
+    for pool_id, pool_value in pools.items():
+        context = f"placement pool {pool_id}"
+        if not ID_RE.fullmatch(str(pool_id)):
+            raise ContractError(f"{context} id is invalid")
+        pool = _expect_object(pool_value, context)
+        pool_fields = {"resource_class", "node_selector", "tolerations", "schedulable_capacity", "queue"}
+        optional = {"accelerator"}
+        _expect_keys(pool, pool_fields, pool_fields | optional, context)
+        if pool["resource_class"] not in {"cpu", "gpu"}:
+            raise ContractError(f"{context} resource class must be cpu or gpu")
+        selector = _validate_node_selector(pool["node_selector"], f"{context} node selector")
+        _validate_tolerations(pool["tolerations"], f"{context} tolerations")
+        capacity = _expect_object(pool["schedulable_capacity"], f"{context} schedulable capacity")
+        capacity_fields = {"cpu_millicores", "memory_mib", "ephemeral_storage_mib"}
+        _expect_keys(capacity, capacity_fields, capacity_fields, f"{context} schedulable capacity")
+        for field in sorted(capacity_fields):
+            if not isinstance(capacity[field], int) or isinstance(capacity[field], bool) or capacity[field] < 1:
+                raise ContractError(f"{context} schedulable {field} must be a positive integer")
+        queue = _expect_object(pool["queue"], f"{context} queue")
+        queue_fields = {"local_queue", "cluster_queue", "nominal_cpu", "nominal_memory", "nominal_accelerator"}
+        _expect_keys(queue, queue_fields, queue_fields, f"{context} queue")
+        for field in ("local_queue", "cluster_queue"):
+            if not ID_RE.fullmatch(str(queue[field])):
+                raise ContractError(f"{context} {field} is invalid")
+        # A ClusterQueue need not cover every resource. A null nominal quota
+        # means the resource is bounded only by schedulable node capacity.
+        if queue["nominal_cpu"] is not None:
+            parse_cpu_millicores(queue["nominal_cpu"], f"{context} nominal CPU")
+        if queue["nominal_memory"] is not None:
+            parse_memory_mib(queue["nominal_memory"], f"{context} nominal memory")
+        if queue["nominal_accelerator"] is not None and (
+            not isinstance(queue["nominal_accelerator"], int)
+            or isinstance(queue["nominal_accelerator"], bool)
+            or queue["nominal_accelerator"] < 1
+        ):
+            raise ContractError(f"{context} nominal accelerator quota is invalid")
+        if pool["resource_class"] == "cpu":
+            if "accelerator" in pool:
+                raise ContractError(f"{context} is a CPU pool and must not reserve accelerators")
+            if GPU_SELECTOR_KEYS & set(selector):
+                raise ContractError(f"{context} is a CPU pool and must not select an accelerator node")
+            if not any(item["effect"] == "NoSchedule" for item in pool["tolerations"]):
+                raise ContractError(f"{context} must tolerate its dedicated NoSchedule taint")
+        else:
+            accelerator = _expect_object(pool.get("accelerator"), f"{context} accelerator")
+            accelerator_fields = {"resource_name", "count"}
+            _expect_keys(accelerator, accelerator_fields, accelerator_fields, f"{context} accelerator")
+            if not RESOURCE_NAME_RE.fullmatch(str(accelerator["resource_name"])):
+                raise ContractError(f"{context} accelerator resource name is invalid")
+            if (
+                not isinstance(accelerator["count"], int)
+                or isinstance(accelerator["count"], bool)
+                or accelerator["count"] < 1
+            ):
+                raise ContractError(f"{context} accelerator count must be a positive integer")
+            if selector.get("capacity.fs2.nebius/pool") == "reference-data":
+                raise ContractError(f"{context} must not route accelerator work to the reference-data pool")
+    stages = _expect_object(contract["stages"], "placement contract stages")
+    for stage_id in ("staging", "raw-input", "inference"):
+        if stage_id not in stages:
+            raise ContractError(f"placement contract must declare the {stage_id} stage")
+    for stage_id, stage_value in stages.items():
+        context = f"placement stage {stage_id}"
+        stage = _expect_object(stage_value, context)
+        stage_fields = {"pool", "defaults"}
+        _expect_keys(stage, stage_fields, stage_fields, context)
+        pool_id = str(stage["pool"])
+        if pool_id not in pools:
+            raise ContractError(f"{context} references unknown pool {pool_id}")
+        expected_class = "gpu" if stage_id == "inference" else "cpu"
+        if pools[pool_id]["resource_class"] != expected_class:
+            raise ContractError(f"{context} must bind a {expected_class} pool")
+        defaults = _expect_object(stage["defaults"], f"{context} defaults")
+        default_fields = {"cpu", "memory", "ephemeral_storage", "active_deadline_seconds", "backoff_limit", "threads"}
+        _expect_keys(defaults, default_fields, default_fields, f"{context} defaults")
+        if not CPU_RE.fullmatch(str(defaults["cpu"])):
+            raise ContractError(f"{context} default CPU request is invalid")
+        for field in ("memory", "ephemeral_storage"):
+            parse_memory_mib(defaults[field], f"{context} default {field}")
+        if (
+            not isinstance(defaults["active_deadline_seconds"], int)
+            or isinstance(defaults["active_deadline_seconds"], bool)
+            or not 60 <= defaults["active_deadline_seconds"] <= 604800
+        ):
+            raise ContractError(f"{context} default deadline is invalid")
+        if (
+            not isinstance(defaults["backoff_limit"], int)
+            or isinstance(defaults["backoff_limit"], bool)
+            or not 0 <= defaults["backoff_limit"] <= 10
+        ):
+            raise ContractError(f"{context} default retry limit is invalid")
+        if (
+            not isinstance(defaults["threads"], int)
+            or isinstance(defaults["threads"], bool)
+            or not 1 <= defaults["threads"] <= 128
+        ):
+            raise ContractError(f"{context} default thread count is invalid")
+        if defaults["threads"] > int(defaults["cpu"]):
+            raise ContractError(f"{context} default thread count exceeds its CPU request")
+    return contract
+
+
+def model_preprocessing_capacity(model_id: str, requirements_path: Path | None = None) -> dict[str, Any] | None:
+    """The declared minimum a model's preprocessing stage needs to be runnable.
+
+    A stage sized below this is not slow, it is not runnable, so a request
+    below it is refused rather than left to fail late on a node that could
+    never have run it.
+    """
+    path = requirements_path or Path(__file__).with_name("model-requirements.json")
+    document = _expect_object(load_json(path), "model reference-data requirements")
+    model = _expect_object(document.get("models", {}), "model requirements").get(model_id)
+    if not isinstance(model, dict) or "preprocessing_capacity" not in model:
+        return None
+    capacity = _expect_object(model["preprocessing_capacity"], f"{model_id} preprocessing capacity")
+    for field in ("cpu", "memory", "ephemeral_storage"):
+        if field not in capacity:
+            raise ContractError(f"{model_id} preprocessing capacity is missing {field}")
+    parse_cpu_millicores(capacity["cpu"], f"{model_id} preprocessing CPU")
+    for field in ("memory", "ephemeral_storage"):
+        parse_memory_mib(capacity[field], f"{model_id} preprocessing {field}")
+    return capacity
+
+
+def check_model_preprocessing_capacity(execution: Mapping[str, Any], model_id: str) -> None:
+    """Refuse a preprocessing request below its model's declared minimum."""
+    capacity = model_preprocessing_capacity(model_id)
+    if capacity is None:
+        return
+    checks = (
+        ("CPU", parse_cpu_millicores(execution["cpu"], "request CPU"),
+         parse_cpu_millicores(capacity["cpu"], "required CPU"), capacity["cpu"]),
+        ("memory", parse_memory_mib(execution["memory"], "request memory"),
+         parse_memory_mib(capacity["memory"], "required memory"), capacity["memory"]),
+        ("ephemeral storage", parse_memory_mib(execution["ephemeral_storage"], "request ephemeral storage"),
+         parse_memory_mib(capacity["ephemeral_storage"], "required ephemeral storage"),
+         capacity["ephemeral_storage"]),
+    )
+    for resource, requested, required, declared in checks:
+        if requested < required:
+            raise ContractError(
+                f"{model_id} preprocessing requires at least {declared} {resource} and this "
+                f"request declares less; the reference-data pool that stages the bulk databases "
+                "is not sized for the data pipeline, so provision a fitting CPU class in root "
+                "terraform.tfvars rather than advertising a lane that cannot run"
+            )
+
+
+def stage_admissibility(contract: Mapping[str, Any], stage_id: str) -> dict[str, Any]:
+    """Report whether a stage's declared sizing can actually be admitted."""
+    placement = resolve_stage_placement(contract, stage_id)
+    reasons: list[str] = []
+    try:
+        check_execution_fits(placement["defaults"], contract, stage_id)
+    except ContractError as exc:
+        reasons.append(str(exc))
+    return {
+        "stage": stage_id,
+        "pool": placement["pool"],
+        "resource_class": placement["resource_class"],
+        "requested": {
+            field: placement["defaults"][field]
+            for field in ("cpu", "memory", "ephemeral_storage")
+        },
+        "pool_schedulable_capacity": placement["schedulable_capacity"],
+        "queue": placement["queue"],
+        "runnable": not reasons,
+        "reasons": reasons,
+    }
+
+
+def load_placement_contract(path: Path | None = None) -> dict[str, Any]:
+    """Load the placement contract, letting a mounted document override pools.
+
+    Terraform renders only the CPU pools and stages it owns, so the
+    reference-data plane never names an accelerator resource. Any pool or
+    stage the mounted document declares replaces the reviewed default whole.
+    """
+    default = _expect_object(load_json(default_placement_path()), "default placement contract")
+    if path is None:
+        return validate_placement_contract(default)
+    override = _expect_object(load_json(path), "placement override")
+    if override.get("schema") != PLACEMENT_SCHEMA:
+        raise ContractError(f"placement override schema must be {PLACEMENT_SCHEMA}")
+    unknown = set(override) - {"schema", "generated_at", "pools", "stages"}
+    if unknown:
+        raise ContractError(f"placement override has unknown fields: {', '.join(sorted(unknown))}")
+    merged = {
+        "schema": PLACEMENT_SCHEMA,
+        "generated_at": override.get("generated_at", default["generated_at"]),
+        "pools": {
+            **default["pools"],
+            **_expect_object(override.get("pools", {}), "placement override pools"),
+        },
+        "stages": {
+            **default["stages"],
+            **_expect_object(override.get("stages", {}), "placement override stages"),
+        },
+    }
+    return validate_placement_contract(merged)
+
+
+def resolve_stage_placement(contract: Mapping[str, Any], stage_id: str) -> dict[str, Any]:
+    """Return the resolved pool placement and sizing defaults for one stage."""
+    try:
+        stage = contract["stages"][stage_id]
+    except (KeyError, TypeError) as exc:
+        raise ContractError(f"placement contract has no {stage_id} stage") from exc
+    pool = contract["pools"][stage["pool"]]
+    resolved: dict[str, Any] = {
+        "stage": stage_id,
+        "pool": stage["pool"],
+        "resource_class": pool["resource_class"],
+        "node_selector": dict(pool["node_selector"]),
+        "tolerations": [dict(item) for item in pool["tolerations"]],
+        "queue": dict(pool["queue"]),
+        "schedulable_capacity": dict(pool["schedulable_capacity"]),
+        "defaults": dict(stage["defaults"]),
+    }
+    if "accelerator" in pool:
+        resolved["accelerator"] = dict(pool["accelerator"])
+    return resolved
+
+
+def check_execution_fits(execution: Mapping[str, Any], contract: Mapping[str, Any], stage_id: str) -> None:
+    """Fail closed when a stage request cannot be admitted by its own pool.
+
+    Kueue leaves an over-sized Job pending forever rather than rejecting it, so
+    the request is compared against both the dedicated pool's schedulable
+    capacity and the ClusterQueue nominal quota before a Job is ever created.
+    """
+    placement = resolve_stage_placement(contract, stage_id)
+    capacity = placement["schedulable_capacity"]
+    queue = placement["queue"]
+    requested_cpu = parse_cpu_millicores(execution["cpu"], f"{stage_id} CPU request")
+    requested_memory = parse_memory_mib(execution["memory"], f"{stage_id} memory request")
+    requested_storage = parse_memory_mib(execution["ephemeral_storage"], f"{stage_id} ephemeral storage request")
+    limits = [
+        ("CPU", requested_cpu, capacity["cpu_millicores"], "schedulable capacity"),
+        ("memory", requested_memory, capacity["memory_mib"], "schedulable capacity"),
+        ("ephemeral storage", requested_storage, capacity["ephemeral_storage_mib"], "schedulable capacity"),
+    ]
+    if queue["nominal_cpu"] is not None:
+        limits.append((
+            "CPU", requested_cpu,
+            parse_cpu_millicores(queue["nominal_cpu"], "nominal CPU"), "Kueue nominal quota",
+        ))
+    if queue["nominal_memory"] is not None:
+        limits.append((
+            "memory", requested_memory,
+            parse_memory_mib(queue["nominal_memory"], "nominal memory"), "Kueue nominal quota",
+        ))
+    accelerator = placement.get("accelerator")
+    if accelerator is not None and queue["nominal_accelerator"] is not None:
+        limits.append((
+            f"{accelerator['resource_name']} count", accelerator["count"],
+            queue["nominal_accelerator"], "Kueue nominal quota",
+        ))
+    for resource, requested, available, source in limits:
+        if requested > available:
+            raise ContractError(
+                f"{stage_id} {resource} request exceeds the {source} of the dedicated "
+                f"{placement['pool']} pool ({requested} > {available}); raise the pool in root "
+                "terraform.tfvars instead of leaving the Job unschedulable"
+            )
+
+
+# Field names a consumer draft has used instead of the published contract.
+HANDOFF_ALIASES = {
+    "published_manifest_sha256": "content.manifest_sha256",
+    "source_sub_path": "storage.dataset_sub_path",
+    "published_tree_sha256": "content.tree_sha256",
+    "manifest_digest": "content.manifest_sha256",
+}
+
+
+def _reject_handoff_aliases(*documents: Mapping[str, Any]) -> None:
+    """Fail closed when a consumer sends an invented handoff field name.
+
+    There is exactly one published handoff contract. Silently ignoring a
+    near-miss field name would let a runtime bind a digest nobody produced.
+    """
+    for document in documents:
+        for alias, actual in HANDOFF_ALIASES.items():
+            if alias in document:
+                raise ContractError(
+                    f"handoff field {alias!r} does not exist; use {actual!r} from the "
+                    f"{RECEIPT_SCHEMA} contract"
+                )
+
+
+def validate_terminal_receipt(document: Any) -> dict[str, Any]:
+    """Validate a bounded, content-addressed terminal reference-data receipt.
+
+    A consumer binds a mount and a dataset sub-path from this document alone.
+    It therefore carries the aggregate tree digest, an independent manifest
+    digest and an inventory digest with counts, never a file list.
+    """
+    receipt = _expect_object(document, "terminal receipt")
+    required = {"schema", "bundle_id", "revision", "created_at", "storage", "content", "placement"}
+    _expect_keys(receipt, required, required, "terminal receipt")
+    if receipt["schema"] != RECEIPT_SCHEMA:
+        raise ContractError(f"terminal receipt schema must be {RECEIPT_SCHEMA}")
+    _expect_datetime(receipt["created_at"], "terminal receipt created_at")
+    if not ID_RE.fullmatch(str(receipt["bundle_id"])):
+        raise ContractError("terminal receipt bundle id is invalid")
+    revision = str(receipt["revision"])
+    if not revision or len(revision) > 160:
+        raise ContractError("terminal receipt revision is invalid")
+    storage = _expect_object(receipt["storage"], "terminal receipt storage")
+    _reject_handoff_aliases(storage)
+    storage_fields = {"host_root", "mount_path", "dataset_sub_path", "read_only"}
+    _expect_keys(storage, storage_fields, storage_fields, "terminal receipt storage")
+    for field in ("host_root", "mount_path"):
+        value = str(storage[field])
+        if not value.startswith("/") or ".." in Path(value).parts:
+            raise ContractError(f"terminal receipt {field} must be an absolute path without traversal")
+    if storage["read_only"] is not True:
+        raise ContractError("terminal receipt must mount the published tree read-only")
+    content = _expect_object(receipt["content"], "terminal receipt content")
+    _reject_handoff_aliases(receipt, content)
+    content_fields = {
+        "tree_sha256", "manifest_sha256", "inventory_sha256",
+        "inventory_marker", "file_count", "expanded_bytes", "inline_inventory",
+    }
+    _expect_keys(content, content_fields, content_fields, "terminal receipt content")
+    for field in ("tree_sha256", "manifest_sha256", "inventory_sha256"):
+        if not SHA256_RE.fullmatch(str(content[field])):
+            raise ContractError(f"terminal receipt {field} must be a SHA-256 digest")
+    if content["manifest_sha256"] == content["tree_sha256"]:
+        raise ContractError("terminal receipt manifest digest must be independent of the tree digest")
+    if content["inventory_marker"] != ".fs2-manifest-sha256":
+        raise ContractError("terminal receipt inventory marker is invalid")
+    for field in ("file_count", "expanded_bytes"):
+        if not isinstance(content[field], int) or isinstance(content[field], bool) or content[field] < 1:
+            raise ContractError(f"terminal receipt {field} must be a positive integer")
+    if not isinstance(content["inline_inventory"], bool):
+        raise ContractError("terminal receipt inline_inventory must be a boolean")
+    if content["inline_inventory"] != (content["file_count"] <= MAX_INLINE_INVENTORY_FILES):
+        raise ContractError(
+            "terminal receipt inline_inventory must agree with the "
+            f"{MAX_INLINE_INVENTORY_FILES}-file bound a consumer can validate"
+        )
+    expected = f"datasets/{receipt['bundle_id']}/{revision}/sha256/{content['tree_sha256']}"
+    if str(storage["dataset_sub_path"]) != expected:
+        raise ContractError(
+            "terminal receipt dataset sub-path must bind its /sha256/<tree> component "
+            "to the exact aggregate tree digest"
+        )
+    placement = _expect_object(receipt["placement"], "terminal receipt placement")
+    if placement.get("resource_class") != "cpu":
+        raise ContractError("the reference-data stage placement must stay CPU-only")
+    if "accelerator" in placement:
+        raise ContractError("the reference-data stage must not reserve an accelerator")
+    selector = _validate_node_selector(placement.get("node_selector"), "terminal receipt node selector")
+    if GPU_SELECTOR_KEYS & set(selector):
+        raise ContractError("the reference-data stage must not declare an accelerator node selector")
+    _validate_tolerations(placement.get("tolerations"), "terminal receipt tolerations")
+    return receipt
+
+
 def _source_url(item: Mapping[str, Any]) -> str:
     source = item["source"]
     if "url" in source:
@@ -367,11 +819,308 @@ def _download_https(url: str, partial: Path, expected_bytes: int) -> None:
 
 
 def _hash_file(path: Path, algorithm: str = "sha256") -> str:
-    digest = hashlib.new(algorithm)
+    return _hash_file_multi(path, (algorithm,))[algorithm]
+
+
+def _hash_file_multi(path: Path, algorithms: Sequence[str]) -> dict[str, str]:
+    """Hash a file once under several algorithms.
+
+    Reference-data blobs are tens of gigabytes each, so the catalog transport
+    digest and the content-addressed SHA-256 are computed in a single pass.
+    """
+    digests = {name: hashlib.new(name) for name in dict.fromkeys(algorithms)}
     with path.open("rb") as handle:
         while block := handle.read(BUFFER_BYTES):
-            digest.update(block)
-    return digest.hexdigest()
+            for digest in digests.values():
+                digest.update(block)
+    return {name: digest.hexdigest() for name, digest in digests.items()}
+
+
+def _blob_path(root: Path, source_sha256: str) -> Path:
+    if not SHA256_RE.fullmatch(source_sha256):
+        raise ContractError("content-addressed blob name must be a SHA-256 digest")
+    return root / "blobs" / "sha256" / source_sha256[:2] / source_sha256
+
+
+def _source_index_path(root: Path, bundle: Mapping[str, Any], object_id: str) -> Path:
+    return root / "sources" / bundle["id"] / bundle["revision"] / f"{object_id}.json"
+
+
+def _catalog_identity(item: Mapping[str, Any]) -> dict[str, Any]:
+    """The immutable catalog identity a localized blob must keep matching."""
+    integrity = item["source_integrity"]
+    return {
+        "source_bytes": item["source_bytes"],
+        "integrity_algorithm": integrity["algorithm"],
+        "integrity_digest": str(integrity["digest"]).lower(),
+    }
+
+
+def _blob_catalog_match(blob: Path, item: Mapping[str, Any]) -> str | None:
+    """Return the blob's SHA-256 when it is this catalog object, else None.
+
+    Two catalog objects may legitimately have the same byte count, so a
+    candidate that fails the catalog digest is simply a different object.
+    A blob whose content does not hash to its own content-addressed name is
+    store corruption and is always fatal.
+    """
+    if blob.stat().st_size != item["source_bytes"]:
+        return None
+    integrity = item["source_integrity"]
+    algorithm = integrity["algorithm"]
+    wanted = {"sha256"}
+    if algorithm in {"sha256", "md5"}:
+        wanted.add(algorithm)
+    observed = _hash_file_multi(blob, sorted(wanted))
+    if SHA256_RE.fullmatch(blob.name) and observed["sha256"] != blob.name:
+        raise ContractError(f"existing content-addressed blob is corrupt: {blob.name}")
+    if algorithm in {"sha256", "md5"} and observed[algorithm] != str(integrity["digest"]).lower():
+        return None
+    return observed["sha256"]
+
+
+def verify_blob_identity(blob: Path, item: Mapping[str, Any]) -> str:
+    """Return a blob's SHA-256 after proving it is the exact catalog object."""
+    if blob.stat().st_size != item["source_bytes"]:
+        raise ContractError(f"source {item['id']} byte count does not match catalog")
+    matched = _blob_catalog_match(blob, item)
+    if matched is None:
+        raise ContractError(f"source {item['id']} checksum does not match catalog")
+    return matched
+
+
+def _write_source_index(root: Path, bundle: Mapping[str, Any], item: Mapping[str, Any], source_sha256: str) -> None:
+    blob = _blob_path(root, source_sha256)
+    atomic_json(
+        _source_index_path(root, bundle, item["id"]),
+        {
+            "schema": SOURCE_INDEX_SCHEMA,
+            "bundle_id": bundle["id"],
+            "revision": bundle["revision"],
+            "object_id": item["id"],
+            "source_sha256": source_sha256,
+            "blob_path": blob.relative_to(root).as_posix(),
+            "recorded_at": _utc_now(),
+            **_catalog_identity(item),
+        },
+    )
+
+
+def read_source_index(root: Path, bundle: Mapping[str, Any], item: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return a validated localization record, or None when none is recorded.
+
+    A record whose catalog identity no longer matches is a fail-closed error:
+    silently re-downloading would let a mutated catalog reuse a revision.
+    """
+    index_path = _source_index_path(root, bundle, item["id"])
+    if not index_path.is_file():
+        return None
+    entry = _expect_object(load_json(index_path), f"source index for {item['id']}")
+    required = {
+        "schema", "bundle_id", "revision", "object_id", "source_sha256",
+        "blob_path", "recorded_at", "source_bytes", "integrity_algorithm", "integrity_digest",
+    }
+    _expect_keys(entry, required, required, f"source index for {item['id']}")
+    if entry["schema"] != SOURCE_INDEX_SCHEMA:
+        raise ContractError(f"source index for {item['id']} has an unsupported schema")
+    if (
+        entry["bundle_id"] != bundle["id"]
+        or entry["revision"] != bundle["revision"]
+        or entry["object_id"] != item["id"]
+    ):
+        raise ContractError(f"source index for {item['id']} belongs to a different bundle revision")
+    if not SHA256_RE.fullmatch(str(entry["source_sha256"])):
+        raise ContractError(f"source index for {item['id']} has an invalid content digest")
+    identity = _catalog_identity(item)
+    if {key: entry[key] for key in identity} != identity:
+        raise ContractError(
+            f"recorded source identity for {item['id']} differs from the catalog; "
+            "publish a new immutable revision instead of reusing this one"
+        )
+    if entry["blob_path"] != _blob_path(root, str(entry["source_sha256"])).relative_to(root).as_posix():
+        raise ContractError(f"source index for {item['id']} does not point at its content-addressed blob")
+    return entry
+
+
+def _claimed_digests(root: Path, bundle: Mapping[str, Any]) -> set[str]:
+    """SHA-256 values this bundle revision has already recorded."""
+    index_dir = root / "sources" / bundle["id"] / bundle["revision"]
+    if not index_dir.is_dir():
+        return set()
+    claimed: set[str] = set()
+    for path in index_dir.glob("*.json"):
+        try:
+            entry = load_json(path)
+        except ContractError:
+            continue
+        digest = entry.get("source_sha256") if isinstance(entry, dict) else None
+        if isinstance(digest, str) and SHA256_RE.fullmatch(digest):
+            claimed.add(digest)
+    return claimed
+
+
+def _blob_sizes(root: Path) -> dict[str, int]:
+    """Content-addressed blob digests and byte counts, without hashing."""
+    blobs = root / "blobs" / "sha256"
+    if not blobs.is_dir():
+        return {}
+    return {
+        candidate.name: candidate.stat().st_size
+        for candidate in blobs.glob("*/*")
+        if candidate.is_file() and not candidate.is_symlink() and SHA256_RE.fullmatch(candidate.name)
+    }
+
+
+def _adopt_existing_blob(root: Path, bundle: Mapping[str, Any], item: Mapping[str, Any]) -> str | None:
+    """Adopt an already-downloaded blob that has no localization record.
+
+    Staging interrupted before this index existed leaves verified blobs
+    behind, and re-downloading them would discard hours of transfer. Only
+    blobs this revision has not already recorded are candidates: otherwise a
+    bundle whose objects share a byte count would re-hash every sibling for
+    every object.
+    """
+    blobs = root / "blobs" / "sha256"
+    if not blobs.is_dir():
+        return None
+    claimed = _claimed_digests(root, bundle)
+    for candidate in sorted(blobs.glob("*/*")):
+        if candidate.is_symlink() or not candidate.is_file():
+            continue
+        if not SHA256_RE.fullmatch(candidate.name) or candidate.name in claimed:
+            continue
+        if candidate.stat().st_size != item["source_bytes"]:
+            continue
+        source_sha256 = _blob_catalog_match(candidate, item)
+        if source_sha256 is not None:
+            return source_sha256
+    return None
+
+
+def localize_source(
+    root: Path,
+    bundle: Mapping[str, Any],
+    item: Mapping[str, Any],
+    downloads: Path,
+    *,
+    verify_existing_blobs: bool = False,
+) -> tuple[Path, str, str]:
+    """Make one catalog object available as an immutable blob.
+
+    Returns the blob path, its SHA-256 and how it was obtained. Already
+    localized objects are never re-downloaded, so an interrupted bundle
+    resumes from the bytes it already has.
+    """
+    entry = read_source_index(root, bundle, item)
+    if entry is not None:
+        source_sha256 = str(entry["source_sha256"])
+        blob = _blob_path(root, source_sha256)
+        if blob.is_file() and blob.stat().st_size == item["source_bytes"]:
+            if verify_existing_blobs and verify_blob_identity(blob, item) != source_sha256:
+                raise ContractError(f"existing content-addressed blob is corrupt: {item['id']}")
+            return blob, source_sha256, "reused"
+    adopted = _adopt_existing_blob(root, bundle, item)
+    if adopted is not None:
+        _write_source_index(root, bundle, item, adopted)
+        return _blob_path(root, adopted), adopted, "adopted"
+    partial, source_sha256 = download_source(item, downloads)
+    blob = _blob_path(root, source_sha256)
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    if blob.exists():
+        if verify_blob_identity(blob, item) != source_sha256:
+            raise ContractError(f"existing content-addressed blob is corrupt: {item['id']}")
+        partial.unlink(missing_ok=True)
+    else:
+        os.replace(partial, blob)
+        blob.chmod(0o444)
+    _write_source_index(root, bundle, item, source_sha256)
+    return blob, source_sha256, "downloaded"
+
+
+def localization_plan(catalog_path: Path, bundle_id: str, root: Path) -> dict[str, Any]:
+    """Report, without mutating anything, how much of a bundle is localized."""
+    catalog = validate_catalog(load_json(catalog_path))
+    try:
+        bundle = catalog["bundles"][bundle_id]
+    except KeyError as exc:
+        raise ContractError(f"unknown bundle id {bundle_id}") from exc
+    downloads = root / "downloads" / bundle_id / bundle["revision"]
+    objects: list[dict[str, Any]] = []
+    localized_bytes = 0
+    adoptable_bytes = 0
+    partial_bytes = 0
+    claimed = _claimed_digests(root, bundle)
+    sized_blobs = _blob_sizes(root)
+    for item in bundle["objects"]:
+        entry = read_source_index(root, bundle, item)
+        blob: Path | None = None
+        if entry is not None:
+            candidate = _blob_path(root, str(entry["source_sha256"]))
+            if candidate.is_file() and candidate.stat().st_size == item["source_bytes"]:
+                blob = candidate
+        partial = downloads / f"{item['id']}.part"
+        partial_size = partial.stat().st_size if partial.is_file() else 0
+        adoptable = None
+        if blob is None:
+            adoptable = next(
+                (
+                    digest for digest, size in sorted(sized_blobs.items())
+                    if size == item["source_bytes"] and digest not in claimed
+                ),
+                None,
+            )
+        if blob is not None:
+            state = "localized"
+            localized_bytes += item["source_bytes"]
+        elif adoptable is not None:
+            # Size-only evidence. Staging re-verifies the catalog transport
+            # digest before adopting, so this is a plan, not a guarantee.
+            state = "adoptable"
+            adoptable_bytes += item["source_bytes"]
+        elif partial_size:
+            state = "partial"
+            partial_bytes += min(partial_size, item["source_bytes"])
+        else:
+            state = "missing"
+        objects.append({
+            "id": item["id"],
+            "state": state,
+            "source_bytes": item["source_bytes"],
+            "partial_bytes": partial_size,
+            "source_sha256": str(entry["source_sha256"]) if entry is not None and blob is not None else None,
+            "adoptable_blob_sha256": adoptable,
+            "digest_verified": blob is not None,
+            "indexed": entry is not None,
+        })
+    source_bytes = sum(item["source_bytes"] for item in bundle["objects"])
+    status_path = root / "status" / f"{bundle_id}.json"
+    published: dict[str, Any] = {"ready": False, "manifest_sha256": None, "tree_sha256": None, "revision": None}
+    if status_path.is_file():
+        status = _expect_object(load_json(status_path), "publication status")
+        published = {
+            "ready": status.get("ready") is True,
+            "manifest_sha256": status.get("manifest_sha256"),
+            "tree_sha256": status.get("tree_sha256"),
+            "revision": status.get("revision"),
+        }
+    return {
+        "schema": PLAN_SCHEMA,
+        "bundle_id": bundle_id,
+        "revision": bundle["revision"],
+        "generated_at": _utc_now(),
+        "objects": objects,
+        "totals": {
+            "object_count": len(objects),
+            "localized_objects": sum(1 for item in objects if item["state"] == "localized"),
+            "adoptable_objects": sum(1 for item in objects if item["state"] == "adoptable"),
+            "source_bytes": source_bytes,
+            "localized_bytes": localized_bytes,
+            "adoptable_bytes": adoptable_bytes,
+            "partial_bytes": partial_bytes,
+            "remaining_bytes": source_bytes - localized_bytes - adoptable_bytes - partial_bytes,
+        },
+        "published": published,
+    }
 
 
 def download_source(item: Mapping[str, Any], downloads: Path) -> tuple[Path, str]:
@@ -528,9 +1277,32 @@ def materialize(source: Path, item: Mapping[str, Any], root: Path) -> None:
         raise ContractError(f"unsupported transform {transform}")
 
 
-def tree_inventory(root: Path, *, exclude: frozenset[str] = frozenset()) -> tuple[list[dict[str, Any]], str, int]:
-    files: list[dict[str, Any]] = []
-    total = 0
+def _inventory_sort_key(entry: Mapping[str, Any]) -> str:
+    """The single ordering rule every inventory producer must use.
+
+    ``Path`` comparison is a plain comparison of the whole path string, so
+    sorting tree-relative POSIX paths as strings reproduces the order of a
+    recursive walk exactly. Per-object expansion and a whole-tree walk
+    therefore agree on the aggregate digest.
+    """
+    return str(entry["path"])
+
+
+def aggregate_tree_identity(files: Sequence[Mapping[str, Any]]) -> tuple[list[dict[str, Any]], str, int]:
+    """Return the canonical inventory, aggregate tree digest and total bytes."""
+    ordered = sorted((dict(entry) for entry in files), key=_inventory_sort_key)
+    paths = [entry["path"] for entry in ordered]
+    if len(set(paths)) != len(paths):
+        duplicate = next(path for path in paths if paths.count(path) > 1)
+        raise ContractError(f"reference-data tree has a duplicate path: {duplicate}")
+    if not ordered:
+        raise ContractError("materialized reference-data tree is empty")
+    return ordered, sha256_bytes(canonical_json(ordered)), sum(int(entry["bytes"]) for entry in ordered)
+
+
+def walk_tree_files(root: Path, *, exclude: frozenset[str] = frozenset()) -> list[tuple[Path, str, int]]:
+    """List the regular files of a tree with their tree-relative paths."""
+    found: list[tuple[Path, str, int]] = []
     for path in sorted(root.rglob("*")):
         if path.is_symlink():
             raise ContractError(f"published tree contains a symlink: {path.relative_to(root)}")
@@ -539,13 +1311,287 @@ def tree_inventory(root: Path, *, exclude: frozenset[str] = frozenset()) -> tupl
         relative = path.relative_to(root).as_posix()
         if relative in exclude:
             continue
-        size = path.stat().st_size
-        files.append({"path": relative, "bytes": size, "sha256": _hash_file(path)})
-        total += size
-    if not files:
-        raise ContractError("materialized reference-data tree is empty")
-    tree_sha256 = sha256_bytes(canonical_json(files))
-    return files, tree_sha256, total
+        found.append((path, relative, path.stat().st_size))
+    return found
+
+
+def tree_stat_summary(root: Path, *, exclude: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+    """Report every tree file's path and size without hashing its content.
+
+    Structural drift in a reference database is caught here in seconds; the
+    per-file digests were already computed while each object was expanded.
+    """
+    return sorted(
+        ({"path": relative, "bytes": size} for _path, relative, size in walk_tree_files(root, exclude=exclude)),
+        key=_inventory_sort_key,
+    )
+
+
+def tree_inventory(root: Path, *, exclude: frozenset[str] = frozenset()) -> tuple[list[dict[str, Any]], str, int]:
+    files = [
+        {"path": relative, "bytes": size, "sha256": _hash_file(path)}
+        for path, relative, size in walk_tree_files(root, exclude=exclude)
+    ]
+    return aggregate_tree_identity(files)
+
+
+EXPANSION_SCHEMA = "fs2-serve.nebius.ai/reference-data-object-expansion/v1"
+
+
+def _object_lock_path(root: Path, bundle: Mapping[str, Any], object_id: str) -> Path:
+    return root / "locks" / bundle["id"] / bundle["revision"] / f"{object_id}.lock"
+
+
+def _expansion_receipt_path(root: Path, bundle: Mapping[str, Any], object_id: str) -> Path:
+    return root / "expansions" / bundle["id"] / bundle["revision"] / f"{object_id}.json"
+
+
+def _expanded_root(root: Path, bundle: Mapping[str, Any], object_id: str, source_sha256: str) -> Path:
+    return root / "expanded" / bundle["id"] / bundle["revision"] / object_id / "sha256" / source_sha256
+
+
+def _object_target_paths(item: Mapping[str, Any], expanded: Path) -> list[tuple[Path, str, int]]:
+    """Map one object's expanded files onto their final tree-relative paths."""
+    relative = _safe_relative(item["target"], f"source {item['id']} target", allow_dot=True)
+    prefix = "" if relative == Path(".") else relative.as_posix()
+    if expanded.is_file():
+        if not prefix:
+            raise ContractError(f"source {item['id']} expanded to a file but targets the tree root")
+        return [(expanded, prefix, expanded.stat().st_size)]
+    return [
+        (path, path_relative if not prefix else f"{prefix}/{path_relative}", size)
+        for path, path_relative, size in walk_tree_files(expanded)
+    ]
+
+
+def read_expansion_receipt(
+    root: Path,
+    bundle: Mapping[str, Any],
+    item: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Return a usable per-object expansion record, or None to redo the work."""
+    path = _expansion_receipt_path(root, bundle, item["id"])
+    if not path.is_file():
+        return None
+    receipt = _expect_object(load_json(path), f"expansion receipt for {item['id']}")
+    required = {
+        "schema", "bundle_id", "revision", "object_id", "source_sha256", "target", "transform",
+        "expanded_path", "file_count", "expanded_bytes", "inventory_sha256", "recorded_at",
+    }
+    _expect_keys(receipt, required, required, f"expansion receipt for {item['id']}")
+    if receipt["schema"] != EXPANSION_SCHEMA:
+        raise ContractError(f"expansion receipt for {item['id']} has an unsupported schema")
+    if (
+        receipt["bundle_id"] != bundle["id"]
+        or receipt["revision"] != bundle["revision"]
+        or receipt["object_id"] != item["id"]
+        or receipt["target"] != item["target"]
+        or receipt["transform"] != item["transform"]
+    ):
+        raise ContractError(f"expansion receipt for {item['id']} belongs to a different bundle revision")
+    for field in ("source_sha256", "inventory_sha256"):
+        if not SHA256_RE.fullmatch(str(receipt[field])):
+            raise ContractError(f"expansion receipt for {item['id']} has an invalid {field}")
+    expanded = root / str(receipt["expanded_path"])
+    if not expanded.exists():
+        return None
+    inventory_path = root / "inventories" / "sha256" / f"{receipt['inventory_sha256']}.json"
+    if not inventory_path.is_file():
+        return None
+    return receipt
+
+
+def _write_object_inventory(root: Path, document: Mapping[str, Any]) -> str:
+    digest = sha256_bytes(canonical_json(document))
+    path = root / "inventories" / "sha256" / f"{digest}.json"
+    if path.exists():
+        if sha256_bytes(canonical_json(load_json(path))) != digest:
+            raise ContractError("existing reference-data inventory content is corrupt")
+    else:
+        atomic_json(path, document)
+        path.chmod(0o444)
+    return digest
+
+
+def expand_object(
+    root: Path,
+    bundle: Mapping[str, Any],
+    item: Mapping[str, Any],
+    downloads: Path,
+    *,
+    verify_existing_blobs: bool = False,
+) -> tuple[dict[str, Any], str]:
+    """Localize and expand one catalog object into its own immutable tree.
+
+    Every object owns a separate content-addressed expansion, so independent
+    objects are downloaded, verified and decompressed concurrently and only the
+    small aggregate promotion needs the whole-bundle lock.
+    """
+    blob, source_sha256, disposition = localize_source(
+        root,
+        bundle,
+        item,
+        downloads,
+        verify_existing_blobs=verify_existing_blobs,
+    )
+    expanded = _expanded_root(root, bundle, item["id"], source_sha256)
+    if not expanded.exists():
+        staging_parent = root / ".staging"
+        staging_parent.mkdir(parents=True, exist_ok=True)
+        temporary = Path(tempfile.mkdtemp(prefix=f"{item['id']}.", dir=staging_parent))
+        try:
+            materialize(blob, item, temporary)
+            candidates = list(temporary.iterdir())
+            relative = _safe_relative(item["target"], f"source {item['id']} target", allow_dot=True)
+            promoted = temporary if relative == Path(".") else temporary / relative
+            if not promoted.exists() or (relative != Path(".") and not candidates):
+                raise ContractError(f"source {item['id']} produced no expanded content")
+            expanded.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(promoted, expanded)
+        finally:
+            if temporary.exists():
+                _remove_tree(temporary)
+    entries = _object_target_paths(item, expanded)
+    if not entries:
+        raise ContractError(f"source {item['id']} produced no expanded files")
+    files = [
+        {"path": tree_relative, "bytes": size, "sha256": _hash_file(path)}
+        for path, tree_relative, size in entries
+    ]
+    ordered, _digest, expanded_bytes = aggregate_tree_identity(files)
+    inventory_sha256 = _write_object_inventory(root, {
+        "schema": INVENTORY_SCHEMA,
+        "bundle_id": bundle["id"],
+        "revision": bundle["revision"],
+        "object_id": item["id"],
+        "source_sha256": source_sha256,
+        "file_count": len(ordered),
+        "expanded_bytes": expanded_bytes,
+        "files": ordered,
+    })
+    receipt = {
+        "schema": EXPANSION_SCHEMA,
+        "bundle_id": bundle["id"],
+        "revision": bundle["revision"],
+        "object_id": item["id"],
+        "source_sha256": source_sha256,
+        "target": item["target"],
+        "transform": item["transform"],
+        "expanded_path": expanded.relative_to(root).as_posix(),
+        "file_count": len(ordered),
+        "expanded_bytes": expanded_bytes,
+        "inventory_sha256": inventory_sha256,
+        "recorded_at": _utc_now(),
+    }
+    atomic_json(_expansion_receipt_path(root, bundle, item["id"]), receipt)
+    return receipt, disposition
+
+
+def localize_and_expand_bundle(
+    root: Path,
+    bundle: Mapping[str, Any],
+    downloads: Path,
+    *,
+    verify_existing_blobs: bool = False,
+) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    """Bring every object of a bundle to an expanded state, sharing the work.
+
+    Objects are claimed with non-blocking per-object locks, so several workers
+    on different nodes make progress at the same time and a worker never waits
+    on an object a peer already owns.
+    """
+    receipts: dict[str, dict[str, Any]] = {}
+    dispositions: dict[str, str] = {}
+    pending = {item["id"]: item for item in bundle["objects"]}
+
+    def claim(object_id: str, *, blocking: bool) -> bool:
+        item = pending[object_id]
+        lock_path = _object_lock_path(root, bundle, object_id)
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as lock:
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return False
+            existing = read_expansion_receipt(root, bundle, item)
+            if existing is not None:
+                receipts[object_id] = existing
+                dispositions[object_id] = "expanded"
+            else:
+                receipt, disposition = expand_object(
+                    root,
+                    bundle,
+                    item,
+                    downloads,
+                    verify_existing_blobs=verify_existing_blobs,
+                )
+                receipts[object_id] = receipt
+                dispositions[object_id] = disposition
+        del pending[object_id]
+        return True
+
+    while pending:
+        progressed = False
+        for object_id in list(pending):
+            existing = read_expansion_receipt(root, bundle, pending[object_id])
+            if existing is not None:
+                receipts[object_id] = existing
+                dispositions[object_id] = "expanded"
+                del pending[object_id]
+                progressed = True
+                continue
+            if claim(object_id, blocking=False):
+                progressed = True
+        if pending and not progressed:
+            # Every remaining object belongs to a peer. Wait on that peer's
+            # lock rather than on a timer, so this worker resumes the instant
+            # the object is published or the peer dies holding it.
+            claim(next(iter(pending)), blocking=True)
+    return receipts, dispositions
+
+
+def _link_or_move(source: Path, destination: Path) -> None:
+    """Place expanded content into the aggregate tree without copying bytes."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_dir():
+        destination.mkdir(exist_ok=True)
+        for child in sorted(source.iterdir()):
+            _link_or_move(child, destination / child.name)
+        return
+    try:
+        os.link(source, destination)
+    except OSError:
+        os.replace(source, destination)
+
+
+def assemble_bundle_tree(
+    root: Path,
+    bundle: Mapping[str, Any],
+    receipts: Mapping[str, Mapping[str, Any]],
+    staging: Path,
+) -> tuple[list[dict[str, Any]], str, int]:
+    """Assemble the aggregate tree and prove its exact aggregate identity."""
+    merged: list[dict[str, Any]] = []
+    for item in bundle["objects"]:
+        receipt = receipts[item["id"]]
+        inventory = _expect_object(
+            load_json(root / "inventories" / "sha256" / f"{receipt['inventory_sha256']}.json"),
+            f"object inventory for {item['id']}",
+        )
+        if sha256_bytes(canonical_json(inventory)) != receipt["inventory_sha256"]:
+            raise ContractError(f"object inventory for {item['id']} does not match its recorded digest")
+        merged.extend(inventory["files"])
+        expanded = root / str(receipt["expanded_path"])
+        relative = _safe_relative(item["target"], f"source {item['id']} target", allow_dot=True)
+        destination = staging if relative == Path(".") else staging / relative
+        if relative != Path(".") and destination.exists() and not bool(item.get("overwrite", False)):
+            raise ContractError(f"source {item['id']} would overwrite {relative}")
+        _link_or_move(expanded, destination)
+    files, tree_sha256, expanded_bytes = aggregate_tree_identity(merged)
+    observed = tree_stat_summary(staging)
+    if observed != [{"path": entry["path"], "bytes": entry["bytes"]} for entry in files]:
+        raise ContractError("assembled reference-data tree does not match the per-object inventories")
+    return files, tree_sha256, expanded_bytes
 
 
 def _readonly_tree(root: Path, *, include_root: bool = True) -> None:
@@ -583,7 +1629,14 @@ def _aws_copy(arguments: Sequence[str]) -> None:
         raise ContractError("private object-store copy failed")
 
 
-def _write_stage_telemetry(root: Path, bundle: Mapping[str, Any], manifest_sha256: str, duration: float, expanded: int) -> None:
+def _write_stage_telemetry(
+    root: Path,
+    bundle: Mapping[str, Any],
+    manifest_sha256: str,
+    duration: float,
+    expanded: int,
+    localization: Mapping[str, str] | None = None,
+) -> None:
     labels = f'bundle="{bundle["id"]}",revision="{bundle["revision"]}"'
     metrics = (
         "# HELP fs2_reference_data_ready Immutable reference-data revision readiness.\n"
@@ -595,9 +1648,118 @@ def _write_stage_telemetry(root: Path, bundle: Mapping[str, Any], manifest_sha25
         "# HELP fs2_reference_data_stage_duration_seconds Last successful staging duration.\n"
         "# TYPE fs2_reference_data_stage_duration_seconds gauge\n"
         f"fs2_reference_data_stage_duration_seconds{{{labels}}} {duration:.6f}\n"
-        f"# fs2_reference_data_manifest_sha256 {manifest_sha256}\n"
     )
+    if localization is not None:
+        counts = {state: 0 for state in ("downloaded", "adopted", "reused")}
+        for state in localization.values():
+            counts[state] = counts.get(state, 0) + 1
+        metrics += (
+            "# HELP fs2_reference_data_source_objects Catalog objects by how staging obtained them.\n"
+            "# TYPE fs2_reference_data_source_objects gauge\n"
+        )
+        for state in sorted(counts):
+            metrics += f'fs2_reference_data_source_objects{{{labels},disposition="{state}"}} {counts[state]}\n'
+        atomic_json(
+            root / "telemetry" / f"{bundle['id']}.localization.json",
+            {
+                "schema": PLAN_SCHEMA,
+                "bundle_id": bundle["id"],
+                "revision": bundle["revision"],
+                "manifest_sha256": manifest_sha256,
+                "recorded_at": _utc_now(),
+                "dispositions": dict(sorted(localization.items())),
+            },
+        )
+    metrics += f"# fs2_reference_data_manifest_sha256 {manifest_sha256}\n"
     atomic_text(root / "telemetry" / f"{bundle['id']}.prom", metrics)
+
+
+def _published_revision(
+    root: Path,
+    bundle: Mapping[str, Any],
+    *,
+    catalog_sha256: str,
+    access_sha256: str | None,
+    expected_object_manifest_prefix: str | None,
+    host_root: str,
+    placement: Mapping[str, Any],
+    verify_tree: bool,
+) -> tuple[dict[str, Any], str] | None:
+    """Return an already published, verified revision when one exists."""
+    bundle_id = bundle["id"]
+    status_path = root / "status" / f"{bundle_id}.json"
+    if not status_path.is_file():
+        return None
+    status = _expect_object(load_json(status_path), "existing publication status")
+    if status.get("revision") != bundle["revision"]:
+        return None
+    if status.get("bundle_id") != bundle_id or status.get("ready") is not True:
+        raise ContractError("existing publication status is inconsistent")
+    manifest_sha256 = str(status.get("manifest_sha256", ""))
+    if not SHA256_RE.fullmatch(manifest_sha256):
+        raise ContractError("existing publication status has an invalid manifest digest")
+    manifest_path = root / "manifests" / "sha256" / f"{manifest_sha256}.json"
+    manifest = _expect_object(load_json(manifest_path), "existing publication manifest")
+    storage = _expect_object(manifest.get("storage"), "existing publication storage")
+    if (
+        manifest.get("source_catalog_sha256") != catalog_sha256
+        or manifest.get("access_receipt_sha256") != access_sha256
+        or storage.get("object_manifest_prefix") != expected_object_manifest_prefix
+    ):
+        raise ContractError("published revision provenance changed; create a new immutable revision")
+    content = _expect_object(manifest.get("content"), "existing publication content")
+    if "inventory_sha256" not in content or "dataset_sub_path" not in storage:
+        raise ContractError(
+            "this revision was published before the bounded handoff contract and has no "
+            "inventory digest or dataset sub-path; run `upgrade-publication` to republish "
+            "the existing immutable tree under the bounded contract without re-staging it"
+        )
+    expected_sub_path = (
+        f"datasets/{bundle_id}/{bundle['revision']}/sha256/{manifest['content']['tree_sha256']}"
+    )
+    if storage.get("host_root") != host_root or storage.get("dataset_sub_path") != expected_sub_path:
+        raise ContractError(
+            "published manifest storage identity no longer matches the requested host root or "
+            f"dataset sub-path (manifest {storage.get('host_root')!r}:"
+            f"{storage.get('dataset_sub_path')!r} vs requested {host_root!r}:{expected_sub_path!r}); "
+            "publish a new immutable revision instead of returning a stale handoff"
+        )
+    verify_manifest(manifest_path, verify_tree=verify_tree)
+    expected_receipt = _terminal_receipt(
+        bundle,
+        manifest,
+        manifest_sha256,
+        host_root=host_root,
+        placement=placement,
+    )
+    receipt_path = root / "receipts" / bundle_id / f"{bundle['revision']}.json"
+    if receipt_path.is_file():
+        receipt = validate_terminal_receipt(load_json(receipt_path))
+        if receipt["content"]["manifest_sha256"] != manifest_sha256:
+            raise ContractError("published terminal receipt does not bind the published manifest")
+        # created_at is the only field allowed to differ between publications;
+        # a changed host root or tfvars placement must never be served stale.
+        stable = {key: value for key, value in receipt.items() if key != "created_at"}
+        if stable != {key: value for key, value in expected_receipt.items() if key != "created_at"}:
+            atomic_json(receipt_path, {**expected_receipt, "created_at": receipt["created_at"]})
+    else:
+        atomic_json(receipt_path, expected_receipt)
+    return manifest, manifest_sha256
+
+
+def _enter_shared_bundle_lock(lock: BinaryIO) -> None:
+    """Take the bundle lock in shared mode, excluding any legacy worker.
+
+    A worker from before per-object locking existed holds this lock
+    exclusively for its whole run. Probing exclusively first proves no such
+    worker is active before this worker starts claiming individual objects.
+    """
+    try:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_SH)
+        return
+    fcntl.flock(lock.fileno(), fcntl.LOCK_SH)
 
 
 def stage_bundle(
@@ -607,6 +1769,9 @@ def stage_bundle(
     *,
     access_receipt_path: Path | None = None,
     object_store_prefix: str | None = None,
+    verify_existing_blobs: bool = False,
+    placement_path: Path | None = None,
+    host_root: str = CANONICAL_HOST_ROOT,
 ) -> tuple[dict[str, Any], str]:
     started = time.monotonic()
     catalog = validate_catalog(load_json(catalog_path))
@@ -614,6 +1779,14 @@ def stage_bundle(
         bundle = catalog["bundles"][bundle_id]
     except KeyError as exc:
         raise ContractError(f"unknown bundle id {bundle_id}") from exc
+    placement = load_placement_contract(placement_path)
+    placement_stage = resolve_stage_placement(placement, "staging")
+    placement_stage = {
+        "resource_class": placement_stage["resource_class"],
+        "pool": placement_stage["pool"],
+        "node_selector": placement_stage["node_selector"],
+        "tolerations": placement_stage["tolerations"],
+    }
     policy = bundle["access"]["staging_policy"]
     access_sha256: str | None = None
     if policy != "automatic-public":
@@ -627,68 +1800,81 @@ def stage_bundle(
     catalog_sha256 = sha256_bytes(canonical_json(catalog))
     object_prefix = object_store_prefix.rstrip("/") if object_store_prefix else None
     expected_object_manifest_prefix = f"{object_prefix}/manifests/sha256" if object_prefix else None
+    published_arguments = {
+        "catalog_sha256": catalog_sha256,
+        "access_sha256": access_sha256,
+        "expected_object_manifest_prefix": expected_object_manifest_prefix,
+        "host_root": host_root,
+        "placement": placement_stage,
+        "verify_tree": verify_existing_blobs,
+    }
     lock_path = root / "locks" / f"{bundle_id}.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
+    downloads = root / "downloads" / bundle_id / bundle["revision"]
     with lock_path.open("a+b") as lock:
+        # Phase 1 shares the bundle lock so peers claim individual objects
+        # concurrently; only the aggregate promotion needs exclusivity.
+        _enter_shared_bundle_lock(lock)
+        already = _published_revision(root, bundle, **published_arguments)
+        if already is not None:
+            manifest, manifest_sha256 = already
+            _write_stage_telemetry(
+                root, bundle, manifest_sha256, time.monotonic() - started,
+                manifest["content"]["expanded_bytes"],
+            )
+            return manifest, manifest_sha256
+        expansions, localization = localize_and_expand_bundle(
+            root,
+            bundle,
+            downloads,
+            verify_existing_blobs=verify_existing_blobs,
+        )
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        status_path = root / "status" / f"{bundle_id}.json"
-        if status_path.is_file():
-            status = _expect_object(load_json(status_path), "existing publication status")
-            if status.get("revision") == bundle["revision"]:
-                if status.get("bundle_id") != bundle_id or status.get("ready") is not True:
-                    raise ContractError("existing publication status is inconsistent")
-                manifest_sha256 = str(status.get("manifest_sha256", ""))
-                if not SHA256_RE.fullmatch(manifest_sha256):
-                    raise ContractError("existing publication status has an invalid manifest digest")
-                manifest_path = root / "manifests" / "sha256" / f"{manifest_sha256}.json"
-                manifest = _expect_object(load_json(manifest_path), "existing publication manifest")
-                storage = _expect_object(manifest.get("storage"), "existing publication storage")
-                if (
-                    manifest.get("source_catalog_sha256") != catalog_sha256
-                    or manifest.get("access_receipt_sha256") != access_sha256
-                    or storage.get("object_manifest_prefix") != expected_object_manifest_prefix
-                ):
-                    raise ContractError("published revision provenance changed; create a new immutable revision")
-                verify_manifest(manifest_path)
-                _write_stage_telemetry(
-                    root,
-                    bundle,
-                    manifest_sha256,
-                    time.monotonic() - started,
-                    manifest["content"]["expanded_bytes"],
-                )
-                return manifest, manifest_sha256
-        downloads = root / "downloads" / bundle_id / bundle["revision"]
-        source_objects: list[dict[str, Any]] = []
-        blobs: list[tuple[Mapping[str, Any], Path]] = []
-        for item in bundle["objects"]:
-            partial, source_sha256 = download_source(item, downloads)
-            blob = root / "blobs" / "sha256" / source_sha256[:2] / source_sha256
-            blob.parent.mkdir(parents=True, exist_ok=True)
-            if blob.exists():
-                if blob.stat().st_size != item["source_bytes"] or _hash_file(blob) != source_sha256:
-                    raise ContractError(f"existing content-addressed blob is corrupt: {item['id']}")
-                partial.unlink(missing_ok=True)
-            else:
-                os.replace(partial, blob)
-                blob.chmod(0o444)
-            source_objects.append({
+        already = _published_revision(root, bundle, **published_arguments)
+        if already is not None:
+            manifest, manifest_sha256 = already
+            _write_stage_telemetry(
+                root, bundle, manifest_sha256, time.monotonic() - started,
+                manifest["content"]["expanded_bytes"],
+            )
+            return manifest, manifest_sha256
+        source_objects = [
+            {
                 "id": item["id"],
                 "source_bytes": item["source_bytes"],
-                "source_sha256": source_sha256,
+                "source_sha256": expansions[item["id"]]["source_sha256"],
                 "target": item["target"],
                 "transform": item["transform"],
-            })
-            blobs.append((item, blob))
-
+            }
+            for item in bundle["objects"]
+        ]
         staging_parent = root / ".staging"
         staging_parent.mkdir(parents=True, exist_ok=True)
         staging = Path(tempfile.mkdtemp(prefix=f"{bundle_id}.", dir=staging_parent))
         try:
-            for item, blob in blobs:
-                materialize(blob, item, staging)
-            files, tree_sha256, expanded_bytes = tree_inventory(staging)
+            files, tree_sha256, expanded_bytes = assemble_bundle_tree(root, bundle, expansions, staging)
             final = root / "datasets" / bundle_id / bundle["revision"] / "sha256" / tree_sha256
+            dataset_sub_path = final.relative_to(root).as_posix()
+            inventory = {
+                "schema": INVENTORY_SCHEMA,
+                "bundle_id": bundle_id,
+                "revision": bundle["revision"],
+                "tree_sha256": tree_sha256,
+                "expanded_bytes": expanded_bytes,
+                "file_count": len(files),
+                "files": files,
+            }
+            inventory_sha256 = sha256_bytes(canonical_json(inventory))
+            inventory_path = root / "inventories" / "sha256" / f"{inventory_sha256}.json"
+            content: dict[str, Any] = {
+                "tree_sha256": tree_sha256,
+                "expanded_bytes": expanded_bytes,
+                "file_count": len(files),
+                "inventory_sha256": inventory_sha256,
+            }
+            if len(files) <= MAX_INLINE_INVENTORY_FILES:
+                content["files"] = files
             stable_manifest: dict[str, Any] = {
                 "schema": MANIFEST_SCHEMA,
                 "bundle_id": bundle_id,
@@ -696,17 +1882,20 @@ def stage_bundle(
                 "source_catalog_sha256": catalog_sha256,
                 "access_receipt_sha256": access_sha256,
                 "source_objects": source_objects,
-                "content": {
-                    "tree_sha256": tree_sha256,
-                    "expanded_bytes": expanded_bytes,
-                    "file_count": len(files),
-                    "files": files,
-                },
+                "content": content,
                 "storage": {
                     "shared_filesystem_uri": final.resolve().as_uri(),
                     "object_manifest_prefix": expected_object_manifest_prefix,
+                    "host_root": host_root,
+                    "dataset_sub_path": dataset_sub_path,
+                    "inventory_uri": inventory_path.resolve().as_uri(),
                 },
             }
+            if not inventory_path.exists():
+                atomic_json(inventory_path, inventory)
+                inventory_path.chmod(0o444)
+            elif sha256_bytes(canonical_json(load_json(inventory_path))) != inventory_sha256:
+                raise ContractError("existing reference-data inventory content is corrupt")
             marker = final / ".fs2-manifest-sha256"
             if final.exists():
                 manifest_sha256 = marker.read_text(encoding="utf-8").strip() if marker.is_file() else ""
@@ -746,9 +1935,23 @@ def stage_bundle(
                 atomic_json(manifest_path, manifest)
                 manifest_path.chmod(0o444)
             if object_prefix:
-                for _item, blob in blobs:
+                for item in bundle["objects"]:
+                    blob = _blob_path(root, expansions[item["id"]]["source_sha256"])
                     _aws_copy(["s3", "cp", str(blob), f"{object_prefix}/blobs/sha256/{blob.name}"])
+                _aws_copy([
+                    "s3", "cp", str(inventory_path),
+                    f"{object_prefix}/inventories/sha256/{inventory_sha256}.json",
+                ])
                 _aws_copy(["s3", "cp", str(manifest_path), f"{object_prefix}/manifests/sha256/{manifest_sha256}.json"])
+            receipt = _terminal_receipt(
+                bundle,
+                manifest,
+                manifest_sha256,
+                host_root=host_root,
+                placement=placement_stage,
+            )
+            receipt_path = root / "receipts" / bundle_id / f"{bundle['revision']}.json"
+            atomic_json(receipt_path, receipt)
             status = {
                 "schema": "fs2-serve.nebius.ai/reference-data-status/v1",
                 "bundle_id": bundle_id,
@@ -756,19 +1959,363 @@ def stage_bundle(
                 "ready": True,
                 "manifest_sha256": manifest_sha256,
                 "tree_sha256": tree_sha256,
+                "inventory_sha256": inventory_sha256,
+                "receipt_sha256": sha256_bytes(canonical_json(receipt)),
+                "dataset_sub_path": dataset_sub_path,
                 "expanded_bytes": expanded_bytes,
                 "file_count": len(files),
                 "updated_at": _utc_now(),
             }
             atomic_json(root / "status" / f"{bundle_id}.json", status)
-            _write_stage_telemetry(root, bundle, manifest_sha256, time.monotonic() - started, expanded_bytes)
+            _write_stage_telemetry(
+                root,
+                bundle,
+                manifest_sha256,
+                time.monotonic() - started,
+                expanded_bytes,
+                localization,
+            )
+            # The published tree now holds the same inodes as the per-object
+            # expansions, so the working copies are redundant, not a second copy.
+            expanded_revision = root / "expanded" / bundle_id / bundle["revision"]
+            if expanded_revision.exists():
+                _remove_tree(expanded_revision)
             return manifest, manifest_sha256
         finally:
             if staging.exists():
                 _remove_tree(staging)
 
 
-def verify_manifest(manifest_path: Path) -> tuple[dict[str, Any], str]:
+def _resolve_manifest_inventory(manifest: Mapping[str, Any], manifest_path: Path) -> list[dict[str, Any]]:
+    """Return the full file inventory a manifest commits to.
+
+    Small bundles keep the inventory inline. Reference databases exceed what a
+    consumer may enumerate, so their inventory is a separate content-addressed
+    document referenced by digest and resolved only for a full tree audit.
+    """
+    content = _expect_object(manifest.get("content"), "manifest content")
+    inline = content.get("files")
+    if isinstance(inline, list):
+        return inline
+    digest = str(content.get("inventory_sha256", ""))
+    if not SHA256_RE.fullmatch(digest):
+        raise ContractError("manifest file inventory is invalid")
+    uri = str(manifest.get("storage", {}).get("inventory_uri", ""))
+    parsed = parse.urlparse(uri)
+    if parsed.scheme == "file":
+        inventory_path = Path(parse.unquote(parsed.path))
+    else:
+        inventory_path = manifest_path.parents[2] / "inventories" / "sha256" / f"{digest}.json"
+    inventory = _expect_object(load_json(inventory_path), "published inventory")
+    if inventory.get("schema") != INVENTORY_SCHEMA:
+        raise ContractError("published inventory schema is invalid")
+    if sha256_bytes(canonical_json(inventory)) != digest:
+        raise ContractError("published inventory does not match its recorded digest")
+    if (
+        inventory.get("tree_sha256") != content.get("tree_sha256")
+        or inventory.get("file_count") != content.get("file_count")
+        or inventory.get("expanded_bytes") != content.get("expanded_bytes")
+    ):
+        raise ContractError("published inventory does not bind the manifest tree identity")
+    files = inventory.get("files")
+    if not isinstance(files, list):
+        raise ContractError("published inventory file list is invalid")
+    return files
+
+
+DEFAULT_RECEIPT_PLACEMENT: dict[str, Any] = {
+    "resource_class": "cpu",
+    "pool": "reference-cpu",
+    "node_selector": {
+        "capacity.fs2.nebius/pool": "reference-data",
+        "capacity.fs2.nebius/type": "regular",
+        "storage.fs2.nebius/reference-data": "true",
+        "workload.fs2.nebius/reference-data": "true",
+    },
+    "tolerations": [{
+        "effect": "NoSchedule",
+        "key": "workload.fs2.nebius/reference-data",
+        "operator": "Equal",
+        "value": "true",
+    }],
+}
+
+
+def build_terminal_receipt(
+    *,
+    bundle_id: str,
+    revision: str,
+    tree_sha256: str,
+    manifest_sha256: str,
+    inventory_sha256: str,
+    file_count: int,
+    expanded_bytes: int,
+    created_at: str | None = None,
+    host_root: str = CANONICAL_HOST_ROOT,
+    mount_path: str = "/reference-data",
+    placement: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build and validate a terminal handoff receipt.
+
+    Both the publisher and any consumer-side fixture go through this one
+    function, so a consumer integration test can never drift from the shape
+    the publisher actually writes.
+    """
+    receipt = {
+        "schema": RECEIPT_SCHEMA,
+        "bundle_id": bundle_id,
+        "revision": revision,
+        "created_at": created_at or _utc_now(),
+        "storage": {
+            "host_root": host_root,
+            "mount_path": mount_path,
+            "dataset_sub_path": f"datasets/{bundle_id}/{revision}/sha256/{tree_sha256}",
+            "read_only": True,
+        },
+        "content": {
+            "tree_sha256": tree_sha256,
+            "manifest_sha256": manifest_sha256,
+            "inventory_sha256": inventory_sha256,
+            "inventory_marker": ".fs2-manifest-sha256",
+            "file_count": file_count,
+            "expanded_bytes": expanded_bytes,
+            "inline_inventory": file_count <= MAX_INLINE_INVENTORY_FILES,
+        },
+        "placement": dict(placement if placement is not None else DEFAULT_RECEIPT_PLACEMENT),
+    }
+    return validate_terminal_receipt(receipt)
+
+
+def _terminal_receipt(
+    bundle: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    manifest_sha256: str,
+    *,
+    host_root: str,
+    placement: Mapping[str, Any],
+) -> dict[str, Any]:
+    content = _expect_object(manifest.get("content"), "manifest content")
+    return build_terminal_receipt(
+        bundle_id=bundle["id"],
+        revision=bundle["revision"],
+        tree_sha256=content["tree_sha256"],
+        manifest_sha256=manifest_sha256,
+        inventory_sha256=content["inventory_sha256"],
+        file_count=content["file_count"],
+        expanded_bytes=content["expanded_bytes"],
+        host_root=host_root,
+        placement=placement,
+    )
+
+
+def derive_database_root(receipt: Mapping[str, Any]) -> str:
+    """The read-only in-container path a consumer mounts for this revision.
+
+    Derived only from published receipt fields, so the mounted dataset path
+    and its ``/sha256/<tree>`` component always agree with the tree digest.
+    """
+    validated = validate_terminal_receipt(receipt)
+    storage = validated["storage"]
+    return f"{str(storage['mount_path']).rstrip('/')}/{storage['dataset_sub_path']}"
+
+
+def derive_preprocess_reference_data(
+    receipt: Mapping[str, Any],
+    *,
+    manifest_uri: str,
+) -> dict[str, Any]:
+    """Transform a producer receipt into a preprocess request reference block.
+
+    This is the consumer-side transform. The publisher never invents a
+    manifest location, so the caller supplies the URI it published the
+    manifest to and it must name that manifest's exact digest.
+    """
+    validated = validate_terminal_receipt(receipt)
+    manifest_sha256 = validated["content"]["manifest_sha256"]
+    if parse.urlparse(manifest_uri).scheme not in {"file", "s3"}:
+        raise ContractError("reference manifest URI must use file or s3")
+    if not parse.urlparse(manifest_uri).path.endswith(f"/{manifest_sha256}.json"):
+        raise ContractError(
+            "reference manifest URI must name the published manifest digest "
+            f"{manifest_sha256}"
+        )
+    return {
+        "bundle_id": validated["bundle_id"],
+        "revision": validated["revision"],
+        "manifest_uri": manifest_uri,
+        "manifest_sha256": manifest_sha256,
+    }
+
+
+def upgrade_publication(
+    catalog_path: Path,
+    bundle_id: str,
+    root: Path,
+    *,
+    access_receipt_path: Path | None = None,
+    object_store_prefix: str | None = None,
+    placement_path: Path | None = None,
+    host_root: str = CANONICAL_HOST_ROOT,
+) -> tuple[dict[str, Any], str]:
+    """Republish an existing immutable tree under the bounded handoff contract.
+
+    A revision staged before the bounded contract carries its whole file
+    inventory inside the manifest and names no host root or dataset sub-path.
+    The tree itself is still correct, so it is re-verified in place and only
+    the manifest, inventory, marker, receipt and status are rewritten. Nothing
+    is re-downloaded and nothing is re-materialized.
+    """
+    catalog = validate_catalog(load_json(catalog_path))
+    try:
+        bundle = catalog["bundles"][bundle_id]
+    except KeyError as exc:
+        raise ContractError(f"unknown bundle id {bundle_id}") from exc
+    placement = load_placement_contract(placement_path)
+    stage_placement = resolve_stage_placement(placement, "staging")
+    placement_stage = {
+        "resource_class": stage_placement["resource_class"],
+        "pool": stage_placement["pool"],
+        "node_selector": stage_placement["node_selector"],
+        "tolerations": stage_placement["tolerations"],
+    }
+    policy = bundle["access"]["staging_policy"]
+    access_sha256: str | None = None
+    if access_receipt_path is not None:
+        access_sha256 = validate_access_receipt(load_json(access_receipt_path), bundle)
+    elif policy != "automatic-public":
+        raise ContractError(f"bundle {bundle_id} requires a non-secret access/terms receipt")
+    catalog_sha256 = sha256_bytes(canonical_json(catalog))
+    object_prefix = object_store_prefix.rstrip("/") if object_store_prefix else None
+    expected_object_manifest_prefix = f"{object_prefix}/manifests/sha256" if object_prefix else None
+
+    lock_path = root / "locks" / f"{bundle_id}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        status_path = root / "status" / f"{bundle_id}.json"
+        if not status_path.is_file():
+            raise ContractError("there is no published revision to upgrade")
+        status = _expect_object(load_json(status_path), "existing publication status")
+        if status.get("revision") != bundle["revision"] or status.get("ready") is not True:
+            raise ContractError("the published revision does not match this catalog revision")
+        previous_sha256 = str(status.get("manifest_sha256", ""))
+        if not SHA256_RE.fullmatch(previous_sha256):
+            raise ContractError("existing publication status has an invalid manifest digest")
+        previous_path = root / "manifests" / "sha256" / f"{previous_sha256}.json"
+        previous = _expect_object(load_json(previous_path), "existing publication manifest")
+        previous_storage = _expect_object(previous.get("storage"), "existing publication storage")
+        if (
+            previous.get("source_catalog_sha256") != catalog_sha256
+            or previous.get("access_receipt_sha256") != access_sha256
+        ):
+            raise ContractError("published revision provenance changed; create a new immutable revision")
+
+        parsed = parse.urlparse(str(previous_storage.get("shared_filesystem_uri", "")))
+        if parsed.scheme != "file":
+            raise ContractError("the published tree must be addressable as a file:/// URI")
+        final = Path(parse.unquote(parsed.path))
+        previous_content = _expect_object(previous.get("content"), "existing publication content")
+        if not final.is_dir() or final.name != previous_content.get("tree_sha256"):
+            raise ContractError("the published tree is missing or does not bind its aggregate digest")
+
+        # Re-verify the tree in place: the upgrade must never assume content.
+        files, tree_sha256, expanded_bytes = tree_inventory(final)
+        if (
+            tree_sha256 != previous_content["tree_sha256"]
+            or expanded_bytes != previous_content["expanded_bytes"]
+            or len(files) != previous_content["file_count"]
+        ):
+            raise ContractError("published tree aggregate identity changed; refusing to upgrade")
+
+        dataset_sub_path = final.relative_to(root).as_posix()
+        inventory = {
+            "schema": INVENTORY_SCHEMA,
+            "bundle_id": bundle_id,
+            "revision": bundle["revision"],
+            "tree_sha256": tree_sha256,
+            "expanded_bytes": expanded_bytes,
+            "file_count": len(files),
+            "files": files,
+        }
+        inventory_sha256 = _write_object_inventory(root, inventory)
+        inventory_path = root / "inventories" / "sha256" / f"{inventory_sha256}.json"
+        content: dict[str, Any] = {
+            "tree_sha256": tree_sha256,
+            "expanded_bytes": expanded_bytes,
+            "file_count": len(files),
+            "inventory_sha256": inventory_sha256,
+        }
+        if len(files) <= MAX_INLINE_INVENTORY_FILES:
+            content["files"] = files
+        manifest = {
+            "schema": MANIFEST_SCHEMA,
+            "bundle_id": bundle_id,
+            "revision": bundle["revision"],
+            "source_catalog_sha256": catalog_sha256,
+            "access_receipt_sha256": access_sha256,
+            "source_objects": previous["source_objects"],
+            "content": content,
+            "storage": {
+                "shared_filesystem_uri": final.resolve().as_uri(),
+                "object_manifest_prefix": expected_object_manifest_prefix,
+                "host_root": host_root,
+                "dataset_sub_path": dataset_sub_path,
+                "inventory_uri": inventory_path.resolve().as_uri(),
+            },
+            # The publication instant is a fact about the tree, not about this
+            # upgrade, so it is carried forward unchanged.
+            "created_at": previous["created_at"],
+        }
+        manifest_sha256 = sha256_bytes(canonical_json(manifest))
+        manifest_path = root / "manifests" / "sha256" / f"{manifest_sha256}.json"
+        if not manifest_path.exists():
+            atomic_json(manifest_path, manifest)
+            manifest_path.chmod(0o444)
+
+        marker = final / ".fs2-manifest-sha256"
+        if not marker.is_file() or marker.read_text(encoding="utf-8").strip() != manifest_sha256:
+            directory_mode = final.stat().st_mode & 0o7777
+            final.chmod(0o755)
+            try:
+                marker.unlink(missing_ok=True)
+                atomic_text(marker, manifest_sha256 + "\n")
+                marker.chmod(0o444)
+            finally:
+                final.chmod(directory_mode)
+        verify_manifest(manifest_path, verify_tree=False)
+
+        if object_prefix:
+            _aws_copy([
+                "s3", "cp", str(inventory_path),
+                f"{object_prefix}/inventories/sha256/{inventory_sha256}.json",
+            ])
+            _aws_copy([
+                "s3", "cp", str(manifest_path),
+                f"{object_prefix}/manifests/sha256/{manifest_sha256}.json",
+            ])
+
+        receipt = _terminal_receipt(
+            bundle, manifest, manifest_sha256, host_root=host_root, placement=placement_stage
+        )
+        atomic_json(root / "receipts" / bundle_id / f"{bundle['revision']}.json", receipt)
+        atomic_json(status_path, {
+            "schema": "fs2-serve.nebius.ai/reference-data-status/v1",
+            "bundle_id": bundle_id,
+            "revision": bundle["revision"],
+            "ready": True,
+            "manifest_sha256": manifest_sha256,
+            "tree_sha256": tree_sha256,
+            "inventory_sha256": inventory_sha256,
+            "receipt_sha256": sha256_bytes(canonical_json(receipt)),
+            "dataset_sub_path": dataset_sub_path,
+            "expanded_bytes": expanded_bytes,
+            "file_count": len(files),
+            "updated_at": _utc_now(),
+        })
+        return manifest, manifest_sha256
+
+
+def verify_manifest(manifest_path: Path, *, verify_tree: bool = True) -> tuple[dict[str, Any], str]:
     manifest = load_json(manifest_path)
     if not isinstance(manifest, dict) or manifest.get("schema") != MANIFEST_SCHEMA:
         raise ContractError("published manifest schema is invalid")
@@ -781,18 +2328,31 @@ def verify_manifest(manifest_path: Path) -> tuple[dict[str, Any], str]:
     if parsed.scheme != "file":
         raise ContractError("offline tree verification requires a file:/// shared-filesystem URI")
     root = Path(parse.unquote(parsed.path))
-    expected_files = manifest.get("content", {}).get("files")
-    if not isinstance(expected_files, list):
-        raise ContractError("manifest file inventory is invalid")
-    observed_files, tree_sha256, expanded_bytes = tree_inventory(root)
-    if observed_files != expected_files:
-        raise ContractError("published tree file inventory or checksums changed")
-    if tree_sha256 != manifest["content"]["tree_sha256"] or expanded_bytes != manifest["content"]["expanded_bytes"]:
-        raise ContractError("published tree aggregate identity changed")
+    content = _expect_object(manifest.get("content"), "manifest content")
+    for field in ("tree_sha256", "expanded_bytes", "file_count"):
+        if field not in content:
+            raise ContractError("manifest content identity is incomplete")
     marker = root / ".fs2-manifest-sha256"
     if not marker.is_file() or marker.read_text(encoding="utf-8").strip() != manifest_sha256:
         raise ContractError("published tree readiness marker is missing or mismatched")
+    if root.name != content["tree_sha256"]:
+        raise ContractError("published tree path does not bind its aggregate tree digest")
+    if not verify_tree:
+        _resolve_manifest_inventory(manifest, manifest_path)
+        return manifest, manifest_sha256
+    expected_files = _resolve_manifest_inventory(manifest, manifest_path)
+    observed_files, tree_sha256, expanded_bytes = tree_inventory(root)
+    if observed_files != expected_files:
+        raise ContractError("published tree file inventory or checksums changed")
+    if tree_sha256 != content["tree_sha256"] or expanded_bytes != content["expanded_bytes"]:
+        raise ContractError("published tree aggregate identity changed")
     return manifest, manifest_sha256
+
+
+DEFAULT_ALPHAFOLD3_ENTRYPOINT = {
+    "interpreter": "/usr/bin/python3",
+    "script": "/opt/alphafold3/run_alphafold.py",
+}
 
 
 def validate_preprocess_request(document: Any, *, allow_public_msa: bool = False) -> dict[str, Any]:
@@ -884,9 +2444,14 @@ def validate_preprocess_request(document: Any, *, allow_public_msa: bool = False
         raise ContractError("preprocess deadline or retry limit is invalid")
     backend = _expect_object(document["backend"], "preprocess backend")
     backend_fields = {"kind", "database_root", "output_format", "threads"}
-    _expect_keys(backend, backend_fields, backend_fields, "preprocess backend")
+    _expect_keys(backend, backend_fields, backend_fields | {"entrypoint"}, "preprocess backend")
     if not isinstance(backend["threads"], int) or not 1 <= backend["threads"] <= 128:
         raise ContractError("preprocess backend thread count is invalid")
+    if backend["threads"] > int(execution["cpu"]):
+        raise ContractError(
+            f"preprocess backend requests {backend['threads']} threads but only "
+            f"{execution['cpu']} CPU; the search tools would oversubscribe the pool"
+        )
     database_root = str(backend.get("database_root", ""))
     if not database_root.startswith("/reference-data/") or ".." in Path(database_root).parts:
         raise ContractError("database_root must be inside the read-only /reference-data mount")
@@ -900,6 +2465,25 @@ def validate_preprocess_request(document: Any, *, allow_public_msa: bool = False
         raise ContractError("preprocess backend is unsupported")
     if backend.get("output_format") != expected_formats[backend_kind]:
         raise ContractError("preprocess output format does not match its backend")
+    if backend_kind == "alphafold3-data":
+        check_model_preprocessing_capacity(execution, "alphafold3")
+    if "entrypoint" in backend:
+        if backend_kind != "alphafold3-data":
+            raise ContractError(
+                "only the alphafold3-data backend takes an explicit entrypoint; other "
+                "backends resolve their own executable from the image"
+            )
+        entrypoint = _expect_object(backend["entrypoint"], "preprocess backend entrypoint")
+        entrypoint_fields = {"interpreter", "script"}
+        _expect_keys(entrypoint, entrypoint_fields, entrypoint_fields, "preprocess backend entrypoint")
+        for field in sorted(entrypoint_fields):
+            value = str(entrypoint[field])
+            if not value.startswith("/") or ".." in Path(value).parts:
+                raise ContractError(
+                    f"preprocess backend entrypoint {field} must be an absolute path without traversal"
+                )
+            if not re.fullmatch(r"[A-Za-z0-9._/+-]+", value):
+                raise ContractError(f"preprocess backend entrypoint {field} has unsupported characters")
     database_parts = Path(database_root).parts
     if (
         len(database_parts) < 6
@@ -1119,9 +2703,18 @@ def _execute_preprocess(
             environment["PROTENIX_ROOT_DIR"] = str(database_root)
             command = ["protenix", "prep", "--input", str(input_path), "--out_dir", str(output)]
         else:
+            # Runtime images place the interpreter and entrypoint differently,
+            # so the request declares them rather than the executor assuming
+            # one image layout. AlphaFold 3 defaults both search tools to eight
+            # threads, which oversubscribes a smaller CPU pool, so the declared
+            # budget is passed explicitly and inference stays on the
+            # accelerator stage.
+            entrypoint = backend.get("entrypoint", DEFAULT_ALPHAFOLD3_ENTRYPOINT)
             command = [
-                "python", "/opt/alphafold3/run_alphafold.py", f"--json_path={input_path}",
+                entrypoint["interpreter"], entrypoint["script"], f"--json_path={input_path}",
                 f"--db_dir={database_root}", f"--output_dir={output}", "--norun_inference",
+                f"--jackhmmer_n_cpu={backend['threads']}",
+                f"--nhmmer_n_cpu={backend['threads']}",
             ]
         if shutil.which(command[0]) is None:
             raise ContractError(f"preprocess image does not contain required executable {command[0]}")
@@ -1362,8 +2955,34 @@ def parser() -> argparse.ArgumentParser:
     stage.add_argument("--root", type=Path, required=True)
     stage.add_argument("--access-receipt", type=Path)
     stage.add_argument("--object-store-prefix")
+    stage.add_argument("--placement", type=Path)
+    stage.add_argument("--host-root", default=CANONICAL_HOST_ROOT)
+    stage.add_argument("--verify-existing-blobs", action="store_true")
+    upgrade = subparsers.add_parser("upgrade-publication")
+    upgrade.add_argument("--catalog", type=Path, required=True)
+    upgrade.add_argument("--bundle", required=True)
+    upgrade.add_argument("--root", type=Path, required=True)
+    upgrade.add_argument("--access-receipt", type=Path)
+    upgrade.add_argument("--object-store-prefix")
+    upgrade.add_argument("--placement", type=Path)
+    upgrade.add_argument("--host-root", default=CANONICAL_HOST_ROOT)
+    plan = subparsers.add_parser("plan")
+    plan.add_argument("--catalog", type=Path, required=True)
+    plan.add_argument("--bundle", required=True)
+    plan.add_argument("--root", type=Path, required=True)
     verify = subparsers.add_parser("verify")
     verify.add_argument("--manifest", type=Path, required=True)
+    verify.add_argument("--verify-tree", action="store_true")
+    handoff = subparsers.add_parser("handoff")
+    handoff.add_argument("--root", type=Path, required=True)
+    handoff.add_argument("--bundle", required=True)
+    handoff.add_argument("--revision", required=True)
+    validate_handoff = subparsers.add_parser("validate-handoff")
+    validate_handoff.add_argument("--receipt", type=Path, required=True)
+    validate_placement = subparsers.add_parser("validate-placement")
+    validate_placement.add_argument("--placement", type=Path)
+    capacity = subparsers.add_parser("capacity-requirements")
+    capacity.add_argument("--placement", type=Path)
     validate_request = subparsers.add_parser("validate-request")
     validate_request.add_argument("--request", type=Path, required=True)
     validate_request.add_argument("--allow-public-msa", action="store_true")
@@ -1389,17 +3008,82 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 "bundle_count": len(catalog["bundles"]),
             }, sort_keys=True))
         elif args.command == "stage":
-            _manifest, digest = stage_bundle(
+            manifest, digest = stage_bundle(
                 args.catalog,
                 args.bundle,
                 args.root,
                 access_receipt_path=args.access_receipt,
                 object_store_prefix=args.object_store_prefix,
+                verify_existing_blobs=args.verify_existing_blobs,
+                placement_path=args.placement,
+                host_root=args.host_root,
             )
-            print(json.dumps({"ready": True, "manifest_sha256": digest}, sort_keys=True))
+            content = manifest["content"]
+            print(json.dumps({
+                "ready": True,
+                "manifest_sha256": digest,
+                "tree_sha256": content["tree_sha256"],
+                "inventory_sha256": content["inventory_sha256"],
+                "file_count": content["file_count"],
+                "expanded_bytes": content["expanded_bytes"],
+                "dataset_sub_path": manifest["storage"]["dataset_sub_path"],
+            }, sort_keys=True))
+        elif args.command == "upgrade-publication":
+            manifest, digest = upgrade_publication(
+                args.catalog,
+                args.bundle,
+                args.root,
+                access_receipt_path=args.access_receipt,
+                object_store_prefix=args.object_store_prefix,
+                placement_path=args.placement,
+                host_root=args.host_root,
+            )
+            content = manifest["content"]
+            print(json.dumps({
+                "upgraded": True,
+                "manifest_sha256": digest,
+                "tree_sha256": content["tree_sha256"],
+                "inventory_sha256": content["inventory_sha256"],
+                "file_count": content["file_count"],
+                "expanded_bytes": content["expanded_bytes"],
+                "dataset_sub_path": manifest["storage"]["dataset_sub_path"],
+            }, sort_keys=True))
+        elif args.command == "plan":
+            print(json.dumps(localization_plan(args.catalog, args.bundle, args.root), indent=2, sort_keys=True))
         elif args.command == "verify":
-            _manifest, digest = verify_manifest(args.manifest)
+            _manifest, digest = verify_manifest(args.manifest, verify_tree=args.verify_tree)
             print(json.dumps({"valid": True, "manifest_sha256": digest}, sort_keys=True))
+        elif args.command == "handoff":
+            receipt_path = args.root / "receipts" / args.bundle / f"{args.revision}.json"
+            print(json.dumps(validate_terminal_receipt(load_json(receipt_path)), indent=2, sort_keys=True))
+        elif args.command == "validate-handoff":
+            receipt = validate_terminal_receipt(load_json(args.receipt))
+            print(json.dumps({
+                "valid": True,
+                "receipt_sha256": sha256_bytes(canonical_json(receipt)),
+                "tree_sha256": receipt["content"]["tree_sha256"],
+                "manifest_sha256": receipt["content"]["manifest_sha256"],
+            }, sort_keys=True))
+        elif args.command == "capacity-requirements":
+            contract = load_placement_contract(args.placement)
+            print(json.dumps({
+                "schema": "fs2-serve.nebius.ai/reference-data-capacity-requirements/v1",
+                "model_preprocessing_capacity": {
+                    "alphafold3": model_preprocessing_capacity("alphafold3"),
+                },
+                "stages": [
+                    stage_admissibility(contract, stage_id)
+                    for stage_id in sorted(contract["stages"])
+                ],
+            }, indent=2, sort_keys=True))
+        elif args.command == "validate-placement":
+            contract = load_placement_contract(args.placement)
+            print(json.dumps({
+                "valid": True,
+                "placement_sha256": sha256_bytes(canonical_json(contract)),
+                "stages": sorted(contract["stages"]),
+                "pools": sorted(contract["pools"]),
+            }, sort_keys=True))
         elif args.command == "validate-request":
             document = validate_preprocess_request(load_json(args.request), allow_public_msa=args.allow_public_msa)
             print(json.dumps({"valid": True, "request_sha256": sha256_bytes(canonical_json(document))}, sort_keys=True))

@@ -1,0 +1,39 @@
+{
+  "bundle_id": "alphafold3-public-databases-v3.0",
+  "content": {
+    "expanded_bytes": 630000000000,
+    "file_count": 214017,
+    "inline_inventory": false,
+    "inventory_marker": ".fs2-manifest-sha256",
+    "inventory_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tree_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "created_at": "2026-09-03T00:00:00Z",
+  "placement": {
+    "node_selector": {
+      "capacity.fs2.nebius/pool": "reference-data",
+      "capacity.fs2.nebius/type": "regular",
+      "storage.fs2.nebius/reference-data": "true",
+      "workload.fs2.nebius/reference-data": "true"
+    },
+    "pool": "reference-cpu",
+    "resource_class": "cpu",
+    "tolerations": [
+      {
+        "effect": "NoSchedule",
+        "key": "workload.fs2.nebius/reference-data",
+        "operator": "Equal",
+        "value": "true"
+      }
+    ]
+  },
+  "revision": "v3.0-paper-snapshot-2022-09-28",
+  "schema": "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1",
+  "storage": {
+    "dataset_sub_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "host_root": "/mnt/fs2-reference-data/data",
+    "mount_path": "/reference-data",
+    "read_only": true
+  }
+}

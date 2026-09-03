@@ -53,6 +53,14 @@ variable "reference_data" {
       active_deadline_seconds = number
       backoff_limit           = number
     })
+    preprocess = optional(object({
+      cpu                     = optional(string, "16")
+      memory                  = optional(string, "64Gi")
+      ephemeral_storage       = optional(string, "32Gi")
+      active_deadline_seconds = optional(number, 21600)
+      backoff_limit           = optional(number, 2)
+      threads                 = optional(number, 16)
+    }), {})
     storage_contract = optional(object({
       schema     = string
       project_id = string
@@ -154,6 +162,14 @@ variable "reference_data" {
       ephemeral_storage       = "2Gi"
       active_deadline_seconds = 604800
       backoff_limit           = 6
+    }
+    preprocess = {
+      cpu                     = "16"
+      memory                  = "64Gi"
+      ephemeral_storage       = "32Gi"
+      active_deadline_seconds = 21600
+      backoff_limit           = 2
+      threads                 = 16
     }
     storage_contract      = null
     object_storage_access = null

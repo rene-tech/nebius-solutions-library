@@ -23,6 +23,14 @@ python3 reference-data/reference_data.py validate-request \
 python3 reference-data/render_job.py preprocess \
   --request reference-data/examples/private-msa-request.json \
   >/dev/null
+python3 reference-data/reference_data.py validate-placement \
+  --placement reference-data/placement-contract.json
+python3 reference-data/reference_data.py validate-handoff \
+  --receipt reference-data/examples/af3-terminal-handoff.example.json
+python3 reference-data/reference_data.py capacity-requirements >/dev/null
+python3 reference-data/render_job.py route \
+  --request reference-data/examples/private-msa-request.json \
+  >/dev/null
 
 terraform fmt -check -recursive reference-data/terraform
 mkdir -p "${check_directory}/reference-data/terraform"
@@ -31,7 +39,8 @@ mkdir -p "${check_directory}/reference-data/terraform/tests"
 cp reference-data/terraform/tests/*.tftest.hcl \
   "${check_directory}/reference-data/terraform/tests/"
 cp reference-data/reference_data.py reference-data/source-catalog.json \
-  reference-data/model-requirements.json "${check_directory}/reference-data/"
+  reference-data/model-requirements.json reference-data/placement-contract.json \
+  "${check_directory}/reference-data/"
 TF_DATA_DIR="${check_directory}/terraform-data" terraform \
   -chdir="${check_directory}/reference-data/terraform" init \
   -backend=false -input=false >/dev/null
