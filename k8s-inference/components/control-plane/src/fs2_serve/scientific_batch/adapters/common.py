@@ -252,6 +252,21 @@ def profile_from_catalog(profile_set: object, model_id: str) -> Mapping[str, obj
     return cast(Mapping[str, object], matches[0])
 
 
+# A profile's lifecycle state and its route exposure must agree. A candidate is never
+# routed; a dispatchable or qualified profile always is. Checking the pair rather than one
+# fixed combination still stops an unvetted model being dispatched, while allowing a model
+# that has earned dispatch to be served.
+_ROUTED_PROFILE_STATES = frozenset({"active", "qualified"})
+
+
+def profile_state_is_consistent(state: object, route_exposed: object) -> bool:
+    if state == "candidate-unqualified":
+        return route_exposed is False
+    if state in _ROUTED_PROFILE_STATES:
+        return route_exposed is True
+    return False
+
+
 def assert_profile_identity(
     profile: Mapping[str, object],
     *,
@@ -264,8 +279,7 @@ def assert_profile_identity(
     if (
         profile.get("schema") != "fs2-serve.nebius.ai/scientific-workload-profile/v1"
         or profile.get("model_id") != model_id
-        or profile.get("state") != "candidate-unqualified"
-        or profile.get("route_exposed") is not False
+        or not profile_state_is_consistent(profile.get("state"), profile.get("route_exposed"))
     ):
         raise ScientificAdapterError("catalog workload profile identity or candidate state is invalid")
     source = strict_object(

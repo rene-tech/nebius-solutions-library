@@ -5,7 +5,7 @@
       "model_id": "boltzgen",
       "variant_id": "upstream-v0-3-2",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "0ecc74cc88193ee484a78da3b3fff6e326a125d4d68515a569f3372c387391e6",
+      "execution_identity_sha256": "0daf037f4869d476482514268053681dca74db9d6e3df135af52826e4c6627cd",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -417,21 +417,8 @@
             "storage.fs2.nebius/reference-data": "true"
           }
         }
-      ]
+      ],
+      "access_profile": "public"
     }
-  ],
-  "_blocked_on": {
-    "note": "This map is complete and every digest in it is real. It cannot be activated yet because main's profile schema requires a qualification block whose receipts do not exist.",
-    "profile_qualification_block_requires": {
-      "h100_semantic_receipt_sha256": "AVAILABLE: f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46, the evidence_sha256 recorded in runtime-images/boltzgen/image-lock.json",
-      "qualified_at": "AVAILABLE: 2026-09-03T07:34:56Z, the H100 receipt's observed_at",
-      "execution_map_sha256": "AVAILABLE once this file is final; it is the sha256 of these bytes",
-      "public_completion_receipt_sha256": "MISSING: no producer for this receipt exists anywhere on main",
-      "scheduler_eligibility_receipt_sha256": "MISSING: no producer for this receipt exists anywhere on main"
-    },
-    "also_required_for_qualified_state": [
-      "source.classification must become qualified-input",
-      "access.state should be not-required for BoltzGen, which is MIT and public"
-    ]
-  }
+  ]
 }

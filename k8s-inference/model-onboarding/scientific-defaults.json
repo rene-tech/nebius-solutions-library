@@ -1,0 +1,93 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-onboarding-defaults/v1",
+  "note": "Everything a scientific-batch model shares. A declaration overrides only what genuinely differs, so onboarding a model costs tens of lines rather than hundreds. Deployment-time values that Helm already owns are not repeated here: stage images come from the runtime image, and the execution map that carries service accounts, node labels and deadlines is chart values under scientificBatch.executionMap.",
+  "kinds": {
+    "scientific-protein": {
+      "execution_mode": "scientific-batch",
+      "runtime": {
+        "template": "scientific-batch",
+        "kind": "custom",
+        "command": [
+          "/opt/fs2/entrypoint"
+        ],
+        "args": [
+          "run",
+          "--artifact-root",
+          "{MODEL_PATH}"
+        ]
+      },
+      "batch": {
+        "protocol": "scientific-batch-v1",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "service_classes": [
+          "customer-batch",
+          "interactive"
+        ],
+        "access_profile": "standard",
+        "access_state": "not-required",
+        "retry": {
+          "max_attempts": 2,
+          "retryable_exit_codes": [
+            137,
+            143
+          ]
+        },
+        "cancellation": {
+          "mode": "terminate-attempt",
+          "grace_seconds": 60
+        }
+      },
+      "policy": {
+        "commercial_use": "allowed",
+        "non_clinical": true
+      },
+      "placement": {
+        "host_architectures": [
+          "amd64"
+        ],
+        "compatible_pool_ids": [
+          "h100-1x",
+          "h100-reserved-8x"
+        ],
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        }
+      },
+      "stage_defaults": {
+        "gpu": {
+          "resource_class": "gpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "restart",
+          "preemption_mode": "restartable"
+        },
+        "cpu": {
+          "resource_class": "cpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 32,
+          "checkpoint_mode": "none",
+          "preemption_mode": "non_preemptible"
+        }
+      },
+      "size_classes": {
+        "single-gpu": {
+          "gpu_count": 1,
+          "gpu_topology": "single-gpu",
+          "requests": {
+            "cpu": "8",
+            "memory": "96Gi",
+            "ephemeral_storage": "32Gi"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "256Gi",
+            "ephemeral_storage": "128Gi"
+          }
+        }
+      }
+    }
+  }
+}
