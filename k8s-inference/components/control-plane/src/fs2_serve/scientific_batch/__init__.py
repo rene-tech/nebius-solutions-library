@@ -1,5 +1,11 @@
 """Deterministic staged scientific-batch controller contracts."""
 
+from .adapters import (
+    ScientificAdapterError,
+    compile_adapter_run,
+    load_json_request,
+    profile_from_catalog,
+)
 from .catalog_adapter import (
     CatalogProfileAdapterError,
     ScientificStageExpansion,
@@ -7,7 +13,9 @@ from .catalog_adapter import (
 )
 from .controller import ScientificBatchController
 from .models import (
+    AdapterExecutionPlan,
     ArtifactCommit,
+    ArtifactMaterialization,
     AttemptOutcome,
     BatchClaim,
     BatchEvent,
@@ -18,6 +26,7 @@ from .models import (
     ExecutionMode,
     FailureKind,
     LifecyclePhase,
+    MaterializationMode,
     PreemptionMode,
     ResourceClass,
     SchedulingSnapshot,
@@ -27,6 +36,7 @@ from .models import (
     ScientificStagePlan,
     ScientificStageState,
     ServiceClass,
+    StageInvocation,
     StageSchedulingDecision,
     StageStatus,
     WorkloadKind,
@@ -44,6 +54,8 @@ from .protocols import (
 
 __all__ = [
     "ArtifactCommit",
+    "ArtifactMaterialization",
+    "AdapterExecutionPlan",
     "AttemptOutcome",
     "BatchClaim",
     "BatchEvent",
@@ -59,16 +71,19 @@ __all__ = [
     "ExecutionMode",
     "FailureKind",
     "LifecyclePhase",
+    "MaterializationMode",
     "PreemptionMode",
     "ResourceClass",
     "SchedulingSnapshot",
     "ScientificBatchCluster",
     "ScientificBatchController",
     "ScientificBatchRepository",
+    "ScientificAdapterError",
     "ScientificAttemptState",
     "ScientificStageExpansion",
     "ScientificStageState",
     "StageSchedulingDecision",
+    "StageInvocation",
     "ScientificStagePlan",
     "ServiceClass",
     "StageStatus",
@@ -78,4 +93,7 @@ __all__ = [
     "WorkloadResource",
     "WorkloadState",
     "scientific_plan_from_catalog_profile",
+    "compile_adapter_run",
+    "load_json_request",
+    "profile_from_catalog",
 ]

@@ -12,12 +12,19 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from pathlib import PurePosixPath
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 _NAME_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$")
 _POOL_RE = re.compile(r"^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$")
 _RESOURCE_NAME_RE = re.compile(r"^[a-z0-9.-]+/[A-Za-z0-9][A-Za-z0-9._-]*$")
 _DIGEST_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
+_ARTIFACT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
+_SENSITIVE_KEY_RE = re.compile(r"(?:token|secret|password|credential|private[_-]?key)", re.IGNORECASE)
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_CONTROLLER_MOUNT_ROOT = PurePosixPath("/mnt/fs2-scientific")
+_RUNTIME_ARTIFACT_ROOT = PurePosixPath("/opt/fs2/artifacts")
 
 
 class BatchStatus(StrEnum):
@@ -76,6 +83,15 @@ class ServiceClass(StrEnum):
 class WorkloadKind(StrEnum):
     JOB = "Job"
     JOB_SET = "JobSet"
+
+
+class MaterializationMode(StrEnum):
+    """Controller-owned artifact localization performed before model argv."""
+
+    COPY_FILE = "copy-file"
+    EXTRACT_TAR = "extract-tar"
+    OVERLAY_TAR = "overlay-tar"
+    BOLTZGEN_INPUT = "boltzgen-input"
 
 
 class AttemptOutcome(StrEnum):
@@ -234,6 +250,198 @@ class ScientificBatchPlan:
         return next(stage for stage in self.stages if stage.stage_id == stage_id)
 
 
+def _check_controller_path(value: str, label: str) -> None:
+    path = PurePosixPath(value)
+    if not path.is_absolute() or _CONTROLLER_MOUNT_ROOT not in path.parents:
+        raise ValueError(f"{label} must be inside the controller-owned mount root")
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactMaterialization:
+    """One logical artifact localized by the controller before a stage starts.
+
+    Model-facing absolute paths are derived here and never accepted in the
+    public request. Archive modes are implemented by the bounded, link-free
+    materializer in ``adapters.materialization``.
+    """
+
+    artifact_id: str
+    destination: str
+    mode: MaterializationMode
+    compression: str | None = None
+    yaml_name: str | None = None
+    reuse_prefix: str | None = None
+
+    def __post_init__(self) -> None:
+        if _ARTIFACT_ID_RE.fullmatch(self.artifact_id) is None:
+            raise ValueError("materialization artifact_id must be a logical artifact ID")
+        _check_controller_path(self.destination, "materialization destination")
+        if self.compression not in {None, "none", "gzip", "zstd"}:
+            raise ValueError("materialization compression is unsupported")
+        if self.mode is MaterializationMode.BOLTZGEN_INPUT:
+            yaml_path = PurePosixPath(self.yaml_name or "")
+            if (
+                not self.yaml_name
+                or yaml_path.is_absolute()
+                or any(part in {"", ".", ".."} for part in yaml_path.parts)
+                or "\\" in self.yaml_name
+            ):
+                raise ValueError("BoltzGen input materialization requires one safe relative YAML path")
+            if self.reuse_prefix is not None:
+                reuse_path = PurePosixPath(self.reuse_prefix)
+                if (
+                    reuse_path.is_absolute()
+                    or any(part in {"", ".", ".."} for part in reuse_path.parts)
+                    or "\\" in self.reuse_prefix
+                ):
+                    raise ValueError("BoltzGen reuse prefix must be a safe relative archive path")
+        elif self.yaml_name is not None or self.reuse_prefix is not None:
+            raise ValueError("YAML and reuse fields are only valid for BoltzGen input materialization")
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeTreeBinding:
+    """One runtime artifact that must be an extracted tree, not an archive.
+
+    Archive provenance and extracted-tree identity are carried as two separate
+    digests. ``archive_sha256`` says where the bytes came from and never
+    qualifies a mount; ``tree_inventory_sha256`` is computed from the localized
+    filesystem and is what a stage preflight verifies. Making them equal is
+    rejected here so no caller can collapse the two identities by accident.
+    """
+
+    artifact_id: str
+    mount_path: str
+    archive_sha256: str
+    tree_inventory_sha256: str
+    entry_count: int
+
+    def __post_init__(self) -> None:
+        if _ARTIFACT_ID_RE.fullmatch(self.artifact_id) is None:
+            raise ValueError("runtime tree binding artifact_id must be a logical artifact ID")
+        path = PurePosixPath(self.mount_path)
+        if not path.is_absolute() or ".." in path.parts or any(part in {"", "."} for part in path.parts[1:]):
+            raise ValueError("runtime tree binding mount_path must be a safe absolute path")
+        for digest, label in (
+            (self.archive_sha256, "archive_sha256"),
+            (self.tree_inventory_sha256, "tree_inventory_sha256"),
+        ):
+            if _SHA256_RE.fullmatch(digest) is None:
+                raise ValueError(f"runtime tree binding {label} must be a lowercase SHA-256")
+        if self.archive_sha256 == self.tree_inventory_sha256:
+            raise ValueError("archive provenance and extracted-tree identity must be distinct digests")
+        if not 1 <= self.entry_count <= 1_048_576:
+            raise ValueError("runtime tree binding entry_count is outside the bound")
+
+
+@dataclass(frozen=True, slots=True)
+class StageInvocation:
+    """Immutable exec-form workload payload attached to a controller stage."""
+
+    stage_id: str
+    shard_id: str
+    argv: tuple[str, ...]
+    environment: tuple[tuple[str, str], ...]
+    working_directory: str
+    consumes: tuple[str, ...]
+    produces: str
+    materializations: tuple[ArtifactMaterialization, ...] = ()
+    runtime_artifacts: tuple[str, ...] = ()
+    runtime_trees: tuple[RuntimeTreeBinding, ...] = ()
+
+    def __post_init__(self) -> None:
+        _check_name(self.stage_id, "stage_id")
+        _check_name(self.shard_id, "shard_id")
+        if not self.argv or self.argv[0] in {"sh", "bash", "/bin/sh", "/bin/bash"}:
+            raise ValueError("stage argv must be a non-shell exec-form command")
+        if any(not value or "\x00" in value for value in self.argv):
+            raise ValueError("stage argv contains an invalid argument")
+        if len(dict(self.environment)) != len(self.environment):
+            raise ValueError("stage environment keys must be unique")
+        for key, value in self.environment:
+            if _ENV_NAME_RE.fullmatch(key) is None or _SENSITIVE_KEY_RE.search(key) or "\x00" in value:
+                raise ValueError("stage environment contains an unsafe key or value")
+        _check_controller_path(self.working_directory, "stage working_directory")
+        for artifact_id in (*self.consumes, self.produces):
+            if _ARTIFACT_ID_RE.fullmatch(artifact_id) is None:
+                raise ValueError("stage artifact handoff must use logical IDs")
+        if len(set(self.consumes)) != len(self.consumes):
+            raise ValueError("stage consumed artifact IDs must be unique")
+        if len(set(self.runtime_artifacts)) != len(self.runtime_artifacts):
+            raise ValueError("stage runtime artifact IDs must be unique")
+        for artifact_id in self.runtime_artifacts:
+            if _ARTIFACT_ID_RE.fullmatch(artifact_id) is None:
+                raise ValueError("stage runtime artifact IDs must be logical IDs")
+        materialized = tuple(item.artifact_id for item in self.materializations)
+        if len(set(materialized)) != len(materialized) or not set(materialized).issubset(self.consumes):
+            raise ValueError("materializations must uniquely reference consumed logical artifacts")
+        bound = tuple(item.artifact_id for item in self.runtime_trees)
+        if len(set(bound)) != len(bound) or not set(bound).issubset(self.runtime_artifacts):
+            raise ValueError("runtime tree bindings must uniquely reference mounted runtime artifacts")
+
+    def names_tree_path(self, binding: RuntimeTreeBinding) -> bool:
+        """Whether this stage passes the localized tree path to the model itself."""
+
+        return binding.mount_path in self.argv or any(value == binding.mount_path for _key, value in self.environment)
+
+
+@dataclass(frozen=True, slots=True)
+class AdapterExecutionPlan:
+    """Canonical controller plan plus exact workload invocations."""
+
+    model_id: str
+    variant_id: str
+    source_revision: str
+    request_sha256: str
+    controller_plan: ScientificBatchPlan
+    invocations: tuple[StageInvocation, ...]
+    required_model_artifacts: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _check_name(self.model_id, "model_id")
+        _check_name(self.variant_id, "variant_id")
+        expected = {
+            (stage.stage_id, shard or "gang") for stage in self.controller_plan.stages for shard in stage.workload_units
+        }
+        actual = {(item.stage_id, item.shard_id) for item in self.invocations}
+        if actual != expected or len(actual) != len(self.invocations):
+            raise ValueError("stage invocations do not exactly cover the controller plan")
+        if len(set(self.required_model_artifacts)) != len(self.required_model_artifacts):
+            raise ValueError("required model artifact IDs must be unique")
+        for artifact_id in self.required_model_artifacts:
+            if _ARTIFACT_ID_RE.fullmatch(artifact_id) is None:
+                raise ValueError("required model artifact IDs must be logical IDs")
+        observed = {artifact_id for invocation in self.invocations for artifact_id in invocation.runtime_artifacts}
+        if observed != set(self.required_model_artifacts):
+            raise ValueError("stage runtime artifacts must exactly cover the execution plan requirements")
+        bindings: dict[str, RuntimeTreeBinding] = {}
+        for invocation in self.invocations:
+            for tree in invocation.runtime_trees:
+                existing = bindings.setdefault(tree.artifact_id, tree)
+                if existing != tree:
+                    raise ValueError("one runtime artifact cannot carry two different tree identities in a plan")
+        for artifact_id, binding in bindings.items():
+            for invocation in self.invocations:
+                if artifact_id in invocation.runtime_artifacts and not any(
+                    tree.artifact_id == artifact_id for tree in invocation.runtime_trees
+                ):
+                    raise ValueError("every stage mounting a localized artifact must carry its tree binding")
+            # A campaign can persist the path in its own configuration, so only
+            # the plan as a whole has to hand the localized tree to the model.
+            if not any(invocation.names_tree_path(binding) for invocation in self.invocations):
+                raise ValueError("a bound runtime tree must be reachable through some stage argv or environment")
+
+    @property
+    def localized_tree_artifacts(self) -> tuple[str, ...]:
+        """Runtime artifacts whose mount must be a verified extracted tree."""
+
+        return tuple(sorted({tree.artifact_id for invocation in self.invocations for tree in invocation.runtime_trees}))
+
+    def invocation(self, stage_id: str, shard_id: str | None) -> StageInvocation:
+        key = (stage_id, shard_id or "gang")
+        return next(item for item in self.invocations if (item.stage_id, item.shard_id) == key)
+
+
 @dataclass(frozen=True, slots=True)
 class StageSchedulingDecision:
     stage_id: str
@@ -243,7 +451,7 @@ class StageSchedulingDecision:
     workload_priority_value: int
     resolved_pool_preference: tuple[str, ...]
     admitted_resource_flavor: str | None
-    accelerator_resource_name: str
+    accelerator_resource_name: str | None
     accelerator_count: int
     max_queue_seconds: int | None
     max_execution_seconds: int | None
@@ -260,19 +468,25 @@ class StageSchedulingDecision:
             _check_name(value, label)
         if self.admitted_resource_flavor is not None:
             _check_name(self.admitted_resource_flavor, "admitted_resource_flavor")
-        if not self.resolved_pool_preference or len(self.resolved_pool_preference) != len(
-            set(self.resolved_pool_preference)
-        ):
-            raise ValueError("resolved_pool_preference must be non-empty and unique")
+        if len(self.resolved_pool_preference) != len(set(self.resolved_pool_preference)):
+            raise ValueError("resolved_pool_preference must be unique")
         for pool in self.resolved_pool_preference:
             if not pool or len(pool) > 128 or _POOL_RE.fullmatch(pool) is None:
                 raise ValueError("resolved pool names must be DNS-compatible and at most 128 characters")
-        if (
-            len(self.accelerator_resource_name) > 253
+        if not 0 <= self.accelerator_count <= 1024:
+            raise ValueError("accelerator count must follow the Kueue scheduling contract")
+        if self.accelerator_count == 0:
+            if self.accelerator_resource_name is not None or self.resolved_pool_preference:
+                raise ValueError("CPU scheduling cannot retain accelerator resource or pool preferences")
+            if self.admitted_resource_flavor is not None:
+                raise ValueError("CPU scheduling cannot retain an accelerator resource flavor")
+        elif (
+            self.accelerator_resource_name is None
+            or len(self.accelerator_resource_name) > 253
             or _RESOURCE_NAME_RE.fullmatch(self.accelerator_resource_name) is None
-            or not 0 <= self.accelerator_count <= 1024
+            or not self.resolved_pool_preference
         ):
-            raise ValueError("accelerator resource name and count must follow the Kueue scheduling contract")
+            raise ValueError("GPU scheduling requires a valid accelerator resource and pool preference")
         if self.max_queue_seconds is not None and self.max_queue_seconds < 1:
             raise ValueError("max_queue_seconds must be positive when set")
         if self.max_execution_seconds is not None and self.max_execution_seconds < 1:
@@ -393,6 +607,9 @@ class ScientificBatchState:
     plan: ScientificBatchPlan
     scheduling: SchedulingSnapshot
     stages: tuple[ScientificStageState, ...]
+    execution_plan: AdapterExecutionPlan | None = None
+    model_id: str | None = None
+    variant_id: str | None = None
     status: BatchStatus = BatchStatus.QUEUED
     revision: int = 0
     cancel_requested: bool = False
@@ -404,6 +621,14 @@ class ScientificBatchState:
         schedule_ids = tuple(stage.stage_id for stage in self.scheduling.stages)
         if record_ids != plan_ids:
             raise ValueError("stage records must match plan order exactly")
+        if self.execution_plan is not None and self.execution_plan.controller_plan != self.plan:
+            raise ValueError("adapter execution plan must contain the admitted controller plan")
+        if self.execution_plan is not None and (
+            self.model_id != self.execution_plan.model_id or self.variant_id != self.execution_plan.variant_id
+        ):
+            raise ValueError("batch model and variant identity must match its adapter execution plan")
+        if (self.model_id is None) != (self.variant_id is None):
+            raise ValueError("batch model_id and variant_id must be present together")
         if set(schedule_ids) != set(plan_ids):
             raise ValueError("the frozen scheduling snapshot must cover every stage exactly once")
         if len([stage for stage in self.stages if stage.status is StageStatus.ACTIVE]) > 1:
@@ -428,6 +653,7 @@ class ScientificBatchState:
         tenant_id: str,
         plan: ScientificBatchPlan,
         scheduling: SchedulingSnapshot,
+        execution_plan: AdapterExecutionPlan | None = None,
     ) -> ScientificBatchState:
         return cls(
             operation_id=operation_id,
@@ -437,6 +663,9 @@ class ScientificBatchState:
             plan=plan,
             scheduling=scheduling,
             stages=tuple(ScientificStageState(stage.stage_id) for stage in plan.stages),
+            execution_plan=execution_plan,
+            model_id=execution_plan.model_id if execution_plan is not None else None,
+            variant_id=execution_plan.variant_id if execution_plan is not None else None,
         )
 
     def stage(self, stage_id: str) -> ScientificStageState:
@@ -481,6 +710,9 @@ class WorkloadResource:
     kind: WorkloadKind
     scheduling: StageSchedulingDecision
     gang_size: int | None = None
+    invocation: StageInvocation | None = None
+    model_id: str | None = None
+    variant_id: str | None = None
 
     def __post_init__(self) -> None:
         _check_name(self.namespace, "namespace")
@@ -493,6 +725,12 @@ class WorkloadResource:
                 raise ValueError("fanout Jobs require a shard and cannot declare gang_size")
         elif self.shard_id is not None or self.gang_size is None or self.gang_size < 2:
             raise ValueError("a true-gang JobSet requires no shard and gang_size >= 2")
+        if self.invocation is not None and (
+            self.invocation.stage_id != self.stage_id or self.invocation.shard_id != (self.shard_id or "gang")
+        ):
+            raise ValueError("workload invocation identity must match the controller workload")
+        if (self.model_id is None) != (self.variant_id is None):
+            raise ValueError("workload model_id and variant_id must be present together")
 
     @property
     def ref(self) -> WorkloadRef:
@@ -544,6 +782,8 @@ class BatchEventDraft:
     attempt_id: UUID | None = None
     phase: LifecyclePhase | None = None
     code: str | None = None
+    model_id: str | None = None
+    variant_id: str | None = None
 
     @classmethod
     def build(
@@ -558,6 +798,8 @@ class BatchEventDraft:
         attempt_id: UUID | None = None,
         phase: LifecyclePhase | None = None,
         code: str | None = None,
+        model_id: str | None = None,
+        variant_id: str | None = None,
     ) -> BatchEventDraft:
         identity = "|".join(
             (
@@ -570,6 +812,8 @@ class BatchEventDraft:
                 str(attempt_id) if attempt_id else "-",
                 phase or "-",
                 code or "-",
+                model_id or "-",
+                variant_id or "-",
             )
         )
         event_id = f"sha256:{hashlib.sha256(identity.encode()).hexdigest()}"
@@ -584,6 +828,8 @@ class BatchEventDraft:
             attempt_id=attempt_id,
             phase=phase,
             code=code,
+            model_id=model_id,
+            variant_id=variant_id,
         )
 
 

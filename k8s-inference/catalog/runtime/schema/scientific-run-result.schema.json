@@ -55,6 +55,7 @@
       "additionalProperties": false,
       "required": [
         "model_id",
+        "variant_id",
         "model_revision",
         "runtime_image_digest",
         "runtime_recipe_sha256",
@@ -64,6 +65,9 @@
       ],
       "properties": {
         "model_id": {
+          "$ref": "#/$defs/model_id"
+        },
+        "variant_id": {
           "$ref": "#/$defs/model_id"
         },
         "model_revision": {
