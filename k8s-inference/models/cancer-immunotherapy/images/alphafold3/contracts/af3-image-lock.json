@@ -1,0 +1,111 @@
+{
+  "build": {
+    "apt_packages": {
+      "ca-certificates": "20260601~24.04.1",
+      "libgomp1": "14.2.0-4ubuntu2~24.04.1",
+      "python3.12": "3.12.3-1ubuntu0.16",
+      "zlib1g": "1:1.3.dfsg-3.1ubuntu2.2",
+      "zstd": "1.5.5+dfsg2-2build1.1"
+    },
+    "attestation_manifest_digest": "sha256:298cf3e98182e0cab67b544cdf4b833a7e5cab50b244c9795b493922b08dec3f",
+    "attestation_predicates": [
+      "https://slsa.dev/provenance/v1",
+      "https://spdx.dev/Document"
+    ],
+    "base_image_digest": "sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e",
+    "builder": "fs2-cancer-runtime-publisher",
+    "created": "2026-09-03T04:22:49Z",
+    "image_manifest_digest": "sha256:7449f797ec87e5d3ef2ee508420311ee6782beaed3fcf72fe25e611a67173743",
+    "oci_archive_sha256": "5c59a6c772bc8c25ef1b3dec45c8e7b7b68485bc5be048a0eb2f4f292876cd68",
+    "platform": "linux/amd64"
+  },
+  "hygiene": {
+    "layer_inspection": {
+      "entries_inspected": 22385,
+      "largest_entries": [
+        {
+          "bytes": 749205904,
+          "path": "alphafold3_venv/lib/python3.12/site-packages/nvidia/cublas/lib/libcublasLt.so.12"
+        },
+        {
+          "bytes": 538629433,
+          "path": "alphafold3_venv/lib/python3.12/site-packages/alphafold3/constants/converters/ccd.pickle"
+        },
+        {
+          "bytes": 516019702,
+          "path": "alphafold3_venv/lib/python3.12/site-packages/var/cache/libcifpp/components.cif"
+        },
+        {
+          "bytes": 516019702,
+          "path": "alphafold3_venv/lib/python3.12/site-packages/share/libcifpp/components.cif"
+        },
+        {
+          "bytes": 503341376,
+          "path": "alphafold3_venv/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_engines_precompiled.so.9"
+        },
+        {
+          "bytes": 486556368,
+          "path": "alphafold3_venv/lib/python3.12/site-packages/nvidia/cusparse/lib/libcusparse.so.12"
+        },
+        {
+          "bytes": 479849968,
+          "path": "alphafold3_venv/lib/python3.12/site-packages/jax_plugins/xla_cuda12/xla_cuda_plugin.so"
+        }
+      ],
+      "layers_inspected": 15,
+      "method": "OCI archive layer tar walk over every filesystem layer",
+      "offenders": []
+    },
+    "parameters_embedded": false,
+    "reference_databases_embedded": false
+  },
+  "publication": {
+    "digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+    "overwrote_existing_tag": false,
+    "published_at": "2026-09-03T04:24:18Z",
+    "region": "eu-north1",
+    "repository": "withheld",
+    "state": "published",
+    "tag": "3.0.4-85c4d205-r6"
+  },
+  "runtime_id": "alphafold3",
+  "schema": "fs2-serve.nebius.ai/alphafold3-image-lock/v1",
+  "smoke": {
+    "cli_help_ok": true,
+    "distribution_version": "3.0.4",
+    "entrypoint_exit_code": 0,
+    "gpu_present": false,
+    "note": "Offline probes only. No GPU and no licensed parameters were present, so the parameter load and inference checks are recorded separately as live H100 evidence."
+  },
+  "source": {
+    "attestation_vcs_revision": "12d40c8f0dac03bceb8d795ad769a2f0bb73140e",
+    "context_files": [
+      {
+        "path": "Dockerfile",
+        "sha256": "9d038079520770f78c80610686379bc904be0fa5e87718ac98e35e8c545ee857"
+      },
+      {
+        "path": "runtime/af3_runtime.py",
+        "sha256": "9bee976e904fa2f2f2324e1191119f6b92c75991b9451043277eb46e4bb09893"
+      },
+      {
+        "path": "contracts/af3-runtime-source-lock.json",
+        "sha256": "3cb4a133b00ae252846159a67016732da3c63bc7151f3fb4058d9882c699e0c6"
+      },
+      {
+        "path": "contracts/af3-parameter-binding.json",
+        "sha256": "0d7e41c06799706f27dd5aec99c57a4e60a9a377f3c0a88df2d0cbe7d65e9ea9"
+      }
+    ],
+    "context_sha256": "803b88cd74610771626905491f7060486a8dc0daebbb60a92eadaa38bb9e8780",
+    "dockerfile_sha256": "9d038079520770f78c80610686379bc904be0fa5e87718ac98e35e8c545ee857",
+    "entrypoint_sha256": "9bee976e904fa2f2f2324e1191119f6b92c75991b9451043277eb46e4bb09893",
+    "parameter_binding_sha256": "0d7e41c06799706f27dd5aec99c57a4e60a9a377f3c0a88df2d0cbe7d65e9ea9",
+    "source_lock_sha256": "3cb4a133b00ae252846159a67016732da3c63bc7151f3fb4058d9882c699e0c6",
+    "source_revision": "12d40c8f0dac03bceb8d795ad769a2f0bb73140e",
+    "source_tree": "22481026bf703f46de0db6e0f6b4a2d1717ffcea",
+    "upstream_commit": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+    "upstream_tree": "efa1a376c9cf94d517d70e68425bc1ed3b17a570",
+    "upstream_version": "3.0.4"
+  }
+}

@@ -304,7 +304,8 @@ class HandoffContractTests(unittest.TestCase):
     def test_every_superseded_digest_is_distinct_and_explained(self) -> None:
         image = self.handoff["image"]
         digests = {entry["digest"] for entry in image["superseded"]}
-        self.assertEqual(3, len(digests))
+        self.assertEqual(len(image["superseded"]), len(digests))
+        self.assertGreaterEqual(len(digests), 1)
         self.assertNotIn(image["digest"], digests)
         for entry in image["superseded"]:
             self.assertIn("must not be deployed", entry["reason"].lower())

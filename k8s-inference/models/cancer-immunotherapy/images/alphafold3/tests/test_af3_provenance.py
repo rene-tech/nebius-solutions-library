@@ -131,6 +131,30 @@ class LockProvenanceTests(unittest.TestCase):
         paths = {entry["path"] for entry in source["context_files"]}
         self.assertEqual(set(build.CONTEXT_FILES), paths)
 
+    def test_the_attested_commit_still_exists_and_its_context_is_unchanged(self) -> None:
+        """The evidence commit may follow the build; it may not disturb it.
+
+        The lock names the commit the attestation carries. That commit must
+        still be reachable, and every build-context file must be byte-identical
+        to it, otherwise the published image no longer matches any commit.
+        """
+        revision = self.lock["source"]["source_revision"]
+        subprocess.run(
+            ["git", "-C", str(ROOT), "cat-file", "-e", f"{revision}^{{commit}}"],
+            check=True, capture_output=True,
+        )
+        prefix = "k8s-inference/models/cancer-immunotherapy/images/alphafold3"
+        for name in build.CONTEXT_FILES:
+            with self.subTest(path=name):
+                attested = subprocess.run(
+                    ["git", "-C", str(ROOT), "show", f"{revision}:{prefix}/{name}"],
+                    check=True, capture_output=True,
+                ).stdout
+                self.assertEqual(
+                    (ROOT / name).read_bytes(), attested,
+                    f"{name} changed after the image was attested",
+                )
+
     def test_the_locked_context_digests_match_the_working_tree(self) -> None:
         recorded = {
             entry["path"]: entry["sha256"] for entry in self.lock["source"]["context_files"]
