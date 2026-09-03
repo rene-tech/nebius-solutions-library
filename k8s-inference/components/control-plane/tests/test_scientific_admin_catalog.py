@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import unittest
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -538,3 +539,28 @@ async def test_admin_discovery_preserves_global_candidate_catalog_without_bypass
     tenant_snapshot = await adapter.list_models(tenant_id="tenant-a")
     assert [item.model_id for item in tenant_snapshot.data.items] == ["protein-design"]
     assert global_catalog.calls == 1
+
+
+class ProfileStateConsistencyTests(unittest.TestCase):
+    """A candidate is never routed; a dispatchable or qualified profile always is."""
+
+    def test_accepted_pairs(self) -> None:
+        from fs2_serve.scientific_admin_catalog import _profile_state_is_consistent
+        from fs2_serve.scientific_batch.adapters.common import profile_state_is_consistent
+
+        for state, routed in (("candidate-unqualified", False), ("active", True),
+                              ("qualified", True)):
+            with self.subTest(state=state, route_exposed=routed):
+                self.assertTrue(_profile_state_is_consistent(state, routed))
+                self.assertTrue(profile_state_is_consistent(state, routed))
+
+    def test_rejected_mismatches(self) -> None:
+        from fs2_serve.scientific_admin_catalog import _profile_state_is_consistent
+        from fs2_serve.scientific_batch.adapters.common import profile_state_is_consistent
+
+        for state, routed in (("candidate-unqualified", True), ("active", False),
+                              ("qualified", False), ("unknown-state", True),
+                              ("unknown-state", False)):
+            with self.subTest(state=state, route_exposed=routed):
+                self.assertFalse(_profile_state_is_consistent(state, routed))
+                self.assertFalse(profile_state_is_consistent(state, routed))

@@ -48,6 +48,20 @@ _ALTERNATIVES = {
 }
 
 
+# Same rule as scientific_batch.adapters.common.profile_state_is_consistent: a candidate is
+# never routed, a dispatchable or qualified profile always is, and a mismatched pair is
+# rejected rather than silently accepted.
+_ROUTED_PROFILE_STATES = frozenset({"active", "qualified"})
+
+
+def _profile_state_is_consistent(state: object, route_exposed: object) -> bool:
+    if state == "candidate-unqualified":
+        return route_exposed is False
+    if state in _ROUTED_PROFILE_STATES:
+        return route_exposed is True
+    return False
+
+
 class ScientificProfileDiscoveryAdapter:
     """Project only profiles that the controller says this tenant can submit."""
 
@@ -78,6 +92,7 @@ class ScientificProfileDiscoveryAdapter:
             data=ScientificModelReadinessList(items=[self._project(profile) for profile in profiles]),
             observed_at=self.clock().astimezone(UTC),
         )
+
 
     @staticmethod
     def _project(profile: ScientificProfileDiscovery) -> ScientificModelReadiness:
@@ -336,8 +351,10 @@ class ScientificCatalogFileAdapter:
                 profiles.pop(model_id, None)
             elif profile.get("schema") != "fs2-serve.nebius.ai/scientific-workload-profile/v1":
                 reason = "workload profile entry schema is unsupported"
-            elif profile.get("state") != "candidate-unqualified" or profile.get("route_exposed") is not False:
-                reason = "v1 workload profile is not a candidate-only projection"
+            elif not _profile_state_is_consistent(
+                profile.get("state"), profile.get("route_exposed")
+            ):
+                reason = "v1 workload profile state and route exposure disagree"
             if reason is not None:
                 if model_id is not None:
                     errors[model_id] = reason
