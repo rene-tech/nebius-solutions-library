@@ -1,0 +1,73 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-adapter-identity/v1",
+  "model_id": "openfold3",
+  "variant_id": "upstream-openbind-v0-5-0",
+  "relationship": "independent-non-equivalent-alternative-to-alphafold3",
+  "module": "fs2_serve.scientific_batch.adapters.openfold3",
+  "source": {
+    "repository": "aqlaboratory/openfold-3",
+    "revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86"
+  },
+  "runtime_image": {
+    "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream",
+    "tag": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86-h100-r4",
+    "digest": "sha256:d1d249fcd8aca464ff0ee0b6e78e0f9c1fe243e0ebd18acc3c4223070fcf203b",
+    "state": "build-only-not-semantic-qualified"
+  },
+  "activation": {
+    "profile_state": "candidate-unqualified",
+    "route_exposed": false,
+    "semantic_h100_qualified": false
+  },
+  "interface": {
+    "parameter_schema": "fs2-serve.nebius.ai/openfold3-upstream-openbind-v0-5-0-parameters/v1",
+    "operations": ["predict-complex-structure"],
+    "entrypoint": "/usr/local/bin/fs2-run-openfold3",
+    "subcommands": ["prepare", "predict"]
+  },
+  "stages": [
+    {
+      "stage_id": "data-pipeline",
+      "resource_class": "cpu",
+      "collector_id": "openfold3-data-collector-v1",
+      "validator_id": "openfold3-data-validator-v1",
+      "max_parallelism": 32,
+      "runtime_artifacts": []
+    },
+    {
+      "stage_id": "inference",
+      "resource_class": "gpu",
+      "collector_id": "openfold3-result-collector-v1",
+      "validator_id": "openfold3-upstream-openbind-v0-5-0",
+      "max_parallelism": 32,
+      "runtime_artifacts": ["openfold3-openbind-0", "openfold3-components-bcif"]
+    }
+  ],
+  "runtime_artifacts": [
+    {
+      "artifact_id": "openfold3-openbind-0",
+      "mount_path": "/models/openfold3",
+      "runtime_path": "/models/openfold3/of3-ob-2025-06-30-174k.pt",
+      "content_sha256": "f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+      "file_sha256": "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8e29e4"
+    },
+    {
+      "artifact_id": "openfold3-components-bcif",
+      "mount_path": "/databases/openfold3",
+      "runtime_path": "/databases/openfold3/components.bcif",
+      "content_sha256": "ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+      "file_sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c"
+    }
+  ],
+  "runtime_cache": {
+    "mount_path": "/cache/openfold3",
+    "qualified_level": "Off",
+    "role": "auxiliary-compiler-jit-l1-plus",
+    "environment": {
+      "TRITON_CACHE_DIR": "/cache/openfold3/triton",
+      "TORCH_EXTENSIONS_DIR": "/cache/openfold3/torch-extensions",
+      "XDG_CACHE_HOME": "/cache/openfold3/xdg"
+    }
+  },
+  "seam": "OpenFold3 remains a distinct non-equivalent backend. Model-owned adapter and explicit allow-list branch only; cache provisioning, scheduler, Terraform, and activation remain external."
+}
