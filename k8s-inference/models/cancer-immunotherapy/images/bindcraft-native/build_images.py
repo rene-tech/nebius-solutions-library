@@ -37,6 +37,100 @@ class BuildError(RuntimeError):
     """The image build or immutable publication contract failed."""
 
 
+def git(arguments: list[str]) -> str:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    return completed.stdout.strip()
+
+
+def build_input_paths() -> list[Path]:
+    """Every file the build reads, so a change to any of them is detectable."""
+
+    paths = [
+        path
+        for path in sorted(ROOT.rglob("*"))
+        if path.is_file()
+        and not any(part in {"__pycache__", "evidence", "tests"} for part in path.relative_to(ROOT).parts)
+        and path.suffix != ".pyc"
+    ]
+    paths.append(ADAPTER_CONTEXT / "bindcraft-native" / "bin" / "bindcraft-batch")
+    return paths
+
+
+def source_fingerprint() -> str:
+    digest = hashlib.sha256()
+    for path in build_input_paths():
+        digest.update(str(path.relative_to(REPOSITORY_ROOT)).encode())
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).hexdigest().encode())
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def committed_source() -> dict[str, Any]:
+    """Refuse to publish provenance that cannot be resolved back to real source.
+
+    A published image's SLSA provenance names the revision it was built from.
+    That claim is worthless if the revision is not reachable from a pushed
+    branch, or if the working tree held edits the revision does not contain: the
+    earlier r16 attested a revision that survived only on a superseded branch,
+    so nobody could reconstruct the source it was actually built from.
+    """
+
+    dirty = git([
+        "status", "--porcelain", "--untracked-files=all", "--",
+        str(ROOT), str(ADAPTER_CONTEXT / "bindcraft-native"),
+    ])
+    if dirty:
+        raise BuildError(
+            "refusing to publish from a dirty source tree; commit or clean:\n" + dirty
+        )
+    revision = git(["rev-parse", "HEAD"])
+    if not FULL_COMMIT.fullmatch(revision):
+        raise BuildError("HEAD did not resolve to a full commit")
+    remote_refs = [
+        line.strip()
+        for line in git(["branch", "--remotes", "--contains", revision]).splitlines()
+        if line.strip()
+    ]
+    if not remote_refs:
+        raise BuildError(
+            "refusing to publish: HEAD is not reachable from any pushed branch, so the attested "
+            "revision could not be resolved later; push the commit first"
+        )
+    return {
+        "revision": revision,
+        "remote_refs": sorted(remote_refs),
+        "context_path": str(ROOT.relative_to(REPOSITORY_ROOT.parent)),
+        "source_fingerprint": source_fingerprint(),
+    }
+
+
+def attested_vcs(digest_reference: str) -> dict[str, str]:
+    completed = run(
+        ["docker", "buildx", "imagetools", "inspect", digest_reference, "--format", "{{ json .Provenance }}"],
+        capture=True,
+    )
+    try:
+        provenance = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise BuildError("published provenance is not readable JSON") from exc
+    metadata = (
+        provenance.get("SLSA", {}).get("runDetails", {}).get("metadata", {}).get("buildkit_metadata", {})
+    )
+    vcs = metadata.get("vcs")
+    if not isinstance(vcs, dict):
+        raise BuildError("published provenance records no VCS metadata")
+    return {str(key): str(value) for key, value in vcs.items()}
+
+
 def run(command: list[str], *, capture: bool = False, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
@@ -56,8 +150,17 @@ def load_lock() -> dict[str, Any]:
         raise BuildError("unsupported image lock schema")
     if value.get("platform") != "linux/amd64":
         raise BuildError("H100 image lock must target linux/amd64")
-    if not FULL_COMMIT.fullmatch(str(value.get("adapter_commit", ""))):
-        raise BuildError("adapter commit must be a full immutable Git revision")
+    # The adapter wrapper is bound by content, not by commit. The commit that
+    # produced it was rebased away, which left the image labelled with a
+    # revision nobody could resolve; a content digest cannot dangle.
+    wrapper_sha256 = str(value.get("adapter_wrapper_sha256", ""))
+    if not HEX_SHA256.fullmatch(wrapper_sha256):
+        raise BuildError("adapter wrapper must be pinned by SHA-256")
+    wrapper = ADAPTER_CONTEXT / "bindcraft-native" / "bin" / "bindcraft-batch"
+    if not wrapper.is_file():
+        raise BuildError("adapter wrapper is missing from the build context")
+    if hashlib.sha256(wrapper.read_bytes()).hexdigest() != wrapper_sha256:
+        raise BuildError("adapter wrapper content does not match its pinned SHA-256")
     base = value.get("base", {})
     if not isinstance(base.get("reference"), str) or "@sha256:" not in base["reference"]:
         raise BuildError("base image must be digest pinned")
@@ -239,7 +342,9 @@ def raw_manifest(target: str) -> tuple[str, int, list[str]]:
     return hashlib.sha256(raw).hexdigest(), len(attestation_descriptors), sorted(predicate_types)
 
 
-def verify_published(lock: dict[str, Any], image: dict[str, Any]) -> dict[str, Any]:
+def verify_published(
+    lock: dict[str, Any], image: dict[str, Any], expected: dict[str, Any] | None = None
+) -> dict[str, Any]:
     digest = inspect_target(image["target"])
     if digest is None:
         raise BuildError(f"published target did not resolve: {image['target']}")
@@ -251,7 +356,7 @@ def verify_published(lock: dict[str, Any], image: dict[str, Any]) -> dict[str, A
         raise BuildError(f"{image['id']}: SPDX SBOM attestation was not published")
     if not any(value.startswith("https://slsa.dev/provenance/") for value in predicate_types):
         raise BuildError(f"{image['id']}: SLSA provenance attestation was not published")
-    return {
+    record = {
         "id": image["id"],
         "source": image["source"],
         "tag": image["target"],
@@ -263,6 +368,26 @@ def verify_published(lock: dict[str, Any], image: dict[str, Any]) -> dict[str, A
         "pull_stdout_sha256": hashlib.sha256(pulled.stdout.encode()).hexdigest(),
         "smoke": smoke_evidence,
     }
+    if expected is not None:
+        vcs = attested_vcs(digest_reference)
+        if vcs.get("revision") != expected["revision"]:
+            raise BuildError(
+                f"{image['id']}: attested revision {vcs.get('revision')!r} is not the built revision "
+                f"{expected['revision']!r}"
+            )
+        context = vcs.get("localdir:context", "")
+        if context != expected["context_path"]:
+            raise BuildError(
+                f"{image['id']}: attested context {context!r} is not this package {expected['context_path']!r}"
+            )
+        record["attested_source"] = {
+            "revision": vcs["revision"],
+            "source": vcs.get("source", ""),
+            "context_path": context,
+            "reachable_from": expected["remote_refs"],
+            "source_fingerprint": expected["source_fingerprint"],
+        }
+    return record
 
 
 def write_receipt(lock: dict[str, Any], records: list[dict[str, Any]]) -> None:
@@ -346,8 +471,15 @@ def main() -> None:
 
     for image in images:
         ensure_absent(image)
+        expected = committed_source()
         docker_build(image, push=True)
-        record = verify_published(lock, image)
+        after = source_fingerprint()
+        if after != expected["source_fingerprint"]:
+            raise BuildError(
+                "build inputs changed while the image was building; the published provenance would "
+                "name a revision whose content was not what was actually built"
+            )
+        record = verify_published(lock, image, expected)
         write_receipt(lock, [record])
 
 

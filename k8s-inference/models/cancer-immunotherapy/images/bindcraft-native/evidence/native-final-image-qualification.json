@@ -77,12 +77,12 @@
   },
   "source_identity_in_published_image": {
     "method": "SHA-256 of each runtime file read from the pulled digest reference, compared to the repository working tree",
-    "match": true,
+    "match": "pending r17 publication; these are the intended bytes and the publisher fails closed unless the pulled image matches",
     "files": [
       {
         "path": "/opt/fs2/bindcraft/runtime_entrypoint.py",
-        "sha256": "0f82578de0d4f851414f91752ecb5e93b97194812f10d43c66849bce22c83dc4",
-        "size_bytes": 39056,
+        "sha256": "b30c37773f480e6eea771d927944d02e57f052bda14f9e46eaeaef86753a071c",
+        "size_bytes": 40841,
         "repository_path": "runtime/bindcraft_runtime_entrypoint.py"
       },
       {
@@ -310,8 +310,8 @@
   "offline_test_evidence": {
     "image_contract_suite": {
       "command": "python3 -m unittest discover -s tests",
-      "tests": 60,
-      "result": "passed"
+      "tests": 65,
+      "result": "pending re-run"
     },
     "native_adapter_suite": {
       "command": "PYTHONPATH=catalog/runtime python3 -m unittest discover -s models/structure/runtime/bindcraft-native/tests",

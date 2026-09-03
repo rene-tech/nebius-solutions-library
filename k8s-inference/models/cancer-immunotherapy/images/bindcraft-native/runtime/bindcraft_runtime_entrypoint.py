@@ -698,6 +698,31 @@ def run_trajectory(args: argparse.Namespace) -> None:
     }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _verify_handoff(root: Path, shard_output: dict[str, Any]) -> None:
+    """Hold a shard's published output to the digests that shard declared."""
+
+    declared: dict[str, dict[str, Any]] = {}
+    for entry in [shard_output["shard"], *shard_output["candidates"]]:
+        artifact = entry.get("artifact")
+        if not isinstance(artifact, dict) or not isinstance(artifact.get("artifact_id"), str):
+            raise ContractError("shard output declares a malformed artifact")
+        declared[artifact["artifact_id"]] = artifact
+    relatives = shard_output.get("artifact_paths")
+    if not isinstance(relatives, dict) or set(relatives) != set(declared):
+        raise ContractError("shard output artifact paths and declarations disagree")
+    for artifact_id, artifact in sorted(declared.items()):
+        relative = relatives[artifact_id]
+        if not isinstance(relative, str) or relative.startswith("/") or ".." in relative.split("/"):
+            raise ContractError("shard output artifact path is unsafe")
+        path = root / relative
+        if not path.is_file() or path.is_symlink():
+            raise ContractError(f"handed-off artifact {artifact_id!r} is missing")
+        if path.stat().st_size != artifact.get("size_bytes") or _sha256(path) != artifact.get("sha256"):
+            raise ContractError(
+                f"handed-off artifact {artifact_id!r} does not match the digest its shard published"
+            )
+
+
 def aggregate(args: argparse.Namespace) -> None:
     if args.backend_id != BACKEND_ID or not args.atomic_rename:
         raise ContractError("aggregate requires the exact backend and atomic rename")
@@ -727,6 +752,11 @@ def aggregate(args: argparse.Namespace) -> None:
                 candidate_index += 1
         for artifact_id, relative in value["artifact_paths"].items():
             paths[artifact_id] = str((root / relative).resolve())
+        # The design stage runs in a different Pod, so its output crosses a
+        # durable volume to get here. Re-read every artifact and hold it to the
+        # digest the producing shard published, rather than trusting that a path
+        # under a shared volume still holds the bytes that shard wrote.
+        _verify_handoff(root, value)
     if candidate_index == 0:
         raise ContractError("aggregate has no accepted candidates")
     runtime_digest = os.environ.get("FS2_RUNTIME_IMAGE_DIGEST", "")

@@ -64,7 +64,7 @@ LABEL org.opencontainers.image.source="https://github.com/martinpacesa/BindCraft
       ai.nebius.fs2.runtime.pyrosetta.artifact.sha256="4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242" \
       ai.nebius.fs2.runtime.pyrosetta.environment.digest="sha256:fd76ade0c607f27677bc04be3c60749f400eedc941d9e72967e19a4cedff80c2" \
       ai.nebius.fs2.runtime.pyrosetta.request-receipt-required="false" \
-      ai.nebius.fs2.runtime.adapter.commit="3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe"
+      ai.nebius.fs2.runtime.adapter.wrapper.sha256="1c62303bb5eca99581fcd0ca9c45cb27d3a8e275875d198db57bec2edb2b7be3"
 
 ENV FS2_RUNTIME_NAME=bindcraft-academic \
     FS2_SOURCE_REVISION=7cd4ace1b7407adf66a50dfefa47de2270f5e4a9 \

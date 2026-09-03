@@ -46,7 +46,17 @@ class ImageLockTests(unittest.TestCase):
         self.assertEqual(image["source"]["revision"], "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9")
         self.assertEqual(image["relationship"], "canonical-native-academic")
         self.assertTrue(image["equivalent_to_requested"])
-        self.assertEqual(lock["adapter_commit"], "3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe")
+        # The adapter is bound by content, never by commit: the commit that
+        # produced this wrapper was rebased away, and r16 shipped a label naming
+        # a revision no longer reachable from any branch.
+        self.assertNotIn("adapter_commit", lock)
+        self.assertEqual(
+            lock["adapter_wrapper_sha256"],
+            "1c62303bb5eca99581fcd0ca9c45cb27d3a8e275875d198db57bec2edb2b7be3",
+        )
+        dockerfile = (ROOT / "Dockerfile.bindcraft").read_text(encoding="utf-8")
+        self.assertNotIn("3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe", dockerfile)
+        self.assertIn("adapter.wrapper.sha256", dockerfile)
         self.assertEqual(sorted(lock["shared_sources"]), [
             "colabdesign", "jaxlib_cuda12_cudnn89_wheel", "nvidia_cuda_nvcc_cuda121_wheel",
             "nvidia_cusparse_cuda121_wheel", "nvidia_nvjitlink_cuda121_wheel",
@@ -55,13 +65,13 @@ class ImageLockTests(unittest.TestCase):
             sorted(path.name for path in ROOT.glob("Dockerfile*")), ["Dockerfile.bindcraft"]
         )
 
-    def test_in_image_sources_still_match_the_published_r16_digest(self) -> None:
-        """Guard the one thing splitting this package could silently break.
+    def test_in_image_sources_match_the_recorded_publication_identity(self) -> None:
+        """Keep the source and the evidence describing the image in step.
 
-        r16 is published and immutable, and the qualification evidence records
-        the SHA-256 of every file the build copies into it, each verified against
-        the pulled digest. Those bytes are therefore frozen: editing one makes
-        the registry image stop matching this source, which is the whole claim.
+        The qualification evidence records the SHA-256 of every file the build
+        copies into the image, and the publisher fails closed unless the pulled
+        image contains exactly those bytes. Editing one without re-recording it
+        would leave the evidence describing an image nobody built.
 
         runtime_entrypoint.py is the reason this test exists. It is the shared
         outer entrypoint and still names the RFdiffusion, ProteinMPNN and
@@ -159,15 +169,16 @@ class ImageLockTests(unittest.TestCase):
             self.assertIn(pyrosetta_patch.PATCHED_IMPORT, patched)
             self.assertIn(pyrosetta_patch.PATCHED_CALL, patched)
 
-    def test_final_tag_is_r16_and_names_the_digest_it_supersedes(self) -> None:
+    def test_final_tag_is_r17_and_names_the_digest_it_supersedes(self) -> None:
         image = build_images.load_lock()["images"][0]
-        self.assertEqual(image["build_tag_suffix"], "-cuda121-r16")
-        self.assertTrue(image["target"].endswith(image["source"]["revision"] + "-cuda121-r16"))
-        # r15 fixed r14's statistics but predates the controller's marker flag.
+        self.assertEqual(image["build_tag_suffix"], "-cuda121-r17")
+        self.assertTrue(image["target"].endswith(image["source"]["revision"] + "-cuda121-r17"))
+        # r16 was correct in behaviour but attested a revision that survived only
+        # on a superseded branch, so its source could not be resolved back.
         self.assertEqual(
             image["supersedes"],
             "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@"
-            "sha256:a8ae983d26696e4858e7fbc67a581791c7b26e59544c2fb29c0b34bdcdeedbf5",
+            "sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d",
         )
 
     def test_the_adapter_wrapper_is_consumed_as_a_build_context(self) -> None:
@@ -187,7 +198,10 @@ class ImageLockTests(unittest.TestCase):
         bindcraft = (ROOT / "Dockerfile.bindcraft").read_text(encoding="utf-8")
         self.assertIn("bindcraft-native/bin/bindcraft-batch", bindcraft)
         self.assertNotIn("verify-academic-access", bindcraft)
-        self.assertIn("3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe", bindcraft)
+        # load_lock re-hashes the wrapper, so a swapped file fails the build.
+        with mock.patch.object(build_images, "ADAPTER_CONTEXT", ROOT / "tests"):
+            with self.assertRaisesRegex(build_images.BuildError, "adapter wrapper is missing"):
+                build_images.load_lock()
 
     def test_one_shot_gpu_smoke_bypasses_only_jax_shutdown_hooks(self) -> None:
         entrypoint = (ROOT / "runtime" / "runtime_entrypoint.py").read_text(encoding="utf-8")
@@ -808,25 +822,122 @@ class NativeDesignEvidenceTests(unittest.TestCase):
             self.assertEqual(settings["number_of_final_designs"], 1)
 
 
+class CrossJobHandoffTests(unittest.TestCase):
+    """The design and aggregate stages are separate Jobs over a shared claim.
+
+    Nothing about a durable volume guarantees the bytes on it are still the ones
+    the design Pod wrote, so the aggregate holds every handed-off artifact to the
+    digest its producing shard published.
+    """
+
+    def shard(self, root: Path) -> dict[str, object]:
+        artifacts = root / "artifacts"
+        artifacts.mkdir(parents=True)
+        payload = artifacts / "shard.json"
+        payload.write_bytes(b'{"status":"succeeded"}\n')
+        candidate = artifacts / "candidate-000.pdb"
+        candidate.write_bytes(b"ATOM\nEND\n")
+
+        def artifact(artifact_id: str, path: Path) -> dict[str, object]:
+            raw = path.read_bytes()
+            return {
+                "artifact_id": artifact_id,
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "size_bytes": len(raw),
+                "media_type": "application/json",
+                "compression": "none",
+            }
+
+        return {
+            "shard": {"name": "shard-000", "artifact": artifact("shard.000", payload)},
+            "candidates": [
+                {"name": "candidate-000-structure", "artifact": artifact("cand.000", candidate)}
+            ],
+            "artifact_paths": {
+                "shard.000": "artifacts/shard.json",
+                "cand.000": "artifacts/candidate-000.pdb",
+            },
+        }
+
+    def test_an_intact_handoff_is_admitted(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            bindcraft_runner._verify_handoff(root, self.shard(root))
+
+    def test_a_rewritten_artifact_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            shard = self.shard(root)
+            (root / "artifacts" / "candidate-000.pdb").write_bytes(b"ATOM\nATOM\nEND\n")
+            with self.assertRaisesRegex(bindcraft_runner.ContractError, "does not match the digest"):
+                bindcraft_runner._verify_handoff(root, shard)
+
+    def test_a_missing_artifact_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            shard = self.shard(root)
+            (root / "artifacts" / "candidate-000.pdb").unlink()
+            with self.assertRaisesRegex(bindcraft_runner.ContractError, "is missing"):
+                bindcraft_runner._verify_handoff(root, shard)
+
+    def test_declarations_and_paths_must_cover_the_same_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            shard = self.shard(root)
+            del shard["artifact_paths"]["cand.000"]
+            with self.assertRaisesRegex(bindcraft_runner.ContractError, "paths and declarations disagree"):
+                bindcraft_runner._verify_handoff(root, shard)
+
+    def test_an_escaping_artifact_path_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            shard = self.shard(root)
+            shard["artifact_paths"]["cand.000"] = "../escape.pdb"
+            with self.assertRaisesRegex(bindcraft_runner.ContractError, "unsafe"):
+                bindcraft_runner._verify_handoff(root, shard)
+
+
 class SemanticJobRenderTests(unittest.TestCase):
+    # The accepted architecture: three public immutable generations reached by
+    # hostPath on the reference-data filesystem, and only the licensed PyRosetta
+    # tree on the private academic claim.
+    REFERENCE_PLANE_HOST_PATH = "/mnt/reference-data"
+    ACADEMIC_CLAIM = "academic-assets-runtime-rwx"
+    NODE_SELECTOR = {
+        "storage.fs2.nebius/reference-data": "true",
+        "capacity.fs2.nebius/type": "regular",
+    }
+
     def handoff(self, root: Path, **overrides: object) -> Path:
         trees = []
         for role in sorted(bindcraft_runner.REQUIRED_TREE_ROLES):
+            licensed = role == bindcraft_runner.PYROSETTA_ROLE
             digest = (
                 bindcraft_runner.PYROSETTA_TREE_MANIFEST_SHA256
-                if role == bindcraft_runner.PYROSETTA_ROLE
+                if licensed
                 else hashlib.sha256(role.encode()).hexdigest()
+            )
+            volume = (
+                {"kind": "persistentVolumeClaim", "claim": self.ACADEMIC_CLAIM}
+                if licensed
+                else {"kind": "hostPath", "path": self.REFERENCE_PLANE_HOST_PATH}
+            )
+            sub_path = (
+                "pyrosetta-bindcraft/site-packages"
+                if licensed
+                else f"sha256/{hashlib.sha256(role.encode()).hexdigest()}"
             )
             trees.append({
                 "role": role,
                 "artifact_id": role,
-                "sub_path": f"sha256/{hashlib.sha256(role.encode()).hexdigest()}",
+                "sub_path": sub_path,
                 "sha256": digest,
+                "volume": volume,
             })
         value: dict[str, object] = {
             "schema": renderer.HANDOFF_SCHEMA,
-            "claim": "academic-assets-runtime-rwx",
             "generation": "sha256:" + "c" * 64,
+            "node_selector": dict(self.NODE_SELECTOR),
             "trees": trees,
         }
         value.update(overrides)
@@ -838,9 +949,12 @@ class SemanticJobRenderTests(unittest.TestCase):
         argv = [
             "--handoff", str(path),
             "--image", "cr.eu-north1.nebius.cloud/x/fs2-models/bindcraft@sha256:" + "b" * 64,
-            "--run-id", "r14acceptance",
-            "--job-name", "fs2-bindcraft-r14-acceptance",
+            "--run-id", "r17acceptance",
+            "--job-name", "fs2-bindcraft-r17-acceptance",
+            "--workspace-claim", "fs2-bindcraft-acceptance-workspace",
         ]
+        if "stage" not in overrides:
+            argv += ["--stage", "design"]
         for key, item in overrides.items():
             argv += ["--" + key.replace("_", "-"), str(item)]
         args = renderer.parser().parse_args(argv)
@@ -848,14 +962,19 @@ class SemanticJobRenderTests(unittest.TestCase):
             args.hotspot = [56]
         return renderer.render(args)
 
-    def stages(self, job: dict) -> tuple[dict, dict]:
-        spec = job["spec"]["template"]["spec"]
-        return spec["initContainers"][0], spec["containers"][0]
+    def stages(self, path: Path) -> tuple[dict, dict]:
+        """Render both Jobs; each stage is its own Job now."""
+
+        _, design = self.render(path, stage="design")
+        _, aggregate = self.render(path, stage="aggregate")
+        return (
+            design["spec"]["template"]["spec"]["containers"][0],
+            aggregate["spec"]["template"]["spec"]["containers"][0],
+        )
 
     def test_both_stages_enter_the_image_through_the_outer_entrypoint(self) -> None:
         with tempfile.TemporaryDirectory() as name:
-            _, job = self.render(self.handoff(Path(name)))
-            design, aggregate = self.stages(job)
+            design, aggregate = self.stages(self.handoff(Path(name)))
             prefix = ["python", "/opt/fs2/runtime_entrypoint.py", "/opt/fs2/bin/bindcraft-batch"]
             self.assertEqual(design["command"][:4], prefix + ["run-trajectory"])
             self.assertEqual(aggregate["command"][:4], prefix + ["aggregate"])
@@ -867,8 +986,9 @@ class SemanticJobRenderTests(unittest.TestCase):
 
     def test_both_stages_carry_the_runtime_localization_marker(self) -> None:
         with tempfile.TemporaryDirectory() as name:
-            config_map, job = self.render(self.handoff(Path(name)))
-            for stage in self.stages(job):
+            path = self.handoff(Path(name))
+            config_map, _ = self.render(path, stage="design")
+            for stage in self.stages(path):
                 command = stage["command"]
                 self.assertIn("--runtime-localization-marker", command)
                 self.assertEqual(
@@ -884,8 +1004,7 @@ class SemanticJobRenderTests(unittest.TestCase):
 
     def test_rendered_job_uses_the_checked_in_production_settings_and_filters(self) -> None:
         with tempfile.TemporaryDirectory() as name:
-            _, job = self.render(self.handoff(Path(name)))
-            command = self.stages(job)[0]["command"]
+            command = self.stages(self.handoff(Path(name)))[0]["command"]
             self.assertIn(renderer.FILTERS, command)
             self.assertIn(renderer.FILTERS_SHA256, command)
             self.assertIn(renderer.SETTINGS_TEMPLATE, command)
@@ -895,35 +1014,131 @@ class SemanticJobRenderTests(unittest.TestCase):
     def test_mpnn_lane_is_selectable_and_defaults_to_the_pinned_template(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             path = self.handoff(Path(name))
-            _, default = self.render(path)
-            for stage in self.stages(default):
+            for stage in self.stages(path):
                 self.assertNotIn(
                     "FS2_BINDCRAFT_MPNN_WEIGHTS", {item["name"] for item in stage["env"]}
                 )
-            _, vanilla = self.render(path, mpnn_weights="original")
-            for stage in self.stages(vanilla):
+            vanilla = [self.render(path, stage=s, mpnn_weights="original")[1]
+                       for s in ("design", "aggregate")]
+            for stage in [job["spec"]["template"]["spec"]["containers"][0] for job in vanilla]:
                 environment = {item["name"]: item["value"] for item in stage["env"]}
                 self.assertEqual(environment["FS2_BINDCRAFT_MPNN_WEIGHTS"], "original")
 
-    def test_rendered_job_mounts_all_four_trees_at_the_paths_the_model_reads(self) -> None:
+    def test_public_trees_come_from_the_reference_plane_and_only_pyrosetta_from_the_claim(self) -> None:
+        # The four trees do not share a backing store. An earlier renderer put
+        # all four on one claim, which could not have mounted the three public
+        # immutable generations at all.
         with tempfile.TemporaryDirectory() as name:
-            _, job = self.render(self.handoff(Path(name)))
-            container = self.stages(job)[0]
+            path = self.handoff(Path(name))
+            _, job = self.render(path, stage="design")
+            spec = job["spec"]["template"]["spec"]
+            container = spec["containers"][0]
+            volumes = {volume["name"]: volume for volume in spec["volumes"]}
             mounted = {
                 mount["mountPath"]: mount
                 for mount in container["volumeMounts"]
-                if mount["name"] == "external-trees"
+                if mount["name"].startswith("trees-")
             }
             self.assertEqual(set(mounted), set(renderer.MOUNT_PATH_BY_ROLE.values()))
             self.assertEqual(len(mounted), 4)
+
+            licensed = mounted[renderer.MOUNT_PATH_BY_ROLE[bindcraft_runner.PYROSETTA_ROLE]]
+            self.assertEqual(
+                volumes[licensed["name"]]["persistentVolumeClaim"]["claimName"], self.ACADEMIC_CLAIM
+            )
+            self.assertEqual(licensed["subPath"], "pyrosetta-bindcraft/site-packages")
+
+            public_paths = set(renderer.MOUNT_PATH_BY_ROLE.values()) - {licensed["mountPath"]}
+            for mount_path in public_paths:
+                mount = mounted[mount_path]
+                self.assertEqual(
+                    volumes[mount["name"]]["hostPath"]["path"], self.REFERENCE_PLANE_HOST_PATH
+                )
+                self.assertTrue(mount["subPath"].startswith("sha256/"), mount_path)
+            # One hostPath volume shared by the three public trees, plus the claim.
+            self.assertEqual(len({mounted[p]["name"] for p in public_paths}), 1)
             for mount in mounted.values():
                 self.assertTrue(mount["readOnly"])
-                self.assertTrue(mount["subPath"].startswith("sha256/"))
+
             vanilla = renderer.MOUNT_PATH_BY_ROLE[bindcraft_runner.MPNN_VANILLA_ROLE]
             soluble = renderer.MOUNT_PATH_BY_ROLE[bindcraft_runner.MPNN_SOLUBLE_ROLE]
             self.assertTrue(vanilla.endswith("/colabdesign/mpnn/weights"))
             self.assertTrue(soluble.endswith("/colabdesign/mpnn/weights_soluble"))
             self.assertNotEqual(mounted[vanilla]["subPath"], mounted[soluble]["subPath"])
+
+    def test_both_stages_are_pinned_to_a_node_carrying_the_reference_plane(self) -> None:
+        # The public generations are hostPath, so a Pod that lands elsewhere
+        # would mount an empty or foreign directory.
+        with tempfile.TemporaryDirectory() as name:
+            path = self.handoff(Path(name))
+            _, design = self.render(path, stage="design")
+            _, aggregate = self.render(path, stage="aggregate")
+            for job in (design, aggregate):
+                selector = job["spec"]["template"]["spec"]["nodeSelector"]
+                for key, value in self.NODE_SELECTOR.items():
+                    self.assertEqual(selector[key], value)
+            self.assertEqual(
+                design["spec"]["template"]["spec"]["nodeSelector"]["accelerator.fs2.nebius/class"],
+                "nvidia-h100-sxm5-80gb",
+            )
+            self.assertNotIn(
+                "accelerator.fs2.nebius/class",
+                aggregate["spec"]["template"]["spec"]["nodeSelector"],
+            )
+
+    def test_the_licensed_tree_may_not_be_served_from_a_public_volume(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            path = self.handoff(root)
+            value = json.loads(path.read_text())
+            for tree in value["trees"]:
+                if tree["role"] == bindcraft_runner.PYROSETTA_ROLE:
+                    tree["volume"] = {"kind": "hostPath", "path": self.REFERENCE_PLANE_HOST_PATH}
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(renderer.RenderError, "private academic claim"):
+                self.render(path, stage="design")
+
+    def test_a_public_tree_may_not_be_served_from_the_private_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            path = self.handoff(root)
+            value = json.loads(path.read_text())
+            for tree in value["trees"]:
+                if tree["role"] == bindcraft_runner.AF2_PARAMS_ROLE:
+                    tree["volume"] = {"kind": "persistentVolumeClaim", "claim": self.ACADEMIC_CLAIM}
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(renderer.RenderError, "must not be served from the private"):
+                self.render(path, stage="design")
+
+    def test_each_stage_is_its_own_job_so_the_gpu_is_released_after_design(self) -> None:
+        # Running design as an init container of the aggregate's Pod kept the
+        # accelerator allocated for the whole Pod lifetime, including the
+        # CPU-only aggregation.
+        with tempfile.TemporaryDirectory() as name:
+            path = self.handoff(Path(name))
+            _, design = self.render(path, stage="design")
+            _, aggregate = self.render(path, stage="aggregate")
+            for job in (design, aggregate):
+                spec = job["spec"]["template"]["spec"]
+                self.assertNotIn("initContainers", spec)
+                self.assertEqual(len(spec["containers"]), 1)
+            self.assertTrue(design["metadata"]["name"].endswith("-design"))
+            self.assertTrue(aggregate["metadata"]["name"].endswith("-aggregate"))
+            self.assertEqual(
+                design["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"][
+                    "nvidia.com/gpu"
+                ],
+                1,
+            )
+            self.assertNotIn(
+                "nvidia.com/gpu",
+                aggregate["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"],
+            )
+            # The handoff between them must outlive the design Pod.
+            for job in (design, aggregate):
+                volumes = {v["name"]: v for v in job["spec"]["template"]["spec"]["volumes"]}
+                self.assertIn("persistentVolumeClaim", volumes["workspace"])
+                self.assertNotIn("emptyDir", volumes["workspace"])
 
     def test_rendered_admission_matches_the_mount_paths_and_handoff_identities(self) -> None:
         with tempfile.TemporaryDirectory() as name:

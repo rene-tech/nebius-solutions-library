@@ -16,9 +16,8 @@ qualification evidence, and the tests and docs for exactly that.
 |---|---|
 | Source | BindCraft `7cd4ace1b7407adf66a50dfefa47de2270f5e4a9`, archive `cada0f51…` |
 | Base | `pytorch/pytorch@sha256:0279f7aa…` (PyTorch 2.3.0, CUDA 12.1, Python 3.10.14) |
-| Final tag | `…/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r16` |
-| Final digest | `sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d` |
-| Attestations | SPDX SBOM and SLSA provenance |
+| Final tag | `…/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r17` |
+| Attestations | SPDX SBOM and SLSA provenance, attesting a revision reachable from a pushed branch |
 | Qualification | offline-qualified; the live H100 semantic acceptance has **not** run |
 
 ## Academic PoC authorization
@@ -49,12 +48,23 @@ provenance and is not what ordinary runs consume.
 
 ## The four external trees
 
-| Role | Mounted at | Identity algorithm | Authority |
-|---|---|---|---|
-| `pyrosetta-site-packages` | `/opt/fs2/academic/pyrosetta-bindcraft/site-packages` | `fs2-tree-manifest/v1` | pinned in the image |
-| `alphafold2-params` | `/models/alphafold2` | `fs2-flat-tree-inventory/v1` | declared per run |
-| `colabdesign-mpnn-weights-vanilla` | `…/colabdesign/mpnn/weights` | `fs2-flat-tree-inventory/v1` | declared per run |
-| `colabdesign-mpnn-weights-soluble` | `…/colabdesign/mpnn/weights_soluble` | `fs2-flat-tree-inventory/v1` | declared per run |
+The four trees do **not** share a backing store. The three public ones are
+immutable generations on the reference-data filesystem, reached by `hostPath` on
+nodes that carry it; only the licensed PyRosetta tree lives on the private
+academic claim. The handoff therefore supplies each tree's own volume source,
+and the renderer refuses a handoff that serves the licensed tree from a public
+volume or a public tree from the private claim.
+
+| Role | Mounted at | Backing store | Identity algorithm | Authority |
+|---|---|---|---|---|
+| `pyrosetta-site-packages` | `/opt/fs2/academic/pyrosetta-bindcraft/site-packages` | private academic claim | `fs2-tree-manifest/v1` | pinned in the image |
+| `alphafold2-params` | `/models/alphafold2` | reference-plane `hostPath` | `fs2-flat-tree-inventory/v1` | declared per run |
+| `colabdesign-mpnn-weights-vanilla` | `…/colabdesign/mpnn/weights` | reference-plane `hostPath` | `fs2-flat-tree-inventory/v1` | declared per run |
+| `colabdesign-mpnn-weights-soluble` | `…/colabdesign/mpnn/weights_soluble` | reference-plane `hostPath` | `fs2-flat-tree-inventory/v1` | declared per run |
+
+Because the public trees are `hostPath`, both Jobs carry the handoff's node
+selector: a Pod that lands on a node without the reference-data filesystem would
+mount an empty directory rather than fail loudly.
 
 `runtime/tree_identity.py` implements both algorithms and keeps each
 byte-identical to the component that publishes the tree it guards:
@@ -99,10 +109,10 @@ is not checked, so both documents' on-disk formatting is free. The bytes that
 matter scientifically are still gated: the materialized target structure's size
 and SHA-256 are verified against the manifest entry before design starts.
 
-## Why r16, and what r14 and r15 got wrong
+## Why r17, and what each predecessor got wrong
 
-`r12` through `r15` are superseded and must not be consumed. Tags are never
-overwritten; the number advances because the runtime contract changed.
+`r12` through `r16` are superseded and must not be consumed. Tags are never
+overwritten; the number advances because something in the contract changed.
 
 * `r12` ran its semantic workflow under `no_filters`. Its accepted design's mean
   pLDDT of 0.79 would not pass the production filter set.
@@ -114,8 +124,20 @@ overwritten; the number advances because the runtime contract changed.
   and twenty.
 * `r15` corrected all of that and added the four-tree admission gate, but
   predates the controller's marker flag.
+* `r16` was behaviourally correct but not reconstructible. Its SLSA provenance
+  attests revision `ce3ca6cd`, which survived only on a superseded branch, and
+  it carried an `adapter.commit` label naming `3475ce0e`, rebased away and
+  reachable from nothing. Nobody could resolve either back to source. It was
+  also built from a working tree holding uncommitted edits.
 
-`r16` reads the columns upstream actually writes
+`r17` fixes the provenance: the publisher refuses to build from a dirty tree,
+refuses a revision not reachable from a pushed branch, re-checks the build
+inputs afterwards so nothing changed mid-build, and then reads the published
+SLSA provenance back and fails unless the attested revision and context are the
+ones it built. The adapter wrapper is bound by SHA-256 rather than by a commit,
+because a content digest cannot dangle.
+
+From `r16` onward the runtime reads the columns upstream actually writes
 (`Average_n_InterfaceResidues`, `Average_dSASA`,
 `Average_Binder_Energy_Score`, `Average_Hotspot_RMSD`) and rejects a run whose
 statistics are missing or non-numeric rather than substituting a zero. It
@@ -133,9 +155,15 @@ python3 build_images.py build                   # local build, no attestations
 python3 build_images.py push                    # non-overwriting publish + verify + receipt
 ```
 
-`push` refuses to overwrite an existing tag, builds with SPDX and SLSA
-attestations, re-pulls by digest, runs the artifact-free canary and both batch
-subcommands, and only then writes `evidence/published-images.json`.
+`push` is fail-closed on provenance as well as on content. It refuses to
+overwrite an existing tag; refuses to build unless the source tree is clean and
+`HEAD` is reachable from a pushed branch; builds with SPDX and SLSA
+attestations; re-hashes every build input afterwards and refuses if any changed
+during the build; re-pulls by digest; runs the artifact-free canary and both
+batch subcommands; reads the published provenance back and refuses unless the
+attested revision and context path are the ones it built; and only then writes
+`evidence/published-images.json`. **Commit and push before publishing** — an
+unpushed revision is rejected by design.
 
 The image consumes the adapter's published `bindcraft-batch` wrapper from
 `models/structure/runtime/bindcraft-native/bin/` through a read-only BuildKit
@@ -166,18 +194,21 @@ empty `markers` directory, and only the superseded three-tree receipts.
 When the generation lands, the run is one command:
 
 ```bash
-python3 qualification/render_semantic_job.py \
-  --handoff <four-tree-handoff.json> \
-  --image …/bindcraft@sha256:72fe33653b0670af707d0234be51091c53a61b43f44d25f69a4cbbaffbf0896d \
-  --run-id <run> --job-name <job> | kubectl apply -f -
+R=qualification/render_semantic_job.py
+COMMON="--handoff <four-tree-handoff.json> --image <r17 digest reference>
+        --run-id <run> --job-name <job> --workspace-claim <durable claim>"
+python3 $R $COMMON --stage design    | kubectl apply -f -   # GPU
+# wait for the design Job to succeed, then:
+python3 $R $COMMON --stage aggregate | kubectl apply -f -   # CPU only
 ```
 
-The rendered Job runs the design stage as an init container and the aggregate as
-the main container over one workspace, because the shard output lives on the
-Pod's own volume and two Jobs could not share it. Both stages enter the image
-through its outer entrypoint and carry the pinned
-`default_4stage_multimer.json` and `default_filters.json` digests; only the
-design stage requests an accelerator.
+One stage per Job. Running the design as an init container of the aggregate's
+Pod held the accelerator for the whole Pod lifetime, so a GPU sat idle through
+the CPU-only aggregation. Split, the GPU is released when design ends; the shard
+output survives on the durable workspace claim, and the aggregate re-verifies
+every handed-off artifact against the digest the design stage published before
+using it. Both stages enter the image through its outer entrypoint and carry the
+pinned `default_4stage_multimer.json` and `default_filters.json` digests.
 
 Passing `default_filters.json` is the semantic bar, not a formality. Its 54
 active thresholds require `Average_n_InterfaceResidues` ≥ 7, `Average_dSASA` ≥ 1,
