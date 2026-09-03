@@ -89,6 +89,15 @@ Every PodSet that does request the exact GPU resource must carry a positive
 quantity and one consistent ResourceFlavor; their total must equal the frozen
 accelerator count before the assignment is persisted.
 
+A unique model-specific `local_queue_routes` entry takes precedence over the
+service class's default LocalQueue, and a matching tenant selector is mandatory
+when that route is tenant-bounded. A tenant-only route is used only when no
+model-specific route exists. Ambiguous routes, a tenant/model mismatch, or an
+execution-map namespace different from the selected LocalQueue namespace fail
+before durable batch admission. The execution map contributes only the model's
+operator-owned workload namespace; it cannot supply or override the LocalQueue,
+ClusterQueue, priority, pool, flavor, or resource fields.
+
 ## Catalog profile adapter boundary
 
 `scientific_plan_from_catalog_profile` consumes only the `workload` projection
@@ -451,6 +460,15 @@ database mount uses the content-addressed reference-data subtree above with GID
 1000. The execution map must remain disabled for that binding until the stager's
 published manifest supplies the final tree digest; no broad-root placeholder is
 valid.
+
+The same namespace rule applies to native BindCraft. For this academic proof of
+concept, the scheduling contract routes both model IDs for the authorized
+academic tenant to `academic-scientific`; the scheduling snapshot freezes
+`workload_namespace=route_namespace=fs2-academic-poc`. Kubernetes create,
+observe, UID-fenced delete, and result projection all consume that frozen value.
+Helm rejects an academic execution-map binding unless the reviewed namespace,
+PVC, LocalQueue, and ServiceAccount contract is enabled, so no rendered Job can
+pretend to mount the licensed claim from `fs2-models`.
 
 Helm's `scientificBatch.enabled` and `scientificBatch.writesEnabled` gates are
 both false by default and must be enabled together. Enabling requires:

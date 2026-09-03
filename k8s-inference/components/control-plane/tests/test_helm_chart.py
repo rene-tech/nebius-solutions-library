@@ -858,6 +858,10 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "--set-json",
         'scientificBatch.executionMap.models=[{"model_id":"protein-design","workload_namespace":"fs2-models"},{"model_id":"alphafold3","workload_namespace":"fs2-academic-poc"}]',
         "--set",
+        "academicAssets.enabled=true",
+        "--set",
+        "academicAssets.execution.enabled=true",
+        "--set",
         "scientificArtifacts.enabled=true",
         "--set-string",
         "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
@@ -945,6 +949,53 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "192.0.2.10/32",
         "192.0.2.20/32",
     }
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        (),
+        ("--set", "academicAssets.enabled=true"),
+        (
+            "--set",
+            "academicAssets.enabled=true",
+            "--set",
+            "academicAssets.execution.enabled=true",
+            "--set",
+            "academicAssets.execution.namespace=fs2-models",
+        ),
+    ],
+)
+def test_academic_scientific_execution_requires_the_exact_namespace_local_contract(
+    extra: tuple[str, ...],
+) -> None:
+    result = subprocess.run(  # noqa: S603 - fixed argv, no shell, test-only Helm validation
+        [
+            *render_command(),
+            "--set",
+            "scientificBatch.enabled=true",
+            "--set",
+            "scientificBatch.writesEnabled=true",
+            "--set",
+            "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+            "--set",
+            "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
+            "--set-json",
+            'scientificBatch.executionMap.models=[{"model_id":"alphafold3","workload_namespace":"fs2-academic-poc"}]',
+            "--set",
+            "scientificArtifacts.enabled=true",
+            "--set-string",
+            "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+            "--set-string",
+            "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
+            *extra,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "academic scientific" in result.stderr
 
 
 @pytest.mark.parametrize(
