@@ -1187,17 +1187,43 @@ async def test_kubernetes_observer_reports_eviction_after_admission_is_cleared(t
 
 
 @pytest.mark.parametrize(
-    ("raw_reason", "expected_kind"),
+    ("condition_type", "observed_reason", "expected_kind", "expected_code"),
     [
-        ("MaximumExecutionTimeExceeded", FailureKind.APPLICATION),
-        ("RequeuingLimitExceeded", FailureKind.INFRASTRUCTURE),
+        ("DeactivationTarget", "MaximumExecutionTimeExceeded", FailureKind.APPLICATION, "EXECUTION_TIMEOUT"),
+        (
+            "Evicted",
+            "DeactivatedDueToMaximumExecutionTimeExceeded",
+            FailureKind.APPLICATION,
+            "EXECUTION_TIMEOUT",
+        ),
+        (
+            "Evicted",
+            "EvictedDueToDeactivatedDueToMaximumExecutionTimeExceeded",
+            FailureKind.APPLICATION,
+            "EXECUTION_TIMEOUT",
+        ),
+        ("DeactivationTarget", "RequeuingLimitExceeded", FailureKind.INFRASTRUCTURE, "RequeuingLimitExceeded"),
+        (
+            "Evicted",
+            "DeactivatedDueToRequeuingLimitExceeded",
+            FailureKind.INFRASTRUCTURE,
+            "RequeuingLimitExceeded",
+        ),
+        (
+            "Evicted",
+            "EvictedDueToDeactivatedDueToRequeuingLimitExceeded",
+            FailureKind.INFRASTRUCTURE,
+            "RequeuingLimitExceeded",
+        ),
     ],
 )
 @pytest.mark.asyncio
-async def test_kubernetes_observer_preserves_raw_kueue_deactivation_reason(
+async def test_kubernetes_observer_normalizes_raw_and_composed_kueue_deactivation_reasons(
     tmp_path: Path,
-    raw_reason: str,
+    condition_type: str,
+    observed_reason: str,
     expected_kind: FailureKind,
+    expected_code: str,
 ) -> None:
     attempt_id = uuid4()
     decision = (
@@ -1214,7 +1240,7 @@ async def test_kubernetes_observer_preserves_raw_kueue_deactivation_reason(
     ref = WorkloadRef(
         namespace="fs2-models",
         route_namespace="fs2-models",
-        name=f"scientific-{raw_reason.lower()}",
+        name=f"scientific-{condition_type.lower()}-{hashlib.sha256(observed_reason.encode()).hexdigest()[:12]}",
         kind=WorkloadKind.JOB,
         uid="deactivated-job-uid",
     )
@@ -1250,11 +1276,10 @@ async def test_kubernetes_observer_preserves_raw_kueue_deactivation_reason(
                             "status": {
                                 "conditions": [
                                     {
-                                        "type": "DeactivationTarget",
+                                        "type": condition_type,
                                         "status": "True",
-                                        "reason": raw_reason,
+                                        "reason": observed_reason,
                                     },
-                                    {"type": "Evicted", "status": "True", "reason": "Deactivated"},
                                 ]
                             },
                         }
@@ -1263,7 +1288,7 @@ async def test_kubernetes_observer_preserves_raw_kueue_deactivation_reason(
             )
         return httpx.Response(200, json={"items": []})
 
-    token = tmp_path / f"{raw_reason}-token"
+    token = tmp_path / f"{hashlib.sha256(observed_reason.encode()).hexdigest()[:12]}-token"
     token.write_text("x" * 32)
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
     cluster = HttpScientificBatchCluster(
@@ -1279,7 +1304,7 @@ async def test_kubernetes_observer_preserves_raw_kueue_deactivation_reason(
     observation = await cluster.observe(ref, scheduling=decision)
     assert observation.state is WorkloadState.FAILED
     assert observation.failure_kind is expected_kind
-    assert observation.failure_code == raw_reason
+    assert observation.failure_code == expected_code
     assert observation.kueue_workload_uid == "deactivated-kueue-uid"
     await client.aclose()
 
@@ -2036,6 +2061,36 @@ def test_kubernetes_failure_taxonomy_retries_only_known_infrastructure() -> None
     assert _kueue_eviction("Preempted")[1] is FailureKind.PREEMPTION
     assert _kueue_eviction("EvictedOnManagerCluster")[1] is FailureKind.INFRASTRUCTURE
     assert _kueue_eviction("DeactivatedByUser")[1] is FailureKind.APPLICATION
+    assert _kueue_eviction("MaximumExecutionTimeExceeded") == (
+        WorkloadState.FAILED,
+        FailureKind.APPLICATION,
+        "EXECUTION_TIMEOUT",
+    )
+    assert _kueue_eviction("DeactivatedDueToMaximumExecutionTimeExceeded") == (
+        WorkloadState.FAILED,
+        FailureKind.APPLICATION,
+        "EXECUTION_TIMEOUT",
+    )
+    assert _kueue_eviction("RequeuingLimitExceeded") == (
+        WorkloadState.FAILED,
+        FailureKind.INFRASTRUCTURE,
+        "RequeuingLimitExceeded",
+    )
+    assert _kueue_eviction("DeactivatedDueToRequeuingLimitExceeded") == (
+        WorkloadState.FAILED,
+        FailureKind.INFRASTRUCTURE,
+        "RequeuingLimitExceeded",
+    )
+    assert _failure(["EvictedDueToDeactivatedDueToMaximumExecutionTimeExceeded"]) == (
+        WorkloadState.FAILED,
+        FailureKind.APPLICATION,
+        "EXECUTION_TIMEOUT",
+    )
+    assert _failure(["EvictedDueToDeactivatedDueToRequeuingLimitExceeded"]) == (
+        WorkloadState.FAILED,
+        FailureKind.INFRASTRUCTURE,
+        "RequeuingLimitExceeded",
+    )
     assert _failure(["NodeLost"])[1] is FailureKind.INFRASTRUCTURE
 
 

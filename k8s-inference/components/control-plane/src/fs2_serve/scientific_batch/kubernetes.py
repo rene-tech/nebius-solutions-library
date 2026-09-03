@@ -57,6 +57,21 @@ KUEUE_JOB_UID_LABEL = "kueue.x-k8s.io/job-uid"
 POOL_LABEL = "fs2.nebius.ai/pool-id"
 NODE_POOL_LABEL = "accelerator.fs2.nebius/pool-id"
 
+_KUEUE_EXECUTION_TIMEOUT_REASONS = frozenset(
+    {
+        "MaximumExecutionTimeExceeded",
+        "DeactivatedDueToMaximumExecutionTimeExceeded",
+        "EvictedDueToDeactivatedDueToMaximumExecutionTimeExceeded",
+    }
+)
+_KUEUE_REQUEUING_LIMIT_REASONS = frozenset(
+    {
+        "RequeuingLimitExceeded",
+        "DeactivatedDueToRequeuingLimitExceeded",
+        "EvictedDueToDeactivatedDueToRequeuingLimitExceeded",
+    }
+)
+
 
 class ScientificManifestRenderer(Protocol):
     """Trusted model-owned renderer; caller request fields never reach this API."""
@@ -97,6 +112,9 @@ def _condition(status: Mapping[str, Any], kind: str, expected: str = "True") -> 
 
 
 def _failure(reasons: list[str]) -> tuple[WorkloadState, FailureKind, str]:
+    for reason in reasons:
+        if reason in _KUEUE_EXECUTION_TIMEOUT_REASONS | _KUEUE_REQUEUING_LIMIT_REASONS:
+            return _kueue_eviction(reason)
     normalized = [reason.lower() for reason in reasons if reason]
     selected = reasons[0] if reasons else "workload_failed"
     if "preempted" in normalized:
@@ -114,6 +132,10 @@ def _failure(reasons: list[str]) -> tuple[WorkloadState, FailureKind, str]:
 def _kueue_eviction(reason: str) -> tuple[WorkloadState, FailureKind, str]:
     """Classify only Kueue's exact eviction reason; generic Pod eviction is not preemption."""
 
+    if reason in _KUEUE_EXECUTION_TIMEOUT_REASONS:
+        return WorkloadState.FAILED, FailureKind.APPLICATION, "EXECUTION_TIMEOUT"
+    if reason in _KUEUE_REQUEUING_LIMIT_REASONS:
+        return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "RequeuingLimitExceeded"
     if reason == "Preempted":
         return WorkloadState.PREEMPTED, FailureKind.PREEMPTION, reason
     if reason in {
@@ -122,11 +144,8 @@ def _kueue_eviction(reason: str) -> tuple[WorkloadState, FailureKind, str]:
         "ClusterQueueStopped",
         "LocalQueueStopped",
         "EvictedOnManagerCluster",
-        "RequeuingLimitExceeded",
     }:
         return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, reason
-    if reason == "MaximumExecutionTimeExceeded":
-        return WorkloadState.FAILED, FailureKind.APPLICATION, reason
     return WorkloadState.FAILED, FailureKind.APPLICATION, reason
 
 
@@ -572,22 +591,27 @@ class HttpScientificBatchCluster:
             raise ScientificKubernetesError("Kueue eviction reason is invalid")
         if deactivation_reason is not None and not isinstance(deactivation_reason, str):
             raise ScientificKubernetesError("Kueue deactivation reason is invalid")
-        # Newer Kueue versions surface the terminal underlying cause on the
-        # temporary DeactivationTarget condition, while Evicted uses the
-        # generic reason Deactivated. Preserve the raw stable cause rather
-        # than collapsing it into a locally invented category.
-        if deactivation_reason in {"MaximumExecutionTimeExceeded", "RequeuingLimitExceeded"}:
+        # Kueue v0.17 first surfaces these terminal causes directly on the
+        # temporary DeactivationTarget condition. A later reconciliation may
+        # replace that condition with DeactivatedDueTo<Cause> on Evicted (and
+        # its emitted event adds EvictedDueTo...). Preserve any exact form so
+        # the classifier produces one stable controller failure code from the
+        # first observable transition onward.
+        if deactivation_reason in _KUEUE_EXECUTION_TIMEOUT_REASONS | _KUEUE_REQUEUING_LIMIT_REASONS:
             eviction_reason = deactivation_reason
         elif eviction_reason == "Deactivated":
             conditions = workload_status.get("conditions", [])
-            raw_causes = {
+            condition_reasons = {
                 item.get("reason")
                 for item in conditions
                 if isinstance(item, Mapping) and item.get("status") in {"True", "False"}
             }
-            for raw_cause in ("MaximumExecutionTimeExceeded", "RequeuingLimitExceeded"):
-                if raw_cause in raw_causes:
-                    eviction_reason = raw_cause
+            for condition_reason in (
+                *_KUEUE_EXECUTION_TIMEOUT_REASONS,
+                *_KUEUE_REQUEUING_LIMIT_REASONS,
+            ):
+                if condition_reason in condition_reasons:
+                    eviction_reason = condition_reason
                     break
         admission = workload_status.get("admission")
         # QuotaReserved is the assignment boundary. Keep its first transition
