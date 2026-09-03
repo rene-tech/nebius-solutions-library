@@ -208,11 +208,11 @@ pre-infrastructure base.
 the audited one-block Protenix patch to an exact
 `2475421477ab414b571149ad4a875c390ff8a35d` (`v2.0.0`) checkout. It fetches
 those tagged sources when verified local checkouts are not supplied. It also
-creates a separate depth-one object store, fetches the currently reachable
-artifact-worker ref, requires exact commit
-`372391764b7c514d015f9b33cd3dcba9f3119f73`, and verifies generator SHA-256
+creates a separate depth-one object store, fetches the accepted mainline
+artifact catalog, requires exact commit
+`9d48fe0ef380ec736e113a89215f3730534693ad`, and verifies generator SHA-256
 `e7ec850a96daaf7d9463d953490d263069406ff4f1b125d400d75390372994b8`.
-That revision is the clean pushed catalog contract; it deliberately leaves
+That revision is the integrated catalog contract; it deliberately leaves
 localization pending. Immutable promotion receipts remain a publication and
 H100 acceptance gate.
 The clean store must not contain superseded unreachable commit `80d3b940...`.

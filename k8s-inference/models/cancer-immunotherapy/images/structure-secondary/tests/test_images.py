@@ -90,12 +90,12 @@ def write_runtime_localization_marker(
 class StructureSecondaryImageContractTests(unittest.TestCase):
     @unittest.skipUnless(
         os.environ.get("FS2_ARTIFACT_GENERATOR"),
-        "set FS2_ARTIFACT_GENERATOR to the exact 37239176 catalog generator",
+        "set FS2_ARTIFACT_GENERATOR to the exact 9d48fe0e catalog generator",
     )
     def test_lock_mounts_match_exact_artifact_worker_runtime_integration(self) -> None:
         generator_path = Path(os.environ["FS2_ARTIFACT_GENERATOR"]).resolve()
         spec = importlib.util.spec_from_file_location(
-            "artifact_worker_mounts_37239176", generator_path
+            "artifact_worker_mounts_9d48fe0e", generator_path
         )
         assert spec is not None and spec.loader is not None
         worker = importlib.util.module_from_spec(spec)
@@ -143,7 +143,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
 
     @unittest.skipUnless(
         os.environ.get("FS2_ARTIFACT_GENERATOR"),
-        "set FS2_ARTIFACT_GENERATOR to the exact 37239176 catalog generator",
+        "set FS2_ARTIFACT_GENERATOR to the exact 9d48fe0e catalog generator",
     )
     def test_exact_artifact_worker_manifest_is_accepted_with_newline_hash(self) -> None:
         generator_path = Path(os.environ["FS2_ARTIFACT_GENERATOR"]).resolve()
@@ -152,7 +152,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             "e7ec850a96daaf7d9463d953490d263069406ff4f1b125d400d75390372994b8",
         )
         spec = importlib.util.spec_from_file_location(
-            "artifact_worker_37239176", generator_path
+            "artifact_worker_9d48fe0e", generator_path
         )
         self.assertIsNotNone(spec)
         self.assertIsNotNone(spec.loader if spec is not None else None)
@@ -556,7 +556,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
     def test_mandatory_check_uses_reachable_generator_in_fresh_object_store(self) -> None:
         source = (ROOT / "check.sh").read_text(encoding="utf-8")
         self.assertIn(
-            "artifact_worker_revision=372391764b7c514d015f9b33cd3dcba9f3119f73",
+            "artifact_worker_revision=9d48fe0ef380ec736e113a89215f3730534693ad",
             source,
         )
         self.assertIn(
@@ -564,7 +564,7 @@ class StructureSecondaryImageContractTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "artifact_worker_ref=refs/heads/agent/fs2-cancer-model-artifact-cache-ingestion-r20260902",
+            "artifact_worker_ref=refs/heads/main",
             source,
         )
         self.assertIn("checkout_exact_ref", source)
