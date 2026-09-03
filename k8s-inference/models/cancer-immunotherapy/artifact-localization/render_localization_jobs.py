@@ -455,6 +455,34 @@ def qualify_job(
     }
 
 
+def _resolved_volume(volume: dict[str, Any], sub_path: str) -> dict[str, Any]:
+    """Address one generation on whichever plane holds it.
+
+    The two planes are addressed differently and the difference is real: the
+    public model-artifact plane is a Terraform-managed host directory that every
+    node mounts and is selected by node label, while the licensed tree lives in a
+    namespaced claim. Flattening them into one shape would name a claim that does
+    not exist, or a host path that is not mounted.
+    """
+
+    resolved: dict[str, Any] = {
+        "kind": volume["kind"],
+        "plane": volume["plane"],
+        "sub_path": sub_path,
+        "read_only": True,
+        "immutable": True,
+        "binding_state": volume["binding_state"],
+    }
+    if volume["kind"] == "host-path":
+        resolved["host_root"] = volume["host_root"]
+        resolved["host_path"] = f"{volume['host_root']}/{sub_path}"
+        resolved["node_selector"] = dict(volume["node_selector"])
+    else:
+        resolved["namespace"] = volume["namespace"]
+        resolved["claim"] = volume["claim"]
+    return resolved
+
+
 def binding_handoff(
     *,
     public_volume: dict[str, Any],
@@ -499,8 +527,10 @@ def binding_handoff(
             total_bytes=tree["total_bytes"],
             inventory_algorithm=tree["inventory_algorithm"],
             sub_path=sub_path,
-            namespace=volume["namespace"],
-            claim=volume["claim"],
+            volume_kind=volume["kind"],
+            namespace=volume.get("namespace", ""),
+            claim=volume.get("claim", ""),
+            host_root=volume.get("host_root", ""),
             visibility=contract.visibility,
             archive=contract.archive,
             generated_entries=contract.tree.generated_entries,
@@ -511,15 +541,7 @@ def binding_handoff(
             "generation": generation,
             "visibility": contract.visibility,
             "externally_installed": contract.externally_installed,
-            "volume": {
-                "namespace": volume["namespace"],
-                "claim": volume["claim"],
-                "sub_path": sub_path,
-                "read_only": True,
-                "immutable": True,
-                "binding_state": volume["binding_state"],
-                "plane": volume["plane"],
-            },
+            "volume": _resolved_volume(volume, sub_path),
             "marker": {
                 # One authority, sealed inside the generation by the same rename
                 # that publishes it. The reserved name is excluded from every
@@ -554,6 +576,7 @@ def binding_handoff(
             # Where the producing plane built the bytes. It is an input to the
             # promotion and a provenance record, never something a runtime binds.
             entry["promoted_from"] = {
+                "kind": private_volume["kind"],
                 "namespace": private_volume["namespace"],
                 "claim": private_volume["claim"],
                 "sub_path": contract.source_sub_path,
@@ -717,20 +740,22 @@ def main(argv: list[str] | None = None) -> int:
         help="subtree of the tenant-private claim that licensed generations live under",
     )
     parser.add_argument(
-        "--public-namespace",
-        default="fs2-reference-data",
-        help="handoff: namespace of the dedicated public reference plane",
+        "--public-host-root",
+        default="/mnt/fs2-reference-data/data",
+        help="handoff: Terraform-managed public model-artifact host root, mounted on every labelled node",
     )
     parser.add_argument(
-        "--public-claim",
-        default="fs2-scientific-artifact-store-rwx",
-        help="handoff: claim on the dedicated public reference plane; public bytes never land on the academic claim",
+        "--public-node-selector",
+        action="append",
+        default=["storage.fs2.nebius/reference-data=true"],
+        metavar="KEY=VALUE",
+        help="handoff: how a consumer lands on a node that mounts the public host root",
     )
     parser.add_argument(
         "--public-binding-state",
-        default="fixture",
+        default="live",
         choices=("fixture", "live"),
-        help="handoff: 'live' only once the public plane has published a claim receipt",
+        help="handoff: 'live' once the public plane is provisioned and mounted",
     )
     parser.add_argument(
         "--private-binding-state",
@@ -836,15 +861,19 @@ def main(argv: list[str] | None = None) -> int:
         json.dump(
             binding_handoff(
                 public_volume={
-                    "namespace": options.public_namespace,
-                    "claim": options.public_claim,
-                    "plane": "public-reference",
+                    "kind": "host-path",
+                    "plane": "reference-data-host",
+                    "host_root": options.public_host_root,
+                    "node_selector": dict(
+                        item.split("=", 1) for item in options.public_node_selector
+                    ),
                     "binding_state": options.public_binding_state,
                 },
                 private_volume={
+                    "kind": "persistent-volume-claim",
+                    "plane": "tenant-private-academic",
                     "namespace": options.namespace,
                     "claim": options.claim,
-                    "plane": "tenant-private-academic",
                     "binding_state": options.private_binding_state,
                 },
                 tree_prefix=options.tree_prefix,

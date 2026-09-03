@@ -623,9 +623,10 @@ class ScientificWorkloadContractTests(unittest.TestCase):
     def test_public_bytes_and_licensed_bytes_use_separate_storage_planes(self) -> None:
         """The academic claim is licensed and tenant-scoped, not artifact storage.
 
-        Public artifacts landing there would freeze a volume that exists for one
-        licence chain into the role of a general cache, so storage authority is
-        chosen per artifact rather than per run.
+        Public model artifacts belong on the Terraform-managed reference-data
+        host root that every labelled node mounts; the licensed tree stays in the
+        academic claim. Putting public bytes on that claim would freeze a volume
+        provisioned for one licence chain into a general cache.
         """
 
         handoff = self.load(
@@ -633,19 +634,52 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         )
         public = handoff["volumes"]["public"]
         private = handoff["volumes"]["tenant-private"]
-        self.assertNotEqual(public["claim"], private["claim"])
-        self.assertNotEqual(public["namespace"], private["namespace"])
+        self.assertEqual("host-path", public["kind"])
+        self.assertEqual("/mnt/fs2-reference-data/data", public["host_root"])
+        self.assertEqual("true", public["node_selector"]["storage.fs2.nebius/reference-data"])
+        self.assertEqual("persistent-volume-claim", private["kind"])
         self.assertEqual("academic-assets-runtime-rwx", private["claim"])
+        # Both planes are provisioned, so neither binding may be left a fixture.
+        self.assertEqual("live", public["binding_state"])
+        self.assertEqual("live", private["binding_state"])
+
         for entry in handoff["artifacts"]:
             with self.subTest(artifact=entry["artifact_id"]):
                 volume = entry["volume"]
+                self.assertEqual("live", volume["binding_state"])
                 if entry["visibility"] == "public":
-                    self.assertEqual(public["claim"], volume["claim"])
-                    self.assertNotEqual("academic-assets-runtime-rwx", volume["claim"])
+                    # A host plane is addressed by host root and node label, and
+                    # carries no claim that a reader could try to mount.
+                    self.assertEqual("host-path", volume["kind"])
+                    self.assertNotIn("claim", volume)
+                    self.assertEqual(f"{public['host_root']}/{volume['sub_path']}", volume["host_path"])
+                    self.assertEqual(public["node_selector"], volume["node_selector"])
                 else:
+                    self.assertEqual("persistent-volume-claim", volume["kind"])
                     self.assertEqual(private["claim"], volume["claim"])
-                # A plane with no live claim receipt is declared, never implied.
-                self.assertIn(volume["binding_state"], {"fixture", "live"})
+                    self.assertEqual(private["namespace"], volume["namespace"])
+                    self.assertNotIn("host_root", volume)
+
+    def test_the_marker_addresses_the_plane_its_generation_actually_lives_on(self) -> None:
+        """A claim for a host directory, or a host root for a claim, names nothing."""
+
+        handoff = self.load(
+            ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
+        )
+        for entry in handoff["artifacts"]:
+            with self.subTest(artifact=entry["artifact_id"]):
+                document = entry["marker"]["document"]
+                volume = entry["volume"]
+                self.assertEqual(volume["kind"], document["volume_kind"])
+                self.assertEqual(volume["sub_path"], document["sub_path"])
+                if volume["kind"] == "host-path":
+                    self.assertEqual(volume["host_root"], document["host_root"])
+                    self.assertEqual("", document["namespace"])
+                    self.assertEqual("", document["claim"])
+                else:
+                    self.assertEqual(volume["claim"], document["claim"])
+                    self.assertEqual(volume["namespace"], document["namespace"])
+                    self.assertEqual("", document["host_root"])
 
     def test_pyrosetta_reuses_the_academic_plane_identity_verbatim(self) -> None:
         """One tree, one identity. The producing plane's digest is authoritative."""

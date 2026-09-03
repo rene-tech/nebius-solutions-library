@@ -1918,3 +1918,52 @@ def test_a_promoted_symlink_keeps_the_target_the_producer_identity_records(tmp_p
     assert os.readlink(staging / "alias.py") == os.readlink(source / "alias.py") == "pkg/__init__.py"
     assert tree_manifest_identity(staging).symlink_count == 1
     assert tree_manifest_identity(staging).sha256 == tree_manifest_identity(source).sha256
+
+
+def test_a_marker_names_the_kind_of_plane_that_holds_the_generation() -> None:
+    """The public model-artifact plane is a host directory; the licensed one is a claim.
+
+    Each is addressed differently, so a marker that carried a claim for a host
+    directory, or a host root for a claim, would name a location nobody can mount.
+    """
+
+    host = generation_marker(
+        artifact_id=MOLECULES_ID,
+        generation="c" * 64,
+        entry_count=1,
+        total_bytes=1,
+        inventory_algorithm=TREE_INVENTORY_ALGORITHM,
+        sub_path="scientific-localization/public/generations/x/sha256/" + "c" * 64,
+        visibility="public",
+        volume_kind="host-path",
+        host_root="/mnt/fs2-reference-data/data",
+    )
+    assert host["volume_kind"] == "host-path"
+    assert host["host_root"] == "/mnt/fs2-reference-data/data"
+    assert host["namespace"] == host["claim"] == ""
+
+    claim = _marker()
+    assert claim["volume_kind"] == "persistent-volume-claim"
+    assert claim["host_root"] == ""
+    assert claim["namespace"] and claim["claim"]
+
+    for kwargs, message in (
+        ({"volume_kind": "host-path", "namespace": "n", "claim": "c"}, "host root"),
+        ({"volume_kind": "host-path"}, "host root"),
+        ({"volume_kind": "persistent-volume-claim", "host_root": "/mnt/x"}, "namespace and claim"),
+        ({"volume_kind": "persistent-volume-claim"}, "namespace and claim"),
+        ({"volume_kind": "host-path", "host_root": "relative/path"}, "safe absolute path"),
+        ({"volume_kind": "nfs", "namespace": "n", "claim": "c"}, "volume_kind is unsupported"),
+    ):
+        arguments: dict[str, Any] = {
+            "artifact_id": MOLECULES_ID,
+            "generation": "c" * 64,
+            "entry_count": 1,
+            "total_bytes": 1,
+            "inventory_algorithm": TREE_INVENTORY_ALGORITHM,
+            "sub_path": "a/b",
+            "visibility": "public",
+            **kwargs,
+        }
+        with pytest.raises(ArtifactLocalizationError, match=message):
+            generation_marker(**arguments)

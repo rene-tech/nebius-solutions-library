@@ -98,12 +98,22 @@ same digest. The marker always names which algorithm produced its digest.
 Storage authority is chosen **per artifact**, not per run:
 
 - **Public** artifacts (BoltzGen molecules, both AlphaFold2 parameter trees, both
-  ColabDesign MPNN weight sets) belong on the dedicated public reference plane.
-  Until that plane publishes a live claim receipt the handoff records it with
-  `binding_state: "fixture"`, which must not be read as a provisioned location.
+  ColabDesign MPNN weight sets) live on the Terraform-managed public
+  model-artifact plane: the host root `/mnt/fs2-reference-data/data`, mounted on
+  every node labelled `storage.fs2.nebius/reference-data=true`, the H100s
+  included. A consumer reaches it by node label, not by claim.
 - **PyRosetta** is licensed and tenant-scoped, so its generation lives only on
-  `fs2-academic-poc/academic-assets-runtime-rwx` under
+  the claim `fs2-academic-poc/academic-assets-runtime-rwx` under
   `scientific-localization/private`.
+
+The two planes are addressed differently and the handoff keeps that difference
+rather than flattening it: a host plane entry carries `host_root`, the resolved
+`host_path` and the node selector that reaches it, and a claim entry carries
+`namespace` and `claim`. A marker that named a claim for a host directory, or a
+host root for a claim, would describe a location nobody can mount, so
+`generation_marker` refuses each mismatch. The object store that the scientific
+artifact store provisions is the **result** store; it is not this plane, and a
+runtime mounts a filesystem.
 
 Public bytes are deliberately kept off the academic claim: that volume exists
 for one licence chain, and filling it with general artifacts would freeze it

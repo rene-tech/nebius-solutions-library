@@ -1574,9 +1574,11 @@ def generation_marker(
     total_bytes: int,
     inventory_algorithm: str,
     sub_path: str,
-    namespace: str,
-    claim: str,
     visibility: str,
+    volume_kind: str = "persistent-volume-claim",
+    namespace: str = "",
+    claim: str = "",
+    host_root: str = "",
     artifact_kind: str = "",
     directory_count: int = 0,
     archive: ArchiveProvenance | None = None,
@@ -1609,6 +1611,19 @@ def generation_marker(
         raise ArtifactLocalizationError("tree inventory algorithm is unsupported")
     if not is_safe_relative_path(sub_path):
         raise ArtifactLocalizationError("a generation sub-path must be a safe relative POSIX path")
+    # A generation lives on exactly one kind of plane, and each kind is addressed
+    # differently. Carrying a claim for a host directory, or a host root for a
+    # claim, would describe a location that does not exist.
+    if volume_kind == "persistent-volume-claim":
+        if not namespace or not claim or host_root:
+            raise ArtifactLocalizationError("a claim-backed generation is addressed by namespace and claim")
+    elif volume_kind == "host-path":
+        if not host_root or namespace or claim:
+            raise ArtifactLocalizationError("a host-backed generation is addressed by its host root")
+        if not host_root.startswith("/") or ".." in PurePosixPath(host_root).parts:
+            raise ArtifactLocalizationError("a generation host root must be a safe absolute path")
+    else:
+        raise ArtifactLocalizationError("generation volume_kind is unsupported")
     document: dict[str, object] = {
         "schema": MARKER_SCHEMA,
         "artifact_id": artifact_id,
@@ -1619,8 +1634,10 @@ def generation_marker(
         "entry_count": entry_count,
         "directory_count": directory_count,
         "total_bytes": total_bytes,
+        "volume_kind": volume_kind,
         "namespace": namespace,
         "claim": claim,
+        "host_root": host_root,
         "sub_path": sub_path,
         "visibility": visibility,
         "read_only": True,
@@ -1808,8 +1825,10 @@ def load_generation_marker(path: Path) -> Mapping[str, object]:
                 "entry_count",
                 "directory_count",
                 "total_bytes",
+                "volume_kind",
                 "namespace",
                 "claim",
+                "host_root",
                 "sub_path",
                 "visibility",
                 "read_only",
@@ -2104,8 +2123,10 @@ def _inventory(options: argparse.Namespace, started: float) -> int:
         total_bytes=total,
         inventory_algorithm=algorithm,
         sub_path=options.sub_path,
+        volume_kind=options.volume_kind,
         namespace=options.namespace,
         claim=options.claim,
+        host_root=options.host_root,
         visibility=options.visibility,
         source=_cli_source(options.source),
     )
@@ -2201,8 +2222,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--marker", type=Path, help="the promotion marker to write or verify")
     parser.add_argument("--sub-path", default="", help="the exact volume sub-path the generation is published at")
+    parser.add_argument(
+        "--volume-kind",
+        default="persistent-volume-claim",
+        choices=("persistent-volume-claim", "host-path"),
+        help="which kind of plane the generation is published on",
+    )
     parser.add_argument("--namespace", default="")
     parser.add_argument("--claim", default="")
+    parser.add_argument("--host-root", default="", help="host-path plane: the Terraform-managed host root")
     parser.add_argument("--visibility", default="public", choices=("public", "tenant-private"))
     parser.add_argument("--expect-generation", help="marker: the generation the caller believes it mounted")
     parser.add_argument("--expect-entries", type=int, help="inventory: fail unless the tree holds exactly this many")
@@ -2307,8 +2335,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             total_bytes=receipt.total_bytes,
             inventory_algorithm=contract.tree.inventory_algorithm,
             sub_path=sub_path,
+            volume_kind=options.volume_kind,
             namespace=options.namespace,
             claim=options.claim,
+            host_root=options.host_root,
             visibility=options.visibility,
             archive=contract.archive,
             generated_entries=contract.tree.generated_entries,
