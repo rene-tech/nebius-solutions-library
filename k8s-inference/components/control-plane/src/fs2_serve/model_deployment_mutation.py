@@ -517,6 +517,9 @@ class ModelDeploymentMutationService:
                             "tier": qualification.template_cache_tiers[template_digest].value,
                             "snapshotPreference": "Never",
                             "snapshotRef": None,
+                            # An unpinned draft keeps the historical spec digest
+                            # and lets evidence select the fastest qualified path.
+                            "mechanism": None,
                         },
                         "queue": {
                             "localQueue": valid_queues[0],

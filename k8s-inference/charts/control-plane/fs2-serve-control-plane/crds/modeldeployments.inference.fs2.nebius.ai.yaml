@@ -279,6 +279,15 @@ spec:
                     snapshotPreference:
                       type: string
                       enum: [Never, Prefer, Require]
+                    mechanism:
+                      description: >-
+                        Pinned cold-start optimisation mechanism. Unset keeps the
+                        historical behaviour, where the fastest qualified path is
+                        selected from evidence. Pinning narrows both the render and
+                        which benchmark cohort may qualify a level; it never grants
+                        a level by itself.
+                      type: string
+                      enum: [conventional, regional-cache, host-memory-residency, gpu-resident]
                     snapshotRef:
                       type: object
                       required: [name, digest, strategy]

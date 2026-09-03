@@ -37,6 +37,7 @@ from fs2_serve.fast_start_identity import (
     RuntimePlacementIdentity,
     mechanism_config_digest,
 )
+from fs2_serve.fast_start_mechanisms import FastStartMechanism
 from fs2_serve.model_deployment import (
     CacheTier,
     FastStartEvidence,
@@ -325,12 +326,18 @@ def test_default_fast_start_keeps_every_existing_spec_digest_stable() -> None:
         "maximumLevel": None,
         "fallbackPolicy": "AllowLowerLevel",
     }
+    assert wire["cache"]["mechanism"] is None
     legacy = {key: value for key, value in wire.items() if key != "fastStart"}
+    legacy["cache"] = {key: value for key, value in legacy["cache"].items() if key != "mechanism"}
     assert ModelDeploymentSpec.model_validate(legacy) == spec
     legacy["placement"]["poolRefs"] = sorted(legacy["placement"]["poolRefs"])
     legacy["exposure"]["openAIAliases"] = sorted(legacy["exposure"]["openAIAliases"])
     legacy["policy"]["allowedPrincipalIds"] = sorted(legacy["policy"]["allowedPrincipalIds"])
     assert spec_digest(spec) == canonical_digest(legacy)
+    # Pinned to the digest the released contract produced before the optional
+    # fast-start policy and the optional cold-start mechanism were added, so a
+    # later optional field can never silently roll a running workload.
+    assert spec_digest(spec) == "sha256:092bab27467b2a92ccfba642ba13cbd2896bdbde3e85080ebf687d105987f000"
     explicit_default = with_fast_start(spec, mode="Fixed", level="Off", fallback_policy="AllowLowerLevel")
     assert spec_digest(explicit_default) == spec_digest(spec)
     assert spec_digest(with_fast_start(spec, mode="Fixed", level="L1")) != spec_digest(spec)
@@ -767,3 +774,23 @@ def test_status_projection_round_trips_through_kubernetes_camel_case_records() -
     assert wire["pools"][0]["receiptDigests"] == [digest("f")]
     restored = FastStartStatus.model_validate(_normalize_keys(wire))
     assert restored == status
+
+
+def test_pinning_a_cold_start_mechanism_is_a_deliberate_spec_change() -> None:
+    """Selecting a mechanism must change the digest; leaving it unset must not."""
+
+    spec = model_spec()
+    wire = spec.model_dump(mode="json", by_alias=True)
+
+    pinned = ModelDeploymentSpec.model_validate({**wire, "cache": {**wire["cache"], "mechanism": "regional-cache"}})
+    assert pinned.cache.mechanism is FastStartMechanism.REGIONAL_CACHE
+    assert spec_digest(pinned) != spec_digest(spec)
+
+    unpinned = ModelDeploymentSpec.model_validate({**wire, "cache": {**wire["cache"], "mechanism": None}})
+    assert spec_digest(unpinned) == spec_digest(spec)
+
+    # The two paths this cluster has no hardware for are not selectable at all,
+    # so a revision can never ask for a mechanism the pool cannot provide.
+    for refused in ("node-local-restore", "shared-restore", "modelexpress"):
+        with pytest.raises(ValueError, match="not selectable"):
+            ModelDeploymentSpec.model_validate({**wire, "cache": {**wire["cache"], "mechanism": refused}})
