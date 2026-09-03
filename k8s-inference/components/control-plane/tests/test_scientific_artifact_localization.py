@@ -2758,9 +2758,7 @@ def test_a_generic_claim_never_inherits_the_academic_claims_ownership() -> None:
         renderer.main([*common, "--namespace", "customer-ns", "--claim", "customer-pvc"])
 
     # Told explicitly, it uses exactly what it was told.
-    document = _render(
-        *common, "--namespace", "customer-ns", "--claim", "customer-pvc", "--supplemental-group", "2000"
-    )
+    document = _render(*common, "--namespace", "customer-ns", "--claim", "customer-pvc", "--supplemental-group", "2000")
     context = next(item for item in document["items"] if item["kind"] == "Job")["spec"]["template"]["spec"][
         "securityContext"
     ]
@@ -2978,3 +2976,302 @@ def test_a_writable_source_leaves_no_partial_link_tree_behind(tmp_path: Path) ->
     assert not list(root.glob(f"{STAGING_PREFIX}*")), "a half-linked tree must not survive"
     assert not (root / "sha256").exists()
     assert _tree_state(source) == before, "the producing tree is untouched"
+
+
+# ---------------------------------------------------------------------------
+# The marker a run seals must be the marker the handoff promised
+# ---------------------------------------------------------------------------
+
+
+def _checked_in_artifact(artifact_id: str) -> dict[str, Any]:
+    document = json.loads(
+        (
+            Path(__file__).resolve().parents[3] / "catalog/runtime/contracts/scientific-artifact-localization.json"
+        ).read_text(encoding="utf-8")
+    )
+    return next(item for item in document["artifacts"] if item["artifact_id"] == artifact_id)
+
+
+def _published_marker(contract: LocalizationContract, *, sub_path: str, **volume: Any) -> dict[str, Any]:
+    """The marker the publication path seals, built the way main() builds it."""
+
+    return generation_marker(
+        artifact_id=contract.artifact_id,
+        artifact_kind=contract.artifact_kind,
+        generation=contract.tree.inventory_sha256,
+        entry_count=contract.tree.entry_count,
+        directory_count=contract.tree.directory_count,
+        symlink_count=contract.tree.symlink_count,
+        total_bytes=contract.tree.total_bytes,
+        inventory_algorithm=contract.tree.inventory_algorithm,
+        sub_path=sub_path,
+        visibility=contract.visibility,
+        archive=contract.archive,
+        generated_entries=contract.tree.generated_entries,
+        consumer_paths=contract.tree.mount_paths,
+        **volume,
+    )
+
+
+def test_the_real_pyrosetta_declaration_seals_the_marker_the_handoff_pins() -> None:
+    """The checked-in contract leaves symlink_count unstated, and must stay so.
+
+    A marker is an identity a handoff pins before anything is published, so it
+    is derived from the contract and never from what a run observed. Sealing an
+    observed count that the contract does not state produced a different
+    document from the one the renderer promised, and admission then failed on a
+    tree that was in fact correct.
+    """
+
+    artifact = _checked_in_artifact("bindcraft-pyrosetta-installed-tree")
+    contract = LocalizationContract.parse(artifact)
+    assert contract.tree.symlink_count is None, "the producing plane never published this count"
+
+    handoff = json.loads(
+        (
+            Path(__file__).resolve().parents[3]
+            / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
+        ).read_text(encoding="utf-8")
+    )
+    entry = next(item for item in handoff["artifacts"] if item["artifact_id"] == contract.artifact_id)
+    volume = entry["volume"]
+
+    sealed = _published_marker(
+        contract,
+        sub_path=volume["sub_path"],
+        volume_kind=volume["kind"],
+        namespace=volume["namespace"],
+        claim=volume["claim"],
+    )
+    assert marker_sha256(sealed) == entry["marker"]["manifest_digest"]
+    assert marker_bytes(sealed) == marker_bytes(entry["marker"]["document"])
+    assert sealed["symlink_count"] is None
+
+
+def test_every_checked_in_artifact_seals_the_marker_its_handoff_row_pins() -> None:
+    """Whatever a promotion writes must equal what a consumer was told to expect."""
+
+    handoff = json.loads(
+        (
+            Path(__file__).resolve().parents[3]
+            / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
+        ).read_text(encoding="utf-8")
+    )
+    for entry in handoff["artifacts"]:
+        contract = LocalizationContract.parse(_checked_in_artifact(entry["artifact_id"]))
+        volume = entry["volume"]
+        placement: dict[str, Any] = {"volume_kind": volume["kind"]}
+        if volume["kind"] == "host-path":
+            placement["host_root"] = volume["host_root"]
+        else:
+            placement["namespace"] = volume["namespace"]
+            placement["claim"] = volume["claim"]
+        sealed = _published_marker(contract, sub_path=volume["sub_path"], **placement)
+        assert marker_sha256(sealed) == entry["marker"]["manifest_digest"], entry["artifact_id"]
+
+
+def test_a_contract_that_omits_a_symlink_count_still_admits_a_tree_that_has_one(tmp_path: Path) -> None:
+    """The functional half: promote a real symlinked tree under a silent contract.
+
+    The synthetic fixture used to pin symlink_count and so agreed with itself.
+    This one leaves it unstated exactly as the real PyRosetta declaration does,
+    then promotes, and requires the sealed marker to match what the renderer
+    precomputed and the mount to admit against it.
+    """
+
+    source = _installed_tree(tmp_path / "producer")
+    identity = tree_manifest_identity(source)
+    assert identity.symlink_count == 1
+
+    artifact = _document(b"unused", {"a": b"b"}, artifact_id="pyrosetta-silent")
+    artifact["transform"] = "external-installed-tree"
+    artifact["source_sub_path"] = "producer"
+    artifact["visibility"] = "tenant-private"
+    artifact["archive"]["media_type"] = "application/zip"
+    artifact["archive"]["filename"] = "pyrosetta-2026.29+release-cp310-linux_x86_64.whl"
+    artifact["tree"] = {
+        "mount_paths": ["/opt/fs2/academic/pyrosetta-silent"],
+        "entry_count": identity.file_count,
+        "directory_count": 2,
+        # Deliberately unstated, exactly as the checked-in declaration leaves it.
+        "total_bytes": identity.total_bytes,
+        "entry_path_pattern": r"^[A-Za-z0-9_][A-Za-z0-9._-]*(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)*$",
+        "inventory_algorithm": TREE_MANIFEST_ALGORITHM,
+        "inventory_sha256": identity.sha256,
+    }
+    artifact["consumers"] = [
+        {
+            "model_id": "bindcraft",
+            "binding_kind": "environment-variable",
+            "binding_name": "PYTHONPATH",
+            "mount_path": "/opt/fs2/academic/pyrosetta-silent",
+        }
+    ]
+    contract = LocalizationContract.parse(artifact)
+    assert contract.tree.symlink_count is None
+
+    contract_path = tmp_path / "contract.json"
+    contract_path.write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/scientific-artifact-localization/v1",
+                "generated_at": "2026-09-03T00:00:00Z",
+                "artifacts": [artifact],
+            }
+        ),
+        encoding="utf-8",
+    )
+    root = tmp_path / "artifact"
+    receipt = tmp_path / "receipts" / "promote.json"
+    sub_path = f"p/generations/pyrosetta-silent/sha256/{identity.sha256}"
+    expected_digest = marker_sha256(
+        _published_marker(
+            contract,
+            sub_path=sub_path,
+            volume_kind="persistent-volume-claim",
+            namespace="fs2-academic-poc",
+            claim="academic-assets-runtime-rwx",
+        )
+    )
+
+    assert (
+        localization_main(
+            [
+                "promote",
+                "--contract",
+                str(contract_path),
+                "--artifact-id",
+                "pyrosetta-silent",
+                "--promote-from",
+                str(source),
+                "--artifact-root",
+                str(root),
+                "--sub-path",
+                sub_path,
+                "--volume-kind",
+                "persistent-volume-claim",
+                "--namespace",
+                "fs2-academic-poc",
+                "--claim",
+                "academic-assets-runtime-rwx",
+                "--visibility",
+                "tenant-private",
+                "--receipt",
+                str(receipt),
+            ]
+        )
+        == 0
+    )
+    document = _assert_valid_receipt(receipt)
+    # The marker carries what the contract stated; the receipt carries what the
+    # run observed. Those are different questions and different documents.
+    assert document["observation"]["marker_sha256"] == expected_digest
+    assert document["tree_identity"]["symlink_count"] == 1
+
+    published = root / "sha256" / identity.sha256
+    sealed = json.loads((published / RUNTIME_MARKER_NAME).read_text(encoding="utf-8"))
+    assert sealed["symlink_count"] is None
+    assert marker_sha256(sealed) == expected_digest
+
+    # And the mount admits against the digest the renderer would have pinned.
+    assert (
+        localization_main(
+            [
+                "marker",
+                "--artifact-id",
+                "pyrosetta-silent",
+                "--mount",
+                str(published),
+                "--expect-generation",
+                identity.sha256,
+                "--sub-path",
+                sub_path,
+                "--expect-manifest-digest",
+                expected_digest,
+                "--expect-algorithm",
+                TREE_MANIFEST_ALGORITHM,
+            ]
+        )
+        == 0
+    )
+
+
+def _manifest_contract(source: Path, tmp_path: Path, **tree: Any) -> LocalizationContract:
+    identity = tree_manifest_identity(source)
+    artifact = _document(b"unused", {"a": b"b"}, artifact_id="pyrosetta-dirs")
+    artifact["transform"] = "external-installed-tree"
+    artifact["source_sub_path"] = "producer"
+    artifact["visibility"] = "tenant-private"
+    artifact["archive"]["media_type"] = "application/zip"
+    artifact["archive"]["filename"] = "pyrosetta-2026.29+release-cp310-linux_x86_64.whl"
+    artifact["tree"] = {
+        "mount_paths": ["/opt/fs2/academic/pyrosetta-dirs"],
+        "entry_count": identity.file_count,
+        "directory_count": identity.directory_count,
+        "total_bytes": identity.total_bytes,
+        "entry_path_pattern": r"^[A-Za-z0-9_][A-Za-z0-9._-]*(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)*$",
+        "inventory_algorithm": TREE_MANIFEST_ALGORITHM,
+        "inventory_sha256": identity.sha256,
+        **tree,
+    }
+    artifact["consumers"] = [
+        {
+            "model_id": "bindcraft",
+            "binding_kind": "environment-variable",
+            "binding_name": "PYTHONPATH",
+            "mount_path": "/opt/fs2/academic/pyrosetta-dirs",
+        }
+    ]
+    return LocalizationContract.parse(artifact)
+
+
+def test_the_manifest_algorithm_measures_directories_instead_of_trusting_the_contract(
+    tmp_path: Path,
+) -> None:
+    """A count nobody measured is a count that fails later, on a node.
+
+    fs2-tree-manifest/v1 hashes files and symlinks, so directories were never
+    looked at and the contracted number was copied straight onto the receipt. A
+    tree whose directory count disagreed therefore verified and promoted, and
+    was then refused by the admission that does count them — the most expensive
+    place to find out.
+    """
+
+    source = _installed_tree(tmp_path / "producer")
+    identity = tree_manifest_identity(source)
+    assert identity.directory_count == 2, "pkg and pkg/data"
+
+    # The truthful contract verifies, and the receipt reports what was measured.
+    receipt = verify_localized_tree(source, _manifest_contract(source, tmp_path))
+    assert receipt.verified
+    assert receipt.to_dict()["tree_identity"]["directory_count"] == 2
+
+    # A contract that understates the directories is refused here, not on a node.
+    wrong = verify_localized_tree(source, _manifest_contract(source, tmp_path, directory_count=0))
+    assert not wrong.verified
+    assert "directories do not match" in (wrong.rejection_reason or "")
+    # The rejection carries what was measured, so the mismatch is diagnosable.
+    assert wrong.to_dict()["tree_identity"]["directory_count"] == 2
+
+    # Adding a directory changes the count without touching the digest, so the
+    # tree is still refused rather than silently admitted.
+    (source / "pkg" / "protocols").mkdir()
+    assert tree_manifest_identity(source).sha256 == identity.sha256
+    stale = verify_localized_tree(source, _manifest_contract(source, tmp_path, directory_count=2))
+    assert not stale.verified
+    assert "3 directories do not match the contracted 2" in (stale.rejection_reason or "")
+
+
+def test_the_checked_in_pyrosetta_declaration_pins_a_directory_count_that_is_now_enforced() -> None:
+    """The real contract states 796 directories, and that number is checked."""
+
+    contract = LocalizationContract.parse(_checked_in_artifact("bindcraft-pyrosetta-installed-tree"))
+    assert contract.tree.inventory_algorithm == TREE_MANIFEST_ALGORITHM
+    assert contract.tree.directory_count == 796
+    # The academic plane's own record is where that number comes from.
+    state = json.loads(
+        (Path(__file__).resolve().parents[3] / "academic-assets/evidence/live-acceptance-state.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "796 directories" in state["semantic_evidence"]["installed_tree"]["modes"]

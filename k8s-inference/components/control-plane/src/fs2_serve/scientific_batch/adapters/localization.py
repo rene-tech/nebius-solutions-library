@@ -891,6 +891,8 @@ def _rejected(
     entry_count: int = 0,
     total_bytes: int = 0,
     inventory: str = "0" * 64,
+    directory_count: int = 0,
+    symlink_count: int | None = None,
     observation: Mapping[str, object] | None = None,
 ) -> LocalizationReceipt:
     return LocalizationReceipt(
@@ -907,6 +909,8 @@ def _rejected(
         rejection_reason=reason,
         observation=observation,
         inventory_algorithm=contract.tree.inventory_algorithm,
+        directory_count=directory_count,
+        symlink_count=symlink_count,
     )
 
 
@@ -961,6 +965,18 @@ def verify_localized_tree(
                 total_bytes=observed.total_bytes,
                 observation=observation,
             )
+        if observed.directory_count != tree.directory_count:
+            return _rejected(
+                contract,
+                f"unexpected-tree-content: {observed.directory_count} directories do not match the "
+                f"contracted {tree.directory_count}",
+                now=moment,
+                entry_count=observed.file_count,
+                total_bytes=observed.total_bytes,
+                directory_count=observed.directory_count,
+                symlink_count=observed.symlink_count,
+                observation=observation,
+            )
         if tree.symlink_count is not None and observed.symlink_count != tree.symlink_count:
             return _rejected(
                 contract,
@@ -969,6 +985,8 @@ def verify_localized_tree(
                 now=moment,
                 entry_count=observed.file_count,
                 total_bytes=observed.total_bytes,
+                directory_count=observed.directory_count,
+                symlink_count=observed.symlink_count,
                 observation=observation,
             )
         if observed.sha256 != tree.inventory_sha256:
@@ -997,7 +1015,7 @@ def verify_localized_tree(
             ),
             observation=observation,
             inventory_algorithm=TREE_MANIFEST_ALGORITHM,
-            directory_count=tree.directory_count,
+            directory_count=observed.directory_count,
             symlink_count=observed.symlink_count,
         )
 
@@ -1534,6 +1552,7 @@ class TreeManifestIdentity:
     total_bytes: int
     file_count: int
     symlink_count: int
+    directory_count: int
 
 
 def tree_manifest_identity(root: Path) -> TreeManifestIdentity:
@@ -1559,12 +1578,20 @@ def tree_manifest_identity(root: Path) -> TreeManifestIdentity:
     resolved = _real_directory(root, "installed tree root")
     entries: list[dict[str, object]] = []
     total_bytes = 0
+    directories = 0
     for path in sorted(resolved.rglob("*"), key=lambda item: item.relative_to(resolved).as_posix()):
         relative = path.relative_to(resolved).as_posix()
         if relative == RUNTIME_MARKER_NAME:
             continue
         if path.is_symlink():
             entries.append({"path": relative, "kind": "symlink", "target": os.readlink(path)})
+            continue
+        if path.is_dir():
+            # Counted but never hashed: this algorithm's digest covers files and
+            # symlinks only, so counting directories cannot move it, and leaving
+            # them unmeasured let a tree verify against a count nobody checked
+            # and then be refused by the admission that does count them.
+            directories += 1
             continue
         if not path.is_file():
             continue
@@ -1584,6 +1611,7 @@ def tree_manifest_identity(root: Path) -> TreeManifestIdentity:
         total_bytes=total_bytes,
         file_count=sum(1 for entry in entries if entry["kind"] == "file"),
         symlink_count=sum(1 for entry in entries if entry["kind"] == "symlink"),
+        directory_count=directories,
     )
 
 
@@ -2515,13 +2543,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     if options.mode in {"stage", "promote"} and options.artifact_root is not None and receipt.verified:
         generation = receipt.tree_inventory_sha256
         sub_path = options.sub_path or f"{GENERATION_DIGEST_DIRECTORY}/{generation}"
+        # The marker is derived from the contract, never from what this run
+        # happened to observe. Its digest has to be predictable before anything
+        # is published, so a handoff can pin it and a node can be told what to
+        # expect; a field the contract leaves unstated must stay unstated here,
+        # or the sealed marker would not be the one the consumer was promised.
+        # What was observed is on the receipt, which is an event, not an identity.
         marker = generation_marker(
             artifact_id=contract.artifact_id,
+            artifact_kind=contract.artifact_kind,
             generation=generation,
-            entry_count=receipt.entry_count,
-            directory_count=receipt.directory_count,
-            symlink_count=receipt.symlink_count,
-            total_bytes=receipt.total_bytes,
+            entry_count=contract.tree.entry_count,
+            directory_count=contract.tree.directory_count,
+            symlink_count=contract.tree.symlink_count,
+            total_bytes=contract.tree.total_bytes,
             inventory_algorithm=contract.tree.inventory_algorithm,
             sub_path=sub_path,
             volume_kind=options.volume_kind,
