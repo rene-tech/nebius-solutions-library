@@ -74,9 +74,11 @@ locals {
       writesEnabled                   = var.scientific_batch.writes_enabled
       namespace                       = var.scientific_batch.namespace
       kubernetesApiUrl                = "https://kubernetes.default.svc"
-      schedulingContractConfigMapName = kubernetes_config_map_v1.scientific_scheduling_contract.metadata[0].name
-      schedulingContractKey           = local.scheduling_contract_key
-      schedulingContractSha256        = local.scheduling_contract_sha256
+      schedulingContractConfigMapName = local.scheduling_contract_ref.config_map_name
+      schedulingContractNamespace     = local.scheduling_contract_ref.namespace
+      schedulingContractKey           = local.scheduling_contract_ref.key
+      schedulingContractSchema        = local.scheduling_contract_ref.schema
+      schedulingContractSha256        = local.scheduling_contract_ref.sha256
       executionMapConfigMapName       = "fs2-${var.run_id}-scientific-execution"
       executionMapKey                 = "execution-map.json"
       executionMap                    = var.scientific_batch.execution_map

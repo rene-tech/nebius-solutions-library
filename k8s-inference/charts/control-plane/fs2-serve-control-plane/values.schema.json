@@ -657,7 +657,8 @@
       "type": "object",
       "required": [
         "enabled", "writesEnabled", "namespace", "kubernetesApiUrl",
-        "schedulingContractConfigMapName", "schedulingContractKey", "schedulingContractSha256",
+        "schedulingContractConfigMapName", "schedulingContractNamespace", "schedulingContractKey",
+        "schedulingContractSchema", "schedulingContractSha256",
         "executionMapConfigMapName", "executionMapKey", "executionMap", "workers",
         "pollSeconds", "leaseSeconds", "apiTimeoutSeconds", "tokenExpirationSeconds"
       ],
@@ -677,7 +678,12 @@
           "type": "string", "maxLength": 253,
           "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
         },
+        "schedulingContractNamespace": {
+          "type": "string", "maxLength": 63,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$"
+        },
         "schedulingContractKey": {"const": "kueue-scheduling.json"},
+        "schedulingContractSchema": {"const": "fs2-serve.nebius.ai/kueue-scheduling/v1"},
         "schedulingContractSha256": {
           "type": "string",
           "pattern": "^$|^[a-f0-9]{64}$"

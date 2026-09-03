@@ -333,13 +333,7 @@ output "reference_data_status" {
 
 output "scheduling_contract_ref" {
   description = "Immutable ConfigMap handoff and revision for the controller/admin owners; this scheduling slice does not mount or consume it."
-  value = {
-    schema          = module.kueue_scheduling.contract.schema
-    config_map_name = kubernetes_config_map_v1.scientific_scheduling_contract.metadata[0].name
-    namespace       = kubernetes_config_map_v1.scientific_scheduling_contract.metadata[0].namespace
-    key             = local.scheduling_contract_key
-    sha256          = local.scheduling_contract_sha256
-  }
+  value       = local.scheduling_contract_ref
 }
 
 output "managed_resource_count" {

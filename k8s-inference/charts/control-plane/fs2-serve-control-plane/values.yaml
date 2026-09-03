@@ -102,7 +102,9 @@ scientificBatch:
   namespace: fs2-models
   kubernetesApiUrl: https://kubernetes.default.svc
   schedulingContractConfigMapName: ""
+  schedulingContractNamespace: ""
   schedulingContractKey: kueue-scheduling.json
+  schedulingContractSchema: fs2-serve.nebius.ai/kueue-scheduling/v1
   # Exact raw-byte digest published by Terraform beside the immutable ConfigMap.
   schedulingContractSha256: ""
   executionMapConfigMapName: ""

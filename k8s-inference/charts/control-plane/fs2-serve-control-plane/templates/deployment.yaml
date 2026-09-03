@@ -139,6 +139,12 @@
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.scientificBatch.schedulingContractSha256) }}
 {{- fail "scientificBatch requires the exact Terraform scheduling-contract raw-byte SHA-256" }}
 {{- end }}
+{{- if ne .Values.scientificBatch.schedulingContractNamespace .Release.Namespace }}
+{{- fail "scientificBatch scheduling-contract ConfigMap must be in the control-plane release namespace" }}
+{{- end }}
+{{- if ne .Values.scientificBatch.schedulingContractSchema "fs2-serve.nebius.ai/kueue-scheduling/v1" }}
+{{- fail "scientificBatch requires the canonical Terraform scheduling-contract schema" }}
+{{- end }}
 {{- if eq (len .Values.scientificBatch.executionMap.models) 0 }}
 {{- fail "scientificBatch requires a generated schema-v3 execution map" }}
 {{- end }}

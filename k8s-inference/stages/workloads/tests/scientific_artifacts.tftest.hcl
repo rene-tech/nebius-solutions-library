@@ -232,6 +232,25 @@ run "the_store_is_absent_from_the_chart_until_it_is_enabled" {
     )
     error_message = "Both batch gates must stay closed by default."
   }
+
+  assert {
+    condition = (
+      startswith(
+        terraform_data.scientific_artifacts_contract.input.chart_values.scientificBatch.schedulingContractConfigMapName,
+        "fs2-mxtest01-scientific-scheduling-"
+      ) &&
+      endswith(
+        terraform_data.scientific_artifacts_contract.input.chart_values.scientificBatch.schedulingContractConfigMapName,
+        substr(terraform_data.scientific_artifacts_contract.input.chart_values.scientificBatch.schedulingContractSha256, 0, 12)
+      ) &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.scientificBatch.schedulingContractNamespace == "fs2-system" &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.scientificBatch.schedulingContractKey == "kueue-scheduling.json" &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.scientificBatch.schedulingContractSchema ==
+      "fs2-serve.nebius.ai/kueue-scheduling/v1" &&
+      length(terraform_data.scientific_artifacts_contract.input.chart_values.scientificBatch.schedulingContractSha256) == 64
+    )
+    error_message = "The chart must consume the exact Terraform scheduling ConfigMap reference, schema and raw-byte digest."
+  }
 }
 
 run "storage_only_projects_the_canonical_chart_values" {
@@ -502,7 +521,7 @@ run "batch_execution_without_the_store_is_refused" {
     }
   }
 
-  expect_failures = [terraform_data.scientific_artifacts_contract]
+  expect_failures = [var.scientific_batch]
 }
 
 run "kubernetes_writes_without_the_batch_gate_are_refused" {

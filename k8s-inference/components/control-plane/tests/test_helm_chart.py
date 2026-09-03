@@ -888,6 +888,8 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "--set",
         "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
         "--set",
+        "scientificBatch.schedulingContractNamespace=fs2-system",
+        "--set",
         "scientificBatch.schedulingContractSha256=" + "c" * 64,
         "--set",
         "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
@@ -931,6 +933,10 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     assert environment["FS2_SCIENTIFIC_BATCH_WRITES_ENABLED"]["value"] == "true"
     assert environment["FS2_SCIENTIFIC_BATCH_CONTROLLER_ID"]["valueFrom"]["fieldRef"] == {"fieldPath": "metadata.uid"}
     assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_FILE"]["value"].endswith("/kueue-scheduling.json")
+    assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_SCHEMA"]["value"] == (
+        "fs2-serve.nebius.ai/kueue-scheduling/v1"
+    )
+    assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_SHA256"]["value"] == "c" * 64
     assert environment["FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE"]["value"].endswith("/execution-map.json")
     assert environment["FS2_SCIENTIFIC_ARTIFACTS_ENABLED"]["value"] == "true"
     assert environment["FS2_ARTIFACT_STORE_CREDENTIALS_FILE"]["value"] == (
@@ -1001,6 +1007,13 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "name": execution_map_name,
         "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
         "sha256": execution_map_sha256,
+    }
+    assert dependency_contract["scientific_batch"]["scheduling_contract"] == {
+        "config_map_name": "scientific-scheduling-a1",
+        "namespace": "fs2-system",
+        "key": "kueue-scheduling.json",
+        "schema": "fs2-serve.nebius.ai/kueue-scheduling/v1",
+        "sha256": "c" * 64,
     }
     for workload_namespace in ("fs2-models", "fs2-academic-poc"):
         workload_network = namespaced[
@@ -1089,6 +1102,8 @@ def test_academic_scientific_execution_requires_the_exact_namespace_local_contra
             "--set",
             "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
             "--set",
+            "scientificBatch.schedulingContractNamespace=fs2-system",
+            "--set",
             "scientificBatch.schedulingContractSha256=" + "c" * 64,
             "--set",
             "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
@@ -1108,6 +1123,55 @@ def test_academic_scientific_execution_requires_the_exact_namespace_local_contra
     )
     assert result.returncode != 0
     assert "academic scientific" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        (
+            ("--set", "scientificBatch.schedulingContractNamespace=another-namespace"),
+            "scheduling-contract ConfigMap must be in the control-plane release namespace",
+        ),
+        (
+            ("--set", "scientificBatch.schedulingContractSchema=fs2-serve.nebius.ai/kueue-scheduling/v2"),
+            "value must be 'fs2-serve.nebius.ai/kueue-scheduling/v1'",
+        ),
+    ],
+)
+def test_scientific_batch_rejects_scheduling_ref_identity_drift(
+    extra: tuple[str, ...], expected: str
+) -> None:
+    arguments = [
+        "--set",
+        "scientificBatch.enabled=true",
+        "--set",
+        "scientificBatch.writesEnabled=true",
+        "--set",
+        "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+        "--set",
+        "scientificBatch.schedulingContractNamespace=fs2-system",
+        "--set",
+        "scientificBatch.schedulingContractSha256=" + "c" * 64,
+        "--set",
+        "scientificBatch.executionMapConfigMapName=scientific-execution-b2",
+        "--set-json",
+        'scientificBatch.executionMap.models=[{"model_id":"protein-design","workload_namespace":"fs2-models","access_profile":"public"}]',
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set-string",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+        "--set-string",
+        "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
+    ]
+    arguments.extend(extra)
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and bounded adversarial values
+        render_command(*arguments),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert expected in result.stderr
 
 
 @pytest.mark.parametrize(

@@ -41,6 +41,13 @@ data:
         }
       },
       "scientific_batch": {
+        "scheduling_contract": {{- if .Values.scientificBatch.enabled }} {
+          "config_map_name": {{ .Values.scientificBatch.schedulingContractConfigMapName | quote }},
+          "namespace": {{ .Values.scientificBatch.schedulingContractNamespace | quote }},
+          "key": {{ .Values.scientificBatch.schedulingContractKey | quote }},
+          "schema": {{ .Values.scientificBatch.schedulingContractSchema | quote }},
+          "sha256": {{ .Values.scientificBatch.schedulingContractSha256 | quote }}
+        }{{- else }} null{{- end }},
         "execution_map": {{- if .Values.scientificBatch.enabled }} {
           "name": {{ include "fs2-serve.scientificExecutionMapName" . | quote }},
           "schema": {{ .Values.scientificBatch.executionMap.schema | quote }},

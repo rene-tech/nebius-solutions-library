@@ -187,6 +187,9 @@ class Settings(BaseSettings):
     scientific_batch_kubernetes_token_file: Path = Path("/var/run/secrets/fs2-scientific-batch/token")
     scientific_batch_kubernetes_ca_file: Path = Path("/var/run/secrets/fs2-scientific-batch/ca.crt")
     scientific_batch_scheduling_contract_file: Path = Path("/etc/fs2-scientific-batch/kueue-scheduling.json")
+    scientific_batch_scheduling_contract_schema: Literal["fs2-serve.nebius.ai/kueue-scheduling/v1"] = (
+        "fs2-serve.nebius.ai/kueue-scheduling/v1"
+    )
     scientific_batch_scheduling_contract_sha256: str | None = Field(
         default=None,
         pattern=r"^[a-f0-9]{64}$",
