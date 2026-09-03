@@ -6,6 +6,16 @@ export type ModelDeploymentSnapshotStrategy = "Weights" | "RuntimeNative" | "Cud
 export type ModelDeploymentFastStartLevel = "Off" | "L1" | "L2" | "L3" | "L4";
 export type ModelDeploymentEffectiveFastStartLevel = ModelDeploymentFastStartLevel | "Hot";
 export type ModelDeploymentFastStartMode = "Fixed" | "Automatic";
+export type ModelDeploymentFastStartMechanism =
+  | "conventional"
+  | "regional-cache"
+  | "host-memory-residency"
+  | "gpu-resident";
+export type ModelDeploymentFastStartMechanismState =
+  | "Configured"
+  | "Pending"
+  | "Unavailable"
+  | "Undeclared";
 export type ModelDeploymentFastStartFallbackPolicy = "AllowLowerLevel" | "RequireTarget";
 export type ModelDeploymentRolloutStrategy = "Rolling" | "Recreate";
 export type ModelDeploymentVisibility = "Private" | "Tenant";
@@ -67,6 +77,8 @@ export interface ModelDeploymentSpec {
     tier: ModelDeploymentCacheTier;
     snapshotPreference: ModelDeploymentSnapshotPreference;
     snapshotRef: (ModelDeploymentNamedDigest & { strategy: ModelDeploymentSnapshotStrategy }) | null;
+    /** Pinned cold-start mechanism; null lets evidence select the fastest qualified path. */
+    mechanism?: ModelDeploymentFastStartMechanism | null;
   };
   /** Optional while older ModelDeployment revisions are still being migrated. */
   fastStart?: ModelDeploymentFastStartPolicy | null;
@@ -297,6 +309,52 @@ export interface ModelExpressMechanismStatus {
   fallback_reason?: string | null;
 }
 
+export interface ModelDeploymentCacheMechanismPoolStatus {
+  availability: "Available" | "Unavailable";
+  reason: string;
+  evidenceSelector?: Record<string, string> | null;
+  evidence_selector?: Record<string, string> | null;
+  mechanismConfigDigest?: string | null;
+  mechanism_config_digest?: string | null;
+}
+
+/**
+ * One cold-start mechanism as the controller observed it. A Configured
+ * mechanism never implies a level: the level lives in the surrounding
+ * fast-start status and comes only from benchmark evidence.
+ */
+export interface ModelDeploymentCacheMechanismStatus {
+  state: ModelDeploymentFastStartMechanismState;
+  selected: boolean;
+  availability: "Available" | "Unavailable";
+  reason: string;
+  configDigest?: string | null;
+  config_digest?: string | null;
+  residencyMode?: string | null;
+  residency_mode?: string | null;
+  poolRefs?: string[] | null;
+  pool_refs?: string[] | null;
+  pools?: Record<string, ModelDeploymentCacheMechanismPoolStatus> | null;
+  retainedPayloadBytes?: number | null;
+  retained_payload_bytes?: number | null;
+  retainedCompileCacheAbi?: string | null;
+  retained_compile_cache_abi?: string | null;
+  reservedHostMemoryBytes?: number | null;
+  reserved_host_memory_bytes?: number | null;
+  reservedHostMemoryFraction?: number | null;
+  reserved_host_memory_fraction?: number | null;
+  standbyReplicas?: number | null;
+  standby_replicas?: number | null;
+  reservedAccelerators?: number | null;
+  reserved_accelerators?: number | null;
+  minimumHotReplicas?: number | null;
+  minimum_hot_replicas?: number | null;
+  configuredHotReplicas?: number | null;
+  configured_hot_replicas?: number | null;
+  telemetryState?: "Unavailable" | null;
+  telemetry_state?: "Unavailable" | null;
+}
+
 export interface ModelDeploymentFastStartStatus {
   mode?: ModelDeploymentFastStartMode | null;
   fallbackPolicy?: ModelDeploymentFastStartFallbackPolicy | null;
@@ -341,6 +399,8 @@ export interface ModelDeploymentFastStartStatus {
   observedAt?: string | null;
   observed_at?: string | null;
   mechanisms?: ({ modelexpress?: ModelExpressMechanismStatus | null } & Record<string, unknown>) | null;
+  cacheMechanisms?: Record<string, ModelDeploymentCacheMechanismStatus> | null;
+  cache_mechanisms?: Record<string, ModelDeploymentCacheMechanismStatus> | null;
   hot?: boolean | null;
   modelStart?: ModelDeploymentFastStartStatistics | null;
   model_start?: ModelDeploymentFastStartStatistics | null;

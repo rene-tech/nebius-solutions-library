@@ -1,4 +1,5 @@
 import type {
+  ModelDeploymentCacheMechanismStatus,
   ModelDeploymentConfigurationOption,
   ModelDeploymentEffectiveFastStartLevel,
   ModelDeploymentFastStartFallbackPolicy,
@@ -64,6 +65,7 @@ export interface NormalizedFastStartStatus {
   endToEndSeconds: number | null;
   observedAt: string | null;
   mechanisms: Record<string, unknown> | null;
+  cacheMechanisms: Record<string, ModelDeploymentCacheMechanismStatus>;
   pools: ModelDeploymentFastStartPoolStatus[];
   automatic: ModelDeploymentFastStartStatus["automatic"];
 }
@@ -145,6 +147,7 @@ export function normalizedFastStartStatus(view: ModelDeploymentStatusView): Norm
     observedAt: status.observedAt ?? status.observed_at
       ?? modelStart?.latestObservedAt ?? modelStart?.latest_observed_at ?? null,
     mechanisms: status.mechanisms ?? null,
+    cacheMechanisms: status.cacheMechanisms ?? status.cache_mechanisms ?? {},
     pools,
     automatic: status.automatic ?? null,
   };
@@ -187,7 +190,7 @@ export function createEmptyModelDeploymentSpec(tenantId = ""): ModelDeploymentSp
       cooldownSeconds: 300,
       warmWindows: [],
     },
-    cache: { tier: "Disabled", snapshotPreference: "Never", snapshotRef: null },
+    cache: { tier: "Disabled", snapshotPreference: "Never", snapshotRef: null, mechanism: null },
     fastStart: { mode: "Fixed", level: "Off", fallbackPolicy: "AllowLowerLevel" },
     queue: { localQueue: "", priorityClass: "", maxQueueSeconds: 900 },
     rollout: { strategy: "Rolling", maxUnavailable: 0, maxSurge: 1, progressDeadlineSeconds: 1800 },
@@ -308,6 +311,10 @@ export function localModelDeploymentProblem(
   if (spec.cache.snapshotPreference === "Require" && spec.cache.tier === "Disabled") return "A required snapshot needs an enabled cache tier.";
   if (spec.cache.snapshotRef && !dnsSubdomain.test(spec.cache.snapshotRef.name)) return "Snapshot name must be a Kubernetes DNS subdomain.";
   if (spec.cache.snapshotRef && !sha256.test(spec.cache.snapshotRef.digest)) return "Snapshot digest must be a complete sha256 digest.";
+  if (
+    (spec.cache.mechanism === "regional-cache" || spec.cache.mechanism === "host-memory-residency")
+    && spec.cache.tier !== "SharedFilesystem"
+  ) return "A retained regional payload needs the SharedFilesystem cache tier.";
   if (spec.fastStart) {
     if (spec.fastStart.mode === "Fixed" && !spec.fastStart.level) return "A fixed fast-start policy needs a level.";
     if (spec.fastStart.mode === "Automatic") {
