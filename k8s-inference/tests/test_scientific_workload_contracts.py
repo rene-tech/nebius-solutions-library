@@ -234,6 +234,12 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         }
         self.assertEqual({"alphafold3", "bindcraft"}, academic)
 
+    # BoltzGen is dispatchable on real H100 and localization evidence. It is active, not
+    # qualified: its public-completion and scheduler-eligibility receipts can only exist
+    # after a real run through the public path, so they are null and the schema forbids
+    # calling it qualified while they are.
+    DISPATCHABLE = {"boltzgen"}
+
     def test_primary_profiles_are_schema_valid_candidate_only_and_unroutable(self) -> None:
         profiles = self.load(CONTRACT_ROOT / "scientific-workload-profiles.json")
         self.assert_valid("scientific-workload-profiles.schema.json", profiles)
@@ -245,11 +251,18 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         for profile in profiles["profiles"]:
             with self.subTest(model_id=profile["model_id"]):
                 self.assertEqual([], list(full_validator.iter_errors(profile)))
+                if profile["model_id"] in self.DISPATCHABLE:
+                    self.assertEqual("active", profile["state"])
+                    qualification = profile["qualification"]
+                    self.assertIsNone(qualification["public_completion_receipt_sha256"])
+                    self.assertIsNone(qualification["scheduler_eligibility_receipt_sha256"])
+                    self.assertIsNotNone(qualification["h100_semantic_receipt_sha256"])
+                    continue
                 self.assertEqual("candidate-unqualified", profile["state"])
                 self.assertFalse(profile["route_exposed"])
                 self.assertEqual(
                     {
-                        "boltzgen": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
+                        "boltzgen": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
                         "proteina-complexa": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
                     }[profile["model_id"]],
                     profile["execution_identity"]["runtime_image_digest"],

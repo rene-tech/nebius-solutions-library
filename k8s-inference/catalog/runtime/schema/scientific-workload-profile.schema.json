@@ -351,10 +351,26 @@
           "$ref": "#/$defs/sha256"
         },
         "public_completion_receipt_sha256": {
-          "$ref": "#/$defs/sha256"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null until a real run produces it. These receipts are circular by nature: a completed public run and a real scheduled admission cannot exist before the model is dispatchable, so requiring them to enable dispatch is unsatisfiable. A profile may therefore be active with them null, but never qualified."
         },
         "scheduler_eligibility_receipt_sha256": {
-          "$ref": "#/$defs/sha256"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null until a real run produces it. These receipts are circular by nature: a completed public run and a real scheduled admission cannot exist before the model is dispatchable, so requiring them to enable dispatch is unsatisfiable. A profile may therefore be active with them null, but never qualified."
         },
         "execution_map_sha256": {
           "$ref": "#/$defs/sha256"
@@ -551,6 +567,33 @@
                   "qualified",
                   "active"
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "A null completion or scheduler-eligibility receipt may never imply qualification. state active is dispatchable-but-not-yet-qualified; state qualified requires both.",
+      "if": {
+        "properties": {
+          "state": {
+            "const": "qualified"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "properties": {
+              "public_completion_receipt_sha256": {
+                "$ref": "#/$defs/sha256"
+              },
+              "scheduler_eligibility_receipt_sha256": {
+                "$ref": "#/$defs/sha256"
               }
             }
           }

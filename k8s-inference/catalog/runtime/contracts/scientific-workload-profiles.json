@@ -6,22 +6,22 @@
       "model_id": "boltzgen",
       "display_name": "BoltzGen v0.3.2",
       "execution_mode": "scientific-batch",
-      "state": "candidate-unqualified",
-      "route_exposed": false,
+      "state": "active",
+      "route_exposed": true,
       "source": {
         "kind": "git",
         "repository": "HannesStark/boltzgen",
         "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
         "review_url": "https://github.com/HannesStark/boltzgen/tree/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
-        "classification": "candidate-input"
+        "classification": "qualified-input"
       },
       "execution_identity": {
         "model_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
-        "runtime_image_digest": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
-        "runtime_recipe_sha256": "0db86c3c4ce9da6c0d3ea4267886bee40da3fd598f3b74aa72d3921e95ed841d",
+        "runtime_image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "runtime_recipe_sha256": "30d047847e272f34b0f468044b068f6112dd65cfcb26ddbb15370145f0bacb54",
         "workload_recipe_sha256": "74bc6015176c892f35c33e9122588909f4cea106b73708cb6ba1d8b8efae4d84",
-        "artifact_manifest_digest": null,
-        "execution_identity_sha256": null
+        "artifact_manifest_digest": "8305400f8711388cbc5d9937a120d7ca4de390170082047511e859f636a2dd66",
+        "execution_identity_sha256": "bd186e38130feb8127ea77a7bb7203c08183ab86fa082d12e749ddb0501f811f"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -38,14 +38,14 @@
         ],
         "mcp": {
           "discoverable": true,
-          "invocable": false,
+          "invocable": true,
           "tool_name": "submit_boltzgen",
           "description": "Submit a bounded asynchronous BoltzGen design campaign."
         }
       },
       "access": {
         "profile": "standard",
-        "state": "unverified",
+        "state": "not-required",
         "receipt_digest": null,
         "credentials_embedded": false
       },
@@ -55,95 +55,109 @@
         "host_architectures": [
           "amd64"
         ],
-      "compatible_pool_ids": [
-        "h100-1x",
-        "h100-reserved-8x"
-      ],
-      "required_node_labels": {
-        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        "compatible_pool_ids": [
+          "h100-1x",
+          "h100-reserved-8x"
+        ],
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
         }
       },
       "workload": {
         "stages": [
           {
-          "id": "configure",
-          "needs": [],
-          "resource_class": "gpu",
+            "id": "configure",
+            "needs": [],
+            "resource_class": "gpu",
             "admission_mode": "independent-jobs",
             "min_parallelism": 1,
             "max_parallelism": 32,
             "checkpoint_mode": "restart",
-          "preemption_mode": "restartable"
-        },
-        {
-          "id": "design",
-          "needs": ["configure"],
-          "resource_class": "gpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "restart",
-          "preemption_mode": "restartable"
-        },
-        {
-          "id": "inverse-folding",
-          "needs": ["design"],
-          "resource_class": "gpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "restart",
-          "preemption_mode": "restartable"
-        },
-        {
-          "id": "folding",
-          "needs": ["inverse-folding"],
-          "resource_class": "gpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "restart",
-          "preemption_mode": "restartable"
-        },
-        {
-          "id": "design-folding",
-          "needs": ["folding"],
-          "resource_class": "gpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "restart",
-          "preemption_mode": "restartable"
-        },
-        {
-          "id": "affinity",
-          "needs": ["design-folding"],
-          "resource_class": "gpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "restart",
-          "preemption_mode": "restartable"
-        },
-        {
-          "id": "analysis",
-          "needs": ["folding"],
-          "resource_class": "cpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "none",
-          "preemption_mode": "non_preemptible"
-        },
-        {
-          "id": "filtering",
-          "needs": ["analysis"],
-          "resource_class": "cpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 32,
-          "checkpoint_mode": "none",
-          "preemption_mode": "non_preemptible"
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "design",
+            "needs": [
+              "configure"
+            ],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "inverse-folding",
+            "needs": [
+              "design"
+            ],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "folding",
+            "needs": [
+              "inverse-folding"
+            ],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "design-folding",
+            "needs": [
+              "folding"
+            ],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "affinity",
+            "needs": [
+              "design-folding"
+            ],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          },
+          {
+            "id": "analysis",
+            "needs": [
+              "folding"
+            ],
+            "resource_class": "cpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "none",
+            "preemption_mode": "non_preemptible"
+          },
+          {
+            "id": "filtering",
+            "needs": [
+              "analysis"
+            ],
+            "resource_class": "cpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 32,
+            "checkpoint_mode": "none",
+            "preemption_mode": "non_preemptible"
           }
         ],
         "retry": {
@@ -160,7 +174,7 @@
       },
       "semantic_validation": {
         "validator_id": "boltzgen-v0-3-2",
-        "state": "candidate-unqualified"
+        "state": "active"
       },
       "policy": {
         "commercial_use": "allowed",
@@ -170,6 +184,13 @@
           "A preempted attempt restarts from committed inputs; BoltzGen partial attempt output is not represented as a resumable platform checkpoint.",
           "The separately pinned inference molecule dictionary remains blocked on its terms receipt."
         ]
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "51aac02bfc6451c8fdbb70d77185763e8b9f030d5c7680db030627eed4329b5a",
+        "qualified_at": "2026-09-03T07:34:56Z"
       }
     },
     {
@@ -226,12 +247,12 @@
         "host_architectures": [
           "amd64"
         ],
-      "compatible_pool_ids": [
-        "h100-1x",
-        "h100-reserved-8x"
-      ],
-      "required_node_labels": {
-        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        "compatible_pool_ids": [
+          "h100-1x",
+          "h100-reserved-8x"
+        ],
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
         }
       },
       "workload": {
