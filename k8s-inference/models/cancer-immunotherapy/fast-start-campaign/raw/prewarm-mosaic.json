@@ -1,0 +1,26 @@
+[
+  {
+    "image": {
+      "cached_on_node": false,
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69\" in 1m45.457s (1m45.457s including waiting). Image size: 4204439320 bytes.",
+      "pull_seconds": null,
+      "pulled_at": "2026-09-03T03:15:54Z",
+      "pulling_started_at": "2026-09-03T03:14:09Z",
+      "state": "pulled"
+    },
+    "node_name_sha256": "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+    "pod": "fsc-prewarm-mosaic-0"
+  },
+  {
+    "image": {
+      "cached_on_node": false,
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69\" in 1m36.863s (1m36.863s including waiting). Image size: 4204439320 bytes.",
+      "pull_seconds": null,
+      "pulled_at": "2026-09-03T03:15:48Z",
+      "pulling_started_at": "2026-09-03T03:14:11Z",
+      "state": "pulled"
+    },
+    "node_name_sha256": "ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9",
+    "pod": "fsc-prewarm-mosaic-1"
+  }
+]

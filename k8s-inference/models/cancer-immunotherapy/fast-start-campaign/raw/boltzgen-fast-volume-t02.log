@@ -1,0 +1,49 @@
+2026-09-03T03:40:17.576007452Z 
+2026-09-03T03:40:17.576047617Z === Configuring pipeline ===
+2026-09-03T03:40:17.576466750Z Using dataset artifact: /opt/fs2/artifacts/boltzgen
+2026-09-03T03:40:17.607811447Z Creating output directory: /work/faststart/boltzgen-fast-volume-t02
+2026-09-03T03:40:17.609542088Z ************** Checking design spec: /opt/fs2/source/example/vanilla_protein/1g13prot.yaml **************
+2026-09-03T03:40:17.687693266Z Total designed residues: 94
+2026-09-03T03:40:17.692450695Z Design specification visualization is written to /work/faststart/boltzgen-fast-volume-t02/1g13prot.cif
+2026-09-03T03:40:17.692467136Z *********************************************************************************************************
+2026-09-03T03:40:17.993463185Z Using kernels: True [device capability: (9, 0)]
+2026-09-03T03:40:17.993482049Z Config overrides for protocol protein-anything: {}
+2026-09-03T03:40:17.993483525Z Using 1 devices
+2026-09-03T03:40:17.993507822Z Raw designs will be saved to: /work/faststart/boltzgen-fast-volume-t02/intermediate_designs
+2026-09-03T03:40:17.993521527Z Using diffusion batch size: 1
+2026-09-03T03:40:17.993525866Z Number of diffusion batches: 1
+2026-09-03T03:40:17.994032252Z Using model artifact: /opt/fs2/artifacts/boltzgen/boltzgen1_diverse.ckpt
+2026-09-03T03:40:17.995356615Z Using model artifact: /opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt
+2026-09-03T03:40:17.995361212Z Using model artifact: /opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt
+2026-09-03T03:40:17.995389305Z Final ranked designs will be saved to: /work/faststart/boltzgen-fast-volume-t02/final_ranked_designs
+2026-09-03T03:40:17.995413906Z [1] design                   
+2026-09-03T03:40:18.024550858Z Configuration complete. Configs written to /work/faststart/boltzgen-fast-volume-t02/config
+2026-09-03T03:40:18.024561919Z Steps manifest written to /work/faststart/boltzgen-fast-volume-t02/steps.yaml
+2026-09-03T03:40:18.024921506Z 
+2026-09-03T03:40:18.024924105Z === Executing pipeline ===
+2026-09-03T03:40:18.027253182Z **************************************************
+2026-09-03T03:40:18.027255588Z Pipeline step 1 of 1: design
+2026-09-03T03:40:47.999913834Z 
+Predicting: |          | 0/? [00:00<?, ?it/s]
+[Step 1/1] design - Predicting: |          | 0/? [00:00<?, ?it/s]
+[Step 1/1] design - Predicting: |          | 0/? [00:00<?, ?it/s]
+Predicting DataLoader 0:   0%|          | 0/1 [00:00<?, ?it/s]   
+[Step 1/1] design - Predicting DataLoader 0: :   0%|          | 0/1 [00:00<?, ?it/s]Switched step_scale to 2.0
+2026-09-03T03:40:47.999946763Z Switched noise_scale to 0.88
+2026-09-03T03:40:50.916700805Z /opt/venv/lib/python3.12/site-packages/cuequivariance_ops_torch/triangle_attention.py:199: UserWarning: Non-SM100f kernel expects bias to be float32 so it's going to be cast to torch.float32. Check if you can change your code for maximum performance.
+2026-09-03T03:40:50.916726606Z   warnings.warn(
+2026-09-03T03:40:51.923444609Z /opt/venv/lib/python3.12/site-packages/cuequivariance_ops_torch/triangle_attention.py:199: UserWarning: Non-SM100f kernel expects bias to be float32 so it's going to be cast to torch.float32. Check if you can change your code for maximum performance.
+2026-09-03T03:40:51.923465412Z   warnings.warn(
+2026-09-03T03:40:53.432218891Z /opt/fs2/source/src/boltzgen/task/predict/writer.py:377: ResourceWarning: unclosed file <_io.TextIOWrapper name='/work/faststart/boltzgen-fast-volume-t02/intermediate_designs/1g13prot.cif' mode='w' encoding='utf-8'>
+2026-09-03T03:40:53.432246895Z   open(gen_path, "w").write(
+2026-09-03T03:40:53.445783655Z 
+[Step 1/1] design - Predicting DataLoader 0: : 100%|██████████| 1/1 [00:05<00:00,  0.18it/s]Number of failed examples: 0
+2026-09-03T03:40:53.445934441Z 
+[Step 1/1] design - Predicting DataLoader 0: : 100%|██████████| 1/1 [00:05<00:00,  0.18it/s]
+2026-09-03T03:40:53.964811178Z ✓ Step design completed successfully in 35.9s
+2026-09-03T03:40:55.455068825Z FS2_SEMANTIC_RESULT_EMITTED
+2026-09-03T03:40:55.459946719Z FS2_SEMANTIC_CIF_PATH /work/faststart/boltzgen-fast-volume-t02/1g13prot.cif
+2026-09-03T03:40:55.463416864Z FS2_SEMANTIC_CIF_ATOMS 1231
+2026-09-03T03:40:55.465712453Z FS2_SEMANTIC_CIF_BYTES 106476
+2026-09-03T03:40:55.468778271Z FS2_SEMANTIC_CIF_SHA256 97d07a4cf2c1e11d92daaed81927215ee946be2ac7303d9cfb843a1165d41e70
+2026-09-03T03:40:55.473008388Z FS2_SEMANTIC_CIF_COUNT 2

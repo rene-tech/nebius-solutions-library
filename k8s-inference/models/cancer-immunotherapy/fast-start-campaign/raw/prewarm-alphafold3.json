@@ -1,0 +1,26 @@
+[
+  {
+    "image": {
+      "cached_on_node": true,
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3@sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887\" already present on machine and can be accessed by the pod",
+      "pull_seconds": null,
+      "pulled_at": "2026-09-03T03:34:32Z",
+      "pulling_started_at": null,
+      "state": "node-cached"
+    },
+    "node_name_sha256": "5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+    "pod": "fsc-prewarm-alphafold3-0"
+  },
+  {
+    "image": {
+      "cached_on_node": false,
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3@sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887\" in 1m19.392s (1m19.392s including waiting). Image size: 4460819393 bytes.",
+      "pull_seconds": null,
+      "pulled_at": "2026-09-03T03:35:53Z",
+      "pulling_started_at": "2026-09-03T03:34:34Z",
+      "state": "pulled"
+    },
+    "node_name_sha256": "ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9",
+    "pod": "fsc-prewarm-alphafold3-1"
+  }
+]
