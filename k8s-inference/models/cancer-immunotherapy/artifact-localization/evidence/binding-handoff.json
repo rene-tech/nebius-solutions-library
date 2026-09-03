@@ -75,7 +75,7 @@
       },
       "visibility": "public",
       "volume": {
-        "binding_state": "rendered",
+        "binding_state": "qualified",
         "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
         "host_root": "/mnt/fs2-reference-data/data",
         "immutable": true,
@@ -181,7 +181,7 @@
       },
       "visibility": "public",
       "volume": {
-        "binding_state": "rendered",
+        "binding_state": "qualified",
         "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
         "host_root": "/mnt/fs2-reference-data/data",
         "immutable": true,
@@ -365,7 +365,7 @@
       },
       "visibility": "public",
       "volume": {
-        "binding_state": "rendered",
+        "binding_state": "qualified",
         "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
         "host_root": "/mnt/fs2-reference-data/data",
         "immutable": true,
@@ -450,7 +450,7 @@
       },
       "visibility": "public",
       "volume": {
-        "binding_state": "rendered",
+        "binding_state": "qualified",
         "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
         "host_root": "/mnt/fs2-reference-data/data",
         "immutable": true,
@@ -535,7 +535,7 @@
       },
       "visibility": "public",
       "volume": {
-        "binding_state": "rendered",
+        "binding_state": "qualified",
         "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
         "host_root": "/mnt/fs2-reference-data/data",
         "immutable": true,
@@ -552,12 +552,104 @@
   ],
   "evidence": {
     "generations_published": false,
-    "meaning": "Every path, identity and marker digest in this document is derived from the checked-in contract by the same code that writes a marker. None of it has been published yet: no promotion or staging Job has run for these paths, so nothing exists at any sub_path named here. plane_state describes the volume, which does exist; binding_state describes the generation, which does not. Treat this as the exact interface to build against, never as a report that the bytes are in place.",
-    "node_probes": [],
-    "promotes_to_next_state_when": "a terminal promotion receipt exists per artifact, at which point binding_state becomes 'promoted'; a node probe that admits the mount makes it 'qualified'.",
-    "promotion_receipts": [],
-    "pyrosetta_note": "The installed tree at the academic claim's pyrosetta-bindcraft/site-packages predates this work and is the promotion input. It is a mutable install path, not an immutable generation, and its existence is not evidence that the content-addressed generation named here has been published.",
-    "state": "rendered"
+    "meaning": "Five public generations are atomically published on the reference-data host plane and admitted on both H100 nodes. Model-native loaders then consumed the exact mounts. generations_published remains false because this six-artifact handoff also declares the tenant-private PyRosetta generation, which is still rendered rather than published.",
+    "node_probes": [
+      {
+        "artifact_id": "alphafold2-params",
+        "marker_admission_jobs": [
+          "fs2-localize-qualify-public-generations-r20260903pub-m0",
+          "fs2-localize-qualify-public-generations-r20260903pub-p3"
+        ],
+        "model_native_probe_job": "fs2-localize-qualify-proteina-complexa-r20260903pub2-proteina",
+        "path": "public-generation-node-qualification-20260903.json"
+      },
+      {
+        "artifact_id": "alphafold2-params-bindcraft",
+        "marker_admission_jobs": [
+          "fs2-localize-qualify-public-generations-r20260903pub-m0",
+          "fs2-localize-qualify-public-generations-r20260903pub-p3"
+        ],
+        "model_native_probe_job": "fs2-localize-qualify-bindcraft-public-r20260903pub2-bindcraft",
+        "path": "public-generation-node-qualification-20260903.json"
+      },
+      {
+        "artifact_id": "boltzgen-inference-molecules",
+        "marker_admission_jobs": [
+          "fs2-localize-qualify-public-generations-r20260903pub-m0",
+          "fs2-localize-qualify-public-generations-r20260903pub-p3"
+        ],
+        "model_native_probe_job": "fs2-localize-qualify-boltzgen-r20260903pub2-boltzgen",
+        "path": "public-generation-node-qualification-20260903.json"
+      },
+      {
+        "artifact_id": "colabdesign-mpnn-weights-soluble",
+        "marker_admission_jobs": [
+          "fs2-localize-qualify-public-generations-r20260903pub-m0",
+          "fs2-localize-qualify-public-generations-r20260903pub-p3"
+        ],
+        "model_native_probe_job": "fs2-localize-qualify-bindcraft-public-r20260903pub2-bindcraft",
+        "path": "public-generation-node-qualification-20260903.json"
+      },
+      {
+        "artifact_id": "colabdesign-mpnn-weights-vanilla",
+        "marker_admission_jobs": [
+          "fs2-localize-qualify-public-generations-r20260903pub-m0",
+          "fs2-localize-qualify-public-generations-r20260903pub-p3"
+        ],
+        "model_native_probe_job": "fs2-localize-qualify-bindcraft-public-r20260903pub2-bindcraft",
+        "path": "public-generation-node-qualification-20260903.json"
+      }
+    ],
+    "pending_artifacts": [
+      "bindcraft-pyrosetta-installed-tree"
+    ],
+    "promotion_receipts": [
+      {
+        "artifact_id": "alphafold2-params",
+        "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+        "marker_sha256": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+        "path": "public-generation-publication-20260903.json",
+        "receipt_selector": "alphafold2-params"
+      },
+      {
+        "artifact_id": "alphafold2-params-bindcraft",
+        "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+        "marker_sha256": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+        "path": "public-generation-publication-20260903.json",
+        "receipt_selector": "alphafold2-params-bindcraft"
+      },
+      {
+        "artifact_id": "boltzgen-inference-molecules",
+        "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "marker_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+        "path": "public-generation-publication-20260903.json",
+        "receipt_selector": "boltzgen-inference-molecules"
+      },
+      {
+        "artifact_id": "colabdesign-mpnn-weights-soluble",
+        "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+        "marker_sha256": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
+        "path": "public-generation-publication-20260903.json",
+        "receipt_selector": "colabdesign-mpnn-weights-soluble"
+      },
+      {
+        "artifact_id": "colabdesign-mpnn-weights-vanilla",
+        "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+        "marker_sha256": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
+        "path": "public-generation-publication-20260903.json",
+        "receipt_selector": "colabdesign-mpnn-weights-vanilla"
+      }
+    ],
+    "public_generations_published": true,
+    "pyrosetta_note": "The installed tree under the academic claim at pyrosetta-bindcraft/site-packages remains the mutable promotion input. This task did not publish or qualify its tenant-private generation.",
+    "qualified_artifacts": [
+      "alphafold2-params",
+      "alphafold2-params-bindcraft",
+      "boltzgen-inference-molecules",
+      "colabdesign-mpnn-weights-soluble",
+      "colabdesign-mpnn-weights-vanilla"
+    ],
+    "state": "public-qualified-private-rendered"
   },
   "models": {
     "bindcraft": [
@@ -578,7 +670,7 @@
   "scope": "poc",
   "volumes": {
     "public": {
-      "binding_state": "rendered",
+      "binding_state": "qualified",
       "host_root": "/mnt/fs2-reference-data/data",
       "kind": "host-path",
       "node_selector": {

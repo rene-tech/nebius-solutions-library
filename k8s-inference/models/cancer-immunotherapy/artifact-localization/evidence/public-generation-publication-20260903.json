@@ -1,0 +1,300 @@
+{
+  "schema": "fs2-serve.nebius.ai/public-generation-publication/v1",
+  "scope": "poc",
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "project": "scientific-ai-platform1",
+    "region": "eu-north1",
+    "namespace": "fs2-academic-poc",
+    "storage_plane": {
+      "kind": "host-path",
+      "host_root": "/mnt/fs2-reference-data/data",
+      "tree_prefix": "scientific-localization/public",
+      "node_selector": {
+        "storage.fs2.nebius/reference-data": "true"
+      }
+    },
+    "execution": {
+      "accelerator_node_class": "nvidia-h100-sxm5-80gb",
+      "capacity": "existing-reserved-capacity-block",
+      "gpu_requested_per_job": 0
+    }
+  },
+  "implementation": {
+    "verified_against_repository_commit": "0d5343c7cda15f1e3cdbdd7bc2c5bebfa32fd659",
+    "config_map_data_sha256": {
+      "__init__.py": "663ed2987c20d56f5a37049429cafda15bd8c435c9cf7046046e95b7882c8757",
+      "localization-contract.json": "a8df9df869a15d963760a1ac6c848a18e84639068235a5459f220a5cb1e00912",
+      "localization.py": "9ce5663d316f1fe18a71dd2f634602277c145dbe20753ca35b0ff9c9252e9c36",
+      "primitives.py": "e6007f2dbea6d0231b3135b87ce1b001f3f49dcfebe98caa44047e3ec4065294"
+    },
+    "image_digest": "docker.io/library/python@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534",
+    "operation": "stage-verify-seal-and-atomic-rename"
+  },
+  "jobs": [
+    {
+      "name": "fs2-localize-stage-r20260903p2",
+      "uid": "78b42688-5bc5-4843-9af0-62448fa43044",
+      "pod": "fs2-localize-stage-r20260903p2-jpsrs",
+      "pod_uid": "62700157-7806-4ffa-bc9d-d722d7ee8c4c",
+      "config_map": "fs2-loc-verifier-r20260903p2",
+      "manifest_sha256": "18d2382a1f542ec2197c10f87a091abcb07ab323b2f15774421f16952294b8b3",
+      "started_at": "2026-09-03T05:50:52Z",
+      "completed_at": "2026-09-03T05:51:05Z",
+      "node_digest": "5e3ad019c6df4d8b",
+      "exit_codes": [
+        0
+      ],
+      "artifacts": [
+        "colabdesign-mpnn-weights-soluble",
+        "colabdesign-mpnn-weights-vanilla"
+      ]
+    },
+    {
+      "name": "fs2-localize-stage-r20260903p3",
+      "uid": "f8970c4f-8ebc-45b5-85a8-47fff8b6ffd4",
+      "pod": "fs2-localize-stage-r20260903p3-xv4hf",
+      "pod_uid": "327a830c-06ec-4a36-a1a6-0890339a1c3a",
+      "config_map": "fs2-loc-verifier-r20260903p3",
+      "manifest_sha256": "0150bdb31c28eebc25accba2b84e48a6828e7d41f53f6f04e52ba6b9c9026129",
+      "started_at": "2026-09-03T05:52:47Z",
+      "completed_at": "2026-09-03T06:01:36Z",
+      "node_digest": "5e3ad019c6df4d8b",
+      "exit_codes": [
+        0
+      ],
+      "artifacts": [
+        "alphafold2-params",
+        "alphafold2-params-bindcraft",
+        "boltzgen-inference-molecules"
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "producer_job": "fs2-localize-stage-r20260903p3",
+      "receipt": {
+        "archive_provenance": {
+          "bytes": 5587968000,
+          "filename": "alphafold_params_2022-12-06.tar",
+          "license_id": "CC-BY-4.0",
+          "present_in_mount": false,
+          "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+          "source_revision": "gcs-generation-1670353726160664",
+          "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar"
+        },
+        "artifact_id": "alphafold2-params",
+        "mount_path": "/opt/fs2/artifacts/alphafold2-params",
+        "observation": {
+          "duration_seconds": 205.587,
+          "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "generation_reused": false,
+          "generation_sub_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "marker_sha256": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f"
+        },
+        "observed_at": "2026-09-03T05:56:07Z",
+        "runtime_bindings": [
+          {
+            "binding_kind": "environment-variable",
+            "binding_name": "AF2_DIR",
+            "binding_value": "/opt/fs2/artifacts/alphafold2-params",
+            "model_id": "proteina-complexa"
+          }
+        ],
+        "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+        "state": "verified",
+        "tree_identity": {
+          "entry_count": 16,
+          "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+          "inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "probe_entries_verified": 16,
+          "total_bytes": 5587956571
+        }
+      }
+    },
+    {
+      "producer_job": "fs2-localize-stage-r20260903p3",
+      "receipt": {
+        "archive_provenance": {
+          "bytes": 5587968000,
+          "filename": "alphafold_params_2022-12-06.tar",
+          "license_id": "CC-BY-4.0",
+          "present_in_mount": false,
+          "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+          "source_revision": "gcs-generation-1670353726160664",
+          "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar"
+        },
+        "artifact_id": "alphafold2-params-bindcraft",
+        "mount_path": "/models/alphafold2",
+        "observation": {
+          "duration_seconds": 30.174,
+          "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "generation_reused": false,
+          "generation_sub_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "marker_sha256": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0"
+        },
+        "observed_at": "2026-09-03T05:56:40Z",
+        "runtime_bindings": [
+          {
+            "binding_kind": "environment-variable",
+            "binding_name": "FS2_ARTIFACT_ROOT",
+            "binding_value": "/models/alphafold2",
+            "model_id": "bindcraft"
+          }
+        ],
+        "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+        "state": "verified",
+        "tree_identity": {
+          "entry_count": 17,
+          "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+          "inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "probe_entries_verified": 16,
+          "total_bytes": 5587959437
+        }
+      }
+    },
+    {
+      "producer_job": "fs2-localize-stage-r20260903p3",
+      "receipt": {
+        "archive_provenance": {
+          "bytes": 391401102,
+          "filename": "mols.zip",
+          "license_id": "MIT",
+          "present_in_mount": false,
+          "sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+          "source_revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+          "source_uri": "https://huggingface.co/datasets/boltzgen/inference-data/resolve/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip"
+        },
+        "artifact_id": "boltzgen-inference-molecules",
+        "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+        "observation": {
+          "duration_seconds": 286.222,
+          "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "generation_reused": false,
+          "generation_sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "marker_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4"
+        },
+        "observed_at": "2026-09-03T05:59:55Z",
+        "runtime_bindings": [
+          {
+            "binding_kind": "argv-option",
+            "binding_name": "--moldir",
+            "binding_value": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+            "model_id": "boltzgen"
+          }
+        ],
+        "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+        "state": "verified",
+        "tree_identity": {
+          "entry_count": 45227,
+          "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+          "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "probe_entries_verified": 10,
+          "total_bytes": 1820698819
+        }
+      }
+    },
+    {
+      "producer_job": "fs2-localize-stage-r20260903p2",
+      "receipt": {
+        "archive_provenance": {
+          "bytes": 50276715,
+          "filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+          "license_id": "Apache-2.0",
+          "present_in_mount": false,
+          "sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+          "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+          "source_uri": "https://github.com/sokrypton/ColabDesign/archive/e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz"
+        },
+        "artifact_id": "colabdesign-mpnn-weights-soluble",
+        "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+        "observation": {
+          "duration_seconds": 4.577,
+          "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "generation_reused": true,
+          "generation_sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "marker_sha256": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660"
+        },
+        "observed_at": "2026-09-03T05:50:59Z",
+        "runtime_bindings": [
+          {
+            "binding_kind": "installed-package-path",
+            "binding_name": "colabdesign.mpnn.weights_soluble",
+            "binding_value": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+            "model_id": "bindcraft"
+          }
+        ],
+        "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+        "state": "verified",
+        "tree_identity": {
+          "entry_count": 5,
+          "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+          "inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "probe_entries_verified": 5,
+          "total_bytes": 26601241
+        }
+      }
+    },
+    {
+      "producer_job": "fs2-localize-stage-r20260903p2",
+      "receipt": {
+        "archive_provenance": {
+          "bytes": 50276715,
+          "filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+          "license_id": "Apache-2.0",
+          "present_in_mount": false,
+          "sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+          "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+          "source_uri": "https://github.com/sokrypton/ColabDesign/archive/e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz"
+        },
+        "artifact_id": "colabdesign-mpnn-weights-vanilla",
+        "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+        "observation": {
+          "duration_seconds": 0.723,
+          "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "generation_reused": false,
+          "generation_sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "marker_sha256": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8"
+        },
+        "observed_at": "2026-09-03T05:51:01Z",
+        "runtime_bindings": [
+          {
+            "binding_kind": "installed-package-path",
+            "binding_name": "colabdesign.mpnn.weights",
+            "binding_value": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+            "model_id": "bindcraft"
+          }
+        ],
+        "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+        "state": "verified",
+        "tree_identity": {
+          "entry_count": 5,
+          "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+          "inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "probe_entries_verified": 5,
+          "total_bytes": 26602793
+        }
+      }
+    }
+  ],
+  "cleanup": {
+    "completed_at": "2026-09-03T06:29:31Z",
+    "deleted_config_maps": [
+      "fs2-loc-verifier-r20260903p2",
+      "fs2-loc-verifier-r20260903p3"
+    ],
+    "deleted_jobs": [
+      "fs2-localize-stage-r20260903p2",
+      "fs2-localize-stage-r20260903p3"
+    ],
+    "exact_name_absence_verified": true,
+    "immutable_generations_retained": true
+  },
+  "outcome": {
+    "state": "published",
+    "artifact_count": 5,
+    "exact_terminal_receipts": true,
+    "all_generations_have_in_generation_markers": true,
+    "all_source_archives_absent_from_runtime_mounts": true
+  }
+}

@@ -95,15 +95,28 @@ same digest. The marker always names which algorithm produced its digest.
 
 ## What exists and what does not
 
-The volumes exist. The generations do not, yet.
+The five public generations are atomically published on the reference-data host
+plane and qualified for read-only model use. The exact producer Jobs and
+terminal receipts are in
+[`evidence/public-generation-publication-20260903.json`](evidence/public-generation-publication-20260903.json);
+two-node marker admission and model-native loader results are in
+[`evidence/public-generation-node-qualification-20260903.json`](evidence/public-generation-node-qualification-20260903.json).
+The checked-in handoff joins those records and marks only these public entries
+`qualified`:
 
-`evidence/binding-handoff.json` is **generated from the contract**: every path,
-tree identity and marker digest in it is derived, and none of it has been
-published. No staging or promotion Job has run for any path it names, so nothing
-is present at any `sub_path` in that document. It records this itself, with
-`evidence.state: "rendered"`, empty `promotion_receipts` and `node_probes`, and a
-`plane_state` that describes the volume kept separate from a `binding_state` that
-describes the generation.
+| Artifact | Generation | Marker SHA-256 |
+| --- | --- | --- |
+| `alphafold2-params` | `cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4` | `da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f` |
+| `alphafold2-params-bindcraft` | `9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f` | `25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0` |
+| `boltzgen-inference-molecules` | `8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc` | `7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4` |
+| `colabdesign-mpnn-weights-soluble` | `54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146` | `471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660` |
+| `colabdesign-mpnn-weights-vanilla` | `2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f` | `07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8` |
+
+Both existing H100 nodes admitted all five in-generation markers. The immutable
+Proteina-Complexa, BindCraft and BoltzGen images then loaded their exact mounts;
+these were CPU-only artifact checks scheduled on the H100 nodes, so they created
+no GPU allocation or quota change. Source archives were absent from every
+runtime mount.
 
 The installed PyRosetta tree at the academic claim's
 `pyrosetta-bindcraft/site-packages` predates this work. It is the promotion
@@ -111,10 +124,12 @@ The installed PyRosetta tree at the academic claim's
 is not evidence that the content-addressed generation has been published.
 
 A binding becomes `promoted` only when a terminal promotion receipt exists for
-that artifact, and `qualified` only when a node probe has admitted the mount.
-Deploying those Jobs and recording that evidence is deliberately separate work.
+that artifact, and `qualified` only when node admission and its model-native
+probe pass. The five public entries now meet that rule. The tenant-private
+PyRosetta generation does not: it remains `rendered`, and the aggregate
+`generations_published` field therefore remains false.
 
-## Where the trees will live
+## Where the trees live
 
 Storage authority is chosen **per artifact**, not per run:
 
@@ -318,8 +333,11 @@ preflight will require, and the marker digest a consumer pins. Every value is
 derived from the contract by the same module that writes the marker, so a
 consumer following the handoff and a control-plane preflight cannot disagree.
 
-Being derived is exactly why it is not evidence of publication. The document
-says so in its own `evidence` block; see **What exists and what does not**.
+The renderer itself still emits `rendered` only: it cannot claim readiness it
+did not establish. The checked-in handoff is promoted beyond that generated
+baseline only by joining the exact terminal receipts and probes above. Its
+evidence block deliberately keeps the still-pending private PyRosetta generation
+separate from the five qualified public generations.
 
 ## The BindCraft AlphaFold2 mount is a second tree, not the same one
 
