@@ -29,6 +29,10 @@ MATRIX_PATH = HERE / "campaign_matrix.json"
 RAW = HERE / "raw"
 RECEIPTS = HERE / "receipts"
 
+# Directory roots this campaign creates on the shared claim. Nothing outside
+# these may be purged, because the claim is owned by another task.
+CAMPAIGN_DIRECTORIES = ("faststart", "faststart-cache", "faststart-jit-cache")
+
 # Kubelet reports a cached image with this exact phrase; anything else is a pull.
 IMAGE_ALREADY_PRESENT = "already present on machine"
 PULL_DURATION = re.compile(r"\bin ((?:\d+h)?(?:\d+m)?[0-9.]+m?s)\b")
@@ -540,6 +544,9 @@ def timeline(raw: dict[str, Any], spec: dict[str, Any], thresholds: dict[str, in
         "compute_to_first_result_seconds": seconds_between(warmup_at, result_at),
         "teardown_seconds": seconds_between(result_at, finished),
         "model_start_seconds": model_start,
+        # The level is evaluated on first semantic result. This second value
+        # closes the whole admitted stage, including writing the result out.
+        "schedule_to_semantic_complete_seconds": seconds_between(scheduled, finished),
         "time_to_first_semantic_result_seconds": seconds_between(started, result_at),
         "container_seconds": seconds_between(started, finished),
         "end_to_end_seconds": seconds_between(submitted, finished),
@@ -672,24 +679,34 @@ def node_identity(namespace: str, pod: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def collect(model: str, variant: str, trial: int) -> dict[str, Any]:
+def collect(model: str, variant: str, trial: int, from_raw: bool = False) -> dict[str, Any]:
     root = matrix()
     spec = root["models"][model]
     namespace = namespace_of(root, spec)
     name = job_name(root, model, variant, trial)
     tid = trial_id(model, variant, trial)
+    previous_path = RECEIPTS / f"{tid}.json"
+    previous = json.loads(previous_path.read_text(encoding="utf-8")) if previous_path.exists() else {}
 
-    raw = capture(namespace, name)
-    RAW.mkdir(parents=True, exist_ok=True)
-    (RAW / f"{tid}.log").write_text(raw["logs"], encoding="utf-8")
-    (RAW / f"{tid}.objects.json").write_text(
-        json.dumps({k: v for k, v in raw.items() if k != "logs"}, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    if from_raw:
+        # Rebuild the timeline from the evidence already stored for this trial.
+        # This is why raw/ is committed: a receipt stays reproducible after the
+        # cluster objects it came from have been cleaned up.
+        stored = json.loads((RAW / f"{tid}.objects.json").read_text(encoding="utf-8"))
+        raw = dict(stored, logs=(RAW / f"{tid}.log").read_text(encoding="utf-8"))
+        state = previous.get("job_state", "complete")
+    else:
+        raw = capture(namespace, name)
+        RAW.mkdir(parents=True, exist_ok=True)
+        (RAW / f"{tid}.log").write_text(raw["logs"], encoding="utf-8")
+        (RAW / f"{tid}.objects.json").write_text(
+            json.dumps({k: v for k, v in raw.items() if k != "logs"}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        state, _ = job_state(namespace, name)
 
     thresholds = root["level_contract"]["thresholds_seconds"]
     measured = timeline(raw, spec, thresholds)
-    state, _ = job_state(namespace, name)
 
     receipt = {
         "schema": "fs2.nebius.ai/fast-start-live-trial-receipt/v1",
@@ -712,7 +729,7 @@ def collect(model: str, variant: str, trial: int) -> dict[str, Any]:
             "capacity_source": root["placement"]["capacity_source"],
             "gpus_requested": spec["resources"]["requests"].get("nvidia.com/gpu"),
         },
-        "node": node_identity(namespace, raw["pod"]),
+        "node": previous["node"] if from_raw and previous.get("node") else node_identity(namespace, raw["pod"]),
         "image": {
             "reference": spec["image"],
             "digest": spec["image_digest"],
@@ -725,18 +742,19 @@ def collect(model: str, variant: str, trial: int) -> dict[str, Any]:
         "mechanism_evidence": root["mechanism_evidence"],
         "jit_cache": spec["variants"][variant]["jit_cache"],
     }
+    # A re-parse of the timeline says nothing about the science, so an existing
+    # semantic verdict and GPU telemetry survive it rather than being dropped.
+    for carried in ("semantic_validation", "gpu_telemetry"):
+        if carried in previous:
+            receipt[carried] = previous[carried]
     RECEIPTS.mkdir(parents=True, exist_ok=True)
-    path = RECEIPTS / f"{tid}.json"
-    path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    previous_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return receipt
 
 
 # --------------------------------------------------------------------------- #
 # cleanup
 # --------------------------------------------------------------------------- #
-
-
-CAMPAIGN_DIRECTORIES = ("faststart", "faststart-cache", "faststart-jit-cache")
 
 
 def cleanup_claim_data() -> dict[str, Any]:
@@ -786,6 +804,132 @@ def cleanup_claim_data() -> dict[str, Any]:
     return {"claim": claim, "removed": list(CAMPAIGN_DIRECTORIES), "claim_root_after": sorted(remaining)}
 
 
+def purge(relatives: list[str]) -> dict[str, Any]:
+    """Remove named paths from the shared claim.
+
+    Needed because the qualified Mosaic runtime creates its output directory
+    with ``exist_ok=False`` and refuses to overwrite a previous result.  That is
+    correct behaviour for a scientific runtime, so re-running a trial resets the
+    trial's own output tree rather than weakening the runtime's guarantee.  Only
+    explicitly named paths are removed; nothing is globbed.
+    """
+    root = matrix()
+    namespace = root["cluster"]["namespace"]
+    claim = root["models"]["mosaic"]["volumes"]["workspace"]["claim"]
+    name = "fsc-purge"
+    safe = []
+    for relative in relatives:
+        cleaned = relative.strip("/")
+        if not cleaned or ".." in cleaned.split("/"):
+            raise SystemExit(f"refusing to purge unsafe path {relative!r}")
+        if cleaned.split("/")[0] not in CAMPAIGN_DIRECTORIES:
+            raise SystemExit(
+                f"refusing to purge {relative!r}: only campaign-owned roots "
+                f"{CAMPAIGN_DIRECTORIES} may be removed"
+            )
+        safe.append(f"/data/{cleaned}")
+    script = "; ".join(f'rm -rf "{path}"' for path in safe) + "; echo PURGED"
+    pod = {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {"name": name, "namespace": namespace, "labels": dict(root["labels"])},
+        "spec": {
+            "restartPolicy": "Never",
+            "automountServiceAccountToken": False,
+            "nodeSelector": root["placement"]["node_selector"],
+            "tolerations": root["placement"]["tolerations"],
+            "securityContext": {
+                "runAsUser": 10001, "runAsGroup": 10001, "fsGroup": 10001,
+                "runAsNonRoot": True, "fsGroupChangePolicy": "OnRootMismatch",
+            },
+            "containers": [
+                {
+                    "name": "purge",
+                    "image": "busybox:1.36",
+                    "command": ["sh", "-c", script],
+                    "resources": {
+                        "requests": {"cpu": "200m", "memory": "256Mi"},
+                        "limits": {"cpu": "1", "memory": "1Gi"},
+                    },
+                    "volumeMounts": [{"name": "data", "mountPath": "/data"}],
+                }
+            ],
+            "volumes": [{"name": "data", "persistentVolumeClaim": {"claimName": claim}}],
+        },
+    }
+    kubectl("delete", "pod", name, "-n", namespace, "--ignore-not-found", check=False)
+    kubectl("apply", "-n", namespace, "-f", "-", stdin=json.dumps(pod))
+    for _ in range(60):
+        state = kube_json("get", "pod", name, "-n", namespace)
+        if state["status"]["phase"] in {"Succeeded", "Failed"}:
+            break
+        time.sleep(5)
+    phase = kube_json("get", "pod", name, "-n", namespace)["status"]["phase"]
+    kubectl("delete", "pod", name, "-n", namespace, "--wait=false", check=False)
+    if phase != "Succeeded":
+        raise SystemExit(f"purge pod ended {phase}")
+    return {"claim": claim, "purged": safe}
+
+
+def probe_cache(relative: str) -> dict[str, Any]:
+    """Report entry count and byte size of a directory on the shared claim.
+
+    Used as corroboration that a persistent compilation cache really was
+    populated between trials, rather than inferring reuse from a timing alone.
+    """
+    root = matrix()
+    namespace = root["cluster"]["namespace"]
+    claim = root["models"]["mosaic"]["volumes"]["workspace"]["claim"]
+    name = "fsc-cache-probe"
+    target = f"/data/{relative.lstrip('/')}"
+    script = (
+        f"if [ -d '{target}' ]; then "
+        f"echo COUNT $(find '{target}' -type f | wc -l); "
+        f"echo BYTES $(du -sb '{target}' | cut -f1); "
+        f"else echo COUNT 0; echo BYTES 0; fi"
+    )
+    pod = {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {"name": name, "namespace": namespace, "labels": dict(root["labels"])},
+        "spec": {
+            "restartPolicy": "Never",
+            "automountServiceAccountToken": False,
+            "nodeSelector": {"workload.fs2.nebius/system": "true"},
+            "securityContext": {"runAsUser": 10001, "runAsGroup": 10001, "runAsNonRoot": True},
+            "containers": [
+                {
+                    "name": "probe",
+                    "image": "busybox:1.36",
+                    "command": ["sh", "-c", script],
+                    "resources": {
+                        "requests": {"cpu": "200m", "memory": "256Mi"},
+                        "limits": {"cpu": "1", "memory": "1Gi"},
+                    },
+                    "volumeMounts": [{"name": "data", "mountPath": "/data", "readOnly": True}],
+                }
+            ],
+            "volumes": [{"name": "data", "persistentVolumeClaim": {"claimName": claim}}],
+        },
+    }
+    kubectl("delete", "pod", name, "-n", namespace, "--ignore-not-found", check=False)
+    kubectl("apply", "-n", namespace, "-f", "-", stdin=json.dumps(pod))
+    for _ in range(60):
+        state = kube_json("get", "pod", name, "-n", namespace)
+        if state["status"]["phase"] in {"Succeeded", "Failed"}:
+            break
+        time.sleep(5)
+    output = kubectl("logs", name, "-n", namespace, check=False).split()
+    kubectl("delete", "pod", name, "-n", namespace, "--wait=false", check=False)
+    values = dict(zip(output[::2], output[1::2]))
+    return {
+        "claim": claim,
+        "path": relative,
+        "entries": int(values.get("COUNT", 0)),
+        "bytes": int(values.get("BYTES", 0)),
+    }
+
+
 def cleanup() -> list[str]:
     root = matrix()
     selector = f"fs2.nebius.ai/task={root['owner_task']}"
@@ -816,6 +960,9 @@ def main() -> int:
         node.add_argument("--model", required=True)
         node.add_argument("--variant", default="baseline")
         node.add_argument("--trial", type=int, required=True)
+        if command == "collect":
+            node.add_argument("--from-raw", action="store_true",
+                              help="rebuild the timeline from stored raw evidence instead of the cluster")
 
     node = sub.add_parser("prewarm")
     node.add_argument("--model", required=True)
@@ -824,6 +971,13 @@ def main() -> int:
     node.add_argument("--job", action="append", required=True)
     node.add_argument("--namespace")
     node.add_argument("--timeout", type=int, default=1800)
+
+    node = sub.add_parser("probe-cache")
+    node.add_argument("--path", required=True, help="path on the shared claim, relative to its root")
+
+    node = sub.add_parser("purge")
+    node.add_argument("--path", action="append", required=True,
+                      help="campaign-owned path on the shared claim to remove; repeatable")
 
     node = sub.add_parser("cleanup")
     node.add_argument("--claim-data", action="store_true", help="also remove the run trees written onto the shared claim")
@@ -844,7 +998,7 @@ def main() -> int:
         print(json.dumps(outcome, indent=2, sort_keys=True))
         return 0 if all(value == "complete" for value in outcome.values()) else 1
     elif arguments.command == "collect":
-        receipt = collect(arguments.model, arguments.variant, arguments.trial)
+        receipt = collect(arguments.model, arguments.variant, arguments.trial, arguments.from_raw)
         print(json.dumps({
             "trial_id": receipt["trial_id"],
             "job_state": receipt["job_state"],
@@ -853,6 +1007,10 @@ def main() -> int:
             "image": receipt["measured"]["image"]["state"],
             "unavailable": receipt["measured"]["unavailable"],
         }, indent=2, sort_keys=True))
+    elif arguments.command == "purge":
+        print(json.dumps(purge(arguments.path), indent=2, sort_keys=True))
+    elif arguments.command == "probe-cache":
+        print(json.dumps(probe_cache(arguments.path), indent=2, sort_keys=True))
     elif arguments.command == "cleanup":
         data = cleanup_claim_data() if arguments.claim_data else None
         print(json.dumps({"deleted": cleanup(), "claim_data": data}, indent=2, sort_keys=True))

@@ -286,6 +286,84 @@ class TestSummary(unittest.TestCase):
                     self.assertGreaterEqual(values["trials_semantically_passed"], 1)
 
 
+class TestWarmJit(unittest.TestCase):
+    def setUp(self):
+        self.matrix = faststart.matrix()
+        self.variant = self.matrix["models"]["mosaic"]["variants"]["warm-jit"]
+
+    def test_warm_jit_also_carries_the_ownership_remediation(self):
+        # Without it the recursive volume pass would swamp the compilation
+        # saving this variant exists to measure.
+        self.assertEqual(
+            self.variant["pod_security_patch"]["fsGroupChangePolicy"], "OnRootMismatch"
+        )
+        _, job = faststart.render("mosaic", "warm-jit", 1)
+        security = job["spec"]["template"]["spec"]["securityContext"]
+        self.assertEqual(security["fsGroupChangePolicy"], "OnRootMismatch")
+
+    def test_compile_time_floor_is_zero(self):
+        # A non-zero floor silently disables caching for Mosaic, whose startup is
+        # many short compilations rather than one long one. This was observed
+        # live: at 0.5 s the cache directory was never even created.
+        self.assertEqual(
+            self.variant["env"]["JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"], "0"
+        )
+        _, job = faststart.render("mosaic", "warm-jit", 1)
+        env = {e["name"]: e["value"] for e in job["spec"]["template"]["spec"]["containers"][0]["env"]}
+        self.assertEqual(env["JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"], "0")
+        self.assertTrue(env["JAX_COMPILATION_CACHE_DIR"].startswith("/workspace/"))
+
+    def test_cache_is_evidenced_by_a_probe_not_by_the_setting(self):
+        evidence = self.variant["jit_cache_evidence"]
+        self.assertEqual(evidence["before_first_trial"]["entries"], 0)
+        self.assertGreater(evidence["after_first_trial"]["entries"], 0)
+
+    def test_summary_separates_one_time_compilation_from_steady_state(self):
+        summary = summarize.summarize()
+        block = summary["models"]["mosaic"]["variants"]["warm-jit"]["compilation"]
+        self.assertEqual(len(block["one_time_compilation"]["trials"]), 1)
+        self.assertGreaterEqual(len(block["steady_state"]["trials"]), 3)
+        cold = block["one_time_compilation"]["model_start_seconds"]["p95"]
+        warm = block["steady_state"]["model_start_seconds"]["p95"]
+        self.assertLess(warm, cold)
+
+
+class TestPurgeSafety(unittest.TestCase):
+    def test_purge_refuses_paths_outside_campaign_roots(self):
+        # The claim belongs to another task, so a mistyped path must not be able
+        # to delete its artifact tree.
+        for unsafe in ("../etc", "mosaic", "boltzgen", "/", "", "faststart/../mosaic"):
+            with self.assertRaises(SystemExit, msg=unsafe):
+                faststart.purge([unsafe])
+
+    def test_purge_accepts_campaign_owned_roots(self):
+        for root in faststart.CAMPAIGN_DIRECTORIES:
+            self.assertIn(root, faststart.CAMPAIGN_DIRECTORIES)
+        self.assertNotIn("mosaic", faststart.CAMPAIGN_DIRECTORIES)
+        self.assertNotIn("boltzgen", faststart.CAMPAIGN_DIRECTORIES)
+
+
+class TestScheduleToComplete(unittest.TestCase):
+    def test_schedule_to_semantic_complete_spans_the_whole_stage(self):
+        measured = faststart.timeline(fake_raw(scheduled=10, finished=205), SPEC, THRESHOLDS)
+        phases = measured["phases_seconds"]
+        self.assertEqual(phases["schedule_to_semantic_complete_seconds"], 195.0)
+        self.assertGreaterEqual(
+            phases["schedule_to_semantic_complete_seconds"], phases["model_start_seconds"]
+        )
+
+    def test_every_receipt_reports_it(self):
+        import json as _json
+        from pathlib import Path as _Path
+        receipts = sorted((_Path(__file__).resolve().parent.parent / "receipts").glob("*.json"))
+        self.assertTrue(receipts)
+        for path in receipts:
+            phases = _json.loads(path.read_text())["measured"]["phases_seconds"]
+            self.assertIsNotNone(
+                phases.get("schedule_to_semantic_complete_seconds"), path.name
+            )
+
+
 class TestMechanismClaims(unittest.TestCase):
     def test_no_snapshot_level_is_claimed_without_restore_proof(self):
         snapshot = faststart.matrix()["mechanism_evidence"]["gpu_process_snapshot"]

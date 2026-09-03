@@ -1,0 +1,962 @@
+{
+  "events": {
+    "apiVersion": "v1",
+    "items": [
+      {
+        "apiVersion": "v1",
+        "count": 1,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-03T04:51:55Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "name": "fsc-mosaic-warm-jit-t03-b984750a47dc-xrw4d",
+          "namespace": "fs2-models",
+          "resourceVersion": "2201276",
+          "uid": "970cec71-c090-4ab2-8016-a0197ad378a7"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-03T04:51:55Z",
+        "message": "Successfully assigned fs2-models/fsc-mosaic-warm-jit-t03-b984750a47dc-xrw4d to computeinstance-e00p3acr87k9k4mckj",
+        "metadata": {
+          "creationTimestamp": "2026-09-03T04:51:55Z",
+          "name": "fsc-mosaic-warm-jit-t03-b984750a47dc-xrw4d.18d1b66f395a7950",
+          "namespace": "fs2-models",
+          "resourceVersion": "2201282",
+          "uid": "de3eec19-0379-4db3-8c71-ee69601738f8"
+        },
+        "reason": "Scheduled",
+        "reportingComponent": "default-scheduler",
+        "reportingInstance": "",
+        "source": {
+          "component": "default-scheduler"
+        },
+        "type": "Normal"
+      },
+      {
+        "apiVersion": "v1",
+        "count": 1,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-03T04:51:56Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "fieldPath": "spec.containers{batch}",
+          "kind": "Pod",
+          "name": "fsc-mosaic-warm-jit-t03-b984750a47dc-xrw4d",
+          "namespace": "fs2-models",
+          "resourceVersion": "2201279",
+          "uid": "970cec71-c090-4ab2-8016-a0197ad378a7"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-03T04:51:56Z",
+        "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69\" already present on machine and can be accessed by the pod",
+        "metadata": {
+          "creationTimestamp": "2026-09-03T04:51:56Z",
+          "name": "fsc-mosaic-warm-jit-t03-b984750a47dc-xrw4d.18d1b66f67807b92",
+          "namespace": "fs2-models",
+          "resourceVersion": "2201294",
+          "uid": "e72d9df9-5eff-4b1b-aca7-2c70afb32aad"
+        },
+        "reason": "Pulled",
+        "reportingComponent": "kubelet",
+        "reportingInstance": "computeinstance-e00p3acr87k9k4mckj",
+        "source": {
+          "component": "kubelet",
+          "host": "computeinstance-e00p3acr87k9k4mckj"
+        },
+        "type": "Normal"
+      },
+      {
+        "apiVersion": "v1",
+        "count": 1,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-03T04:51:56Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "fieldPath": "spec.containers{batch}",
+          "kind": "Pod",
+          "name": "fsc-mosaic-warm-jit-t03-b984750a47dc-xrw4d",
+          "namespace": "fs2-models",
+          "resourceVersion": "2201279",
+          "uid": "970cec71-c090-4ab2-8016-a0197ad378a7"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-03T04:51:56Z",
+        "message": "Container created",
+        "metadata": {
+          "creationTimestamp": "2026-09-03T04:51:56Z",
+          "name": "fsc-mosaic-warm-jit-t03-b984750a47dc-xrw4d.18d1b66f68b81ead",
+          "namespace": "fs2-models",
+          "resourceVersion": "2201295",
+          "uid": "dddfad4f-f3a6-4f72-b9df-475dc75a1d28"
+        },
+        "reason": "Created",
+        "reportingComponent": "kubelet",
+        "reportingInstance": "computeinstance-e00p3acr87k9k4mckj",
+        "source": {
+          "component": "kubelet",
+          "host": "computeinstance-e00p3acr87k9k4mckj"
+        },
+        "type": "Normal"
+      },
+      {
+        "apiVersion": "v1",
+        "count": 1,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-03T04:51:57Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "fieldPath": "spec.containers{batch}",
+          "kind": "Pod",
+          "name": "fsc-mosaic-warm-jit-t03-b984750a47dc-xrw4d",
+          "namespace": "fs2-models",
+          "resourceVersion": "2201279",
+          "uid": "970cec71-c090-4ab2-8016-a0197ad378a7"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-03T04:51:57Z",
+        "message": "Container started",
+        "metadata": {
+          "creationTimestamp": "2026-09-03T04:51:57Z",
+          "name": "fsc-mosaic-warm-jit-t03-b984750a47dc-xrw4d.18d1b66fa4674f21",
+          "namespace": "fs2-models",
+          "resourceVersion": "2201309",
+          "uid": "133a6d4f-e418-456e-87e6-c934b5c080f1"
+        },
+        "reason": "Started",
+        "reportingComponent": "kubelet",
+        "reportingInstance": "computeinstance-e00p3acr87k9k4mckj",
+        "source": {
+          "component": "kubelet",
+          "host": "computeinstance-e00p3acr87k9k4mckj"
+        },
+        "type": "Normal"
+      }
+    ],
+    "kind": "List",
+    "metadata": {
+      "resourceVersion": ""
+    }
+  },
+  "job": {
+    "apiVersion": "batch/v1",
+    "kind": "Job",
+    "metadata": {
+      "annotations": {
+        "fs2.nebius.ai/campaign-id": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+        "fs2.nebius.ai/image-digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+        "fs2.nebius.ai/variant": "warm-jit",
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{\"fs2.nebius.ai/campaign-id\":\"fs2-qualified-model-fast-start-live-campaign-r20260903\",\"fs2.nebius.ai/image-digest\":\"sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69\",\"fs2.nebius.ai/variant\":\"warm-jit\"},\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-faststart-campaign\",\"app.kubernetes.io/part-of\":\"fs2-serve\",\"fs2.nebius.ai/campaign-variant\":\"warm-jit\",\"fs2.nebius.ai/local-queue\":\"inference-models\",\"fs2.nebius.ai/model-id\":\"mosaic\",\"fs2.nebius.ai/task\":\"fs2-qualified-model-fast-start-live-campaign-r20260903\",\"fs2.nebius.ai/trial\":\"03\",\"fs2.nebius.ai/trial-id\":\"mosaic-warm-jit-t03\",\"kueue.x-k8s.io/queue-name\":\"inference-models\"},\"name\":\"fsc-mosaic-warm-jit-t03-b984750a47dc\",\"namespace\":\"fs2-models\"},\"spec\":{\"backoffLimit\":0,\"completions\":1,\"parallelism\":1,\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-faststart-campaign\",\"app.kubernetes.io/part-of\":\"fs2-serve\",\"fs2.nebius.ai/campaign-variant\":\"warm-jit\",\"fs2.nebius.ai/model-id\":\"mosaic\",\"fs2.nebius.ai/task\":\"fs2-qualified-model-fast-start-live-campaign-r20260903\",\"fs2.nebius.ai/trial\":\"03\",\"fs2.nebius.ai/trial-id\":\"mosaic-warm-jit-t03\",\"kueue.x-k8s.io/queue-name\":\"inference-models\"}},\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"command\":[\"/opt/fs2/bin/mosaic-batch\",\"run-shard\",\"--request\",\"/var/run/fs2/request.json\",\"--input-manifest\",\"/var/run/fs2/input-manifest.json\",\"--recipe\",\"/opt/fs2/mosaic/recipe.json\",\"--recipe-sha256\",\"cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe\",\"--shard-index\",\"0\",\"--seed\",\"7300\",\"--output\",\"/workspace/faststart/mosaic-warm-jit-t03/shard-000\"],\"env\":[{\"name\":\"FS2_ARTIFACT_ROOT\",\"value\":\"/opt/fs2/artifacts\"},{\"name\":\"JAX_COMPILATION_CACHE_DIR\",\"value\":\"/workspace/faststart-jit-cache/mosaic\"},{\"name\":\"JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS\",\"value\":\"0\"},{\"name\":\"JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES\",\"value\":\"0\"}],\"image\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69\",\"name\":\"batch\",\"resources\":{\"limits\":{\"cpu\":\"16\",\"memory\":\"128Gi\",\"nvidia.com/gpu\":\"1\"},\"requests\":{\"cpu\":\"8\",\"memory\":\"64Gi\",\"nvidia.com/gpu\":\"1\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"readOnlyRootFilesystem\":true},\"volumeMounts\":[{\"mountPath\":\"/var/run/fs2\",\"name\":\"request\",\"readOnly\":true},{\"mountPath\":\"/tmp\",\"name\":\"tmp\"},{\"mountPath\":\"/opt/fs2/artifacts\",\"name\":\"artifacts\",\"readOnly\":true},{\"mountPath\":\"/workspace\",\"name\":\"workspace\"}]}],\"enableServiceLinks\":false,\"nodeSelector\":{\"accelerator.fs2.nebius/class\":\"nvidia-h100-sxm5-80gb\",\"accelerator.fs2.nebius/pool-id\":\"h100-reserved-8x\"},\"restartPolicy\":\"Never\",\"securityContext\":{\"fsGroup\":10001,\"fsGroupChangePolicy\":\"OnRootMismatch\",\"runAsGroup\":10001,\"runAsNonRoot\":true,\"runAsUser\":10001,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"tolerations\":[{\"effect\":\"NoSchedule\",\"key\":\"dedicated\",\"operator\":\"Equal\",\"value\":\"fs2-inference\"}],\"volumes\":[{\"configMap\":{\"defaultMode\":420,\"name\":\"fsc-mosaic-warm-jit-t03-b984750a47dc-request\"},\"name\":\"request\"},{\"emptyDir\":{\"sizeLimit\":\"16Gi\"},\"name\":\"tmp\"},{\"name\":\"artifacts\",\"persistentVolumeClaim\":{\"claimName\":\"fs2-runtime-qualification-artifacts-r20260902\"}},{\"name\":\"workspace\",\"persistentVolumeClaim\":{\"claimName\":\"fs2-runtime-qualification-artifacts-r20260902\"}}]}},\"ttlSecondsAfterFinished\":86400}}\n"
+      },
+      "creationTimestamp": "2026-09-03T04:51:55Z",
+      "generation": 2,
+      "labels": {
+        "app.kubernetes.io/managed-by": "fs2-faststart-campaign",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2.nebius.ai/campaign-variant": "warm-jit",
+        "fs2.nebius.ai/local-queue": "inference-models",
+        "fs2.nebius.ai/model-id": "mosaic",
+        "fs2.nebius.ai/task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+        "fs2.nebius.ai/trial": "03",
+        "fs2.nebius.ai/trial-id": "mosaic-warm-jit-t03",
+        "kueue.x-k8s.io/queue-name": "inference-models"
+      },
+      "name": "fsc-mosaic-warm-jit-t03-b984750a47dc",
+      "namespace": "fs2-models",
+      "resourceVersion": "2202171",
+      "uid": "6e27a193-3cd2-422b-9f14-905408b80df7"
+    },
+    "spec": {
+      "backoffLimit": 0,
+      "completionMode": "NonIndexed",
+      "completions": 1,
+      "manualSelector": false,
+      "parallelism": 1,
+      "podReplacementPolicy": "TerminatingOrFailed",
+      "selector": {
+        "matchLabels": {
+          "batch.kubernetes.io/controller-uid": "6e27a193-3cd2-422b-9f14-905408b80df7"
+        }
+      },
+      "suspend": false,
+      "template": {
+        "metadata": {
+          "annotations": {
+            "kueue.x-k8s.io/workload": "job-fsc-mosaic-warm-jit-t03-b984750a47dc-d1b3c"
+          },
+          "labels": {
+            "app.kubernetes.io/managed-by": "fs2-faststart-campaign",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "batch.kubernetes.io/controller-uid": "6e27a193-3cd2-422b-9f14-905408b80df7",
+            "batch.kubernetes.io/job-name": "fsc-mosaic-warm-jit-t03-b984750a47dc",
+            "controller-uid": "6e27a193-3cd2-422b-9f14-905408b80df7",
+            "fs2.nebius.ai/campaign-variant": "warm-jit",
+            "fs2.nebius.ai/model-id": "mosaic",
+            "fs2.nebius.ai/task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+            "fs2.nebius.ai/trial": "03",
+            "fs2.nebius.ai/trial-id": "mosaic-warm-jit-t03",
+            "job-name": "fsc-mosaic-warm-jit-t03-b984750a47dc",
+            "kueue.x-k8s.io/cluster-queue-name": "inference-accelerators",
+            "kueue.x-k8s.io/local-queue-name": "inference-models",
+            "kueue.x-k8s.io/podset": "main",
+            "kueue.x-k8s.io/queue-name": "inference-models"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "command": [
+                "/opt/fs2/bin/mosaic-batch",
+                "run-shard",
+                "--request",
+                "/var/run/fs2/request.json",
+                "--input-manifest",
+                "/var/run/fs2/input-manifest.json",
+                "--recipe",
+                "/opt/fs2/mosaic/recipe.json",
+                "--recipe-sha256",
+                "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+                "--shard-index",
+                "0",
+                "--seed",
+                "7300",
+                "--output",
+                "/workspace/faststart/mosaic-warm-jit-t03/shard-000"
+              ],
+              "env": [
+                {
+                  "name": "FS2_ARTIFACT_ROOT",
+                  "value": "/opt/fs2/artifacts"
+                },
+                {
+                  "name": "JAX_COMPILATION_CACHE_DIR",
+                  "value": "/workspace/faststart-jit-cache/mosaic"
+                },
+                {
+                  "name": "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS",
+                  "value": "0"
+                },
+                {
+                  "name": "JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES",
+                  "value": "0"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+              "imagePullPolicy": "IfNotPresent",
+              "name": "batch",
+              "resources": {
+                "limits": {
+                  "cpu": "16",
+                  "memory": "128Gi",
+                  "nvidia.com/gpu": "1"
+                },
+                "requests": {
+                  "cpu": "8",
+                  "memory": "64Gi",
+                  "nvidia.com/gpu": "1"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": true
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/var/run/fs2",
+                  "name": "request",
+                  "readOnly": true
+                },
+                {
+                  "mountPath": "/tmp",
+                  "name": "tmp"
+                },
+                {
+                  "mountPath": "/opt/fs2/artifacts",
+                  "name": "artifacts",
+                  "readOnly": true
+                },
+                {
+                  "mountPath": "/workspace",
+                  "name": "workspace"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "enableServiceLinks": false,
+          "nodeSelector": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
+          },
+          "restartPolicy": "Never",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "fsGroup": 10001,
+            "fsGroupChangePolicy": "OnRootMismatch",
+            "runAsGroup": 10001,
+            "runAsNonRoot": true,
+            "runAsUser": 10001,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "terminationGracePeriodSeconds": 30,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "dedicated",
+              "operator": "Equal",
+              "value": "fs2-inference"
+            }
+          ],
+          "volumes": [
+            {
+              "configMap": {
+                "defaultMode": 420,
+                "name": "fsc-mosaic-warm-jit-t03-b984750a47dc-request"
+              },
+              "name": "request"
+            },
+            {
+              "emptyDir": {
+                "sizeLimit": "16Gi"
+              },
+              "name": "tmp"
+            },
+            {
+              "name": "artifacts",
+              "persistentVolumeClaim": {
+                "claimName": "fs2-runtime-qualification-artifacts-r20260902"
+              }
+            },
+            {
+              "name": "workspace",
+              "persistentVolumeClaim": {
+                "claimName": "fs2-runtime-qualification-artifacts-r20260902"
+              }
+            }
+          ]
+        }
+      },
+      "ttlSecondsAfterFinished": 86400
+    },
+    "status": {
+      "completionTime": "2026-09-03T04:53:15Z",
+      "conditions": [
+        {
+          "lastProbeTime": "2026-09-03T04:51:55Z",
+          "lastTransitionTime": "2026-09-03T04:51:55Z",
+          "message": "Job resumed",
+          "reason": "JobResumed",
+          "status": "False",
+          "type": "Suspended"
+        },
+        {
+          "lastProbeTime": "2026-09-03T04:53:15Z",
+          "lastTransitionTime": "2026-09-03T04:53:15Z",
+          "message": "Reached expected number of succeeded pods",
+          "reason": "CompletionsReached",
+          "status": "True",
+          "type": "SuccessCriteriaMet"
+        },
+        {
+          "lastProbeTime": "2026-09-03T04:53:15Z",
+          "lastTransitionTime": "2026-09-03T04:53:15Z",
+          "message": "Reached expected number of succeeded pods",
+          "reason": "CompletionsReached",
+          "status": "True",
+          "type": "Complete"
+        }
+      ],
+      "ready": 0,
+      "startTime": "2026-09-03T04:51:55Z",
+      "succeeded": 1,
+      "terminating": 0,
+      "uncountedTerminatedPods": {}
+    }
+  },
+  "pod": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "annotations": {
+        "kueue.x-k8s.io/workload": "job-fsc-mosaic-warm-jit-t03-b984750a47dc-d1b3c"
+      },
+      "creationTimestamp": "2026-09-03T04:51:55Z",
+      "generateName": "fsc-mosaic-warm-jit-t03-b984750a47dc-",
+      "generation": 1,
+      "labels": {
+        "app.kubernetes.io/managed-by": "fs2-faststart-campaign",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "batch.kubernetes.io/controller-uid": "6e27a193-3cd2-422b-9f14-905408b80df7",
+        "batch.kubernetes.io/job-name": "fsc-mosaic-warm-jit-t03-b984750a47dc",
+        "controller-uid": "6e27a193-3cd2-422b-9f14-905408b80df7",
+        "fs2.nebius.ai/campaign-variant": "warm-jit",
+        "fs2.nebius.ai/model-id": "mosaic",
+        "fs2.nebius.ai/task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+        "fs2.nebius.ai/trial": "03",
+        "fs2.nebius.ai/trial-id": "mosaic-warm-jit-t03",
+        "job-name": "fsc-mosaic-warm-jit-t03-b984750a47dc",
+        "kueue.x-k8s.io/cluster-queue-name": "inference-accelerators",
+        "kueue.x-k8s.io/local-queue-name": "inference-models",
+        "kueue.x-k8s.io/podset": "main",
+        "kueue.x-k8s.io/queue-name": "inference-models",
+        "topology.kubernetes.io/region": "eu-north1"
+      },
+      "name": "fsc-mosaic-warm-jit-t03-b984750a47dc-xrw4d",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "batch/v1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "Job",
+          "name": "fsc-mosaic-warm-jit-t03-b984750a47dc",
+          "uid": "6e27a193-3cd2-422b-9f14-905408b80df7"
+        }
+      ],
+      "resourceVersion": "2202170",
+      "uid": "970cec71-c090-4ab2-8016-a0197ad378a7"
+    },
+    "spec": {
+      "automountServiceAccountToken": false,
+      "containers": [
+        {
+          "command": [
+            "/opt/fs2/bin/mosaic-batch",
+            "run-shard",
+            "--request",
+            "/var/run/fs2/request.json",
+            "--input-manifest",
+            "/var/run/fs2/input-manifest.json",
+            "--recipe",
+            "/opt/fs2/mosaic/recipe.json",
+            "--recipe-sha256",
+            "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+            "--shard-index",
+            "0",
+            "--seed",
+            "7300",
+            "--output",
+            "/workspace/faststart/mosaic-warm-jit-t03/shard-000"
+          ],
+          "env": [
+            {
+              "name": "FS2_ARTIFACT_ROOT",
+              "value": "/opt/fs2/artifacts"
+            },
+            {
+              "name": "JAX_COMPILATION_CACHE_DIR",
+              "value": "/workspace/faststart-jit-cache/mosaic"
+            },
+            {
+              "name": "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS",
+              "value": "0"
+            },
+            {
+              "name": "JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES",
+              "value": "0"
+            }
+          ],
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+          "imagePullPolicy": "IfNotPresent",
+          "name": "batch",
+          "resources": {
+            "limits": {
+              "cpu": "16",
+              "memory": "128Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "securityContext": {
+            "allowPrivilegeEscalation": false,
+            "capabilities": {
+              "drop": [
+                "ALL"
+              ]
+            },
+            "readOnlyRootFilesystem": true
+          },
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File",
+          "volumeMounts": [
+            {
+              "mountPath": "/var/run/fs2",
+              "name": "request",
+              "readOnly": true
+            },
+            {
+              "mountPath": "/tmp",
+              "name": "tmp"
+            },
+            {
+              "mountPath": "/opt/fs2/artifacts",
+              "name": "artifacts",
+              "readOnly": true
+            },
+            {
+              "mountPath": "/workspace",
+              "name": "workspace"
+            }
+          ]
+        }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "enableServiceLinks": false,
+      "nodeName": "computeinstance-e00p3acr87k9k4mckj",
+      "nodeSelector": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+        "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
+      },
+      "preemptionPolicy": "PreemptLowerPriority",
+      "priority": 0,
+      "restartPolicy": "Never",
+      "schedulerName": "default-scheduler",
+      "securityContext": {
+        "fsGroup": 10001,
+        "fsGroupChangePolicy": "OnRootMismatch",
+        "runAsGroup": 10001,
+        "runAsNonRoot": true,
+        "runAsUser": 10001,
+        "seccompProfile": {
+          "type": "RuntimeDefault"
+        }
+      },
+      "serviceAccount": "default",
+      "serviceAccountName": "default",
+      "terminationGracePeriodSeconds": 30,
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference"
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/not-ready",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/unreachable",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "nvidia.com/gpu",
+          "operator": "Exists"
+        }
+      ],
+      "volumes": [
+        {
+          "configMap": {
+            "defaultMode": 420,
+            "name": "fsc-mosaic-warm-jit-t03-b984750a47dc-request"
+          },
+          "name": "request"
+        },
+        {
+          "emptyDir": {
+            "sizeLimit": "16Gi"
+          },
+          "name": "tmp"
+        },
+        {
+          "name": "artifacts",
+          "persistentVolumeClaim": {
+            "claimName": "fs2-runtime-qualification-artifacts-r20260902"
+          }
+        },
+        {
+          "name": "workspace",
+          "persistentVolumeClaim": {
+            "claimName": "fs2-runtime-qualification-artifacts-r20260902"
+          }
+        }
+      ]
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T04:53:14Z",
+          "observedGeneration": 1,
+          "status": "False",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T04:51:55Z",
+          "observedGeneration": 1,
+          "reason": "PodCompleted",
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T04:53:13Z",
+          "observedGeneration": 1,
+          "reason": "PodCompleted",
+          "status": "False",
+          "type": "Ready"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T04:53:13Z",
+          "observedGeneration": 1,
+          "reason": "PodCompleted",
+          "status": "False",
+          "type": "ContainersReady"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T04:51:55Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodScheduled"
+        }
+      ],
+      "containerStatuses": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://46322b6a80d61b8cfbcd615d6d919c53abd10e30a488aaf37d3bfca74f316dda",
+          "image": "sha256:9e30b86c9b2cf49e7e2d177f089b0654b58f57c78aa8f2898569c6e8d5255d50",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+          "lastState": {},
+          "name": "batch",
+          "ready": false,
+          "resources": {
+            "limits": {
+              "cpu": "16",
+              "memory": "128Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": false,
+          "state": {
+            "terminated": {
+              "containerID": "containerd://46322b6a80d61b8cfbcd615d6d919c53abd10e30a488aaf37d3bfca74f316dda",
+              "exitCode": 0,
+              "finishedAt": "2026-09-03T04:53:12Z",
+              "reason": "Completed",
+              "startedAt": "2026-09-03T04:51:57Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/var/run/fs2",
+              "name": "request",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/tmp",
+              "name": "tmp"
+            },
+            {
+              "mountPath": "/opt/fs2/artifacts",
+              "name": "artifacts",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/workspace",
+              "name": "workspace"
+            }
+          ]
+        }
+      ],
+      "hostIP": "10.0.0.31",
+      "hostIPs": [
+        {
+          "ip": "10.0.0.31"
+        }
+      ],
+      "observedGeneration": 1,
+      "phase": "Succeeded",
+      "podIP": "10.6.122.33",
+      "podIPs": [
+        {
+          "ip": "10.6.122.33"
+        }
+      ],
+      "qosClass": "Burstable",
+      "startTime": "2026-09-03T04:51:55Z"
+    }
+  },
+  "workload": {
+    "apiVersion": "kueue.x-k8s.io/v1beta2",
+    "kind": "Workload",
+    "metadata": {
+      "creationTimestamp": "2026-09-03T04:51:55Z",
+      "generation": 1,
+      "labels": {
+        "kueue.x-k8s.io/job-uid": "6e27a193-3cd2-422b-9f14-905408b80df7"
+      },
+      "name": "job-fsc-mosaic-warm-jit-t03-b984750a47dc-d1b3c",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "batch/v1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "Job",
+          "name": "fsc-mosaic-warm-jit-t03-b984750a47dc",
+          "uid": "6e27a193-3cd2-422b-9f14-905408b80df7"
+        }
+      ],
+      "resourceVersion": "2202177",
+      "uid": "05ab21bb-83f9-435a-9bf8-a0a29fe9c4c1"
+    },
+    "spec": {
+      "active": true,
+      "podSets": [
+        {
+          "count": 1,
+          "name": "main",
+          "template": {
+            "metadata": {
+              "labels": {
+                "app.kubernetes.io/managed-by": "fs2-faststart-campaign",
+                "app.kubernetes.io/part-of": "fs2-serve",
+                "batch.kubernetes.io/job-name": "fsc-mosaic-warm-jit-t03-b984750a47dc",
+                "fs2.nebius.ai/campaign-variant": "warm-jit",
+                "fs2.nebius.ai/model-id": "mosaic",
+                "fs2.nebius.ai/task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+                "fs2.nebius.ai/trial": "03",
+                "fs2.nebius.ai/trial-id": "mosaic-warm-jit-t03",
+                "kueue.x-k8s.io/queue-name": "inference-models"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "containers": [
+                {
+                  "command": [
+                    "/opt/fs2/bin/mosaic-batch",
+                    "run-shard",
+                    "--request",
+                    "/var/run/fs2/request.json",
+                    "--input-manifest",
+                    "/var/run/fs2/input-manifest.json",
+                    "--recipe",
+                    "/opt/fs2/mosaic/recipe.json",
+                    "--recipe-sha256",
+                    "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+                    "--shard-index",
+                    "0",
+                    "--seed",
+                    "7300",
+                    "--output",
+                    "/workspace/faststart/mosaic-warm-jit-t03/shard-000"
+                  ],
+                  "env": [
+                    {
+                      "name": "FS2_ARTIFACT_ROOT",
+                      "value": "/opt/fs2/artifacts"
+                    },
+                    {
+                      "name": "JAX_COMPILATION_CACHE_DIR",
+                      "value": "/workspace/faststart-jit-cache/mosaic"
+                    },
+                    {
+                      "name": "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS",
+                      "value": "0"
+                    },
+                    {
+                      "name": "JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES",
+                      "value": "0"
+                    }
+                  ],
+                  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+                  "imagePullPolicy": "IfNotPresent",
+                  "name": "batch",
+                  "resources": {
+                    "limits": {
+                      "cpu": "16",
+                      "memory": "128Gi",
+                      "nvidia.com/gpu": "1"
+                    },
+                    "requests": {
+                      "cpu": "8",
+                      "memory": "64Gi",
+                      "nvidia.com/gpu": "1"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    },
+                    "readOnlyRootFilesystem": true
+                  },
+                  "terminationMessagePath": "/dev/termination-log",
+                  "terminationMessagePolicy": "File",
+                  "volumeMounts": [
+                    {
+                      "mountPath": "/var/run/fs2",
+                      "name": "request",
+                      "readOnly": true
+                    },
+                    {
+                      "mountPath": "/tmp",
+                      "name": "tmp"
+                    },
+                    {
+                      "mountPath": "/opt/fs2/artifacts",
+                      "name": "artifacts",
+                      "readOnly": true
+                    },
+                    {
+                      "mountPath": "/workspace",
+                      "name": "workspace"
+                    }
+                  ]
+                }
+              ],
+              "dnsPolicy": "ClusterFirst",
+              "enableServiceLinks": false,
+              "nodeSelector": {
+                "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
+              },
+              "restartPolicy": "Never",
+              "schedulerName": "default-scheduler",
+              "securityContext": {
+                "fsGroup": 10001,
+                "fsGroupChangePolicy": "OnRootMismatch",
+                "runAsGroup": 10001,
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "terminationGracePeriodSeconds": 30,
+              "tolerations": [
+                {
+                  "effect": "NoSchedule",
+                  "key": "dedicated",
+                  "operator": "Equal",
+                  "value": "fs2-inference"
+                }
+              ],
+              "volumes": [
+                {
+                  "configMap": {
+                    "defaultMode": 420,
+                    "name": "fsc-mosaic-warm-jit-t03-b984750a47dc-request"
+                  },
+                  "name": "request"
+                },
+                {
+                  "emptyDir": {
+                    "sizeLimit": "16Gi"
+                  },
+                  "name": "tmp"
+                },
+                {
+                  "name": "artifacts",
+                  "persistentVolumeClaim": {
+                    "claimName": "fs2-runtime-qualification-artifacts-r20260902"
+                  }
+                },
+                {
+                  "name": "workspace",
+                  "persistentVolumeClaim": {
+                    "claimName": "fs2-runtime-qualification-artifacts-r20260902"
+                  }
+                }
+              ]
+            }
+          },
+          "topologyRequest": {
+            "podIndexLabel": "batch.kubernetes.io/job-completion-index"
+          }
+        }
+      ],
+      "priority": 0,
+      "queueName": "inference-models"
+    },
+    "status": {
+      "admission": {
+        "clusterQueue": "inference-accelerators",
+        "podSetAssignments": [
+          {
+            "count": 1,
+            "flavors": {
+              "nvidia.com/gpu": "inference-h100-reserved-8x"
+            },
+            "name": "main",
+            "resourceUsage": {
+              "nvidia.com/gpu": "1"
+            }
+          }
+        ]
+      },
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-03T04:51:55Z",
+          "message": "Quota reserved in ClusterQueue inference-accelerators",
+          "observedGeneration": 1,
+          "reason": "QuotaReserved",
+          "status": "True",
+          "type": "QuotaReserved"
+        },
+        {
+          "lastTransitionTime": "2026-09-03T04:51:55Z",
+          "message": "The workload is admitted",
+          "observedGeneration": 1,
+          "reason": "Admitted",
+          "status": "True",
+          "type": "Admitted"
+        },
+        {
+          "lastTransitionTime": "2026-09-03T04:53:15Z",
+          "message": "Reached expected number of succeeded pods",
+          "observedGeneration": 1,
+          "reason": "Succeeded",
+          "status": "True",
+          "type": "Finished"
+        }
+      ]
+    }
+  }
+}

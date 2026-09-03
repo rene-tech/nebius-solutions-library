@@ -70,8 +70,16 @@ def query_range(base: str, expression: str, start: str, end: str, step: int = 5)
 
 
 def node_hostname(namespace: str, pod_name: str) -> str | None:
-    pod = faststart.kube_json("get", "pod", pod_name, "-n", namespace)
-    return pod["spec"].get("nodeName")
+    """Resolve the node a trial's Pod ran on, or None once it has been cleaned up.
+
+    Telemetry can only be gathered while the Pod object still exists. A trial
+    whose Pod is gone keeps the telemetry captured earlier rather than losing it
+    or having it silently recomputed against the wrong window.
+    """
+    raw = faststart.kubectl(
+        "get", "pod", pod_name, "-n", namespace, "-o", "jsonpath={.spec.nodeName}", check=False
+    ).strip()
+    return raw or None
 
 
 def enrich(path: Path, base: str, windows: dict[str, list[str]]) -> dict[str, Any] | None:
@@ -82,7 +90,7 @@ def enrich(path: Path, base: str, windows: dict[str, list[str]]) -> dict[str, An
         return None
     hostname = node_hostname(receipt["cluster"]["namespace"], receipt["pod"])
     if hostname is None:
-        return None
+        return receipt.get("gpu_telemetry")
 
     devices: dict[str, dict[str, Any]] = {}
     for label, metric in QUERIES.items():
@@ -153,9 +161,13 @@ def main() -> int:
 
     with prometheus(arguments.port) as base:
         for path in paths:
+            before = json.loads(path.read_text(encoding="utf-8")).get("gpu_telemetry")
             telemetry = enrich(path, base, windows)
             if telemetry is None:
                 print(f"{path.stem}: no window, skipped")
+                continue
+            if telemetry is before:
+                print(f"{path.stem}: Pod already cleaned up, retained earlier telemetry")
                 continue
             busy = telemetry["devices_with_nonzero_utilization"]
             peak = max(

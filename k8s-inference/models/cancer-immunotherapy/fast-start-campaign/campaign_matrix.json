@@ -201,14 +201,40 @@
           "jit_cache": "per-pod-ephemeral"
         },
         "warm-jit": {
-          "label": "prepared-node, persistent XLA compilation cache",
-          "description": "Identical to baseline except the JAX persistent compilation cache is redirected to the regional shared filesystem so previously compiled executables are reused across Pods. This isolates the XLA compilation contribution to model start.",
+          "label": "prepared-node, ownership remediated, persistent XLA compilation cache",
+          "description": "Carries the fsGroupChangePolicy OnRootMismatch remediation proven by the fast-volume cohort, so the recursive volume-ownership pass no longer masks anything, and additionally redirects the JAX persistent compilation cache to the regional shared filesystem so compiled XLA executables survive the Pod. This isolates the XLA compilation contribution to model start, which the fast-volume cohort left as Mosaic's remaining floor.",
           "env": {
             "JAX_COMPILATION_CACHE_DIR": "/workspace/faststart-jit-cache/mosaic",
-            "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS": "0.5",
+            "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS": "0",
             "JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES": "0"
           },
-          "jit_cache": "regional-shared-filesystem"
+          "jit_cache": "regional-shared-filesystem",
+          "pod_security_patch": {
+            "fsGroupChangePolicy": "OnRootMismatch"
+          },
+          "optimization": "volume-ownership-fast-path + persistent-xla-compilation-cache",
+          "cache_path": "/workspace/faststart-jit-cache/mosaic",
+          "sequencing": "Trial 1 runs alone and populates the shared compilation cache, so it pays the one-time compilation. Trials 2 to 4 run concurrently against the populated cache and form the steady-state cohort. Running all trials at once would make every one of them miss the cache and race to write it, which would measure nothing.",
+          "one_time_vs_steady_evidence": "Compilation reuse is read from the runtime's own first-step timing rather than declared: the baseline cohort's first optimizer step took 87.61 s including JAX compilation against a steady 0.25 s per step, so a warm trial is one whose first step collapses toward the steady step time. The cache directory's entry count and byte size are probed on the claim before and after the cohort as corroboration.",
+          "threshold_finding": "The first attempt used JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0.5 and cached nothing at all: the cache directory was never created and the first optimizer step still took 85.88 s. Mosaic's startup is not one long compilation but many short ones, so every module fell under the 0.5 s floor and JAX skipped the write silently. The floor is now 0. This is the failure mode a fast-start mechanism can have while looking configured, which is why the campaign probes the cache directory instead of trusting the setting.",
+          "mechanism_preflight": {
+            "claim": "JAX persistent compilation caching is available in this image on the CUDA backend",
+            "evidence": "probe Pod fsc-jax-gpu-cache-probe, same image digest, one H100, wrote 5 cache entries including xla_gpu_per_fusion_autotune_cache_dir after a 1.50 s compile with the floor at 0",
+            "cpu_control": "probe Pod fsc-jax-cache-probe on the CPU backend wrote 2 entries, confirming the env binding itself"
+          },
+          "jit_cache_evidence": {
+            "path": "faststart-jit-cache/mosaic on claim fs2-runtime-qualification-artifacts-r20260902",
+            "before_first_trial": {
+              "entries": 0,
+              "bytes": 0
+            },
+            "after_first_trial": {
+              "entries": 2103,
+              "bytes": 10580313
+            },
+            "probe": "faststart.py probe-cache, a short-lived read-only Pod that counts files and bytes on the claim",
+            "meaning": "trial 1 ran against an empty cache and populated it; trials 2 to 4 ran against those 2103 entries"
+          }
         },
         "fast-volume": {
           "label": "prepared-node, no recursive volume ownership pass",
@@ -547,15 +573,53 @@
       ],
       "semantic_gate_source": "container-log; AlphaFold 3 output lives in an ephemeral scratch volume that is deliberately not written back to the tenant-private licensed claim",
       "successor_lane": {
-        "state": "pending-upstream",
-        "digest": "sha256:2c357d97309bf5691ac67a7465672580d16af4431577732361dc2ad9c5dbd72c",
-        "tag": "3.0.4-85c4d205-r3",
+        "state": "measured-by-owning-task",
+        "digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+        "tag": "3.0.4-85c4d205-r6",
         "repository": "withheld; the owning runtime task treats the registry account path as a deploy-time binding and the digest as the authoritative identity",
-        "blocked_reason": "The owning task fs2-af3-runtime-clean-successor-r20260903 reported on 2026-09-03 that a reviewer blocked this digest and that it is being superseded, and asked that no other task schedule a Job against it. It is also running the semantic trial itself, so a trial here would duplicate live GPU work.",
-        "campaign_action": "no Job was submitted against this digest",
-        "planned": "one production-equivalent semantic inference against the replacement digest with the same official subpath parameter mount, then three trials once it passes, reported with a receipt comparable to the academic lane below",
-        "comparison_baseline": "the three academic-lane trials in this campaign, whose p95 model start is 60.805 s",
-        "expected_difference": "the successor runtime verifies parameter identity before load, adding a one-off read of the 1.02 GB parameter object that the academic lane did not perform"
+        "campaign_action": "no Job was submitted against any successor digest from this campaign",
+        "why_not_measured_here": "The owning task fs2-af3-runtime-clean-successor-r20260903 ran the production-equivalent H100 semantic trial itself and asked that no other task schedule against its digests. Three candidates were superseded during that exchange, so a trial from here would have measured a retired image.",
+        "superseded_do_not_run": [
+          {
+            "digest": "sha256:2c357d97309bf5691ac67a7465672580d16af4431577732361dc2ad9c5dbd72c",
+            "reason": "blocked by reviewer"
+          },
+          {
+            "digest": "sha256:d8cf266e972e4eea9ef63723be834550b669431ef618a8975354100146fa0440",
+            "reason": "SLSA attestation recorded a vcs revision that had been amended away; a provenance defect, not behavioural"
+          },
+          {
+            "digest": "sha256:561ce3b7",
+            "reason": "reached a GPU and passed, but carried a flag denylist bypassable via Abseil --flagfile"
+          },
+          {
+            "digest": "sha256:74962d653e8deca287a753d61e3e5162d602de2031945dfaf3b1e8e6e38007ae",
+            "reason": "earlier iteration with an invented receipt shape"
+          }
+        ],
+        "owning_task_evidence": {
+          "path": "models/cancer-immunotherapy/images/alphafold3/evidence/build-and-offline-verification-20260903.json",
+          "branch": "agent/fs2-af3-runtime-clean-successor-r20260903",
+          "source_commit": "12d40c8f",
+          "evidence_commit": "2892f703",
+          "reported": {
+            "params_load_seconds": 7.11,
+            "parameter_arrays": 405,
+            "parameter_elements": 368384602,
+            "scopes": 329,
+            "inference_direct_seconds": 58.44,
+            "inference_from_relocated_handoff_seconds": [
+              33.09,
+              33.63
+            ],
+            "container_total_seconds": 132.37,
+            "cif_files": 6,
+            "atom_records": 128
+          }
+        },
+        "comparison_to_this_campaign": "This campaign's academic lane measured p95 model start 60.805 s with AlphaFold 3 self-reported inference of 43.69 to 45.4 s. The successor's direct inference of 58.44 s is not directly comparable: it verifies the full SHA-256 of the 1.02 GB parameter object before loading, which the academic lane did not, and it used triton flash attention where this campaign used xla.",
+        "cross_checked": "The successor's 405 parameter arrays, 368,384,602 elements and 329 scopes match this campaign's academic lane exactly, so both lanes load the same official parameter object.",
+        "speedup_attribution": "The owning task's faster repeat inferences within one Pod are a warm JAX compilation cache, the same mechanism this campaign measures for Mosaic. Neither task claims a snapshot level from it."
       },
       "measured_lane_note": "The lane measured in this campaign is the stock upstream v3.0.4 academic image that carries the retained H100 semantic evidence, not the clean runtime wrapper."
     }

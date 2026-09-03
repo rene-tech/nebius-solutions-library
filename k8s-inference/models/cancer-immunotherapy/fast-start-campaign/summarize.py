@@ -22,6 +22,10 @@ HERE = Path(__file__).resolve().parent
 RECEIPTS = HERE / "receipts"
 SUMMARY = HERE / "CAMPAIGN_SUMMARY.json"
 
+# A first step this many times slower than the cohort's fastest means the trial
+# compiled rather than reused a cached executable.
+COLD_FIRST_STEP_RATIO = 4
+
 PHASES = (
     "capacity_wait_seconds",
     "sandbox_and_volume_setup_seconds",
@@ -29,6 +33,7 @@ PHASES = (
     "compute_to_first_result_seconds",
     "time_to_first_semantic_result_seconds",
     "model_start_seconds",
+    "schedule_to_semantic_complete_seconds",
     "teardown_seconds",
     "end_to_end_seconds",
 )
@@ -166,6 +171,49 @@ def summarize() -> dict[str, Any]:
             }
             if passed:
                 entry["qualified_level_all_trials"] = level_for(phases["model_start_seconds"]["p95"], thresholds)
+
+            # Split one-time compilation from steady state using the runtime's
+            # own first-step timing. A trial that had to compile spends orders of
+            # magnitude longer on its first step than one that reused a cached
+            # executable, so the split is read from the measurement rather than
+            # from which trial happened to run first.
+            firsts = {
+                t["trial_id"]: t["measured"]["throughput"]["runtime_reported_step_seconds_first"]
+                for t in passed
+                if (t["measured"].get("throughput") or {}).get("runtime_reported_step_seconds_first") is not None
+            }
+            if len(firsts) == len(passed) and len(firsts) > 1 and max(firsts.values()) >= COLD_FIRST_STEP_RATIO * min(firsts.values()):
+                floor = min(firsts.values())
+                cold = sorted(k for k, v in firsts.items() if v >= COLD_FIRST_STEP_RATIO * floor)
+                warm = sorted(k for k in firsts if k not in cold)
+                by_id = {t["trial_id"]: t for t in passed}
+                entry["compilation"] = {
+                    "rule": (
+                        f"a trial whose first optimizer step is at least {COLD_FIRST_STEP_RATIO}x the cohort's "
+                        "fastest first step had to compile; the rest reused cached executables"
+                    ),
+                    "first_step_seconds": {k: round(v, 2) for k, v in sorted(firsts.items())},
+                    "one_time_compilation": {
+                        "trials": cold,
+                        "model_start_seconds": statistics_for(
+                            [by_id[k]["measured"]["phases_seconds"]["model_start_seconds"] for k in cold]
+                        ),
+                        "qualified_level": level_for(
+                            max(by_id[k]["measured"]["phases_seconds"]["model_start_seconds"] for k in cold),
+                            thresholds,
+                        ),
+                    },
+                    "steady_state": {
+                        "trials": warm,
+                        "model_start_seconds": statistics_for(
+                            [by_id[k]["measured"]["phases_seconds"]["model_start_seconds"] for k in warm]
+                        ),
+                        "qualified_level": level_for(
+                            max(by_id[k]["measured"]["phases_seconds"]["model_start_seconds"] for k in warm),
+                            thresholds,
+                        ),
+                    },
+                }
             if steady and len(steady) != len(passed):
                 steady_stats = statistics_for([t["measured"]["phases_seconds"]["model_start_seconds"] for t in steady])
                 entry["steady_state"] = {

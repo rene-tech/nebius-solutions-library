@@ -330,6 +330,7 @@
       "queue_admission_seconds": null,
       "runtime_init_and_artifact_load_seconds": 13.272,
       "sandbox_and_volume_setup_seconds": 2.0,
+      "schedule_to_semantic_complete_seconds": 67.0,
       "teardown_seconds": 6.765,
       "time_to_first_semantic_result_seconds": 58.235
     },
