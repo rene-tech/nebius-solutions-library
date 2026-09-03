@@ -1,0 +1,34 @@
+{
+  "$schema": "../model-declaration.schema.json",
+  "kind": "scientific-protein",
+  "size_class": "single-gpu",
+  "model": {
+    "id": "boltzgen",
+    "display_name": "BoltzGen",
+    "source": {
+      "kind": "git",
+      "repository": "boltzgen/boltzgen",
+      "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+      "review": {"url": "https://github.com/boltzgen/boltzgen/tree/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0"},
+      "license": {"id": "MIT", "commercial_use": "allowed"}
+    }
+  },
+  "runtime": {
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e"
+  },
+  "batch": {
+    "parameter_schema": "fs2-serve.nebius.ai/boltzgen-parameters/v1",
+    "operations": ["design-binders"],
+    "gpu_stages": ["configure", "design", "inverse-folding", "folding", "design-folding", "affinity"],
+    "semantic_validation": {"validator_id": "boltzgen-v0-3-2"},
+    "mcp": {
+      "tool_name": "submit_boltzgen",
+      "description": "Submit a BoltzGen binder design or structure folding run."
+    }
+  },
+  "policy": {
+    "limitations": [
+      "Qualified for the configure plus design stage only, on real H100 evidence against this exact image digest."
+    ]
+  }
+}
