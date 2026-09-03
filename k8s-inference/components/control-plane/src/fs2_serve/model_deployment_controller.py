@@ -42,6 +42,12 @@ from .fast_start import (
     FastStartQualificationState,
     FastStartStatus,
 )
+from .fast_start_identity import mechanism_config_digest
+from .fast_start_mechanisms import (
+    DECLARED_MECHANISMS,
+    FastStartCacheMechanismStatus,
+    project_cache_mechanisms,
+)
 from .fast_start_policy import (
     AutomaticFastStartPolicy,
     AutomaticFastStartState,
@@ -73,6 +79,7 @@ from .model_deployment import (
     ValidationDisposition,
     bounded_label_value,
     canonical_digest,
+    effective_hot_floor,
     operation_demand_promql,
     plan_reconciliation,
     validate_model_deployment,
@@ -1646,6 +1653,34 @@ def _fast_start_status(
             # inferring them from readiness.
             telemetry_state="Unavailable",
         )
+    cache_mechanisms: dict[str, FastStartCacheMechanismStatus] = {}
+    if envelope is not None:
+        placement_pools = {
+            pool_ref: envelope.pools[pool_ref].node_selector
+            for pool_ref in sorted(spec.placement.pool_refs)
+            if pool_ref in envelope.pools
+        }
+        storage_contract_digests = {
+            item.pool_ref: item.storage_contract_digest
+            for item in (qualification.fast_start_runtime_contracts if qualification is not None else [])
+            if item.runtime.runtime_image == spec.runtime.image
+            and item.runtime.template_digest == spec.runtime.template_ref.digest
+        }
+        declarations = {}
+        if qualification is not None:
+            for candidate in DECLARED_MECHANISMS:
+                declaration = qualification.mechanism_declaration(candidate)
+                if declaration is not None:
+                    declarations[candidate] = declaration
+        cache_mechanisms = project_cache_mechanisms(
+            selected=spec.cache.mechanism,
+            declarations=declarations,
+            pools=placement_pools,
+            storage_contract_digests=storage_contract_digests,
+            converged=converged,
+            configured_hot_replicas=effective_hot_floor(spec.availability, at=now),
+            mechanism_config_digest=mechanism_config_digest,
+        )
     return FastStartStatus(
         **assessment.model_dump(),
         effective_level=effective,
@@ -1653,6 +1688,7 @@ def _fast_start_status(
         hot=None if ready_replicas is None else ready_replicas > 0,
         automatic=automatic,
         mechanisms=mechanisms,
+        cache_mechanisms=cache_mechanisms,
     )
 
 

@@ -9,7 +9,13 @@ from typing import Any
 import httpx
 import pytest
 from test_fast_start import evidence, with_evidence, with_fast_start
-from test_model_deployment import envelope, model_spec, renderer, reserved_and_preemptible_envelope
+from test_model_deployment import (
+    envelope,
+    model_spec,
+    render_regional_cache,
+    renderer,
+    reserved_and_preemptible_envelope,
+)
 
 from fs2_serve.fast_start import FastStartLevel
 from fs2_serve.fast_start_policy import FastStartHistoryWindow
@@ -18,7 +24,9 @@ from fs2_serve.model_deployment import (
     FINALIZER,
     DesiredState,
     DrainObservation,
+    InfrastructureEnvelope,
     LifecycleSpec,
+    ModelDeploymentSpec,
     ObservedResource,
     RenderContext,
     RenderedResource,
@@ -1730,3 +1738,88 @@ async def test_http_delete_carries_exact_uid_and_resource_version_preconditions(
     assert deleted[0]["propagationPolicy"] == "Foreground"
     assert deleted[0]["preconditions"] == {"uid": "scaled-object-uid", "resourceVersion": "20"}
     await http.aclose()
+
+
+def _mechanism_envelope() -> tuple[ModelDeploymentSpec, InfrastructureEnvelope]:
+    """A model that declares and pins regional-cache, with no evidence at all."""
+
+    base = envelope()
+    pools = {
+        key: value.model_copy(
+            update={
+                "node_selector": {
+                    **value.node_selector,
+                    "local-nvme.fs2.nebius/eligible": "false",
+                    "snapshot.fs2.nebius/eligible": "false",
+                }
+            }
+        )
+        for key, value in base.pools.items()
+    }
+    declaration = render_regional_cache()
+    qualification = base.qualifications["qwen.3-8b"].model_copy(update={"regional_cache": declaration})
+    installed = base.model_copy(update={"pools": pools, "qualifications": {"qwen.3-8b": qualification}})
+    wire = model_spec().model_dump(mode="json", by_alias=True)
+    wire["cache"] = {**wire["cache"], "mechanism": "regional-cache"}
+    return ModelDeploymentSpec.model_validate(wire), installed
+
+
+def test_a_configured_mechanism_is_reported_without_claiming_a_level() -> None:
+    """The honest report: mechanism Configured, effective level still absent."""
+
+    spec, installed = _mechanism_envelope()
+    context = RenderContext(
+        name="qwen-live",
+        namespace="fs2-models",
+        uid="cr-uid-1",
+        generation=1,
+        pool=installed.pools["pool-b"],
+        eligible_pools=[installed.pools[pool_ref] for pool_ref in spec.placement.pool_refs],
+        prometheus_server_address="http://prometheus:9090",
+        regional_cache=installed.qualifications["qwen.3-8b"].regional_cache,
+    )
+    plan = plan_reconciliation(
+        generation=1,
+        deleting=False,
+        spec=spec,
+        envelope=installed,
+        renderer=renderer(),
+        render_context=context,
+        observed=[],
+        discovery_complete=True,
+    )
+    status = build_status(
+        spec=spec,
+        owner_uid="cr-uid-1",
+        generation=1,
+        plan=plan,
+        discovery=Discovery(resources=[], complete=True),
+        previous_status={},
+        drain=None,
+        envelope=installed,
+    )
+    fast_start = status["fastStart"]
+    mechanisms = fast_start["cacheMechanisms"]
+
+    # The selected mechanism is visible and attributed to its reviewed digest.
+    regional = mechanisms["regional-cache"]
+    assert regional["selected"] is True
+    assert regional["state"] in ("Configured", "Pending")
+    assert regional["configDigest"] == installed.qualifications["qwen.3-8b"].regional_cache.config_digest
+    assert regional["retainedCompileCacheAbi"] == "driver-580-sm90"
+
+    # And it buys nothing: there is no evidence, so no level is claimed.
+    assert fast_start["qualifiedLevel"] == "Off"
+    assert fast_start.get("effectiveLevel") in (None, "Off")
+
+    # The paths this cluster has no hardware for are reported, not hidden.
+    assert mechanisms["node-local-restore"]["state"] == "Unavailable"
+    assert mechanisms["node-local-restore"]["reason"] == "NoNodeLocalNvme"
+    assert mechanisms["shared-restore"]["reason"] == "NoQualifiedSnapshotCapability"
+    for pool in mechanisms["node-local-restore"]["pools"].values():
+        assert pool["evidenceSelector"] == {"local-nvme.fs2.nebius/eligible": "false"}
+
+    # An undeclared mechanism is neither selected nor pretending to be ready.
+    assert mechanisms["gpu-resident"]["state"] == "Undeclared"
+    assert mechanisms["gpu-resident"]["selected"] is False
+    assert mechanisms["gpu-resident"].get("configDigest") is None
