@@ -101,7 +101,7 @@
       "bound_workloads": [
         {
           "model_id": "alphafold3",
-          "stage": "raw-input",
+          "stage": "data-pipeline",
           "capacity": {
             "cpu": "16",
             "memory": "64Gi"

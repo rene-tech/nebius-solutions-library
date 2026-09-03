@@ -963,7 +963,7 @@ class GeneralCpuSourceTests(unittest.TestCase):
         reference_bound = {
             (entry["model_id"], entry["stage"]) for entry in reference["bound_workloads"]
         }
-        self.assertIn(("alphafold3", "raw-input"), reference_bound)
+        self.assertIn(("alphafold3", "data-pipeline"), reference_bound)
         # Neither class may claim the other's work.
         self.assertNotIn(("alphafold3", "raw-input"), bound)
         self.assertNotIn(("bindcraft", "aggregation"), reference_bound)

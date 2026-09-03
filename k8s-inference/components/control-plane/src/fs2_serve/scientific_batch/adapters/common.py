@@ -55,6 +55,12 @@ _RECIPE_SHARED_PATHS = (
     "catalog/runtime/contracts/scientific-artifact-localization.json",
 )
 _RECIPE_MODEL_PATHS = {
+    "alphafold3": (
+        "components/control-plane/src/fs2_serve/scientific_batch/adapters/alphafold3.py",
+        "catalog/runtime/schema/alphafold3-parameters.schema.json",
+        "models/structure/batch-adapters/alphafold3/adapter.py",
+        "models/structure/batch-adapters/alphafold3/contract.json",
+    ),
     "boltzgen": (
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/boltzgen.py",
         "catalog/runtime/schema/boltzgen-parameters.schema.json",

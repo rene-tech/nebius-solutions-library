@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Keep scientific profiles and their execution map on one digest chain.
 
-``runtime_recipe_sha256`` hashes each primary adapter together with every shared
+``runtime_recipe_sha256`` hashes each registered adapter together with every shared
 execution contract, including the localization contract and its schema. Editing
 any of those changes the profile execution identity, which changes the matching
 execution-map identity and finally the exact map digest rendered by Helm. This

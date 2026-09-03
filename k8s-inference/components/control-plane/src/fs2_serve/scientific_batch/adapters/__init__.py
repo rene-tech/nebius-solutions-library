@@ -224,6 +224,20 @@ for _module_name in (
 ):
     _register_legacy_primary(_module_name)
 
+# AlphaFold 3 uses the production compiler signature and the companion's
+# file-backed collector protocol. Import it only after the registry types are
+# defined so the model module can reuse those canonical controller records.
+from . import alphafold3  # noqa: E402
+
+register_adapter(
+    model_id=alphafold3.MODEL_ID,
+    compiler=alphafold3.compile_run,
+    collectors={
+        alphafold3.DATA_COLLECTOR_ID: alphafold3.collect_data,
+        alphafold3.RESULT_COLLECTOR_ID: alphafold3.collect_result,
+    },
+)
+
 
 __all__ = [
     "AdapterCompiler",
@@ -235,6 +249,7 @@ __all__ = [
     "LocalizationReceipt",
     "ScientificAdapterError",
     "StageCollector",
+    "alphafold3",
     "collect_stage_output",
     "compile_adapter_run",
     "esmfold2",

@@ -1,0 +1,43 @@
+"""Compatibility import for the controller-owned AlphaFold 3 adapter."""
+
+from fs2_serve.scientific_batch.adapters.alphafold3 import (
+    DATA_COLLECTOR_ID,
+    DATA_STAGE_ID,
+    DATA_VALIDATOR_ID,
+    INFERENCE_STAGE_ID,
+    MODEL_ID,
+    PARAMETER_SCHEMA,
+    RUNTIME_IMAGE_DIGEST,
+    RUNTIME_MOUNTS,
+    RESULT_COLLECTOR_ID,
+    SOURCE_REPOSITORY,
+    SOURCE_REVISION,
+    VALIDATOR_ID,
+    VARIANT_ID,
+    Parameters,
+    collect_data,
+    collect_result,
+    compile_run,
+    mount_contract,
+)
+
+__all__ = [
+    "DATA_COLLECTOR_ID",
+    "DATA_STAGE_ID",
+    "DATA_VALIDATOR_ID",
+    "INFERENCE_STAGE_ID",
+    "MODEL_ID",
+    "PARAMETER_SCHEMA",
+    "Parameters",
+    "RUNTIME_IMAGE_DIGEST",
+    "RUNTIME_MOUNTS",
+    "RESULT_COLLECTOR_ID",
+    "SOURCE_REPOSITORY",
+    "SOURCE_REVISION",
+    "VALIDATOR_ID",
+    "VARIANT_ID",
+    "collect_data",
+    "collect_result",
+    "compile_run",
+    "mount_contract",
+]

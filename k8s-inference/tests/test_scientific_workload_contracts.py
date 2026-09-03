@@ -245,7 +245,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assert_valid("scientific-workload-profiles.schema.json", profiles)
         full_validator = self.validator("scientific-workload-profile.schema.json")
         self.assertEqual(
-            ["boltzgen", "proteina-complexa"],
+            ["boltzgen", "proteina-complexa", "alphafold3"],
             [profile["model_id"] for profile in profiles["profiles"]],
         )
         for profile in profiles["profiles"]:
@@ -264,6 +264,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                     {
                         "boltzgen": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
                         "proteina-complexa": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+                        "alphafold3": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
                     }[profile["model_id"]],
                     profile["execution_identity"]["runtime_image_digest"],
                 )
@@ -324,7 +325,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         del missing_receipt["qualification"]["public_completion_receipt_sha256"]
         self.assertTrue(list(validator.iter_errors(missing_receipt)))
 
-    def test_primary_parameter_schemas_validate_only_canonical_request_parameters(
+    def test_adapter_parameter_schemas_validate_only_canonical_request_parameters(
         self,
     ) -> None:
         cases = (
@@ -337,6 +338,11 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 "boltzgen-parameters.schema.json",
                 ROOT
                 / "models/structure/batch-adapters/boltzgen/fixtures/positive-design.json",
+            ),
+            (
+                "alphafold3-parameters.schema.json",
+                ROOT
+                / "models/structure/batch-adapters/alphafold3/fixtures/positive-raw.json",
             ),
         )
         request_validator = self.validator("scientific-run-request.schema.json")

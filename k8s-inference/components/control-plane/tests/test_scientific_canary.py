@@ -25,7 +25,7 @@ def test_internal_cpu_canary_is_deterministic_and_never_a_discoverable_profile()
     assert first.canary_id == CANARY_ID
     assert first.input_sha256 == "1e20635aeb8036a584a2b6f69da8c707b12f1f44ed452e78a472c3e0f064928e"
     assert first.output_sha256 == "b18338dda9fda75dbca256a7982778de61d6f0a1317ae1b0d0c2adb98ca68457"
-    assert first.profile_count == 2
+    assert first.profile_count == 3
     # BoltzGen is dispatchable, so exactly one profile is runnable. The canary itself is
     # still never one of them, which the discoverability assertions below prove.
     assert first.runnable_profile_count == 1
