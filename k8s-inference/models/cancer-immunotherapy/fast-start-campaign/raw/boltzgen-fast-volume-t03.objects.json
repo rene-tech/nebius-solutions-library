@@ -1,0 +1,881 @@
+{
+  "events": {
+    "apiVersion": "v1",
+    "items": [
+      {
+        "apiVersion": "v1",
+        "count": 1,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-03T03:40:15Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1-68fj2",
+          "namespace": "fs2-models",
+          "resourceVersion": "2156581",
+          "uid": "f5874438-79c5-46bc-aed0-29324ee18a85"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-03T03:40:15Z",
+        "message": "Successfully assigned fs2-models/fsc-boltzgen-fast-volume-t03-270e1ff195e1-68fj2 to computeinstance-e00p3acr87k9k4mckj",
+        "metadata": {
+          "creationTimestamp": "2026-09-03T03:40:15Z",
+          "name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1-68fj2.18d1b285e506e677",
+          "namespace": "fs2-models",
+          "resourceVersion": "2156585",
+          "uid": "f882ed02-c4f3-44c9-b9bd-4dfa55e5fe85"
+        },
+        "reason": "Scheduled",
+        "reportingComponent": "default-scheduler",
+        "reportingInstance": "",
+        "source": {
+          "component": "default-scheduler"
+        },
+        "type": "Normal"
+      },
+      {
+        "apiVersion": "v1",
+        "count": 1,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-03T03:40:16Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "fieldPath": "spec.containers{batch}",
+          "kind": "Pod",
+          "name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1-68fj2",
+          "namespace": "fs2-models",
+          "resourceVersion": "2156582",
+          "uid": "f5874438-79c5-46bc-aed0-29324ee18a85"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-03T03:40:16Z",
+        "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e\" already present on machine and can be accessed by the pod",
+        "metadata": {
+          "creationTimestamp": "2026-09-03T03:40:16Z",
+          "name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1-68fj2.18d1b2862e93b886",
+          "namespace": "fs2-models",
+          "resourceVersion": "2156607",
+          "uid": "733ab317-3c4c-4b0f-8c01-a5e50b4fdcbe"
+        },
+        "reason": "Pulled",
+        "reportingComponent": "kubelet",
+        "reportingInstance": "computeinstance-e00p3acr87k9k4mckj",
+        "source": {
+          "component": "kubelet",
+          "host": "computeinstance-e00p3acr87k9k4mckj"
+        },
+        "type": "Normal"
+      },
+      {
+        "apiVersion": "v1",
+        "count": 1,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-03T03:40:16Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "fieldPath": "spec.containers{batch}",
+          "kind": "Pod",
+          "name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1-68fj2",
+          "namespace": "fs2-models",
+          "resourceVersion": "2156582",
+          "uid": "f5874438-79c5-46bc-aed0-29324ee18a85"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-03T03:40:16Z",
+        "message": "Container created",
+        "metadata": {
+          "creationTimestamp": "2026-09-03T03:40:16Z",
+          "name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1-68fj2.18d1b2862fa3e81d",
+          "namespace": "fs2-models",
+          "resourceVersion": "2156608",
+          "uid": "9ce61d10-ceed-4ba9-8b66-69d3259a2f70"
+        },
+        "reason": "Created",
+        "reportingComponent": "kubelet",
+        "reportingInstance": "computeinstance-e00p3acr87k9k4mckj",
+        "source": {
+          "component": "kubelet",
+          "host": "computeinstance-e00p3acr87k9k4mckj"
+        },
+        "type": "Normal"
+      },
+      {
+        "apiVersion": "v1",
+        "count": 1,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-03T03:40:17Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "fieldPath": "spec.containers{batch}",
+          "kind": "Pod",
+          "name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1-68fj2",
+          "namespace": "fs2-models",
+          "resourceVersion": "2156582",
+          "uid": "f5874438-79c5-46bc-aed0-29324ee18a85"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-03T03:40:17Z",
+        "message": "Container started",
+        "metadata": {
+          "creationTimestamp": "2026-09-03T03:40:17Z",
+          "name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1-68fj2.18d1b28669fa2ba7",
+          "namespace": "fs2-models",
+          "resourceVersion": "2156618",
+          "uid": "4b374e5d-4720-4f73-b38f-166fcba3f16c"
+        },
+        "reason": "Started",
+        "reportingComponent": "kubelet",
+        "reportingInstance": "computeinstance-e00p3acr87k9k4mckj",
+        "source": {
+          "component": "kubelet",
+          "host": "computeinstance-e00p3acr87k9k4mckj"
+        },
+        "type": "Normal"
+      }
+    ],
+    "kind": "List",
+    "metadata": {
+      "resourceVersion": ""
+    }
+  },
+  "job": {
+    "apiVersion": "batch/v1",
+    "kind": "Job",
+    "metadata": {
+      "annotations": {
+        "fs2.nebius.ai/campaign-id": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+        "fs2.nebius.ai/image-digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "fs2.nebius.ai/variant": "fast-volume",
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{\"fs2.nebius.ai/campaign-id\":\"fs2-qualified-model-fast-start-live-campaign-r20260903\",\"fs2.nebius.ai/image-digest\":\"sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e\",\"fs2.nebius.ai/variant\":\"fast-volume\"},\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-faststart-campaign\",\"app.kubernetes.io/part-of\":\"fs2-serve\",\"fs2.nebius.ai/campaign-variant\":\"fast-volume\",\"fs2.nebius.ai/local-queue\":\"inference-models\",\"fs2.nebius.ai/model-id\":\"boltzgen\",\"fs2.nebius.ai/task\":\"fs2-qualified-model-fast-start-live-campaign-r20260903\",\"fs2.nebius.ai/trial\":\"03\",\"fs2.nebius.ai/trial-id\":\"boltzgen-fast-volume-t03\",\"kueue.x-k8s.io/queue-name\":\"inference-models\"},\"name\":\"fsc-boltzgen-fast-volume-t03-270e1ff195e1\",\"namespace\":\"fs2-models\"},\"spec\":{\"backoffLimit\":0,\"completions\":1,\"parallelism\":1,\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-faststart-campaign\",\"app.kubernetes.io/part-of\":\"fs2-serve\",\"fs2.nebius.ai/campaign-variant\":\"fast-volume\",\"fs2.nebius.ai/model-id\":\"boltzgen\",\"fs2.nebius.ai/task\":\"fs2-qualified-model-fast-start-live-campaign-r20260903\",\"fs2.nebius.ai/trial\":\"03\",\"fs2.nebius.ai/trial-id\":\"boltzgen-fast-volume-t03\",\"kueue.x-k8s.io/queue-name\":\"inference-models\"}},\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"command\":[\"/bin/sh\",\"-c\",\"set -eu\\n'boltzgen' 'run' '/opt/fs2/source/example/vanilla_protein/1g13prot.yaml' '--output' '/work/faststart/boltzgen-fast-volume-t03' '--protocol' 'protein-anything' '--num_designs' '1' '--budget' '1' '--steps' 'design' '--no_subprocess' '--devices' '1' '--num_workers' '0' '--design_checkpoints' '/opt/fs2/artifacts/boltzgen/boltzgen1_diverse.ckpt' '--moldir' '/opt/fs2/artifacts/boltzgen' '--config' 'design' 'sampling_steps=20' 'recycling_steps=0' 'data.num_workers=0' 'diffusion_samples=1' '--skip_inverse_folding' '--folding_checkpoint' '/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt'\\necho \\\"FS2_SEMANTIC_RESULT_EMITTED\\\"\\nDESIGN=\\\"$(find /work/faststart/boltzgen-fast-volume-t03 -name \\\"*.cif\\\" | sort | head -1)\\\"\\necho \\\"FS2_SEMANTIC_CIF_PATH $DESIGN\\\"\\necho \\\"FS2_SEMANTIC_CIF_ATOMS $(grep -c \\\"^ATOM\\\" \\\"$DESIGN\\\")\\\"\\necho \\\"FS2_SEMANTIC_CIF_BYTES $(wc -c \\u003c \\\"$DESIGN\\\")\\\"\\necho \\\"FS2_SEMANTIC_CIF_SHA256 $(sha256sum \\\"$DESIGN\\\" | cut -d\\\" \\\" -f1)\\\"\\necho \\\"FS2_SEMANTIC_CIF_COUNT $(find /work/faststart/boltzgen-fast-volume-t03 -name \\\"*.cif\\\" | wc -l)\\\"\"],\"env\":[{\"name\":\"FS2_ARTIFACT_ROOT\",\"value\":\"/opt/fs2/artifacts\"},{\"name\":\"HF_HOME\",\"value\":\"/tmp/hf\"},{\"name\":\"MPLCONFIGDIR\",\"value\":\"/tmp/mpl\"},{\"name\":\"XDG_CACHE_HOME\",\"value\":\"/tmp/xdg\"}],\"image\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e\",\"name\":\"batch\",\"resources\":{\"limits\":{\"cpu\":\"16\",\"memory\":\"128Gi\",\"nvidia.com/gpu\":\"1\"},\"requests\":{\"cpu\":\"8\",\"memory\":\"64Gi\",\"nvidia.com/gpu\":\"1\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"readOnlyRootFilesystem\":false},\"volumeMounts\":[{\"mountPath\":\"/tmp\",\"name\":\"tmp\"},{\"mountPath\":\"/opt/fs2/artifacts\",\"name\":\"artifacts\",\"readOnly\":true},{\"mountPath\":\"/work\",\"name\":\"workspace\"}]}],\"enableServiceLinks\":false,\"nodeSelector\":{\"accelerator.fs2.nebius/class\":\"nvidia-h100-sxm5-80gb\",\"accelerator.fs2.nebius/pool-id\":\"h100-reserved-8x\"},\"restartPolicy\":\"Never\",\"securityContext\":{\"fsGroup\":10001,\"fsGroupChangePolicy\":\"OnRootMismatch\",\"runAsGroup\":10001,\"runAsNonRoot\":true,\"runAsUser\":10001,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"tolerations\":[{\"effect\":\"NoSchedule\",\"key\":\"dedicated\",\"operator\":\"Equal\",\"value\":\"fs2-inference\"}],\"volumes\":[{\"emptyDir\":{\"sizeLimit\":\"16Gi\"},\"name\":\"tmp\"},{\"name\":\"artifacts\",\"persistentVolumeClaim\":{\"claimName\":\"fs2-runtime-qualification-artifacts-r20260902\"}},{\"name\":\"workspace\",\"persistentVolumeClaim\":{\"claimName\":\"fs2-runtime-qualification-artifacts-r20260902\"}}]}},\"ttlSecondsAfterFinished\":86400}}\n"
+      },
+      "creationTimestamp": "2026-09-03T03:40:15Z",
+      "generation": 2,
+      "labels": {
+        "app.kubernetes.io/managed-by": "fs2-faststart-campaign",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2.nebius.ai/campaign-variant": "fast-volume",
+        "fs2.nebius.ai/local-queue": "inference-models",
+        "fs2.nebius.ai/model-id": "boltzgen",
+        "fs2.nebius.ai/task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+        "fs2.nebius.ai/trial": "03",
+        "fs2.nebius.ai/trial-id": "boltzgen-fast-volume-t03",
+        "kueue.x-k8s.io/queue-name": "inference-models"
+      },
+      "name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1",
+      "namespace": "fs2-models",
+      "resourceVersion": "2157140",
+      "uid": "1b8bd9d3-3193-4c41-bc98-c934a4ef3f16"
+    },
+    "spec": {
+      "backoffLimit": 0,
+      "completionMode": "NonIndexed",
+      "completions": 1,
+      "manualSelector": false,
+      "parallelism": 1,
+      "podReplacementPolicy": "TerminatingOrFailed",
+      "selector": {
+        "matchLabels": {
+          "batch.kubernetes.io/controller-uid": "1b8bd9d3-3193-4c41-bc98-c934a4ef3f16"
+        }
+      },
+      "suspend": false,
+      "template": {
+        "metadata": {
+          "annotations": {
+            "kueue.x-k8s.io/workload": "job-fsc-boltzgen-fast-volume-t03-270e1ff195e1-2c4a6"
+          },
+          "labels": {
+            "app.kubernetes.io/managed-by": "fs2-faststart-campaign",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "batch.kubernetes.io/controller-uid": "1b8bd9d3-3193-4c41-bc98-c934a4ef3f16",
+            "batch.kubernetes.io/job-name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1",
+            "controller-uid": "1b8bd9d3-3193-4c41-bc98-c934a4ef3f16",
+            "fs2.nebius.ai/campaign-variant": "fast-volume",
+            "fs2.nebius.ai/model-id": "boltzgen",
+            "fs2.nebius.ai/task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+            "fs2.nebius.ai/trial": "03",
+            "fs2.nebius.ai/trial-id": "boltzgen-fast-volume-t03",
+            "job-name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1",
+            "kueue.x-k8s.io/cluster-queue-name": "inference-accelerators",
+            "kueue.x-k8s.io/local-queue-name": "inference-models",
+            "kueue.x-k8s.io/podset": "main",
+            "kueue.x-k8s.io/queue-name": "inference-models"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "command": [
+                "/bin/sh",
+                "-c",
+                "set -eu\n'boltzgen' 'run' '/opt/fs2/source/example/vanilla_protein/1g13prot.yaml' '--output' '/work/faststart/boltzgen-fast-volume-t03' '--protocol' 'protein-anything' '--num_designs' '1' '--budget' '1' '--steps' 'design' '--no_subprocess' '--devices' '1' '--num_workers' '0' '--design_checkpoints' '/opt/fs2/artifacts/boltzgen/boltzgen1_diverse.ckpt' '--moldir' '/opt/fs2/artifacts/boltzgen' '--config' 'design' 'sampling_steps=20' 'recycling_steps=0' 'data.num_workers=0' 'diffusion_samples=1' '--skip_inverse_folding' '--folding_checkpoint' '/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt'\necho \"FS2_SEMANTIC_RESULT_EMITTED\"\nDESIGN=\"$(find /work/faststart/boltzgen-fast-volume-t03 -name \"*.cif\" | sort | head -1)\"\necho \"FS2_SEMANTIC_CIF_PATH $DESIGN\"\necho \"FS2_SEMANTIC_CIF_ATOMS $(grep -c \"^ATOM\" \"$DESIGN\")\"\necho \"FS2_SEMANTIC_CIF_BYTES $(wc -c < \"$DESIGN\")\"\necho \"FS2_SEMANTIC_CIF_SHA256 $(sha256sum \"$DESIGN\" | cut -d\" \" -f1)\"\necho \"FS2_SEMANTIC_CIF_COUNT $(find /work/faststart/boltzgen-fast-volume-t03 -name \"*.cif\" | wc -l)\""
+              ],
+              "env": [
+                {
+                  "name": "FS2_ARTIFACT_ROOT",
+                  "value": "/opt/fs2/artifacts"
+                },
+                {
+                  "name": "HF_HOME",
+                  "value": "/tmp/hf"
+                },
+                {
+                  "name": "MPLCONFIGDIR",
+                  "value": "/tmp/mpl"
+                },
+                {
+                  "name": "XDG_CACHE_HOME",
+                  "value": "/tmp/xdg"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+              "imagePullPolicy": "IfNotPresent",
+              "name": "batch",
+              "resources": {
+                "limits": {
+                  "cpu": "16",
+                  "memory": "128Gi",
+                  "nvidia.com/gpu": "1"
+                },
+                "requests": {
+                  "cpu": "8",
+                  "memory": "64Gi",
+                  "nvidia.com/gpu": "1"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": false
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/tmp",
+                  "name": "tmp"
+                },
+                {
+                  "mountPath": "/opt/fs2/artifacts",
+                  "name": "artifacts",
+                  "readOnly": true
+                },
+                {
+                  "mountPath": "/work",
+                  "name": "workspace"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "enableServiceLinks": false,
+          "nodeSelector": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
+          },
+          "restartPolicy": "Never",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "fsGroup": 10001,
+            "fsGroupChangePolicy": "OnRootMismatch",
+            "runAsGroup": 10001,
+            "runAsNonRoot": true,
+            "runAsUser": 10001,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            }
+          },
+          "terminationGracePeriodSeconds": 30,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "dedicated",
+              "operator": "Equal",
+              "value": "fs2-inference"
+            }
+          ],
+          "volumes": [
+            {
+              "emptyDir": {
+                "sizeLimit": "16Gi"
+              },
+              "name": "tmp"
+            },
+            {
+              "name": "artifacts",
+              "persistentVolumeClaim": {
+                "claimName": "fs2-runtime-qualification-artifacts-r20260902"
+              }
+            },
+            {
+              "name": "workspace",
+              "persistentVolumeClaim": {
+                "claimName": "fs2-runtime-qualification-artifacts-r20260902"
+              }
+            }
+          ]
+        }
+      },
+      "ttlSecondsAfterFinished": 86400
+    },
+    "status": {
+      "completionTime": "2026-09-03T03:41:03Z",
+      "conditions": [
+        {
+          "lastProbeTime": "2026-09-03T03:40:15Z",
+          "lastTransitionTime": "2026-09-03T03:40:15Z",
+          "message": "Job resumed",
+          "reason": "JobResumed",
+          "status": "False",
+          "type": "Suspended"
+        },
+        {
+          "lastProbeTime": "2026-09-03T03:41:03Z",
+          "lastTransitionTime": "2026-09-03T03:41:03Z",
+          "message": "Reached expected number of succeeded pods",
+          "reason": "CompletionsReached",
+          "status": "True",
+          "type": "SuccessCriteriaMet"
+        },
+        {
+          "lastProbeTime": "2026-09-03T03:41:03Z",
+          "lastTransitionTime": "2026-09-03T03:41:03Z",
+          "message": "Reached expected number of succeeded pods",
+          "reason": "CompletionsReached",
+          "status": "True",
+          "type": "Complete"
+        }
+      ],
+      "ready": 0,
+      "startTime": "2026-09-03T03:40:15Z",
+      "succeeded": 1,
+      "terminating": 0,
+      "uncountedTerminatedPods": {}
+    }
+  },
+  "pod": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "annotations": {
+        "kueue.x-k8s.io/workload": "job-fsc-boltzgen-fast-volume-t03-270e1ff195e1-2c4a6"
+      },
+      "creationTimestamp": "2026-09-03T03:40:15Z",
+      "generateName": "fsc-boltzgen-fast-volume-t03-270e1ff195e1-",
+      "generation": 1,
+      "labels": {
+        "app.kubernetes.io/managed-by": "fs2-faststart-campaign",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "batch.kubernetes.io/controller-uid": "1b8bd9d3-3193-4c41-bc98-c934a4ef3f16",
+        "batch.kubernetes.io/job-name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1",
+        "controller-uid": "1b8bd9d3-3193-4c41-bc98-c934a4ef3f16",
+        "fs2.nebius.ai/campaign-variant": "fast-volume",
+        "fs2.nebius.ai/model-id": "boltzgen",
+        "fs2.nebius.ai/task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+        "fs2.nebius.ai/trial": "03",
+        "fs2.nebius.ai/trial-id": "boltzgen-fast-volume-t03",
+        "job-name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1",
+        "kueue.x-k8s.io/cluster-queue-name": "inference-accelerators",
+        "kueue.x-k8s.io/local-queue-name": "inference-models",
+        "kueue.x-k8s.io/podset": "main",
+        "kueue.x-k8s.io/queue-name": "inference-models",
+        "topology.kubernetes.io/region": "eu-north1"
+      },
+      "name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1-68fj2",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "batch/v1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "Job",
+          "name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1",
+          "uid": "1b8bd9d3-3193-4c41-bc98-c934a4ef3f16"
+        }
+      ],
+      "resourceVersion": "2157139",
+      "uid": "f5874438-79c5-46bc-aed0-29324ee18a85"
+    },
+    "spec": {
+      "automountServiceAccountToken": false,
+      "containers": [
+        {
+          "command": [
+            "/bin/sh",
+            "-c",
+            "set -eu\n'boltzgen' 'run' '/opt/fs2/source/example/vanilla_protein/1g13prot.yaml' '--output' '/work/faststart/boltzgen-fast-volume-t03' '--protocol' 'protein-anything' '--num_designs' '1' '--budget' '1' '--steps' 'design' '--no_subprocess' '--devices' '1' '--num_workers' '0' '--design_checkpoints' '/opt/fs2/artifacts/boltzgen/boltzgen1_diverse.ckpt' '--moldir' '/opt/fs2/artifacts/boltzgen' '--config' 'design' 'sampling_steps=20' 'recycling_steps=0' 'data.num_workers=0' 'diffusion_samples=1' '--skip_inverse_folding' '--folding_checkpoint' '/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt'\necho \"FS2_SEMANTIC_RESULT_EMITTED\"\nDESIGN=\"$(find /work/faststart/boltzgen-fast-volume-t03 -name \"*.cif\" | sort | head -1)\"\necho \"FS2_SEMANTIC_CIF_PATH $DESIGN\"\necho \"FS2_SEMANTIC_CIF_ATOMS $(grep -c \"^ATOM\" \"$DESIGN\")\"\necho \"FS2_SEMANTIC_CIF_BYTES $(wc -c < \"$DESIGN\")\"\necho \"FS2_SEMANTIC_CIF_SHA256 $(sha256sum \"$DESIGN\" | cut -d\" \" -f1)\"\necho \"FS2_SEMANTIC_CIF_COUNT $(find /work/faststart/boltzgen-fast-volume-t03 -name \"*.cif\" | wc -l)\""
+          ],
+          "env": [
+            {
+              "name": "FS2_ARTIFACT_ROOT",
+              "value": "/opt/fs2/artifacts"
+            },
+            {
+              "name": "HF_HOME",
+              "value": "/tmp/hf"
+            },
+            {
+              "name": "MPLCONFIGDIR",
+              "value": "/tmp/mpl"
+            },
+            {
+              "name": "XDG_CACHE_HOME",
+              "value": "/tmp/xdg"
+            }
+          ],
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "imagePullPolicy": "IfNotPresent",
+          "name": "batch",
+          "resources": {
+            "limits": {
+              "cpu": "16",
+              "memory": "128Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "securityContext": {
+            "allowPrivilegeEscalation": false,
+            "capabilities": {
+              "drop": [
+                "ALL"
+              ]
+            },
+            "readOnlyRootFilesystem": false
+          },
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File",
+          "volumeMounts": [
+            {
+              "mountPath": "/tmp",
+              "name": "tmp"
+            },
+            {
+              "mountPath": "/opt/fs2/artifacts",
+              "name": "artifacts",
+              "readOnly": true
+            },
+            {
+              "mountPath": "/work",
+              "name": "workspace"
+            }
+          ]
+        }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "enableServiceLinks": false,
+      "nodeName": "computeinstance-e00p3acr87k9k4mckj",
+      "nodeSelector": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+        "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
+      },
+      "preemptionPolicy": "PreemptLowerPriority",
+      "priority": 0,
+      "restartPolicy": "Never",
+      "schedulerName": "default-scheduler",
+      "securityContext": {
+        "fsGroup": 10001,
+        "fsGroupChangePolicy": "OnRootMismatch",
+        "runAsGroup": 10001,
+        "runAsNonRoot": true,
+        "runAsUser": 10001,
+        "seccompProfile": {
+          "type": "RuntimeDefault"
+        }
+      },
+      "serviceAccount": "default",
+      "serviceAccountName": "default",
+      "terminationGracePeriodSeconds": 30,
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference"
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/not-ready",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/unreachable",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "nvidia.com/gpu",
+          "operator": "Exists"
+        }
+      ],
+      "volumes": [
+        {
+          "emptyDir": {
+            "sizeLimit": "16Gi"
+          },
+          "name": "tmp"
+        },
+        {
+          "name": "artifacts",
+          "persistentVolumeClaim": {
+            "claimName": "fs2-runtime-qualification-artifacts-r20260902"
+          }
+        },
+        {
+          "name": "workspace",
+          "persistentVolumeClaim": {
+            "claimName": "fs2-runtime-qualification-artifacts-r20260902"
+          }
+        }
+      ]
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T03:41:02Z",
+          "observedGeneration": 1,
+          "status": "False",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T03:40:15Z",
+          "observedGeneration": 1,
+          "reason": "PodCompleted",
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T03:41:01Z",
+          "observedGeneration": 1,
+          "reason": "PodCompleted",
+          "status": "False",
+          "type": "Ready"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T03:41:01Z",
+          "observedGeneration": 1,
+          "reason": "PodCompleted",
+          "status": "False",
+          "type": "ContainersReady"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T03:40:15Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodScheduled"
+        }
+      ],
+      "containerStatuses": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://343417cac6c4d0e38ed996a89a525e27a81a02739cf72de8eae8e4b494d63208",
+          "image": "sha256:e7f33739f36417d447a0871d4abdd8431f1f64f07baf3543b2c4073c207c08cd",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "lastState": {},
+          "name": "batch",
+          "ready": false,
+          "resources": {
+            "limits": {
+              "cpu": "16",
+              "memory": "128Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": false,
+          "state": {
+            "terminated": {
+              "containerID": "containerd://343417cac6c4d0e38ed996a89a525e27a81a02739cf72de8eae8e4b494d63208",
+              "exitCode": 0,
+              "finishedAt": "2026-09-03T03:41:00Z",
+              "reason": "Completed",
+              "startedAt": "2026-09-03T03:40:17Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/tmp",
+              "name": "tmp"
+            },
+            {
+              "mountPath": "/opt/fs2/artifacts",
+              "name": "artifacts",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/work",
+              "name": "workspace"
+            }
+          ]
+        }
+      ],
+      "hostIP": "10.0.0.31",
+      "hostIPs": [
+        {
+          "ip": "10.0.0.31"
+        }
+      ],
+      "observedGeneration": 1,
+      "phase": "Succeeded",
+      "podIP": "10.6.122.166",
+      "podIPs": [
+        {
+          "ip": "10.6.122.166"
+        }
+      ],
+      "qosClass": "Burstable",
+      "startTime": "2026-09-03T03:40:15Z"
+    }
+  },
+  "workload": {
+    "apiVersion": "kueue.x-k8s.io/v1beta2",
+    "kind": "Workload",
+    "metadata": {
+      "creationTimestamp": "2026-09-03T03:40:15Z",
+      "generation": 1,
+      "labels": {
+        "kueue.x-k8s.io/job-uid": "1b8bd9d3-3193-4c41-bc98-c934a4ef3f16"
+      },
+      "name": "job-fsc-boltzgen-fast-volume-t03-270e1ff195e1-2c4a6",
+      "namespace": "fs2-models",
+      "ownerReferences": [
+        {
+          "apiVersion": "batch/v1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "Job",
+          "name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1",
+          "uid": "1b8bd9d3-3193-4c41-bc98-c934a4ef3f16"
+        }
+      ],
+      "resourceVersion": "2157145",
+      "uid": "7884cca9-ad2e-4a08-9c7b-db77d9b2d9ac"
+    },
+    "spec": {
+      "active": true,
+      "podSets": [
+        {
+          "count": 1,
+          "name": "main",
+          "template": {
+            "metadata": {
+              "labels": {
+                "app.kubernetes.io/managed-by": "fs2-faststart-campaign",
+                "app.kubernetes.io/part-of": "fs2-serve",
+                "batch.kubernetes.io/job-name": "fsc-boltzgen-fast-volume-t03-270e1ff195e1",
+                "fs2.nebius.ai/campaign-variant": "fast-volume",
+                "fs2.nebius.ai/model-id": "boltzgen",
+                "fs2.nebius.ai/task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+                "fs2.nebius.ai/trial": "03",
+                "fs2.nebius.ai/trial-id": "boltzgen-fast-volume-t03",
+                "kueue.x-k8s.io/queue-name": "inference-models"
+              }
+            },
+            "spec": {
+              "automountServiceAccountToken": false,
+              "containers": [
+                {
+                  "command": [
+                    "/bin/sh",
+                    "-c",
+                    "set -eu\n'boltzgen' 'run' '/opt/fs2/source/example/vanilla_protein/1g13prot.yaml' '--output' '/work/faststart/boltzgen-fast-volume-t03' '--protocol' 'protein-anything' '--num_designs' '1' '--budget' '1' '--steps' 'design' '--no_subprocess' '--devices' '1' '--num_workers' '0' '--design_checkpoints' '/opt/fs2/artifacts/boltzgen/boltzgen1_diverse.ckpt' '--moldir' '/opt/fs2/artifacts/boltzgen' '--config' 'design' 'sampling_steps=20' 'recycling_steps=0' 'data.num_workers=0' 'diffusion_samples=1' '--skip_inverse_folding' '--folding_checkpoint' '/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt'\necho \"FS2_SEMANTIC_RESULT_EMITTED\"\nDESIGN=\"$(find /work/faststart/boltzgen-fast-volume-t03 -name \"*.cif\" | sort | head -1)\"\necho \"FS2_SEMANTIC_CIF_PATH $DESIGN\"\necho \"FS2_SEMANTIC_CIF_ATOMS $(grep -c \"^ATOM\" \"$DESIGN\")\"\necho \"FS2_SEMANTIC_CIF_BYTES $(wc -c < \"$DESIGN\")\"\necho \"FS2_SEMANTIC_CIF_SHA256 $(sha256sum \"$DESIGN\" | cut -d\" \" -f1)\"\necho \"FS2_SEMANTIC_CIF_COUNT $(find /work/faststart/boltzgen-fast-volume-t03 -name \"*.cif\" | wc -l)\""
+                  ],
+                  "env": [
+                    {
+                      "name": "FS2_ARTIFACT_ROOT",
+                      "value": "/opt/fs2/artifacts"
+                    },
+                    {
+                      "name": "HF_HOME",
+                      "value": "/tmp/hf"
+                    },
+                    {
+                      "name": "MPLCONFIGDIR",
+                      "value": "/tmp/mpl"
+                    },
+                    {
+                      "name": "XDG_CACHE_HOME",
+                      "value": "/tmp/xdg"
+                    }
+                  ],
+                  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+                  "imagePullPolicy": "IfNotPresent",
+                  "name": "batch",
+                  "resources": {
+                    "limits": {
+                      "cpu": "16",
+                      "memory": "128Gi",
+                      "nvidia.com/gpu": "1"
+                    },
+                    "requests": {
+                      "cpu": "8",
+                      "memory": "64Gi",
+                      "nvidia.com/gpu": "1"
+                    }
+                  },
+                  "securityContext": {
+                    "allowPrivilegeEscalation": false,
+                    "capabilities": {
+                      "drop": [
+                        "ALL"
+                      ]
+                    },
+                    "readOnlyRootFilesystem": false
+                  },
+                  "terminationMessagePath": "/dev/termination-log",
+                  "terminationMessagePolicy": "File",
+                  "volumeMounts": [
+                    {
+                      "mountPath": "/tmp",
+                      "name": "tmp"
+                    },
+                    {
+                      "mountPath": "/opt/fs2/artifacts",
+                      "name": "artifacts",
+                      "readOnly": true
+                    },
+                    {
+                      "mountPath": "/work",
+                      "name": "workspace"
+                    }
+                  ]
+                }
+              ],
+              "dnsPolicy": "ClusterFirst",
+              "enableServiceLinks": false,
+              "nodeSelector": {
+                "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
+              },
+              "restartPolicy": "Never",
+              "schedulerName": "default-scheduler",
+              "securityContext": {
+                "fsGroup": 10001,
+                "fsGroupChangePolicy": "OnRootMismatch",
+                "runAsGroup": 10001,
+                "runAsNonRoot": true,
+                "runAsUser": 10001,
+                "seccompProfile": {
+                  "type": "RuntimeDefault"
+                }
+              },
+              "terminationGracePeriodSeconds": 30,
+              "tolerations": [
+                {
+                  "effect": "NoSchedule",
+                  "key": "dedicated",
+                  "operator": "Equal",
+                  "value": "fs2-inference"
+                }
+              ],
+              "volumes": [
+                {
+                  "emptyDir": {
+                    "sizeLimit": "16Gi"
+                  },
+                  "name": "tmp"
+                },
+                {
+                  "name": "artifacts",
+                  "persistentVolumeClaim": {
+                    "claimName": "fs2-runtime-qualification-artifacts-r20260902"
+                  }
+                },
+                {
+                  "name": "workspace",
+                  "persistentVolumeClaim": {
+                    "claimName": "fs2-runtime-qualification-artifacts-r20260902"
+                  }
+                }
+              ]
+            }
+          },
+          "topologyRequest": {
+            "podIndexLabel": "batch.kubernetes.io/job-completion-index"
+          }
+        }
+      ],
+      "priority": 0,
+      "queueName": "inference-models"
+    },
+    "status": {
+      "admission": {
+        "clusterQueue": "inference-accelerators",
+        "podSetAssignments": [
+          {
+            "count": 1,
+            "flavors": {
+              "nvidia.com/gpu": "inference-h100-reserved-8x"
+            },
+            "name": "main",
+            "resourceUsage": {
+              "nvidia.com/gpu": "1"
+            }
+          }
+        ]
+      },
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-09-03T03:40:15Z",
+          "message": "Quota reserved in ClusterQueue inference-accelerators",
+          "observedGeneration": 1,
+          "reason": "QuotaReserved",
+          "status": "True",
+          "type": "QuotaReserved"
+        },
+        {
+          "lastTransitionTime": "2026-09-03T03:40:15Z",
+          "message": "The workload is admitted",
+          "observedGeneration": 1,
+          "reason": "Admitted",
+          "status": "True",
+          "type": "Admitted"
+        },
+        {
+          "lastTransitionTime": "2026-09-03T03:41:03Z",
+          "message": "Reached expected number of succeeded pods",
+          "observedGeneration": 1,
+          "reason": "Succeeded",
+          "status": "True",
+          "type": "Finished"
+        }
+      ]
+    }
+  }
+}

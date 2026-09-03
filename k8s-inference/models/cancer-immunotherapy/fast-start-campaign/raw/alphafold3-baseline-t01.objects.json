@@ -1,0 +1,676 @@
+{
+  "events": {
+    "apiVersion": "v1",
+    "items": [
+      {
+        "apiVersion": "v1",
+        "count": 1,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-03T03:39:48Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322-skkgd",
+          "namespace": "fs2-academic-poc",
+          "resourceVersion": "2156191",
+          "uid": "a5fc97fd-3fd6-4f2a-8405-1080383e0fef"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-03T03:39:48Z",
+        "message": "Successfully assigned fs2-academic-poc/fsc-alphafold3-baseline-t01-e8fe9a3aa322-skkgd to computeinstance-e00m0hsph76ajt9sdb",
+        "metadata": {
+          "creationTimestamp": "2026-09-03T03:39:48Z",
+          "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322-skkgd.18d1b27fa73325c7",
+          "namespace": "fs2-academic-poc",
+          "resourceVersion": "2156195",
+          "uid": "2da1c33e-5e62-4150-aceb-dc09f237a476"
+        },
+        "reason": "Scheduled",
+        "reportingComponent": "default-scheduler",
+        "reportingInstance": "",
+        "source": {
+          "component": "default-scheduler"
+        },
+        "type": "Normal"
+      },
+      {
+        "apiVersion": "v1",
+        "count": 1,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-03T03:39:49Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "fieldPath": "spec.containers{batch}",
+          "kind": "Pod",
+          "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322-skkgd",
+          "namespace": "fs2-academic-poc",
+          "resourceVersion": "2156192",
+          "uid": "a5fc97fd-3fd6-4f2a-8405-1080383e0fef"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-03T03:39:49Z",
+        "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3@sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887\" already present on machine and can be accessed by the pod",
+        "metadata": {
+          "creationTimestamp": "2026-09-03T03:39:49Z",
+          "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322-skkgd.18d1b27fddf10f3a",
+          "namespace": "fs2-academic-poc",
+          "resourceVersion": "2156205",
+          "uid": "c1e9a943-b2c6-4e12-aa3c-05377e348013"
+        },
+        "reason": "Pulled",
+        "reportingComponent": "kubelet",
+        "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+        "source": {
+          "component": "kubelet",
+          "host": "computeinstance-e00m0hsph76ajt9sdb"
+        },
+        "type": "Normal"
+      },
+      {
+        "apiVersion": "v1",
+        "count": 1,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-03T03:39:49Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "fieldPath": "spec.containers{batch}",
+          "kind": "Pod",
+          "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322-skkgd",
+          "namespace": "fs2-academic-poc",
+          "resourceVersion": "2156192",
+          "uid": "a5fc97fd-3fd6-4f2a-8405-1080383e0fef"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-03T03:39:49Z",
+        "message": "Container created",
+        "metadata": {
+          "creationTimestamp": "2026-09-03T03:39:49Z",
+          "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322-skkgd.18d1b27fdedd0933",
+          "namespace": "fs2-academic-poc",
+          "resourceVersion": "2156206",
+          "uid": "511533d8-7a7c-4477-9c17-c7e0c23d9370"
+        },
+        "reason": "Created",
+        "reportingComponent": "kubelet",
+        "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+        "source": {
+          "component": "kubelet",
+          "host": "computeinstance-e00m0hsph76ajt9sdb"
+        },
+        "type": "Normal"
+      },
+      {
+        "apiVersion": "v1",
+        "count": 1,
+        "eventTime": null,
+        "firstTimestamp": "2026-09-03T03:39:50Z",
+        "involvedObject": {
+          "apiVersion": "v1",
+          "fieldPath": "spec.containers{batch}",
+          "kind": "Pod",
+          "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322-skkgd",
+          "namespace": "fs2-academic-poc",
+          "resourceVersion": "2156192",
+          "uid": "a5fc97fd-3fd6-4f2a-8405-1080383e0fef"
+        },
+        "kind": "Event",
+        "lastTimestamp": "2026-09-03T03:39:50Z",
+        "message": "Container started",
+        "metadata": {
+          "creationTimestamp": "2026-09-03T03:39:50Z",
+          "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322-skkgd.18d1b280182b9d80",
+          "namespace": "fs2-academic-poc",
+          "resourceVersion": "2156215",
+          "uid": "7ba24830-01b9-481e-ad4e-6351e3490ce0"
+        },
+        "reason": "Started",
+        "reportingComponent": "kubelet",
+        "reportingInstance": "computeinstance-e00m0hsph76ajt9sdb",
+        "source": {
+          "component": "kubelet",
+          "host": "computeinstance-e00m0hsph76ajt9sdb"
+        },
+        "type": "Normal"
+      }
+    ],
+    "kind": "List",
+    "metadata": {
+      "resourceVersion": ""
+    }
+  },
+  "job": {
+    "apiVersion": "batch/v1",
+    "kind": "Job",
+    "metadata": {
+      "annotations": {
+        "fs2.nebius.ai/campaign-id": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+        "fs2.nebius.ai/image-digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
+        "fs2.nebius.ai/variant": "baseline",
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{\"fs2.nebius.ai/campaign-id\":\"fs2-qualified-model-fast-start-live-campaign-r20260903\",\"fs2.nebius.ai/image-digest\":\"sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887\",\"fs2.nebius.ai/variant\":\"baseline\"},\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-faststart-campaign\",\"app.kubernetes.io/part-of\":\"fs2-serve\",\"fs2.nebius.ai/campaign-variant\":\"baseline\",\"fs2.nebius.ai/model-id\":\"alphafold3\",\"fs2.nebius.ai/task\":\"fs2-qualified-model-fast-start-live-campaign-r20260903\",\"fs2.nebius.ai/trial\":\"01\",\"fs2.nebius.ai/trial-id\":\"alphafold3-baseline-t01\"},\"name\":\"fsc-alphafold3-baseline-t01-e8fe9a3aa322\",\"namespace\":\"fs2-academic-poc\"},\"spec\":{\"backoffLimit\":0,\"completions\":1,\"parallelism\":1,\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-faststart-campaign\",\"app.kubernetes.io/part-of\":\"fs2-serve\",\"fs2.nebius.ai/campaign-variant\":\"baseline\",\"fs2.nebius.ai/model-id\":\"alphafold3\",\"fs2.nebius.ai/task\":\"fs2-qualified-model-fast-start-live-campaign-r20260903\",\"fs2.nebius.ai/trial\":\"01\",\"fs2.nebius.ai/trial-id\":\"alphafold3-baseline-t01\"}},\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"command\":[\"/bin/sh\",\"-c\",\"set -eu\\ncd /app/alphafold\\n'/alphafold3_venv/bin/python3' 'run_alphafold.py' '--model_dir=/opt/fs2/academic/alphafold3' '--json_path=/var/run/fs2/fold_input.json' '--output_dir=/scratch/out' '--norun_data_pipeline' '--flash_attention_implementation=xla'\\necho \\\"FS2_SEMANTIC_RESULT_EMITTED\\\"\\nCIF=\\\"$(find /scratch/out -name \\\"*model*.cif\\\" | sort | head -1)\\\"\\necho \\\"FS2_SEMANTIC_CIF_PATH $CIF\\\"\\necho \\\"FS2_SEMANTIC_CIF_ATOMS $(grep -c \\\"^ATOM\\\" \\\"$CIF\\\")\\\"\\necho \\\"FS2_SEMANTIC_CIF_BYTES $(wc -c \\u003c \\\"$CIF\\\")\\\"\\necho \\\"FS2_SEMANTIC_CIF_SHA256 $(sha256sum \\\"$CIF\\\" | cut -d\\\" \\\" -f1)\\\"\\necho \\\"FS2_SEMANTIC_CIF_COUNT $(find /scratch/out -name \\\"*.cif\\\" | wc -l)\\\"\"],\"env\":[{\"name\":\"HOME\",\"value\":\"/scratch\"},{\"name\":\"PYTHONUNBUFFERED\",\"value\":\"1\"},{\"name\":\"TMPDIR\",\"value\":\"/scratch\"},{\"name\":\"XLA_FLAGS\",\"value\":\"--xla_gpu_enable_triton_gemm=false\"}],\"image\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3@sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887\",\"name\":\"batch\",\"resources\":{\"limits\":{\"cpu\":\"12\",\"memory\":\"64Gi\",\"nvidia.com/gpu\":\"1\"},\"requests\":{\"cpu\":\"4\",\"memory\":\"32Gi\",\"nvidia.com/gpu\":\"1\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"readOnlyRootFilesystem\":false},\"volumeMounts\":[{\"mountPath\":\"/var/run/fs2\",\"name\":\"request\",\"readOnly\":true},{\"mountPath\":\"/tmp\",\"name\":\"tmp\"},{\"mountPath\":\"/opt/fs2/academic\",\"name\":\"academic\",\"readOnly\":true},{\"mountPath\":\"/scratch\",\"name\":\"scratch\"}]}],\"enableServiceLinks\":false,\"nodeSelector\":{\"accelerator.fs2.nebius/class\":\"nvidia-h100-sxm5-80gb\",\"accelerator.fs2.nebius/pool-id\":\"h100-reserved-8x\"},\"restartPolicy\":\"Never\",\"securityContext\":{\"runAsGroup\":12345,\"runAsNonRoot\":true,\"runAsUser\":12345,\"seccompProfile\":{\"type\":\"RuntimeDefault\"},\"supplementalGroups\":[65532]},\"tolerations\":[{\"effect\":\"NoSchedule\",\"key\":\"dedicated\",\"operator\":\"Equal\",\"value\":\"fs2-inference\"}],\"volumes\":[{\"configMap\":{\"defaultMode\":420,\"name\":\"fsc-alphafold3-baseline-t01-e8fe9a3aa322-request\"},\"name\":\"request\"},{\"emptyDir\":{\"sizeLimit\":\"8Gi\"},\"name\":\"tmp\"},{\"name\":\"academic\",\"persistentVolumeClaim\":{\"claimName\":\"academic-assets-runtime-rwx\"}},{\"emptyDir\":{\"sizeLimit\":\"32Gi\"},\"name\":\"scratch\"}]}},\"ttlSecondsAfterFinished\":86400}}\n"
+      },
+      "creationTimestamp": "2026-09-03T03:39:48Z",
+      "generation": 1,
+      "labels": {
+        "app.kubernetes.io/managed-by": "fs2-faststart-campaign",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2.nebius.ai/campaign-variant": "baseline",
+        "fs2.nebius.ai/model-id": "alphafold3",
+        "fs2.nebius.ai/task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+        "fs2.nebius.ai/trial": "01",
+        "fs2.nebius.ai/trial-id": "alphafold3-baseline-t01"
+      },
+      "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322",
+      "namespace": "fs2-academic-poc",
+      "resourceVersion": "2157026",
+      "uid": "2db1e440-3121-4325-951e-92ce55723fd1"
+    },
+    "spec": {
+      "backoffLimit": 0,
+      "completionMode": "NonIndexed",
+      "completions": 1,
+      "manualSelector": false,
+      "parallelism": 1,
+      "podReplacementPolicy": "TerminatingOrFailed",
+      "selector": {
+        "matchLabels": {
+          "batch.kubernetes.io/controller-uid": "2db1e440-3121-4325-951e-92ce55723fd1"
+        }
+      },
+      "suspend": false,
+      "template": {
+        "metadata": {
+          "labels": {
+            "app.kubernetes.io/managed-by": "fs2-faststart-campaign",
+            "app.kubernetes.io/part-of": "fs2-serve",
+            "batch.kubernetes.io/controller-uid": "2db1e440-3121-4325-951e-92ce55723fd1",
+            "batch.kubernetes.io/job-name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322",
+            "controller-uid": "2db1e440-3121-4325-951e-92ce55723fd1",
+            "fs2.nebius.ai/campaign-variant": "baseline",
+            "fs2.nebius.ai/model-id": "alphafold3",
+            "fs2.nebius.ai/task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+            "fs2.nebius.ai/trial": "01",
+            "fs2.nebius.ai/trial-id": "alphafold3-baseline-t01",
+            "job-name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322"
+          }
+        },
+        "spec": {
+          "automountServiceAccountToken": false,
+          "containers": [
+            {
+              "command": [
+                "/bin/sh",
+                "-c",
+                "set -eu\ncd /app/alphafold\n'/alphafold3_venv/bin/python3' 'run_alphafold.py' '--model_dir=/opt/fs2/academic/alphafold3' '--json_path=/var/run/fs2/fold_input.json' '--output_dir=/scratch/out' '--norun_data_pipeline' '--flash_attention_implementation=xla'\necho \"FS2_SEMANTIC_RESULT_EMITTED\"\nCIF=\"$(find /scratch/out -name \"*model*.cif\" | sort | head -1)\"\necho \"FS2_SEMANTIC_CIF_PATH $CIF\"\necho \"FS2_SEMANTIC_CIF_ATOMS $(grep -c \"^ATOM\" \"$CIF\")\"\necho \"FS2_SEMANTIC_CIF_BYTES $(wc -c < \"$CIF\")\"\necho \"FS2_SEMANTIC_CIF_SHA256 $(sha256sum \"$CIF\" | cut -d\" \" -f1)\"\necho \"FS2_SEMANTIC_CIF_COUNT $(find /scratch/out -name \"*.cif\" | wc -l)\""
+              ],
+              "env": [
+                {
+                  "name": "HOME",
+                  "value": "/scratch"
+                },
+                {
+                  "name": "PYTHONUNBUFFERED",
+                  "value": "1"
+                },
+                {
+                  "name": "TMPDIR",
+                  "value": "/scratch"
+                },
+                {
+                  "name": "XLA_FLAGS",
+                  "value": "--xla_gpu_enable_triton_gemm=false"
+                }
+              ],
+              "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3@sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
+              "imagePullPolicy": "IfNotPresent",
+              "name": "batch",
+              "resources": {
+                "limits": {
+                  "cpu": "12",
+                  "memory": "64Gi",
+                  "nvidia.com/gpu": "1"
+                },
+                "requests": {
+                  "cpu": "4",
+                  "memory": "32Gi",
+                  "nvidia.com/gpu": "1"
+                }
+              },
+              "securityContext": {
+                "allowPrivilegeEscalation": false,
+                "capabilities": {
+                  "drop": [
+                    "ALL"
+                  ]
+                },
+                "readOnlyRootFilesystem": false
+              },
+              "terminationMessagePath": "/dev/termination-log",
+              "terminationMessagePolicy": "File",
+              "volumeMounts": [
+                {
+                  "mountPath": "/var/run/fs2",
+                  "name": "request",
+                  "readOnly": true
+                },
+                {
+                  "mountPath": "/tmp",
+                  "name": "tmp"
+                },
+                {
+                  "mountPath": "/opt/fs2/academic",
+                  "name": "academic",
+                  "readOnly": true
+                },
+                {
+                  "mountPath": "/scratch",
+                  "name": "scratch"
+                }
+              ]
+            }
+          ],
+          "dnsPolicy": "ClusterFirst",
+          "enableServiceLinks": false,
+          "nodeSelector": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
+          },
+          "restartPolicy": "Never",
+          "schedulerName": "default-scheduler",
+          "securityContext": {
+            "runAsGroup": 12345,
+            "runAsNonRoot": true,
+            "runAsUser": 12345,
+            "seccompProfile": {
+              "type": "RuntimeDefault"
+            },
+            "supplementalGroups": [
+              65532
+            ]
+          },
+          "terminationGracePeriodSeconds": 30,
+          "tolerations": [
+            {
+              "effect": "NoSchedule",
+              "key": "dedicated",
+              "operator": "Equal",
+              "value": "fs2-inference"
+            }
+          ],
+          "volumes": [
+            {
+              "configMap": {
+                "defaultMode": 420,
+                "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322-request"
+              },
+              "name": "request"
+            },
+            {
+              "emptyDir": {
+                "sizeLimit": "8Gi"
+              },
+              "name": "tmp"
+            },
+            {
+              "name": "academic",
+              "persistentVolumeClaim": {
+                "claimName": "academic-assets-runtime-rwx"
+              }
+            },
+            {
+              "emptyDir": {
+                "sizeLimit": "32Gi"
+              },
+              "name": "scratch"
+            }
+          ]
+        }
+      },
+      "ttlSecondsAfterFinished": 86400
+    },
+    "status": {
+      "completionTime": "2026-09-03T03:40:57Z",
+      "conditions": [
+        {
+          "lastProbeTime": "2026-09-03T03:40:57Z",
+          "lastTransitionTime": "2026-09-03T03:40:57Z",
+          "message": "Reached expected number of succeeded pods",
+          "reason": "CompletionsReached",
+          "status": "True",
+          "type": "SuccessCriteriaMet"
+        },
+        {
+          "lastProbeTime": "2026-09-03T03:40:57Z",
+          "lastTransitionTime": "2026-09-03T03:40:57Z",
+          "message": "Reached expected number of succeeded pods",
+          "reason": "CompletionsReached",
+          "status": "True",
+          "type": "Complete"
+        }
+      ],
+      "ready": 0,
+      "startTime": "2026-09-03T03:39:48Z",
+      "succeeded": 1,
+      "terminating": 0,
+      "uncountedTerminatedPods": {}
+    }
+  },
+  "pod": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "creationTimestamp": "2026-09-03T03:39:48Z",
+      "generateName": "fsc-alphafold3-baseline-t01-e8fe9a3aa322-",
+      "generation": 1,
+      "labels": {
+        "app.kubernetes.io/managed-by": "fs2-faststart-campaign",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "batch.kubernetes.io/controller-uid": "2db1e440-3121-4325-951e-92ce55723fd1",
+        "batch.kubernetes.io/job-name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322",
+        "controller-uid": "2db1e440-3121-4325-951e-92ce55723fd1",
+        "fs2.nebius.ai/campaign-variant": "baseline",
+        "fs2.nebius.ai/model-id": "alphafold3",
+        "fs2.nebius.ai/task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+        "fs2.nebius.ai/trial": "01",
+        "fs2.nebius.ai/trial-id": "alphafold3-baseline-t01",
+        "job-name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322",
+        "topology.kubernetes.io/region": "eu-north1"
+      },
+      "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322-skkgd",
+      "namespace": "fs2-academic-poc",
+      "ownerReferences": [
+        {
+          "apiVersion": "batch/v1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "Job",
+          "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322",
+          "uid": "2db1e440-3121-4325-951e-92ce55723fd1"
+        }
+      ],
+      "resourceVersion": "2157025",
+      "uid": "a5fc97fd-3fd6-4f2a-8405-1080383e0fef"
+    },
+    "spec": {
+      "automountServiceAccountToken": false,
+      "containers": [
+        {
+          "command": [
+            "/bin/sh",
+            "-c",
+            "set -eu\ncd /app/alphafold\n'/alphafold3_venv/bin/python3' 'run_alphafold.py' '--model_dir=/opt/fs2/academic/alphafold3' '--json_path=/var/run/fs2/fold_input.json' '--output_dir=/scratch/out' '--norun_data_pipeline' '--flash_attention_implementation=xla'\necho \"FS2_SEMANTIC_RESULT_EMITTED\"\nCIF=\"$(find /scratch/out -name \"*model*.cif\" | sort | head -1)\"\necho \"FS2_SEMANTIC_CIF_PATH $CIF\"\necho \"FS2_SEMANTIC_CIF_ATOMS $(grep -c \"^ATOM\" \"$CIF\")\"\necho \"FS2_SEMANTIC_CIF_BYTES $(wc -c < \"$CIF\")\"\necho \"FS2_SEMANTIC_CIF_SHA256 $(sha256sum \"$CIF\" | cut -d\" \" -f1)\"\necho \"FS2_SEMANTIC_CIF_COUNT $(find /scratch/out -name \"*.cif\" | wc -l)\""
+          ],
+          "env": [
+            {
+              "name": "HOME",
+              "value": "/scratch"
+            },
+            {
+              "name": "PYTHONUNBUFFERED",
+              "value": "1"
+            },
+            {
+              "name": "TMPDIR",
+              "value": "/scratch"
+            },
+            {
+              "name": "XLA_FLAGS",
+              "value": "--xla_gpu_enable_triton_gemm=false"
+            }
+          ],
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3@sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
+          "imagePullPolicy": "IfNotPresent",
+          "name": "batch",
+          "resources": {
+            "limits": {
+              "cpu": "12",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "4",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "securityContext": {
+            "allowPrivilegeEscalation": false,
+            "capabilities": {
+              "drop": [
+                "ALL"
+              ]
+            },
+            "readOnlyRootFilesystem": false
+          },
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File",
+          "volumeMounts": [
+            {
+              "mountPath": "/var/run/fs2",
+              "name": "request",
+              "readOnly": true
+            },
+            {
+              "mountPath": "/tmp",
+              "name": "tmp"
+            },
+            {
+              "mountPath": "/opt/fs2/academic",
+              "name": "academic",
+              "readOnly": true
+            },
+            {
+              "mountPath": "/scratch",
+              "name": "scratch"
+            }
+          ]
+        }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "enableServiceLinks": false,
+      "nodeName": "computeinstance-e00m0hsph76ajt9sdb",
+      "nodeSelector": {
+        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+        "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
+      },
+      "preemptionPolicy": "PreemptLowerPriority",
+      "priority": 0,
+      "restartPolicy": "Never",
+      "schedulerName": "default-scheduler",
+      "securityContext": {
+        "runAsGroup": 12345,
+        "runAsNonRoot": true,
+        "runAsUser": 12345,
+        "seccompProfile": {
+          "type": "RuntimeDefault"
+        },
+        "supplementalGroups": [
+          65532
+        ]
+      },
+      "serviceAccount": "default",
+      "serviceAccountName": "default",
+      "terminationGracePeriodSeconds": 30,
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference"
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/not-ready",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/unreachable",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "nvidia.com/gpu",
+          "operator": "Exists"
+        }
+      ],
+      "volumes": [
+        {
+          "configMap": {
+            "defaultMode": 420,
+            "name": "fsc-alphafold3-baseline-t01-e8fe9a3aa322-request"
+          },
+          "name": "request"
+        },
+        {
+          "emptyDir": {
+            "sizeLimit": "8Gi"
+          },
+          "name": "tmp"
+        },
+        {
+          "name": "academic",
+          "persistentVolumeClaim": {
+            "claimName": "academic-assets-runtime-rwx"
+          }
+        },
+        {
+          "emptyDir": {
+            "sizeLimit": "32Gi"
+          },
+          "name": "scratch"
+        }
+      ]
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T03:40:56Z",
+          "observedGeneration": 1,
+          "status": "False",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T03:39:48Z",
+          "observedGeneration": 1,
+          "reason": "PodCompleted",
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T03:40:55Z",
+          "observedGeneration": 1,
+          "reason": "PodCompleted",
+          "status": "False",
+          "type": "Ready"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T03:40:55Z",
+          "observedGeneration": 1,
+          "reason": "PodCompleted",
+          "status": "False",
+          "type": "ContainersReady"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-03T03:39:48Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodScheduled"
+        }
+      ],
+      "containerStatuses": [
+        {
+          "allocatedResources": {
+            "cpu": "4",
+            "memory": "32Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://d2c89f44c510a720670f5b50e9eeff413108dfa6882cf1b06c44a43c1274fa1d",
+          "image": "sha256:cc14504aa49a887abe0a4ac990da3bde08edffe78ad7c00600a436e1f8f98d81",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3@sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
+          "lastState": {},
+          "name": "batch",
+          "ready": false,
+          "resources": {
+            "limits": {
+              "cpu": "12",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "4",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": false,
+          "state": {
+            "terminated": {
+              "containerID": "containerd://d2c89f44c510a720670f5b50e9eeff413108dfa6882cf1b06c44a43c1274fa1d",
+              "exitCode": 0,
+              "finishedAt": "2026-09-03T03:40:55Z",
+              "reason": "Completed",
+              "startedAt": "2026-09-03T03:39:50Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 12345,
+              "supplementalGroups": [
+                12345,
+                65532
+              ],
+              "uid": 12345
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/var/run/fs2",
+              "name": "request",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/tmp",
+              "name": "tmp"
+            },
+            {
+              "mountPath": "/opt/fs2/academic",
+              "name": "academic",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/scratch",
+              "name": "scratch"
+            }
+          ]
+        }
+      ],
+      "hostIP": "10.0.0.17",
+      "hostIPs": [
+        {
+          "ip": "10.0.0.17"
+        }
+      ],
+      "observedGeneration": 1,
+      "phase": "Succeeded",
+      "podIP": "10.6.82.224",
+      "podIPs": [
+        {
+          "ip": "10.6.82.224"
+        }
+      ],
+      "qosClass": "Burstable",
+      "startTime": "2026-09-03T03:39:48Z"
+    }
+  },
+  "workload": null
+}

@@ -1,0 +1,563 @@
+{
+  "schema": "fs2.nebius.ai/fast-start-live-campaign-matrix/v1",
+  "campaign_id": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+  "owner_task": "fs2-qualified-model-fast-start-live-campaign-r20260903",
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "namespace": "fs2-models",
+    "local_queue": "inference-models",
+    "cluster_queue": "inference-accelerators"
+  },
+  "placement": {
+    "node_selector": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+      "accelerator.fs2.nebius/pool-id": "h100-reserved-8x"
+    },
+    "tolerations": [
+      {
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference",
+        "effect": "NoSchedule"
+      }
+    ],
+    "capacity_source": "capacity-block",
+    "capacity_type": "regular",
+    "rationale": "The preemptible h100-1x pool that carried the original one-off Mosaic qualification is at zero nodes for this campaign. Only the two always-hot capacity-block nodes advertise H100 GPUs, so every trial is pinned to the reserved-8x flavor that Kueue actually covers."
+  },
+  "pod_security": {
+    "runAsUser": 10001,
+    "runAsGroup": 10001,
+    "fsGroup": 10001,
+    "runAsNonRoot": true,
+    "seccompProfile": {
+      "type": "RuntimeDefault"
+    }
+  },
+  "container_security": {
+    "allowPrivilegeEscalation": false,
+    "readOnlyRootFilesystem": true,
+    "capabilities": {
+      "drop": [
+        "ALL"
+      ]
+    }
+  },
+  "labels": {
+    "app.kubernetes.io/managed-by": "fs2-faststart-campaign",
+    "app.kubernetes.io/part-of": "fs2-serve",
+    "fs2.nebius.ai/task": "fs2-qualified-model-fast-start-live-campaign-r20260903"
+  },
+  "level_contract": {
+    "source": "k8s-inference/FAST_START_LEVELS.md",
+    "measured_value": "model_start_seconds",
+    "boundaries": {
+      "start": "the instant the Pod is scheduled onto a Ready accelerator node, which is the capacity-available point for a batch stage",
+      "end": "the first semantic result the model emits, which for a batch runtime is the same instant as semantic ready"
+    },
+    "boundary_rationale": "The published contract assigns queue admission and placement to capacity wait, and assigns image setup, artifact restore, runtime initialisation, weight transfer and compilation to model start. Sandbox and volume setup therefore counts inside model start, not outside it. Measuring from container start instead would silently hide the recursive volume-ownership pass, which the baseline trials showed is the single largest contributor.",
+    "thresholds_seconds": {
+      "L4": 30,
+      "L3": 60,
+      "L2": 120,
+      "L1": 300
+    },
+    "below_all_thresholds": "Off",
+    "note": "Capacity wait and Kueue queue wait are reported separately and are deliberately excluded from the level evaluation, exactly as the published contract requires."
+  },
+  "mechanism_evidence": {
+    "local_nvme": {
+      "state": "unavailable",
+      "proof": "node label local-nvme.fs2.nebius/eligible=false on both H100 capacity-block nodes"
+    },
+    "gpu_process_snapshot": {
+      "state": "unsupported",
+      "proof": "node label snapshot.fs2.nebius/eligible=false on both H100 capacity-block nodes; no CRIU/cuda-checkpoint device state was captured or restored in this campaign",
+      "claim": "none"
+    },
+    "host_ram_standby": {
+      "state": "not-exercised",
+      "reason": "batch stages terminate their process at the end of each trial, so no host-RAM standby process survives between trials"
+    },
+    "hot_replica": {
+      "state": "not-applicable",
+      "reason": "these scientific runtimes are batch stages with no long-lived Service endpoint in this campaign"
+    }
+  },
+  "models": {
+    "mosaic": {
+      "model_id": "mosaic",
+      "runnable": true,
+      "backend_id": "mosaic-boltz2-proteinmpnn-v1",
+      "source_revision": "70fec525423f5f87156a1a957b4a4048f9f8e676",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+      "image_digest": "sha256:2dd5e1861826d6ea6fec27623489eda3bd0f819d2acd41da32b5b9220e6f2a69",
+      "image_tag": "70fec525423f5f87156a1a957b4a4048f9f8e676-adapter-v5",
+      "image_lock": "../runtime-images/mosaic/image-lock.json",
+      "qualification_state": "h100-semantic-qualified",
+      "prewarm_command": [
+        "/opt/fs2/bin/mosaic-batch",
+        "run-shard",
+        "--help"
+      ],
+      "resources": {
+        "requests": {
+          "cpu": "8",
+          "memory": "64Gi",
+          "nvidia.com/gpu": "1"
+        },
+        "limits": {
+          "cpu": "16",
+          "memory": "128Gi",
+          "nvidia.com/gpu": "1"
+        }
+      },
+      "request_files": {
+        "request.json": "../runtime-images/mosaic/qualification/mosaic-request.json",
+        "input-manifest.json": "../runtime-images/mosaic/qualification/mosaic-input-manifest.json"
+      },
+      "command_template": [
+        "/opt/fs2/bin/mosaic-batch",
+        "run-shard",
+        "--request",
+        "/var/run/fs2/request.json",
+        "--input-manifest",
+        "/var/run/fs2/input-manifest.json",
+        "--recipe",
+        "/opt/fs2/mosaic/recipe.json",
+        "--recipe-sha256",
+        "cbfc7a88e6e7c2255730218bbdeaf6fc272d721b6c792231429a923309a8e0fe",
+        "--shard-index",
+        "0",
+        "--seed",
+        "{seed}",
+        "--output",
+        "/workspace/faststart/{trial_id}/shard-000"
+      ],
+      "seed": 7300,
+      "env": {
+        "FS2_ARTIFACT_ROOT": "/opt/fs2/artifacts"
+      },
+      "volumes": {
+        "artifacts": {
+          "claim": "fs2-runtime-qualification-artifacts-r20260902",
+          "mount": "/opt/fs2/artifacts",
+          "readOnly": true
+        },
+        "workspace": {
+          "claim": "fs2-runtime-qualification-artifacts-r20260902",
+          "mount": "/workspace",
+          "readOnly": false
+        }
+      },
+      "tmp_size": "16Gi",
+      "external_artifacts": [
+        {
+          "id": "boltz2-conf",
+          "path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt",
+          "sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+          "bytes": 2286561469,
+          "verified_by_runtime": true
+        },
+        {
+          "id": "proteinmpnn-v-48-020",
+          "path": "/opt/fs2/artifacts/mosaic/proteinmpnn/v_48_020.pt",
+          "sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+          "bytes": 6681301,
+          "verified_by_runtime": true
+        },
+        {
+          "id": "boltz2-mols",
+          "path": "/opt/fs2/artifacts/mosaic/boltz/mols",
+          "kind": "directory",
+          "entries": 45227,
+          "verified_by_runtime": false,
+          "note": "the runtime checks directory presence; the archive identity is pinned in the image lock"
+        }
+      ],
+      "artifact_bytes_read_floor": 2293242770,
+      "result": {
+        "shard_dir": "/workspace/faststart/{trial_id}/shard-000",
+        "files": [
+          "shard-result.json",
+          "candidate-metrics.json",
+          "candidate.pdb"
+        ]
+      },
+      "semantic_gate": "mosaic_binder",
+      "log_markers": {
+        "runtime_result": "\"status\": \"succeeded\"",
+        "optimizer_progress": "^\\d+ loss: ",
+        "step_time": " time: ([0-9.]+)\\s*$",
+        "gpu_device_kind": "\"gpu\": \"([^\"]+)\""
+      },
+      "variants": {
+        "baseline": {
+          "label": "prepared-node, cold XLA compilation",
+          "description": "The image and every external checkpoint are already resident on the node and on the regional shared filesystem, but the JAX persistent compilation cache lives in the per-Pod /tmp emptyDir, so each trial recompiles every XLA executable. This is the currently deployed truth.",
+          "env": {},
+          "jit_cache": "per-pod-ephemeral"
+        },
+        "warm-jit": {
+          "label": "prepared-node, persistent XLA compilation cache",
+          "description": "Identical to baseline except the JAX persistent compilation cache is redirected to the regional shared filesystem so previously compiled executables are reused across Pods. This isolates the XLA compilation contribution to model start.",
+          "env": {
+            "JAX_COMPILATION_CACHE_DIR": "/workspace/faststart-jit-cache/mosaic",
+            "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS": "0.5",
+            "JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES": "0"
+          },
+          "jit_cache": "regional-shared-filesystem"
+        },
+        "fast-volume": {
+          "label": "prepared-node, no recursive volume ownership pass",
+          "description": "Identical to baseline except fsGroupChangePolicy is OnRootMismatch. The default Always policy makes the kubelet walk and chown the entire shared artifact volume on every Pod start, which the baseline trials showed dominates model start. OnRootMismatch skips the walk when the volume root already carries the target group.",
+          "env": {},
+          "pod_security_patch": {
+            "fsGroupChangePolicy": "OnRootMismatch"
+          },
+          "jit_cache": "per-pod-ephemeral",
+          "optimization": "volume-ownership-fast-path"
+        }
+      }
+    },
+    "boltzgen": {
+      "model_id": "boltzgen",
+      "runnable": true,
+      "backend_id": "boltzgen-cueq-v3",
+      "source_revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "image_digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "image_tag": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v3",
+      "lane": "optimized fused-kernel (cuEquivariance) lane; the portable no-kernel lane sha256:e2bb0a15c7585916ed650e851903bfe55643141f6521e36cdcb382670c0d3c02 is a separate runtime and is deliberately not collapsed into this one",
+      "qualification_state": "h100-semantic-qualified",
+      "prewarm_command": [
+        "python",
+        "/opt/fs2/runtime_probe.py",
+        "--model",
+        "boltzgen"
+      ],
+      "shell_wrapper": true,
+      "resources": {
+        "requests": {
+          "cpu": "8",
+          "memory": "64Gi",
+          "nvidia.com/gpu": "1"
+        },
+        "limits": {
+          "cpu": "16",
+          "memory": "128Gi",
+          "nvidia.com/gpu": "1"
+        }
+      },
+      "request_files": {},
+      "command_template": [
+        "boltzgen",
+        "run",
+        "/opt/fs2/source/example/vanilla_protein/1g13prot.yaml",
+        "--output",
+        "/work/faststart/{trial_id}",
+        "--protocol",
+        "protein-anything",
+        "--num_designs",
+        "1",
+        "--budget",
+        "1",
+        "--steps",
+        "design",
+        "--no_subprocess",
+        "--devices",
+        "1",
+        "--num_workers",
+        "0",
+        "--design_checkpoints",
+        "/opt/fs2/artifacts/boltzgen/boltzgen1_diverse.ckpt",
+        "--moldir",
+        "/opt/fs2/artifacts/boltzgen",
+        "--config",
+        "design",
+        "sampling_steps=20",
+        "recycling_steps=0",
+        "data.num_workers=0",
+        "diffusion_samples=1",
+        "--skip_inverse_folding",
+        "--folding_checkpoint",
+        "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt"
+      ],
+      "argv_provenance": "byte-identical to the argv recorded for job fs2-model-forward-boltzgen-optimized-v1-20260903 in the owning task's h100-qualification-receipt.json, except for the per-trial --output directory",
+      "seed": 0,
+      "env": {
+        "FS2_ARTIFACT_ROOT": "/opt/fs2/artifacts",
+        "MPLCONFIGDIR": "/tmp/mpl"
+      },
+      "container_security": {
+        "allowPrivilegeEscalation": false,
+        "readOnlyRootFilesystem": false,
+        "capabilities": {
+          "drop": [
+            "ALL"
+          ]
+        }
+      },
+      "container_security_deviation": "readOnlyRootFilesystem is false for this runtime. Unlike the Mosaic image, the BoltzGen image was never hardened against a read-only root, and this campaign measures startup rather than auditing the hardening contract. Every writable path the runtime actually uses is still an explicit mount, and the shared artifact plane stays mounted read-only.",
+      "volumes": {
+        "artifacts": {
+          "claim": "fs2-runtime-qualification-artifacts-r20260902",
+          "mount": "/opt/fs2/artifacts",
+          "readOnly": true
+        },
+        "workspace": {
+          "claim": "fs2-runtime-qualification-artifacts-r20260902",
+          "mount": "/work",
+          "readOnly": false
+        }
+      },
+      "tmp_size": "16Gi",
+      "external_artifacts": [
+        {
+          "id": "boltzgen1-diverse",
+          "path": "/opt/fs2/artifacts/boltzgen/boltzgen1_diverse.ckpt",
+          "sha256": "360af8bd6e59527ff6ec25dd81253967f3bd3567d200053b10680634751f8e3c",
+          "bytes": 1930847192,
+          "source": "hf://boltzgen/boltzgen-1@c1be29e1f82ffcc72264f64b993c43fb4e0d17f0",
+          "verified_by_runtime": false
+        },
+        {
+          "id": "boltz2-conf",
+          "path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt",
+          "sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
+          "bytes": 2286561469,
+          "verified_by_runtime": false
+        },
+        {
+          "id": "boltzgen-inference-molecules",
+          "path": "/opt/fs2/artifacts/boltzgen",
+          "kind": "directory",
+          "entries": 45227,
+          "bytes": 1820698819,
+          "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "verified_by_runtime": false
+        }
+      ],
+      "artifact_bytes_read_floor": 4217544661,
+      "result": {
+        "run_dir": "/work/faststart/{trial_id}",
+        "expect_nonempty": true
+      },
+      "semantic_gate": "boltzgen_design",
+      "log_markers": {
+        "runtime_result": "FS2_SEMANTIC_RESULT_EMITTED",
+        "kernels": "Using kernels: (\\w+)",
+        "optimizer_progress": "it/s|s/it|\\d+/\\d+",
+        "gpu_device_kind": "device capability: \\(([0-9, ]+)\\)"
+      },
+      "variants": {
+        "baseline": {
+          "label": "prepared-node, cold kernel and compile caches",
+          "description": "The image and every checkpoint are already resident, but the cuEquivariance/Triton, numba and Torch kernel caches live in the per-Pod /tmp emptyDir, so each trial recompiles its fused kernels.",
+          "env": {
+            "XDG_CACHE_HOME": "/tmp/xdg",
+            "HF_HOME": "/tmp/hf"
+          },
+          "jit_cache": "per-pod-ephemeral"
+        },
+        "warm-cache": {
+          "label": "prepared-node, persistent kernel and compile caches",
+          "description": "Identical to baseline except the kernel/compile caches are redirected to a campaign-owned directory on the regional shared filesystem, so trials after the first reuse compiled fused kernels. This isolates the kernel-compilation contribution to model start.",
+          "env": {
+            "XDG_CACHE_HOME": "/work/faststart-cache/boltzgen/xdg",
+            "HF_HOME": "/work/faststart-cache/boltzgen/hf"
+          },
+          "jit_cache": "regional-shared-filesystem"
+        },
+        "fast-volume": {
+          "label": "prepared-node, no recursive volume ownership pass",
+          "description": "Identical to baseline except fsGroupChangePolicy is OnRootMismatch. The default Always policy makes the kubelet walk and chown the entire shared artifact volume on every Pod start, which the baseline trials showed dominates model start. OnRootMismatch skips the walk when the volume root already carries the target group.",
+          "env": {
+            "XDG_CACHE_HOME": "/tmp/xdg",
+            "HF_HOME": "/tmp/hf"
+          },
+          "pod_security_patch": {
+            "fsGroupChangePolicy": "OnRootMismatch"
+          },
+          "jit_cache": "per-pod-ephemeral",
+          "optimization": "volume-ownership-fast-path"
+        }
+      },
+      "runtime_reported_metrics": {
+        "designed_residues": "Total designed residues: (\\d+)",
+        "fused_kernels_enabled": "Using kernels: (True|False)",
+        "device_capability_major": "device capability: \\((\\d+),",
+        "semantic_cif_atoms": "FS2_SEMANTIC_CIF_ATOMS (\\d+)",
+        "semantic_cif_bytes": "FS2_SEMANTIC_CIF_BYTES (\\d+)",
+        "semantic_cif_sha256": "FS2_SEMANTIC_CIF_SHA256 ([0-9a-f]{64})",
+        "semantic_cif_count": "FS2_SEMANTIC_CIF_COUNT (\\d+)"
+      },
+      "shell_postlude": [
+        "DESIGN=\"$(find /work/faststart/{trial_id} -name \"*.cif\" | sort | head -1)\"",
+        "echo \"FS2_SEMANTIC_CIF_PATH $DESIGN\"",
+        "echo \"FS2_SEMANTIC_CIF_ATOMS $(grep -c \"^ATOM\" \"$DESIGN\")\"",
+        "echo \"FS2_SEMANTIC_CIF_BYTES $(wc -c < \"$DESIGN\")\"",
+        "echo \"FS2_SEMANTIC_CIF_SHA256 $(sha256sum \"$DESIGN\" | cut -d\" \" -f1)\"",
+        "echo \"FS2_SEMANTIC_CIF_COUNT $(find /work/faststart/{trial_id} -name \"*.cif\" | wc -l)\""
+      ]
+    },
+    "alphafold3": {
+      "model_id": "alphafold3",
+      "runnable": true,
+      "backend_id": "alphafold3-v3.0.4-academic",
+      "source_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/academic/tenant-academic/alphafold3@sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
+      "image_digest": "sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887",
+      "image_tag": "3.0.4-academic",
+      "image_provenance": "resolved from the live node image cache on the H100 capacity-block node, because every committed file redacts the registry path to \"withheld\". This is the digest the owning task recorded as historical-semantic-evidence; the unpublished clean-wrapper successor has a null digest and is deliberately not used.",
+      "qualification_state": "h100-semantic-qualified",
+      "namespace": "fs2-academic-poc",
+      "use_kueue": false,
+      "kueue_note": "The ClusterQueue inference-accelerators selects only namespace fs2-models, and the AlphaFold 3 parameter claim is tenant-private to fs2-academic-poc. A cross-namespace claim mount is impossible, so this model schedules directly against the accelerator pool exactly as its original semantic evidence Job did, and its GPU is therefore outside Kueue quota rather than borrowed from it.",
+      "prewarm_command": [
+        "/alphafold3_venv/bin/python3",
+        "-c",
+        "import alphafold3; print('ok')"
+      ],
+      "shell_wrapper": true,
+      "shell_prelude": [
+        "cd /app/alphafold"
+      ],
+      "resources": {
+        "requests": {
+          "cpu": "4",
+          "memory": "32Gi",
+          "nvidia.com/gpu": "1"
+        },
+        "limits": {
+          "cpu": "12",
+          "memory": "64Gi",
+          "nvidia.com/gpu": "1"
+        }
+      },
+      "request_files": {
+        "fold_input.json": "af3-fold-input.json"
+      },
+      "command_template": [
+        "/alphafold3_venv/bin/python3",
+        "run_alphafold.py",
+        "--model_dir=/opt/fs2/academic/alphafold3",
+        "--json_path=/var/run/fs2/fold_input.json",
+        "--output_dir=/scratch/out",
+        "--norun_data_pipeline",
+        "--flash_attention_implementation=xla"
+      ],
+      "argv_provenance": "the inference argv recorded for job academic-af3-v304-semantic-v1, which is the official no-data-pipeline path; --norun_data_pipeline is what makes the unpublished reference-database bundle irrelevant to this measurement",
+      "seed": 1,
+      "env": {
+        "HOME": "/scratch",
+        "TMPDIR": "/scratch",
+        "XLA_FLAGS": "--xla_gpu_enable_triton_gemm=false",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "pod_security": {
+        "runAsUser": 12345,
+        "runAsGroup": 12345,
+        "runAsNonRoot": true,
+        "supplementalGroups": [
+          65532
+        ],
+        "seccompProfile": {
+          "type": "RuntimeDefault"
+        }
+      },
+      "pod_security_note": "fsGroup is deliberately absent. The academic claim is group-owned by GID 65532 with 0440 files and 0550 directories, so access comes from a supplemental group; setting fsGroup would attempt a recursive ownership change on a read-only licensed tree.",
+      "container_security": {
+        "allowPrivilegeEscalation": false,
+        "readOnlyRootFilesystem": false,
+        "capabilities": {
+          "drop": [
+            "ALL"
+          ]
+        }
+      },
+      "volumes": {
+        "academic": {
+          "claim": "academic-assets-runtime-rwx",
+          "mount": "/opt/fs2/academic",
+          "readOnly": true
+        },
+        "scratch": {
+          "emptyDir": "32Gi",
+          "mount": "/scratch"
+        }
+      },
+      "tmp_size": "8Gi",
+      "external_artifacts": [
+        {
+          "id": "alphafold3-parameters",
+          "path": "/opt/fs2/academic/alphafold3/af3.bin.zst",
+          "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+          "bytes": 1020545840,
+          "decompressed_sha256": "df8bbf2621f17dd3ee21c2a921e84a50bc2b80cdc0c7971cb915c2826fee1f9b",
+          "decompressed_bytes": 1146811260,
+          "license": "academic, non-redistributable; mounted from the tenant-private claim and never embedded in an image",
+          "verified_by_runtime": false
+        }
+      ],
+      "artifact_bytes_read_floor": 1020545840,
+      "reference_data": {
+        "state": "not-required",
+        "reason": "--norun_data_pipeline skips MSA and template search entirely, so the unpublished alphafold3-public-databases-v3.0 bundle is not on this path"
+      },
+      "result": {
+        "run_dir": "/scratch/out",
+        "expect_cif": true
+      },
+      "semantic_gate": "af3_structure",
+      "log_markers": {
+        "runtime_result": "Writing outputs with",
+        "optimizer_progress": "(Featurising data with seed|Running model inference with seed)",
+        "params_loaded": "Checking that model parameters can be loaded",
+        "gpu_device_kind": "Found local GPU devices: \\[([^\\]]+)\\]"
+      },
+      "variants": {
+        "baseline": {
+          "label": "prepared-node, cold XLA compilation",
+          "description": "The image and the compressed parameter object are already resident. The JAX compilation cache is not persisted, so each trial pays full XLA compilation on top of parameter decompression and host-to-device transfer.",
+          "env": {},
+          "jit_cache": "per-pod-ephemeral"
+        }
+      },
+      "env_note": "PYTHONUNBUFFERED is set so the container log carries a real timestamp per line. Without it AlphaFold 3 buffers its whole run and flushes at exit, which collapses every phase boundary onto the flush instant.",
+      "runtime_reported_metrics": {
+        "featurisation_seconds": "Featurising data with \\d+ seed\\(s\\) took ([0-9.]+) seconds",
+        "inference_seconds": "Running model inference with seed \\d+ took ([0-9.]+) seconds",
+        "extraction_seconds": "Extracting \\d+ inference samples with seed \\d+ took ([0-9.]+) seconds",
+        "inference_samples": "Extracting (\\d+) inference samples with seed",
+        "semantic_cif_atoms": "FS2_SEMANTIC_CIF_ATOMS (\\d+)",
+        "semantic_cif_bytes": "FS2_SEMANTIC_CIF_BYTES (\\d+)",
+        "semantic_cif_sha256": "FS2_SEMANTIC_CIF_SHA256 ([0-9a-f]{64})",
+        "semantic_cif_count": "FS2_SEMANTIC_CIF_COUNT (\\d+)"
+      },
+      "shell_postlude": [
+        "CIF=\"$(find /scratch/out -name \"*model*.cif\" | sort | head -1)\"",
+        "echo \"FS2_SEMANTIC_CIF_PATH $CIF\"",
+        "echo \"FS2_SEMANTIC_CIF_ATOMS $(grep -c \"^ATOM\" \"$CIF\")\"",
+        "echo \"FS2_SEMANTIC_CIF_BYTES $(wc -c < \"$CIF\")\"",
+        "echo \"FS2_SEMANTIC_CIF_SHA256 $(sha256sum \"$CIF\" | cut -d\" \" -f1)\"",
+        "echo \"FS2_SEMANTIC_CIF_COUNT $(find /scratch/out -name \"*.cif\" | wc -l)\""
+      ],
+      "semantic_gate_source": "container-log; AlphaFold 3 output lives in an ephemeral scratch volume that is deliberately not written back to the tenant-private licensed claim",
+      "successor_lane": {
+        "state": "pending-upstream",
+        "digest": "sha256:2c357d97309bf5691ac67a7465672580d16af4431577732361dc2ad9c5dbd72c",
+        "tag": "3.0.4-85c4d205-r3",
+        "repository": "withheld; the owning runtime task treats the registry account path as a deploy-time binding and the digest as the authoritative identity",
+        "blocked_reason": "The owning task fs2-af3-runtime-clean-successor-r20260903 reported on 2026-09-03 that a reviewer blocked this digest and that it is being superseded, and asked that no other task schedule a Job against it. It is also running the semantic trial itself, so a trial here would duplicate live GPU work.",
+        "campaign_action": "no Job was submitted against this digest",
+        "planned": "one production-equivalent semantic inference against the replacement digest with the same official subpath parameter mount, then three trials once it passes, reported with a receipt comparable to the academic lane below",
+        "comparison_baseline": "the three academic-lane trials in this campaign, whose p95 model start is 60.805 s",
+        "expected_difference": "the successor runtime verifies parameter identity before load, adding a one-off read of the 1.02 GB parameter object that the academic lane did not perform"
+      },
+      "measured_lane_note": "The lane measured in this campaign is the stock upstream v3.0.4 academic image that carries the retained H100 semantic evidence, not the clean runtime wrapper."
+    }
+  }
+}
