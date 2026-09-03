@@ -9,10 +9,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import PurePosixPath
+from typing import TypeVar
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 _NAME_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$")
@@ -57,6 +59,32 @@ COLLECTION_GRACE_SECONDS = 1800
 # a stalled collection still yields a deterministic controller failure code
 # rather than an opaque Kubernetes ``DeadlineExceeded`` kill.
 COLLECTION_DEADLINE_MARGIN_SECONDS = 120
+
+STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v8"
+PREVIOUS_STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v7"
+LEGACY_STATE_SCHEMA = "fs2-serve.nebius.ai/scientific-batch-state/v6"
+READABLE_STATE_SCHEMAS = (LEGACY_STATE_SCHEMA, PREVIOUS_STATE_SCHEMA, STATE_SCHEMA)
+LEGACY_ADMISSION_FAILURE_CODE = "legacy_state_incompatible"
+
+
+class ScientificIdentityError(LookupError):
+    """A frozen admission has no record for a requested stage or shard identity.
+
+    Every identity lookup below raises this instead of letting a bare
+    ``StopIteration`` escape.  Inside a coroutine that would surface as an
+    opaque ``RuntimeError``, which a legacy row reopened by a newer controller
+    can otherwise trigger for a whole reconcile loop.
+    """
+
+
+_Frozen = TypeVar("_Frozen")
+
+
+def _only(matches: Iterator[_Frozen], message: str) -> _Frozen:
+    match = next(matches, None)
+    if match is None:
+        raise ScientificIdentityError(message)
+    return match
 
 
 class BatchStatus(StrEnum):
@@ -340,7 +368,10 @@ class ScientificBatchPlan:
             known.add(stage.stage_id)
 
     def stage(self, stage_id: str) -> ScientificStagePlan:
-        return next(stage for stage in self.stages if stage.stage_id == stage_id)
+        return _only(
+            (stage for stage in self.stages if stage.stage_id == stage_id),
+            f"frozen plan has no stage {stage_id!r}",
+        )
 
 
 def _check_controller_path(value: str, label: str) -> None:
@@ -806,10 +837,16 @@ class AdapterExecutionPlan:
 
     def invocation(self, stage_id: str, shard_id: str | None) -> StageInvocation:
         key = (stage_id, shard_id or "gang")
-        return next(item for item in self.invocations if (item.stage_id, item.shard_id) == key)
+        return _only(
+            (item for item in self.invocations if (item.stage_id, item.shard_id) == key),
+            f"frozen adapter execution has no invocation for stage {key[0]!r} shard {key[1]!r}",
+        )
 
     def execution_binding(self, stage_id: str) -> StageExecutionBinding:
-        return next(item for item in self.stage_bindings if item.stage_id == stage_id)
+        return _only(
+            (item for item in self.stage_bindings if item.stage_id == stage_id),
+            f"frozen adapter execution has no stage binding for {stage_id!r}",
+        )
 
     def producer(self, logical_artifact_id: str) -> StageInvocation | None:
         return next((item for item in self.invocations if item.produces == logical_artifact_id), None)
@@ -1028,7 +1065,10 @@ class SchedulingSnapshot:
                 raise ValueError("stage LocalQueue route namespace is inconsistent")
 
     def stage(self, stage_id: str) -> StageSchedulingDecision:
-        return next(stage for stage in self.stages if stage.stage_id == stage_id)
+        return _only(
+            (stage for stage in self.stages if stage.stage_id == stage_id),
+            f"frozen scheduling snapshot has no stage {stage_id!r}",
+        )
 
     @property
     def digest(self) -> str:
@@ -1213,9 +1253,12 @@ class ScientificBatchState:
     cancel_requested: bool = False
     failure_code: str | None = None
     result_published: bool = False
+    stored_schema: str = STATE_SCHEMA
 
     def __post_init__(self) -> None:
         _check_variant(self.variant_id)
+        if self.stored_schema not in READABLE_STATE_SCHEMAS:
+            raise ValueError("stored scientific-batch state schema is unsupported")
         if self.execution_plan is not None and (
             self.execution_plan.controller_plan != self.plan
             or self.execution_plan.model_id != self.model_id
@@ -1303,7 +1346,24 @@ class ScientificBatchState:
         )
 
     def stage(self, stage_id: str) -> ScientificStageState:
-        return next(stage for stage in self.stages if stage.stage_id == stage_id)
+        return _only(
+            (stage for stage in self.stages if stage.stage_id == stage_id),
+            f"scientific batch has no stage record {stage_id!r}",
+        )
+
+    @property
+    def legacy_admission(self) -> bool:
+        """Whether this row was frozen before the current state schema.
+
+        A pre-v8 admission has no placement class, no raw scheduling contract
+        digest, and no execution-map or stage bindings, because those values
+        did not exist when it was written.  The codec reopens them as the
+        explicit null/empty representation, so the row stays readable but is
+        not executable: the controller can neither render its workloads nor
+        prove which image and resources it was admitted against.
+        """
+
+        return self.stored_schema != STATE_SCHEMA
 
 
 @dataclass(frozen=True, slots=True)

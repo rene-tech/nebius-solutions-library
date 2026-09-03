@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from .models import (
+    LEGACY_ADMISSION_FAILURE_CODE,
     PUBLIC_ARTIFACT_ACCESS_CONTEXT,
     AdapterExecutionPlan,
     ArtifactAccessContext,
@@ -47,6 +48,12 @@ from .protocols import (
     ScientificBatchRepository,
     ScientificBatchResultPublisher,
 )
+
+# A terminal cascade advances one persisted cleanup step per attempt, so it
+# needs at most a delete-request step and an absence step per attempt round.
+# The bound keeps a slow cluster from holding the claim: an unfinished cascade
+# resumes on the next poll from its own durable state.
+CASCADE_STEP_BOUND = 8
 
 
 class ScientificBatchController:
@@ -174,6 +181,9 @@ class ScientificBatchController:
             return
         if record.cancel_requested:
             await self._cancel(claim, record, now=now)
+            return
+        if record.legacy_admission:
+            await self._retire_legacy_admission(claim, record, now=now)
             return
 
         active = next((stage for stage in record.stages if stage.status is StageStatus.ACTIVE), None)
@@ -357,9 +367,7 @@ class ScientificBatchController:
                     execution_binding=(
                         None
                         if record.execution_plan is None
-                        else next(
-                            item for item in record.execution_plan.stage_bindings if item.stage_id == spec.stage_id
-                        )
+                        else record.execution_plan.execution_binding(spec.stage_id)
                     ),
                 )
                 ref = await self.cluster.apply(resource, controller_fence=claim.fencing_token)
@@ -695,24 +703,16 @@ class ScientificBatchController:
         *,
         now: datetime,
     ) -> None:
-        attempts = list(stage.attempts)
-        for index, attempt in enumerate(attempts):
-            active = attempt.outcome is AttemptOutcome.ACTIVE
-            terminal_attempt = replace(
-                attempt,
-                outcome=AttemptOutcome.CANCELLED if active else attempt.outcome,
-                completed_at=now if active else attempt.completed_at,
-                failure_kind=failure_kind if active else attempt.failure_kind,
-                failure_code="peer_failed" if active else attempt.failure_code,
-            )
-            cleaned_attempt, cleanup_events = await self._advance_cleanup(
-                claim,
-                record,
-                terminal_attempt,
-                graceful=active,
-            )
-            events.extend(cleanup_events)
-            attempts[index] = cleaned_attempt
+        retired, retirement_events = await self._retire_attempts(
+            claim,
+            record,
+            stage,
+            failure_kind=failure_kind,
+            failure_code="peer_failed",
+            now=now,
+        )
+        attempts = list(retired)
+        events.extend(retirement_events)
 
         deletion_pending = any(not attempt.resource_released for attempt in attempts)
         failed = replace(
@@ -753,36 +753,101 @@ class ScientificBatchController:
         )
         await self._write(claim, record, next_record, tuple(events), now=now)
 
+    async def _retire_attempts(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        stage: ScientificStageState,
+        *,
+        failure_kind: FailureKind | None,
+        failure_code: str,
+        now: datetime,
+    ) -> tuple[tuple[ScientificAttemptState, ...], tuple[BatchEventDraft, ...]]:
+        """Move one stage's attempts toward a released terminal outcome.
+
+        Only an attempt that is still running is reclassified; an attempt that
+        already reached its own outcome keeps it. Each returned attempt has
+        advanced exactly one persisted step of UID-fenced cleanup, so the
+        caller must check ``resource_released`` before it treats the stage or
+        the batch as terminal.
+        """
+
+        attempts: list[ScientificAttemptState] = []
+        events: list[BatchEventDraft] = []
+        for attempt in stage.attempts:
+            active = attempt.outcome is AttemptOutcome.ACTIVE
+            terminal_attempt = replace(
+                attempt,
+                outcome=AttemptOutcome.CANCELLED if active else attempt.outcome,
+                completed_at=now if active else attempt.completed_at,
+                failure_kind=failure_kind if active else attempt.failure_kind,
+                failure_code=failure_code if active else attempt.failure_code,
+            )
+            cleaned_attempt, cleanup_events = await self._advance_cleanup(
+                claim,
+                record,
+                terminal_attempt,
+                graceful=active,
+            )
+            events.extend(cleanup_events)
+            attempts.append(cleaned_attempt)
+        return tuple(attempts), tuple(events)
+
+    async def _settle_cascade(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        step: Callable[[BatchClaim, ScientificBatchState, datetime], Awaitable[ScientificBatchState | None]],
+        *,
+        now: datetime,
+    ) -> None:
+        """Repeat one terminal cascade step until the batch stops moving.
+
+        Cleanup advances exactly one persisted step per attempt: a delete is
+        requested and recorded, and only a later step may conclude that
+        Kubernetes has released the resource. Handing control back between
+        those steps would leave a cancelled or retired batch reported as
+        running, and its public Operation row running with it, until an
+        unrelated later poll. Each step here is still its own fenced durable
+        write, so a crash mid-cascade resumes from what was committed.
+        """
+
+        for _ in range(CASCADE_STEP_BOUND):
+            written = await step(claim, record, now)
+            if written is None or written.status.terminal:
+                return
+            record = written
+
     async def _cancel(self, claim: BatchClaim, record: ScientificBatchState, *, now: datetime) -> None:
+        await self._settle_cascade(claim, record, self._cancel_step, now=now)
+
+    async def _cancel_step(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        now: datetime,
+    ) -> ScientificBatchState | None:
         stages: list[ScientificStageState] = []
         events: list[BatchEventDraft] = []
         deletion_pending = False
         for stage in record.stages:
-            attempts: list[ScientificAttemptState] = []
-            for attempt in stage.attempts:
-                active = attempt.outcome is AttemptOutcome.ACTIVE
-                terminal_attempt = replace(
-                    attempt,
-                    outcome=AttemptOutcome.CANCELLED if active else attempt.outcome,
-                    completed_at=now if active else attempt.completed_at,
-                    failure_code="cancelled" if active else attempt.failure_code,
-                )
-                cleaned_attempt, cleanup_events = await self._advance_cleanup(
-                    claim,
-                    record,
-                    terminal_attempt,
-                    graceful=active,
-                )
-                events.extend(cleanup_events)
-                deletion_pending = deletion_pending or not cleaned_attempt.resource_released
-                attempts.append(cleaned_attempt)
+            attempts, cleanup_events = await self._retire_attempts(
+                claim,
+                record,
+                stage,
+                failure_kind=None,
+                failure_code="cancelled",
+                now=now,
+            )
+            events.extend(cleanup_events)
             stage_deletion_pending = any(not attempt.resource_released for attempt in attempts)
+            deletion_pending = deletion_pending or stage_deletion_pending
             status = (
                 stage.status
                 if stage_deletion_pending or stage.status is StageStatus.SUCCEEDED
                 else StageStatus.CANCELLED
             )
-            stages.append(replace(stage, status=status, attempts=tuple(attempts)))
+            stages.append(replace(stage, status=status, attempts=attempts))
         if deletion_pending:
             next_record = replace(
                 record,
@@ -790,9 +855,9 @@ class ScientificBatchController:
                 status=BatchStatus.RUNNING,
                 failure_code="cancelled",
             )
-            if next_record != record or events:
-                await self._write(claim, record, next_record, tuple(events), now=now)
-            return
+            if next_record == record and not events:
+                return None
+            return await self._write(claim, record, next_record, tuple(events), now=now)
 
         events.append(self._event(record, BatchEventKind.BATCH_CANCELLED, code="cancelled"))
         next_record = replace(
@@ -802,7 +867,84 @@ class ScientificBatchController:
             failure_code="cancelled",
             result_published=self.result_publisher is None,
         )
-        await self._write(claim, record, next_record, tuple(events), now=now)
+        return await self._write(claim, record, next_record, tuple(events), now=now)
+
+    async def _retire_legacy_admission(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        *,
+        now: datetime,
+    ) -> None:
+        """Fail a still-open pre-v8 batch instead of executing its admission.
+
+        A row frozen before the current state schema has no placement class, no
+        raw scheduling contract digest, and no execution-map or stage bindings,
+        so this controller cannot render its workloads or prove what it was
+        admitted against. Resuming one would either abort mid-stage or leave it
+        reported as running forever. Scientific batch has never been enabled on
+        a live cluster, so no such row can own real GPU capacity; the truthful
+        outcome is a terminal infrastructure failure the caller can resubmit
+        against the current schema. Any workload identity the row does carry is
+        still deleted through the same UID-fenced cleanup, so a resource that
+        somehow exists is released rather than orphaned.
+        """
+
+        await self._settle_cascade(claim, record, self._retire_legacy_step, now=now)
+
+    async def _retire_legacy_step(
+        self,
+        claim: BatchClaim,
+        record: ScientificBatchState,
+        now: datetime,
+    ) -> ScientificBatchState | None:
+        stages: list[ScientificStageState] = []
+        events: list[BatchEventDraft] = []
+        deletion_pending = False
+        for stage in record.stages:
+            attempts, cleanup_events = await self._retire_attempts(
+                claim,
+                record,
+                stage,
+                failure_kind=FailureKind.INFRASTRUCTURE,
+                failure_code=LEGACY_ADMISSION_FAILURE_CODE,
+                now=now,
+            )
+            events.extend(cleanup_events)
+            stage_deletion_pending = any(not attempt.resource_released for attempt in attempts)
+            deletion_pending = deletion_pending or stage_deletion_pending
+            if stage.status.terminal:
+                status, failure_code = stage.status, stage.failure_code
+            elif stage.status is StageStatus.ACTIVE:
+                # The first write upgrades the row to the current schema, so a
+                # restart no longer sees a legacy admission. Carrying the code
+                # on the stage keeps the half-retired batch recoverable through
+                # the ordinary failure cascade instead of stalling as running.
+                status = StageStatus.ACTIVE if stage_deletion_pending else StageStatus.FAILED
+                failure_code = LEGACY_ADMISSION_FAILURE_CODE
+            else:
+                status, failure_code = StageStatus.CANCELLED, stage.failure_code
+            stages.append(replace(stage, status=status, failure_code=failure_code, attempts=attempts))
+        if deletion_pending:
+            next_record = replace(
+                record,
+                stages=tuple(stages),
+                status=BatchStatus.RUNNING,
+                failure_code=LEGACY_ADMISSION_FAILURE_CODE,
+            )
+            if next_record == record and not events:
+                return None
+            return await self._write(claim, record, next_record, tuple(events), now=now)
+
+        events.append(self._event(record, BatchEventKind.BATCH_FAILED, code=LEGACY_ADMISSION_FAILURE_CODE))
+        next_record = replace(
+            record,
+            stages=tuple(stages),
+            status=BatchStatus.FAILED,
+            failure_code=LEGACY_ADMISSION_FAILURE_CODE,
+            result_published=self.result_publisher is None,
+        )
+        return await self._write(claim, record, next_record, tuple(events), now=now)
 
     async def _advance_cleanup(
         self,

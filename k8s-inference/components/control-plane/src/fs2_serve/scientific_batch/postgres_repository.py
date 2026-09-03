@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import datetime
@@ -11,7 +10,7 @@ from uuid import UUID
 
 import asyncpg
 
-from .codec import LEGACY_STATE_SCHEMA, PREVIOUS_STATE_SCHEMA, state_from_value, state_to_json
+from .codec import state_from_value, state_to_json
 from .models import (
     PUBLIC_ARTIFACT_ACCESS_CONTEXT,
     AdapterExecutionPlan,
@@ -67,13 +66,11 @@ class PostgresScientificBatchRepository:
 
     @staticmethod
     def _state(record: Mapping[str, Any]) -> ScientificBatchState:
-        raw_state = record["state"]
         state = state_from_value(record["state"])
-        raw_value = json.loads(raw_state) if isinstance(raw_state, str) else raw_state
-        legacy = isinstance(raw_value, Mapping) and raw_value.get("schema_version") in {
-            LEGACY_STATE_SCHEMA,
-            PREVIOUS_STATE_SCHEMA,
-        }
+        # A pre-v8 row was digested by a scheduling snapshot that had fewer
+        # fields, so only a current-schema row can be checked against the
+        # stored digest column.
+        legacy = state.legacy_admission
         if (
             state.operation_id != record["operation_id"]
             or state.batch_id != record["batch_id"]
