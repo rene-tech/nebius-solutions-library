@@ -104,13 +104,14 @@
         "read_only_mount_verified": true,
         "pythonpath_first": true,
         "import_origin": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages/pyrosetta/__init__.py",
+        "dunder_version_attribute_present": false,
         "metadata_version": "2026.29+releasequarterly.80a0635615",
         "dist_info": "pyrosetta-2026.29+releasequarterly.80a0635615.dist-info",
         "version_api_check": {
           "method": "pyrosetta.version()",
           "status": "supported",
           "release": "2026.29+releasequarterly.80a0635615",
-          "note": "Direct H100 invocation returned the PyRosetta-4 release banner; an unsupported API would not be classified as installation failure."
+          "note": "Direct H100 invocation returned the PyRosetta-4 release banner. The module has no supported __version__ dunder attribute; this is not an installation failure. Metadata and dist-info are authoritative."
         },
         "per_request_receipt_gate": false,
         "licensed_bytes_embedded_in_image": false
