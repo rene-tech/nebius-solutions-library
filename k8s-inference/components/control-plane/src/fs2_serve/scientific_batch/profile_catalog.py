@@ -102,6 +102,62 @@ class ScientificWorkloadProfile:
         return cast(str, interface["parameter_schema"])
 
     @property
+    def display_name(self) -> str:
+        return cast(str, self.value["display_name"])
+
+    @property
+    def execution_mode(self) -> str:
+        return cast(str, self.value["execution_mode"])
+
+    @property
+    def source_repository(self) -> str:
+        source = cast(Mapping[str, Any], self.value["source"])
+        return cast(str, source["repository"])
+
+    @property
+    def runtime_image_digest(self) -> str:
+        identity = cast(Mapping[str, Any], self.value["execution_identity"])
+        return cast(str, identity["runtime_image_digest"])
+
+    @property
+    def execution_identity_sha256(self) -> str:
+        identity = cast(Mapping[str, Any], self.value["execution_identity"])
+        return cast(str, identity["execution_identity_sha256"])
+
+    @property
+    def access_profile(self) -> str:
+        access = cast(Mapping[str, Any], self.value["access"])
+        return cast(str, access["profile"])
+
+    @property
+    def access_state(self) -> str:
+        access = cast(Mapping[str, Any], self.value["access"])
+        return cast(str, access["state"])
+
+    @property
+    def access_receipt_digest(self) -> str | None:
+        access = cast(Mapping[str, Any], self.value["access"])
+        return cast(str | None, access["receipt_digest"])
+
+    @property
+    def mcp_discoverable(self) -> bool:
+        interface = cast(Mapping[str, Any], self.value["interface"])
+        mcp = cast(Mapping[str, Any], interface["mcp"])
+        return mcp.get("discoverable") is True
+
+    @property
+    def mcp_tool_name(self) -> str:
+        interface = cast(Mapping[str, Any], self.value["interface"])
+        mcp = cast(Mapping[str, Any], interface["mcp"])
+        return cast(str, mcp["tool_name"])
+
+    @property
+    def mcp_description(self) -> str:
+        interface = cast(Mapping[str, Any], self.value["interface"])
+        mcp = cast(Mapping[str, Any], interface["mcp"])
+        return cast(str, mcp["description"])
+
+    @property
     def mcp_invocable(self) -> bool:
         interface = cast(Mapping[str, Any], self.value["interface"])
         mcp = cast(Mapping[str, Any], interface["mcp"])

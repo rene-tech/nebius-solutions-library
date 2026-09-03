@@ -110,7 +110,9 @@ scientificBatch:
   executionMapConfigMapName: ""
   executionMapKey: execution-map.json
   # Rendered into the immutable ConfigMap above by this release. Runtime
-  # onboarding supplies exact digest-bound model/stage entries.
+  # onboarding supplies exact digest-bound model/stage entries. An empty list
+  # is a valid fail-closed startup state: the controller runs its private CPU
+  # plumbing canary, while all public discovery/submission remains empty.
   executionMap:
     schema: fs2-serve.nebius.ai/scientific-execution-map/v3
     models: []

@@ -297,7 +297,8 @@ class CanonicalArtifactAdapter(ArtifactAdapter):
 
 
 class ModelAdapter:
-    async def list_models(self) -> ScientificModelSnapshot:
+    async def list_models(self, *, tenant_id: str | None = None) -> ScientificModelSnapshot:
+        del tenant_id
         return ScientificModelSnapshot(data=ScientificModelReadinessList(items=[]), observed_at=FIXED_NOW)
 
 

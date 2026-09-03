@@ -19,6 +19,7 @@ from .scientific_admin_models import (
     ScientificModelReadinessList,
     ScientificServiceClass,
 )
+from .scientific_batch.service import ScientificBatchService, ScientificProfileDiscovery
 
 SCIENTIFIC_SOURCE_RECEIPTS = "scientific-source-candidate-receipts.json"
 _HYBRID_MODELS = frozenset({"esmfold2", "esmfold2-fast"})
@@ -35,6 +36,88 @@ _ALTERNATIVES = {
         reason="Open alternative; it is not represented as native BindCraft/PyRosetta.",
     ),
 }
+
+
+class ScientificProfileDiscoveryAdapter:
+    """Admin projection of tenant-runnable scientific profiles only."""
+
+    def __init__(
+        self,
+        *,
+        scientific_batches: ScientificBatchService | None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self.scientific_batches = scientific_batches
+        self.clock = clock or (lambda: datetime.now(UTC))
+
+    async def list_models(self, *, tenant_id: str | None = None) -> ScientificModelSnapshot:
+        profiles = (
+            ()
+            if self.scientific_batches is None
+            else self.scientific_batches.discovery_profiles(
+                tenant_id=tenant_id,
+                allowed_models=frozenset({"*"}),
+                surface="admin",
+            )
+        )
+        return ScientificModelSnapshot(
+            data=ScientificModelReadinessList(items=[self._project(profile) for profile in profiles]),
+            observed_at=self.clock().astimezone(UTC),
+        )
+
+    @staticmethod
+    def _project(profile: ScientificProfileDiscovery) -> ScientificModelReadiness:
+        service_classes = [ScientificServiceClass(value) for value in profile.service_classes]
+        access_profile: Literal["standard", "academic"] = (
+            "academic" if profile.access_profile == "academic" else "standard"
+        )
+        access_state: Literal["not-required", "unverified", "verified", "blocked"] = (
+            "verified" if access_profile == "academic" else "not-required"
+        )
+        execution_mode: Literal["scientific-batch", "hybrid"] = (
+            "hybrid" if profile.execution_mode == "hybrid" else "scientific-batch"
+        )
+        return ScientificModelReadiness(
+            model_id=profile.model_id,
+            display_name=profile.display_name,
+            readiness="qualified",
+            readiness_reason=(
+                "The exact profile, execution map, access binding, and scheduler eligibility are active."
+            ),
+            execution_mode=execution_mode,
+            batch_supported=True,
+            interactive_supported=execution_mode == "hybrid",
+            service_classes=service_classes,
+            backend=ScientificBackendIdentity(
+                backend_id=profile.variant_id,
+                kind="qualified-scientific-profile",
+                source_repository=profile.source_repository,
+                source_revision=profile.source_revision,
+                model_revision=profile.source_revision,
+                runtime_image_digest=profile.runtime_image_digest,
+                execution_identity_digest=profile.execution_identity_sha256,
+            ),
+            access=ScientificAccessGate(
+                profile=access_profile,
+                state=access_state,
+                gate=(
+                    "Deployment-bound tenant academic authorization is verified."
+                    if access_profile == "academic"
+                    else "No restricted academic asset is required by this backend."
+                ),
+                receipt_digest=profile.access_receipt_digest,
+                alternative=None,
+            ),
+            caching=ScientificCachingReadiness(
+                exact_tier="not-observed",
+                image="verified",
+                artifacts="verified",
+                reference_data="unsupported",
+                runtime_checkpoint="unavailable",
+                gpu_snapshot="unavailable",
+                reason="Discovery does not infer a fast-start tier without an exact observation.",
+            ),
+        )
 
 
 def _mapping(value: object, label: str) -> Mapping[str, Any]:
@@ -101,7 +184,8 @@ class ScientificCatalogFileAdapter:
                 lanes[candidate_id] = lane_id
         return lanes
 
-    async def list_models(self) -> ScientificModelSnapshot:
+    async def list_models(self, *, tenant_id: str | None = None) -> ScientificModelSnapshot:
+        del tenant_id
         try:
             raw = self.receipts_file.read_text(encoding="utf-8")
             if len(raw.encode("utf-8")) > 1024 * 1024:

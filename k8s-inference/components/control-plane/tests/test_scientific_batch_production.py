@@ -125,8 +125,11 @@ def profile_value() -> dict[str, object]:
     digest = "a" * 64
     return {
         "model_id": "protein-design",
+        "display_name": "Protein Design",
+        "execution_mode": "scientific-batch",
         "state": "qualified",
         "route_exposed": True,
+        "source": {"repository": "example/protein-design"},
         "execution_identity": {
             "model_revision": "b" * 40,
             "runtime_image_digest": f"sha256:{digest}",
@@ -139,7 +142,12 @@ def profile_value() -> dict[str, object]:
             "operations": ["design"],
             "service_classes": ["customer-batch"],
             "parameter_schema": PARAMETER_SCHEMA,
-            "mcp": {"invocable": True},
+            "mcp": {
+                "discoverable": True,
+                "invocable": True,
+                "tool_name": "submit_protein_design",
+                "description": "Submit a qualified protein design run.",
+            },
         },
         "access": {"profile": "standard", "state": "not-required", "receipt_digest": None},
         "resources": {"gpu_count": 1, "compatible_pool_ids": ["h100-preemptible"]},
@@ -159,6 +167,13 @@ def profile_value() -> dict[str, object]:
             ],
         },
         "semantic_validation": {"validator_id": "protein-design-v1", "state": "qualified"},
+        "qualification": {
+            "h100_semantic_receipt_sha256": "1" * 64,
+            "public_completion_receipt_sha256": "2" * 64,
+            "scheduler_eligibility_receipt_sha256": "3" * 64,
+            "execution_map_sha256": "4" * 64,
+            "qualified_at": "2026-09-03T08:00:00Z",
+        },
     }
 
 
@@ -357,6 +372,8 @@ class FakeArtifactAccess:
 
 
 class FakeExecutionBinding:
+    execution_map_sha256 = "sha256:" + "4" * 64
+
     def access_context(self, profile, *, tenant_id: str) -> ArtifactAccessContext:
         assert profile.model_id == "protein-design"
         return ArtifactAccessContext(profile="public", receipt_digest=None, tenant_id=tenant_id)
@@ -464,6 +481,7 @@ class FakePlanFactory:
 async def principal(store: MemoryStore) -> Principal:
     token_id = uuid4()
     scopes = {
+        Scope.CATALOG_READ,
         Scope.INFERENCE_INVOKE,
         Scope.OPERATIONS_READ,
         Scope.OPERATIONS_RESULT,
@@ -561,6 +579,58 @@ def scientific_runtime(
         scientific_batches=service,
     )
     return runtime, controller, repository, cluster, pointer
+
+
+@pytest.mark.asyncio
+async def test_scientific_discovery_is_submittability_and_token_policy_filtered(
+    registry, cipher, hasher
+) -> None:
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
+    assert runtime.scientific_batches is not None
+    identity = await principal(runtime.store)
+    authorized = identity.model_copy(
+        update={"scopes": identity.scopes | frozenset({Scope.CATALOG_READ.value})}
+    )
+
+    discovered = runtime.scientific_batches.discover(authorized, surface="mcp")
+    assert [item["model_id"] for item in discovered["data"]] == ["protein-design"]
+    assert discovered["data"][0]["variant_id"] == "protein-design-h100"
+    assert discovered["data"][0]["runtime_image_digest"] == "sha256:" + "a" * 64
+    assert discovered["data"][0]["public_completion_receipt_sha256"] == "2" * 64
+
+    no_invoke = authorized.model_copy(
+        update={"scopes": frozenset({Scope.CATALOG_READ.value})}
+    )
+    assert runtime.scientific_batches.discover(no_invoke, surface="mcp")["data"] == []
+    outside_model_policy = authorized.model_copy(update={"models": frozenset({"another-model"})})
+    assert runtime.scientific_batches.discover(outside_model_policy, surface="mcp")["data"] == []
+
+
+def test_scientific_discovery_hides_profiles_when_scheduler_or_binding_is_not_exact(
+    registry, cipher, hasher
+) -> None:
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
+    assert runtime.scientific_batches is not None
+
+    runtime.scientific_batches.scheduling = SchedulingContractResolver(
+        {
+            **scheduling().contract,
+            "model_eligible_pool_ids": {"another-model": ["h100-preemptible"]},
+        }
+    )
+    assert runtime.scientific_batches.discovery_profiles(
+        tenant_id="tenant-a",
+        allowed_models=frozenset({"*"}),
+        surface="admin",
+    ) == ()
+
+    runtime.scientific_batches.scheduling = scheduling()
+    runtime.scientific_batches.execution_binding.execution_map_sha256 = "sha256:" + "9" * 64
+    assert runtime.scientific_batches.discovery_profiles(
+        tenant_id="tenant-a",
+        allowed_models=frozenset({"*"}),
+        surface="admin",
+    ) == ()
 
 
 class _MemoryInputUploadPort:
@@ -856,6 +926,7 @@ async def test_submit_freezes_public_profile_and_never_enters_generic_worker(cip
 async def test_public_http_and_mcp_share_scientific_operation_lifecycle(registry, cipher, hasher) -> None:
     runtime, controller, repository, cluster, pointer = scientific_runtime(registry, cipher, hasher)
     scopes = {
+        Scope.CATALOG_READ,
         Scope.INFERENCE_INVOKE,
         Scope.MCP_INVOKE,
         Scope.OPERATIONS_READ,
@@ -967,6 +1038,10 @@ async def test_public_http_and_mcp_share_scientific_operation_lifecycle(registry
     context = Context(mcp_server=server, subscriptions=server._subscriptions)  # type: ignore[attr-defined]
     auth_token = auth_context_var.set(AuthenticatedUser(access))
     try:
+        discovered_mcp = await server._tool_manager.call_tool(  # type: ignore[attr-defined]
+            "list_scientific_models", {}, context, convert_result=False
+        )
+        assert [item["model_id"] for item in discovered_mcp["data"]] == ["protein-design"]
         submitted_mcp = await server._tool_manager.call_tool(  # type: ignore[attr-defined]
             "submit_scientific_run",
             {
