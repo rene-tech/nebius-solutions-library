@@ -639,14 +639,17 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertEqual("true", public["node_selector"]["storage.fs2.nebius/reference-data"])
         self.assertEqual("persistent-volume-claim", private["kind"])
         self.assertEqual("academic-assets-runtime-rwx", private["claim"])
-        # Both planes are provisioned, so neither binding may be left a fixture.
-        self.assertEqual("live", public["binding_state"])
-        self.assertEqual("live", private["binding_state"])
+        # The volumes exist. The generations do not, and the handoff says so
+        # rather than implying that rendering a path published one.
+        self.assertEqual("provisioned", public["plane_state"])
+        self.assertEqual("provisioned", private["plane_state"])
+        self.assertEqual("rendered", public["binding_state"])
+        self.assertEqual("rendered", private["binding_state"])
 
         for entry in handoff["artifacts"]:
             with self.subTest(artifact=entry["artifact_id"]):
                 volume = entry["volume"]
-                self.assertEqual("live", volume["binding_state"])
+                self.assertEqual("rendered", volume["binding_state"])
                 if entry["visibility"] == "public":
                     # A host plane is addressed by host root and node label, and
                     # carries no claim that a reader could try to mount.
@@ -700,6 +703,48 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertEqual(artifact["sha256"], tree["archive"]["sha256"])
         self.assertEqual(artifact["size_bytes"], tree["archive"]["bytes"])
         self.assertNotEqual(tree["archive"]["sha256"], tree["tree"]["inventory_sha256"])
+
+
+    def test_the_handoff_never_claims_bytes_it_has_not_published(self) -> None:
+        """A rendered path is an interface, not a report that anything exists.
+
+        Every identity here is derived from the contract. Calling that state
+        "live" told a reader the generations were in place when no promotion had
+        ever run, which is the difference between a plan and evidence.
+        """
+
+        handoff = self.load(
+            ROOT / "models/cancer-immunotherapy/artifact-localization/evidence/binding-handoff.json"
+        )
+        evidence = handoff["evidence"]
+        self.assertEqual("rendered", evidence["state"])
+        self.assertFalse(evidence["generations_published"])
+        self.assertEqual([], evidence["promotion_receipts"])
+        self.assertEqual([], evidence["node_probes"])
+        # The installed PyRosetta tree predates this work and proves nothing
+        # about the generation named here.
+        self.assertIn("not an immutable generation", evidence["pyrosetta_note"])
+
+        for entry in handoff["artifacts"]:
+            with self.subTest(artifact=entry["artifact_id"]):
+                volume = entry["volume"]
+                # A published state must be backed by a receipt this document lists.
+                if volume["binding_state"] != "rendered":
+                    self.assertTrue(
+                        evidence["promotion_receipts"],
+                        "a promoted binding requires a terminal promotion receipt",
+                    )
+                self.assertNotIn(volume["binding_state"], {"live", "fixture"})
+
+    def test_no_checked_in_localization_evidence_claims_an_unproven_live_state(self) -> None:
+        """Catch the overclaim in any evidence file, not only the handoff."""
+
+        evidence = ROOT / "models/cancer-immunotherapy/artifact-localization/evidence"
+        for path in sorted(evidence.glob("*.json")):
+            with self.subTest(evidence=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertNotIn('"binding_state": "live"', text)
+                self.assertNotIn('"generations_published": true', text)
 
 
 if __name__ == "__main__":

@@ -93,7 +93,28 @@ rather than publishing a second, weaker name for bytes that already have one; a
 cross-contract test runs both implementations over one fixture and requires the
 same digest. The marker always names which algorithm produced its digest.
 
-## Where the trees live
+## What exists and what does not
+
+The volumes exist. The generations do not, yet.
+
+`evidence/binding-handoff.json` is **generated from the contract**: every path,
+tree identity and marker digest in it is derived, and none of it has been
+published. No staging or promotion Job has run for any path it names, so nothing
+is present at any `sub_path` in that document. It records this itself, with
+`evidence.state: "rendered"`, empty `promotion_receipts` and `node_probes`, and a
+`plane_state` that describes the volume kept separate from a `binding_state` that
+describes the generation.
+
+The installed PyRosetta tree at the academic claim's
+`pyrosetta-bindcraft/site-packages` predates this work. It is the promotion
+*input*: a mutable install path, not an immutable generation, and its existence
+is not evidence that the content-addressed generation has been published.
+
+A binding becomes `promoted` only when a terminal promotion receipt exists for
+that artifact, and `qualified` only when a node probe has admitted the mount.
+Deploying those Jobs and recording that evidence is deliberately separate work.
+
+## Where the trees will live
 
 Storage authority is chosen **per artifact**, not per run:
 
@@ -264,10 +285,14 @@ The instance ID stays in the private run record.
 ## Binding handoff
 
 `render_localization_jobs.py handoff` emits
-`evidence/binding-handoff.json`: per artifact, the claim and sub-path to mount,
-the paths each consumer reads, the archive provenance, and the tree identity a
-preflight will require. Every value is derived from the contract, so a consumer
-following the handoff and a control-plane preflight cannot disagree.
+`evidence/binding-handoff.json`: per artifact, the plane and sub-path to mount,
+the paths each consumer reads, the archive provenance, the tree identity a
+preflight will require, and the marker digest a consumer pins. Every value is
+derived from the contract by the same module that writes the marker, so a
+consumer following the handoff and a control-plane preflight cannot disagree.
+
+Being derived is exactly why it is not evidence of publication. The document
+says so in its own `evidence` block; see **What exists and what does not**.
 
 ## The BindCraft AlphaFold2 mount is a second tree, not the same one
 

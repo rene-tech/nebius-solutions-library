@@ -522,9 +522,15 @@ def _resolved_volume(volume: dict[str, Any], sub_path: str) -> dict[str, Any]:
     resolved: dict[str, Any] = {
         "kind": volume["kind"],
         "plane": volume["plane"],
+        # Whether the volume itself exists, which is a different question from
+        # whether anything has been published into it.
+        "plane_state": volume["plane_state"],
         "sub_path": sub_path,
         "read_only": True,
         "immutable": True,
+        # What is known about the generation at that path. "rendered" means the
+        # path and identity are derived from the contract and nothing has been
+        # published there yet.
         "binding_state": volume["binding_state"],
     }
     if volume["kind"] == "host-path":
@@ -635,17 +641,39 @@ def binding_handoff(
         "schema": "fs2-serve.nebius.ai/scientific-localization-binding-handoff/v1",
         "scope": "poc",
         "note": (
-            "Every runtime binding is an immutable generation published read-only at "
+            "Every runtime binding is an immutable generation at "
             "<prefix>/generations/<artifact_id>/sha256/<tree digest>, so a consumer binds "
             "content rather than a mutable path. The marker named here lives inside that "
             "generation and is its single admission authority; manifest_digest is the "
             "SHA-256 of exactly the bytes of document. Storage authority is per artifact: "
-            "public bytes live on the dedicated public reference plane and a licensed tree "
-            "lives only on the tenant-private academic claim, so the academic claim is "
-            "never frozen into the role of general public artifact storage. An entry whose "
-            "volume binding_state is 'fixture' names a plane that has not yet published a "
-            "live claim receipt, and must not be treated as a provisioned location."
+            "public bytes belong on the dedicated public reference plane and a licensed "
+            "tree only on the tenant-private academic claim."
         ),
+        "evidence": {
+            "state": "rendered",
+            "generations_published": False,
+            "promotion_receipts": [],
+            "node_probes": [],
+            "meaning": (
+                "Every path, identity and marker digest in this document is derived from the "
+                "checked-in contract by the same code that writes a marker. None of it has "
+                "been published yet: no promotion or staging Job has run for these paths, so "
+                "nothing exists at any sub_path named here. plane_state describes the volume, "
+                "which does exist; binding_state describes the generation, which does not. "
+                "Treat this as the exact interface to build against, never as a report that "
+                "the bytes are in place."
+            ),
+            "pyrosetta_note": (
+                "The installed tree at the academic claim's pyrosetta-bindcraft/site-packages "
+                "predates this work and is the promotion input. It is a mutable install path, "
+                "not an immutable generation, and its existence is not evidence that the "
+                "content-addressed generation named here has been published."
+            ),
+            "promotes_to_next_state_when": (
+                "a terminal promotion receipt exists per artifact, at which point binding_state "
+                "becomes 'promoted'; a node probe that admits the mount makes it 'qualified'."
+            ),
+        },
         "volumes": {"public": public_volume, "tenant-private": private_volume},
         "models": {model: sorted(ids) for model, ids in sorted(by_model.items())},
         "artifacts": entries,
@@ -970,16 +998,26 @@ def main(argv: list[str] | None = None) -> int:
         help="handoff: how a consumer lands on a node that mounts the public host root",
     )
     parser.add_argument(
-        "--public-binding-state",
-        default="live",
-        choices=("fixture", "live"),
-        help="handoff: 'live' once the public plane is provisioned and mounted",
+        "--public-plane-state",
+        default="provisioned",
+        choices=("declared", "provisioned"),
+        help="handoff: whether the public host plane itself exists and is mounted",
     )
     parser.add_argument(
-        "--private-binding-state",
-        default="live",
-        choices=("fixture", "live"),
-        help="handoff: whether the tenant-private claim is provisioned",
+        "--private-plane-state",
+        default="provisioned",
+        choices=("declared", "provisioned"),
+        help="handoff: whether the tenant-private claim itself exists and is bound",
+    )
+    parser.add_argument(
+        "--binding-state",
+        default="rendered",
+        choices=("rendered", "promoted", "qualified"),
+        help=(
+            "handoff: what is known about the generations themselves. 'rendered' is derived "
+            "from the contract and asserts nothing exists yet; 'promoted' requires a terminal "
+            "promotion receipt per artifact; 'qualified' additionally requires a node probe"
+        ),
     )
     parser.add_argument("--model-id", help="qualify only: which runtime is being proven")
     parser.add_argument("--probe", action="append", help="qualify only: model-side probe argv")
@@ -1095,14 +1133,16 @@ def main(argv: list[str] | None = None) -> int:
                     "node_selector": dict(
                         item.split("=", 1) for item in options.public_node_selector
                     ),
-                    "binding_state": options.public_binding_state,
+                    "plane_state": options.public_plane_state,
+                    "binding_state": options.binding_state,
                 },
                 private_volume={
                     "kind": "persistent-volume-claim",
                     "plane": "tenant-private-academic",
                     "namespace": options.namespace,
                     "claim": options.claim,
-                    "binding_state": options.private_binding_state,
+                    "plane_state": options.private_plane_state,
+                    "binding_state": options.binding_state,
                 },
                 tree_prefix=options.tree_prefix,
                 private_tree_prefix=options.private_tree_prefix,

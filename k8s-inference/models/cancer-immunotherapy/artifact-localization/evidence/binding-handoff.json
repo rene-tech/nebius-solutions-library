@@ -75,7 +75,7 @@
       },
       "visibility": "public",
       "volume": {
-        "binding_state": "live",
+        "binding_state": "rendered",
         "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
         "host_root": "/mnt/fs2-reference-data/data",
         "immutable": true,
@@ -84,6 +84,7 @@
           "storage.fs2.nebius/reference-data": "true"
         },
         "plane": "reference-data-host",
+        "plane_state": "provisioned",
         "read_only": true,
         "sub_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4"
       }
@@ -180,7 +181,7 @@
       },
       "visibility": "public",
       "volume": {
-        "binding_state": "live",
+        "binding_state": "rendered",
         "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
         "host_root": "/mnt/fs2-reference-data/data",
         "immutable": true,
@@ -189,6 +190,7 @@
           "storage.fs2.nebius/reference-data": "true"
         },
         "plane": "reference-data-host",
+        "plane_state": "provisioned",
         "read_only": true,
         "sub_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f"
       }
@@ -273,12 +275,13 @@
       },
       "visibility": "tenant-private",
       "volume": {
-        "binding_state": "live",
+        "binding_state": "rendered",
         "claim": "academic-assets-runtime-rwx",
         "immutable": true,
         "kind": "persistent-volume-claim",
         "namespace": "fs2-academic-poc",
         "plane": "tenant-private-academic",
+        "plane_state": "provisioned",
         "read_only": true,
         "sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
       }
@@ -362,7 +365,7 @@
       },
       "visibility": "public",
       "volume": {
-        "binding_state": "live",
+        "binding_state": "rendered",
         "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
         "host_root": "/mnt/fs2-reference-data/data",
         "immutable": true,
@@ -371,6 +374,7 @@
           "storage.fs2.nebius/reference-data": "true"
         },
         "plane": "reference-data-host",
+        "plane_state": "provisioned",
         "read_only": true,
         "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
       }
@@ -446,7 +450,7 @@
       },
       "visibility": "public",
       "volume": {
-        "binding_state": "live",
+        "binding_state": "rendered",
         "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
         "host_root": "/mnt/fs2-reference-data/data",
         "immutable": true,
@@ -455,6 +459,7 @@
           "storage.fs2.nebius/reference-data": "true"
         },
         "plane": "reference-data-host",
+        "plane_state": "provisioned",
         "read_only": true,
         "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146"
       }
@@ -530,7 +535,7 @@
       },
       "visibility": "public",
       "volume": {
-        "binding_state": "live",
+        "binding_state": "rendered",
         "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
         "host_root": "/mnt/fs2-reference-data/data",
         "immutable": true,
@@ -539,11 +544,21 @@
           "storage.fs2.nebius/reference-data": "true"
         },
         "plane": "reference-data-host",
+        "plane_state": "provisioned",
         "read_only": true,
         "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f"
       }
     }
   ],
+  "evidence": {
+    "generations_published": false,
+    "meaning": "Every path, identity and marker digest in this document is derived from the checked-in contract by the same code that writes a marker. None of it has been published yet: no promotion or staging Job has run for these paths, so nothing exists at any sub_path named here. plane_state describes the volume, which does exist; binding_state describes the generation, which does not. Treat this as the exact interface to build against, never as a report that the bytes are in place.",
+    "node_probes": [],
+    "promotes_to_next_state_when": "a terminal promotion receipt exists per artifact, at which point binding_state becomes 'promoted'; a node probe that admits the mount makes it 'qualified'.",
+    "promotion_receipts": [],
+    "pyrosetta_note": "The installed tree at the academic claim's pyrosetta-bindcraft/site-packages predates this work and is the promotion input. It is a mutable install path, not an immutable generation, and its existence is not evidence that the content-addressed generation named here has been published.",
+    "state": "rendered"
+  },
   "models": {
     "bindcraft": [
       "alphafold2-params-bindcraft",
@@ -558,25 +573,27 @@
       "alphafold2-params"
     ]
   },
-  "note": "Every runtime binding is an immutable generation published read-only at <prefix>/generations/<artifact_id>/sha256/<tree digest>, so a consumer binds content rather than a mutable path. The marker named here lives inside that generation and is its single admission authority; manifest_digest is the SHA-256 of exactly the bytes of document. Storage authority is per artifact: public bytes live on the dedicated public reference plane and a licensed tree lives only on the tenant-private academic claim, so the academic claim is never frozen into the role of general public artifact storage. An entry whose volume binding_state is 'fixture' names a plane that has not yet published a live claim receipt, and must not be treated as a provisioned location.",
+  "note": "Every runtime binding is an immutable generation at <prefix>/generations/<artifact_id>/sha256/<tree digest>, so a consumer binds content rather than a mutable path. The marker named here lives inside that generation and is its single admission authority; manifest_digest is the SHA-256 of exactly the bytes of document. Storage authority is per artifact: public bytes belong on the dedicated public reference plane and a licensed tree only on the tenant-private academic claim.",
   "schema": "fs2-serve.nebius.ai/scientific-localization-binding-handoff/v1",
   "scope": "poc",
   "volumes": {
     "public": {
-      "binding_state": "live",
+      "binding_state": "rendered",
       "host_root": "/mnt/fs2-reference-data/data",
       "kind": "host-path",
       "node_selector": {
         "storage.fs2.nebius/reference-data": "true"
       },
-      "plane": "reference-data-host"
+      "plane": "reference-data-host",
+      "plane_state": "provisioned"
     },
     "tenant-private": {
-      "binding_state": "live",
+      "binding_state": "rendered",
       "claim": "academic-assets-runtime-rwx",
       "kind": "persistent-volume-claim",
       "namespace": "fs2-academic-poc",
-      "plane": "tenant-private-academic"
+      "plane": "tenant-private-academic",
+      "plane_state": "provisioned"
     }
   }
 }
