@@ -257,38 +257,61 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         bindings = {
             (item["model_id"], item["stage_id"]): item for item in contract["bindings"]
         }
+        # Both AlphaFold 3 stages share the namespace that holds the licensed
+        # claim and the durable controller state; only the queue and pool differ.
         for stage_id in ("data-pipeline", "inference"):
             self.assertEqual(
                 "fs2-academic-poc",
                 bindings[("alphafold3", stage_id)]["execution_namespace"],
             )
             self.assertEqual(
-                "academic-scientific",
-                bindings[("alphafold3", stage_id)]["local_queue_name"],
-            )
-            self.assertEqual(
-                "inference-accelerators",
-                bindings[("alphafold3", stage_id)]["cluster_queue_name"],
-            )
-            self.assertEqual(
                 "fs2-academic-runner",
                 bindings[("alphafold3", stage_id)]["service_account_name"],
             )
-            self.assertEqual(
-                [
-                    {
-                        "key": "dedicated",
-                        "operator": "Equal",
-                        "value": "fs2-inference",
-                        "effect": "NoSchedule",
-                    }
-                ],
-                bindings[("alphafold3", stage_id)]["tolerations"],
-            )
+        self.assertEqual(
+            ("academic-scientific-cpu", "reference-data-cpu"),
+            (
+                bindings[("alphafold3", "data-pipeline")]["local_queue_name"],
+                bindings[("alphafold3", "data-pipeline")]["cluster_queue_name"],
+            ),
+        )
+        self.assertEqual(
+            ("academic-scientific", "inference-accelerators"),
+            (
+                bindings[("alphafold3", "inference")]["local_queue_name"],
+                bindings[("alphafold3", "inference")]["cluster_queue_name"],
+            ),
+        )
+        self.assertEqual(
+            [
+                {
+                    "key": "workload.fs2.nebius/reference-data",
+                    "operator": "Equal",
+                    "value": "true",
+                    "effect": "NoSchedule",
+                }
+            ],
+            bindings[("alphafold3", "data-pipeline")]["tolerations"],
+        )
+        self.assertEqual(
+            [
+                {
+                    "key": "dedicated",
+                    "operator": "Equal",
+                    "value": "fs2-inference",
+                    "effect": "NoSchedule",
+                }
+            ],
+            bindings[("alphafold3", "inference")]["tolerations"],
+        )
+        # CPU preprocessing carries no accelerator selector, so an MSA can never
+        # occupy an idle H100.
         self.assertEqual(
             {
-                "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                "capacity.fs2.nebius/pool": "reference-data",
+                "capacity.fs2.nebius/type": "regular",
                 "storage.fs2.nebius/reference-data": "true",
+                "workload.fs2.nebius/reference-data": "true",
             },
             bindings[("alphafold3", "data-pipeline")]["node_selector"],
         )
@@ -299,12 +322,10 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         database = bindings[("alphafold3", "data-pipeline")]["mounts"][0]
         self.assertEqual("operator-host-path", database["kind"])
         self.assertEqual("/mnt/fs2-reference-data/data", database["host_path"])
-        self.assertEqual("/databases", database["mount_path"])
-        self.assertEqual(
-            "datasets/alphafold3-public-databases-v3.0/"
-            "v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}",
-            database["sub_path"],
-        )
+        # The whole reference plane, with no subPath: the terminal receipt, the
+        # dataset tree, its marker and the sibling manifest must all resolve.
+        self.assertEqual("/reference-data", database["mount_path"])
+        self.assertIsNone(database["sub_path"])
         self.assertEqual(
             "datasets/alphafold3-public-databases-v3.0/"
             "v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}",
@@ -332,9 +353,16 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertTrue(database["read_only"])
         self.assertEqual([1000], database["supplemental_groups"])
         validator = self.validator("scientific-execution-targets.schema.json")
+        # A narrowed root is refused in either direction: any subPath at all
+        # would hide the terminal receipt and the sibling manifest.
         for field, replacement in (
             ("host_path", "/mnt/fs2-reference-data"),
-            ("sub_path", None),
+            ("mount_path", "/databases"),
+            (
+                "sub_path",
+                "datasets/alphafold3-public-databases-v3.0/"
+                "v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}",
+            ),
             (
                 "sub_path",
                 "datasets/alphafold3-public-databases-v3.0/"
@@ -619,11 +647,17 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 self.assertEqual(
                     "Off", profile["policy"]["fast_start"]["qualified_level"]
                 )
-                self.assertEqual(
-                    "build-required",
-                    profile["execution_identity"]["runtime_image_state"],
-                )
-                self.assertIsNone(profile["execution_identity"]["runtime_image_digest"])
+                # A published, independently accepted runtime image may be
+                # pinned while the workload stays a candidate: the image is one
+                # gate, and the route, queue and reference data are others. What
+                # a candidate must never do is claim a digest it does not have.
+                image_state = profile["execution_identity"]["runtime_image_state"]
+                image_digest = profile["execution_identity"]["runtime_image_digest"]
+                self.assertIn(image_state, {"build-required", "digest-pinned"})
+                if image_state == "build-required":
+                    self.assertIsNone(image_digest)
+                else:
+                    self.assertRegex(str(image_digest), r"^sha256:[0-9a-f]{64}$")
                 self.assertNotIn(
                     ".",
                     profile["execution_identity"]["runtime_image_repository"].split(

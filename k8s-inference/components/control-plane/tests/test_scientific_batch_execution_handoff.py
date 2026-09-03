@@ -422,16 +422,51 @@ def af3_execution_value(profile_value: dict[str, object]) -> dict[str, object]:
         item["artifact_id"]: item
         for item in profile_value["artifact_requirements"]  # type: ignore[index]
     }
+    # Both stages share the one academic namespace that holds the licensed claim
+    # and the durable controller state; only the queue, the pool and the
+    # envelope differ between CPU preprocessing and GPU inference.
     stage_common = {
         "image": "registry.test/alphafold3@sha256:" + "a" * 64,
         "execution_namespace": "fs2-academic-poc",
-        "local_queue_name": "academic-scientific",
-        "cluster_queue_name": "inference-accelerators",
         "service_account_name": "fs2-academic-runner",
-        "resources": {"cpu": "8", "memory": "64Gi", "ephemeral_storage": "64Gi"},
         "active_deadline_seconds": 3600,
         "termination_grace_seconds": 60,
         "environment": {"FS2_NETWORK_MODE": "offline"},
+    }
+    # The raw-input preprocessing envelope of the accepted reference-data model
+    # requirement. jackhmmer and nhmmer are the CPU-bound part of AlphaFold 3
+    # and are not satisfied by the smaller database-stager envelope.
+    cpu_stage = {
+        **stage_common,
+        "local_queue_name": "academic-scientific-cpu",
+        "cluster_queue_name": "reference-data-cpu",
+        "resources": {"cpu": "16", "memory": "64Gi", "ephemeral_storage": "32Gi"},
+    }
+    gpu_stage = {
+        **stage_common,
+        "local_queue_name": "academic-scientific",
+        "cluster_queue_name": "inference-accelerators",
+        "resources": {"cpu": "8", "memory": "64Gi", "ephemeral_storage": "64Gi"},
+        "environment": {
+            **stage_common["environment"],
+            "FS2_AF3_CACHE_ROOT": "/cache/alphafold3",
+            "FS2_AF3_JAX_CACHE_DIR": "/cache/alphafold3/jax",
+            "FS2_AF3_TRITON_CACHE_DIR": "/cache/alphafold3/triton",
+            "FS2_AF3_XDG_CACHE_DIR": "/cache/alphafold3/xdg",
+        },
+    }
+    warm_cache = {
+        "name": "alphafold3-warm-cache",
+        "kind": "cache",
+        "artifact_id": None,
+        "claim_name": "scientific-alphafold3-cache",
+        "claim_namespace": "fs2-academic-poc",
+        "host_path": None,
+        "operator_owned": True,
+        "mount_path": "/cache/alphafold3",
+        "sub_path": None,
+        "supplemental_groups": [],
+        "read_only": False,
     }
     workspace = {
         "name": "artifact-workspace",
@@ -463,7 +498,7 @@ def af3_execution_value(profile_value: dict[str, object]) -> dict[str, object]:
                 "runtime_artifacts": [
                     {
                         "artifact_id": "alphafold3-public-databases-v3.0",
-                        "mount_path": "/databases",
+                        "mount_path": "/reference-data",
                         "content_digest": "sha256:" + AF3_TREE_SHA256,
                         "aggregate_tree": {
                             "manifest_digest": "sha256:" + AF3_MANIFEST_SHA256,
@@ -497,41 +532,43 @@ def af3_execution_value(profile_value: dict[str, object]) -> dict[str, object]:
                 ],
                 "stages": [
                     {
-                        **stage_common,
+                        **cpu_stage,
                         "stage_id": "data-pipeline",
                         "collector_id": "alphafold3-data-collector-v1",
                         "validator_id": "alphafold3-data-validator-v1",
                         "mounts": [
                             workspace,
                             {
-                                "name": "alphafold3-databases",
+                                "name": "alphafold3-reference-plane",
                                 "kind": "operator-host-path",
                                 "artifact_id": "alphafold3-public-databases-v3.0",
                                 "claim_name": None,
                                 "claim_namespace": None,
                                 "host_path": "/mnt/fs2-reference-data/data",
                                 "operator_owned": True,
-                                "mount_path": "/databases",
-                                "sub_path": AF3_DATASET_RELATIVE_PATH,
+                                "mount_path": "/reference-data",
+                                "sub_path": None,
                                 "supplemental_groups": [1000],
                                 "read_only": True,
                             },
                         ],
                         "node_selector": {
-                            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                            "capacity.fs2.nebius/pool": "reference-data",
+                            "capacity.fs2.nebius/type": "regular",
                             "storage.fs2.nebius/reference-data": "true",
+                            "workload.fs2.nebius/reference-data": "true",
                         },
                         "tolerations": [
                             {
-                                "key": "dedicated",
+                                "key": "workload.fs2.nebius/reference-data",
                                 "operator": "Equal",
-                                "value": "fs2-inference",
+                                "value": "true",
                                 "effect": "NoSchedule",
                             }
                         ],
                     },
                     {
-                        **stage_common,
+                        **gpu_stage,
                         "stage_id": "inference",
                         "collector_id": "alphafold3-result-collector-v1",
                         "validator_id": "alphafold3-upstream-v3-0-4",
@@ -550,27 +587,8 @@ def af3_execution_value(profile_value: dict[str, object]) -> dict[str, object]:
                                 "supplemental_groups": [65532],
                                 "read_only": True,
                             },
-                            {
-                                "name": "alphafold3-warm-cache",
-                                "kind": "cache",
-                                "artifact_id": None,
-                                "claim_name": "scientific-alphafold3-cache",
-                                "claim_namespace": "fs2-academic-poc",
-                                "host_path": None,
-                                "operator_owned": True,
-                                "mount_path": "/cache/alphafold3",
-                                "sub_path": None,
-                                "supplemental_groups": [],
-                                "read_only": False,
-                            },
+                            warm_cache,
                         ],
-                        "environment": {
-                            "FS2_NETWORK_MODE": "offline",
-                            "FS2_AF3_CACHE_ROOT": "/cache/alphafold3",
-                            "FS2_AF3_JAX_CACHE_DIR": "/cache/alphafold3/jax",
-                            "FS2_AF3_TRITON_CACHE_DIR": "/cache/alphafold3/triton",
-                            "FS2_AF3_XDG_CACHE_DIR": "/cache/alphafold3/xdg",
-                        },
                         "node_selector": {
                             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
                         },
@@ -667,6 +685,13 @@ def af3_scheduling() -> SchedulingContractResolver:
                     "metadata": {"name": "academic-scientific", "namespace": "fs2-academic-poc"},
                     "spec": {"clusterQueue": "inference-accelerators"},
                 },
+                # CPU preprocessing shares the academic namespace but is routed
+                # to the reference-data ClusterQueue so an MSA never consumes
+                # accelerator quota.
+                "academic-scientific-cpu": {
+                    "metadata": {"name": "academic-scientific-cpu", "namespace": "fs2-academic-poc"},
+                    "spec": {"clusterQueue": "reference-data-cpu"},
+                },
             },
             "cluster_queues": {
                 "inference-accelerators": {
@@ -682,7 +707,21 @@ def af3_scheduling() -> SchedulingContractResolver:
                             }
                         ]
                     },
-                }
+                },
+                "reference-data-cpu": {
+                    "metadata": {"name": "reference-data-cpu"},
+                    "spec": {
+                        "resourceGroups": [
+                            {
+                                "coveredResources": ["nvidia.com/gpu"],
+                                "flavors": [
+                                    {"name": "inference-h100-reserved-8x"},
+                                    {"name": "inference-h100-1x"},
+                                ],
+                            }
+                        ]
+                    },
+                },
             },
             "workload_priority_classes": {"customer-batch": {"value": 10}},
             "local_queue_routes": {
@@ -695,6 +734,12 @@ def af3_scheduling() -> SchedulingContractResolver:
                 "academic-scientific": {
                     "namespace": "fs2-academic-poc",
                     "cluster_queue": "inference-accelerators",
+                    "model_ids": ["alphafold3"],
+                    "tenant_ids": [],
+                },
+                "academic-scientific-cpu": {
+                    "namespace": "fs2-academic-poc",
+                    "cluster_queue": "reference-data-cpu",
                     "model_ids": ["alphafold3"],
                     "tenant_ids": [],
                 },
@@ -736,18 +781,23 @@ def test_af3_two_digest_execution_target_and_physical_mounts(tmp_path: Path) -> 
         input_artifacts=(model_input,),
     )
     assert all(not mount.supplemental_groups for item in raw_plan.invocations for mount in item.runtime_mounts)
+    # One namespace holds the licensed claim and the durable state; the CPU and
+    # GPU stages differ only by queue.
     assert all(item.namespace == "fs2-academic-poc" for item in plan.invocations)
-    assert all(item.local_queue_name == "academic-scientific" for item in plan.invocations)
+    assert plan.invocation("data-pipeline", "main").local_queue_name == "academic-scientific-cpu"
+    assert plan.invocation("inference", "main").local_queue_name == "academic-scientific"
     assert plan.invocation("data-pipeline", "main").runtime_mounts[0].supplemental_groups == (1000,)
     assert plan.invocation("inference", "main").runtime_mounts[0].supplemental_groups == (65532,)
     data = plan.invocation("data-pipeline", "main")
     inference = plan.invocation("inference", "main")
-    assert all(mount.mount_path != "/cache/alphafold3" for mount in inference.runtime_mounts)
-    assert data.argv[data.argv.index("--expected-db-content-sha256") + 1] == AF3_TREE_SHA256
-    assert data.argv[data.argv.index("--expected-db-manifest-sha256") + 1] == AF3_MANIFEST_SHA256
-    assert data.argv[data.argv.index("--db-ready-marker") + 1] == "/databases/.fs2-manifest-sha256"
-    assert inference.argv[inference.argv.index("--expected-reference-content-sha256") + 1] == AF3_TREE_SHA256
-    assert inference.argv[inference.argv.index("--expected-reference-manifest-sha256") + 1] == AF3_MANIFEST_SHA256
+    assert data.argv[data.argv.index("--reference-receipt") + 1] == (
+        "/reference-data/receipts/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28.json"
+    )
+    assert data.argv[data.argv.index("--threads") + 1] == "16"
+    assert data.argv[data.argv.index("--cpu-request") + 1] == "16"
+    assert "--database-root" not in data.argv
+    assert inference.argv[1] == "/opt/fs2/af3_runtime.py"
+    assert inference.argv[2] == "inference"
     localized = renderer.verify_runtime_artifacts(profile, plan, access)
     database_localization = next(
         item for item in localized if item.logical_artifact_id == "alphafold3-public-databases-v3.0"
@@ -763,29 +813,7 @@ def test_af3_two_digest_execution_target_and_physical_mounts(tmp_path: Path) -> 
     assert database_localization.aggregate_tree.node_accessibility.required_node_labels == (
         ("storage.fs2.nebius/reference-data", "true"),
     )
-    scheduling_path = tmp_path / "kueue-scheduling.json"
-    scheduling_path.write_text(json.dumps(af3_scheduling().contract))
-    scheduling = SchedulingContractResolver.load(scheduling_path)
-    assert scheduling.local_queue_routes["academic-scientific"] == {
-        "namespace": "fs2-academic-poc",
-        "cluster_queue": "inference-accelerators",
-        "model_ids": ["alphafold3"],
-        "tenant_ids": [],
-    }
-    assert renderer.scheduling_targets() == {
-        ("alphafold3", "data-pipeline"): (
-            "fs2-academic-poc",
-            "academic-scientific",
-            "inference-accelerators",
-        ),
-        ("alphafold3", "inference"): (
-            "fs2-academic-poc",
-            "academic-scientific",
-            "inference-accelerators",
-        ),
-    }
-    scheduling.require_execution_targets(renderer.scheduling_targets())
-    snapshot = scheduling.freeze_for_execution(
+    snapshot = af3_scheduling().freeze_for_execution(
         service_class="customer-batch",
         model_id="alphafold3",
         tenant_id="ordinary-poc",
@@ -793,8 +821,14 @@ def test_af3_two_digest_execution_target_and_physical_mounts(tmp_path: Path) -> 
         execution=plan,
         captured_at=NOW,
     )
+    # Single-namespace durable state, two queues: the frozen snapshot keeps the
+    # CPU stage off the accelerator ClusterQueue.
     assert all(item.execution_namespace == "fs2-academic-poc" for item in snapshot.stages)
-    assert all(item.resolved_local_queue == "academic-scientific" for item in snapshot.stages)
+    assert snapshot.stage("data-pipeline").resolved_local_queue == "academic-scientific-cpu"
+    assert snapshot.stage("data-pipeline").resolved_cluster_queue == "reference-data-cpu"
+    assert snapshot.stage("data-pipeline").accelerator_count == 0
+    assert snapshot.stage("inference").resolved_local_queue == "academic-scientific"
+    assert snapshot.stage("inference").resolved_cluster_queue == "inference-accelerators"
     inference_scheduling = snapshot.stage("inference")
     assert inference_scheduling.resolved_pool_preference == (
         "h100-reserved-8x",
@@ -858,37 +892,52 @@ def test_af3_two_digest_execution_target_and_physical_mounts(tmp_path: Path) -> 
     data_resource = workload(data)
     data_manifest = renderer.render(data_resource)
     data_pod = data_manifest["spec"]["template"]["spec"]  # type: ignore[index]
-    database_volume = next(item for item in data_pod["volumes"] if item["name"] == "alphafold3-databases")
-    assert database_volume["hostPath"] == {
+    reference_volume = next(
+        item for item in data_pod["volumes"] if item["name"] == "alphafold3-reference-plane"
+    )
+    assert reference_volume["hostPath"] == {
         "path": "/mnt/fs2-reference-data/data",
         "type": "Directory",
     }
-    database_mount = next(
-        item for item in data_pod["containers"][0]["volumeMounts"] if item["name"] == "alphafold3-databases"
+    reference_mount = next(
+        item for item in data_pod["containers"][0]["volumeMounts"] if item["name"] == "alphafold3-reference-plane"
     )
-    assert database_mount == {
-        "name": "alphafold3-databases",
-        "mountPath": "/databases",
+    # The whole plane root, read-only, with no subPath: the receipt, the dataset
+    # tree, its marker and the sibling manifest all have to resolve.
+    assert reference_mount == {
+        "name": "alphafold3-reference-plane",
+        "mountPath": "/reference-data",
         "readOnly": True,
-        "subPath": AF3_DATASET_RELATIVE_PATH,
     }
+    assert "subPath" not in reference_mount
     assert "affinity" not in data_pod
+    # A CPU preprocessing pod carries no accelerator selector, so an MSA can
+    # never sit on an idle H100.
     assert data_pod["nodeSelector"] == {
-        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+        "capacity.fs2.nebius/pool": "reference-data",
+        "capacity.fs2.nebius/type": "regular",
         "storage.fs2.nebius/reference-data": "true",
+        "workload.fs2.nebius/reference-data": "true",
     }
+    assert "accelerator.fs2.nebius/class" not in data_pod["nodeSelector"]
     assert data_pod["tolerations"] == [
         {
-            "key": "dedicated",
+            "key": "workload.fs2.nebius/reference-data",
             "operator": "Equal",
-            "value": "fs2-inference",
+            "value": "true",
             "effect": "NoSchedule",
         }
     ]
+    assert data_pod["containers"][0]["resources"]["requests"] == {
+        "cpu": "16",
+        "memory": "64Gi",
+        "ephemeral-storage": "32Gi",
+    }
+    assert "nvidia.com/gpu" not in data_pod["containers"][0]["resources"]["limits"]
     trusted_data_execution = renderer.executions[("alphafold3", "data-pipeline")]
     renderer.executions[("alphafold3", "data-pipeline")] = replace(
         trusted_data_execution,
-        node_selector=MappingProxyType({"accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"}),
+        node_selector=MappingProxyType({"capacity.fs2.nebius/pool": "reference-data"}),
     )
     with pytest.raises(ScientificExecutionMapError, match="hostPath lost its trusted stage node selector"):
         renderer.render(data_resource)
@@ -910,7 +959,7 @@ def test_af3_two_digest_execution_target_and_physical_mounts(tmp_path: Path) -> 
     )
     assert database_marker["expected_manifest_sha256"] == AF3_MANIFEST_SHA256
     assert database_marker["content_digest"] == "sha256:" + AF3_TREE_SHA256
-    assert database_marker["mount_path"] == "/databases"
+    assert database_marker["mount_path"] == "/reference-data"
     assert database_marker["sub_path"] is None
     inference_resource = workload(inference)
     inference_manifest = renderer.render(inference_resource)
@@ -925,45 +974,24 @@ def test_af3_two_digest_execution_target_and_physical_mounts(tmp_path: Path) -> 
     )
     assert private_mount["mountPath"] == "/models/af3.bin.zst"
     assert private_mount["subPath"] == "alphafold3/af3.bin.zst"
-    cache_mount = next(
-        item
-        for item in inference_pod["containers"][0]["volumeMounts"]
-        if item["name"] == "alphafold3-warm-cache"
-    )
-    assert cache_mount == {
-        "name": "alphafold3-warm-cache",
-        "mountPath": "/cache/alphafold3",
-        "readOnly": False,
-    }
-    cache_volume = next(
-        item for item in inference_pod["volumes"] if item["name"] == "alphafold3-warm-cache"
-    )
-    assert cache_volume["persistentVolumeClaim"] == {
-        "claimName": "scientific-alphafold3-cache",
-        "readOnly": False,
-    }
-    inference_environment = {
-        item["name"]: item["value"] for item in inference_pod["containers"][0]["env"]
-    }
-    assert {
-        key: inference_environment[key]
-        for key in (
-            "FS2_AF3_CACHE_ROOT",
-            "FS2_AF3_JAX_CACHE_DIR",
-            "FS2_AF3_TRITON_CACHE_DIR",
-            "FS2_AF3_XDG_CACHE_DIR",
-        )
-    } == {
-        "FS2_AF3_CACHE_ROOT": "/cache/alphafold3",
-        "FS2_AF3_JAX_CACHE_DIR": "/cache/alphafold3/jax",
-        "FS2_AF3_TRITON_CACHE_DIR": "/cache/alphafold3/triton",
-        "FS2_AF3_XDG_CACHE_DIR": "/cache/alphafold3/xdg",
-    }
     assert inference_pod["serviceAccountName"] == "fs2-academic-runner"
     assert inference_pod["nodeSelector"] == {
         "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
     }
-    assert inference_pod["tolerations"] == data_pod["tolerations"]
+    assert inference_pod["tolerations"] == [
+        {
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": "fs2-inference",
+            "effect": "NoSchedule",
+        }
+    ]
+    # The GPU stage never sees the reference plane; it consumes the immutable
+    # CPU handoff and the licensed parameters only.
+    assert all(item["name"] != "alphafold3-reference-plane" for item in inference_pod["volumes"])
+    assert all(
+        item["mountPath"] != "/reference-data" for item in inference_pod["containers"][0]["volumeMounts"]
+    )
     assert inference_pod["securityContext"] == {
         "runAsNonRoot": True,
         "seccompProfile": {"type": "RuntimeDefault"},
@@ -1060,16 +1088,20 @@ def test_af3_operator_storage_cannot_cross_namespace_or_change_host_path(tmp_pat
     with pytest.raises(ScientificExecutionMapError, match="outside the exact"):
         af3_renderer(tmp_path, mutate=broad_host_root)
 
-    def unpinned_root(value: dict[str, object]) -> None:
-        value["models"][0]["stages"][0]["mounts"][1]["sub_path"] = None  # type: ignore[index]
+    # Narrowing the plane root to the dataset with a subPath is refused: it
+    # would hide the terminal receipt and the sibling manifest that the dataset
+    # tree has to be verified against.
+    def subpath_narrowed_root(value: dict[str, object]) -> None:
+        value["models"][0]["stages"][0]["mounts"][1]["sub_path"] = AF3_DATASET_RELATIVE_PATH  # type: ignore[index]
 
-    with pytest.raises(ScientificExecutionMapError, match="pinned read-only"):
-        af3_renderer(tmp_path, mutate=unpinned_root)
+    with pytest.raises(ScientificExecutionMapError, match="no subPath"):
+        af3_renderer(tmp_path, mutate=subpath_narrowed_root)
 
     def mismatched_mount_tree(value: dict[str, object]) -> None:
-        value["models"][0]["stages"][0]["mounts"][1]["sub_path"] = (  # type: ignore[index]
-            "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/" + "b" * 64
-        )
+        other = "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/" + "b" * 64
+        tree = value["models"][0]["runtime_artifacts"][0]["aggregate_tree"]  # type: ignore[index]
+        tree["dataset_relative_path"] = other
+        tree["dataset_uri"] = f"file:///mnt/fs2-reference-data/data/{other}"
 
     with pytest.raises(ScientificExecutionMapError, match="outside the exact"):
         af3_renderer(tmp_path, mutate=mismatched_mount_tree)
@@ -1111,30 +1143,6 @@ def test_af3_operator_storage_cannot_cross_namespace_or_change_host_path(tmp_pat
 
     with pytest.raises(ScientificExecutionMapError, match="trusted storage identity"):
         af3_renderer(tmp_path, mutate=wrong_reference_group)
-
-    def cross_namespace_cache(value: dict[str, object]) -> None:
-        value["models"][0]["stages"][1]["mounts"][2]["claim_namespace"] = "fs2-models"  # type: ignore[index]
-
-    with pytest.raises(ScientificExecutionMapError, match="execution namespace"):
-        af3_renderer(tmp_path, mutate=cross_namespace_cache)
-
-    def cache_artifact_impersonation(value: dict[str, object]) -> None:
-        value["models"][0]["stages"][1]["mounts"][2]["artifact_id"] = "alphafold3-parameters"  # type: ignore[index]
-
-    with pytest.raises(ScientificExecutionMapError, match="cannot impersonate"):
-        af3_renderer(tmp_path, mutate=cache_artifact_impersonation)
-
-    def wrong_cache_path(value: dict[str, object]) -> None:
-        value["models"][0]["stages"][1]["mounts"][2]["mount_path"] = "/cache/tenant"  # type: ignore[index]
-
-    with pytest.raises(ScientificExecutionMapError, match="model/stage allowlist"):
-        af3_renderer(tmp_path, mutate=wrong_cache_path)
-
-    def missing_cache_environment(value: dict[str, object]) -> None:
-        value["models"][0]["stages"][1]["environment"].pop("FS2_AF3_JAX_CACHE_DIR")  # type: ignore[index]
-
-    with pytest.raises(ScientificExecutionMapError, match="warm-cache contract"):
-        af3_renderer(tmp_path, mutate=missing_cache_environment)
 
 
 def test_af3_aggregate_tree_rejects_traversal_wrong_identity_and_missing_node_evidence(
@@ -1190,7 +1198,6 @@ def test_af3_aggregate_tree_rejects_traversal_wrong_identity_and_missing_node_ev
         artifact["aggregate_tree"]["dataset_uri"] = (  # type: ignore[index]
             f"file:///mnt/fs2-reference-data/data/{wrong_relative}"
         )
-        value["models"][0]["stages"][0]["mounts"][1]["sub_path"] = wrong_relative  # type: ignore[index]
 
     renderer, profile = af3_renderer(tmp_path, mutate=wrong_tree)
     plan, access, _ = compiled_af3_plan(renderer, profile)
@@ -1403,17 +1410,91 @@ def test_protenix_gpu_stage_gets_exact_deployment_owned_warm_cache(tmp_path: Pat
     }
     environment = {item["name"]: item["value"] for item in pod["containers"][0]["env"]}
     assert {key: environment[key] for key in cache_environment} == cache_environment
-    assert pod["securityContext"] == {
-        "runAsNonRoot": True,
-        "seccompProfile": {"type": "RuntimeDefault"},
-    }
-    assert "fsGroup" not in pod["securityContext"]
-    assert "fsGroupChangePolicy" not in pod["securityContext"]
 
     execution["models"][0]["stages"][1]["environment"].pop("TRITON_CACHE_DIR")
     path.write_text(json.dumps(execution))
     with pytest.raises(ScientificExecutionMapError, match="warm-cache contract"):
         FileScientificManifestRenderer(path=path, profiles=catalog)
+
+
+def runtime_plan() -> AdapterExecutionPlan:
+    controller_plan = ScientificBatchPlan(
+        (
+            ScientificStagePlan("prepare", resource_class=ResourceClass.CPU),
+            ScientificStagePlan("inference", depends_on=("prepare",)),
+        )
+    )
+    mount = RuntimeArtifactMount(
+        artifact_id="protenix-common",
+        mount_path="/models/protenix-v2/common",
+        sub_path="protenix-v2/common",
+        expected_content_sha256="c" * 64,
+        expected_manifest_sha256="e" * 64,
+        readiness_receipt_sha256=sha("localized-protenix-common").removeprefix("sha256:"),
+        supplemental_groups=(10001,),
+    )
+    prepare = StageInvocation(
+        stage_id="prepare",
+        shard_id="main",
+        argv=(
+            "protenix-wrapper",
+            "prep",
+            "--common",
+            "/models/protenix-v2/common",
+            "--runtime-localization-marker",
+            "/mnt/fs2-scientific/work/prepare/main/.fs2/runtime-localization.json",
+        ),
+        environment=(),
+        working_directory="/mnt/fs2-scientific/work/prepare/main",
+        consumes=(),
+        produces="processed-input",
+        collector_id="protenix-prepared-v1",
+        validator_id="protenix-prepared-validator-v1",
+        handoff_name="processed-envelope",
+        namespace="fs2-models",
+        local_queue_name="scientific",
+        runtime_artifacts=("protenix-common",),
+        runtime_mounts=(mount,),
+    )
+    inference = StageInvocation(
+        stage_id="inference",
+        shard_id="main",
+        argv=(
+            "protenix-wrapper",
+            "pred",
+            "--common",
+            "/models/protenix-v2/common",
+            "--runtime-localization-marker",
+            "/mnt/fs2-scientific/work/inference/main/.fs2/runtime-localization.json",
+        ),
+        environment=(),
+        working_directory="/mnt/fs2-scientific/work/inference/main",
+        consumes=("processed-input",),
+        produces="result-manifest",
+        collector_id="protenix-results-v1",
+        validator_id="protenix-validator-v1",
+        handoff_name=None,
+        namespace="fs2-models",
+        local_queue_name="scientific",
+        materializations=(
+            ArtifactMaterialization(
+                "processed-input",
+                "/mnt/fs2-scientific/work/inference/main/prepared",
+                MaterializationMode.EXTRACT_TAR,
+            ),
+        ),
+        runtime_artifacts=("protenix-common",),
+        runtime_mounts=(mount,),
+    )
+    return AdapterExecutionPlan(
+        model_id="protenix-v2",
+        variant_id="upstream-v2-0-0",
+        source_revision="b" * 40,
+        request_sha256="d" * 64,
+        controller_plan=controller_plan,
+        invocations=(prepare, inference),
+        required_model_artifacts=("protenix-common",),
+    )
 
 
 def test_openfold3_gpu_stage_gets_exact_deployment_owned_warm_cache(tmp_path: Path) -> None:
@@ -1704,86 +1785,6 @@ def test_openfold3_gpu_stage_gets_exact_deployment_owned_warm_cache(tmp_path: Pa
         mutation(candidate)
         with pytest.raises(ScientificExecutionMapError, match=error):
             load(candidate)
-
-
-def runtime_plan() -> AdapterExecutionPlan:
-    controller_plan = ScientificBatchPlan(
-        (
-            ScientificStagePlan("prepare", resource_class=ResourceClass.CPU),
-            ScientificStagePlan("inference", depends_on=("prepare",)),
-        )
-    )
-    mount = RuntimeArtifactMount(
-        artifact_id="protenix-common",
-        mount_path="/models/protenix-v2/common",
-        sub_path="protenix-v2/common",
-        expected_content_sha256="c" * 64,
-        expected_manifest_sha256="e" * 64,
-        readiness_receipt_sha256=sha("localized-protenix-common").removeprefix("sha256:"),
-        supplemental_groups=(10001,),
-    )
-    prepare = StageInvocation(
-        stage_id="prepare",
-        shard_id="main",
-        argv=(
-            "protenix-wrapper",
-            "prep",
-            "--common",
-            "/models/protenix-v2/common",
-            "--runtime-localization-marker",
-            "/mnt/fs2-scientific/work/prepare/main/.fs2/runtime-localization.json",
-        ),
-        environment=(),
-        working_directory="/mnt/fs2-scientific/work/prepare/main",
-        consumes=(),
-        produces="processed-input",
-        collector_id="protenix-prepared-v1",
-        validator_id="protenix-prepared-validator-v1",
-        handoff_name="processed-envelope",
-        namespace="fs2-models",
-        local_queue_name="scientific",
-        runtime_artifacts=("protenix-common",),
-        runtime_mounts=(mount,),
-    )
-    inference = StageInvocation(
-        stage_id="inference",
-        shard_id="main",
-        argv=(
-            "protenix-wrapper",
-            "pred",
-            "--common",
-            "/models/protenix-v2/common",
-            "--runtime-localization-marker",
-            "/mnt/fs2-scientific/work/inference/main/.fs2/runtime-localization.json",
-        ),
-        environment=(),
-        working_directory="/mnt/fs2-scientific/work/inference/main",
-        consumes=("processed-input",),
-        produces="result-manifest",
-        collector_id="protenix-results-v1",
-        validator_id="protenix-validator-v1",
-        handoff_name=None,
-        namespace="fs2-models",
-        local_queue_name="scientific",
-        materializations=(
-            ArtifactMaterialization(
-                "processed-input",
-                "/mnt/fs2-scientific/work/inference/main/prepared",
-                MaterializationMode.EXTRACT_TAR,
-            ),
-        ),
-        runtime_artifacts=("protenix-common",),
-        runtime_mounts=(mount,),
-    )
-    return AdapterExecutionPlan(
-        model_id="protenix-v2",
-        variant_id="upstream-v2-0-0",
-        source_revision="b" * 40,
-        request_sha256="d" * 64,
-        controller_plan=controller_plan,
-        invocations=(prepare, inference),
-        required_model_artifacts=("protenix-common",),
-    )
 
 
 def test_runtime_artifact_file_manifest_is_hard_admission_gate(tmp_path: Path) -> None:

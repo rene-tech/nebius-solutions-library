@@ -27,8 +27,13 @@ _LABEL_VALUE_RE = re.compile(r"^[A-Za-z0-9](?:[-A-Za-z0-9_.]*[A-Za-z0-9])?$")
 _ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _SENSITIVE_KEY_RE = re.compile(r"(?:token|secret|password|credential|private[_-]?key)", re.IGNORECASE)
 _CONTROLLER_MOUNT_ROOT = PurePosixPath("/mnt/fs2-scientific")
+# /reference-data is the shared reference plane, mounted whole and read-only so
+# a dataset tree, its readiness marker and the sibling manifest that describes
+# it all resolve under one mount. /databases stays for the per-model reference
+# artifacts of ESMFold2 and OpenFold3, which are single localized directories.
 _RUNTIME_MOUNT_ROOTS = tuple(
-    PurePosixPath(value) for value in ("/models", "/databases", "/opt/fs2/artifacts", "/opt/fs2/academic")
+    PurePosixPath(value)
+    for value in ("/models", "/reference-data", "/databases", "/opt/fs2/artifacts", "/opt/fs2/academic")
 )
 
 

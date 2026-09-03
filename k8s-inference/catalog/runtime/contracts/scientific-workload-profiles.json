@@ -58,11 +58,11 @@
         "artifact_manifest_digest": null,
         "execution_identity_sha256": null,
         "model_revision": "85c4d20505fd5cef05eac22b534d4e793971ae69",
-        "runtime_image_digest": null,
+        "runtime_image_digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
         "runtime_image_repository": "cancer-immunotherapy/alphafold3",
-        "runtime_image_state": "build-required",
-        "runtime_recipe_sha256": "24da1953c6e45086b7f5566a92411cffc74b6f887e7fc561df518a12af2a7869",
-        "workload_recipe_sha256": "0b73c2a948bbc9cc0187d7bd5ef58b418b5bf45d95bd070066205d91de090a39"
+        "runtime_image_state": "digest-pinned",
+        "runtime_recipe_sha256": "9cca7088f5444cdc0a4a651b503008f700820be61c9871417c240ec41700723b",
+        "workload_recipe_sha256": "c00467a5ea3409010d31dd933f8cea5014b1886047990fac2295997d6b38869b"
       },
       "execution_mode": "scientific-batch",
       "interface": {
@@ -81,6 +81,13 @@
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
+            "fold_job_count": {
+              "default": 1,
+              "description": "Number of fold jobs in the input JSON. The CPU stage packages one data JSON per fold job and the GPU stage consumes the package, so this bounds the expected output inventory.",
+              "maximum": 64,
+              "minimum": 1,
+              "type": "integer"
+            },
             "input_mode": {
               "default": "raw",
               "description": "raw runs the CPU data pipeline; enriched consumes a verified processed-JSON artifact and skips preprocessing.",
@@ -119,7 +126,7 @@
           ],
           "type": "object"
         },
-        "parameter_schema_sha256": "d04949b4b8695cf1165b6ea6b0fb9f8b9090a2cd67267dd39872446aefc7dcca",
+        "parameter_schema_sha256": "51daae3f817822503cda8cd606e3e4a65cf111fede84ea1133ca29dfac6c3f27",
         "protocol": "scientific-batch-v1",
         "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
         "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
@@ -192,7 +199,7 @@
           "grace_seconds": 60,
           "mode": "terminate-attempt"
         },
-        "parameter_schema_sha256": "d04949b4b8695cf1165b6ea6b0fb9f8b9090a2cd67267dd39872446aefc7dcca",
+        "parameter_schema_sha256": "51daae3f817822503cda8cd606e3e4a65cf111fede84ea1133ca29dfac6c3f27",
         "retry": {
           "max_attempts": 2,
           "retryable_exit_codes": [
@@ -217,12 +224,12 @@
             "resource_class": "cpu",
             "resources": {
               "cpu_millis": 16000,
-              "ephemeral_storage_request_gib": 16,
+              "ephemeral_storage_request_gib": 32,
               "gpu_count": 0,
               "limits": {
-                "cpu_millis": 64000,
-                "ephemeral_storage_bytes": 68719476736,
-                "memory_bytes": 274877906944
+                "cpu_millis": 16000,
+                "ephemeral_storage_bytes": 34359738368,
+                "memory_bytes": 68719476736
               },
               "memory_bytes": 68719476736
             }
@@ -451,7 +458,7 @@
         "runtime_image_digest": null,
         "runtime_image_repository": "cancer-immunotherapy/esmfold2",
         "runtime_image_state": "build-required",
-        "runtime_recipe_sha256": "c7c90a6ef96ddae4f1beb8d5c695dd16fe81f017004261f4a403b2076cab0222",
+        "runtime_recipe_sha256": "f042bba981183c03c1d14794679f7447e2ef73832c9840666a03864e719a524c",
         "workload_recipe_sha256": "70c4f42818bd3800e24d81ec2d3298149f4908b9c9f3e2db2b05c61a9e78b821"
       },
       "execution_mode": "scientific-batch",
@@ -803,7 +810,7 @@
         "runtime_image_digest": null,
         "runtime_image_repository": "cancer-immunotherapy/esmfold2-fast",
         "runtime_image_state": "build-required",
-        "runtime_recipe_sha256": "26f3afc576c79649b00b41889b3211dededf284ddad94a9f106e5262055ad9d7",
+        "runtime_recipe_sha256": "2b6646b41a8744139d2cd588b899762ceb1bd529151955597332640a24291ba7",
         "workload_recipe_sha256": "d58c9a6df6276a679de470917c237aa76d655a67159bc75f1adf333079fd2a5c"
       },
       "execution_mode": "scientific-batch",
@@ -1064,7 +1071,7 @@
         "runtime_image_digest": null,
         "runtime_image_repository": "cancer-immunotherapy/openfold3-upstream",
         "runtime_image_state": "build-required",
-        "runtime_recipe_sha256": "b5c22b39ccf39dd8ff62cf8e4a5faae0bf6745b155bd3d644b91a9dc94b34070",
+        "runtime_recipe_sha256": "b6429dcfd4e2099b63c513b4b29d09240b19421e92c0bd4445820911865b13d8",
         "workload_recipe_sha256": "2631810766dd319f07dcc4a09c697a466be0a7671ffa39868085825c9670d39c"
       },
       "execution_mode": "scientific-batch",
@@ -1362,7 +1369,7 @@
         "runtime_image_digest": null,
         "runtime_image_repository": "cancer-immunotherapy/protenix-v2",
         "runtime_image_state": "build-required",
-        "runtime_recipe_sha256": "7c1ec0c1c5c69d44ef0fa948cfa0faf929abd8341e1b99ac3467ae1307ac985e",
+        "runtime_recipe_sha256": "f028b856e258016444f63ddf26f4a5cfb44bce94785b88c795091410415e433d",
         "workload_recipe_sha256": "907cc5a26dab19b5bf72fd90d807f4232776361e75760e031b1c0737ea11316f"
       },
       "execution_mode": "scientific-batch",

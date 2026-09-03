@@ -26,32 +26,34 @@
       "model_id": "alphafold3",
       "stage_id": "data-pipeline",
       "execution_namespace": "fs2-academic-poc",
-      "local_queue_name": "academic-scientific",
-      "cluster_queue_name": "inference-accelerators",
+      "local_queue_name": "academic-scientific-cpu",
+      "cluster_queue_name": "reference-data-cpu",
       "service_account_name": "fs2-academic-runner",
       "node_selector": {
-        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
-        "storage.fs2.nebius/reference-data": "true"
+        "capacity.fs2.nebius/pool": "reference-data",
+        "capacity.fs2.nebius/type": "regular",
+        "storage.fs2.nebius/reference-data": "true",
+        "workload.fs2.nebius/reference-data": "true"
       },
       "tolerations": [
         {
-          "key": "dedicated",
+          "key": "workload.fs2.nebius/reference-data",
           "operator": "Equal",
-          "value": "fs2-inference",
+          "value": "true",
           "effect": "NoSchedule"
         }
       ],
       "mounts": [
         {
-          "name": "alphafold3-databases",
+          "name": "alphafold3-reference-plane",
           "kind": "operator-host-path",
           "artifact_id": "alphafold3-public-databases-v3.0",
           "claim_name": null,
           "claim_namespace": null,
           "host_path": "/mnt/fs2-reference-data/data",
           "operator_owned": true,
-          "mount_path": "/databases",
-          "sub_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}",
+          "mount_path": "/reference-data",
+          "sub_path": null,
           "aggregate_tree_policy": {
             "dataset_relative_path_template": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}",
             "dataset_uri_template": "file:///mnt/fs2-reference-data/data/datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}",

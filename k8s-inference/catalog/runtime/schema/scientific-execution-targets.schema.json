@@ -71,7 +71,7 @@
           "stage_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
           "execution_namespace": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
           "local_queue_name": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
-          "cluster_queue_name": {"const": "inference-accelerators"},
+          "cluster_queue_name": {"enum": ["inference-accelerators", "reference-data-cpu"]},
           "service_account_name": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"},
           "node_selector": {
             "type": "object",
@@ -273,10 +273,11 @@
             "properties": {
               "artifact_id": {"const": "alphafold3-public-databases-v3.0"},
               "host_path": {"const": "/mnt/fs2-reference-data/data"},
-              "mount_path": {"const": "/databases"},
+              "mount_path": {"const": "/reference-data"},
               "aggregate_tree_policy": {"$ref": "#/$defs/aggregateTreePolicy"},
               "sub_path": {
-                "const": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}"
+                "type": "null",
+                "description": "The reference plane is mounted whole. A subPath would expose only the dataset tree, hiding the terminal receipt and the sibling manifest the run verifies it against."
               },
               "supplemental_groups": {"const": [1000]},
               "read_only": {"const": true}
@@ -358,15 +359,20 @@
       }
     },
     "toleration": {
+      "description": "One of the two deployment-owned taints a scientific stage may tolerate: the dedicated inference taint for accelerator work, or the reference-data taint for CPU preprocessing on the reference-data pool.",
       "type": "object",
       "additionalProperties": false,
       "required": ["key", "operator", "value", "effect"],
       "properties": {
-        "key": {"const": "dedicated"},
+        "key": {"enum": ["dedicated", "workload.fs2.nebius/reference-data"]},
         "operator": {"const": "Equal"},
-        "value": {"const": "fs2-inference"},
+        "value": {"enum": ["fs2-inference", "true"]},
         "effect": {"const": "NoSchedule"}
-      }
+      },
+      "oneOf": [
+        {"properties": {"key": {"const": "dedicated"}, "value": {"const": "fs2-inference"}}},
+        {"properties": {"key": {"const": "workload.fs2.nebius/reference-data"}, "value": {"const": "true"}}}
+      ]
     }
   }
 }

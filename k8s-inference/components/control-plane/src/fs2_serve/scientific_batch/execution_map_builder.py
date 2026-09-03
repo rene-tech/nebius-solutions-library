@@ -119,14 +119,16 @@ def _target_mount(
     if raw_mount.get("kind") == "operator-host-path":
         if not isinstance(artifact_id, str) or artifact_id not in localizations:
             raise ScientificExecutionMapError("operator hostPath has no aggregate-tree localization")
+        # The reference plane is exposed whole and read-only, so the mount stays
+        # unqualified. Narrowing it to the dataset with a subPath would hide the
+        # terminal receipt and the sibling manifest the tree is verified against.
+        # The dataset is pinned by the aggregate tree's own content-addressed
+        # path instead, which is checked when the map is loaded.
         aggregate = _object(localizations[artifact_id].get("aggregate_tree"), "operator aggregate tree")
-        exact_sub_path = aggregate.get("dataset_relative_path")
-        if sub_path != (
-            "datasets/alphafold3-public-databases-v3.0/"
-            "v3.0-paper-snapshot-2022-09-28/sha256/{content_digest_sha256}"
-        ):
-            raise ScientificExecutionMapError("operator hostPath policy does not use the canonical pinned template")
-        sub_path = exact_sub_path
+        if not isinstance(aggregate.get("dataset_relative_path"), str):
+            raise ScientificExecutionMapError("operator aggregate tree records no dataset path")
+        if sub_path is not None:
+            raise ScientificExecutionMapError("operator hostPath exposes one plane root with no subPath")
     return {
         key: value
         for key, value in {

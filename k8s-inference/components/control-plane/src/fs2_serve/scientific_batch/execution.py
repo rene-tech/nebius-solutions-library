@@ -45,37 +45,58 @@ AF3_REFERENCE_ARTIFACT = "alphafold3-public-databases-v3.0"
 AF3_REFERENCE_REVISION = "v3.0-paper-snapshot-2022-09-28"
 AF3_REFERENCE_MARKER = ".fs2-manifest-sha256"
 AF3_REFERENCE_DATASET_PREFIX = f"datasets/{AF3_REFERENCE_ARTIFACT}/{AF3_REFERENCE_REVISION}/sha256"
+# Both AlphaFold 3 stages run in the one namespace that holds the licensed
+# claim and the durable controller state. Only the queue and the pool differ:
+# preprocessing is CPU work on the academic CPU LocalQueue, inference is GPU
+# work on the academic accelerator LocalQueue.
 AF3_EXECUTION_NAMESPACE = "fs2-academic-poc"
-AF3_LOCAL_QUEUE = "academic-scientific"
-AF3_CLUSTER_QUEUE = "inference-accelerators"
+AF3_GPU_LOCAL_QUEUE = "academic-scientific"
+AF3_CPU_LOCAL_QUEUE = "academic-scientific-cpu"
+AF3_GPU_CLUSTER_QUEUE = "inference-accelerators"
+AF3_CPU_CLUSTER_QUEUE = "reference-data-cpu"
 AF3_SERVICE_ACCOUNT = "fs2-academic-runner"
 AF3_PARAMETER_SUPPLEMENTAL_GROUP = 65532
 AF3_REFERENCE_SUPPLEMENTAL_GROUP = 1000
 _AF3_ACCELERATOR_SELECTOR = {"accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"}
 _AF3_REFERENCE_ACCESS_SELECTOR = {"storage.fs2.nebius/reference-data": "true"}
+# The reference-data CPU pool of the accepted reference-data placement contract.
+# Deliberately carries no accelerator label: a stage that requests a GPU while
+# doing database search would hold an idle H100 for the length of an MSA.
 _AF3_REFERENCE_SELECTOR = {
-    **_AF3_ACCELERATOR_SELECTOR,
+    "capacity.fs2.nebius/pool": "reference-data",
+    "capacity.fs2.nebius/type": "regular",
     **_AF3_REFERENCE_ACCESS_SELECTOR,
+    "workload.fs2.nebius/reference-data": "true",
 }
 _DEDICATED_INFERENCE_TOLERATION = ("dedicated", "Equal", "fs2-inference", "NoSchedule")
+_REFERENCE_DATA_TOLERATION = ("workload.fs2.nebius/reference-data", "Equal", "true", "NoSchedule")
 _AF3_STAGE_NODE_SELECTORS = {
     ("alphafold3", "data-pipeline"): _AF3_REFERENCE_SELECTOR,
     ("alphafold3", "inference"): _AF3_ACCELERATOR_SELECTOR,
 }
 _AF3_STAGE_TOLERATIONS = {
-    ("alphafold3", "data-pipeline"): (_DEDICATED_INFERENCE_TOLERATION,),
+    ("alphafold3", "data-pipeline"): (_REFERENCE_DATA_TOLERATION,),
     ("alphafold3", "inference"): (_DEDICATED_INFERENCE_TOLERATION,),
+}
+_AF3_STAGE_QUEUES = {
+    ("alphafold3", "data-pipeline"): (AF3_CPU_LOCAL_QUEUE, AF3_CPU_CLUSTER_QUEUE),
+    ("alphafold3", "inference"): (AF3_GPU_LOCAL_QUEUE, AF3_GPU_CLUSTER_QUEUE),
 }
 _RUNTIME_ARTIFACT_SUPPLEMENTAL_GROUPS = {
     ("alphafold3", "data-pipeline", AF3_REFERENCE_ARTIFACT): (AF3_REFERENCE_SUPPLEMENTAL_GROUP,),
     ("alphafold3", "inference", "alphafold3-parameters"): (AF3_PARAMETER_SUPPLEMENTAL_GROUP,),
 }
+# The whole reference plane, read-only, with no subPath. The receipt, the
+# dataset tree, its readiness marker and the manifest describing it are
+# siblings under this root, so mounting only the dataset would hide three of
+# the four documents a preprocessing run has to read.
+AF3_REFERENCE_MOUNT_PATH = "/reference-data"
 _OPERATOR_HOST_PATH_ALLOWLIST = {
     (
         "alphafold3",
         "data-pipeline",
         AF3_REFERENCE_ARTIFACT,
-    ): (AF3_REFERENCE_HOST_PATH, "/databases"),
+    ): (AF3_REFERENCE_HOST_PATH, AF3_REFERENCE_MOUNT_PATH),
 }
 _OPERATOR_HOST_PATH_REQUIRED_NODE_SELECTORS = {
     (
@@ -465,7 +486,7 @@ class FileScientificManifestRenderer:
                         or PurePosixPath(aggregate_tree.dataset_relative_path).name
                         != normalized_content_digest.removeprefix("sha256:")
                         or _bounded_string(artifact["mount_path"], "runtime artifact mount path", maximum=512)
-                        != "/databases"
+                        != AF3_REFERENCE_MOUNT_PATH
                     ):
                         raise ScientificExecutionMapError(
                             "runtime aggregate tree is outside the exact AF3 dataset layout"
@@ -643,16 +664,21 @@ class FileScientificManifestRenderer:
                                 "writable cache mount is outside the model/stage allowlist"
                             )
                     else:
+                        # The reference plane is mounted whole and read-only. A
+                        # subPath would expose only the dataset tree and hide
+                        # the terminal receipt and the sibling manifest the run
+                        # verifies it against, so the dataset is pinned by the
+                        # aggregate tree below rather than by the mount.
                         if (
                             artifact_id is None
                             or claim_name is not None
                             or claim_namespace is not None
-                            or sub_path is None
+                            or sub_path is not None
                             or not operator_owned
                             or not read_only
                         ):
                             raise ScientificExecutionMapError(
-                                "operator hostPath mounts require one pinned read-only logical artifact tree"
+                                "operator hostPath mounts expose one read-only plane root with no subPath"
                             )
                         host_path = _bounded_string(host_path, "scientific operator hostPath", maximum=512)
                         parsed_host_path = PurePosixPath(host_path)
@@ -665,7 +691,7 @@ class FileScientificManifestRenderer:
                             != (host_path, mount_path)
                             or aggregate_localization is None
                             or aggregate_localization.aggregate_tree is None
-                            or sub_path != aggregate_localization.aggregate_tree.dataset_relative_path
+                            or aggregate_localization.mount_path != mount_path
                         ):
                             raise ScientificExecutionMapError(
                                 "operator hostPath is outside the exact model/stage/artifact tree allowlist"
@@ -766,8 +792,7 @@ class FileScientificManifestRenderer:
                     node_selector != _AF3_STAGE_NODE_SELECTORS[stage_key]
                     or tuple(tolerations) != _AF3_STAGE_TOLERATIONS[stage_key]
                     or execution_namespace != AF3_EXECUTION_NAMESPACE
-                    or local_queue_name != AF3_LOCAL_QUEUE
-                    or cluster_queue_name != AF3_CLUSTER_QUEUE
+                    or (local_queue_name, cluster_queue_name) != _AF3_STAGE_QUEUES[stage_key]
                     or stage["service_account_name"] != AF3_SERVICE_ACCOUNT
                 ):
                     raise ScientificExecutionMapError(
@@ -1049,9 +1074,15 @@ class FileScientificManifestRenderer:
                     raise ScientificExecutionMapError(
                         f"runtime artifact {artifact_id} lost its trusted storage group binding"
                     )
+                # An aggregate tree is exposed as one read-only plane root with
+                # no subPath. The dataset inside it is pinned by the promoted
+                # content digest checked when the map was loaded, and by the
+                # runtime's own check that the mounted directory name equals
+                # that digest, so the mount itself must stay unqualified.
                 if localization.aggregate_tree is not None and any(
                     source.kind != "operator-host-path"
-                    or source.sub_path != localization.aggregate_tree.dataset_relative_path
+                    or source.sub_path is not None
+                    or source.mount_path != localization.mount_path
                     for source in candidates
                 ):
                     raise ScientificExecutionMapError(

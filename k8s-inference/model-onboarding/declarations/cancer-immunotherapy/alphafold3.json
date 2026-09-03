@@ -76,11 +76,12 @@
     "version": "3.0.4-candidate",
     "image": {
       "logical_repository": "cancer-immunotherapy/alphafold3",
-      "digest": null,
-      "state": "build-required"
+      "digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+      "state": "digest-pinned"
     },
     "command": [
-      "/usr/local/bin/fs2-run-alphafold3"
+      "/alphafold3_venv/bin/python3",
+      "/opt/fs2/af3_runtime.py"
     ],
     "args": [],
     "environment": {
@@ -155,7 +156,10 @@
           },
           "input_mode": {
             "type": "string",
-            "enum": ["raw", "enriched"],
+            "enum": [
+              "raw",
+              "enriched"
+            ],
             "default": "raw",
             "description": "raw runs the CPU data pipeline; enriched consumes a verified processed-JSON artifact and skips preprocessing."
           },
@@ -163,6 +167,13 @@
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
             "description": "Required for enriched input; the original raw-input digest bound by the relocatable handoff."
+          },
+          "fold_job_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "default": 1,
+            "description": "Number of fold jobs in the input JSON. The CPU stage packages one data JSON per fold job and the GPU stage consumes the package, so this bounds the expected output inventory."
           }
         }
       }
@@ -186,12 +197,12 @@
           "requests": {
             "cpu": "16",
             "memory": "64Gi",
-            "ephemeral_storage": "16Gi"
+            "ephemeral_storage": "32Gi"
           },
           "limits": {
-            "cpu": "64",
-            "memory": "256Gi",
-            "ephemeral_storage": "64Gi"
+            "cpu": "16",
+            "memory": "64Gi",
+            "ephemeral_storage": "32Gi"
           }
         },
         "admission_mode": "independent-jobs",

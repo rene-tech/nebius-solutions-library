@@ -20,7 +20,7 @@ AF3_MANIFEST = "b" * 64
 
 MOUNT_PATHS = {
     "alphafold3-parameters": "/models/af3.bin.zst",
-    "alphafold3-public-databases-v3.0": "/databases",
+    "alphafold3-public-databases-v3.0": "/reference-data",
     "esmfold2-trunk": "/models/esmfold2",
     "esmfold2-fast-trunk": "/models/esmfold2-fast",
     "esmc-6b": "/models/esmc-6b",
@@ -128,12 +128,28 @@ def test_generated_installed_config_map_is_the_production_reader_contract(tmp_pa
     renderer = FileScientificManifestRenderer(path=installed, profiles=profiles)
 
     assert set(renderer.variants) == {"alphafold3", "esmfold2", "esmfold2-fast", "openfold3", "protenix-v2"}
+    # One namespace for the licensed claim and the durable state, two queues so
+    # CPU preprocessing never consumes accelerator quota.
     af3_data = renderer.executions[("alphafold3", "data-pipeline")]
-    assert (af3_data.namespace, af3_data.local_queue_name) == ("fs2-academic-poc", "academic-scientific")
-    assert af3_data.node_selector["storage.fs2.nebius/reference-data"] == "true"
-    assert next(mount for mount in af3_data.mounts if mount.kind == "operator-host-path").sub_path.endswith(
-        AF3_CONTENT
+    assert (af3_data.namespace, af3_data.local_queue_name) == (
+        "fs2-academic-poc",
+        "academic-scientific-cpu",
     )
+    af3_inference = renderer.executions[("alphafold3", "inference")]
+    assert (af3_inference.namespace, af3_inference.local_queue_name) == (
+        "fs2-academic-poc",
+        "academic-scientific",
+    )
+    assert af3_data.node_selector["storage.fs2.nebius/reference-data"] == "true"
+    # The plane root is exposed whole: no subPath, because the receipt and the
+    # sibling manifest have to resolve alongside the dataset. The dataset itself
+    # is pinned by the aggregate tree's content-addressed path.
+    reference_mount = next(mount for mount in af3_data.mounts if mount.kind == "operator-host-path")
+    assert reference_mount.sub_path is None
+    assert reference_mount.mount_path == "/reference-data"
+    assert renderer.runtime_artifacts[
+        ("alphafold3", "alphafold3-public-databases-v3.0")
+    ].aggregate_tree.dataset_relative_path.endswith(AF3_CONTENT)
     assert next(mount for mount in af3_data.mounts if mount.artifact_id).supplemental_groups == (1000,)
     af3_inference = renderer.executions[("alphafold3", "inference")]
     assert {group for mount in af3_inference.mounts for group in mount.supplemental_groups} == {65532}
