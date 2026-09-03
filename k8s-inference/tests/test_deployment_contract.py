@@ -302,6 +302,7 @@ class DeploymentContractTests(unittest.TestCase):
                 "fast_start_evidence_file": None,
                 "fast_start_environment_qualifications_file": None,
                 "fast_start_measurement_contracts_file": None,
+                "fast_start_mechanisms_file": None,
                 "fast_start_wait_second_value": 0.01,
                 "fast_start_mechanism_hourly_costs": {},
                 "priority_classes": {
@@ -1533,6 +1534,7 @@ class DeploymentContractTests(unittest.TestCase):
                 "fast_start_evidence_file": None,
                 "fast_start_environment_qualifications_file": None,
                 "fast_start_measurement_contracts_file": None,
+                "fast_start_mechanisms_file": None,
                 "fast_start_wait_second_value": 0.01,
                 "fast_start_mechanism_hourly_costs": {},
                 "priority_classes": {

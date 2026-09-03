@@ -1136,6 +1136,7 @@ locals {
       fast_start_evidence_file                   = var.deployment.dynamic_models.fast_start_evidence_file
       fast_start_environment_qualifications_file = var.deployment.dynamic_models.fast_start_environment_qualifications_file
       fast_start_measurement_contracts_file      = var.deployment.dynamic_models.fast_start_measurement_contracts_file
+      fast_start_mechanisms_file                 = var.deployment.dynamic_models.fast_start_mechanisms_file
       fast_start_wait_second_value               = var.deployment.dynamic_models.fast_start_wait_second_value
       fast_start_mechanism_hourly_costs          = var.deployment.dynamic_models.fast_start_mechanism_hourly_costs
       priority_classes                           = var.deployment.dynamic_models.priority_classes

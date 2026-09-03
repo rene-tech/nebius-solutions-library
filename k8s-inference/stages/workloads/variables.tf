@@ -861,6 +861,7 @@ variable "model_controller" {
     fast_start_evidence_file                   = optional(string)
     fast_start_environment_qualifications_file = optional(string)
     fast_start_measurement_contracts_file      = optional(string)
+    fast_start_mechanisms_file                 = optional(string)
     fast_start_wait_second_value               = optional(number, 0.01)
     fast_start_mechanism_hourly_costs          = optional(map(number), {})
     priority_classes                           = map(number)

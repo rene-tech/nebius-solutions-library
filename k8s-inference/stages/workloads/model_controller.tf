@@ -26,6 +26,64 @@ locals {
         var.model_controller.fast_start_measurement_contracts_file
     )))
   )
+  model_controller_fast_start_mechanisms = (
+    var.model_controller.fast_start_mechanisms_file == null ? {
+      schema = "fs2-serve.nebius.ai/fast-start-mechanism-set/v1"
+      models = {}
+      } : jsondecode(file(pathexpand(
+        var.model_controller.fast_start_mechanisms_file
+    )))
+  )
+  # One reviewed document declares every model's cold-start mechanisms, so
+  # onboarding the two hundredth model is another entry here rather than new
+  # Terraform. Each declaration carries its own configDigest and this gate
+  # recomputes it, so a hand-edited declaration cannot slip into the envelope
+  # and silently inherit an existing benchmark cohort.
+  model_controller_fast_start_mechanism_declarations = {
+    for model_id, declarations in try(local.model_controller_fast_start_mechanisms.models, {}) :
+    model_id => {
+      for mechanism, declaration in declarations : mechanism => declaration
+    }
+  }
+  model_controller_fast_start_mechanism_names_valid = try(
+    local.model_controller_fast_start_mechanisms.schema == "fs2-serve.nebius.ai/fast-start-mechanism-set/v1" &&
+    alltrue(flatten([
+      for model_id, declarations in local.model_controller_fast_start_mechanism_declarations : [
+        for mechanism, declaration in declarations :
+        contains(["regionalCache", "hostMemoryResidency", "gpuResident"], mechanism)
+      ]
+    ])),
+    false,
+  )
+  model_controller_fast_start_mechanism_digests_valid = try(
+    alltrue(flatten([
+      for model_id, declarations in local.model_controller_fast_start_mechanism_declarations : [
+        for mechanism, declaration in declarations :
+        can(regex("^sha256:[a-f0-9]{64}$", declaration.configDigest)) &&
+        declaration.configDigest == "sha256:${sha256(jsonencode({
+          for key, value in declaration : key => value if key != "configDigest"
+        }))}"
+      ]
+    ])),
+    false,
+  )
+  model_controller_fast_start_mechanism_pools_valid = try(
+    alltrue(flatten([
+      for model_id, declarations in local.model_controller_fast_start_mechanism_declarations : [
+        for mechanism, declaration in declarations :
+        length(declaration.poolRefs) > 0 &&
+        alltrue([
+          for pool_ref in declaration.poolRefs : contains(keys(local.selected_queue_pools), pool_ref)
+        ])
+      ]
+    ])),
+    false,
+  )
+  model_controller_fast_start_mechanisms_valid = (
+    local.model_controller_fast_start_mechanism_names_valid &&
+    local.model_controller_fast_start_mechanism_digests_valid &&
+    local.model_controller_fast_start_mechanism_pools_valid
+  )
   model_controller_fast_start_environment_qualifications_valid = try(
     local.model_controller_fast_start_environment_qualifications.schema == "fs2-serve.nebius.ai/runtime-environment-qualification-set/v1" &&
     length(keys(local.model_controller_fast_start_environment_qualifications)) == 2 &&
@@ -176,7 +234,7 @@ locals {
           contains([15, 16], length(keys(item)))
         ) &&
         (
-          item.mechanism == "modelexpress" ?
+          contains(["modelexpress", "regional-cache", "host-memory-residency", "gpu-resident"], item.mechanism) ?
           can(regex("^sha256:[a-f0-9]{64}$", try(item.mechanismConfigDigest, ""))) :
           try(item.mechanismConfigDigest, null) == null
         )
@@ -747,9 +805,12 @@ locals {
       # and projected here, every level above Off stays unqualified and the
       # controller reports that truthfully.
       fastStartEvidence = try(local.model_controller_fast_start_evidence[model_id], [])
-      }, contains(keys(local.model_controller_modelexpress_bindings), model_id) ? {
-      modelExpress = local.model_controller_modelexpress_bindings[model_id]
-    } : {})
+      },
+      contains(keys(local.model_controller_modelexpress_bindings), model_id) ? {
+        modelExpress = local.model_controller_modelexpress_bindings[model_id]
+      } : {},
+      try(local.model_controller_fast_start_mechanism_declarations[model_id], {}),
+    )
   }
   model_controller_pool_envelope = {
     for pool_id, pool in local.selected_queue_pools : pool_id => {
@@ -932,6 +993,10 @@ resource "terraform_data" "model_controller_contract" {
       error_message = "Fast-start evidence must map only controller-qualified model IDs to the exact bounded wire shape emitted by project_fast_start_evidence.py."
     }
 
+    precondition {
+      condition     = local.model_controller_fast_start_mechanisms_valid
+      error_message = "Each fast-start mechanism declaration must carry a matching configDigest and only reference selected accelerator pools."
+    }
     precondition {
       condition     = local.model_controller_fast_start_environment_qualifications_valid
       error_message = "Fast-start environment qualifications must be an exact, self-digested v1 document for this project, region, cluster context, accelerator class, pool, and capacity type."

@@ -437,7 +437,7 @@ def test_the_residency_holder_schedules_the_ram_it_costs() -> None:
         model_ref="qwen3-8b",
         qualification=declaration,
         image=QWEN_IMAGE,
-        node_selector={"kubernetes.io/hostname": "computeinstance-e00m0hsph76ajt9sdb"},
+        node_selector={"kubernetes.io/hostname": "h100-node-a"},
         tolerations=[{"key": "dedicated", "operator": "Equal", "value": "fs2-inference", "effect": "NoSchedule"}],
         labels={},
         annotations={},
@@ -547,7 +547,7 @@ def test_the_residency_agent_holds_real_bytes_and_publishes_a_verifiable_receipt
         "FS2_RESIDENCY_CONFIG_DIGEST": "sha256:" + "7c" * 32,
         "FS2_RESIDENCY_RECEIPT_ROOT": str(receipt_root),
         "FS2_RESIDENCY_REFRESH_SECONDS": "30",
-        "FS2_NODE_NAME": "computeinstance-e00m0hsph76ajt9sdb",
+        "FS2_NODE_NAME": "h100-node-a",
     }
     with mock.patch.dict(os.environ, environment, clear=False):
         with mock.patch.object(residency_agent.time, "sleep", side_effect=StopIteration):
@@ -557,7 +557,7 @@ def test_the_residency_agent_holds_real_bytes_and_publishes_a_verifiable_receipt
         assert receipt["resident_bytes"] == 12288
         assert receipt["resident_files"] == 2
         assert receipt["residency_guaranteed"] is False
-        assert receipt["node_name"] == "computeinstance-e00m0hsph76ajt9sdb"
+        assert receipt["node_name"] == "h100-node-a"
         # The same receipt is what the readiness probe and the runtime's init
         # container check, so the handshake is proved by one artefact.
         assert residency_agent.check() == 0
