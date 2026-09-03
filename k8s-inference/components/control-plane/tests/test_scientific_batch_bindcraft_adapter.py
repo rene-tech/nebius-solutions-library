@@ -2,20 +2,27 @@
 
 from __future__ import annotations
 
-import copy
+import hashlib
+import importlib.util
 import json
+import os
+from argparse import Namespace
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import pytest
 
 from fs2_serve.scientific_batch import ResourceClass, ScientificAdapterError, compile_adapter_run
 from fs2_serve.scientific_batch.adapters import bindcraft
+from fs2_serve.scientific_batch.adapters.materialization import safe_extract_tar
 
 SOLUTION_ROOT = Path(__file__).resolve().parents[3]
 ADAPTER_ROOT = SOLUTION_ROOT / "models/structure/batch-adapters/bindcraft"
 LOCALIZATION_CONTRACT = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-artifact-localization.json"
 PROFILE_PATH = SOLUTION_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json"
+R18_RUNTIME_SHA256 = "b30c37773f480e6eea771d927944d02e57f052bda14f9e46eaeaef86753a071c"
+R18_IMAGE_DIGEST = "sha256:806760cde59f1eb47de2735cd6415e176277586e022bbfb33f8658221c3f672d"
 
 
 def fixture(name: str) -> dict[str, Any]:
@@ -227,6 +234,63 @@ def test_stage_argv_is_shell_free_and_uses_the_reviewed_outer_entrypoint() -> No
     assert "--atomic-rename" in aggregate.argv
 
 
+def test_each_invocation_carries_its_exact_native_request_and_input_manifest() -> None:
+    request = fixture("positive-default-lane")
+    request["parameters"]["designs"] = 33
+    plan = bindcraft.compile_run(granted(), request, operation_id="op-bindcraft-native-documents")
+    public, parameters = bindcraft._request(request)
+    expected_manifest = bindcraft.native_input_manifest(public)
+    expected_manifest_bytes = bindcraft._canonical_bytes(expected_manifest)
+
+    for index, shard_id in enumerate(parameters.shard_ids):
+        invocation = plan.invocation("design", shard_id)
+        environment = dict(invocation.environment)
+        native = json.loads(environment["FS2_BINDCRAFT_REQUEST_JSON"])
+        assert native == bindcraft.native_request(public, parameters, shard_index=index)
+        assert native["parameters"]["accepted_designs_per_shard"] == parameters.accepted_designs(index)
+        assert native["parameters"]["max_trajectories_per_shard"] == parameters.max_trajectories(index)
+        assert native["parameters"]["target_chains"] == ["A"]
+        assert native["parameters"]["hotspots"] == [{"chain": "A", "residue": residue} for residue in (56, 66, 115)]
+        assert environment["FS2_BINDCRAFT_INPUT_MANIFEST_JSON"].encode() == expected_manifest_bytes
+        assert native["input_manifest"]["sha256"] == hashlib.sha256(expected_manifest_bytes).hexdigest()
+        assert environment["FS2_BINDCRAFT_TARGET_PDB"].endswith("/inputs/target_structure.pdb")
+        assert environment["FS2_BINDCRAFT_EXTERNAL_TREES"].endswith("/.fs2/external-trees.json")
+        roles = json.loads(environment["FS2_BINDCRAFT_EXTERNAL_TREE_ROLES"])
+        assert {item["role"] for item in roles["trees"]} == set(bindcraft.EXTERNAL_TREE_ROLES)
+        assert environment["FS2_SCIENTIFIC_COLLECTOR_ID"] == bindcraft.DESIGN_COLLECTOR_ID
+
+    aggregate = dict(plan.invocation("aggregate", "main").environment)
+    assert json.loads(aggregate["FS2_BINDCRAFT_REQUEST_JSON"]) == bindcraft.native_request(
+        public,
+        parameters,
+        shard_index=0,
+    )
+    assert "FS2_BINDCRAFT_TARGET_PDB" not in aggregate
+    assert aggregate["FS2_SCIENTIFIC_COLLECTOR_ID"] == bindcraft.AGGREGATE_COLLECTOR_ID
+
+
+def test_target_must_be_one_uncompressed_pdb() -> None:
+    for media_type, compression in (("application/json", None), ("chemical/x-pdb", "zstd")):
+        request = fixture("positive-default-lane")
+        request["input_manifest"]["media_type"] = media_type
+        if compression is not None:
+            request["input_manifest"]["compression"] = compression
+        with pytest.raises(ScientificAdapterError, match="[Pp][Dd][Bb]|uncompressed"):
+            bindcraft.compile_run(granted(), request, operation_id="op-bindcraft-input-type")
+
+
+def test_runtime_document_materialization_is_idempotent_and_refuses_drift(tmp_path: Path) -> None:
+    invocation = compile_fixture("positive-default-lane").invocation("design", "design-000")
+    workspace = tmp_path / "attempt"
+    workspace.mkdir()
+    first = bindcraft.materialize_runtime_documents(invocation, workspace)
+    assert bindcraft.materialize_runtime_documents(invocation, workspace) == first
+    first[0].chmod(0o640)
+    first[0].write_text("{}\n", encoding="ascii")
+    with pytest.raises(ScientificAdapterError, match="different bytes"):
+        bindcraft.materialize_runtime_documents(invocation, workspace)
+
+
 def test_the_default_mpnn_lane_is_vanilla_and_soluble_is_never_implicit() -> None:
     assert bindcraft.DEFAULT_MPNN_LANE == "vanilla"
     assert "mpnn_lane" not in fixture("positive-default-lane")["parameters"]
@@ -341,66 +405,232 @@ def test_dispatch_reaches_the_adapter_through_the_public_allow_list() -> None:
         )
 
 
-def publish_shard(workspace: Path, *, index: int, designs: int = 1, sequence: str | None = None) -> None:
-    artifacts = workspace / "output" / "artifacts"
+def _pdb(*, complex_structure: bool) -> str:
+    chains = ("A", "A", "B", "B") if complex_structure else ("B", "B", "B", "B")
+    return "\n".join(
+        [
+            (
+                f"ATOM  {index:5d}  CA  ALA {chain}{index:4d}    "
+                f"{index:8.3f}{index + 1:8.3f}{index + 2:8.3f}  1.00 20.00           C"
+            )
+            for index, chain in enumerate(chains, start=1)
+        ]
+        + ["TER", "END", ""]
+    )
+
+
+def _pointer(path: Path, artifact_id: str, media_type: str) -> dict[str, Any]:
+    content = path.read_bytes()
+    return {
+        "artifact_id": artifact_id,
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "size_bytes": len(content),
+        "media_type": media_type,
+        "compression": "none",
+    }
+
+
+def publish_shard(
+    workspace: Path,
+    *,
+    index: int,
+    request: dict[str, Any] | None = None,
+    designs: int | None = None,
+    sequence: str | None = None,
+    scoring_engine: str = "pyrosetta",
+    backend_id: str = bindcraft.BACKEND_ID,
+    source_revision: str = bindcraft.SOURCE_REVISION,
+    status: str = "succeeded",
+    generation: str = "generation-test",
+) -> None:
+    request = request or fixture("positive-default-lane")
+    parameters = bindcraft.BindCraftParameters.parse(request["parameters"])
+    accepted = parameters.accepted_designs(index) if designs is None else designs
+    output = workspace / "output"
+    artifacts = output / "artifacts"
     artifacts.mkdir(parents=True, exist_ok=True)
-    (artifacts / "shard.json").write_text(
+    shard_path = artifacts / "shard.json"
+    shard_path.write_text(
         json.dumps(
             {
-                "backend_id": bindcraft.BACKEND_ID,
-                "source_revision": bindcraft.SOURCE_REVISION,
+                "backend_id": backend_id,
+                "source_revision": source_revision,
                 "index": index,
-                "seed": 4096 + index,
-                "status": "succeeded",
-            }
-        ),
+                "seed": parameters.seed(index),
+                "status": status,
+            },
+            sort_keys=True,
+        )
+        + "\n",
         encoding="utf-8",
     )
+    shard_id = f"artifact.bindcraft.native.shard.{index:03d}"
+    shard_entry = {
+        "name": f"shard-{index:03d}",
+        "semantic_type": "bindcraft-native-shard-result-json/v1",
+        "artifact": _pointer(shard_path, shard_id, "application/json"),
+    }
     body = sequence or "AAAGGGCCCWWWYYYFFFLLLVVVIIIMMMTTTSSSNNNQQQHHHKKKRRRDDDEEEPPPAAAGG"
-    for ordinal in range(designs):
-        (artifacts / f"candidate-{ordinal:03d}-metrics.json").write_text(
+    entries: list[dict[str, Any]] = []
+    paths = {shard_id: str(shard_path.relative_to(output))}
+    requested_contacts = [
+        {
+            "chain": parameters.target_chain,
+            "residue": residue,
+            "closest_binder_atom_angstrom": 3.0 + position / 100,
+            "in_contact": position == 0,
+        }
+        for position, residue in enumerate(parameters.hotspot_residues)
+    ]
+    for ordinal in range(accepted):
+        metrics_path = artifacts / f"candidate-{ordinal:03d}-metrics.json"
+        structure_path = artifacts / f"candidate-{ordinal:03d}.pdb"
+        relaxed_path = artifacts / f"candidate-{ordinal:03d}-relaxed-complex.pdb"
+        metrics_path.write_text(
             json.dumps(
                 {
                     "candidate_id": f"native-s{index:03d}-c{ordinal:03d}",
                     "shard_index": index,
                     "sequence": body,
-                    "scoring_engine": "pyrosetta",
+                    "scoring_engine": scoring_engine,
+                    "filter_set_sha256": bindcraft.FILTERS_SHA256,
                     "iptm": 0.82,
-                }
-            ),
+                    "interface_residue_count": 3,
+                    "buried_interface_area": 750.0,
+                    "binder_energy_score": -42.0,
+                    "hotspot_geometry": {
+                        "contact_cutoff_angstrom": 4.0,
+                        "requested": requested_contacts,
+                        "contacted": 1,
+                    },
+                },
+                sort_keys=True,
+            )
+            + "\n",
             encoding="utf-8",
         )
-        (artifacts / f"candidate-{ordinal:03d}.pdb").write_text("ATOM\nTER\nEND\n", encoding="utf-8")
-        (artifacts / f"candidate-{ordinal:03d}-relaxed-complex.pdb").write_text("ATOM\nTER\nEND\n", encoding="utf-8")
+        structure_path.write_text(_pdb(complex_structure=False), encoding="ascii")
+        relaxed_path.write_text(_pdb(complex_structure=True), encoding="ascii")
+        specifications = (
+            (
+                f"candidate-{ordinal:03d}-metrics",
+                "bindcraft-native-design-metrics-json/v1",
+                metrics_path,
+                f"artifact.bindcraft.native.s{index:03d}.c{ordinal:03d}.metrics",
+                "application/json",
+            ),
+            (
+                f"candidate-{ordinal:03d}-structure",
+                "protein-structure-pdb/v1",
+                structure_path,
+                f"artifact.bindcraft.native.s{index:03d}.c{ordinal:03d}.pdb",
+                "chemical/x-pdb",
+            ),
+            (
+                f"candidate-{ordinal:03d}-relaxed-complex",
+                "bindcraft-native-relaxed-complex-pdb/v1",
+                relaxed_path,
+                f"artifact.bindcraft.native.s{index:03d}.c{ordinal:03d}.relaxed-complex",
+                "chemical/x-pdb",
+            ),
+        )
+        for name, semantic_type, path, artifact_id, media_type in specifications:
+            entries.append(
+                {
+                    "name": name,
+                    "semantic_type": semantic_type,
+                    "artifact": _pointer(path, artifact_id, media_type),
+                }
+            )
+            paths[artifact_id] = str(path.relative_to(output))
+    (output / "shard-output.json").write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/bindcraft-native-shard-output/v1",
+                "shard": shard_entry,
+                "candidates": entries,
+                "artifact_paths": paths,
+                "pyrosetta": {
+                    "version": bindcraft.PYROSETTA_EXPECTED_VERSION,
+                    "tree_manifest_sha256": bindcraft.PYROSETTA_INVENTORY_SHA256,
+                },
+                "external_trees": {
+                    "schema": "fs2.nebius.ai/bindcraft-external-tree-admission/v1",
+                    "localization_generation": generation,
+                    "trees": {
+                        role: {
+                            "artifact_id": artifact_id,
+                            "root": root,
+                            (
+                                "tree_manifest_sha256" if role == "pyrosetta-site-packages" else "inventory_sha256"
+                            ): digest,
+                        }
+                        for role, (artifact_id, root, digest) in bindcraft.EXTERNAL_TREE_ROLES.items()
+                    },
+                },
+                "runtime_localization_marker": {"generation": generation},
+                "resolved_settings": {},
+                "trajectories_recorded": accepted,
+                "timings": {},
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
-def test_the_collector_returns_every_result_file_and_gates_the_science(tmp_path: Path) -> None:
-    """Referenced-but-uncollected files die with the Pod, taking the result."""
+def test_design_collector_publishes_one_deterministic_bounded_overlay_bundle(tmp_path: Path) -> None:
+    """The artifact service receives exactly the directory aggregate consumes."""
 
     request = fixture("positive-default-lane")
+    request["parameters"]["designs"] = 33
     workspace = tmp_path / "design-000"
     (workspace / "output").mkdir(parents=True)
     with pytest.raises(ScientificAdapterError, match="has not been published"):
         bindcraft.collect_output(request, workspace)
 
-    publish_shard(workspace, index=0, designs=2)
-    collected = bindcraft.collect_output(request, workspace)
-    names = [entry["name"] for entry in collected.manifest["entries"]]  # type: ignore[index]
-    assert names.count("shard") == 1
-    # Every candidate contributes metrics, structure and relaxed complex.
-    assert len(names) == 1 + 2 * 3
-    assert len(set(names)) == len(names)
-    # Blobs are keyed by the helper's content-addressed artifact identity.
-    assert len(collected.blobs) == len(names)
-    pointers = {entry["artifact"]["artifact_id"] for entry in collected.manifest["entries"]}  # type: ignore[index]
-    assert pointers == set(collected.blobs)
+    publish_shard(workspace, index=0, request=request)
+    first = bindcraft.collect_design_output(request, workspace)
+    second = bindcraft.collect_stage_output(bindcraft.DESIGN_COLLECTOR_ID, request, workspace)
+    assert first == second
+    assert len(first.manifest["entries"]) == 1  # type: ignore[arg-type]
+    entry = first.manifest["entries"][0]  # type: ignore[index]
+    pointer = entry["artifact"]
+    assert entry["semantic_type"] == "bindcraft-native-shard-bundle-tar/v1"
+    assert pointer["compression"] == "zstd"
+    content = first.blobs[pointer["artifact_id"]]
+    assert pointer["sha256"] == hashlib.sha256(content).hexdigest()
 
-    metrics = workspace / "output" / "artifacts" / "candidate-000-metrics.json"
-    tampered = json.loads(metrics.read_text(encoding="utf-8"))
-    tampered["scoring_engine"] = "rosettapy"
-    metrics.write_text(json.dumps(tampered), encoding="utf-8")
+    destination = tmp_path / "overlay"
+    extracted = safe_extract_tar(content, destination, compression="zstd")
+    relatives = {path.relative_to(destination).as_posix() for path in extracted}
+    assert relatives == {
+        "shard-output.json",
+        "artifacts/shard.json",
+        "artifacts/candidate-000-metrics.json",
+        "artifacts/candidate-000.pdb",
+        "artifacts/candidate-000-relaxed-complex.pdb",
+        "artifacts/candidate-001-metrics.json",
+        "artifacts/candidate-001.pdb",
+        "artifacts/candidate-001-relaxed-complex.pdb",
+    }
+
+
+def test_design_collector_rejects_semantic_and_content_address_tampering(tmp_path: Path) -> None:
+    request = fixture("positive-default-lane")
+    workspace = tmp_path / "wrong-engine"
+    publish_shard(workspace, index=0, request=request, scoring_engine="rosettapy")
     with pytest.raises(ScientificAdapterError, match="PyRosetta"):
-        bindcraft.collect_output(request, workspace)
+        bindcraft.collect_design_output(request, workspace)
+
+    workspace = tmp_path / "tampered"
+    publish_shard(workspace, index=0, request=request)
+    metrics = workspace / "output" / "artifacts" / "candidate-000-metrics.json"
+    metrics.write_text(metrics.read_text(encoding="utf-8") + " ", encoding="utf-8")
+    with pytest.raises(ScientificAdapterError, match="content-addressed pointer"):
+        bindcraft.collect_design_output(request, workspace)
 
 
 def test_the_collector_holds_candidates_to_the_requested_binder_length(tmp_path: Path) -> None:
@@ -409,28 +639,23 @@ def test_the_collector_holds_candidates_to_the_requested_binder_length(tmp_path:
     workspace = tmp_path / "design-000"
     (workspace / "output").mkdir(parents=True)
     for length in (window["minimum"] - 1, window["maximum"] + 1):
-        publish_shard(workspace, index=0, designs=1, sequence="A" * length)
+        publish_shard(workspace, index=0, request=request, sequence="A" * length)
         with pytest.raises(ScientificAdapterError, match="binder length"):
             bindcraft.collect_output(request, workspace)
-    publish_shard(workspace, index=0, designs=1, sequence="A" * window["maximum"])
-    assert bindcraft.collect_output(request, workspace).manifest["manifest_id"] == "bindcraft.shard.000.results"
+    publish_shard(workspace, index=0, request=request, sequence="A" * window["maximum"])
+    assert bindcraft.collect_output(request, workspace).manifest["manifest_id"] == "bindcraft.shard.000.handoff"
 
 
 def test_a_shard_from_another_backend_or_revision_is_refused(tmp_path: Path) -> None:
     request = fixture("positive-default-lane")
     workspace = tmp_path / "design-000"
     (workspace / "output").mkdir(parents=True)
-    publish_shard(workspace, index=0, designs=1)
-    record = workspace / "output" / "artifacts" / "shard.json"
-    original = json.loads(record.read_text(encoding="utf-8"))
-    for field, value, expected in (
-        ("status", "failed", "succeeded run"),
-        ("backend_id", "open-binder", "succeeded run"),
-        ("source_revision", "0" * 40, "another source revision"),
+    for override, expected in (
+        ({"status": "failed"}, "successful immutable run"),
+        ({"backend_id": "open-binder"}, "successful immutable run"),
+        ({"source_revision": "0" * 40}, "successful immutable run"),
     ):
-        tampered = copy.deepcopy(original)
-        tampered[field] = value
-        record.write_text(json.dumps(tampered), encoding="utf-8")
+        publish_shard(workspace, index=0, request=request, **override)
         with pytest.raises(ScientificAdapterError, match=expected):
             bindcraft.collect_output(request, workspace)
 
@@ -448,43 +673,147 @@ def test_the_profile_matches_the_catalog_when_published() -> None:
     assert entry["workload"]["stages"][0]["max_parallelism"] == bindcraft.MAX_DESIGN_SHARDS
 
 
-def test_collected_results_carry_the_right_media_type_and_immutable_metadata(tmp_path: Path) -> None:
-    """JSON is JSON and PDB is PDB, each with a content-addressed pointer.
+def _r18_runtime() -> ModuleType:
+    configured = os.environ.get("FS2_BINDCRAFT_R18_RUNTIME_SOURCE")
+    candidates = [
+        Path(configured) if configured else None,
+        SOLUTION_ROOT / "models/cancer-immunotherapy/images/bindcraft-native/runtime/bindcraft_runtime_entrypoint.py",
+    ]
+    source = next((candidate for candidate in candidates if candidate is not None and candidate.is_file()), None)
+    if source is None:
+        pytest.skip("the separately reviewed r18 image source is not present on this branch")
+    assert hashlib.sha256(source.read_bytes()).hexdigest() == R18_RUNTIME_SHA256
+    spec = importlib.util.spec_from_file_location("fs2_bindcraft_r18_contract_test", source)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-    ``collect_output_files`` used to derive media type with branches only for
-    CSV and mmCIF, so everything else fell through to ``chemical/x-pdb``.
-    BindCraft is the first adapter to emit JSON results, which made a shard
-    record and its candidate metrics arrive labelled as structures. The shared
-    helper now has a JSON branch; these assertions hold both sides of it.
-    """
 
-    workspace = tmp_path / "design-000"
-    (workspace / "output").mkdir(parents=True)
-    publish_shard(workspace, index=0, designs=2)
-    collected = bindcraft.collect_output(fixture("positive-default-lane"), workspace)
+def test_compiled_argv_and_native_document_execute_the_real_r18_parser_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _r18_runtime()
+    request = fixture("positive-default-lane")
+    target = tmp_path / "target.pdb"
+    target.write_text(_pdb(complex_structure=True), encoding="ascii")
+    target_bytes = target.read_bytes()
+    request["input_manifest"]["sha256"] = hashlib.sha256(target_bytes).hexdigest()
+    request["input_manifest"]["size_bytes"] = len(target_bytes)
+    plan = bindcraft.compile_run(granted(), request, operation_id="op-bindcraft-r18-parser")
+    public, parameters = bindcraft._request(request)
+    design = plan.invocation("design", "design-000")
+    aggregate = plan.invocation("aggregate", "main")
+    assert runtime.parser().parse_args(list(design.argv[3:])).mode == "run-trajectory"
+    assert runtime.parser().parse_args(list(aggregate.argv[3:])).mode == "aggregate"
+
+    native = bindcraft.native_request(public, parameters, shard_index=0)
+    native["parameters"]["_shard_index"] = 0
+    monkeypatch.setenv("FS2_BINDCRAFT_TARGET_PDB", str(target))
+    admitted_target, admitted_pointer = runtime._target_artifact(
+        native,
+        bindcraft.native_input_manifest(public),
+    )
+    assert admitted_target == target
+    assert admitted_pointer["sha256"] == hashlib.sha256(target_bytes).hexdigest()
+    template = tmp_path / "advanced.json"
+    template.write_text(
+        json.dumps(
+            {
+                "num_recycles_design": 3,
+                "num_recycles_validation": 3,
+                "num_seqs": 20,
+                "max_mpnn_sequences": 2,
+                "model_path": "multimer",
+                "mpnn_weights": "original",
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "settings-output"
+    output.mkdir()
+    settings_path, _advanced_path, _resolved = runtime._settings(
+        native,
+        target,
+        output,
+        template,
+        bindcraft.AF2_PATH,
+    )
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert settings["number_of_final_designs"] == parameters.accepted_designs(0)
+    assert settings["target_hotspot_residues"] == "56,66,115"
+    assert settings["chains"] == "A"
+
+
+def test_r18_aggregate_consumes_the_bundle_and_the_final_collector_returns_every_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _r18_runtime()
+    request = fixture("positive-default-lane")
+    request["parameters"]["designs"] = 2
+    plan = bindcraft.compile_run(granted(), request, operation_id="op-r18-aggregate")
+    aggregate = tmp_path / "aggregate"
+    for index in range(2):
+        design = tmp_path / f"design-{index:03d}"
+        publish_shard(design, index=index, request=request)
+        collected = bindcraft.collect_design_output(request, design)
+        entry = collected.manifest["entries"][0]  # type: ignore[index]
+        bundle = collected.blobs[entry["artifact"]["artifact_id"]]
+        safe_extract_tar(bundle, aggregate / "shards" / f"{index:03d}", compression="zstd")
+
+    request_path, manifest_path = bindcraft.materialize_runtime_documents(
+        plan.invocation("aggregate", "main"),
+        aggregate,
+    )
+    assert bindcraft.materialize_runtime_documents(plan.invocation("aggregate", "main"), aggregate) == (
+        request_path,
+        manifest_path,
+    )
+    metadata = aggregate / ".fs2"
+    marker = metadata / "runtime-localization.json"
+    marker.write_text(json.dumps({"generation": "generation-test"}, sort_keys=True) + "\n", encoding="ascii")
+    (aggregate / "output").mkdir()
+    monkeypatch.setenv("FS2_RUNTIME_IMAGE_DIGEST", R18_IMAGE_DIGEST)
+    runtime.aggregate(
+        Namespace(
+            backend_id=bindcraft.BACKEND_ID,
+            atomic_rename=True,
+            runtime_localization_marker=str(marker),
+            request=str(request_path),
+            input_manifest=str(manifest_path),
+            shards=str(aggregate / "shards"),
+            expected_shards=2,
+            staging_manifest=str(aggregate / "output/output-manifest.json.tmp"),
+            output_manifest=str(aggregate / "output/output-manifest.json"),
+        )
+    )
+
+    collected = bindcraft.collect_stage_output(
+        bindcraft.AGGREGATE_COLLECTOR_ID,
+        request,
+        aggregate,
+        runtime_image_digest=R18_IMAGE_DIGEST,
+    )
     entries = collected.manifest["entries"]
     by_name = {entry["name"]: entry for entry in entries}  # type: ignore[union-attr]
-
-    for name in ("shard", "candidate-000-metrics", "candidate-001-metrics"):
-        assert by_name[name]["semantic_type"].endswith("-json/v1")
-        assert by_name[name]["artifact"]["media_type"] == "application/json"
-    for name in (
-        "candidate-000-structure",
-        "candidate-000-relaxed-complex",
-        "candidate-001-structure",
-        "candidate-001-relaxed-complex",
-    ):
-        assert by_name[name]["artifact"]["media_type"] == "chemical/x-pdb"
-
-    # Immutable metadata: every pointer is content-addressed and matches bytes.
-    import hashlib
-
+    assert len(entries) == 10  # two shards, six candidate files, aggregate identity, and source manifest
+    assert by_name["candidate-000-metrics"]["artifact"]["media_type"] == "application/json"
+    assert by_name["candidate-001-metrics"]["artifact"]["media_type"] == "application/json"
+    assert by_name["candidate-000-structure"]["artifact"]["media_type"] == "chemical/x-pdb"
+    assert by_name["candidate-001-relaxed-complex"]["artifact"]["media_type"] == "chemical/x-pdb"
+    assert by_name["output-manifest"]["artifact"]["media_type"] == "application/json"
     for entry in entries:  # type: ignore[union-attr]
         pointer = entry["artifact"]
         content = collected.blobs[pointer["artifact_id"]]
         assert pointer["sha256"] == hashlib.sha256(content).hexdigest()
         assert pointer["size_bytes"] == len(content)
-        assert pointer["sha256"][:32] in pointer["artifact_id"]
+
+    with pytest.raises(ScientificAdapterError, match="runtime_image_digest"):
+        bindcraft.collect_aggregate_output(request, aggregate, runtime_image_digest="sha256:" + "f" * 64)
+    with pytest.raises(ScientificAdapterError, match="unsupported BindCraft collector"):
+        bindcraft.collect_stage_output("bindcraft-unknown-v1", request, aggregate)
 
 
 def test_the_shared_collector_types_json_csv_and_structures_apart(tmp_path: Path) -> None:

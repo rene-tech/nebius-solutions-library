@@ -6,7 +6,7 @@
     "artifact_id": "bindcraft.pdl1.target.02",
     "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "size_bytes": 24576,
-    "media_type": "application/json"
+    "media_type": "chemical/x-pdb"
   },
   "parameters": {
     "target": {
