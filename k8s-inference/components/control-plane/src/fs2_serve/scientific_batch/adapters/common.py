@@ -494,11 +494,14 @@ def collect_output_files(
         if artifact_id in blobs:
             raise ScientificAdapterError("collector produced a duplicate artifact identity")
         blobs[artifact_id] = content
+        suffix = resolved.suffix.lower()
         media_type = (
             "text/csv"
             if semantic_type.endswith("csv/v1")
+            else "application/json"
+            if semantic_type.endswith("json/v1") or suffix == ".json"
             else "chemical/x-mmcif"
-            if resolved.suffix.lower() in {".cif", ".mmcif"}
+            if suffix in {".cif", ".mmcif"}
             else "chemical/x-pdb"
         )
         manifest_entries.append(
