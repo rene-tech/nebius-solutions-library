@@ -313,14 +313,9 @@ class HttpScientificBatchCluster:
             raise BatchRepositoryConflictError("workload UID changed")
         status = _object(value.get("status", {}), "Kubernetes workload status")
         phases: list[LifecyclePhase] = []
-        if _condition(status, "QuotaReserved") or _condition(status, "Admitted") or status.get("startTime"):
+        scheduling_admission, kueue_workload_uid = await self._scheduling_admission(ref, str(metadata.get("uid", "")))
+        if scheduling_admission is not None:
             phases.append(LifecyclePhase.ADMITTED)
-        scheduling_admission = None
-        kueue_workload_uid = None
-        if LifecyclePhase.ADMITTED in phases:
-            scheduling_admission, kueue_workload_uid = await self._scheduling_admission(
-                ref, str(metadata.get("uid", ""))
-            )
 
         selector = quote(f"{ATTEMPT_LABEL}={attempt_id}", safe="=,.-")
         pod_response = await self._request(
@@ -367,6 +362,10 @@ class HttpScientificBatchCluster:
         succeeded = int(status.get("succeeded", 0) or 0) > 0 or _condition(status, "Completed") is not None
         failed_condition = _condition(status, "Failed")
         failed = int(status.get("failed", 0) or 0) > 0 or failed_condition is not None
+        if scheduling_admission is None and (
+            status.get("startTime") or any(phase == "Running" for phase in pod_phases) or succeeded
+        ):
+            raise ScientificKubernetesError("Kueue admission is unresolved for a started workload")
         if succeeded:
             state = WorkloadState.SUCCEEDED
         elif failed:
@@ -478,12 +477,12 @@ class HttpScientificBatchCluster:
             "GET", f"/apis/kueue.x-k8s.io/v1beta1/resourceflavors/{quote(flavor, safe='')}"
         )
         if flavor_response.status_code == 404:
-            return None, workload_uid
+            raise ScientificKubernetesError("Kueue admitted ResourceFlavor is absent")
         flavor_metadata = _metadata(cast(dict[str, Any], flavor_response.json()))
         flavor_labels = _object(flavor_metadata.get("labels", {}), "ResourceFlavor labels")
         pool_id = flavor_labels.get(POOL_LABEL)
         if not isinstance(pool_id, str):
-            return None, workload_uid
+            raise ScientificKubernetesError("Kueue admitted ResourceFlavor has no canonical pool identity")
         return (
             SchedulingAdmission(
                 resolved_pool_id=pool_id,

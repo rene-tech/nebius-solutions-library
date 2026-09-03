@@ -598,7 +598,10 @@ class FileScientificManifestRenderer:
             "ephemeral-storage": execution.ephemeral_storage,
         }
         if gpu_count:
-            limits[resource.scheduling.accelerator_resource_name] = str(gpu_count)
+            accelerator_resource = resource.scheduling.accelerator_resource_name
+            if accelerator_resource is None:
+                raise ScientificExecutionMapError("GPU scheduling has no accelerator resource")
+            limits[accelerator_resource] = str(gpu_count)
         runtime_marker = {
             "schema": RUNTIME_LOCALIZATION_SCHEMA,
             "operation_id": str(resource.operation_id),
