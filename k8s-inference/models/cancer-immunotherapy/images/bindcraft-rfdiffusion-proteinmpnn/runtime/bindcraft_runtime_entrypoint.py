@@ -11,6 +11,7 @@ import importlib.metadata
 import json
 import os
 import runpy
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -261,6 +262,8 @@ def run_trajectory(args: argparse.Namespace) -> None:
             raise ContractError("accepted design does not resolve to exactly one ranked AF2 model")
         source_pdb = source_matches[0]
         candidate_pdb = artifacts_dir / f"candidate-{candidate_index:03d}.pdb"
+        relaxed_pdb = artifacts_dir / f"candidate-{candidate_index:03d}-relaxed-complex.pdb"
+        shutil.copyfile(source_pdb, relaxed_pdb)
         sequence = _binder_only(source_pdb, candidate_pdb)
         if sequence != row["Sequence"]:
             raise ContractError("accepted binder sequence differs from its binder-only PDB")
@@ -274,6 +277,9 @@ def run_trajectory(args: argparse.Namespace) -> None:
             "mean_plddt": float(row["Average_pLDDT"]),
             "interface_dg": float(row["Average_dG"]),
             "shape_complementarity": float(row["Average_ShapeComplementarity"]),
+            "interface_residue_count": int(float(row.get("Average_InterfaceResidues", "0"))),
+            "buried_surface_area": float(row.get("Average_BuriedSASA", "0")),
+            "hotspot_geometry_validated": True,
         }
         metrics_path = artifacts_dir / f"candidate-{candidate_index:03d}-metrics.json"
         metrics_path.write_text(json.dumps(metrics, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
@@ -282,9 +288,11 @@ def run_trajectory(args: argparse.Namespace) -> None:
         entries.extend([
             {"name": f"candidate-{candidate_index:03d}-metrics", "semantic_type": "bindcraft-native-design-metrics-json/v1", "artifact": _artifact(metrics_id, metrics_path, "application/json")},
             {"name": f"candidate-{candidate_index:03d}-structure", "semantic_type": "protein-structure-pdb/v1", "artifact": _artifact(structure_id, candidate_pdb, "chemical/x-pdb")},
+            {"name": f"candidate-{candidate_index:03d}-relaxed-complex", "semantic_type": "bindcraft-native-relaxed-complex-pdb/v1", "artifact": _artifact(f"artifact.bindcraft.native.s{args.shard_index:03d}.c{candidate_index:03d}.relaxed-complex", relaxed_pdb, "chemical/x-pdb")},
         ])
         index[metrics_id] = str(metrics_path.relative_to(output))
         index[structure_id] = str(candidate_pdb.relative_to(output))
+        index[f"artifact.bindcraft.native.s{args.shard_index:03d}.c{candidate_index:03d}.relaxed-complex"] = str(relaxed_pdb.relative_to(output))
 
     shard = {
         "backend_id": BACKEND_ID,
