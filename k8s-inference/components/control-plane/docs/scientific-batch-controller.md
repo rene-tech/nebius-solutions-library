@@ -25,10 +25,13 @@ terminology for resolved LocalQueue/ClusterQueue, priority class/value, ordered
 pool preference, resource class, accelerator resource/count,
 queue/execution ceilings, checkpoint mode, and preemption mode. It also freezes
 one of `presentation`, `interactive`, `customer-batch`, or `bulk-backfill`, plus
-the logical tenant queue, model lane, policy revision, and capture time. The
-canonical digest makes drift visible. An idempotent replay may return the
-existing batch only when tenant, internal plan, and snapshot are byte-for-byte
-equivalent. A later policy or capacity change never changes an admitted batch.
+the LocalQueue namespace, logical tenant queue, model lane, policy revision,
+and capture time. The controller rejects a snapshot routed to a namespace other
+than its configured workload namespace; it never silently posts all routed
+work into one default namespace. The canonical digest makes drift visible. An
+idempotent replay may return the existing batch only when tenant, internal
+plan, and snapshot are byte-for-byte equivalent. A later policy or capacity
+change never changes an admitted batch.
 
 The scheduling types are an internal frozen consumption model, not a competing
 Kueue policy authority. Integration must project the reviewed Kueue scheduling
@@ -42,10 +45,13 @@ resource, queue deadline, execution deadline, and preemption mode. Queue expiry
 is enforced from the frozen attempt start without retry; the execution deadline
 is projected to both Kueue's max-exec label and the Job or JobSet Job template.
 The frozen snapshot has no admitted ResourceFlavor field. The exact Kueue
-admission—Workload UID plus actual pool, ResourceFlavor, accelerator resource,
-quantity, and admission time—is stored only on the attempt after the live
-Kueue Workload reports `Admitted`. A started, successful, or preempted workload
-without that evidence cannot advance, and its actual resource/count must match
+admission assignment—Workload UID plus actual pool, ResourceFlavor,
+accelerator resource, quantity, and Kueue transition time—is stored once the
+live Kueue Workload reports `QuotaReserved`. The lifecycle does not emit
+`admitted` until the separate `Admitted=True` condition exists. This preserves
+the exact same-poll assignment on queue timeout without falsely claiming the
+Pod ran. A started, successful, or preempted workload without an actual
+`Admitted` condition cannot advance, and its actual resource/count must match
 the frozen stage request.
 
 ## Catalog profile adapter boundary
@@ -88,16 +94,19 @@ failure.
   The second fenced transition binds the returned Job/JobSet UID. A crash in
   between leaves a recognizable pending apply, and a fast Kueue admission can
   never present a companion capability before the controller record exists.
-- A terminal observation is durable before workload deletion. The separate
-  `resource_released` marker is persisted after an idempotent, UID-fenced
-  delete, before the durable stage-success transition. If the controller loses
-  its database write after deleting, its successor safely repeats deletion.
-  This is the quota-handoff fence before the next sequential stage can be
-  created.
+- A terminal observation is durable before workload deletion. Kubernetes
+  `DELETE 202` only advances the attempt to a durable `deletion_requested`
+  state. A later reconcile performs a UID-specific GET; only `404` advances
+  `resource_released` and emits `teardown`. A still-present UID retains GPU and
+  quota accounting, while a changed UID or DELETE precondition `409` is a
+  fenced conflict. If the controller loses its database write after deletion,
+  its successor safely repeats the UID-preconditioned request. Confirmed
+  absence is the quota-handoff fence before retry or the next sequential stage.
 
-Kubernetes implementations need not reconstruct an observation after deletion:
-the terminal outcome is already durable. Apply and delete must reject an older
-controller fence and verify immutable attempt ownership before adopting an
+Kubernetes implementations need not reconstruct a full workload observation
+after deletion: the terminal outcome is already durable. They must expose a
+bounded UID-specific absence check. Apply and delete reject an older controller
+fence and verify immutable attempt ownership before adopting or removing an
 existing deterministic name.
 
 ## Attempts, failures, and cancellation
@@ -113,8 +122,9 @@ Cancellations are durable level signals, so a cancellation racing with Job
 creation is carried through the reconciler's next compare-and-swap rather than
 orphaning the just-created object. Cancellation is a fenced cascade: all active
 Jobs/JobSets receive idempotent deletes, active attempts move through
-grace/drain and teardown, every non-succeeded stage becomes cancelled, and no
-later stage can be created.
+grace/drain, and the batch remains nonterminal while any exact UID is still
+present. Only confirmed absence emits teardown and permits every non-succeeded
+stage to become cancelled; no later stage can be created.
 
 ## Lifecycle evidence
 
@@ -208,6 +218,13 @@ is authoritative for LocalQueue, ClusterQueue, workload priority, accelerator,
 pool order, and preemption. ResourceFlavor is absent from the submission
 snapshot because only Kueue may choose it; it appears later only in the attempt
 admission record.
+
+Every rendered GPU Pod template also receives required node affinity on
+`accelerator.fs2.nebius/pool-id` for the frozen ordered pool preference. The
+controller injects that constraint into every existing required node-selector
+term, so a ClusterQueue that exposes several ResourceFlavors cannot admit the
+workload onto an incompatible pool. CPU stages do not receive this GPU
+constraint.
 
 The execution map is a closed operator configuration, not a public request or
 catalog schema extension. Version 2 binds each public `model_id` to one exact
@@ -329,6 +346,13 @@ multi-GB tree per attempt. The Pod security context sets
 `fsGroupChangePolicy=OnRootMismatch` without setting `fsGroup`, so Kubernetes
 does not recursively chown a multi-GB immutable tree.
 
+Model compilers declare immutable mount intent and may leave the live readiness
+receipt unset. They are not allowed to invent localization evidence. After the
+execution map verifies every content/file manifest and authorization receipt,
+the trusted controller binding injects the exact localization receipt into a
+new frozen `AdapterExecutionPlan` before admission. Kubernetes apply rejects
+any plan that has not passed that controller-owned binding step.
+
 Before a durable batch row or Kubernetes object exists, the controller verifies
 every plan-required artifact and rejects any required ID undeclared by the
 qualified profile. Profile artifacts for disabled stages may remain unused;
@@ -376,10 +400,12 @@ immutable admission, monotonically sequenced events, and controller fences.
 The fake cluster enforces immutable names and mutation fences. The focused
 tests cover sequential commit gating, contained logical-manifest resolution,
 relative AF3/Protenix handoff relocation, exact runtime mounts and localization
-receipts, delayed artifact publication, fan-out and gang rendering, quota
-handoff (including an injected crash after external deletion), canonical
-scheduling routing/deadlines, complete phase ingestion, infrastructure
-preemption/retry, stale-attempt observations, non-retryable taxonomy,
+receipts, delayed artifact publication, fan-out and gang rendering, routed
+LocalQueue namespaces, required GPU pool affinity, and quota handoff (including
+DELETE 202, a still-present UID, confirmed absence, and a DELETE 409 fence),
+canonical scheduling routing/deadlines, same-poll QuotaReserved persistence,
+complete phase ingestion, exact Kueue preemption/retry, stale-attempt
+observations, non-retryable taxonomy,
 cancellation races and cascade, public HTTP/MCP lifecycle dispatch, Kubernetes
 REST creation, unresolved-versus-actual Kueue admission, closed API transports,
 durable PostgreSQL fencing, and invalid DAGs/snapshots.

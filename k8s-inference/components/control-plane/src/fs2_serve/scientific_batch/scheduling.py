@@ -106,8 +106,10 @@ class SchedulingContractResolver:
         route = _object(self.local_queue_routes.get(local_queue_name), "Kueue LocalQueue route")
         route_models = route.get("model_ids")
         route_tenants = route.get("tenant_ids")
+        route_namespace = route.get("namespace")
         if (
-            route.get("namespace") != local_metadata.get("namespace")
+            not isinstance(route_namespace, str)
+            or route_namespace != local_metadata.get("namespace")
             or route.get("cluster_queue") != cluster_queue_name
             or not isinstance(route_models, list)
             or not all(isinstance(item, str) for item in route_models)
@@ -205,5 +207,6 @@ class SchedulingContractResolver:
             service_class=selected_class,
             tenant_queue=local_queue_name,
             model_lane=model_id,
+            workload_namespace=route_namespace,
             stages=decisions,
         )

@@ -117,6 +117,8 @@ class ScientificBatchCluster(Protocol):
 
     async def delete(self, ref: WorkloadRef, *, controller_fence: int) -> None: ...
 
+    async def absent(self, ref: WorkloadRef) -> bool: ...
+
 
 class ScientificBatchResultPublisher(Protocol):
     """Idempotently commit the artifact-service-owned terminal result."""

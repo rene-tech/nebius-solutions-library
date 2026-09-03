@@ -11,6 +11,7 @@ import importlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from ..models import AdapterExecutionPlan, ArtifactAccessContext, ScientificInputArtifact, StageInvocation
 
@@ -65,9 +66,9 @@ def _register_legacy_primary(module_name: str) -> None:
         if error.name == f"{__name__}.{module_name}":
             return
         raise
-    model_id = getattr(module, "MODEL_ID")
-    variant = getattr(module, "VARIANT_ID")
-    compile_run = getattr(module, "compile_run")
+    model_id = module.MODEL_ID
+    variant = module.VARIANT_ID
+    compile_run = module.compile_run
 
     def compiler(
         profile: Mapping[str, object],
@@ -81,7 +82,7 @@ def _register_legacy_primary(module_name: str) -> None:
         del access_context, input_artifacts
         if variant_id != variant:
             raise ValueError(f"route variant_id does not match the {model_id} adapter")
-        return compile_run(profile, request, operation_id=operation_id)
+        return cast(AdapterExecutionPlan, compile_run(profile, request, operation_id=operation_id))
 
     _COMPILERS.setdefault(model_id, compiler)
     globals()[module_name] = module

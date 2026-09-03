@@ -543,9 +543,6 @@ class AdapterExecutionPlan:
         if len(produced) != len(set(produced)):
             raise ValueError("each stage invocation must produce a unique logical artifact")
         producer_stage = {item.produces: item.stage_id for item in self.invocations}
-        consumed_outputs = {
-            logical_id for item in self.invocations for logical_id in item.consumes if logical_id in producer_stage
-        }
         for item in self.invocations:
             for logical_id in item.consumes:
                 stage_id = producer_stage.get(logical_id)
@@ -725,6 +722,7 @@ class SchedulingSnapshot:
     service_class: ServiceClass
     tenant_queue: str
     model_lane: str
+    workload_namespace: str
     stages: tuple[StageSchedulingDecision, ...]
 
     def __post_init__(self) -> None:
@@ -734,7 +732,11 @@ class SchedulingSnapshot:
             raise ValueError("captured_at must be timezone-aware")
         if not isinstance(self.service_class, ServiceClass):
             raise ValueError("service_class must be a supported scheduling class")
-        for value, label in ((self.tenant_queue, "tenant_queue"), (self.model_lane, "model_lane")):
+        for value, label in (
+            (self.tenant_queue, "tenant_queue"),
+            (self.model_lane, "model_lane"),
+            (self.workload_namespace, "workload_namespace"),
+        ):
             if not value or len(value) > 128 or _POOL_RE.fullmatch(value) is None:
                 raise ValueError(f"{label} must be a bounded provider-neutral queue identity")
         ids = [stage.stage_id for stage in self.stages]
@@ -752,6 +754,7 @@ class SchedulingSnapshot:
             "service_class": self.service_class,
             "tenant_queue": self.tenant_queue,
             "model_lane": self.model_lane,
+            "workload_namespace": self.workload_namespace,
             "stages": [
                 {
                     "stage_id": item.stage_id,
@@ -834,6 +837,7 @@ class ScientificAttemptState:
     completed_at: datetime | None = None
     outcome: AttemptOutcome = AttemptOutcome.ACTIVE
     last_phase: LifecyclePhase = LifecyclePhase.SCHEDULING
+    deletion_requested: bool = False
     resource_released: bool = False
     scheduling_admission: SchedulingAdmission | None = None
     kueue_workload_uid: str | None = None
@@ -857,6 +861,12 @@ class ScientificAttemptState:
             raise ValueError("only terminal attempts carry completed_at")
         if self.resource_released and self.outcome is AttemptOutcome.ACTIVE:
             raise ValueError("an active attempt cannot have released its workload resource")
+        if self.deletion_requested and (
+            self.outcome is AttemptOutcome.ACTIVE or self.workload.uid is None
+        ):
+            raise ValueError("only a terminal applied attempt can have deletion pending")
+        if self.resource_released and self.workload.uid is not None and not self.deletion_requested:
+            raise ValueError("an applied workload is released only after a persisted delete request")
         for values, label in ((self.pod_uids, "Pod UID"),):
             if len(values) != len(set(values)) or any(not value or len(value) > 128 for value in values):
                 raise ValueError(f"scientific attempt {label} identities are invalid")
