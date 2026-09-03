@@ -1,7 +1,8 @@
 {
   "schema": "fs2-serve.nebius.ai/scientific-file-ingestion/v1",
   "notes": [
-    "Source identities are consumed verbatim from the pinned manifests in candidate 58e84e51 (k8s-inference/model-artifacts/manifest-complexa-{protein,ligand,ame}.json and manifest-rosettafold3-checkpoint.json). Only the pinned identities were consumed; that candidate's mutable final-consumer-path contract was not.",
+    "Source identities are consumed verbatim from the accepted public artifact catalog now on main: k8s-inference/model-artifacts/manifest-complexa-{protein,ligand,ame}.json and manifest-rosettafold3-checkpoint.json. The catalog is the authority on what these artifacts are; only those identities were taken from it, never its cache-path contract.",
+    "They are restated here rather than read from the catalog because the staging job runs in-cluster from a ConfigMap and cannot read the repository. That duplication is checked: tests/test_ingestion.py CatalogAgreementTests compares every revision, file digest, byte count, licence and resolved URL against the catalog, so drift fails closed instead of quietly producing two answers.",
     "These artifacts are published upstream as individually addressable files, not as an archive, so the archive/tree duality that governs safe-extract-tar artifacts does not apply. The downloaded set of verified files IS the tree.",
     "tree.inventory_sha256 is deliberately absent. A generation is named by a digest measured from real bytes, which cannot be predicted from upstream metadata, and a contract that declared one up front would be asserting an identity it has not seen. The measured value lives in the promotion receipt and the binding handoff under evidence/, which is where a consumer pins it."
   ],

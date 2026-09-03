@@ -415,6 +415,82 @@ class RendererTests(unittest.TestCase):
         self.assertIn("/claim/a/b/.receipts/staging.r1.json", command)
 
 
+CATALOG = REPO / "model-artifacts"
+CATALOG_MANIFESTS = {
+    "complexa-protein": "manifest-complexa-protein.json",
+    "complexa-ligand": "manifest-complexa-ligand.json",
+    "complexa-ame": "manifest-complexa-ame.json",
+    "rosettafold3-checkpoint": "manifest-rosettafold3-checkpoint.json",
+}
+
+
+@unittest.skipIf(not (CATALOG / "manifest-complexa-protein.json").is_file(),
+                 "the accepted public artifact catalog is not present on this branch")
+class CatalogAgreementTests(unittest.TestCase):
+    """The ingestion contract must never drift from the accepted catalog.
+
+    The catalog is the authority on what these artifacts *are*. This contract
+    restates those identities because the staging job runs in-cluster from a
+    ConfigMap and cannot read the repository, so the duplication is deliberate
+    and load-bearing. Duplication that nothing checks is how two sources of
+    truth quietly disagree, which is exactly the failure a pinned digest exists
+    to prevent, so every restated field is compared here and drift fails closed.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.contract = {artifact["artifact_id"]: artifact
+                        for artifact in fa.load_contract(ROOT / "ingestion-contract.json")["artifacts"]}
+
+    def manifest(self, artifact_id: str) -> dict[str, object]:
+        return json.loads((CATALOG / CATALOG_MANIFESTS[artifact_id]).read_text())
+
+    def test_the_catalog_covers_every_artifact_this_task_ingests(self) -> None:
+        self.assertEqual(sorted(self.contract), sorted(CATALOG_MANIFESTS))
+
+    def test_pinned_source_revisions_agree(self) -> None:
+        for artifact_id in CATALOG_MANIFESTS:
+            with self.subTest(artifact_id):
+                self.assertEqual(self.contract[artifact_id]["source"]["revision"],
+                                 self.manifest(artifact_id)["source"]["revision"])
+
+    def test_every_file_identity_agrees(self) -> None:
+        for artifact_id in CATALOG_MANIFESTS:
+            with self.subTest(artifact_id):
+                manifest = self.manifest(artifact_id)
+                catalog = {entry["path"]: (entry["bytes"], entry["sha256"])
+                           for entry in manifest["content"]["files"]}
+                ours = {entry["path"]: (entry["bytes"], entry["sha256"])
+                        for entry in self.contract[artifact_id]["files"]}
+                self.assertEqual(ours, catalog)
+                self.assertEqual(self.contract[artifact_id]["tree"]["total_bytes"],
+                                 manifest["content"]["expanded_bytes"])
+
+    def test_licences_and_entitlements_agree(self) -> None:
+        for artifact_id in CATALOG_MANIFESTS:
+            with self.subTest(artifact_id):
+                manifest = self.manifest(artifact_id)
+                source = self.contract[artifact_id]["source"]
+                self.assertEqual(source["license_id"], manifest["license"]["id"])
+                self.assertEqual(source["entitlement_state"], manifest["entitlement_state"])
+
+    def test_every_resolved_url_stays_within_the_catalog_source(self) -> None:
+        # The catalog records a source URI; a direct-https manifest names the
+        # file itself while this contract names the directory its resolver
+        # appends to. Comparing the resolved URL rather than the raw field keeps
+        # that shape difference from hiding a real divergence.
+        for artifact_id, artifact in self.contract.items():
+            with self.subTest(artifact_id):
+                declared = self.manifest(artifact_id)["source"]["uri"]
+                for entry in artifact["files"]:
+                    resolved = fa.source_url(artifact, entry["path"])
+                    if declared.startswith("hf://"):
+                        repo = declared.removeprefix("hf://")
+                        self.assertTrue(resolved.startswith(f"https://huggingface.co/{repo}/resolve/"))
+                    else:
+                        self.assertIn(resolved, {declared, f"{declared.rstrip('/')}/{entry['path']}"})
+
+
 class PromoteRendererTests(unittest.TestCase):
     def render(self, **overrides: object) -> dict[str, object]:
         arguments: dict[str, object] = {

@@ -18,9 +18,17 @@ NVIDIA Open Model License, and the RF3 reward checkpoint is served directly
 under BSD-3-Clause. No credential is read, stored, or needed, and no artifact
 byte is committed to Git.
 
-The per-file sizes and SHA-256 digests in `ingestion-contract.json` are consumed
-verbatim from the pinned manifests in candidate `58e84e51`. Only those identities
-were taken from it; its mutable final-consumer-path contract was not.
+The per-file sizes and SHA-256 digests in `ingestion-contract.json` come verbatim
+from the accepted public artifact catalog in `k8s-inference/model-artifacts/`,
+which is the authority on what these artifacts are. Only those identities were
+taken from it, never its cache-path contract.
+
+They are restated in this contract rather than read from the catalog because the
+staging job runs in-cluster from a ConfigMap and cannot read the repository. That
+duplication is guarded: `CatalogAgreementTests` compares every revision, file
+digest, byte count, licence and resolved URL against the catalog manifests, so a
+divergence fails the suite instead of quietly leaving two answers to what a
+pinned digest is.
 
 ## Two planes, and why the pipeline has three steps
 
