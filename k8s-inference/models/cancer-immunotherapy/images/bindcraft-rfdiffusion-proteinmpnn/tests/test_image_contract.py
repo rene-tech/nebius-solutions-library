@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -32,6 +33,9 @@ pyrosetta_patch = load_module(
 )
 bindcraft_runner = load_module(
     "bindcraft_runtime_entrypoint", ROOT / "runtime" / "bindcraft_runtime_entrypoint.py"
+)
+freebindcraft_runner = load_module(
+    "freebindcraft_runtime_entrypoint", ROOT / "runtime" / "freebindcraft_runtime_entrypoint.py"
 )
 
 
@@ -144,7 +148,7 @@ class ImageLockTests(unittest.TestCase):
         by_id = {image["id"]: image for image in lock["images"]}
         for image_id in ("bindcraft-academic", "freebindcraft-open-fallback"):
             image = by_id[image_id]
-            expected = {"bindcraft-academic": "-cuda121-r11", "freebindcraft-open-fallback": "-cuda121-r6", "rfdiffusion": "-cuda121-r6"}.get(image_id, "")
+            expected = {"bindcraft-academic": "-cuda121-r11", "freebindcraft-open-fallback": "-cuda121-r9", "rfdiffusion": "-cuda121-r6"}.get(image_id, "")
             self.assertEqual(image["build_tag_suffix"], expected)
             self.assertTrue(image["target"].endswith(image["source"]["revision"] + expected))
             self.assertIn("@sha256:", image["supersedes"])
@@ -156,13 +160,75 @@ class ImageLockTests(unittest.TestCase):
         )
         self.assertTrue((build_images.ADAPTER_CONTEXT / "rfdiffusion/bin/rfdiffusion-batch").is_file())
         self.assertTrue((build_images.ADAPTER_CONTEXT / "bindcraft-native/bin/bindcraft-batch").is_file())
+        self.assertTrue((build_images.ADAPTER_CONTEXT / "bindcraft-open/bin/freebindcraft-batch").is_file())
         bindcraft = (ROOT / "Dockerfile.bindcraft").read_text(encoding="utf-8")
+        freebindcraft = (ROOT / "Dockerfile.freebindcraft").read_text(encoding="utf-8")
         rfdiffusion = (ROOT / "Dockerfile.rfdiffusion").read_text(encoding="utf-8")
         self.assertIn("bindcraft-native/bin/bindcraft-batch", bindcraft)
         self.assertNotIn("verify-academic-access", bindcraft)
+        self.assertIn("bindcraft-open/bin/freebindcraft-batch", freebindcraft)
+        self.assertIn("runtime/freebindcraft_runtime_entrypoint.py", freebindcraft)
         self.assertIn("rfdiffusion/bin/rfdiffusion-batch", rfdiffusion)
         self.assertIn("3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe", bindcraft)
+        self.assertIn("3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe", freebindcraft)
         self.assertIn("3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe", rfdiffusion)
+
+    def test_open_bindcraft_has_pinned_freesasa_and_real_scoring_contract(self) -> None:
+        lock = build_images.load_lock()
+        dockerfile = (ROOT / "Dockerfile.freebindcraft").read_text(encoding="utf-8")
+        for component in (
+            "freesasa_2_2_1_sdist",
+            "cython_3_0_12_cp310_wheel",
+            "openmm_8_2_0_cuda12_py310_conda",
+            "libstdcxx_ng_12_4_0_conda",
+            "libgcc_ng_12_4_0_conda",
+        ):
+            pinned = lock["shared_sources"][component]
+            self.assertIn(pinned["url"], dockerfile)
+            self.assertIn(pinned["sha256"], dockerfile)
+        self.assertEqual(freebindcraft_runner.BACKEND_ID, "freebindcraft-v1-0-5")
+        self.assertEqual(
+            freebindcraft_runner.SOURCE_REVISION,
+            "28c43fc48942eebd7918f504e9812c5c17bb3411",
+        )
+        source = (ROOT / "runtime" / "freebindcraft_runtime_entrypoint.py").read_text(encoding="utf-8")
+        self.assertIn('sasa_engine="freesasa"', source)
+        self.assertIn('getPlatformByName("CUDA")', source)
+        self.assertIn('"scoring_engine": "openmm-freesasa"', source)
+        self.assertIn("--no-pyrosetta", source)
+        self.assertIn("FS2 hard trajectory bound", source)
+        self.assertIn("request[\"parameters\"][\"max_trajectories_per_shard\"]", source)
+        self.assertIn("DAlphaBall.gcc", dockerfile)
+        self.assertIn("lib/plugins/libOpenMMCUDA.so", dockerfile)
+
+    def test_open_bindcraft_enforces_request_trajectory_bound(self) -> None:
+        generic_utils = types.ModuleType("functions.generic_utils")
+        generic_utils.check_n_trajectories = mock.Mock(return_value=False)
+        functions = types.ModuleType("functions")
+        functions.generic_utils = generic_utils
+        functions.check_n_trajectories = generic_utils.check_n_trajectories
+        numpy = types.ModuleType("numpy")
+        numpy.random = types.SimpleNamespace(randint=mock.Mock())
+        observed: list[bool] = []
+
+        def upstream(_: str, *, run_name: str) -> None:
+            self.assertEqual(run_name, "__main__")
+            observed.extend([
+                functions.check_n_trajectories({}, {}),
+                functions.check_n_trajectories({}, {}),
+            ])
+
+        with mock.patch.dict(sys.modules, {
+            "functions": functions,
+            "functions.generic_utils": generic_utils,
+            "numpy": numpy,
+        }), mock.patch.object(freebindcraft_runner.runpy, "run_path", side_effect=upstream):
+            freebindcraft_runner._run_upstream(
+                Path("settings.json"), Path("filters.json"), Path("advanced.json"), 42, 1,
+            )
+
+        self.assertEqual(observed, [False, True])
+        self.assertIs(functions.check_n_trajectories, generic_utils.check_n_trajectories)
 
     def test_typed_rfdiffusion_runner_maps_generated_and_motif_contigs(self) -> None:
         self.assertEqual(
@@ -200,10 +266,15 @@ class ImageLockTests(unittest.TestCase):
         self.assertNotIn("academic-access-gate", manifest)
         self.assertNotIn("access-receipt", manifest)
 
-    def test_h100_evidence_records_full_bindcraft_path_and_cleanup(self) -> None:
+    def test_h100_evidence_records_full_bindcraft_paths_and_cleanup(self) -> None:
         evidence = json.loads((ROOT / "evidence" / "h100-semantic-validation.json").read_text())
         runs = {run["model"]: run for run in evidence["runs"]}
-        self.assertEqual(set(runs), {"rfdiffusion", "proteinmpnn", "bindcraft-native-pyrosetta"})
+        self.assertEqual(set(runs), {
+            "rfdiffusion",
+            "proteinmpnn",
+            "bindcraft-native-pyrosetta",
+            "freebindcraft-open-fallback",
+        })
         bindcraft = runs["bindcraft-native-pyrosetta"]
         self.assertEqual(bindcraft["semantic_workflow"]["result"], "passed")
         self.assertTrue(bindcraft["semantic_workflow"]["pyrosetta_relaxation_and_scoring"])
@@ -219,6 +290,31 @@ class ImageLockTests(unittest.TestCase):
         self.assertEqual(bindcraft["resource_measurements"]["cgroup_oom_kill_events"], 0)
         self.assertTrue(bindcraft["cleanup"]["pod_deleted"])
         self.assertEqual(bindcraft["cleanup"]["task_owned_pods_or_jobs_remaining"], 0)
+
+        fallback = runs["freebindcraft-open-fallback"]
+        self.assertEqual(fallback["relationship"], "derived-open-non-equivalent-fallback")
+        self.assertEqual(fallback["interface"]["wrapper_path"], "/opt/fs2/bin/freebindcraft-batch")
+        self.assertEqual(fallback["semantic_workflow"]["result"], "passed")
+        self.assertFalse(fallback["semantic_workflow"]["pyrosetta_relaxation_and_scoring"])
+        self.assertTrue(fallback["semantic_workflow"]["openmm_cuda_scoring"])
+        self.assertTrue(fallback["semantic_workflow"]["freesasa_interface_scoring"])
+        self.assertEqual(fallback["semantic_workflow"]["accepted_candidates"], 1)
+        self.assertEqual(fallback["independent_adapter_validation"]["status"], "passed")
+        self.assertEqual(fallback["lane_constraints"]["pyrosetta"], "forbidden")
+        self.assertEqual(fallback["resource_measurements"]["cgroup_oom_kill_events"], 0)
+        self.assertTrue(fallback["cleanup"]["pod_deleted"])
+        self.assertEqual(fallback["cleanup"]["task_owned_pods_or_jobs_remaining"], 0)
+
+    def test_open_semantic_manifest_is_digest_pinned_and_has_no_academic_mount(self) -> None:
+        manifest = (ROOT / "kubernetes" / "freebindcraft-semantic-pod.yaml").read_text(
+            encoding="utf-8"
+        )
+        digest = "sha256:6d44aba5780c2b74985db037045e06e732f4e867795d33a6313c5faa95bd9e30"
+        self.assertIn("freebindcraft@" + digest, manifest)
+        self.assertIn("capacity.fs2.nebius/source: capacity-block", manifest)
+        self.assertNotIn("pyrosetta-bindcraft", manifest)
+        self.assertNotIn("supplementalGroups", manifest)
+        self.assertNotIn("fsGroup:", manifest)
 
     def test_bindcraft_wrapper_uses_shared_newline_canonicalization(self) -> None:
         value = {"z": 1, "a": "two"}

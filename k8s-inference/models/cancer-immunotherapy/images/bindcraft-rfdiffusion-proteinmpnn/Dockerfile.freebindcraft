@@ -1,4 +1,21 @@
 # syntax=docker/dockerfile:1.7
+FROM docker.io/pytorch/pytorch@sha256:0279f7aa29974bf64e61d0ff6e979b41a249b3662a46e30778dbf80b8c99c361 AS freesasa-builder
+
+ARG FREESASA_URL=https://files.pythonhosted.org/packages/52/fc/1b28f7973952934737387172ef0a40c0ea7cb9a6132264c3e731760f8efa/freesasa-2.2.1.tar.gz
+ARG FREESASA_SHA256=5630e65d619cf6a062028d7c6297afe8c5b18c677c75f1c32a0938399f4f6850
+ARG CYTHON_URL=https://files.pythonhosted.org/packages/dc/21/5b700dac60cc7af4261c7fa2e91f55fe5f38f6c183e1201ced7cc932201b/Cython-3.0.12-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+ARG CYTHON_SHA256=bee2717e5b5f7d966d0c6e27d2efe3698c357aa4d61bb3201997c7a4f9fe485a
+
+COPY runtime/fetch_verified.py /opt/fs2/fetch_verified.py
+RUN set -eux; \
+    apt-get update; \
+    apt-get install --yes --no-install-recommends gcc; \
+    python /opt/fs2/fetch_verified.py "${CYTHON_URL}" "${CYTHON_SHA256}" /tmp/Cython-3.0.12-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl; \
+    python -m pip install --no-cache-dir /tmp/Cython-3.0.12-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl; \
+    python /opt/fs2/fetch_verified.py "${FREESASA_URL}" "${FREESASA_SHA256}" /tmp/freesasa.tar.gz; \
+    mkdir -p /tmp/wheels; \
+    python -m pip wheel --no-deps --no-build-isolation --wheel-dir /tmp/wheels /tmp/freesasa.tar.gz
+
 FROM docker.io/pytorch/pytorch@sha256:0279f7aa29974bf64e61d0ff6e979b41a249b3662a46e30778dbf80b8c99c361
 
 ARG SOURCE_REVISION=28c43fc48942eebd7918f504e9812c5c17bb3411
@@ -7,6 +24,12 @@ ARG COLABDESIGN_REVISION=e31a56fe1d9b4de25c8697f3a28b75892941cc72
 ARG COLABDESIGN_ARCHIVE_SHA256=26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f
 ARG PDBFIXER_REVISION=199f03df6c50f7cf6120de766f4ccce426fda4e9
 ARG PDBFIXER_ARCHIVE_SHA256=4d53a2a88b39b1303c92f8b75247886d4ee1fe5bd4034c27bf233ef9c1130010
+ARG OPENMM_CUDA_URL=https://api.anaconda.org/download/conda-forge/openmm/8.2.0/linux-64/openmm-8.2.0-py310h114903a_0.conda
+ARG OPENMM_CUDA_SHA256=f86c65ceb604d27c86f213b861a1426719bc04fcc9c5a9dd41fe0934ffc5311d
+ARG LIBSTDCXX_URL=https://api.anaconda.org/download/conda-forge/libstdcxx-ng/12.4.0/linux-64/libstdcxx-ng-12.4.0-hc0a3c3a_0.conda
+ARG LIBSTDCXX_SHA256=8187844ef0344d0751b9c8125593189c81905a52a5a6a2c27550003ec0a41be4
+ARG LIBGCC_URL=https://api.anaconda.org/download/conda-forge/libgcc-ng/12.4.0/linux-64/libgcc-ng-12.4.0-h77fa898_0.conda
+ARG LIBGCC_SHA256=307d10b872ae5e74333a23a668b2a11472ef45c146af12121165cd2f21c48a26
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY runtime/fetch_verified.py /opt/fs2/fetch_verified.py
@@ -16,10 +39,15 @@ RUN --mount=type=cache,id=fs2-cancer-bindcraft-pip,target=/root/.cache/pip,shari
     python -m pip install --timeout 300 --retries 10 -r /tmp/requirements.bindcraft.txt; \
     ln -sfn /opt/conda/lib/python3.10/site-packages/nvidia/cusparse/lib/libcusparse.so.12 /opt/conda/lib/libcusparse.so.12; \
     rm -f /tmp/requirements.bindcraft.txt
-COPY requirements.freebindcraft.txt /tmp/requirements.freebindcraft.txt
+COPY --from=freesasa-builder /tmp/wheels/freesasa-2.2.1-*.whl /tmp/wheels/
 RUN set -eux; \
-    python -m pip install --no-cache-dir -r /tmp/requirements.freebindcraft.txt; \
-    rm -rf /tmp/requirements.freebindcraft.txt /root/.cache; \
+    python /opt/fs2/fetch_verified.py "${LIBGCC_URL}" "${LIBGCC_SHA256}" /tmp/libgcc.conda; \
+    python /opt/fs2/fetch_verified.py "${LIBSTDCXX_URL}" "${LIBSTDCXX_SHA256}" /tmp/libstdcxx.conda; \
+    python /opt/fs2/fetch_verified.py "${OPENMM_CUDA_URL}" "${OPENMM_CUDA_SHA256}" /tmp/openmm.conda; \
+    /opt/conda/bin/conda install --offline --no-deps --yes /tmp/libgcc.conda /tmp/libstdcxx.conda /tmp/openmm.conda; \
+    test -f /opt/conda/lib/plugins/libOpenMMCUDA.so; \
+    python -m pip install --no-cache-dir --no-deps /tmp/wheels/freesasa-2.2.1-*.whl; \
+    rm -rf /tmp/libgcc.conda /tmp/libstdcxx.conda /tmp/openmm.conda /tmp/wheels /root/.cache; \
     python /opt/fs2/fetch_verified.py \
       "https://github.com/cytokineking/FreeBindCraft/archive/${SOURCE_REVISION}.tar.gz" \
       "${SOURCE_ARCHIVE_SHA256}" /tmp/freebindcraft.tar.gz; \
@@ -41,29 +69,35 @@ RUN set -eux; \
     mkdir -p /tmp/pdbfixer; \
     tar -xzf /tmp/pdbfixer.tar.gz --strip-components=1 -C /tmp/pdbfixer; \
     python -m pip install --no-cache-dir --no-deps /tmp/pdbfixer; \
-    chmod +x /opt/freebindcraft/functions/dssp /opt/freebindcraft/functions/sc /opt/freebindcraft/functions/FASPR; \
+    chmod +x /opt/freebindcraft/functions/dssp /opt/freebindcraft/functions/sc /opt/freebindcraft/functions/FASPR /opt/freebindcraft/functions/DAlphaBall.gcc; \
     rm -rf /tmp/freebindcraft.tar.gz /tmp/colabdesign.tar.gz /tmp/pdbfixer.tar.gz /tmp/colabdesign /tmp/pdbfixer /root/.cache; \
     find /opt/freebindcraft -type f \( -name '*.pt' -o -name '*.pth' -o -name '*.ckpt' -o -name '*.pkl' \) -delete; \
     test ! -e /opt/freebindcraft/params; \
+    mkdir -p /opt/fs2/bin /opt/fs2/freebindcraft; \
     useradd --create-home --uid 10001 --shell /usr/sbin/nologin fs2; \
     chown -R root:root /opt/freebindcraft; \
     chmod -R a-w /opt/freebindcraft
 
 COPY --chown=root:root runtime/artifact_gate.py runtime/runtime_entrypoint.py /opt/fs2/
+COPY --chown=root:root runtime/freebindcraft_runtime_entrypoint.py /opt/fs2/freebindcraft/runtime_entrypoint.py
+COPY --from=fs2-adapters bindcraft-open/bin/freebindcraft-batch /opt/fs2/bin/freebindcraft-batch
+RUN chmod 0555 /opt/fs2/bin/freebindcraft-batch /opt/fs2/freebindcraft/runtime_entrypoint.py
 
 LABEL org.opencontainers.image.source="https://github.com/cytokineking/FreeBindCraft" \
       org.opencontainers.image.revision="28c43fc48942eebd7918f504e9812c5c17bb3411" \
       org.opencontainers.image.licenses="MIT" \
       ai.nebius.fs2.runtime.relationship="derived-open-non-equivalent-fallback" \
       ai.nebius.fs2.runtime.weights="external" \
-      ai.nebius.fs2.runtime.pyrosetta="absent"
+      ai.nebius.fs2.runtime.pyrosetta="absent" \
+      ai.nebius.fs2.runtime.scoring="openmm-freesasa" \
+      ai.nebius.fs2.runtime.adapter.commit="3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe"
 
 ENV FS2_RUNTIME_NAME=freebindcraft-open-fallback \
     FS2_SOURCE_REVISION=28c43fc48942eebd7918f504e9812c5c17bb3411 \
     FS2_ARTIFACT_KIND=freebindcraft-af2-params \
     FS2_ARTIFACT_ROOT=/models/alphafold2 \
     FS2_ARTIFACT_MANIFEST=/models/alphafold2/manifest.json \
-    LD_LIBRARY_PATH=/opt/conda/lib/python3.10/site-packages/torch/lib:/opt/conda/lib/python3.10/site-packages/nvidia/cusparse/lib:/opt/conda/lib/python3.10/site-packages/nvidia/nvjitlink/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
+    LD_LIBRARY_PATH=/opt/conda/lib:/opt/conda/lib/python3.10/site-packages/torch/lib:/opt/conda/lib/python3.10/site-packages/nvidia/cusparse/lib:/opt/conda/lib/python3.10/site-packages/nvidia/nvjitlink/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
     PYTHONPATH=/opt/freebindcraft \
     XLA_PYTHON_CLIENT_PREALLOCATE=false \
     MPLCONFIGDIR=/tmp/matplotlib \

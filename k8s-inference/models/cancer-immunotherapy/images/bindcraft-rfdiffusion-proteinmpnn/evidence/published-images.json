@@ -47,11 +47,11 @@
         "https://slsa.dev/provenance/v1",
         "https://spdx.dev/Document"
       ],
-      "digest": "sha256:38d0c34f9eace396c6d2787592d3f8c0be311a3b5d23d734842a12fd2561ac0d",
-      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft@sha256:38d0c34f9eace396c6d2787592d3f8c0be311a3b5d23d734842a12fd2561ac0d",
+      "digest": "sha256:6d44aba5780c2b74985db037045e06e732f4e867795d33a6313c5faa95bd9e30",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft@sha256:6d44aba5780c2b74985db037045e06e732f4e867795d33a6313c5faa95bd9e30",
       "id": "freebindcraft-open-fallback",
-      "manifest_sha256": "38d0c34f9eace396c6d2787592d3f8c0be311a3b5d23d734842a12fd2561ac0d",
-      "pull_stdout_sha256": "53310d132d52b56c1b45d865c0f16035e6f5d234a41b159907c21fe28deaed29",
+      "manifest_sha256": "6d44aba5780c2b74985db037045e06e732f4e867795d33a6313c5faa95bd9e30",
+      "pull_stdout_sha256": "11c3db375701f197278f72c15094a866c8687c7b64b9db7215374d3d5b4ffb63",
       "smoke": [
         {
           "command": [
@@ -62,7 +62,7 @@
             "linux/amd64",
             "--network",
             "none",
-            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft@sha256:38d0c34f9eace396c6d2787592d3f8c0be311a3b5d23d734842a12fd2561ac0d",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft@sha256:6d44aba5780c2b74985db037045e06e732f4e867795d33a6313c5faa95bd9e30",
             "--fs2-image-smoke"
           ],
           "last_line": "{\"cuda_available\": false, \"cuda_build\": \"12.1\", \"embedded_model_artifacts\": false, \"embedded_pyrosetta\": false, \"gpu_evidence\": {}, \"gpu_required_imports_deferred\": [], \"imports\": {\"colabdesign\": \"imported\", \"jax\": \"0.4.28\", \"jaxlib\": \"0.4.28+cuda12.cudnn89\", \"openmm\": \"8.2\", \"pdbfixer\": \"imported\", \"torch\": \"2.3.0\"}, \"runtime\": \"freebindcraft-open-fallback\", \"schema\": \"fs2.nebius.ai/runtime-image-smoke/v1\", \"source_revision\": \"28c43fc48942eebd7918f504e9812c5c17bb3411\"}",
@@ -78,13 +78,13 @@
             "--network",
             "none",
             "--entrypoint",
-            "python",
-            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft@sha256:38d0c34f9eace396c6d2787592d3f8c0be311a3b5d23d734842a12fd2561ac0d",
-            "-c",
-            "compile(open('/opt/freebindcraft/docker_cli.py').read(), '/opt/freebindcraft/docker_cli.py', 'exec')"
+            "/opt/fs2/bin/freebindcraft-batch",
+            "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft@sha256:6d44aba5780c2b74985db037045e06e732f4e867795d33a6313c5faa95bd9e30",
+            "run-trajectory",
+            "--help"
           ],
-          "last_line": "",
-          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          "last_line": "  --pyrosetta-forbidden",
+          "stdout_sha256": "6afc7478f2a172aba2485cddb374e567813403671ed3352be53218adbf67e358"
         }
       ],
       "source": {
@@ -92,7 +92,7 @@
         "repository": "https://github.com/cytokineking/FreeBindCraft",
         "revision": "28c43fc48942eebd7918f504e9812c5c17bb3411"
       },
-      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft:28c43fc48942eebd7918f504e9812c5c17bb3411-cuda121-r6"
+      "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft:28c43fc48942eebd7918f504e9812c5c17bb3411-cuda121-r9"
     },
     {
       "attestation_manifests": 1,
@@ -184,6 +184,6 @@
     }
   ],
   "platform": "linux/amd64",
-  "recorded_at": "2026-09-03T00:56:28.262558Z",
+  "recorded_at": "2026-09-03T02:27:54.438646Z",
   "schema": "fs2.nebius.ai/cancer-runtime-image-publication/v1"
 }

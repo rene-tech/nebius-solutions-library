@@ -1,6 +1,6 @@
 {
   "schema": "fs2.nebius.ai/cancer-runtime-h100-semantic-validation/v1",
-  "recorded_at": "2026-09-03T00:51:27Z",
+  "recorded_at": "2026-09-03T02:25:10Z",
   "environment": {
     "project": "project-e00rene",
     "region": "eu-north1",
@@ -181,6 +181,146 @@
         "task_owned_pods_or_jobs_remaining": 0,
         "private_academic_claim_deleted": false,
         "note": "The shared tenant-private academic claim is an intentional dependency and was not task-owned."
+      }
+    },
+    {
+      "model": "freebindcraft-open-fallback",
+      "relationship": "derived-open-non-equivalent-fallback",
+      "source_revision": "28c43fc48942eebd7918f504e9812c5c17bb3411",
+      "image_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft:28c43fc48942eebd7918f504e9812c5c17bb3411-cuda121-r9",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/freebindcraft@sha256:6d44aba5780c2b74985db037045e06e732f4e867795d33a6313c5faa95bd9e30",
+      "registry_digest_verified_after_push": true,
+      "attestations": [
+        "https://slsa.dev/provenance/v1",
+        "https://spdx.dev/Document"
+      ],
+      "pod": {
+        "name": "fs2-image-smoke-freebindcraft",
+        "uid": "2118bc17-832f-4c0f-8305-464e6aa9d23a",
+        "pod_ip": "10.6.82.44",
+        "created_at": "2026-09-03T02:12:10Z",
+        "restart_count": 0,
+        "api_object_sha256": "c23ad4551b8786bfa7befaefa48256fea1a1c4a73a2c7895a8d2eb88b3c45c06",
+        "manifest_sha256": "fd3dafe0227656eb53ea138f57cdac0ce45ecfb606368e37412e97c4c7f50b70",
+        "security_context": {
+          "run_as_user": 10001,
+          "run_as_group": 10001,
+          "supplemental_groups": [],
+          "fs_group": null
+        },
+        "resources": {
+          "cpu_request": "4",
+          "cpu_limit": "16",
+          "memory_request": "96Gi",
+          "memory_limit": "128Gi",
+          "gpu_request": 1,
+          "gpu_limit": 1
+        }
+      },
+      "interface": {
+        "wrapper_path": "/opt/fs2/bin/freebindcraft-batch",
+        "wrapper_sha256": "badbefc649d9cb785be99eaf5cbcaed3efd74a9e3d308fa0f3620172cd06f14d",
+        "runtime_runner_path": "/opt/fs2/runtime/freebindcraft_runtime_entrypoint.py",
+        "runtime_runner_sha256": "f2f8fac74219b26df5813513889e3c5e027d89344ce660b2639bb82c5dcacaa3",
+        "operations": [
+          "run-trajectory",
+          "aggregate"
+        ]
+      },
+      "lane_constraints": {
+        "pyrosetta": "forbidden",
+        "pyrosetta_importable": false,
+        "licensed_bytes_embedded_in_image": false,
+        "scoring_engine": "openmm-freesasa"
+      },
+      "external_model_artifacts": {
+        "alphafold2_parameters_archive_sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+        "alphafold2_parameters_archive_size_bytes": 5587968000,
+        "colabdesign_soluble_proteinmpnn_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+        "colabdesign_soluble_proteinmpnn_sha256": "f3f705752e625a173ac5ea4d2b2e46bd10ff13905a73bcc1ca2ecd3420b361e1",
+        "colabdesign_soluble_proteinmpnn_size_bytes": 6650310,
+        "target": "upstream BindCraft PDL1 example, chain A, hotspot A56",
+        "target_sha256": "d3c95434dcadf26d005340b15bd92be61e101ed921478c26f2a5550f198e61f6"
+      },
+      "request": {
+        "operation": "design-binder",
+        "service_class": "customer-batch",
+        "base_seed": 384856,
+        "shard_count": 1,
+        "binder_length": 65,
+        "accepted_designs_per_shard": 1,
+        "max_trajectories_per_shard": 1,
+        "input_manifest_canonical_sha256": "4fcd95d7460ef6d176a74493da1d6477348fcb1042cfcac1b7d2bfef56a06aca",
+        "adapter_validator_request_sha256": "ba8164af621e55249e83afc9fb233db0f66ebcaf49f264f09fad2e5e434f135d"
+      },
+      "semantic_workflow": {
+        "result": "passed",
+        "design_iterations": 140,
+        "trajectory_seconds": 140,
+        "post_design_seconds": 70,
+        "total_upstream_seconds": 231,
+        "proteinmpnn_candidates": 1,
+        "af2_models_per_candidate": 2,
+        "pyrosetta_relaxation_and_scoring": false,
+        "openmm_cuda_scoring": true,
+        "freesasa_interface_scoring": true,
+        "accepted_candidates": 1,
+        "filter_set": "no_filters",
+        "reranked": true,
+        "aggregate_atomic_rename": true,
+        "run_log_sha256": "3654cb80145de4f4cb9c0e12b9200868aa36aa240cca1ffba5d78fd89417cf83",
+        "run_log_size_bytes": 22125
+      },
+      "accepted_candidate": {
+        "sequence": "SEEIMYYRMKIMWLQTEVIRAARAGDEEALRRALAELEELREEYLKLPGAPKDSGLFRPVLPPLP",
+        "mean_plddt": 0.80,
+        "iptm": 0.67,
+        "buried_sasa_angstrom2": 1802.15,
+        "shape_complementarity": 0.66,
+        "openmm_cuda_energy_kj_per_mol": -27405.94186501285
+      },
+      "aggregate": {
+        "shard_size_bytes": 144,
+        "aggregate_sha256": "dbf46901fab2f61fd2ec835481cca318d226697bef968019fd12475fcd0a0a48",
+        "aggregate_size_bytes": 394,
+        "serialized_output_manifest_size_bytes": 1666,
+        "canonical_output_manifest_sha256": "2d2449cd487d76d6dab040ac16893289f35fd7c02e81ad3b02e21136cccced6d"
+      },
+      "independent_adapter_validation": {
+        "validator_id": "freebindcraft-v1-0-5",
+        "status": "passed",
+        "candidate_count": 1,
+        "shard_count": 1,
+        "qualification_effect": "none-offline-validation-only"
+      },
+      "resource_measurements": {
+        "sampled_memory_current_peak_bytes": 8597721088,
+        "cgroup_memory_peak_bytes": 11523444736,
+        "sampled_gpu_memory_peak_mib": 8304,
+        "cgroup_memory_max_events": 0,
+        "cgroup_oom_events": 0,
+        "cgroup_oom_kill_events": 0,
+        "resource_sample_count": 230,
+        "resource_sample_window_start": "2026-09-03T02:16:45Z",
+        "resource_sample_window_end": "2026-09-03T02:20:41Z",
+        "resource_samples_sha256": "abb73f6937cf7369f79d9fdbd913686c57509c1bb2e20cdeb965447d097f28ba"
+      },
+      "remediation_history": [
+        {
+          "tag_suffix": "-cuda121-r7",
+          "accepted": false,
+          "finding": "The upstream trajectory counter could exceed the typed one-trajectory bound and DAlphaBall lacked execute permission."
+        },
+        {
+          "tag_suffix": "-cuda121-r8",
+          "accepted": false,
+          "finding": "The pip OpenMM wheel exposed only Reference and CPU platforms and could not run post-design scoring on CUDA."
+        }
+      ],
+      "cleanup": {
+        "pod_deleted": true,
+        "temporary_local_validation_directories_deleted": true,
+        "task_owned_pods_or_jobs_remaining": 0
       }
     }
   ]
