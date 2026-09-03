@@ -1,0 +1,8 @@
+# Build, publication and semantic receipts are private and never committed.
+*.image-receipt.json
+*.build-receipt.json
+*.smoke-receipt.json
+*.semantic-receipt.json
+*.oci
+*.metadata.json
+__pycache__/

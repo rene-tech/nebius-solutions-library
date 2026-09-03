@@ -1,0 +1,4 @@
+*
+!runtime/af3_runtime.py
+!contracts/af3-runtime-source-lock.json
+!contracts/af3-parameter-binding.json

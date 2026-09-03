@@ -1,0 +1,61 @@
+{
+  "cache": {
+    "cache_level": "auxiliary-compiler-cache",
+    "degraded_reason": null,
+    "is_gpu_snapshot": false,
+    "jax_compilation_cache_dir": "/cache/alphafold3/jax",
+    "kind": "xla-and-triton-compilation-cache",
+    "note": "Compilation artefacts only. This is not a GPU memory snapshot and must not be reported as one. Image-local content is the L1 level; no higher level is claimed without measured evidence.",
+    "root": "/cache/alphafold3",
+    "triton_cache_dir": "/cache/alphafold3/triton",
+    "writable": true,
+    "xdg_cache_dir": "/cache/alphafold3/xdg"
+  },
+  "cpu_envelope": {
+    "cpu_request": 16,
+    "jackhmmer_n_cpu": 16,
+    "msa_threads": 16,
+    "nhmmer_n_cpu": 16,
+    "upstream_default": "min(cpu_count, 8), derived from the node rather than the pod",
+    "upstream_default_overridden": true
+  },
+  "mode": "data",
+  "plan": {
+    "argv": [
+      "/alphafold3_venv/bin/python3",
+      "/app/alphafold/run_alphafold.py",
+      "--json_path=/input/fold_input.json",
+      "--output_dir=/output",
+      "--db_dir=/reference-data/datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/a45ee44c6d96ca285ff61b3da30aa2938c69004994026fd163da7536e09646b1",
+      "--norun_inference",
+      "--jackhmmer_n_cpu=16",
+      "--nhmmer_n_cpu=16"
+    ],
+    "environment_additions": {
+      "TRITON_CACHE_DIR": "/cache/alphafold3/triton",
+      "XDG_CACHE_HOME": "/cache/alphafold3/xdg"
+    },
+    "stage": "data"
+  },
+  "reference_data": {
+    "bound_by": "mounted-tree-name-and-marker",
+    "bundle_id": "alphafold3-public-databases-v3.0",
+    "content_tree_sha256": "a45ee44c6d96ca285ff61b3da30aa2938c69004994026fd163da7536e09646b1",
+    "database_root": "/reference-data/datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/a45ee44c6d96ca285ff61b3da30aa2938c69004994026fd163da7536e09646b1",
+    "dataset_sub_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/a45ee44c6d96ca285ff61b3da30aa2938c69004994026fd163da7536e09646b1",
+    "expanded_bytes": 35,
+    "file_count": 3,
+    "host_root": "/mnt/fs2-reference-data/data",
+    "identities_are_independent": true,
+    "inventory_sha256": "498752c389f057fce01de42a31f9902d7c0caf47e7bb4cbcdd73c9cd1e75a4d3",
+    "manifest_document_verified": true,
+    "manifest_path": "/reference-data/manifests/sha256/96f7bda2775caf95bfca562b8a80fd7dce901909c142c1899e6edaca5a985a2f.json",
+    "manifest_sha256": "96f7bda2775caf95bfca562b8a80fd7dce901909c142c1899e6edaca5a985a2f",
+    "marker_matched_receipt": true,
+    "mount_path": "/reference-data",
+    "revision": "v3.0-paper-snapshot-2022-09-28",
+    "single_root_mount": true
+  },
+  "schema": "fs2-serve.nebius.ai/alphafold3-runtime-receipt/v1",
+  "status": "PLANNED"
+}

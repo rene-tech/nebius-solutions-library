@@ -1,0 +1,92 @@
+{
+  "contract": "fs2.cancer-immunotherapy.alphafold3.runtime-source-lock",
+  "contract_version": "1.0.0",
+  "runtime_id": "alphafold3",
+  "runtime_role": "structure-prediction-secondary",
+  "generated_by": "models/cancer-immunotherapy/images/alphafold3/build.py",
+  "upstream": {
+    "project": "AlphaFold 3",
+    "owner": "Google DeepMind",
+    "repository": "https://github.com/google-deepmind/alphafold3",
+    "release_tag": "v3.0.4",
+    "version": "3.0.4",
+    "commit": "85c4d20505fd5cef05eac22b534d4e793971ae69",
+    "tree": "efa1a376c9cf94d517d70e68425bc1ed3b17a570",
+    "tag_resolves_to_commit": true,
+    "tracked_file_count": 201,
+    "source_license": "Apache-2.0",
+    "source_license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "verified_files": {
+      "pyproject.toml": "84b0897942270517f52798c69dd0128ab90bfb762663ee531f06a9e3aa196c02",
+      "uv.lock": "ff4275f82dcd554c3244ab92703ab7097f5c3844f403900ae08a3a375513bdd9",
+      "docker/Dockerfile": "0c6905d96dafaa8e401dd0d8dfe0593f9e11376bc526b735693397e76e7c4e25",
+      "docker/jackhmmer_seq_limit.patch": "df9e3ae35ad1659921d96ebfca67a9616a7a467ddde2be18a56f9bd3edb38c41",
+      "WEIGHTS_TERMS_OF_USE.md": "41adf62ff5eabc58831c828793988537948663c139f8b87d8d413851b150b6e5"
+    },
+    "identity_proof": "The build fetches exactly one commit and asserts both the commit id and the tree id before any upstream byte is used. A git object id is a content address, so equality of the asserted ids is equality of the source tree."
+  },
+  "access_class": {
+    "source": "public-apache-2.0",
+    "parameters": "academic-restricted-operator-obtained",
+    "reference_databases": "public-external-volume",
+    "notes": "Only the AlphaFold 3 source code is redistributable and only the source code is present in this image. Model parameters are covered by the AlphaFold 3 Weights Terms of Use, are obtained by the operator directly from Google, and are never embedded, layered, cached or exported by this runtime."
+  },
+  "base_images": {
+    "cuda": {
+      "reference": "nvidia/cuda:12.6.3-base-ubuntu24.04",
+      "index_digest": "sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e",
+      "amd64_manifest_digest": "sha256:6b3201183858bad08441837f5a5efc2c75290135cc25fcc87d9ff763190cfd09",
+      "registry": "docker.io",
+      "reason": "Matches the upstream AlphaFold 3 Dockerfile base exactly. nvcr.io is not reachable from the build environment (HTTP 403), and the official public Docker Hub nvidia/cuda image is the same content NVIDIA publishes."
+    },
+    "uv": {
+      "reference": "ghcr.io/astral-sh/uv:0.9.24",
+      "amd64_manifest_digest": "sha256:e4bc0bb4310505e7104f06430c0a2271a58f60a756a3b2c287bb409890081b2a",
+      "reason": "Upstream pins uv 0.9.24; the digest pins the exact binary."
+    }
+  },
+  "external_build_artifacts": [
+    {
+      "name": "hmmer",
+      "version": "3.4",
+      "url": "http://eddylab.org/software/hmmer/hmmer-3.4.tar.gz",
+      "sha256": "ca70d94fd0cf271bd7063423aabb116d42de533117343a9b27a65c17ff06fbf3",
+      "transport_note": "eddylab.org serves plain HTTP only. Integrity is enforced by the pinned SHA-256 checksum, which is what upstream AlphaFold 3 also relies on.",
+      "patched_with": "docker/jackhmmer_seq_limit.patch from the pinned upstream commit"
+    }
+  ],
+  "python_environment": {
+    "resolver": "uv",
+    "lock": "upstream uv.lock at the pinned commit",
+    "sync_flags": ["--frozen", "--no-dev", "--no-editable"],
+    "deviation_from_upstream": "Upstream builds with --all-groups, which installs the pytest dev group. This runtime omits dev dependencies because the image is a production batch runtime and its smoke and semantic checks are implemented by af3_runtime.py, not by pytest. Nothing in the resolved runtime dependency set differs.",
+    "key_pins": {
+      "jax": "0.10.2",
+      "jax_cuda": "jax[cuda12]==0.10.2",
+      "dm-haiku": "0.0.16",
+      "rdkit": "2025.9.4",
+      "tokamax": "0.0.12",
+      "python": ">=3.12"
+    },
+    "version_provenance": "setuptools-scm git metadata is intentionally absent in the image, so SETUPTOOLS_SCM_PRETEND_VERSION is set to 3.0.4 and the built distribution version is asserted to equal 3.0.4. A silent fall back to the pyproject placeholder version fails the build."
+  },
+  "reproducibility": {
+    "deterministic_inputs": [
+      "base image content digests",
+      "uv binary content digest",
+      "upstream commit and tree ids",
+      "frozen upstream uv.lock",
+      "pinned HMMER tarball SHA-256"
+    ],
+    "nondeterministic_inputs": [
+      "Ubuntu 24.04 apt package versions for python3.12, zlib1g, libgomp1, zstd, ca-certificates and the build-only compilers"
+    ],
+    "mitigation": "Exact installed apt package versions are captured into the build receipt at build time, so apt drift is detectable by comparing receipts rather than being invisible.",
+    "platform": "linux/amd64"
+  },
+  "cache_levels": {
+    "L1": "image-local: AlphaFold 3 source, python environment, HMMER binaries and the Chemical Component Dictionary derived data are inside the image layers.",
+    "auxiliary_compiler_cache": "The persistent JAX/Triton/XDG directories under /cache/alphafold3 are an XLA and Triton compilation cache. They are not a GPU memory snapshot and must not be reported as one.",
+    "unclaimed": "No L2 or higher cache level is claimed. Any such claim requires measured evidence recorded by the fast-start qualification task."
+  }
+}

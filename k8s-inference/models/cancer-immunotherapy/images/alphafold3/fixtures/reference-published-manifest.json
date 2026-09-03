@@ -1,0 +1,31 @@
+{
+  "access_receipt_sha256": null,
+  "bundle_id": "alphafold3-public-databases-v3.0",
+  "content": {
+    "expanded_bytes": 35,
+    "file_count": 3,
+    "files": [
+      {
+        "bytes": 10,
+        "path": "mmcif_files/1abc.cif",
+        "sha256": "a1a531cdda5b027ab74164c3abfd07f70aafbda9c2d0fc9c47a74deaf4749610"
+      },
+      {
+        "bytes": 12,
+        "path": "pdb_seqres_2022_09_28.fasta",
+        "sha256": "84a0bdf9a9e0b85f3a41cbc7082a85fa8d725fb48040c64b50aa7971215ae1dd"
+      },
+      {
+        "bytes": 13,
+        "path": "rfam_14_9_clust_seq_id_90_cov_80_rep_seq.fasta",
+        "sha256": "bf2d7f8ef9c1ed3d429a4236057fc93fc13c3b6576e9913c40e2981c3a7767a2"
+      }
+    ],
+    "inventory_sha256": "498752c389f057fce01de42a31f9902d7c0caf47e7bb4cbcdd73c9cd1e75a4d3",
+    "tree_sha256": "a45ee44c6d96ca285ff61b3da30aa2938c69004994026fd163da7536e09646b1"
+  },
+  "created_at": "2026-09-03T00:00:00Z",
+  "revision": "v3.0-paper-snapshot-2022-09-28",
+  "schema": "fs2-serve.nebius.ai/reference-data-manifest/v1",
+  "source_catalog_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}

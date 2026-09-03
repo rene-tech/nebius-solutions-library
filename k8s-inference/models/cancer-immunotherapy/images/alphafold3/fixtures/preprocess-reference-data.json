@@ -1,0 +1,6 @@
+{
+  "bundle_id": "alphafold3-public-databases-v3.0",
+  "manifest_sha256": "96f7bda2775caf95bfca562b8a80fd7dce901909c142c1899e6edaca5a985a2f",
+  "manifest_uri": "file:///reference-data/manifests/sha256/96f7bda2775caf95bfca562b8a80fd7dce901909c142c1899e6edaca5a985a2f.json",
+  "revision": "v3.0-paper-snapshot-2022-09-28"
+}
