@@ -158,6 +158,11 @@ def _settings(request: dict[str, Any], target: Path, output: Path, template: Pat
         "num_recycles_design": int(os.environ.get("FS2_BINDCRAFT_DESIGN_RECYCLES", "1")),
         "num_recycles_validation": int(os.environ.get("FS2_BINDCRAFT_VALIDATION_RECYCLES", "1")),
         "optimise_beta": False,
+        # The advanced template may intentionally leave these unset.  BindCraft
+        # treats null as an os.path.dirname(None) failure after the trajectory;
+        # bind the task-staged AF2 directory and soluble ProteinMPNN lane.
+        "model_path": os.environ.get("FS2_BINDCRAFT_AF2_MODEL", "v_48_020"),
+        "mpnn_weights": os.environ.get("FS2_BINDCRAFT_MPNN_WEIGHTS", "soluble"),
         "af_params_dir": os.environ.get("FS2_BINDCRAFT_AF2_PARAMS", "/models/alphafold2"),
     })
     settings_path = output / "target-settings.json"
