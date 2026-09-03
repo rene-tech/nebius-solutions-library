@@ -471,6 +471,15 @@ def job(args: argparse.Namespace, handoff: dict[str, Any], config_name: str) -> 
         "readOnlyRootFilesystem": True,
         "capabilities": {"drop": ["ALL"]},
     }
+    workspace_prepare_script = f"""\
+import os
+from pathlib import Path
+
+run = Path({str('/workspace/runs/' + args.run_id)!r})
+run.mkdir(parents=True, exist_ok=True)
+os.chown(run, 10001, 10001)
+run.chmod(0o770)
+"""
     pod_spec: dict[str, Any] = {
         "restartPolicy": "Never",
         "automountServiceAccountToken": False,
@@ -499,21 +508,42 @@ def job(args: argparse.Namespace, handoff: dict[str, Any], config_name: str) -> 
         # an attacker cannot redirect either after admission. Materialize the
         # four bounded control files into an emptyDir first; the model process
         # then reads regular, read-only files without weakening that gate.
-        "initContainers": [{
-            "name": "materialize-request",
-            "image": args.image,
-            "imagePullPolicy": "IfNotPresent",
-            "command": ["python", "-c", MATERIALIZE_REQUEST_SCRIPT],
-            "resources": {
-                "requests": {"cpu": "50m", "memory": "64Mi"},
-                "limits": {"cpu": "1", "memory": "256Mi"},
+        "initContainers": [
+            {
+                # The direct acceptance owns this empty workspace claim. Prepare
+                # only its run directory as root instead of setting fsGroup on
+                # the Pod: fsGroup would also recursively mutate the mounted
+                # academic model claim, the exact failure this workload must
+                # not reintroduce.
+                "name": "prepare-workspace",
+                "image": args.image,
+                "imagePullPolicy": "IfNotPresent",
+                "command": ["python", "-c", workspace_prepare_script],
+                "resources": {
+                    "requests": {"cpu": "50m", "memory": "64Mi"},
+                    "limits": {"cpu": "1", "memory": "256Mi"},
+                },
+                "securityContext": {
+                    **security, "runAsNonRoot": False, "runAsUser": 0, "runAsGroup": 0,
+                },
+                "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
             },
-            "securityContext": security,
-            "volumeMounts": [
-                {"name": "request-source", "mountPath": "/var/run/fs2-source", "readOnly": True},
-                {"name": "request", "mountPath": "/var/run/fs2"},
-            ],
-        }],
+            {
+                "name": "materialize-request",
+                "image": args.image,
+                "imagePullPolicy": "IfNotPresent",
+                "command": ["python", "-c", MATERIALIZE_REQUEST_SCRIPT],
+                "resources": {
+                    "requests": {"cpu": "50m", "memory": "64Mi"},
+                    "limits": {"cpu": "1", "memory": "256Mi"},
+                },
+                "securityContext": security,
+                "volumeMounts": [
+                    {"name": "request-source", "mountPath": "/var/run/fs2-source", "readOnly": True},
+                    {"name": "request", "mountPath": "/var/run/fs2"},
+                ],
+            },
+        ],
         # One stage per Job. Running the design as an init container of the
         # aggregate's Pod kept the GPU allocated for the whole Pod lifetime,
         # including the CPU-only aggregation, so the accelerator sat idle while

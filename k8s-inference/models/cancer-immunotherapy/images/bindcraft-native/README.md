@@ -236,6 +236,12 @@ admission documents; the copy makes them regular read-only files without
 relaxing the image gate. The design itself remains the GPU main container and
 the aggregate remains a separate CPU-only Job.
 
+The direct runner also prepares only its run directory on the task-owned empty
+workspace claim with a short root init. It deliberately does not set Pod
+`fsGroup`: that would apply volume ownership to the read-only academic claim as
+well and could recursively damage the repaired PyRosetta ownership contract.
+The root init mounts no model or academic volume.
+
 Passing `default_filters.json` is the semantic bar, not a formality. Its 54
 active thresholds require `Average_n_InterfaceResidues` ≥ 7, `Average_dSASA` ≥ 1,
 `Average_dG` ≤ 0, `Average_Binder_Energy_Score` ≤ 0, `Average_Hotspot_RMSD` ≤ 6,

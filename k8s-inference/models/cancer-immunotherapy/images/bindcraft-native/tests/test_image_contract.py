@@ -1350,10 +1350,13 @@ class SemanticJobRenderTests(unittest.TestCase):
             _, aggregate = self.render(path, stage="aggregate")
             for job in (design, aggregate):
                 spec = job["spec"]["template"]["spec"]
-                self.assertEqual(len(spec["initContainers"]), 1)
-                init = spec["initContainers"][0]
-                self.assertEqual(init["name"], "materialize-request")
-                self.assertNotIn("nvidia.com/gpu", init["resources"]["limits"])
+                self.assertEqual(len(spec["initContainers"]), 2)
+                self.assertEqual(
+                    [init["name"] for init in spec["initContainers"]],
+                    ["prepare-workspace", "materialize-request"],
+                )
+                for init in spec["initContainers"]:
+                    self.assertNotIn("nvidia.com/gpu", init["resources"]["limits"])
                 self.assertEqual(len(spec["containers"]), 1)
             self.assertTrue(design["metadata"]["name"].endswith("-design"))
             self.assertTrue(aggregate["metadata"]["name"].endswith("-aggregate"))
@@ -1382,7 +1385,7 @@ class SemanticJobRenderTests(unittest.TestCase):
             volumes = {volume["name"]: volume for volume in spec["volumes"]}
             self.assertIn("configMap", volumes["request-source"])
             self.assertIn("emptyDir", volumes["request"])
-            init = spec["initContainers"][0]
+            init = spec["initContainers"][1]
             self.assertEqual(init["command"][:2], ["python", "-c"])
             for filename in renderer.REQUEST_FILENAMES:
                 self.assertIn(filename, init["command"][2])
@@ -1391,6 +1394,19 @@ class SemanticJobRenderTests(unittest.TestCase):
             }
             self.assertEqual(main_mounts["request"]["mountPath"], "/var/run/fs2")
             self.assertNotIn("request-source", main_mounts)
+
+    def test_workspace_preparation_cannot_mutate_model_volumes(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            _, job = self.render(self.handoff(Path(name)), stage="design")
+            spec = job["spec"]["template"]["spec"]
+            prepare = spec["initContainers"][0]
+            self.assertEqual(prepare["name"], "prepare-workspace")
+            self.assertEqual(prepare["securityContext"]["runAsUser"], 0)
+            self.assertEqual(
+                prepare["volumeMounts"], [{"name": "workspace", "mountPath": "/workspace"}]
+            )
+            self.assertNotIn("fsGroup", spec["securityContext"])
+            self.assertIn("/workspace/runs/r17acceptance", prepare["command"][2])
 
     def test_rendered_admission_matches_the_mount_paths_and_handoff_identities(self) -> None:
         with tempfile.TemporaryDirectory() as name:
