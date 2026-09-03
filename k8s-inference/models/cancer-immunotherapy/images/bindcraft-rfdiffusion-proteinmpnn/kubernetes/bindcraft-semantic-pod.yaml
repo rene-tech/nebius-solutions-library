@@ -28,7 +28,7 @@ spec:
       type: RuntimeDefault
   initContainers:
     - name: prepare-external-weight-mount
-      image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1
+      image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:fcc5b0da20f8bee01e78ad042ba597f7596cd52322a542ff4e48c855abae0177
       imagePullPolicy: IfNotPresent
       command: [python, -c, "from pathlib import Path; p=Path('/work/weights_soluble'); p.mkdir(parents=True, exist_ok=True); (p/'__init__.py').touch(mode=0o444, exist_ok=True)"]
       resources:
@@ -48,7 +48,7 @@ spec:
           mountPath: /work
   containers:
     - name: runtime
-      image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1
+      image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:fcc5b0da20f8bee01e78ad042ba597f7596cd52322a542ff4e48c855abae0177
       imagePullPolicy: IfNotPresent
       command: [python, -c, "import time; print('ready', flush=True); time.sleep(86400)"]
       env:
@@ -57,7 +57,7 @@ spec:
         - name: XLA_PYTHON_CLIENT_PREALLOCATE
           value: "false"
         - name: FS2_RUNTIME_IMAGE_DIGEST
-          value: sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1
+          value: sha256:fcc5b0da20f8bee01e78ad042ba597f7596cd52322a542ff4e48c855abae0177
       resources:
         requests:
           cpu: "4"

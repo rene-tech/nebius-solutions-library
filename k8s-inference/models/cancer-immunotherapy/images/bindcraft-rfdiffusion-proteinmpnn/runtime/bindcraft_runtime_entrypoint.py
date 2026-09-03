@@ -7,6 +7,7 @@ import argparse
 import csv
 import hashlib
 import importlib
+import importlib.metadata
 import json
 import os
 import runpy
@@ -19,6 +20,8 @@ BACKEND_ID = "bindcraft-v1-5-3-pyrosetta-academic"
 SOURCE_REVISION = "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
 ACADEMIC_ASSET_ID = "pyrosetta-bindcraft"
 ACADEMIC_ARTIFACT_SHA256 = "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242"
+PYROSETTA_EXPECTED_VERSION = "2026.29+releasequarterly.80a0635615"
+PYROSETTA_TREE_MANIFEST_SHA256 = "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
 PYROSETTA_SITE_PACKAGES = Path("/opt/fs2/academic/pyrosetta-bindcraft/site-packages")
 ARTIFACT_MANIFEST_SCHEMA = "fs2-serve.nebius.ai/scientific-artifact-manifest/v1"
 AA3 = {
@@ -75,7 +78,34 @@ def _bind_pyrosetta() -> dict[str, str]:
     origin = Path(str(pyrosetta.__file__)).resolve()
     if target.resolve() not in origin.parents:
         raise ContractError("PyRosetta resolved outside the tenant-private mount")
-    return {"origin": str(origin), "version": str(getattr(pyrosetta, "__version__", "unknown"))}
+    try:
+        distribution = importlib.metadata.distribution("pyrosetta")
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise ContractError("PyRosetta installed dist-info is missing from the tenant-private mount") from exc
+    dist_path = Path(str(getattr(distribution, "_path", ""))).resolve()
+    if target.resolve() not in dist_path.parents or not dist_path.name.endswith(".dist-info"):
+        raise ContractError("PyRosetta dist-info resolved outside the tenant-private mount")
+    if distribution.version != PYROSETTA_EXPECTED_VERSION:
+        raise ContractError(
+            f"PyRosetta metadata version {distribution.version!r} is not the expected {PYROSETTA_EXPECTED_VERSION!r}"
+        )
+    version_api_status = "unsupported"
+    version_api_value = ""
+    version_api = getattr(pyrosetta, "version", None)
+    if callable(version_api):
+        try:
+            version_api_value = str(version_api())
+            version_api_status = "supported"
+        except Exception as exc:  # Some exact releases do not expose this API.
+            version_api_status = f"unsupported:{type(exc).__name__}"
+    return {
+        "origin": str(origin),
+        "version": distribution.version,
+        "dist_info": dist_path.name,
+        "tree_manifest_sha256": PYROSETTA_TREE_MANIFEST_SHA256,
+        "version_api_status": version_api_status,
+        "version_api_value": version_api_value,
+    }
 
 
 def _target_artifact(request: dict[str, Any], manifest: dict[str, Any]) -> tuple[Path, dict[str, Any]]:

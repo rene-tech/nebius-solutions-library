@@ -59,8 +59,8 @@
     {
       "model": "bindcraft-native-pyrosetta",
       "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9",
-      "image_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r11",
-      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:9ec7eb93208ffd5ec88669e9a6714d8d1e9bffcea1bd5130ab81271095736aa1",
+      "image_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft:7cd4ace1b7407adf66a50dfefa47de2270f5e4a9-cuda121-r12",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:fcc5b0da20f8bee01e78ad042ba597f7596cd52322a542ff4e48c855abae0177",
       "registry_digest_verified_after_push": true,
       "attestations": [
         "https://slsa.dev/provenance/v1",
@@ -104,6 +104,14 @@
         "read_only_mount_verified": true,
         "pythonpath_first": true,
         "import_origin": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages/pyrosetta/__init__.py",
+        "metadata_version": "2026.29+releasequarterly.80a0635615",
+        "dist_info": "pyrosetta-2026.29+releasequarterly.80a0635615.dist-info",
+        "version_api_check": {
+          "method": "pyrosetta.version()",
+          "status": "supported",
+          "release": "2026.29+releasequarterly.80a0635615",
+          "note": "Direct H100 invocation returned the PyRosetta-4 release banner; an unsupported API would not be classified as installation failure."
+        },
         "per_request_receipt_gate": false,
         "licensed_bytes_embedded_in_image": false
       },

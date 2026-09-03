@@ -21,6 +21,8 @@ RUNTIME_IMPORTS = {
     "proteinmpnn": ("torch", "protein_mpnn_utils"),
 }
 PYROSETTA_SITE_PACKAGES = Path("/opt/fs2/academic/pyrosetta-bindcraft/site-packages")
+PYROSETTA_EXPECTED_VERSION = "2026.29+releasequarterly.80a0635615"
+PYROSETTA_TREE_MANIFEST_SHA256 = "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
 
 
 def _runtime() -> str:
@@ -144,6 +146,17 @@ def _bind_preinstalled_pyrosetta() -> None:
     origin = Path(str(module.__file__)).resolve()
     if target.resolve() not in origin.parents:
         raise ArtifactGateError("PyRosetta resolved outside the tenant-private mounted tree")
+    try:
+        distribution = importlib.metadata.distribution("pyrosetta")
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise ArtifactGateError("PyRosetta installed dist-info is missing from the tenant-private mount") from exc
+    dist_path = Path(str(getattr(distribution, "_path", ""))).resolve()
+    if target.resolve() not in dist_path.parents or not dist_path.name.endswith(".dist-info"):
+        raise ArtifactGateError("PyRosetta dist-info resolved outside the tenant-private mounted tree")
+    if distribution.version != PYROSETTA_EXPECTED_VERSION:
+        raise ArtifactGateError(
+            f"PyRosetta metadata version {distribution.version!r} is not the expected {PYROSETTA_EXPECTED_VERSION!r}"
+        )
 
 
 def main() -> None:
