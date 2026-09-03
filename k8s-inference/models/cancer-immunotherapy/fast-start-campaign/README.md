@@ -66,6 +66,53 @@ and reaches the licensed parameter tree through `supplementalGroups: [65532]`
 instead, and its measured volume setup was 1–2 s throughout. That is an
 independent confirmation of the diagnosis rather than a separate result.
 
+### The same mechanism also breaks the access model
+
+The cost is only half the problem. The recursive pass does not just take time,
+it **rewrites ownership on the claim it walks**, and that turned out to be the
+more serious failure.
+
+After this campaign finished measuring, other Pods in `fs2-academic-poc` mounted
+the tenant-private academic claim with `fsGroup: 10001` under the default
+policy. A task-owned audit Pod (`fsc-af3-perm-audit`, running `uid 12345` with
+`supplementalGroups: [65532]`, no `fsGroup`, claim mounted read-only) confirmed
+the result directly:
+
+```
+drwxrws---  65532 10001   /academic/alphafold3          # contract wants group 65532, mode 0550
+drwxrws---  65532 10001   /academic/pyrosetta-bindcraft
+ls: can't open '/academic/alphafold3': Permission denied
+```
+
+The contract group 65532 became the owning **uid** while the group became
+10001, so membership of supplemental group 65532 now grants nothing and the
+1.02 GB parameter object is unreadable to every conforming Pod. Licensed bytes
+also became group-writable, which the contract forbids outright. The owning
+runtime task reported the AlphaFold 3 tree; this campaign's audit found the
+PyRosetta BindCraft tree damaged identically, which that report did not cover.
+
+**This campaign is not a contributor.** All three academic-lane trial Pods set
+`supplementalGroups: [65532]` and no `fsGroup`, verified from the committed raw
+Pod specs, and the audit Pod deliberately set none either so that auditing could
+not worsen the damage.
+
+**The recorded results stand.** The three academic-lane trials ran before the
+change and succeeded, which is itself evidence the permissions conformed then. A
+rerun today fails with `EACCES`; that is a claim-permission fault, not a
+regression in either runtime, and it should not be read as one.
+
+**It is deliberately not repaired here.** The claim and its Terraform module
+belong to the academic-assets task. Changing ownership or mode on another task's
+licensed, non-redistributable asset is out of scope for a benchmark campaign.
+Any new AlphaFold 3 or BindCraft trial on this claim is blocked until an owner
+restores group 65532 with directory mode 0550 and file mode 0440, and stops Pods
+mounting this claim with `fsGroup`.
+
+The practical rule this yields: **a Pod that only reads a shared claim should use
+`supplementalGroups` and set no `fsGroup` at all.** Where `fsGroup` is genuinely
+needed, `fsGroupChangePolicy: OnRootMismatch` limits both the cost and the blast
+radius.
+
 ### Where the remaining time goes
 
 | Model | Volume/sandbox | Runtime init and artifact load | Compute to first result |

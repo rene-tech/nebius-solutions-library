@@ -26,6 +26,12 @@
     }
   },
   "mechanism_evidence": {
+    "fsgroup_recursive_ownership": {
+      "guidance": "a Pod that only reads a shared claim should use supplementalGroups and set no fsGroup at all",
+      "remediation": "fsGroupChangePolicy OnRootMismatch reduces it to 1-2 s",
+      "second_failure_mode": "the same recursive pass rewrites ownership on the claim it walks. On the tenant-private academic claim it replaced the contract group 65532 with 10001 and made licensed bytes group-writable, leaving the parameter object unreadable to every contract-conforming Pod. The cost is a performance problem; the ownership rewrite is a correctness and licensing problem.",
+      "startup_cost": "153-305 s per Pod start on a 128 GiB shared claim under the default fsGroupChangePolicy Always"
+    },
     "gpu_process_snapshot": {
       "claim": "none",
       "proof": "node label snapshot.fs2.nebius/eligible=false on both H100 capacity-block nodes; no CRIU/cuda-checkpoint device state was captured or restored in this campaign",
