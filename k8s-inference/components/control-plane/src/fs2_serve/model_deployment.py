@@ -39,6 +39,7 @@ from .fast_start_identity import (
     RuntimeEvidenceIdentity,
     StartupScenario,
 )
+from .fast_start_mechanisms import SELECTABLE_MECHANISMS, FastStartMechanism
 from .models import KubernetesModel
 
 API_VERSION = "inference.fs2.nebius.ai/v1alpha1"
@@ -226,9 +227,26 @@ class SnapshotRef(NamedDigest):
 
 
 class CacheSpec(KubernetesModel):
+    """Cache tier, snapshot policy, and the selected cold-start mechanism.
+
+    ``mechanism`` pins which cold-start optimisation the renderer configures and
+    which benchmark cohort may qualify a level for this revision.  Leaving it
+    unset keeps the historical behaviour, where any compatible mechanism's
+    evidence may qualify the pool and the fastest qualified path is selected.
+    Pinning it is strictly narrowing: only that mechanism renders and only its
+    evidence counts.  A mechanism never grants a level by being selected.
+    """
+
     tier: CacheTier
     snapshot_preference: SnapshotPreference
     snapshot_ref: SnapshotRef | None = None
+    mechanism: FastStartMechanism | None = None
+
+    @model_validator(mode="after")
+    def selectable_mechanism(self) -> CacheSpec:
+        if self.mechanism is not None and self.mechanism not in SELECTABLE_MECHANISMS:
+            raise ValueError("cache mechanism is not selectable on a ModelDeployment")
+        return self
 
     @model_validator(mode="after")
     def valid_snapshot(self) -> CacheSpec:
@@ -437,6 +455,11 @@ def spec_digest(spec: ModelDeploymentSpec) -> str:
         # were already persisted; an unset or default policy keeps every
         # existing ETag and controller spec-digest annotation stable.
         del payload["fastStart"]
+    if spec.cache.mechanism is None:
+        # The cold-start mechanism selection joined the contract later still.
+        # An unpinned revision keeps its existing ETag and spec-digest
+        # annotation, so adding this field cannot roll a running workload.
+        del payload["cache"]["mechanism"]
     return canonical_digest(payload)
 
 
