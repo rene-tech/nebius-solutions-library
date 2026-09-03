@@ -421,21 +421,13 @@ class ArtifactServiceBridge:
             "stages": [
                 {
                     "stage_id": item.stage_id,
-                    "resource_class": state.plan.stage(item.stage_id).resource_class.value,
+                    "resource_class": item.resource_class.value,
                     "resolved_cluster_queue": item.resolved_cluster_queue,
                     "resolved_local_queue": item.resolved_local_queue,
                     "workload_priority_class": item.workload_priority_class,
                     "workload_priority_value": item.workload_priority_value,
-                    "resolved_pool_preference": (
-                        list(item.resolved_pool_preference)
-                        if state.plan.stage(item.stage_id).resource_class.value == "gpu"
-                        else []
-                    ),
-                    "accelerator_resource_name": (
-                        item.accelerator_resource_name
-                        if state.plan.stage(item.stage_id).resource_class.value == "gpu"
-                        else None
-                    ),
+                    "resolved_pool_preference": list(item.resolved_pool_preference),
+                    "accelerator_resource_name": item.accelerator_resource_name,
                     "accelerator_count": item.accelerator_count,
                     "max_queue_seconds": item.max_queue_seconds,
                     "max_execution_seconds": item.max_execution_seconds,

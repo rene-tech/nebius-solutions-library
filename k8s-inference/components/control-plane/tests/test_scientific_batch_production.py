@@ -92,7 +92,11 @@ from fs2_serve.scientific_batch.profile_catalog import (
     ScientificWorkloadProfile,
 )
 from fs2_serve.scientific_batch.scheduling import SchedulingContractError, SchedulingContractResolver
-from fs2_serve.scientific_batch.service import ScientificBatchService
+from fs2_serve.scientific_batch.service import (
+    ScientificBatchService,
+    ScientificBatchStatusResponse,
+    ScientificEventPage,
+)
 from fs2_serve.scientific_batch.worker import ScientificBatchWorker
 from fs2_serve.scientific_batch.workload_routes import scientific_workload_artifact_router
 from fs2_serve.settings import Settings
@@ -526,6 +530,10 @@ async def test_public_http_and_mcp_share_scientific_operation_lifecycle(registry
 
             await controller.reconcile_once()
             attempt = repository.records[operation_id].stage("design").attempts[0]
+            before_admission = await client.get(f"/v1/operations/{operation_id}")
+            assert before_admission.status_code == 200
+            assert before_admission.json()["batch"]["stages"][0]["attempts"][0]["scheduling_admission"] is None
+            admitted_at = datetime.now(UTC)
             cluster.set_observation(
                 attempt.workload,
                 WorkloadObservation(
@@ -533,6 +541,13 @@ async def test_public_http_and_mcp_share_scientific_operation_lifecycle(registry
                     attempt_id=attempt.attempt_id,
                     state=WorkloadState.SUCCEEDED,
                     phases=(LifecyclePhase.ADMITTED, LifecyclePhase.ACTIVE_COMPUTE),
+                    scheduling_admission=SchedulingAdmission(
+                        resolved_pool_id="h100-preemptible",
+                        admitted_resource_flavor="inference-h100-1x",
+                        accelerator_resource_name="nvidia.com/gpu",
+                        accelerator_count=1,
+                        admitted_at=admitted_at,
+                    ),
                 ),
             )
             repository.put_commit(
@@ -568,6 +583,14 @@ async def test_public_http_and_mcp_share_scientific_operation_lifecycle(registry
             assert status.status_code == events.status_code == artifact.status_code == result.status_code == 200
             assert status.json()["batch"]["status"] == "succeeded"
             assert status.json()["batch"]["variant_id"] == "protein-design-h100"
+            actual_admission = status.json()["batch"]["stages"][0]["attempts"][0]["scheduling_admission"]
+            assert actual_admission == {
+                "resolved_pool_id": "h100-preemptible",
+                "admitted_resource_flavor": "inference-h100-1x",
+                "accelerator_resource_name": "nvidia.com/gpu",
+                "accelerator_count": 1,
+                "admitted_at": admitted_at.isoformat().replace("+00:00", "Z"),
+            }
             assert events.json()["data"][-1]["kind"] == "batch_succeeded"
             assert artifact.json() == pointer
             assert result.json()["schema"] == "fs2-serve.nebius.ai/scientific-run-result/v1"
@@ -646,10 +669,33 @@ def test_internal_state_codec_round_trip_and_rejects_type_coercion() -> None:
         scheduling=snapshot,
     )
     value = state_to_value(state)
+    frozen_stage = value["scheduling"]["stages"][0]
+    assert frozen_stage["resource_class"] == "gpu"
+    assert "admitted_resource_flavor" not in frozen_stage
     assert state_from_value(value) == state
     value["cancel_requested"] = "false"
     with pytest.raises(ValueError, match="not a boolean"):
         state_from_value(value)
+
+
+def test_scientific_status_and_event_transport_models_are_closed() -> None:
+    for model in (ScientificBatchStatusResponse, ScientificEventPage):
+        schema = model.model_json_schema()
+        object_schemas = [schema, *schema.get("$defs", {}).values()]
+        for candidate in object_schemas:
+            if candidate.get("type") == "object":
+                assert candidate.get("additionalProperties") is False
+
+    status_schema = ScientificBatchStatusResponse.model_json_schema()
+    admission = status_schema["$defs"]["SchedulingAdmission"]
+    assert admission["additionalProperties"] is False
+    assert set(admission["properties"]) == {
+        "resolved_pool_id",
+        "admitted_resource_flavor",
+        "accelerator_resource_name",
+        "accelerator_count",
+        "admitted_at",
+    }
 
 
 def test_scheduling_resolver_enforces_canonical_tenant_route_and_priority() -> None:
@@ -833,6 +879,81 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
     assert observation.kueue_workload_uid == "kueue-workload-uid"
     assert fence.calls == [(operation_id, "controller-a", 7)]
     assert [request.method for request in requests] == ["POST", "GET", "GET", "GET", "GET"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_observer_does_not_infer_actual_admission_before_kueue_resolves(
+    tmp_path: Path,
+) -> None:
+    attempt_id = uuid4()
+    ref = WorkloadResource(
+        operation_id=uuid4(),
+        batch_id=uuid4(),
+        workload_id=uuid4(),
+        attempt_id=attempt_id,
+        stage_id="design",
+        shard_id="main",
+        attempt_number=1,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        variant_id="protein-design-h100",
+        input_artifact_id=uuid4(),
+        service_class=ServiceClass.CUSTOMER_BATCH,
+        scheduling_snapshot_digest="sha256:" + "a" * 64,
+        namespace="fs2-models",
+        name="scientific-pending",
+        kind=WorkloadKind.JOB,
+        scheduling=scheduling()
+        .freeze(
+            service_class="customer-batch",
+            model_id="protein-design",
+            tenant_id="tenant-a",
+            profile=profile_value(),
+            plan=ScientificBatchPlan((ScientificStagePlan(stage_id="design"),)),
+        )
+        .stages[0],
+    ).ref
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/scientific-pending"):
+            return httpx.Response(
+                200,
+                json={
+                    "metadata": {
+                        "name": ref.name,
+                        "namespace": ref.namespace,
+                        "uid": "pending-job-uid",
+                        "labels": {ATTEMPT_LABEL: str(attempt_id)},
+                    },
+                    "status": {},
+                },
+            )
+        if request.url.path.endswith("/workloads"):
+            return httpx.Response(
+                200,
+                json={"items": [{"metadata": {"uid": "pending-kueue-uid"}, "status": {}}]},
+            )
+        return httpx.Response(200, json={"items": []})
+
+    token = tmp_path / "pending-token"
+    token.write_text("x" * 32)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.test")
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        controller_id="controller-a",
+        fence=Fence(),
+        renderer=JobRenderer(),
+        writes_enabled=True,
+        client=client,
+    )
+    observation = await cluster.observe(ref)
+    assert observation.state is WorkloadState.PENDING
+    assert observation.scheduling_admission is None
+    assert LifecyclePhase.ADMITTED not in observation.phases
+    assert observation.kueue_workload_uid == "pending-kueue-uid"
     await client.aclose()
 
 

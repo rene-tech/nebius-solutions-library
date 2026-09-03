@@ -650,13 +650,13 @@ class ResolvedArtifactMaterialization:
 @dataclass(frozen=True, slots=True)
 class StageSchedulingDecision:
     stage_id: str
+    resource_class: ResourceClass
     resolved_cluster_queue: str
     resolved_local_queue: str
     workload_priority_class: str
     workload_priority_value: int
     resolved_pool_preference: tuple[str, ...]
-    admitted_resource_flavor: str | None
-    accelerator_resource_name: str
+    accelerator_resource_name: str | None
     accelerator_count: int
     max_queue_seconds: int | None
     max_execution_seconds: int | None
@@ -671,21 +671,26 @@ class StageSchedulingDecision:
             (self.workload_priority_class, "workload_priority_class"),
         ):
             _check_name(value, label)
-        if self.admitted_resource_flavor is not None:
-            _check_name(self.admitted_resource_flavor, "admitted_resource_flavor")
-        if not self.resolved_pool_preference or len(self.resolved_pool_preference) != len(
-            set(self.resolved_pool_preference)
-        ):
-            raise ValueError("resolved_pool_preference must be non-empty and unique")
+        if not isinstance(self.resource_class, ResourceClass):
+            raise ValueError("resource_class must be a supported scheduling resource class")
+        if len(self.resolved_pool_preference) != len(set(self.resolved_pool_preference)):
+            raise ValueError("resolved_pool_preference must be unique")
         for pool in self.resolved_pool_preference:
             if not pool or len(pool) > 128 or _POOL_RE.fullmatch(pool) is None:
                 raise ValueError("resolved pool names must be DNS-compatible and at most 128 characters")
-        if (
-            len(self.accelerator_resource_name) > 253
-            or _RESOURCE_NAME_RE.fullmatch(self.accelerator_resource_name) is None
-            or not 0 <= self.accelerator_count <= 1024
-        ):
-            raise ValueError("accelerator resource name and count must follow the Kueue scheduling contract")
+        if not 0 <= self.accelerator_count <= 1024:
+            raise ValueError("accelerator count must follow the Kueue scheduling contract")
+        if self.resource_class is ResourceClass.GPU:
+            if (
+                not self.resolved_pool_preference
+                or self.accelerator_count < 1
+                or self.accelerator_resource_name is None
+                or len(self.accelerator_resource_name) > 253
+                or _RESOURCE_NAME_RE.fullmatch(self.accelerator_resource_name) is None
+            ):
+                raise ValueError("GPU scheduling requires an exact accelerator request and pool preference")
+        elif self.resolved_pool_preference or self.accelerator_resource_name is not None or self.accelerator_count != 0:
+            raise ValueError("CPU scheduling cannot retain accelerator resource or pool preferences")
         if self.max_queue_seconds is not None and self.max_queue_seconds < 1:
             raise ValueError("max_queue_seconds must be positive when set")
         if self.max_execution_seconds is not None and self.max_execution_seconds < 1:
@@ -731,12 +736,12 @@ class SchedulingSnapshot:
             "stages": [
                 {
                     "stage_id": item.stage_id,
+                    "resource_class": item.resource_class,
                     "resolved_cluster_queue": item.resolved_cluster_queue,
                     "resolved_local_queue": item.resolved_local_queue,
                     "workload_priority_class": item.workload_priority_class,
                     "workload_priority_value": item.workload_priority_value,
                     "resolved_pool_preference": item.resolved_pool_preference,
-                    "admitted_resource_flavor": item.admitted_resource_flavor,
                     "accelerator_resource_name": item.accelerator_resource_name,
                     "accelerator_count": item.accelerator_count,
                     "max_queue_seconds": item.max_queue_seconds,

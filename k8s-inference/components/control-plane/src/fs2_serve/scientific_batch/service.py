@@ -8,20 +8,32 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
+from pydantic import Field
+
 from ..auth import require_operation_access
-from ..models import AdmissionRequest, OperationView, Principal, Scope
+from ..models import AdmissionRequest, OperationView, Principal, Scope, StrictModel
+from ..scientific_run_result import ArtifactRef, ScientificRunResult
+from ..scientific_run_result import SchedulingAdmission as PublicSchedulingAdmission
 from ..store import ConflictError, Store
 from .catalog_adapter import CatalogProfileAdapterError, scientific_plan_from_catalog_profile
 from .controller import ScientificBatchController
 from .models import (
     AdapterExecutionPlan,
     ArtifactAccessContext,
+    AttemptOutcome,
     BatchEvent,
+    BatchEventKind,
+    BatchStatus,
+    FailureKind,
+    LifecyclePhase,
     RuntimeArtifactLocalization,
     ScientificBatchPlan,
     ScientificBatchState,
     ScientificInputAdmission,
     ScientificInputArtifact,
+    ServiceClass,
+    StageStatus,
+    WorkloadKind,
 )
 from .postgres_repository import ScientificBatchNotFoundError
 from .profile_catalog import ScientificProfileCatalog, ScientificProfileError, ScientificWorkloadProfile
@@ -97,6 +109,75 @@ class ScientificBatchServiceRepository(Protocol):
     ) -> list[BatchEvent]: ...
 
 
+class ScientificAttemptView(StrictModel):
+    """Closed operational attempt view; actual admission reuses the public result shape."""
+
+    attempt_id: UUID
+    shard_id: str | None
+    attempt_number: int = Field(ge=1, le=10)
+    workload_kind: WorkloadKind
+    workload_name: str
+    workload_uid: str | None
+    outcome: AttemptOutcome
+    last_phase: LifecyclePhase
+    resource_released: bool
+    scheduling_admission: PublicSchedulingAdmission | None
+    failure_kind: FailureKind | None
+    failure_code: str | None
+
+
+class ScientificStageView(StrictModel):
+    stage_id: str
+    status: StageStatus
+    failure_code: str | None
+    attempts: tuple[ScientificAttemptView, ...] = Field(max_length=10_240)
+
+
+class ScientificBatchView(StrictModel):
+    batch_id: UUID
+    workload_id: UUID
+    model_id: str
+    variant_id: str
+    input_artifact_id: UUID
+    status: BatchStatus
+    revision: int = Field(ge=0)
+    cancel_requested: bool
+    failure_code: str | None
+    result_published: bool
+    scheduling_snapshot_digest: str
+    service_class: ServiceClass
+    stages: tuple[ScientificStageView, ...] = Field(min_length=1, max_length=64)
+
+
+class ScientificBatchStatusResponse(StrictModel):
+    operation: OperationView
+    batch: ScientificBatchView
+
+
+class ScientificEventView(StrictModel):
+    sequence: int = Field(ge=1)
+    event_id: str
+    operation_id: UUID
+    batch_id: UUID
+    workload_id: UUID
+    kind: BatchEventKind
+    stage_id: str | None
+    shard_id: str | None
+    attempt_id: UUID | None
+    phase: LifecyclePhase | None
+    code: str | None
+    occurred_at: datetime
+
+
+class ScientificEventPage(StrictModel):
+    operation_id: UUID
+    batch_id: UUID
+    workload_id: UUID
+    model_id: str
+    variant_id: str
+    data: tuple[ScientificEventView, ...] = Field(max_length=1000)
+
+
 class ScientificBatchService:
     def __init__(
         self,
@@ -125,80 +206,77 @@ class ScientificBatchService:
 
     @staticmethod
     def _state_view(operation: OperationView, state: ScientificBatchState) -> dict[str, Any]:
-        return {
-            "operation": operation.model_dump(mode="json"),
-            "batch": {
-                "batch_id": str(state.batch_id),
-                "workload_id": str(state.workload_id),
-                "model_id": state.model_id,
-                "variant_id": state.variant_id,
-                "input_artifact_id": str(state.input_artifact_id),
-                "status": str(state.status),
-                "revision": state.revision,
-                "cancel_requested": state.cancel_requested,
-                "failure_code": state.failure_code,
-                "result_published": state.result_published,
-                "scheduling_snapshot_digest": state.scheduling.digest,
-                "service_class": str(state.scheduling.service_class),
-                "stages": [
-                    {
-                        "stage_id": stage.stage_id,
-                        "status": str(stage.status),
-                        "failure_code": stage.failure_code,
-                        "attempts": [
-                            {
-                                "attempt_id": str(attempt.attempt_id),
-                                "shard_id": attempt.shard_id,
-                                "attempt_number": attempt.attempt_number,
-                                "workload_kind": str(attempt.workload.kind),
-                                "workload_name": attempt.workload.name,
-                                "workload_uid": attempt.workload.uid,
-                                "outcome": str(attempt.outcome),
-                                "last_phase": str(attempt.last_phase),
-                                "resource_released": attempt.resource_released,
-                                "scheduling_admission": (
+        view = ScientificBatchStatusResponse(
+            operation=operation,
+            batch=ScientificBatchView(
+                batch_id=state.batch_id,
+                workload_id=state.workload_id,
+                model_id=state.model_id,
+                variant_id=state.variant_id,
+                input_artifact_id=state.input_artifact_id,
+                status=state.status,
+                revision=state.revision,
+                cancel_requested=state.cancel_requested,
+                failure_code=state.failure_code,
+                result_published=state.result_published,
+                scheduling_snapshot_digest=state.scheduling.digest,
+                service_class=state.scheduling.service_class,
+                stages=tuple(
+                    ScientificStageView(
+                        stage_id=stage.stage_id,
+                        status=stage.status,
+                        failure_code=stage.failure_code,
+                        attempts=tuple(
+                            ScientificAttemptView(
+                                attempt_id=attempt.attempt_id,
+                                shard_id=attempt.shard_id,
+                                attempt_number=attempt.attempt_number,
+                                workload_kind=attempt.workload.kind,
+                                workload_name=attempt.workload.name,
+                                workload_uid=attempt.workload.uid,
+                                outcome=attempt.outcome,
+                                last_phase=attempt.last_phase,
+                                resource_released=attempt.resource_released,
+                                scheduling_admission=(
                                     None
                                     if attempt.scheduling_admission is None
-                                    else {
-                                        "resolved_pool_id": attempt.scheduling_admission.resolved_pool_id,
-                                        "admitted_resource_flavor": (
-                                            attempt.scheduling_admission.admitted_resource_flavor
-                                        ),
-                                        "accelerator_resource_name": (
-                                            attempt.scheduling_admission.accelerator_resource_name
-                                        ),
-                                        "accelerator_count": attempt.scheduling_admission.accelerator_count,
-                                        "admitted_at": attempt.scheduling_admission.admitted_at.isoformat(),
-                                    }
+                                    else PublicSchedulingAdmission(
+                                        resolved_pool_id=attempt.scheduling_admission.resolved_pool_id,
+                                        admitted_resource_flavor=attempt.scheduling_admission.admitted_resource_flavor,
+                                        accelerator_resource_name=attempt.scheduling_admission.accelerator_resource_name,
+                                        accelerator_count=attempt.scheduling_admission.accelerator_count,
+                                        admitted_at=attempt.scheduling_admission.admitted_at,
+                                    )
                                 ),
-                                "failure_kind": None if attempt.failure_kind is None else str(attempt.failure_kind),
-                                "failure_code": attempt.failure_code,
-                            }
+                                failure_kind=attempt.failure_kind,
+                                failure_code=attempt.failure_code,
+                            )
                             for attempt in stage.attempts
-                        ],
-                    }
+                        ),
+                    )
                     for stage in state.stages
-                ],
-            },
-        }
+                ),
+            ),
+        )
+        return view.model_dump(mode="json")
 
     @staticmethod
     def _event_view(event: BatchEvent) -> dict[str, Any]:
         draft = event.draft
-        return {
-            "sequence": event.sequence,
-            "event_id": draft.event_id,
-            "operation_id": str(draft.operation_id),
-            "batch_id": str(draft.batch_id),
-            "workload_id": str(draft.workload_id),
-            "kind": str(draft.kind),
-            "stage_id": draft.stage_id,
-            "shard_id": draft.shard_id,
-            "attempt_id": None if draft.attempt_id is None else str(draft.attempt_id),
-            "phase": None if draft.phase is None else str(draft.phase),
-            "code": draft.code,
-            "occurred_at": event.occurred_at.isoformat(),
-        }
+        return ScientificEventView(
+            sequence=event.sequence,
+            event_id=draft.event_id,
+            operation_id=draft.operation_id,
+            batch_id=draft.batch_id,
+            workload_id=draft.workload_id,
+            kind=draft.kind,
+            stage_id=draft.stage_id,
+            shard_id=draft.shard_id,
+            attempt_id=draft.attempt_id,
+            phase=draft.phase,
+            code=draft.code,
+            occurred_at=event.occurred_at,
+        ).model_dump(mode="json")
 
     async def submit(
         self,
@@ -371,18 +449,21 @@ class ScientificBatchService:
         events = await self.repository.list_events(
             operation_id, tenant_id=principal.tenant_id, after_sequence=after_sequence, limit=limit
         )
-        return {
-            "operation_id": str(operation_id),
-            "batch_id": str(state.batch_id),
-            "workload_id": str(state.workload_id),
-            "model_id": state.model_id,
-            "variant_id": state.variant_id,
-            "data": [self._event_view(event) for event in events],
-        }
+        return ScientificEventPage(
+            operation_id=operation_id,
+            batch_id=state.batch_id,
+            workload_id=state.workload_id,
+            model_id=state.model_id,
+            variant_id=state.variant_id,
+            data=tuple(ScientificEventView.model_validate(self._event_view(event)) for event in events),
+        ).model_dump(mode="json")
 
     async def artifact(self, artifact_id: UUID, *, principal: Principal) -> Mapping[str, Any]:
         self._authorize(principal, Scope.OPERATIONS_RESULT)
-        return await self.artifacts.artifact_response(artifact_id, tenant_id=principal.tenant_id)
+        artifact = ArtifactRef.model_validate(
+            await self.artifacts.artifact_response(artifact_id, tenant_id=principal.tenant_id)
+        )
+        return artifact.model_dump(mode="json", exclude_unset=True)
 
     async def result(self, operation_id: UUID, *, principal: Principal) -> Mapping[str, Any]:
         self._authorize(principal, Scope.OPERATIONS_RESULT)
@@ -390,6 +471,9 @@ class ScientificBatchService:
         require_operation_access(principal, operation)
         if operation.protocol != "scientific-batch-v1":
             raise ScientificBatchNotFoundError("operation is not a scientific batch")
-        result = await self.artifacts.result_response(operation_id, tenant_id=principal.tenant_id)
-        self.profiles.validate_result(result)
-        return result
+        result = ScientificRunResult.model_validate(
+            await self.artifacts.result_response(operation_id, tenant_id=principal.tenant_id)
+        )
+        document = result.to_document()
+        self.profiles.validate_result(document)
+        return document

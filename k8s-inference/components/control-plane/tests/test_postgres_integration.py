@@ -69,6 +69,7 @@ from fs2_serve.scientific_batch.controller import ScientificBatchController
 from fs2_serve.scientific_batch.models import (
     CheckpointMode,
     PreemptionMode,
+    ResourceClass,
     SchedulingSnapshot,
     ScientificBatchPlan,
     ScientificStagePlan,
@@ -2803,12 +2804,12 @@ async def test_scientific_batch_repository_is_durable_fenced_and_excluded_from_g
         stages=(
             StageSchedulingDecision(
                 stage_id="design",
+                resource_class=ResourceClass.GPU,
                 resolved_cluster_queue="inference-accelerators",
                 resolved_local_queue="scientific",
                 workload_priority_class="customer-batch",
                 workload_priority_value=100,
                 resolved_pool_preference=("h100-preemptible",),
-                admitted_resource_flavor=None,
                 accelerator_resource_name="nvidia.com/gpu",
                 accelerator_count=1,
                 max_queue_seconds=None,

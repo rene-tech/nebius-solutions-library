@@ -184,15 +184,13 @@ class SchedulingContractResolver:
         decisions = tuple(
             StageSchedulingDecision(
                 stage_id=stage.stage_id,
+                resource_class=stage.resource_class,
                 resolved_cluster_queue=cluster_queue_name,
                 resolved_local_queue=local_queue_name,
                 workload_priority_class=priority_name,
                 workload_priority_value=priority,
-                resolved_pool_preference=resolved_pools,
-                # Kueue writes the admitted ResourceFlavor later. Submission
-                # must never guess it from a pool preference.
-                admitted_resource_flavor=None,
-                accelerator_resource_name=accelerator_resource,
+                resolved_pool_preference=(() if stage.resource_class is ResourceClass.CPU else resolved_pools),
+                accelerator_resource_name=(None if stage.resource_class is ResourceClass.CPU else accelerator_resource),
                 accelerator_count=0 if stage.resource_class is ResourceClass.CPU else gpu_count,
                 max_queue_seconds=max_queue_seconds,
                 max_execution_seconds=max_execution_seconds,
