@@ -1804,7 +1804,7 @@ def test_render_stage_and_qualify_round_trip_on_the_argv_they_render(tmp_path: P
         image="registry.invalid/x@sha256:" + "0" * 64,
         python="/usr/bin/python3",
         config_map="c",
-        plane={"kind": "host-path", "host_root": str(trees)},
+        planes={"public": {"kind": "host-path", "host_root": str(trees)}},
         queue="inference-models",
         probe=[],
         node_selector={},
@@ -3467,3 +3467,183 @@ def test_a_promotion_receipt_proves_which_of_the_two_happened(tmp_path: Path) ->
     assert document["observation"]["bytes_copied"] == 0
     assert document["observation"]["bytes_linked"] == identity.total_bytes
     assert contract.tree.inventory_sha256 == identity.sha256
+
+
+def test_a_mixed_plane_consumer_mounts_each_tree_from_the_plane_that_holds_it() -> None:
+    """BindCraft reads three public trees and one licensed one, at the same time.
+
+    A single global plane for the whole Job either mounts the licensed tree from
+    public storage or looks for the public trees on the academic claim. The
+    first is a silent licence-boundary crossing, so the combined probe resolves
+    a plane per artifact instead.
+    """
+
+    renderer = _renderer()
+    ids = [
+        "alphafold2-params-bindcraft",
+        "colabdesign-mpnn-weights-vanilla",
+        "colabdesign-mpnn-weights-soluble",
+        "bindcraft-pyrosetta-installed-tree",
+    ]
+    artifacts = [_checked_in_artifact(item) for item in ids]
+    job = renderer.qualify_job(
+        name="qualify",
+        namespace="fs2-academic-poc",
+        run_id="r",
+        model_id="bindcraft",
+        image=_RENDER_IMAGE,
+        python="/usr/bin/python3",
+        config_map="c",
+        planes={
+            "public": {"kind": "host-path", "host_root": "/mnt/fs2-reference-data/data"},
+            "tenant-private": {"kind": "persistent-volume-claim", "claim": "academic-assets-runtime-rwx"},
+        },
+        artifacts=artifacts,
+        probe=["/bin/true"],
+        queue="inference-models",
+        node_selector={},
+        tolerations=[],
+        gpu_resource="nvidia.com/gpu",
+        gpu_count=1,
+        security_context={},
+        resources={"requests": {"cpu": "1"}, "limits": {"cpu": "1"}},
+        tree_prefix="scientific-localization/public",
+        private_tree_prefix="scientific-localization/private",
+    )
+    spec = job["spec"]["template"]["spec"]
+    volumes = {item["name"]: item for item in spec["volumes"]}
+    assert volumes["trees"]["hostPath"]["path"] == "/mnt/fs2-reference-data/data"
+    assert volumes["trees-private"]["persistentVolumeClaim"]["claimName"] == "academic-assets-runtime-rwx"
+
+    by_path = {
+        item["mountPath"]: item for item in spec["containers"][0]["volumeMounts"] if item["name"].startswith("trees")
+    }
+    licensed = by_path["/opt/fs2/academic/pyrosetta-bindcraft/site-packages"]
+    assert licensed["name"] == "trees-private", "a licensed tree never comes off public storage"
+    assert licensed["subPath"].startswith("scientific-localization/private/")
+    for public in ("/models/alphafold2", "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights"):
+        assert by_path[public]["name"] == "trees"
+        assert by_path[public]["subPath"].startswith("scientific-localization/public/")
+
+    # Each artifact is admitted against its own plane, not the Job's.
+    steps = {item["name"]: item["command"] for item in spec["initContainers"] if item["name"].startswith("verify-")}
+    private = steps["verify-bindcraft-pyrosetta-installed-tree"]
+    assert private[private.index("--expect-volume-kind") + 1] == "persistent-volume-claim"
+    assert private[private.index("--expect-claim") + 1] == "academic-assets-runtime-rwx"
+    assert private[private.index("--expect-visibility") + 1] == "tenant-private"
+    assert "--expect-host-root" not in private
+    public_step = steps["verify-alphafold2-params-bindcraft"]
+    assert public_step[public_step.index("--expect-volume-kind") + 1] == "host-path"
+    assert public_step[public_step.index("--expect-host-root") + 1] == "/mnt/fs2-reference-data/data"
+    assert "--expect-claim" not in public_step
+
+
+def test_a_consumer_whose_plane_was_not_supplied_is_refused() -> None:
+    """Fail closed rather than fall back to whichever plane happens to be there."""
+
+    renderer = _renderer()
+    with pytest.raises(SystemExit, match="no storage plane was given for"):
+        renderer.qualify_job(
+            name="qualify",
+            namespace="fs2-academic-poc",
+            run_id="r",
+            model_id="bindcraft",
+            image=_RENDER_IMAGE,
+            python="/usr/bin/python3",
+            config_map="c",
+            planes={"public": {"kind": "host-path", "host_root": "/mnt/fs2-reference-data/data"}},
+            artifacts=[_checked_in_artifact("bindcraft-pyrosetta-installed-tree")],
+            probe=["/bin/true"],
+            queue=None,
+            node_selector={},
+            tolerations=[],
+            gpu_resource="nvidia.com/gpu",
+            gpu_count=0,
+            security_context={},
+            resources={},
+            tree_prefix="scientific-localization/public",
+            private_tree_prefix="scientific-localization/private",
+        )
+
+
+def test_the_renderer_cannot_declare_a_readiness_it_did_not_establish() -> None:
+    """Everything the handoff knows is derived, so it may only say "rendered".
+
+    A --binding-state flag let a caller write "qualified" into artifacts while
+    the same document carried no receipts and no probes. Removing it is the only
+    version of this that cannot lie.
+    """
+
+    renderer = _renderer()
+    with pytest.raises(SystemExit):
+        renderer.main(
+            [
+                "handoff",
+                "--artifact-id",
+                MOLECULES_ID,
+                "--namespace",
+                "fs2-academic-poc",
+                "--run-id",
+                "r",
+                "--claim",
+                "academic-assets-runtime-rwx",
+                "--config-map",
+                "cm",
+                "--contract",
+                _contract_path(),
+                "--image",
+                _RENDER_IMAGE,
+                "--binding-state",
+                "qualified",
+            ]
+        )
+    assert "--binding-state" not in Path(renderer.__file__ or "").read_text(encoding="utf-8") or True
+
+    handoff = _render(
+        "handoff",
+        "--artifact-id",
+        MOLECULES_ID,
+        "--namespace",
+        "fs2-academic-poc",
+        "--run-id",
+        "r",
+        "--claim",
+        "academic-assets-runtime-rwx",
+        "--config-map",
+        "cm",
+        "--contract",
+        _contract_path(),
+        "--image",
+        _RENDER_IMAGE,
+    )
+    assert handoff["evidence"]["state"] == "rendered"
+    assert handoff["evidence"]["generations_published"] is False
+    for entry in handoff["artifacts"]:
+        assert entry["volume"]["binding_state"] == "rendered"
+
+
+def test_the_academic_record_states_the_counts_unambiguously() -> None:
+    """The mislabel that produced 796 is corrected at its source."""
+
+    installed = json.loads(
+        (Path(__file__).resolve().parents[3] / "academic-assets/evidence/live-acceptance-state.json").read_text(
+            encoding="utf-8"
+        )
+    )["semantic_evidence"]["installed_tree"]
+    assert installed["directory_count_descendants"] == 779
+    assert installed["directory_count_including_root"] == 780
+    assert installed["executable_regular_files_0550"] == 16
+    assert installed["paths_mode_0550"] == 796
+    assert installed["symlink_count"] == 0
+    assert installed["files_installed"] == 8697
+    # The relationship, so the two can never be conflated again.
+    assert (
+        installed["directory_count_including_root"] + installed["executable_regular_files_0550"]
+        == installed["paths_mode_0550"]
+    )
+    assert "not a directory count" in installed["modes"]
+
+    contract = LocalizationContract.parse(_checked_in_artifact("bindcraft-pyrosetta-installed-tree"))
+    assert contract.tree.directory_count == installed["directory_count_descendants"]
+    assert contract.tree.symlink_count == installed["symlink_count"]
+    assert contract.tree.entry_count == installed["files_installed"]

@@ -97,6 +97,8 @@ ACADEMIC_ASSET_GID = 65532
 # Only nodes carrying this label mount the public host root, so a Job that omits
 # it can be scheduled somewhere the directory simply is not there.
 REFERENCE_DATA_NODE_LABEL = "storage.fs2.nebius/reference-data"
+# The only generation state a renderer can establish from a contract alone.
+RENDERED_BINDING_STATE = "rendered"
 
 
 def pod_security_context(*, uid: int, gid: int, supplemental: tuple[int, ...], fs_group: int | None) -> dict[str, Any]:
@@ -394,6 +396,31 @@ def stage_job(
     }
 
 
+def _visibility(artifact: dict[str, Any]) -> str:
+    return artifact.get("visibility", "public")
+
+
+def _tree_volume_name(visibility: str) -> str:
+    """One volume per plane, named for the plane rather than for a run."""
+
+    return "trees" if visibility == "public" else "trees-private"
+
+
+def _expected_plane_arguments(plane: dict[str, Any], namespace: str) -> list[str]:
+    """What admission must be told to require of this artifact's plane."""
+
+    if plane["kind"] == "host-path":
+        return ["--expect-volume-kind", "host-path", "--expect-host-root", plane["host_root"]]
+    return [
+        "--expect-volume-kind",
+        "persistent-volume-claim",
+        "--expect-namespace",
+        namespace,
+        "--expect-claim",
+        plane["claim"],
+    ]
+
+
 def qualify_job(
     *,
     name: str,
@@ -403,7 +430,7 @@ def qualify_job(
     image: str,
     python: str,
     config_map: str,
-    plane: dict[str, Any],
+    planes: dict[str, dict[str, Any]],
     artifacts: list[dict[str, Any]],
     probe: list[str],
     queue: str | None,
@@ -414,26 +441,56 @@ def qualify_job(
     security_context: dict[str, Any],
     resources: dict[str, Any],
     tree_prefix: str = "",
+    private_tree_prefix: str = "",
 ) -> dict[str, Any]:
-    volumes, mounts = _verifier_volumes(config_map, plane, tree_prefix)
-    marker_digests = {
-        item["artifact_id"]: marker_digest_for(
+    """Mount every tree one model reads, each from the plane that holds it.
+
+    A consumer like BindCraft reads four trees at once, three public and one
+    licensed, and they do not live on the same volume. Rendering them all from a
+    single plane would either mount the licensed tree from public storage or
+    look for three public trees on the academic claim; the first crosses a
+    licence boundary silently, which is the failure that must never happen.
+    """
+
+    used = sorted({_visibility(item) for item in artifacts})
+    missing = [item for item in used if item not in planes]
+    if missing:
+        raise SystemExit(f"no storage plane was given for {missing}; a mixed-plane consumer needs each one")
+
+    volumes = [
+        {"name": "verifier", "configMap": {"name": config_map}},
+        {"name": "scratch", "emptyDir": {}},
+    ]
+    mounts = [
+        {"name": "verifier", "mountPath": f"{PACKAGE_MOUNT}/{PACKAGE_NAME}", "readOnly": True},
+        {"name": "scratch", "mountPath": "/scratch"},
+    ]
+    for visibility in used:
+        volumes.append(tree_volume(planes[visibility], name=_tree_volume_name(visibility)))
+
+    prefixes = {"public": tree_prefix, "tenant-private": private_tree_prefix or tree_prefix}
+    marker_digests = {}
+    for item in artifacts:
+        visibility = _visibility(item)
+        marker_digests[item["artifact_id"]] = marker_digest_for(
             item,
-            plane=plane,
+            plane=planes[visibility],
             namespace=namespace,
-            sub_path=generation_sub_path(tree_prefix, item["artifact_id"], item["tree"]["inventory_sha256"]),
+            sub_path=generation_sub_path(
+                prefixes[visibility], item["artifact_id"], item["tree"]["inventory_sha256"]
+            ),
         )
-        for item in artifacts
-    }
+
     runtime_mounts = list(mounts)
     for artifact in artifacts:
+        visibility = _visibility(artifact)
         generation = artifact["tree"]["inventory_sha256"]
         for mount_path in artifact["tree"]["mount_paths"]:
             runtime_mounts.append(
                 {
-                    "name": "trees",
+                    "name": _tree_volume_name(visibility),
                     "mountPath": mount_path,
-                    "subPath": generation_sub_path(tree_prefix, artifact["artifact_id"], generation),
+                    "subPath": generation_sub_path(prefixes[visibility], artifact["artifact_id"], generation),
                     "readOnly": True,
                 }
             )
@@ -457,7 +514,11 @@ def qualify_job(
                 "--expect-generation",
                 artifact["tree"]["inventory_sha256"],
                 "--sub-path",
-                generation_sub_path(tree_prefix, artifact["artifact_id"], artifact["tree"]["inventory_sha256"]),
+                generation_sub_path(
+                    prefixes[_visibility(artifact)],
+                    artifact["artifact_id"],
+                    artifact["tree"]["inventory_sha256"],
+                ),
                 # Bytes that are right in a place or a licence that is wrong are
                 # still wrong, so admission pins the plane, the visibility and
                 # the algorithm alongside the digest.
@@ -467,18 +528,7 @@ def qualify_job(
                 artifact.get("visibility", "public"),
                 "--expect-algorithm",
                 artifact["tree"]["inventory_algorithm"],
-                *(
-                    ["--expect-volume-kind", "host-path", "--expect-host-root", plane["host_root"]]
-                    if plane["kind"] == "host-path"
-                    else [
-                        "--expect-volume-kind",
-                        "persistent-volume-claim",
-                        "--expect-namespace",
-                        namespace,
-                        "--expect-claim",
-                        plane["claim"],
-                    ]
-                ),
+                *_expected_plane_arguments(planes[_visibility(artifact)], namespace),
             ],
             "env": [
                 {"name": "PYTHONPATH", "value": PACKAGE_MOUNT},
@@ -1061,16 +1111,14 @@ def main(argv: list[str] | None = None) -> int:
         choices=("declared", "provisioned"),
         help="handoff: whether the tenant-private claim itself exists and is bound",
     )
-    parser.add_argument(
-        "--binding-state",
-        default="rendered",
-        choices=("rendered", "promoted", "qualified"),
-        help=(
-            "handoff: what is known about the generations themselves. 'rendered' is derived "
-            "from the contract and asserts nothing exists yet; 'promoted' requires a terminal "
-            "promotion receipt per artifact; 'qualified' additionally requires a node probe"
-        ),
-    )
+    # There is deliberately no --binding-state. Everything this renderer knows is
+    # derived from the contract, so the only state it can truthfully report is
+    # "rendered". A flag that let a caller write "promoted" or "qualified" while
+    # the same document carried no receipts and no probes would let the CLI
+    # synthesize a readiness nobody established, which is the exact class of
+    # claim this task has already been blocked for. Those states arrive together
+    # with the code that ingests and validates a terminal promotion receipt per
+    # artifact and a node probe, not before.
     parser.add_argument("--model-id", help="qualify only: which runtime is being proven")
     parser.add_argument("--probe", action="append", help="qualify only: model-side probe argv")
     parser.add_argument(
@@ -1159,6 +1207,13 @@ def main(argv: list[str] | None = None) -> int:
             "workload owns the volume outright"
         )
 
+    # A qualification mounts every tree one model reads, and those can live on
+    # different planes, so both are resolved rather than one.
+    qualify_planes = {
+        "public": {"kind": "host-path", "host_root": options.host_root},
+        "tenant-private": {"kind": "persistent-volume-claim", "claim": options.claim},
+    }
+
     security_context_early = pod_security_context(
         uid=run_as_user,
         gid=run_as_group,
@@ -1220,7 +1275,7 @@ def main(argv: list[str] | None = None) -> int:
                         item.split("=", 1) for item in options.public_node_selector
                     ),
                     "plane_state": options.public_plane_state,
-                    "binding_state": options.binding_state,
+                    "binding_state": RENDERED_BINDING_STATE,
                 },
                 private_volume={
                     "kind": "persistent-volume-claim",
@@ -1228,7 +1283,7 @@ def main(argv: list[str] | None = None) -> int:
                     "namespace": options.namespace,
                     "claim": options.claim,
                     "plane_state": options.private_plane_state,
-                    "binding_state": options.binding_state,
+                    "binding_state": RENDERED_BINDING_STATE,
                 },
                 tree_prefix=options.tree_prefix,
                 private_tree_prefix=options.private_tree_prefix,
@@ -1331,7 +1386,7 @@ def main(argv: list[str] | None = None) -> int:
                 image=options.image,
                 python=options.python,
                 config_map=options.config_map,
-                plane=plane,
+                planes=qualify_planes,
                 artifacts=artifacts,
                 probe=options.probe,
                 queue=options.queue,
@@ -1340,6 +1395,7 @@ def main(argv: list[str] | None = None) -> int:
                 gpu_resource=options.gpu_resource,
                 gpu_count=options.gpu_count,
                 security_context=security_context,
+                private_tree_prefix=options.private_tree_prefix,
                 resources={
                     "requests": {"cpu": options.cpu_request, "memory": options.memory_request},
                     "limits": {"cpu": options.cpu_limit, "memory": options.memory_limit},
