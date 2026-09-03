@@ -24,8 +24,8 @@
     "platform": "linux/amd64",
     "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
     "repository": "proteina-complexa",
-    "tag_suffix": "batch-v1",
-    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd-batch-v1",
+    "tag_suffix": "ptxas-v1",
+    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd-ptxas-v1",
     "build_context": "..",
     "dockerfile": "Dockerfile",
     "python": "3.12",
@@ -51,7 +51,8 @@
     "runtime_entrypoint": {
       "path": "runtime_entrypoint.py",
       "container_path": "/opt/fs2/complexa/runtime_entrypoint.py",
-      "sha256": "81cf6cb493cc37dfc2cd04753e18ef97f72b37f4094526aa76a5aa0a8f14093f"
+      "sha256": "81cf6cb493cc37dfc2cd04753e18ef97f72b37f4094526aa76a5aa0a8f14093f",
+      "delivery": "controller ConfigMap overlay; the accepted ptxas-v1 image predates the baked entrypoint, so the exact digest above is mounted read-only at the declared container path"
     },
     "smoke": [
       [
@@ -66,11 +67,13 @@
         "describe"
       ]
     ],
-    "published_digest": "sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+    "published_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
     "provenance": {
-      "mode": "slsa-provenance-max-attached-at-push",
-      "vcs_revision": "cb8d6bea1bd15ae4cd68f588e718c14333acbac2",
-      "requirement": "the attached SLSA provenance must name the exact clean commit of this repository that carries these build inputs; a dirty tree or an uncommitted build input invalidates the publication"
+      "mode": "immutable-registry-digest-plus-oci-source-revision-label",
+      "vcs_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+      "image_revision_label": "54058860d43444c7289873f77d3e50b5b02348cd",
+      "oci_referrers": 0,
+      "requirement": "the immutable registry digest must carry org.opencontainers.image.revision=54058860d43444c7289873f77d3e50b5b02348cd and its /opt/fs2/source tree must remain byte-equivalent to the pinned archive; this image has no attached OCI referrer, so no SLSA claim is made"
     },
     "supersedes": [
       {
@@ -79,14 +82,6 @@
         "digest": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
         "deployable": false,
         "reason": "first Complexa publication. Carries the correct upstream source but no runtime batch contract, no ptxas in the runtime stage, and image cache defaults (HF_HOME, XDG_CACHE_HOME) that resolve under the read-only external artifact root."
-      },
-      {
-        "tag_suffix": "ptxas-v1",
-        "tag": "54058860d43444c7289873f77d3e50b5b02348cd-ptxas-v1",
-        "digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
-        "deployable": false,
-        "reason": "added ptxas to the runtime stage. Its only recorded H100 outcome is an AlphaFold2 multimer parameter load through ColabDesign (AF2_PARAMETER_LOADER_OK) driven by a bash -lc wrapper that wrote a .env file; the predecessor receipt itself records forward_result as blocked. That evidence exercises a reward-model dependency, not the Proteina-Complexa score model, so it never qualified any Complexa variant. It also carries no OCI referrer, so it has no attached SLSA provenance at all, and it was built from unmerged branch commit 07adbbb8 rather than a clean main commit.",
-        "reuse_note": "This digest was used while developing the runtime recipe, with the entrypoint overlaid from a ConfigMap. An earlier revision of this lock claimed it carried the first real Complexa forward inference and pointed at a contract-proving section of the H100 run receipt. No such section has ever existed in that receipt, and the semantic qualification records a null contract-proving verdict, so the claim was unbacked and is withdrawn rather than restated. No qualification claim in this tree rests on this digest; every qualified run is on the published digest."
       }
     ],
     "cache_policy": {
@@ -106,9 +101,9 @@
       "evidence": [
         "evidence/h100-run-receipt.json",
         "evidence/h100-semantic-qualification.json",
+        "evidence/ptxas-v1-promotion.json",
         "evidence/registry-provenance.json",
         "evidence/dependency-generation-observation.json",
-        "evidence/live-plan-match.json",
         "evidence/cleanup.json"
       ],
       "variants": [
@@ -120,10 +115,11 @@
       "servable": false,
       "servable_gate": "all three variants qualified on real H100 AND the scientific batch controller route exercised end to end. The controller route is owned by another workstream and is not deployed here, so this runtime is never reported as servable by this task."
     },
-    "baked_working_directory": {
+    "runtime_working_directory": {
       "path": "/opt/fs2/complexa/workdir",
       "asset_link": "assets -> /opt/fs2/source/assets",
-      "why": "upstream target dictionaries carry relative ./assets/... paths and Hydra cannot express an absolute override for task names that begin with a digit, so the binding is baked into the image rather than created at run time"
+      "delivery": "task/controller-owned emptyDir plus a shell-free init-container symlink",
+      "why": "upstream target dictionaries carry relative ./assets/... paths and Hydra cannot express an absolute override for task names that begin with a digit. The accepted ptxas-v1 image does not bake this working directory, so the execution plan creates it without mutating the image or checkpoint generations."
     },
     "reward_models": {
       "protein": {
@@ -131,7 +127,7 @@
         "binding": "AF2_DIR",
         "exercisable_here": false,
         "availability": "published-and-node-verified",
-        "reason": "the exact alphafold2-params generation is available for controller binding, but the accepted d36fc qualification deliberately ran reward-free and neither mounted nor exercised AlphaFold2. The baked entrypoint verifies the fs2-tree-inventory/v2 Complexa and RF3 generations; the AlphaFold2 tree uses fs2-flat-tree-inventory/v1, so its reward path remains unqualified rather than being inferred from availability."
+        "reason": "the exact alphafold2-params generation is available for controller binding, but the accepted f4e06 qualification deliberately ran reward-free and neither mounted nor exercised AlphaFold2. The overlaid entrypoint verifies the fs2-tree-inventory/v2 Complexa and RF3 generations; the AlphaFold2 tree uses fs2-flat-tree-inventory/v1, so its reward path remains unqualified rather than being inferred from availability."
       },
       "ligand": {
         "model": "rosettafold3",
@@ -333,7 +329,7 @@
       "entitlement_state": "not-required",
       "mount_path": "/opt/fs2/source/assets/target_data",
       "role": "target structures the design pipelines condition on; a real runtime dependency, not incidental image content",
-      "binding": "baked into the image at /opt/fs2/source/assets and reached through an image-baked read-only working directory; never a writable .env and never a symlink created at run time",
+      "binding": "baked into the image at /opt/fs2/source/assets and reached through a controller-created scratch working directory whose assets symlink is produced by a shell-free init container; never a writable .env",
       "delivery": "baked into the image from the pinned upstream source archive, so its identity is covered by the image digest and needs no mount",
       "files": [
         {
@@ -377,7 +373,7 @@
     },
     {
       "id": "cli-requires-writable-dotenv",
-      "detail": "the packaged complexa console script expects a writable .env in the working directory, which is why the predecessor qualification attempt was recorded as blocked. proteinfoundation.generate itself only calls dotenv.load_dotenv(), which tolerates an absent .env.",
+      "detail": "the retained 2026-09-03T03:16Z failure from fs2-complexa-forward-ptxas-v1-20260903d says '.env_example not found' and 'Make sure you are in the project root directory'. It was a wrong-working-directory harness failure before inference, not a missing ptxas or model defect. proteinfoundation.generate itself only calls dotenv.load_dotenv(), which tolerates an absent .env.",
       "handled_by": "the runtime contract invokes python -m proteinfoundation.generate directly as an argv list; the console script is never used and no .env is written",
       "upstream_change_required": false
     },
@@ -401,7 +397,7 @@
     }
   ],
   "integration": {
-    "base_commit": "e48aee14",
+    "base_commit": "90428fad",
     "base_branch": "main",
     "predecessor_build_inputs": "4a1c0f90 (agent/fs2-cancer-images-complexa-boltzgen-successor-r20260903)",
     "not_replayed": "no adapter, controller, catalog, admin, model-onboarding, Terraform or shared-service file is touched. The shared scientific-source-candidate receipt keeps status candidate and qualification_state unqualified, exactly as the merged Mosaic qualification left it; a runtime-image qualification is not a source-candidate promotion.",

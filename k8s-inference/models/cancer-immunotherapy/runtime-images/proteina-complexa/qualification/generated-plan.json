@@ -4,15 +4,15 @@
   "rendered_from": {
     "image_lock": "proteina-complexa/image-lock.json",
     "entrypoint_sha256": "81cf6cb493cc37dfc2cd04753e18ef97f72b37f4094526aa76a5aa0a8f14093f",
-    "entrypoint_source": "baked",
-    "image_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23"
+    "entrypoint_source": "configmap",
+    "image_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca"
   },
   "namespace": "fs2-academic-poc",
-  "run_prefix": "fs2-cxq-a1",
+  "run_prefix": "fs2-cxq-promote-p1",
   "requests": {
     "protein": {
       "schema": "fs2-serve.nebius.ai/proteina-complexa-batch-request/v1",
-      "run_id": "fs2-cxq-a1-protein",
+      "run_id": "fs2-cxq-promote-p1-protein",
       "variant": "protein",
       "task_name": "02_PDL1",
       "samples": 1,
@@ -25,7 +25,7 @@
     },
     "ligand": {
       "schema": "fs2-serve.nebius.ai/proteina-complexa-batch-request/v1",
-      "run_id": "fs2-cxq-a1-ligand",
+      "run_id": "fs2-cxq-promote-p1-ligand",
       "variant": "ligand",
       "task_name": "39_7V11_LIGAND",
       "samples": 1,
@@ -38,7 +38,7 @@
     },
     "ame": {
       "schema": "fs2-serve.nebius.ai/proteina-complexa-batch-request/v1",
-      "run_id": "fs2-cxq-a1-ame",
+      "run_id": "fs2-cxq-promote-p1-ame",
       "variant": "ame",
       "task_name": "M0024_1nzy_og",
       "samples": 1,
@@ -55,23 +55,24 @@
       "apiVersion": "v1",
       "kind": "ConfigMap",
       "metadata": {
-        "name": "fs2-cxq-a1-contract",
+        "name": "fs2-cxq-promote-p1-contract",
         "namespace": "fs2-academic-poc",
         "labels": {
           "fs2.nebius.ai/owner-task": "fs2-complexa-final-h100-qualification-r20260903"
         }
       },
       "data": {
-        "request-protein.json": "{\n  \"schema\": \"fs2-serve.nebius.ai/proteina-complexa-batch-request/v1\",\n  \"run_id\": \"fs2-cxq-a1-protein\",\n  \"variant\": \"protein\",\n  \"task_name\": \"02_PDL1\",\n  \"samples\": 1,\n  \"batch_size\": 1,\n  \"nsteps\": 400,\n  \"seed\": 20260903,\n  \"reward_model\": \"none\",\n  \"search_algorithm\": \"single-pass\",\n  \"verify_content_digests\": true\n}\n",
-        "request-ligand.json": "{\n  \"schema\": \"fs2-serve.nebius.ai/proteina-complexa-batch-request/v1\",\n  \"run_id\": \"fs2-cxq-a1-ligand\",\n  \"variant\": \"ligand\",\n  \"task_name\": \"39_7V11_LIGAND\",\n  \"samples\": 1,\n  \"batch_size\": 1,\n  \"nsteps\": 400,\n  \"seed\": 20260903,\n  \"reward_model\": \"none\",\n  \"search_algorithm\": \"single-pass\",\n  \"verify_content_digests\": true\n}\n",
-        "request-ame.json": "{\n  \"schema\": \"fs2-serve.nebius.ai/proteina-complexa-batch-request/v1\",\n  \"run_id\": \"fs2-cxq-a1-ame\",\n  \"variant\": \"ame\",\n  \"task_name\": \"M0024_1nzy_og\",\n  \"samples\": 1,\n  \"batch_size\": 1,\n  \"nsteps\": 400,\n  \"seed\": 20260903,\n  \"reward_model\": \"none\",\n  \"search_algorithm\": \"single-pass\",\n  \"verify_content_digests\": true\n}\n"
+        "request-protein.json": "{\n  \"schema\": \"fs2-serve.nebius.ai/proteina-complexa-batch-request/v1\",\n  \"run_id\": \"fs2-cxq-promote-p1-protein\",\n  \"variant\": \"protein\",\n  \"task_name\": \"02_PDL1\",\n  \"samples\": 1,\n  \"batch_size\": 1,\n  \"nsteps\": 400,\n  \"seed\": 20260903,\n  \"reward_model\": \"none\",\n  \"search_algorithm\": \"single-pass\",\n  \"verify_content_digests\": true\n}\n",
+        "request-ligand.json": "{\n  \"schema\": \"fs2-serve.nebius.ai/proteina-complexa-batch-request/v1\",\n  \"run_id\": \"fs2-cxq-promote-p1-ligand\",\n  \"variant\": \"ligand\",\n  \"task_name\": \"39_7V11_LIGAND\",\n  \"samples\": 1,\n  \"batch_size\": 1,\n  \"nsteps\": 400,\n  \"seed\": 20260903,\n  \"reward_model\": \"none\",\n  \"search_algorithm\": \"single-pass\",\n  \"verify_content_digests\": true\n}\n",
+        "request-ame.json": "{\n  \"schema\": \"fs2-serve.nebius.ai/proteina-complexa-batch-request/v1\",\n  \"run_id\": \"fs2-cxq-promote-p1-ame\",\n  \"variant\": \"ame\",\n  \"task_name\": \"M0024_1nzy_og\",\n  \"samples\": 1,\n  \"batch_size\": 1,\n  \"nsteps\": 400,\n  \"seed\": 20260903,\n  \"reward_model\": \"none\",\n  \"search_algorithm\": \"single-pass\",\n  \"verify_content_digests\": true\n}\n",
+        "runtime_entrypoint.py": "#!/usr/bin/env python3\n\"\"\"Shell-free Proteina-Complexa scientific-batch runtime entrypoint.\n\nThe scientific batch controller launches this module directly as ``argv`` --\nthere is no shell, no ``.env`` file and no interactive wrapper anywhere in the\npath.  It owns five responsibilities that the upstream project does not:\n\n1. **Exact checkpoint-pair selection.**  Each Complexa variant is driven by a\n   *pair* of public checkpoints (a score model and its partial autoencoder).\n   The pairs are pinned here by artifact id, file name, byte count and\n   SHA-256, so a run can never silently mix the ligand score model with the\n   AME autoencoder.\n2. **Immutable generation verification.**  Checkpoints arrive as content\n   addressed generations on the shared reference-data host plane, promoted by\n   the ingestion successor's terminal run.  Before a GPU is touched the mount\n   must prove it is the pinned generation: the reserved marker must describe\n   this artifact, generation, sub-path, plane, licence visibility and inventory\n   algorithm, the marker's own document digest must equal what the promotion\n   receipt published, and a tree digest recomputed from the mounted bytes must\n   reproduce the generation name.  Per-file byte counts are always checked and\n   content digests are verified when asked for.\n3. **Target resolution.**  Upstream's target dictionaries carry *relative*\n   ``target_path`` values (``./assets/target_data/...``), so a run only\n   resolves its target when the process happens to be started from the source\n   tree.  Under a container ``workingDir`` of ``/workspace`` the\n   conditional-feature constructor raises ``FileNotFoundError``.  Passing an\n   absolute Hydra override is not available as a fix: most upstream task names\n   begin with a digit (``02_PDL1``, ``39_7V11_LIGAND``) and Hydra's override\n   grammar only admits key segments that start with a letter or underscore, so\n   ``++generation.target_dict_cfg.02_PDL1.target_path=...`` is a parse error.\n   Instead the image bakes a read-only working directory whose ``assets``\n   link resolves upstream's own relative path, so the binding is part of the\n   image digest rather than a writable ``.env`` or a symlink created at run\n   time.  Target structures are treated as a real artifact: each is pinned by\n   digest against the upstream source archive and verified before model load,\n   because a run that loads both checkpoints and then cannot find its target\n   has failed on a missing artifact.\n4. **Phase timing and truthful cache reporting.**  Upstream reports one\n   ``Total generation time``.  The controller needs the split between\n   interpreter import, checkpoint load and sampling, which is recovered from\n   the upstream log's own timestamps rather than guessed.\n5. **Model-specific semantic validation.**  A zero exit code is necessary but\n   not sufficient.  Structures are parsed, coordinates are checked for\n   degeneracy, and each variant's own expectations (a binder chain within the\n   target's length envelope, a ligand residue actually present in the complex,\n   LoRA adapters actually re-applied) must hold before the run is called PASS.\n\nNothing here claims a GPU snapshot: ``gpu_snapshot`` is always reported as not\ncaptured and not restored, because no device snapshot is taken or restored.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport argparse\nimport hashlib\nimport json\nimport math\nimport os\nimport re\nimport subprocess\nimport sys\nimport zlib\nimport time\nfrom datetime import datetime, timezone\nfrom pathlib import Path\nfrom typing import Any\n\nSCHEMA_REQUEST = \"fs2-serve.nebius.ai/proteina-complexa-batch-request/v1\"\nSCHEMA_RESULT = \"fs2-serve.nebius.ai/proteina-complexa-batch-result/v1\"\n\nBACKEND_ID = \"proteina-complexa-native-upstream-v1\"\nMODEL_ID = \"proteina-complexa\"\nSOURCE_REVISION = \"54058860d43444c7289873f77d3e50b5b02348cd\"\nSOURCE_ROOT = Path(\"/opt/fs2/source\")\n\n# The three public Complexa releases, each a (score model, partial autoencoder)\n# pair.  Byte counts and digests are the upstream published identities; they are\n# also what the regional ingestion receipt records for the staged copies.\nVARIANTS: dict[str, dict[str, Any]] = {\n    \"protein\": {\n        \"artifact_id\": \"complexa-protein\",\n        \"model_id\": \"proteina-complexa-protein-target-160m-v1\",\n        \"source_uri\": \"hf://nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1\",\n        \"source_revision\": \"ffed199e32612b98ffa04f4640d34d37b137fca5\",\n        \"checkpoint\": {\n            \"name\": \"complexa.ckpt\",\n            \"bytes\": 2934289381,\n            \"sha256\": \"589db1741f29838c7961386f6b873087238c72682e56189b89e0ae02610c19e9\",\n        },\n        \"autoencoder\": {\n            \"name\": \"complexa_ae.ckpt\",\n            \"bytes\": 4100101779,\n            \"sha256\": \"35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816\",\n        },\n        \"pipeline\": \"search_binder_local_pipeline\",\n        \"target_namespace\": \"target_dict_cfg\",\n        \"target_dictionary\": \"configs/targets/targets_dict.yaml\",\n        \"lora\": False,\n        \"environment\": {},\n        \"expects_ligand\": False,\n        \"expects_motif\": False,\n        \"default_task\": \"02_PDL1\",\n    },\n    \"ligand\": {\n        \"artifact_id\": \"complexa-ligand\",\n        \"model_id\": \"proteina-complexa-ligand-target-160m-v1\",\n        \"source_uri\": \"hf://nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1\",\n        \"source_revision\": \"bc90c8b2c701ceb52d5faef72600b6b5be880244\",\n        \"checkpoint\": {\n            \"name\": \"complexa_ligand.ckpt\",\n            \"bytes\": 1790554392,\n            \"sha256\": \"8175213eac5ec6433fed1756d055ce3f867129bfdb033040e1a0560ca558bfe5\",\n        },\n        \"autoencoder\": {\n            \"name\": \"complexa_ligand_ae.ckpt\",\n            \"bytes\": 4100184649,\n            \"sha256\": \"898da17022cdeaaaea7caace41c8b6fe7bfcb78be4876b0113127eb9bb1527e6\",\n        },\n        \"pipeline\": \"search_ligand_binder_local_pipeline\",\n        \"target_namespace\": \"target_dict_cfg\",\n        \"target_dictionary\": \"configs/targets/ligand_targets_dict.yaml\",\n        \"lora\": True,\n        \"environment\": {},\n        \"expects_ligand\": True,\n        \"expects_motif\": False,\n        \"default_task\": \"39_7V11_LIGAND\",\n    },\n    \"ame\": {\n        \"artifact_id\": \"complexa-ame\",\n        \"model_id\": \"proteina-complexa-ame-160m-v1\",\n        \"source_uri\": \"hf://nvidia/NV-Proteina-Complexa-AME-160M-v1\",\n        \"source_revision\": \"9743d749a8754080a32fda857d95579dfa4dabae\",\n        \"checkpoint\": {\n            \"name\": \"complexa_ame.ckpt\",\n            \"bytes\": 1792013880,\n            \"sha256\": \"d11319693d024d0427abc356a86350a694a1cb7dceb8db642c8041e5a20a9f7b\",\n        },\n        \"autoencoder\": {\n            \"name\": \"complexa_ame_ae.ckpt\",\n            \"bytes\": 4100197925,\n            \"sha256\": \"63b1358c5459e968628094fdc9a2a6a95ac003606fcf7b1a3a21174458a69734\",\n        },\n        \"pipeline\": \"search_ame_local_pipeline\",\n        \"target_namespace\": \"motif_target_dict_cfg\",\n        \"target_dictionary\": \"configs/design_tasks/ame_dict_v2.yaml\",\n        \"lora\": True,\n        # The AME release is trained against the v2 Complexa architecture; the\n        # upstream pipeline config carries the same value in ``env_vars`` but\n        # only the process environment is read by the architecture switch.\n        \"environment\": {\"USE_V2_COMPLEXA_ARCH\": \"True\"},\n        \"expects_ligand\": True,\n        \"expects_motif\": True,\n        \"default_task\": \"M0024_1nzy_og\",\n    },\n}\n\n# RosettaFold3 is the reward and evaluation folding model for the ligand and AME\n# pipelines.  It is bound (mounted and pointed at) for every variant so the\n# reward path is available, and marker-verified, but it is only *exercised* when\n# a request asks for the upstream default reward model.\nRF3_ARTIFACT = {\n    \"artifact_id\": \"rosettafold3-checkpoint\",\n    \"name\": \"rf3_foundry_01_24_latest_remapped.ckpt\",\n    \"bytes\": 3038876446,\n    \"sha256\": \"364ef592fd8042a9cf4176d045015190f8322f961ccca38d891b20ca578d3bb0\",\n    \"license_id\": \"BSD-3-Clause\",\n    \"role\": \"reward-and-evaluation\",\n}\n\n# The immutable public generations promoted onto the shared reference-data host\n# plane by the ingestion successor's terminal run r20260903b. A generation is\n# named by its own content: the directory name equals the fs2-tree-inventory/v2\n# digest of the tree it holds, so a mount either is that generation or is not.\nHOST_ROOT = \"/mnt/fs2-reference-data/data\"\nGENERATION_ROOT = \"scientific-localization/public/generations\"\nMARKER_NAME = \".fs2-runtime-tree.json\"\nMARKER_SCHEMA = \"fs2-serve.nebius.ai/scientific-localization-generation-marker/v1\"\nINVENTORY_ALGORITHM = \"fs2-tree-inventory/v2\"\n\nGENERATIONS: dict[str, dict[str, Any]] = {\n    \"complexa-protein\": {\n        \"marker_sha256\": \"b84403b26e5ac4acd2ea3203d3ea7936e8ef009a9ac1c19fbcfddd7c40667851\",\n        \"generation\": \"eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536\",\n        \"entry_count\": 2,\n        \"total_bytes\": 7034391160,\n        \"license_id\": \"NVIDIA-Open-Model-License-2024-06\",\n        \"source_uri\": \"hf://nvidia/NV-Proteina-Complexa-Protein-Target-160M-v1\",\n        \"source_revision\": \"ffed199e32612b98ffa04f4640d34d37b137fca5\",\n    },\n    \"complexa-ligand\": {\n        \"marker_sha256\": \"868551c2ec89d8296155ac5e5e0a674205cbc851c301ed58f32014d7fe404177\",\n        \"generation\": \"61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5\",\n        \"entry_count\": 2,\n        \"total_bytes\": 5890739041,\n        \"license_id\": \"NVIDIA-Open-Model-License-2024-06\",\n        \"source_uri\": \"hf://nvidia/NV-Proteina-Complexa-Ligand-Target-160M-v1\",\n        \"source_revision\": \"bc90c8b2c701ceb52d5faef72600b6b5be880244\",\n    },\n    \"complexa-ame\": {\n        \"marker_sha256\": \"18199cf0468000baefa7ed0cb604a2a7c64d0228ddf8d8e5579d6c1e543267db\",\n        \"generation\": \"d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a\",\n        \"entry_count\": 2,\n        \"total_bytes\": 5892211805,\n        \"license_id\": \"NVIDIA-Open-Model-License-2024-06\",\n        \"source_uri\": \"hf://nvidia/NV-Proteina-Complexa-AME-160M-v1\",\n        \"source_revision\": \"9743d749a8754080a32fda857d95579dfa4dabae\",\n    },\n    \"rosettafold3-checkpoint\": {\n        \"marker_sha256\": \"94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822\",\n        \"generation\": \"d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce\",\n        \"entry_count\": 1,\n        \"total_bytes\": 3038876446,\n        \"license_id\": \"BSD-3-Clause\",\n        \"source_uri\": \"https://files.ipd.uw.edu/pub/rf3/\",\n        \"source_revision\": \"foundry-production-b02eed6a-checksum-lock\",\n    },\n}\n\n# Target structures are a real runtime dependency, not incidental image content:\n# a run that loads both checkpoints and then cannot find its target has failed\n# on a missing artifact. They ship inside the pinned upstream source archive, so\n# their public identity is that archive at its pinned revision, and each file is\n# pinned by its own digest and verified before the model is loaded.\nTARGET_DATA = {\n    \"source_uri\": \"https://github.com/NVIDIA-BioNeMo/Proteina-Complexa\",\n    \"source_revision\": SOURCE_REVISION,\n    \"archive_sha256\": \"4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b\",\n    \"license_id\": \"Apache-2.0\",\n    \"binding\": \"baked into the image at /opt/fs2/source/assets and reached through an \"\n    \"image-baked read-only working directory; never a writable .env and never a \"\n    \"symlink created at run time\",\n    \"files\": {\n        \"assets/target_data/bindcraft_targets/PD-L1.pdb\": {\n            \"bytes\": 74614,\n            \"sha256\": \"5e949950d8255ec3bf390b8bf24f5c71c6ac8fc65bc553d7e477563c9599b93e\",\n        },\n        \"assets/target_data/ligand_targets/7v11_ligand_centered.pdb\": {\n            \"bytes\": 4045,\n            \"sha256\": \"ffa26a9b1ed40e7a0cdc4a9f74ce105b965f65d095b66d60b30c8e1cf79fb391\",\n        },\n        \"assets/target_data/ame_input_structures/M0024_1nzy.pdb\": {\n            \"bytes\": 8586,\n            \"sha256\": \"70cff8a74c8fa5628a94a93828e98e9b16651c83927feb038b834e46696372eb\",\n        },\n    },\n}\n\n# The image bakes this directory with a read-only ``assets`` symlink to the\n# source asset root, so upstream's relative ./assets/... target paths resolve\n# from a working directory that is part of the image digest.\nBAKED_WORKDIR = Path(\"/opt/fs2/complexa/workdir\")\n\nSTANDARD_RESIDUES = frozenset(\n    \"\"\"ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP\n    TYR VAL\"\"\".split()\n)\n\n# Consecutive C-alpha atoms in a real protein backbone sit ~3.8 A apart.  A\n# generous envelope still rejects collapsed or exploded coordinate fields.\nCA_MIN_A = 2.5\nCA_MAX_A = 4.6\n\n# A designed chain of this length or more must show real sequence variety.\nMIN_CHAIN_FOR_DIVERSITY = 20\nMIN_DISTINCT_RESIDUES = 5\n\n\ndef _now() -> str:\n    return datetime.now(timezone.utc).isoformat(timespec=\"seconds\").replace(\"+00:00\", \"Z\")\n\n\ndef _sha256(path: Path) -> str:\n    digest = hashlib.sha256()\n    with path.open(\"rb\") as stream:\n        for chunk in iter(lambda: stream.read(4 * 1024 * 1024), b\"\"):\n            digest.update(chunk)\n    return digest.hexdigest()\n\n\ndef _fail(message: str) -> \"RuntimeFailure\":\n    return RuntimeFailure(message)\n\n\nclass RuntimeFailure(Exception):\n    \"\"\"A condition that must terminate the run without a PASS.\"\"\"\n\n\ndef _artifact_root() -> Path:\n    return Path(os.environ.get(\"FS2_ARTIFACT_ROOT\", \"/opt/fs2/artifacts\"))\n\n\n_SAFE_SEGMENT = re.compile(r\"[A-Za-z0-9_][A-Za-z0-9._+-]*\")\n\n\ndef _safe_relative(value: str) -> bool:\n    \"\"\"The plane's own rule for an inventoried entry path.\n\n    No absolute path, no traversal and no leading dot at any depth, which is\n    what keeps the reserved marker name outside the inventory and therefore\n    unforgeable.\n    \"\"\"\n    if not value or value.startswith(\"/\") or len(value) > 1024:\n        return False\n    return all(_SAFE_SEGMENT.fullmatch(segment) for segment in value.split(\"/\"))\n\n\ndef _crc32(path: Path) -> int:\n    value = 0\n    with path.open(\"rb\") as stream:\n        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b\"\"):\n            value = zlib.crc32(chunk, value)\n    return value & 0xFFFFFFFF\n\n\ndef tree_inventory_v2(root: Path) -> tuple[str, int, int, int]:\n    \"\"\"Recompute ``fs2-tree-inventory/v2`` over a mounted generation.\n\n    This is the check that cannot be forged by editing a document: the digest is\n    taken from the bytes actually mounted, and a generation directory is named\n    by that digest, so a mount either is the generation it claims or is not.\n    Returns (digest, file count, total bytes, directory count).\n    \"\"\"\n    rows: list[dict[str, Any]] = []\n    files = total = directories = 0\n    for base, directory_names, file_names in os.walk(root):\n        for name in sorted(directory_names):\n            relative = os.path.relpath(os.path.join(base, name), root)\n            if not _safe_relative(relative):\n                continue\n            rows.append({\"kind\": \"directory\", \"path\": relative})\n            directories += 1\n        for name in sorted(file_names):\n            relative = os.path.relpath(os.path.join(base, name), root)\n            if relative == MARKER_NAME or not _safe_relative(relative):\n                continue\n            entry = Path(base, name)\n            size = entry.stat().st_size\n            rows.append(\n                {\n                    \"bytes\": size,\n                    \"crc32\": f\"{_crc32(entry):08x}\",\n                    \"kind\": \"file\",\n                    \"path\": relative,\n                }\n            )\n            files += 1\n            total += size\n    rows.sort(key=lambda row: row[\"path\"])\n    payload = (json.dumps(rows, separators=(\",\", \":\"), sort_keys=True) + \"\\n\").encode(\"utf-8\")\n    return hashlib.sha256(payload).hexdigest(), files, total, directories\n\n\ndef _marker_sha256(document: dict[str, Any]) -> str:\n    return hashlib.sha256(\n        (json.dumps(document, indent=2, sort_keys=True) + \"\\n\").encode(\"utf-8\")\n    ).hexdigest()\n\n\ndef verify_generation(mount: Path, artifact_id: str) -> dict[str, Any]:\n    \"\"\"Prove a mount is exactly the pinned immutable generation.\n\n    Mirrors the plane's own admission rules: the marker must describe this\n    artifact, this generation, this sub-path, this plane and this licence\n    visibility, its own document digest must match what the promotion receipt\n    published, and the tree recomputed from the mounted bytes must reproduce the\n    generation name. Bytes that are right in the wrong place, under the wrong\n    licence, or measured by the wrong algorithm are still wrong.\n    \"\"\"\n    pinned = GENERATIONS.get(artifact_id)\n    if pinned is None:\n        raise _fail(f\"no generation is pinned for {artifact_id}\")\n    started = time.monotonic()\n\n    marker_path = mount / MARKER_NAME\n    if not marker_path.is_file():\n        raise _fail(f\"{artifact_id} mount carries no {MARKER_NAME}: {mount}\")\n    marker = json.loads(marker_path.read_text(encoding=\"utf-8\"))\n\n    expected_sub_path = f\"{GENERATION_ROOT}/{artifact_id}/sha256/{pinned['generation']}\"\n    checks: list[tuple[str, Any, Any]] = [\n        (\"schema\", marker.get(\"schema\"), MARKER_SCHEMA),\n        (\"artifact_id\", marker.get(\"artifact_id\"), artifact_id),\n        (\"generation\", marker.get(\"generation\"), pinned[\"generation\"]),\n        (\"inventory_sha256\", marker.get(\"inventory_sha256\"), pinned[\"generation\"]),\n        (\"sub_path\", marker.get(\"sub_path\"), expected_sub_path),\n        (\"read_only\", marker.get(\"read_only\"), True),\n        (\"inventory_algorithm\", marker.get(\"inventory_algorithm\"), INVENTORY_ALGORITHM),\n        (\"volume_kind\", marker.get(\"volume_kind\"), \"host-path\"),\n        (\"visibility\", marker.get(\"visibility\"), \"public\"),\n        (\"host_root\", marker.get(\"host_root\"), HOST_ROOT),\n        (\"namespace\", marker.get(\"namespace\"), \"\"),\n        (\"claim\", marker.get(\"claim\"), \"\"),\n        (\"entry_count\", marker.get(\"entry_count\"), pinned[\"entry_count\"]),\n        (\"total_bytes\", marker.get(\"total_bytes\"), pinned[\"total_bytes\"]),\n        (\"license_id\", marker.get(\"license_id\"), pinned[\"license_id\"]),\n        (\"source_uri\", marker.get(\"source_uri\"), pinned[\"source_uri\"]),\n        (\"source_revision\", marker.get(\"source_revision\"), pinned[\"source_revision\"]),\n    ]\n    for field, observed, expected in checks:\n        if observed != expected:\n            raise _fail(\n                f\"{artifact_id} generation marker {field} is {observed!r}, expected {expected!r}\"\n            )\n\n    observed_marker_digest = _marker_sha256(marker)\n    if observed_marker_digest != pinned[\"marker_sha256\"]:\n        raise _fail(\n            f\"{artifact_id} generation marker digest is {observed_marker_digest}, \"\n            f\"and {pinned['marker_sha256']} was published by the promotion receipt\"\n        )\n\n    digest, files, total, directories = tree_inventory_v2(mount)\n    if digest != pinned[\"generation\"]:\n        raise _fail(\n            f\"{artifact_id} mount recomputes to {digest}, \"\n            f\"which is not the pinned generation {pinned['generation']}\"\n        )\n    if files != pinned[\"entry_count\"] or total != pinned[\"total_bytes\"]:\n        raise _fail(\n            f\"{artifact_id} mount holds {files} files and {total} bytes, expected \"\n            f\"{pinned['entry_count']} and {pinned['total_bytes']}\"\n        )\n\n    return {\n        \"artifact_id\": artifact_id,\n        \"mount\": str(mount),\n        \"generation\": pinned[\"generation\"],\n        \"sub_path\": expected_sub_path,\n        \"host_root\": HOST_ROOT,\n        \"volume_kind\": \"host-path\",\n        \"visibility\": \"public\",\n        \"license_id\": pinned[\"license_id\"],\n        \"source_uri\": pinned[\"source_uri\"],\n        \"source_revision\": pinned[\"source_revision\"],\n        \"marker_sha256\": observed_marker_digest,\n        \"inventory_algorithm\": INVENTORY_ALGORITHM,\n        \"recomputed_generation\": digest,\n        \"entry_count\": files,\n        \"total_bytes\": total,\n        \"directory_count\": directories,\n        \"seconds\": round(time.monotonic() - started, 3),\n    }\n\n\ndef verify_target_structure(relative: str) -> dict[str, Any]:\n    \"\"\"Verify one bundled target structure against its pinned identity.\"\"\"\n    pinned = TARGET_DATA[\"files\"].get(relative)\n    if pinned is None:\n        raise _fail(f\"target structure {relative} carries no pinned identity\")\n    path = SOURCE_ROOT / relative\n    record = verify_file(path, pinned, f\"target structure {relative}\", digests=True)\n    record.update(\n        {\n            \"relative_path\": relative,\n            \"source_uri\": TARGET_DATA[\"source_uri\"],\n            \"source_revision\": TARGET_DATA[\"source_revision\"],\n            \"archive_sha256\": TARGET_DATA[\"archive_sha256\"],\n            \"license_id\": TARGET_DATA[\"license_id\"],\n            \"binding\": TARGET_DATA[\"binding\"],\n        }\n    )\n    return record\n\n\ndef verify_file(path: Path, expected: dict[str, Any], label: str, *, digests: bool) -> dict[str, Any]:\n    \"\"\"Verify one artifact marker: presence, exact size, optionally content.\"\"\"\n    record: dict[str, Any] = {\n        \"label\": label,\n        \"path\": str(path),\n        \"expected_bytes\": expected[\"bytes\"],\n        \"expected_sha256\": expected[\"sha256\"],\n        \"digest_verified\": False,\n    }\n    if not path.is_file():\n        raise _fail(f\"{label} is absent: {path}\")\n    size = path.stat().st_size\n    record[\"observed_bytes\"] = size\n    if size != expected[\"bytes\"]:\n        raise _fail(f\"{label} is {size} bytes, expected {expected['bytes']}: {path}\")\n    if digests:\n        started = time.monotonic()\n        observed = _sha256(path)\n        record[\"observed_sha256\"] = observed\n        record[\"digest_seconds\"] = round(time.monotonic() - started, 3)\n        if observed != expected[\"sha256\"]:\n            raise _fail(f\"{label} is sha256:{observed}, expected sha256:{expected['sha256']}\")\n        record[\"digest_verified\"] = True\n    return record\n\n\ndef _load_yaml(path: Path) -> dict[str, Any]:\n    import yaml  # provided by the runtime venv\n\n    value = yaml.safe_load(path.read_text(encoding=\"utf-8\"))\n    if not isinstance(value, dict):\n        raise _fail(f\"expected a YAML mapping: {path}\")\n    return value\n\n\ndef resolve_target(variant: dict[str, Any], task_name: str) -> dict[str, Any]:\n    \"\"\"Resolve a task to an absolute, existing target structure.\n\n    Upstream stores ``target_path`` relative to the repository root.  The value\n    is resolved against the in-image source root so the contract does not\n    depend on the working directory.\n    \"\"\"\n    dictionary = SOURCE_ROOT / variant[\"target_dictionary\"]\n    entries = _load_yaml(dictionary).get(variant[\"target_namespace\"]) or {}\n    if task_name not in entries:\n        available = \", \".join(sorted(entries)[:8])\n        raise _fail(\n            f\"task {task_name!r} is not in {variant['target_namespace']} \"\n            f\"({dictionary}); available include: {available}\"\n        )\n    entry = dict(entries[task_name])\n    relative = entry.get(\"target_path\")\n    if not relative:\n        raise _fail(\n            f\"task {task_name!r} declares no target_path; this contract only \"\n            \"admits tasks whose structure ships with the image\"\n        )\n    resolved = Path(relative)\n    if not resolved.is_absolute():\n        resolved = (SOURCE_ROOT / str(relative).lstrip(\"./\")).resolve()\n    if not resolved.is_file():\n        raise _fail(f\"target structure for {task_name!r} is absent: {resolved}\")\n    ligand = entry.get(\"ligand\")\n    ligands = [ligand] if isinstance(ligand, str) else list(ligand or [])\n    return {\n        \"task_name\": task_name,\n        \"target_path\": str(resolved),\n        \"declared_target_path\": relative,\n        \"binder_length\": entry.get(\"binder_length\"),\n        \"ligand_residues\": [str(item) for item in ligands if item],\n        \"contig_atoms\": entry.get(\"contig_atoms\"),\n    }\n\n\ndef verify_working_directory(work_directory: Path) -> dict[str, Any]:\n    \"\"\"Confirm the image-baked working directory resolves upstream assets.\n\n    Upstream target dictionaries declare ./assets/target_data/..., resolved\n    against the process working directory, and Hydra cannot express an absolute\n    override for them because most task names begin with a digit while its key\n    grammar admits only a leading letter or underscore. The image therefore\n    bakes a working directory holding a read-only assets link to the source\n    asset root, so the binding is part of the image digest. Nothing is created\n    here: a missing or redirected link fails the run rather than being repaired,\n    because repairing it at run time is the mutable side effect this contract\n    exists to avoid.\n    \"\"\"\n    link = work_directory / \"assets\"\n    expected = SOURCE_ROOT / \"assets\"\n    if not work_directory.is_dir():\n        raise _fail(f\"the image-baked working directory is missing: {work_directory}\")\n    if not link.is_symlink():\n        raise _fail(f\"{link} is not the image-baked asset link\")\n    resolved = link.resolve()\n    if resolved != expected.resolve():\n        raise _fail(f\"{link} resolves to {resolved}, expected {expected}\")\n    if not (link / \"target_data\").is_dir():\n        raise _fail(f\"{link}/target_data is not readable\")\n    return {\n        \"working_directory\": str(work_directory),\n        \"asset_link\": str(link),\n        \"resolves_to\": str(resolved),\n        \"created_at_run_time\": False,\n    }\n\n\ndef cuda_preflight() -> dict[str, Any]:\n    \"\"\"Record the device identity this process can actually see.\"\"\"\n    import torch\n\n    if not torch.cuda.is_available():\n        raise _fail(\"CUDA is not available; Proteina-Complexa generation requires a GPU\")\n    index = torch.cuda.current_device()\n    major, minor = torch.cuda.get_device_capability(index)\n    properties = torch.cuda.get_device_properties(index)\n    return {\n        \"available\": True,\n        \"device_count\": torch.cuda.device_count(),\n        \"device_name\": torch.cuda.get_device_name(index),\n        \"compute_capability\": f\"{major}.{minor}\",\n        \"total_memory_bytes\": int(properties.total_memory),\n        \"torch_version\": torch.__version__,\n        \"torch_cuda_version\": torch.version.cuda,\n        \"driver_visible_devices\": os.environ.get(\"CUDA_VISIBLE_DEVICES\"),\n        # Capability-driven, never a device-name allowlist: Hopper is the present\n        # acceptance target but Blackwell and Ada report their own capabilities\n        # and are admitted by the same check.\n        \"architecture_policy\": \"capability-driven; no device-name allowlist\",\n    }\n\n\ndef build_argv(\n    variant_name: str,\n    variant: dict[str, Any],\n    request: dict[str, Any],\n    target: dict[str, Any],\n    artifact_dir: Path,\n    output_root: Path,\n) -> list[str]:\n    task = target[\"task_name\"]\n    argv = [\n        sys.executable,\n        \"-m\",\n        \"proteinfoundation.generate\",\n        f\"--config-path={SOURCE_ROOT / 'configs'}\",\n        f\"--config-name={variant['pipeline']}\",\n        f\"++ckpt_path={artifact_dir}\",\n        f\"++ckpt_name={variant['checkpoint']['name']}\",\n        f\"++autoencoder_ckpt_path={artifact_dir / variant['autoencoder']['name']}\",\n        f\"++generation.task_name={task}\",\n        # No target_path override: Hydra's override grammar rejects key\n        # segments that begin with a digit, and most upstream task names do.\n        # The run directory's ``assets`` symlink is what makes upstream's own\n        # relative target_path resolve. See verify_working_directory().\n        f\"++generation.dataloader.batch_size={request['batch_size']}\",\n        f\"++generation.dataloader.dataset.nres.nsamples={request['samples']}\",\n        f\"++generation.args.nsteps={request['nsteps']}\",\n        f\"++seed={request['seed']}\",\n        f\"++root_path={output_root}\",\n        \"++save_timing=true\",\n        # Hydra must not relocate the process: every path this contract passes\n        # is absolute, and a chdir would only make upstream's relative defaults\n        # resolve somewhere unpredictable.\n        \"hydra.job.chdir=False\",\n        f\"hydra.run.dir={output_root / 'hydra'}\",\n    ]\n    if request[\"reward_model\"] == \"none\":\n        # Isolate the Complexa forward model: the composite reward models pull\n        # AlphaFold2 (protein) or RosettaFold3 (ligand, AME) into the sampling\n        # loop, and a reward failure would be indistinguishable from a Complexa\n        # failure.\n        # Only an assignment, never a delete: the AME pipeline already ships\n        # reward_model: null, and \"~generation.reward_model\" then aborts\n        # composition with \"Could not delete from config\". Assignment composes\n        # cleanly whether the node is a dict or already null.\n        argv += [\n            \"++generation.search.algorithm=single-pass\",\n            \"++generation.reward_model=null\",\n        ]\n    else:\n        argv += [f\"++generation.search.algorithm={request['search_algorithm']}\"]\n    return argv\n\n\n# Upstream emits loguru lines of the form\n# \"2026-09-03 04:36:52.223 | INFO | __main__:validate_checkpoint_paths:117 - ...\"\n_LOG_LINE = re.compile(\n    r\"^(?P<stamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}) \\| \\w+\\s+\\| [^-]+- (?P<message>.*)$\"\n)\n\n\ndef upstream_generation_seconds(output_root: Path) -> float | None:\n    \"\"\"Read upstream's own generation total from the timing CSV it writes.\n\n    This is preferred over the log: upstream emits \"Total generation time\"\n    through a Rich handler that wraps the line and right-aligns the source\n    location, whereas the CSV is machine-readable and written by the same code\n    path that measures it.\n    \"\"\"\n    for path in sorted(output_root.glob(\"timing_*.csv\")):\n        rows = [row for row in path.read_text(encoding=\"utf-8\").splitlines() if row.strip()]\n        if len(rows) < 2:\n            continue\n        header = [column.strip() for column in rows[0].split(\",\")]\n        if \"total_time\" not in header:\n            continue\n        values = rows[1].split(\",\")\n        try:\n            return float(values[header.index(\"total_time\")])\n        except (ValueError, IndexError):\n            continue\n    return None\n\n\n# Upstream emits loguru lines of the form\n# \"2026-09-03 04:36:52.223 | INFO | __main__:validate_checkpoint_paths:117 - ...\"\n_LOG_LINE = re.compile(\n    r\"^(?P<stamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}) \\| \\w+\\s+\\| [^-]+- (?P<message>.*)$\"\n)\n\n# The anchors below are the plain-format lines upstream always emits, in the\n# order it emits them. Note that \"Starting generation job at\" is logged *before*\n# the checkpoint is loaded, so upstream's own total spans model load plus\n# sampling -- it is not the sampling time on its own.\n_ANCHORS = (\n    (\"checkpoint_validated\", \"Checkpoint validated:\"),\n    (\"generation_job_started\", \"Starting generation job at\"),\n    (\"checkpoint_load_started\", \"Using checkpoint \"),\n    (\"lora_reapplied\", \"Re-create LoRA layers\"),\n    (\"model_ready\", \"cfg_gen:\"),\n)\n\n\ndef parse_phases(\n    log_text: str, started_at: float, generation_seconds: float | None = None\n) -> dict[str, Any]:\n    \"\"\"Split the upstream run into phases using its own timestamps.\n\n    ``generation_seconds`` is upstream's measured generation total. Sampling is\n    derived from it by subtracting the observed model-load span, rather than\n    timing sampling directly, because upstream logs no plain-format marker at\n    the moment sampling begins.\n    \"\"\"\n    marks: dict[str, float] = {}\n    for raw in log_text.splitlines():\n        match = _LOG_LINE.match(raw.strip())\n        if not match:\n            continue\n        moment = datetime.strptime(match.group(\"stamp\"), \"%Y-%m-%d %H:%M:%S.%f\")\n        epoch = moment.replace(tzinfo=timezone.utc).timestamp()\n        message = match.group(\"message\")\n        for key, needle in _ANCHORS:\n            if message.startswith(needle) and key not in marks:\n                marks[key] = epoch\n\n    def span(first: str, second: str) -> float | None:\n        if first in marks and second in marks:\n            return round(marks[second] - marks[first], 3)\n        return None\n\n    model_load = span(\"checkpoint_load_started\", \"model_ready\")\n    sampling = None\n    if generation_seconds is not None and model_load is not None:\n        sampling = round(generation_seconds - model_load, 3)\n\n    phases: dict[str, Any] = {\n        \"interpreter_and_import_seconds\": (\n            round(marks[\"checkpoint_validated\"] - started_at, 3)\n            if \"checkpoint_validated\" in marks\n            else None\n        ),\n        \"model_load_seconds\": model_load,\n        \"sampling_seconds\": sampling,\n        # The canonical active-compute phase. Sampling, not the whole job:\n        # upstream's total also covers loading two multi-gigabyte checkpoints.\n        \"compute_seconds\": sampling,\n        \"upstream_reported_generation_seconds\": generation_seconds,\n        \"lora_reapplied\": \"lora_reapplied\" in marks,\n    }\n    if \"lora_reapplied\" in marks:\n        phases[\"checkpoint_load_to_lora_seconds\"] = span(\n            \"checkpoint_load_started\", \"lora_reapplied\"\n        )\n    return phases\n\n\ndef _atoms(pdb_text: str) -> list[str]:\n    return [\n        line\n        for line in pdb_text.splitlines()\n        if line.startswith((\"ATOM\", \"HETATM\")) and len(line) >= 54\n    ]\n\n\ndef _coord(line: str) -> tuple[float, float, float]:\n    return (float(line[30:38]), float(line[38:46]), float(line[46:54]))\n\n\ndef inspect_structure(path: Path) -> dict[str, Any]:\n    \"\"\"Parse one PDB file and summarise what it actually contains.\"\"\"\n    text = path.read_text(encoding=\"utf-8\", errors=\"strict\")\n    atoms = _atoms(text)\n    if not atoms:\n        raise _fail(f\"structure has no parseable ATOM/HETATM records: {path}\")\n    residues: dict[tuple[str, str], str] = {}\n    chains: set[str] = set()\n    ca_by_chain: dict[str, list[tuple[float, float, float]]] = {}\n    residue_names: set[str] = set()\n    for line in atoms:\n        name = line[17:20].strip()\n        chain = line[21:22]\n        key = (chain, line[22:27])\n        residues[key] = name\n        residue_names.add(name)\n        chains.add(chain)\n        coord = _coord(line)\n        if not all(math.isfinite(value) for value in coord):\n            raise _fail(f\"structure contains a non-finite coordinate: {path}\")\n        if line[12:16].strip() == \"CA\":\n            ca_by_chain.setdefault(chain, []).append(coord)\n\n    standard = {key: name for key, name in residues.items() if name in STANDARD_RESIDUES}\n    if not standard:\n        raise _fail(f\"structure contains no standard amino-acid residue: {path}\")\n\n    # Per chain, because the binder pipelines write the target and the designed\n    # binder into one file: a whole-file residue count is the sum of both and\n    # says nothing about the binder's length.\n    per_chain: dict[str, dict[str, int]] = {}\n    kinds: dict[str, set[str]] = {}\n    for (chain, _number), name in residues.items():\n        bucket = per_chain.setdefault(chain, {\"residues\": 0, \"standard\": 0})\n        bucket[\"residues\"] += 1\n        if name in STANDARD_RESIDUES:\n            bucket[\"standard\"] += 1\n            kinds.setdefault(chain, set()).add(name)\n    for chain, bucket in per_chain.items():\n        bucket[\"distinct_standard\"] = len(kinds.get(chain, ()))\n\n    spans: dict[str, Any] = {}\n    for chain, trace in ca_by_chain.items():\n        if len(trace) < 2:\n            continue\n        steps = [\n            math.dist(trace[index], trace[index + 1]) for index in range(len(trace) - 1)\n        ]\n        extent = max(\n            math.dist(trace[i], trace[j])\n            for i in range(0, len(trace), max(1, len(trace) // 12))\n            for j in range(i + 1, len(trace), max(1, len(trace) // 12))\n        )\n        spans[chain] = {\n            \"ca_count\": len(trace),\n            \"min_step_a\": round(min(steps), 3),\n            \"max_step_a\": round(max(steps), 3),\n            \"mean_step_a\": round(sum(steps) / len(steps), 3),\n            \"max_extent_a\": round(extent, 3),\n        }\n        if extent < 1e-3:\n            raise _fail(f\"chain {chain} C-alpha trace is fully degenerate: {path}\")\n\n    return {\n        \"path\": str(path),\n        \"bytes\": path.stat().st_size,\n        \"atom_records\": len(atoms),\n        \"residue_count\": len(residues),\n        \"standard_residue_count\": len(standard),\n        \"chains\": sorted(chains),\n        \"chain_residues\": per_chain,\n        \"residue_names\": sorted(residue_names),\n        \"ca_traces\": spans,\n    }\n\n\ndef validate_backbone(structures: list[dict[str, Any]]) -> list[str]:\n    \"\"\"Flag C-alpha traces whose bond geometry is not protein-like.\"\"\"\n    notes: list[str] = []\n    for structure in structures:\n        for chain, span in structure[\"ca_traces\"].items():\n            if span[\"ca_count\"] < 2:\n                continue\n            if not (CA_MIN_A <= span[\"mean_step_a\"] <= CA_MAX_A):\n                notes.append(\n                    f\"{Path(structure['path']).name} chain {chain} mean C-alpha step \"\n                    f\"{span['mean_step_a']} A is outside {CA_MIN_A}-{CA_MAX_A} A\"\n                )\n    return notes\n\n\ndef validate_sequence_diversity(structures: list[dict[str, Any]]) -> list[str]:\n    \"\"\"Reject a designed chain that collapsed onto one or two residue types.\n\n    Complexa is a design model: a chain of plausible geometry but near-uniform\n    composition (poly-alanine, poly-glycine) is a real failure mode that every\n    geometry check passes.  Only substantial chains are judged, so a short\n    peptide or a ligand-only chain is not penalised.\n    \"\"\"\n    notes: list[str] = []\n    for structure in structures:\n        for chain, counts in structure[\"chain_residues\"].items():\n            if counts[\"standard\"] < MIN_CHAIN_FOR_DIVERSITY:\n                continue\n            distinct = counts[\"distinct_standard\"]\n            if distinct < MIN_DISTINCT_RESIDUES:\n                notes.append(\n                    f\"{Path(structure['path']).name} chain {chain} has \"\n                    f\"{counts['standard']} residues but only {distinct} distinct \"\n                    f\"amino-acid type(s), below the minimum of {MIN_DISTINCT_RESIDUES}\"\n                )\n    return notes\n\n\ndef discover_structures(output_root: Path) -> list[Path]:\n    \"\"\"Find produced PDBs without ever following a symlink out of the tree.\"\"\"\n    found: list[Path] = []\n    for base, directories, files in os.walk(output_root, followlinks=False):\n        directories[:] = [\n            name for name in directories if not Path(base, name).is_symlink()\n        ]\n        found.extend(\n            Path(base, name) for name in files if name.endswith(\".pdb\")\n        )\n    return sorted(found)\n\n\ndef validate_outputs(\n    variant_name: str,\n    variant: dict[str, Any],\n    request: dict[str, Any],\n    target: dict[str, Any],\n    output_root: Path,\n) -> dict[str, Any]:\n    \"\"\"Model-specific semantic validation of the produced artifacts.\"\"\"\n    pdbs = discover_structures(output_root)\n    if not pdbs:\n        raise _fail(f\"generation produced no PDB structure under {output_root}\")\n    structures = [inspect_structure(path) for path in pdbs]\n\n    binder_pdbs = [item for item in structures if \"_binder\" in Path(item[\"path\"]).name]\n    # The ligand and AME pipelines write both a binder-only structure and a\n    # protein+ligand complex; the protein pipeline writes the binder only.\n    complexes = [item for item in structures if item not in binder_pdbs]\n\n    findings: list[str] = validate_backbone(structures)\n    findings += validate_sequence_diversity(structures)\n\n    ligand_hits: list[str] = []\n    if variant[\"expects_ligand\"]:\n        wanted = {name.upper() for name in target[\"ligand_residues\"]}\n        if not wanted:\n            raise _fail(f\"variant {variant_name} expects a ligand but the target declares none\")\n        pool = complexes or structures\n        for structure in pool:\n            present = wanted.intersection(structure[\"residue_names\"])\n            if present:\n                ligand_hits.extend(sorted(present))\n        if not ligand_hits:\n            raise _fail(\n                f\"no produced complex contains any expected ligand residue \"\n                f\"{sorted(wanted)}; got residue names \"\n                f\"{sorted({name for item in pool for name in item['residue_names']})}\"\n            )\n\n    envelope = target.get(\"binder_length\") or []\n    if isinstance(envelope, (int, float)):\n        envelope = [envelope]\n    envelope = [int(value) for value in envelope if value is not None]\n    length_pool = binder_pdbs or structures\n    observed_lengths = [item[\"standard_residue_count\"] for item in length_pool]\n    chain_lengths = {\n        Path(item[\"path\"]).name: {\n            chain: counts[\"standard\"] for chain, counts in item[\"chain_residues\"].items()\n        }\n        for item in length_pool\n    }\n    # A two-element envelope is a real upstream ``[min, max]`` binder-length\n    # range and is enforced.  A single-element envelope is upstream's\n    # ``UniformInt(low=N, high=null)`` shape, whose sampled length is not a\n    # documented bound, so it is recorded rather than enforced.\n    length_notes: list[str] = []\n    if envelope:\n        low = min(envelope)\n        high = max(envelope) if len(envelope) > 1 else None\n        for name, chains in chain_lengths.items():\n            if not any(count > 0 for count in chains.values()):\n                raise _fail(f\"{name} has no standard residues in any chain\")\n            if high is not None:\n                # The designed binder is whichever chain lands in the declared\n                # envelope; the other chain is the supplied target.\n                if not any(low <= count <= high for count in chains.values()):\n                    findings.append(\n                        f\"{name} has no chain within the target binder envelope \"\n                        f\"{low}-{high}; per-chain standard residues {chains}\"\n                    )\n            elif not any(count == low for count in chains.values()):\n                length_notes.append(\n                    f\"{name} has no chain of exactly the declared length {low}; \"\n                    f\"per-chain standard residues {chains}\"\n                )\n\n    rewards = sorted(output_root.glob(\"rewards_*.csv\"))\n    timing = sorted(output_root.glob(\"timing_*.csv\"))\n    if not timing:\n        raise _fail(f\"upstream wrote no timing CSV under {output_root}\")\n\n    reward_rows = 0\n    if rewards:\n        header, *rows = rewards[0].read_text(encoding=\"utf-8\").splitlines()\n        reward_rows = len([row for row in rows if row.strip()])\n        if \"pdb_path\" not in header:\n            raise _fail(f\"rewards CSV has no pdb_path column: {rewards[0]}\")\n\n    if variant_name == \"protein\" and not envelope:\n        raise _fail(\"the protein target declares no binder length envelope\")\n\n    return {\n        \"structure_count\": len(structures),\n        \"binder_structure_count\": len(binder_pdbs),\n        \"complex_structure_count\": len(complexes),\n        \"structures\": structures,\n        \"expected_ligand_residues\": target[\"ligand_residues\"],\n        \"observed_ligand_residues\": sorted(set(ligand_hits)),\n        \"binder_lengths\": observed_lengths,\n        \"chain_lengths\": chain_lengths,\n        \"binder_length_envelope\": envelope,\n        \"rewards_csv\": [str(path) for path in rewards],\n        \"reward_rows\": reward_rows,\n        \"timing_csv\": [str(path) for path in timing],\n        \"geometry_findings\": findings,\n        \"length_notes\": length_notes,\n    }\n\n\ndef normalise_request(raw: dict[str, Any]) -> dict[str, Any]:\n    if raw.get(\"schema\") not in (None, SCHEMA_REQUEST):\n        raise _fail(f\"unsupported request schema: {raw.get('schema')}\")\n    variant_name = raw.get(\"variant\")\n    if variant_name not in VARIANTS:\n        raise _fail(f\"variant must be one of {sorted(VARIANTS)}; got {variant_name!r}\")\n    variant = VARIANTS[variant_name]\n    reward = raw.get(\"reward_model\", \"none\")\n    if reward not in (\"none\", \"upstream-default\"):\n        raise _fail(\"reward_model must be 'none' or 'upstream-default'\")\n    algorithm = raw.get(\"search_algorithm\", \"single-pass\")\n    if reward == \"none\" and algorithm != \"single-pass\":\n        raise _fail(\"search_algorithm must be 'single-pass' when reward_model is 'none'\")\n\n    def positive(key: str, default: int) -> int:\n        value = int(raw.get(key, default))\n        if value < 1:\n            raise _fail(f\"{key} must be >= 1; got {value}\")\n        return value\n\n    return {\n        \"run_id\": str(raw.get(\"run_id\") or f\"complexa-{variant_name}-{int(time.time())}\"),\n        \"variant\": variant_name,\n        \"task_name\": str(raw.get(\"task_name\") or variant[\"default_task\"]),\n        \"samples\": positive(\"samples\", 1),\n        \"batch_size\": positive(\"batch_size\", 1),\n        \"nsteps\": positive(\"nsteps\", 400),\n        \"seed\": int(raw.get(\"seed\", 20260903)),\n        \"reward_model\": reward,\n        \"search_algorithm\": \"single-pass\" if reward == \"none\" else algorithm,\n        \"verify_content_digests\": bool(raw.get(\"verify_content_digests\", False)),\n    }\n\n\ndef describe() -> dict[str, Any]:\n    return {\n        \"schema\": \"fs2-serve.nebius.ai/proteina-complexa-runtime-descriptor/v1\",\n        \"backend_id\": BACKEND_ID,\n        \"model_id\": MODEL_ID,\n        \"source_revision\": SOURCE_REVISION,\n        \"request_schema\": SCHEMA_REQUEST,\n        \"result_schema\": SCHEMA_RESULT,\n        \"variants\": {\n            name: {\n                \"artifact_id\": spec[\"artifact_id\"],\n                \"model_id\": spec[\"model_id\"],\n                \"checkpoint\": spec[\"checkpoint\"][\"name\"],\n                \"autoencoder\": spec[\"autoencoder\"][\"name\"],\n                \"pipeline\": spec[\"pipeline\"],\n                \"lora\": spec[\"lora\"],\n                \"environment\": spec[\"environment\"],\n                \"default_task\": spec[\"default_task\"],\n                \"expects_ligand\": spec[\"expects_ligand\"],\n                \"expects_motif\": spec[\"expects_motif\"],\n            }\n            for name, spec in VARIANTS.items()\n        },\n        \"shared_artifacts\": [RF3_ARTIFACT],\n        \"generations\": {\n            artifact_id: {\n                \"generation\": pinned[\"generation\"],\n                \"marker_sha256\": pinned[\"marker_sha256\"],\n                \"sub_path\": f\"{GENERATION_ROOT}/{artifact_id}/sha256/{pinned['generation']}\",\n                \"host_root\": HOST_ROOT,\n                \"volume_kind\": \"host-path\",\n                \"visibility\": \"public\",\n                \"license_id\": pinned[\"license_id\"],\n                \"entry_count\": pinned[\"entry_count\"],\n                \"total_bytes\": pinned[\"total_bytes\"],\n            }\n            for artifact_id, pinned in GENERATIONS.items()\n        },\n        \"target_data\": TARGET_DATA,\n        \"working_directory\": str(BAKED_WORKDIR),\n        \"reward_models\": {\n            \"protein\": \"AlphaFold2 through ColabDesign, bound by AF2_DIR\",\n            \"ligand\": \"RosettaFold3, bound by RF3_CKPT_PATH and RF3_EXEC_PATH\",\n            \"ame\": \"RosettaFold3, bound by RF3_CKPT_PATH and RF3_EXEC_PATH\",\n        },\n        \"gpu_snapshot\": {\n            \"captured\": False,\n            \"restored\": False,\n            \"reason\": \"no device snapshot mechanism is used by this runtime\",\n        },\n    }\n\n\ndef run(arguments: argparse.Namespace) -> int:\n    wall_started = time.time()\n    started_monotonic = time.monotonic()\n    request = normalise_request(json.loads(Path(arguments.request).read_text(encoding=\"utf-8\")))\n    variant_name = request[\"variant\"]\n    variant = VARIANTS[variant_name]\n\n    output_root = Path(arguments.output_root).resolve()\n    output_root.mkdir(parents=True, exist_ok=True)\n    upstream_log = output_root / \"upstream.log\"\n    result_path = output_root / \"result.json\"\n\n    result: dict[str, Any] = {\n        \"schema\": SCHEMA_RESULT,\n        \"backend_id\": BACKEND_ID,\n        \"model_id\": MODEL_ID,\n        \"source_revision\": SOURCE_REVISION,\n        \"run_id\": request[\"run_id\"],\n        \"variant\": variant_name,\n        \"request\": request,\n        \"started_at\": _now(),\n        \"terminal_state\": \"FAILED\",\n        \"gpu_snapshot\": describe()[\"gpu_snapshot\"],\n        \"cache_level\": arguments.cache_level,\n    }\n\n    try:\n        artifact_dir = Path(arguments.artifact_dir or (_artifact_root() / variant[\"artifact_id\"]))\n        phase_started = time.monotonic()\n\n        # The mount must be the pinned immutable generation before anything else\n        # happens: marker, plane, licence, document digest, and a tree digest\n        # recomputed from the mounted bytes.\n        generation = verify_generation(artifact_dir, variant[\"artifact_id\"])\n\n        markers = [\n            verify_file(\n                artifact_dir / variant[\"checkpoint\"][\"name\"],\n                variant[\"checkpoint\"],\n                f\"{variant_name} score checkpoint\",\n                digests=request[\"verify_content_digests\"],\n            ),\n            verify_file(\n                artifact_dir / variant[\"autoencoder\"][\"name\"],\n                variant[\"autoencoder\"],\n                f\"{variant_name} partial autoencoder\",\n                digests=request[\"verify_content_digests\"],\n            ),\n        ]\n\n        rf3_root = Path(\n            os.environ.get(\"FS2_RF3_ROOT\", str(_artifact_root() / \"rosettafold3-checkpoint\"))\n        )\n        rf3_path = rf3_root / RF3_ARTIFACT[\"name\"]\n        rf3_required = request[\"reward_model\"] == \"upstream-default\" and variant_name in (\n            \"ligand\",\n            \"ame\",\n        )\n        if rf3_root.is_dir() and (rf3_root / MARKER_NAME).is_file():\n            rf3_record: dict[str, Any] = verify_generation(rf3_root, \"rosettafold3-checkpoint\")\n            rf3_record.update(\n                verify_file(\n                    rf3_path,\n                    RF3_ARTIFACT,\n                    \"rosettafold3 checkpoint\",\n                    digests=request[\"verify_content_digests\"],\n                )\n            )\n            rf3_record[\"bound\"] = True\n            rf3_record[\"exercised\"] = rf3_required\n            rf3_record[\"role\"] = RF3_ARTIFACT[\"role\"]\n        else:\n            rf3_record = {\n                \"label\": \"rosettafold3 checkpoint\",\n                \"path\": str(rf3_path),\n                \"bound\": False,\n                \"exercised\": False,\n                \"role\": RF3_ARTIFACT[\"role\"],\n                \"note\": \"no RosettaFold3 generation is mounted for this run\",\n            }\n            if rf3_required:\n                raise _fail(\n                    \"this request asks for the upstream default reward model, which for \"\n                    f\"the {variant_name} pipeline is RosettaFold3, but no RosettaFold3 \"\n                    f\"generation is mounted at {rf3_root}\"\n                )\n\n        result[\"artifact_verification\"] = {\n            \"artifact_dir\": str(artifact_dir),\n            \"generation\": generation,\n            \"markers\": markers,\n            \"rosettafold3\": rf3_record,\n            \"seconds\": round(time.monotonic() - phase_started, 3),\n            \"content_digests_verified\": request[\"verify_content_digests\"],\n        }\n\n        result[\"cuda\"] = cuda_preflight()\n        target = resolve_target(variant, request[\"task_name\"])\n        relative_target = os.path.relpath(target[\"target_path\"], SOURCE_ROOT)\n        result[\"target\"] = {**target, \"identity\": verify_target_structure(relative_target)}\n        work_root = Path(arguments.work_dir)\n        result[\"working_directory\"] = verify_working_directory(work_root)\n\n        environment = dict(os.environ)\n        environment.update(variant[\"environment\"])\n        environment.setdefault(\"DATA_PATH\", str(SOURCE_ROOT / \"assets\"))\n        environment.setdefault(\"RF3_EXEC_PATH\", \"/opt/venv/bin/rf3\")\n        if rf3_record.get(\"bound\"):\n            environment[\"RF3_CKPT_PATH\"] = str(rf3_path)\n\n        argv = build_argv(\n            variant_name, variant, request, target, artifact_dir, output_root\n        )\n        result[\"argv\"] = argv\n        result[\"environment_overrides\"] = {\n            key: environment[key]\n            for key in sorted(set(variant[\"environment\"]) | {\"DATA_PATH\", \"RF3_EXEC_PATH\", \"RF3_CKPT_PATH\"})\n            if key in environment\n        }\n\n        upstream_started_wall = time.time()\n        upstream_started = time.monotonic()\n        with upstream_log.open(\"wb\") as sink:\n            process = subprocess.Popen(\n                argv,\n                cwd=str(work_root),\n                env=environment,\n                stdout=subprocess.PIPE,\n                stderr=subprocess.STDOUT,\n            )\n            assert process.stdout is not None\n            for chunk in iter(lambda: process.stdout.read(65536), b\"\"):\n                sink.write(chunk)\n                sink.flush()\n                sys.stdout.buffer.write(chunk)\n                sys.stdout.buffer.flush()\n            exit_code = process.wait()\n        upstream_seconds = round(time.monotonic() - upstream_started, 3)\n\n        log_text = upstream_log.read_text(encoding=\"utf-8\", errors=\"replace\")\n        phases = parse_phases(\n            log_text, upstream_started_wall, upstream_generation_seconds(output_root)\n        )\n        phases[\"upstream_process_seconds\"] = upstream_seconds\n        result[\"phases\"] = phases\n        result[\"upstream_exit_code\"] = exit_code\n        result[\"cuda_used_by_upstream\"] = \"GPU available: True (cuda), used: True\" in log_text\n\n        # Terminal PASS is only reachable after upstream exits zero.\n        if exit_code != 0:\n            raise _fail(f\"upstream generation exited {exit_code}\")\n        if not result[\"cuda_used_by_upstream\"]:\n            raise _fail(\"upstream did not report CUDA use; refusing to call this a GPU run\")\n        if variant[\"lora\"] and not phases.get(\"lora_reapplied\"):\n            raise _fail(\n                f\"variant {variant_name} ships LoRA adapters but upstream never \"\n                \"re-created and reloaded them\"\n            )\n        if not variant[\"lora\"] and phases.get(\"lora_reapplied\"):\n            raise _fail(\n                f\"variant {variant_name} must not carry LoRA adapters but upstream re-applied them\"\n            )\n\n        result[\"validation\"] = validate_outputs(\n            variant_name, variant, request, target, output_root\n        )\n        if result[\"validation\"][\"geometry_findings\"]:\n            raise _fail(\n                \"semantic validation findings: \"\n                + \"; \".join(result[\"validation\"][\"geometry_findings\"])\n            )\n\n        result[\"terminal_state\"] = \"PASS\"\n        return 0\n    except RuntimeFailure as failure:\n        result[\"failure\"] = str(failure)\n        return 1\n    except Exception as unexpected:  # noqa: BLE001 - recorded, then re-raised as failure\n        result[\"failure\"] = f\"{type(unexpected).__name__}: {unexpected}\"\n        return 1\n    finally:\n        result[\"finished_at\"] = _now()\n        result[\"wall_seconds\"] = round(time.time() - wall_started, 3)\n        result[\"entrypoint_seconds\"] = round(time.monotonic() - started_monotonic, 3)\n        result_path.write_text(json.dumps(result, indent=2, sort_keys=True) + \"\\n\", encoding=\"utf-8\")\n        print(\n            f\"[complexa-batch] {result['variant']} {result['terminal_state']} \"\n            f\"-> {result_path}\",\n            flush=True,\n        )\n\n\ndef main(argv: list[str] | None = None) -> int:\n    parser = argparse.ArgumentParser(description=__doc__)\n    sub = parser.add_subparsers(dest=\"command\", required=True)\n\n    sub.add_parser(\"describe\", help=\"print the runtime descriptor and exit\")\n\n    runner = sub.add_parser(\"run\", help=\"execute one Complexa generation request\")\n    runner.add_argument(\"--request\", required=True, help=\"path to the request JSON\")\n    runner.add_argument(\"--output-root\", required=True, help=\"directory for artifacts\")\n    runner.add_argument(\n        \"--artifact-dir\",\n        default=None,\n        help=\"override the checkpoint-pair directory (defaults to FS2_ARTIFACT_ROOT/<artifact id>)\",\n    )\n    runner.add_argument(\n        \"--work-dir\",\n        default=str(BAKED_WORKDIR),\n        help=\"the image-baked working directory that resolves relative asset \"\n        \"paths; it is read-only and outside the output root\",\n    )\n    runner.add_argument(\n        \"--cache-level\",\n        default=\"unknown\",\n        choices=[\"cold\", \"image-local\", \"artifact-local\", \"warm\", \"unknown\"],\n        help=\"truthful cache level of this run, supplied by the caller\",\n    )\n\n    arguments = parser.parse_args(argv)\n    if arguments.command == \"describe\":\n        print(json.dumps(describe(), indent=2, sort_keys=True))\n        return 0\n    return run(arguments)\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
       }
     },
     {
       "apiVersion": "batch/v1",
       "kind": "Job",
       "metadata": {
-        "name": "fs2-cxq-a1-protein",
+        "name": "fs2-cxq-promote-p1-protein",
         "namespace": "fs2-academic-poc",
         "labels": {
           "fs2.nebius.ai/owner-task": "fs2-complexa-final-h100-qualification-r20260903",
@@ -91,6 +92,34 @@
           },
           "spec": {
             "restartPolicy": "Never",
+            "initContainers": [
+              {
+                "name": "prepare-workdir",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+                "imagePullPolicy": "IfNotPresent",
+                "command": [
+                  "python",
+                  "-c",
+                  "import os; os.symlink('/opt/fs2/source/assets', '/workdir/assets')"
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "cpu": "1",
+                    "memory": "512Mi"
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "workdir",
+                    "mountPath": "/workdir"
+                  }
+                ]
+              }
+            ],
             "securityContext": {
               "fsGroup": 10001,
               "fsGroupChangePolicy": "OnRootMismatch",
@@ -113,7 +142,7 @@
             "containers": [
               {
                 "name": "complexa",
-                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
                 "imagePullPolicy": "IfNotPresent",
                 "workingDir": "/workspace",
                 "command": [
@@ -125,7 +154,7 @@
                   "--output-root",
                   "/workspace/protein",
                   "--cache-level",
-                  "cold"
+                  "image-local"
                 ],
                 "env": [
                   {
@@ -200,13 +229,23 @@
                     "readOnly": true
                   },
                   {
+                    "name": "contract",
+                    "mountPath": "/opt/fs2/complexa/runtime_entrypoint.py",
+                    "subPath": "runtime_entrypoint.py",
+                    "readOnly": true
+                  },
+                  {
                     "name": "outputs",
                     "mountPath": "/workspace",
-                    "subPath": "fs2-cxq-a1"
+                    "subPath": "fs2-cxq-promote-p1"
                   },
                   {
                     "name": "cache",
                     "mountPath": "/tmp"
+                  },
+                  {
+                    "name": "workdir",
+                    "mountPath": "/opt/fs2/complexa/workdir"
                   }
                 ]
               }
@@ -228,7 +267,7 @@
               {
                 "name": "contract",
                 "configMap": {
-                  "name": "fs2-cxq-a1-contract",
+                  "name": "fs2-cxq-promote-p1-contract",
                   "defaultMode": 365
                 }
               },
@@ -236,6 +275,12 @@
                 "name": "cache",
                 "emptyDir": {
                   "sizeLimit": "32Gi"
+                }
+              },
+              {
+                "name": "workdir",
+                "emptyDir": {
+                  "sizeLimit": "64Mi"
                 }
               }
             ]
@@ -247,7 +292,7 @@
       "apiVersion": "batch/v1",
       "kind": "Job",
       "metadata": {
-        "name": "fs2-cxq-a1-ligand",
+        "name": "fs2-cxq-promote-p1-ligand",
         "namespace": "fs2-academic-poc",
         "labels": {
           "fs2.nebius.ai/owner-task": "fs2-complexa-final-h100-qualification-r20260903",
@@ -267,6 +312,34 @@
           },
           "spec": {
             "restartPolicy": "Never",
+            "initContainers": [
+              {
+                "name": "prepare-workdir",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+                "imagePullPolicy": "IfNotPresent",
+                "command": [
+                  "python",
+                  "-c",
+                  "import os; os.symlink('/opt/fs2/source/assets', '/workdir/assets')"
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "cpu": "1",
+                    "memory": "512Mi"
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "workdir",
+                    "mountPath": "/workdir"
+                  }
+                ]
+              }
+            ],
             "securityContext": {
               "fsGroup": 10001,
               "fsGroupChangePolicy": "OnRootMismatch",
@@ -289,7 +362,7 @@
             "containers": [
               {
                 "name": "complexa",
-                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
                 "imagePullPolicy": "IfNotPresent",
                 "workingDir": "/workspace",
                 "command": [
@@ -301,7 +374,7 @@
                   "--output-root",
                   "/workspace/ligand",
                   "--cache-level",
-                  "cold"
+                  "image-local"
                 ],
                 "env": [
                   {
@@ -376,13 +449,23 @@
                     "readOnly": true
                   },
                   {
+                    "name": "contract",
+                    "mountPath": "/opt/fs2/complexa/runtime_entrypoint.py",
+                    "subPath": "runtime_entrypoint.py",
+                    "readOnly": true
+                  },
+                  {
                     "name": "outputs",
                     "mountPath": "/workspace",
-                    "subPath": "fs2-cxq-a1"
+                    "subPath": "fs2-cxq-promote-p1"
                   },
                   {
                     "name": "cache",
                     "mountPath": "/tmp"
+                  },
+                  {
+                    "name": "workdir",
+                    "mountPath": "/opt/fs2/complexa/workdir"
                   }
                 ]
               }
@@ -404,7 +487,7 @@
               {
                 "name": "contract",
                 "configMap": {
-                  "name": "fs2-cxq-a1-contract",
+                  "name": "fs2-cxq-promote-p1-contract",
                   "defaultMode": 365
                 }
               },
@@ -412,6 +495,12 @@
                 "name": "cache",
                 "emptyDir": {
                   "sizeLimit": "32Gi"
+                }
+              },
+              {
+                "name": "workdir",
+                "emptyDir": {
+                  "sizeLimit": "64Mi"
                 }
               }
             ]
@@ -423,7 +512,7 @@
       "apiVersion": "batch/v1",
       "kind": "Job",
       "metadata": {
-        "name": "fs2-cxq-a1-ame",
+        "name": "fs2-cxq-promote-p1-ame",
         "namespace": "fs2-academic-poc",
         "labels": {
           "fs2.nebius.ai/owner-task": "fs2-complexa-final-h100-qualification-r20260903",
@@ -443,6 +532,34 @@
           },
           "spec": {
             "restartPolicy": "Never",
+            "initContainers": [
+              {
+                "name": "prepare-workdir",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+                "imagePullPolicy": "IfNotPresent",
+                "command": [
+                  "python",
+                  "-c",
+                  "import os; os.symlink('/opt/fs2/source/assets', '/workdir/assets')"
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "cpu": "1",
+                    "memory": "512Mi"
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "workdir",
+                    "mountPath": "/workdir"
+                  }
+                ]
+              }
+            ],
             "securityContext": {
               "fsGroup": 10001,
               "fsGroupChangePolicy": "OnRootMismatch",
@@ -465,7 +582,7 @@
             "containers": [
               {
                 "name": "complexa",
-                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
                 "imagePullPolicy": "IfNotPresent",
                 "workingDir": "/workspace",
                 "command": [
@@ -477,7 +594,7 @@
                   "--output-root",
                   "/workspace/ame",
                   "--cache-level",
-                  "cold"
+                  "image-local"
                 ],
                 "env": [
                   {
@@ -552,13 +669,23 @@
                     "readOnly": true
                   },
                   {
+                    "name": "contract",
+                    "mountPath": "/opt/fs2/complexa/runtime_entrypoint.py",
+                    "subPath": "runtime_entrypoint.py",
+                    "readOnly": true
+                  },
+                  {
                     "name": "outputs",
                     "mountPath": "/workspace",
-                    "subPath": "fs2-cxq-a1"
+                    "subPath": "fs2-cxq-promote-p1"
                   },
                   {
                     "name": "cache",
                     "mountPath": "/tmp"
+                  },
+                  {
+                    "name": "workdir",
+                    "mountPath": "/opt/fs2/complexa/workdir"
                   }
                 ]
               }
@@ -580,7 +707,7 @@
               {
                 "name": "contract",
                 "configMap": {
-                  "name": "fs2-cxq-a1-contract",
+                  "name": "fs2-cxq-promote-p1-contract",
                   "defaultMode": 365
                 }
               },
@@ -588,6 +715,12 @@
                 "name": "cache",
                 "emptyDir": {
                   "sizeLimit": "32Gi"
+                }
+              },
+              {
+                "name": "workdir",
+                "emptyDir": {
+                  "sizeLimit": "64Mi"
                 }
               }
             ]

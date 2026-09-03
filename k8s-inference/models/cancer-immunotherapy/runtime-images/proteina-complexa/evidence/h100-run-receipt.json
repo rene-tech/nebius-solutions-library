@@ -2,7 +2,7 @@
   "schema": "fs2.nebius.ai/proteina-complexa-h100-run-receipt/v1",
   "owner_task": "fs2-complexa-final-h100-qualification-r20260903",
   "model_id": "proteina-complexa",
-  "collected_at": "2026-09-03T06:29:10Z",
+  "collected_at": "2026-09-03T13:53:21Z",
   "source": {
     "repository": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
     "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
@@ -10,29 +10,33 @@
     "equivalence": "equivalent: 632/632 files match"
   },
   "image": {
-    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
-    "published_digest": "sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
-    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd-batch-v1",
+    "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+    "published_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd-ptxas-v1",
     "provenance": {
-      "mode": "slsa-provenance-max-attached-at-push",
-      "vcs_revision": "cb8d6bea1bd15ae4cd68f588e718c14333acbac2",
-      "requirement": "the attached SLSA provenance must name the exact clean commit of this repository that carries these build inputs; a dirty tree or an uncommitted build input invalidates the publication"
+      "mode": "immutable-registry-digest-plus-oci-source-revision-label",
+      "vcs_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+      "image_revision_label": "54058860d43444c7289873f77d3e50b5b02348cd",
+      "oci_referrers": 0,
+      "requirement": "the immutable registry digest must carry org.opencontainers.image.revision=54058860d43444c7289873f77d3e50b5b02348cd and its /opt/fs2/source tree must remain byte-equivalent to the pinned archive; this image has no attached OCI referrer, so no SLSA claim is made"
     },
     "entrypoint_sha256": "81cf6cb493cc37dfc2cd04753e18ef97f72b37f4094526aa76a5aa0a8f14093f"
   },
   "cluster": {
     "context": "k8s-inference-h100",
+    "tenant_sha256": "sha256:dc08b68fb449f950eeff645e6ad8d94ef7ee74ff48b1fb7f0519aef2dd75d5bf",
     "parent_project": "project-e00rene",
     "region": "eu-north1",
-    "namespace": "fs2-academic-poc",
-    "capacity_choice": "existing capacity-block H100 nodes; no new or preemptible capacity was created because the predecessor Jobs were already complete and this successor only collected their evidence",
-    "tenant_sha256": "sha256:dc08b68fb449f950eeff645e6ad8d94ef7ee74ff48b1fb7f0519aef2dd75d5bf",
     "cluster_name_sha256": "sha256:5edaaf892bc9b5969ab5cd93b4b2beec36397d77991afe355085451f33cc0c18",
-    "kubeconfig_note": "the plain resource names are recorded in the task card, not in the public export; see tests/test_public_export.py"
+    "namespace": "fs2-academic-poc",
+    "kubeconfig_note": "the plain resource names are recorded in the task card, not in the public export; see tests/test_public_export.py",
+    "capacity_choice": "existing capacity-block H100 node; no preemptible capacity was created because an otherwise-free task-safe H100 allocation was already available"
   },
   "execution_plan": {
     "path": "qualification/generated-plan.json",
-    "sha256": "7012ee66c058206a20e747e5e2bb971e0a897a49cc23475a6193dcb3de3307dd",
+    "sha256": "7ac8d3dca672e7db121559aad5acb368ba08281f4d6a7f694b098705c08327ac",
+    "submission_input_sha256": "850505c65fd1ce179882bcfe74343c0fc019f26c4ae926d31a986b9c097515cf",
+    "reconciliation": "the checked-in plan includes the shell-free scratch-workdir binding proven by the live Job objects; the submission input was rendered before that live-discovered path requirement was folded back into render_plan.py",
     "shell_free": true
   },
   "artifact_delivery": {
@@ -87,7 +91,7 @@
       "variant": "protein",
       "task_name": "02_PDL1",
       "target_structure": "/opt/fs2/source/assets/target_data/bindcraft_targets/PD-L1.pdb",
-      "run_id": "fs2-cxq-a1-protein",
+      "run_id": "fs2-cxq-promote-p1-protein",
       "terminal_state": "PASS",
       "upstream_exit_code": 0,
       "cuda_used_by_upstream": true,
@@ -106,18 +110,17 @@
         "capacity_source": "capacity-block",
         "instance_type": "gpu-h100-sxm",
         "driver_version": "580.159.04-1ubuntu1",
-        "allocatable_gpu": "8",
-        "resource_name_sha256": "sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8"
+        "allocatable_gpu": "8"
       },
       "kubernetes_resources": {
-        "job": "fs2-cxq-a1-protein",
-        "job_uid": "7be1467b-26a4-4e2d-be74-148134e8abe1",
-        "pod": "fs2-cxq-a1-protein-v45gb",
-        "pod_uid": "73c8e959-b68a-46fe-a322-d4473032c6c9"
+        "job": "fs2-cxq-promote-p1-protein",
+        "job_uid": "f1379e17-7851-44c3-8545-deccf0314986",
+        "pod": "fs2-cxq-promote-p1-protein-jx6v2",
+        "pod_uid": "827ef8e8-a218-4066-890b-19da4eab0fe8"
       },
-      "container_id": "containerd://24cadde6d851ef3c27194ea81cd2cf1141b80eee7c59ee9284b3e75514cdbf1f",
-      "image": "sha256:f67b474f24484a69cc1b202737865fe0cb4c130693b9b1b534de27d20c5c7d52",
-      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+      "container_id": "containerd://8e6ff82f2c9b1a0e1a1cc422fe3423fb59045b33e592abf260f352db44efefd0",
+      "image": "sha256:b455d68551fec946c4d56f3d12adf80a5e0e89118a4526ed0dc6d61944d7d462",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
       "checkpoint_pair": [
         {
           "label": "protein score checkpoint",
@@ -125,7 +128,7 @@
           "bytes": 2934289381,
           "sha256": "589db1741f29838c7961386f6b873087238c72682e56189b89e0ae02610c19e9",
           "content_digest_verified": true,
-          "digest_seconds": 2.126
+          "digest_seconds": 2.155
         },
         {
           "label": "protein partial autoencoder",
@@ -133,13 +136,13 @@
           "bytes": 4100101779,
           "sha256": "35f8865efd269995eeaf1670e1c1085acfe2988c40abdeda8e09a0e15eb40816",
           "content_digest_verified": true,
-          "digest_seconds": 3.009
+          "digest_seconds": 2.984
         }
       ],
       "rosettafold3": {
         "artifact_id": "rosettafold3-checkpoint",
         "bound": true,
-        "digest_seconds": 2.321,
+        "digest_seconds": 2.264,
         "digest_verified": true,
         "directory_count": 0,
         "entry_count": 1,
@@ -158,7 +161,7 @@
         "path": "/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt",
         "recomputed_generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
         "role": "reward-and-evaluation",
-        "seconds": 1.086,
+        "seconds": 1.103,
         "source_revision": "foundry-production-b02eed6a-checksum-lock",
         "source_uri": "https://files.ipd.uw.edu/pub/rf3/",
         "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
@@ -166,40 +169,48 @@
         "visibility": "public",
         "volume_kind": "host-path"
       },
-      "artifact_verification_seconds": 10.911,
+      "artifact_verification_seconds": 11.025,
       "phases": {
-        "compute_seconds": 12.328,
-        "interpreter_and_import_seconds": 12.466,
+        "compute_seconds": 12.407,
+        "interpreter_and_import_seconds": 12.49,
         "lora_reapplied": false,
-        "model_load_seconds": 8.232,
-        "sampling_seconds": 12.328,
-        "upstream_process_seconds": 34.632,
-        "upstream_reported_generation_seconds": 20.56
+        "model_load_seconds": 8.743,
+        "sampling_seconds": 12.407,
+        "upstream_process_seconds": 35.223,
+        "upstream_reported_generation_seconds": 21.15
       },
       "kubernetes_timings": {
-        "job_created_at": "2026-09-03T05:57:47Z",
-        "container_started_at": "2026-09-03T05:59:32Z",
-        "container_finished_at": "2026-09-03T06:00:19Z",
-        "schedule_to_container_start_seconds": 105.0,
-        "container_runtime_seconds": 47.0,
-        "schedule_to_semantic_complete_seconds": 152.0
+        "job_created_at": "2026-09-03T13:39:56Z",
+        "container_started_at": "2026-09-03T13:40:01Z",
+        "container_finished_at": "2026-09-03T13:40:49Z",
+        "schedule_to_container_start_seconds": 5.0,
+        "container_runtime_seconds": 48.0,
+        "schedule_to_semantic_complete_seconds": 53.0
       },
       "image_phase": {
-        "already_present_on_node": false,
-        "pulled_during_this_run": true,
-        "observed_cache_level": "cold",
+        "already_present_on_node": true,
+        "pulled_during_this_run": false,
+        "observed_cache_level": "image-local",
         "events": [
           {
             "reason": "Scheduled",
-            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-a1-protein-v45gb to sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8"
-          },
-          {
-            "reason": "Pulling",
-            "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23\""
+            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-promote-p1-protein-jx6v2 to sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8"
           },
           {
             "reason": "Pulled",
-            "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23\" in 1m34.821s (1m34.821s including waiting). Image size: 4372295394 bytes."
+            "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca\" already present on machine and can be accessed by the pod"
+          },
+          {
+            "reason": "Created",
+            "message": "Container created"
+          },
+          {
+            "reason": "Started",
+            "message": "Container started"
+          },
+          {
+            "reason": "Pulled",
+            "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca\" already present on machine and can be accessed by the pod"
           },
           {
             "reason": "Created",
@@ -211,14 +222,14 @@
           }
         ]
       },
-      "cache_level": "cold",
+      "cache_level": "image-local",
       "asset_link": null,
       "produced": {
         "structures": 1,
         "chain_lengths": {
-          "job_0_n_243_id_0_single_orig0.pdb": {
+          "job_0_n_217_id_0_single_orig0.pdb": {
             "A": 115,
-            "B": 128
+            "B": 102
           }
         },
         "observed_ligand_residues": [],
@@ -246,29 +257,29 @@
           "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         },
         {
-          "path": "job_0_n_243_id_0_single_orig0/job_0_n_243_id_0_single_orig0.pdb",
-          "bytes": 156333,
-          "sha256": "dbc355ee84b656a3241c3e30eb40035188f0f410b545a801fab2816ab5104c61"
+          "path": "job_0_n_217_id_0_single_orig0/job_0_n_217_id_0_single_orig0.pdb",
+          "bytes": 139161,
+          "sha256": "40544e59b78c78e6350ac9fe0df44a24d5fdb4bcd853751e2018e1473ec0d838"
         },
         {
           "path": "result.json",
-          "bytes": 9930,
-          "sha256": "2979482b007d34a1d914730a9b8689498fd3f83b42637913629fe0668dfb3736"
+          "bytes": 9950,
+          "sha256": "c61e99a3bfa6c01fb47e39da64bfefd3184d1ebd865d58ca2ec580a967744c40"
         },
         {
           "path": "rewards_search_binder_local_pipeline_0.csv",
-          "bytes": 800,
-          "sha256": "411f62570d06cd36d64990fb5b749895a58774f37a2450a16db641dc9b4e8a81"
+          "bytes": 717,
+          "sha256": "652640cc53ddb3ffc4a20536efe1c48d9e8accdd4d34391eefcb207554403a98"
         },
         {
           "path": "timing_0.csv",
           "bytes": 37,
-          "sha256": "8f811d0d22e27c49745aa7893e061c70a98b1375a8bbfb6266ec2754f280fc3b"
+          "sha256": "2764eee97e6044d4547392721eb4642f862e33fc27f078c1bdb4a021e1a0f5bc"
         },
         {
           "path": "upstream.log",
           "bytes": 10234,
-          "sha256": "8c0dab1a1e1c75c3c978506b902fa5be7aaeb66247d32e7d93e3e23f68d16a1b"
+          "sha256": "782efbe920bfb0ada25720845b91529cc59414d7b965668a2ca99541e53b4201"
         }
       ],
       "argv": [
@@ -297,7 +308,7 @@
       "variant": "ligand",
       "task_name": "39_7V11_LIGAND",
       "target_structure": "/opt/fs2/source/assets/target_data/ligand_targets/7v11_ligand_centered.pdb",
-      "run_id": "fs2-cxq-a1-ligand",
+      "run_id": "fs2-cxq-promote-p1-ligand",
       "terminal_state": "PASS",
       "upstream_exit_code": 0,
       "cuda_used_by_upstream": true,
@@ -310,24 +321,23 @@
         "architecture_policy": "capability-driven; no device-name allowlist"
       },
       "node": {
-        "name_sha256": "sha256:ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9",
+        "name_sha256": "sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
         "gpu_name": "H100",
         "accelerator_class": "nvidia-h100-sxm5-80gb",
         "capacity_source": "capacity-block",
         "instance_type": "gpu-h100-sxm",
         "driver_version": "580.159.04-1ubuntu1",
-        "allocatable_gpu": "8",
-        "resource_name_sha256": "sha256:ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
+        "allocatable_gpu": "8"
       },
       "kubernetes_resources": {
-        "job": "fs2-cxq-a1-ligand",
-        "job_uid": "ab5ad749-d81e-4eb5-b9db-8a8dad7b3b24",
-        "pod": "fs2-cxq-a1-ligand-p82rz",
-        "pod_uid": "18a9a016-5732-425b-b8af-d70c1b225048"
+        "job": "fs2-cxq-promote-p1-ligand",
+        "job_uid": "16cbe4b7-2ea4-4a8a-8e50-2a5e89e547b0",
+        "pod": "fs2-cxq-promote-p1-ligand-cf9gs",
+        "pod_uid": "e9fcc668-5769-441e-8b4f-46200bed59ff"
       },
-      "container_id": "containerd://a5058c5d0d5585fdded9fdecf1835944e9c0195a2d84735bf79de47b8b05e04c",
-      "image": "sha256:f67b474f24484a69cc1b202737865fe0cb4c130693b9b1b534de27d20c5c7d52",
-      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+      "container_id": "containerd://2be39dd0cf157c497158151a98f804022bdd91b2b252096321077188c097175d",
+      "image": "sha256:b455d68551fec946c4d56f3d12adf80a5e0e89118a4526ed0dc6d61944d7d462",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
       "checkpoint_pair": [
         {
           "label": "ligand score checkpoint",
@@ -335,7 +345,7 @@
           "bytes": 1790554392,
           "sha256": "8175213eac5ec6433fed1756d055ce3f867129bfdb033040e1a0560ca558bfe5",
           "content_digest_verified": true,
-          "digest_seconds": 1.233
+          "digest_seconds": 1.324
         },
         {
           "label": "ligand partial autoencoder",
@@ -343,13 +353,13 @@
           "bytes": 4100184649,
           "sha256": "898da17022cdeaaaea7caace41c8b6fe7bfcb78be4876b0113127eb9bb1527e6",
           "content_digest_verified": true,
-          "digest_seconds": 2.822
+          "digest_seconds": 3.047
         }
       ],
       "rosettafold3": {
         "artifact_id": "rosettafold3-checkpoint",
         "bound": true,
-        "digest_seconds": 2.133,
+        "digest_seconds": 2.294,
         "digest_verified": true,
         "directory_count": 0,
         "entry_count": 1,
@@ -368,7 +378,7 @@
         "path": "/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt",
         "recomputed_generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
         "role": "reward-and-evaluation",
-        "seconds": 1.196,
+        "seconds": 1.034,
         "source_revision": "foundry-production-b02eed6a-checksum-lock",
         "source_uri": "https://files.ipd.uw.edu/pub/rf3/",
         "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
@@ -376,41 +386,49 @@
         "visibility": "public",
         "volume_kind": "host-path"
       },
-      "artifact_verification_seconds": 10.658,
+      "artifact_verification_seconds": 9.735,
       "phases": {
-        "checkpoint_load_to_lora_seconds": 8.083,
-        "compute_seconds": 12.332,
-        "interpreter_and_import_seconds": 12.177,
+        "checkpoint_load_to_lora_seconds": 8.075,
+        "compute_seconds": 14.121,
+        "interpreter_and_import_seconds": 12.388,
         "lora_reapplied": true,
-        "model_load_seconds": 12.768,
-        "sampling_seconds": 12.332,
-        "upstream_process_seconds": 38.687,
-        "upstream_reported_generation_seconds": 25.1
+        "model_load_seconds": 12.829,
+        "sampling_seconds": 14.121,
+        "upstream_process_seconds": 41.268,
+        "upstream_reported_generation_seconds": 26.95
       },
       "kubernetes_timings": {
-        "job_created_at": "2026-09-03T05:57:47Z",
-        "container_started_at": "2026-09-03T05:59:29Z",
-        "container_finished_at": "2026-09-03T06:00:20Z",
-        "schedule_to_container_start_seconds": 102.0,
-        "container_runtime_seconds": 51.0,
-        "schedule_to_semantic_complete_seconds": 153.0
+        "job_created_at": "2026-09-03T13:39:57Z",
+        "container_started_at": "2026-09-03T13:40:01Z",
+        "container_finished_at": "2026-09-03T13:40:54Z",
+        "schedule_to_container_start_seconds": 4.0,
+        "container_runtime_seconds": 53.0,
+        "schedule_to_semantic_complete_seconds": 57.0
       },
       "image_phase": {
-        "already_present_on_node": false,
-        "pulled_during_this_run": true,
-        "observed_cache_level": "cold",
+        "already_present_on_node": true,
+        "pulled_during_this_run": false,
+        "observed_cache_level": "image-local",
         "events": [
           {
             "reason": "Scheduled",
-            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-a1-ligand-p82rz to sha256:ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
-          },
-          {
-            "reason": "Pulling",
-            "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23\""
+            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-promote-p1-ligand-cf9gs to sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8"
           },
           {
             "reason": "Pulled",
-            "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23\" in 1m38.115s (1m38.115s including waiting). Image size: 4372295394 bytes."
+            "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca\" already present on machine and can be accessed by the pod"
+          },
+          {
+            "reason": "Created",
+            "message": "Container created"
+          },
+          {
+            "reason": "Started",
+            "message": "Container started"
+          },
+          {
+            "reason": "Pulled",
+            "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca\" already present on machine and can be accessed by the pod"
           },
           {
             "reason": "Created",
@@ -422,7 +440,7 @@
           }
         ]
       },
-      "cache_level": "cold",
+      "cache_level": "image-local",
       "asset_link": null,
       "produced": {
         "structures": 2,
@@ -459,33 +477,33 @@
         },
         {
           "path": "job_0_n_100_id_0_single_orig0/job_0_n_100_id_0_single_orig0.pdb",
-          "bytes": 60016,
-          "sha256": "4f135a82aac4e2506e702987f54fc6ee47b90d9856a4a727d8faba996acc42bd"
+          "bytes": 69898,
+          "sha256": "42034b7a0bd8bafc9f9ea699a36a001b562523f4012bd3af0faed47e6e42e2d6"
         },
         {
           "path": "job_0_n_100_id_0_single_orig0/job_0_n_100_id_0_single_orig0_binder.pdb",
-          "bytes": 56217,
-          "sha256": "df8341972a712509f1fda5772b27cd6d4b6e0b8213b4cc7fce4c6463dd784b89"
+          "bytes": 66099,
+          "sha256": "da7c951f7cf7eaf2f9f4b18b049da383431db4cc775473744906a43d0726b790"
         },
         {
           "path": "result.json",
-          "bytes": 10901,
-          "sha256": "9f4bdf78f1df8148220363b3387a0348c7e8a497cb6c7cfd096139e994c42576"
+          "bytes": 10990,
+          "sha256": "108909def2aa57d7ae7f0d416ee40f802dbfbb280adeee30332f5cd9bb8e7333"
         },
         {
           "path": "rewards_search_ligand_binder_local_pipeline_0.csv",
-          "bytes": 413,
-          "sha256": "beeaac60067f71a038b17dd08a7aca24469673ef5941ab59c983b0d3a2a83166"
+          "bytes": 426,
+          "sha256": "58b059542b8743095be2d237073f7c0166d67e14f1d380eb7dcf7e752d878284"
         },
         {
           "path": "timing_0.csv",
           "bytes": 37,
-          "sha256": "5decf9caa3c4b1ff88011cbf5862021f7a4c1da573fb3065b3c0ef09de3c5da1"
+          "sha256": "2c4d415877c57d07df8381c9914cf6948a7643ace998e54e40d0da5a634fda18"
         },
         {
           "path": "upstream.log",
           "bytes": 31981,
-          "sha256": "9bee93ffaeacbbad2eba9aa4a761b46a03f4fee78996863b613eaeca78b98ebc"
+          "sha256": "ee19b2979626d912cb8b92c4237e8ac76f818a379ccb6ca45a9804c5955e8fa8"
         }
       ],
       "argv": [
@@ -514,7 +532,7 @@
       "variant": "ame",
       "task_name": "M0024_1nzy_og",
       "target_structure": "/opt/fs2/source/assets/target_data/ame_input_structures/M0024_1nzy.pdb",
-      "run_id": "fs2-cxq-a1-ame",
+      "run_id": "fs2-cxq-promote-p1-ame",
       "terminal_state": "PASS",
       "upstream_exit_code": 0,
       "cuda_used_by_upstream": true,
@@ -533,18 +551,17 @@
         "capacity_source": "capacity-block",
         "instance_type": "gpu-h100-sxm",
         "driver_version": "580.159.04-1ubuntu1",
-        "allocatable_gpu": "8",
-        "resource_name_sha256": "sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8"
+        "allocatable_gpu": "8"
       },
       "kubernetes_resources": {
-        "job": "fs2-cxq-a1-ame",
-        "job_uid": "2e0c6168-3f7a-4a2f-88e6-6e8115c81f8f",
-        "pod": "fs2-cxq-a1-ame-fzxcr",
-        "pod_uid": "bc5fe4b2-b782-4242-b10e-4414ae7f6489"
+        "job": "fs2-cxq-promote-p1-ame",
+        "job_uid": "74532202-3d92-42d5-b5d7-bb33a59b46bf",
+        "pod": "fs2-cxq-promote-p1-ame-57ssg",
+        "pod_uid": "933d6073-8a11-40f1-b4ef-95eb94ffac97"
       },
-      "container_id": "containerd://c79b351d7f8ba1d6692514c8c588ccac25a8a71e32166829faccc4c840d12ba9",
-      "image": "sha256:f67b474f24484a69cc1b202737865fe0cb4c130693b9b1b534de27d20c5c7d52",
-      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+      "container_id": "containerd://1457455ad3fb62813518c0d73491ab0b4984707d98fdb76c6bd0fab988232180",
+      "image": "sha256:b455d68551fec946c4d56f3d12adf80a5e0e89118a4526ed0dc6d61944d7d462",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
       "checkpoint_pair": [
         {
           "label": "ame score checkpoint",
@@ -552,7 +569,7 @@
           "bytes": 1792013880,
           "sha256": "d11319693d024d0427abc356a86350a694a1cb7dceb8db642c8041e5a20a9f7b",
           "content_digest_verified": true,
-          "digest_seconds": 1.357
+          "digest_seconds": 1.324
         },
         {
           "label": "ame partial autoencoder",
@@ -560,13 +577,13 @@
           "bytes": 4100197925,
           "sha256": "63b1358c5459e968628094fdc9a2a6a95ac003606fcf7b1a3a21174458a69734",
           "content_digest_verified": true,
-          "digest_seconds": 3.083
+          "digest_seconds": 3.045
         }
       ],
       "rosettafold3": {
         "artifact_id": "rosettafold3-checkpoint",
         "bound": true,
-        "digest_seconds": 2.32,
+        "digest_seconds": 2.349,
         "digest_verified": true,
         "directory_count": 0,
         "entry_count": 1,
@@ -585,7 +602,7 @@
         "path": "/opt/fs2/artifacts/rosettafold3-checkpoint/rf3_foundry_01_24_latest_remapped.ckpt",
         "recomputed_generation": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
         "role": "reward-and-evaluation",
-        "seconds": 1.169,
+        "seconds": 1.024,
         "source_revision": "foundry-production-b02eed6a-checksum-lock",
         "source_uri": "https://files.ipd.uw.edu/pub/rf3/",
         "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
@@ -593,41 +610,49 @@
         "visibility": "public",
         "volume_kind": "host-path"
       },
-      "artifact_verification_seconds": 10.137,
+      "artifact_verification_seconds": 9.706,
       "phases": {
-        "checkpoint_load_to_lora_seconds": 7.273,
-        "compute_seconds": 12.894,
-        "interpreter_and_import_seconds": 12.527,
+        "checkpoint_load_to_lora_seconds": 7.507,
+        "compute_seconds": 13.586,
+        "interpreter_and_import_seconds": 12.541,
         "lora_reapplied": true,
-        "model_load_seconds": 11.686,
-        "sampling_seconds": 12.894,
-        "upstream_process_seconds": 38.707,
-        "upstream_reported_generation_seconds": 24.58
+        "model_load_seconds": 11.914,
+        "sampling_seconds": 13.586,
+        "upstream_process_seconds": 39.522,
+        "upstream_reported_generation_seconds": 25.5
       },
       "kubernetes_timings": {
-        "job_created_at": "2026-09-03T05:57:47Z",
-        "container_started_at": "2026-09-03T05:59:32Z",
-        "container_finished_at": "2026-09-03T06:00:23Z",
-        "schedule_to_container_start_seconds": 105.0,
+        "job_created_at": "2026-09-03T13:39:57Z",
+        "container_started_at": "2026-09-03T13:40:01Z",
+        "container_finished_at": "2026-09-03T13:40:52Z",
+        "schedule_to_container_start_seconds": 4.0,
         "container_runtime_seconds": 51.0,
-        "schedule_to_semantic_complete_seconds": 156.0
+        "schedule_to_semantic_complete_seconds": 55.0
       },
       "image_phase": {
-        "already_present_on_node": false,
-        "pulled_during_this_run": true,
-        "observed_cache_level": "cold",
+        "already_present_on_node": true,
+        "pulled_during_this_run": false,
+        "observed_cache_level": "image-local",
         "events": [
           {
             "reason": "Scheduled",
-            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-a1-ame-fzxcr to sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8"
-          },
-          {
-            "reason": "Pulling",
-            "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23\""
+            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-promote-p1-ame-57ssg to sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8"
           },
           {
             "reason": "Pulled",
-            "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23\" in 1m34.266s (1m34.266s including waiting). Image size: 4372295394 bytes."
+            "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca\" already present on machine and can be accessed by the pod"
+          },
+          {
+            "reason": "Created",
+            "message": "Container created"
+          },
+          {
+            "reason": "Started",
+            "message": "Container started"
+          },
+          {
+            "reason": "Pulled",
+            "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca\" already present on machine and can be accessed by the pod"
           },
           {
             "reason": "Created",
@@ -639,7 +664,7 @@
           }
         ]
       },
-      "cache_level": "cold",
+      "cache_level": "image-local",
       "asset_link": null,
       "produced": {
         "structures": 2,
@@ -676,33 +701,33 @@
         },
         {
           "path": "job_0_n_180_id_0_single_orig0/job_0_n_180_id_0_single_orig0.pdb",
-          "bytes": 109269,
-          "sha256": "cac356ddff3697c62af29bf63442f1476f5c9a38e1cf49316659f585070d2409"
+          "bytes": 126117,
+          "sha256": "b0d5fb5e2f8e9d21dc4777d4dcf43c85563c2a3964616d13ecf5f374d0c5a5c0"
         },
         {
           "path": "job_0_n_180_id_0_single_orig0/job_0_n_180_id_0_single_orig0_binder.pdb",
-          "bytes": 105222,
-          "sha256": "621967dcd4eda748657cd25f71d06a38a0eb57e5ca2b7d355a10253412219f58"
+          "bytes": 122070,
+          "sha256": "884f919ea5ccdbff6bc695623b8bcc87964734377c81dd70f87950a95efa7994"
         },
         {
           "path": "result.json",
-          "bytes": 10919,
-          "sha256": "42c5e0a802898c9b69793865b61ccd3f664df3065d891a2052e24cff8541bd75"
+          "bytes": 11011,
+          "sha256": "752b6a638c71274718dd71651dcdc5a1090bb1211cc3a38b3c791c6f18e1cbc5"
         },
         {
           "path": "rewards_search_ame_local_pipeline_0.csv",
-          "bytes": 611,
-          "sha256": "9f813b6a1e6e2cf81dc8521d6821b90fe6b42c87ac910f46c1ec5ff0b31c656a"
+          "bytes": 615,
+          "sha256": "bf80c0fd392c4d415ae93a985dd8a5605b899d075677e1209e6666193f714f2c"
         },
         {
           "path": "timing_0.csv",
           "bytes": 37,
-          "sha256": "72a751756acb2a0eb550a2db2d600de8052a9bad4f330f27f2acc0dfc72d479a"
+          "sha256": "04c7ebd7ecb069f70ac87eac9f22e74196c35287cd437cad900e2f1accb91823"
         },
         {
           "path": "upstream.log",
           "bytes": 50053,
-          "sha256": "c3a5a91666931f3da811621cb3d7559772b44baa0f54127ca05f5d7bbef0516f"
+          "sha256": "3076ba8ad97cc20828fdb8c2a7dc118b0c6b87e3e9bc8f91e22edd659f59b2bd"
         }
       ],
       "argv": [

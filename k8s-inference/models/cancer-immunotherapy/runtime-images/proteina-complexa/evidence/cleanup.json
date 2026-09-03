@@ -1,6 +1,6 @@
 {
   "schema": "fs2.nebius.ai/task-owned-resource-cleanup/v1",
-  "completed_at": "2026-09-03T06:30:49Z",
+  "completed_at": "2026-09-03T13:57:36Z",
   "cluster": {
     "context": "k8s-inference-h100",
     "namespace": "fs2-academic-poc",
@@ -10,43 +10,59 @@
   "deleted": {
     "jobs": [
       {
-        "name": "fs2-cxq-a1-ame",
-        "uid": "2e0c6168-3f7a-4a2f-88e6-6e8115c81f8f"
+        "name": "fs2-cx-f4-ptxas-kernel-p2",
+        "uid": "d376dc33-9bf9-4b89-88ed-ad4978b95b16"
       },
       {
-        "name": "fs2-cxq-a1-ligand",
-        "uid": "ab5ad749-d81e-4eb5-b9db-8a8dad7b3b24"
+        "name": "fs2-cx-f4-ptxas-kernel-p3",
+        "uid": "ba4b2bc4-dc15-4d43-afe4-267eb8bd64a7"
       },
       {
-        "name": "fs2-cxq-a1-protein",
-        "uid": "7be1467b-26a4-4e2d-be74-148134e8abe1"
+        "name": "fs2-cxq-promote-p1-protein",
+        "uid": "f1379e17-7851-44c3-8545-deccf0314986"
+      },
+      {
+        "name": "fs2-cxq-promote-p1-ligand",
+        "uid": "16cbe4b7-2ea4-4a8a-8e50-2a5e89e547b0"
+      },
+      {
+        "name": "fs2-cxq-promote-p1-ame",
+        "uid": "74532202-3d92-42d5-b5d7-bb33a59b46bf"
+      },
+      {
+        "name": "fs2-cxq-promote-p1-validator",
+        "uid": "d597385c-4777-47a1-84ee-ab2528d21bfc"
       }
     ],
-    "pods": [
-      "fs2-cxq-a1-ame-fzxcr",
-      "fs2-cxq-a1-ligand-p82rz",
-      "fs2-cxq-a1-protein-v45gb",
-      "fs2-cxq-artifact-inspector",
-      "fs2-cxq-collector",
-      "fs2-cxq-fetch",
-      "fs2-cxq-prune"
+    "standalone_pods": [
+      {
+        "name": "fs2-cxq-promote-p1-collector",
+        "uid": "139b2f6a-30ab-425a-851b-bf212c7a0d0e"
+      }
     ],
     "config_maps": [
-      "fs2-cxq-a1-contract",
-      "fs2-cxq-r3-contract",
-      "fs2-cxq-r4-contract",
-      "fs2-cxq-r5-contract"
+      {
+        "name": "fs2-cxq-promote-p1-contract",
+        "uid": "092412c1-1c18-4c10-903f-12fab6e821de"
+      },
+      {
+        "name": "fs2-cxq-promote-p1-validator",
+        "uid": "bd2a4bb7-510a-4405-aa18-081519f860d4"
+      }
     ],
     "persistent_volume_claim": {
-      "name": "fs2-cxq-out-r20260903",
-      "uid": "9684d513-f156-40b1-9932-6a9046c9a441",
-      "capacity": "128Gi",
+      "name": "fs2-cxq-promotion-out-r20260903",
+      "uid": "4ff8bcbb-10d7-4154-a51f-14094ef964f9",
+      "provisioned_volume": "pvc-4ff8bcbb-10d7-4154-a51f-14094ef964f9",
+      "requested_capacity": "8Gi",
+      "provisioned_capacity": "128Gi",
       "lifecycle": "task-owned-temporary",
-      "recovery": "deleted with its temporary output; the committed run receipt retains per-file byte counts and SHA-256 identities, but the raw PVC is not recoverable from this task"
+      "recovery": "deleted with its temporary output; the committed receipts retain per-file byte counts and SHA-256 identities"
     }
   },
   "post_cleanup": {
     "matching_resources": [],
+    "provisioned_volume_present": false,
     "h100_nodes_ready": [
       "sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
       "sha256:ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
@@ -56,10 +72,6 @@
         "ready_replicas": 1,
         "pod_phase": "Running",
         "image_digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
-      },
-      "cosmos3-nano-burst-h100-1x": {
-        "ready_replicas": 0,
-        "image_digest": "sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587"
       }
     },
     "shared_controller_deployed": false,

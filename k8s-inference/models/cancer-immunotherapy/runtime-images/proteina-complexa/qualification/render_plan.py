@@ -149,11 +149,11 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
     }
 
     # The requests always arrive through a ConfigMap mounted at /opt/fs2/requests.
-    # The entrypoint itself normally comes from the image. It is only overlaid
-    # from the ConfigMap when --entrypoint-source configmap is passed, which is
-    # how the contract was proven against a predecessor digest that had no
-    # entrypoint baked in. Overlaying it onto /opt/fs2/complexa shadows the
-    # baked-in file, so the two modes are mutually exclusive by construction.
+    # The entrypoint itself normally comes from the image. It is overlaid from
+    # the ConfigMap when --entrypoint-source configmap is passed, which is the
+    # immutable handoff for the accepted ptxas-v1 image. That image also predates
+    # the fixed working directory, so overlay mode creates the assets binding in
+    # an emptyDir with a shell-free Python init container.
     overlay = arguments.entrypoint_source == "configmap"
     data = {
         f"request-{variant}.json": json.dumps(document, indent=2) + "\n"
@@ -211,6 +211,31 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
                         },
                         "spec": {
                             "restartPolicy": "Never",
+                            **(
+                                {
+                                    "initContainers": [
+                                        {
+                                            "name": "prepare-workdir",
+                                            "image": reference,
+                                            "imagePullPolicy": "IfNotPresent",
+                                            "command": [
+                                                "python",
+                                                "-c",
+                                                "import os; os.symlink('/opt/fs2/source/assets', '/workdir/assets')",
+                                            ],
+                                            "resources": {
+                                                "requests": {"cpu": "100m", "memory": "128Mi"},
+                                                "limits": {"cpu": "1", "memory": "512Mi"},
+                                            },
+                                            "volumeMounts": [
+                                                {"name": "workdir", "mountPath": "/workdir"}
+                                            ],
+                                        }
+                                    ]
+                                }
+                                if overlay
+                                else {}
+                            ),
                             # The RWX volume root is root-owned, so the non-root
                             # runtime user cannot create its output directory
                             # without a supplemental group. OnRootMismatch keeps
@@ -330,6 +355,16 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
                                             "subPath": arguments.run_prefix,
                                         },
                                         {"name": "cache", "mountPath": "/tmp"},
+                                        *(
+                                            [
+                                                {
+                                                    "name": "workdir",
+                                                    "mountPath": "/opt/fs2/complexa/workdir",
+                                                }
+                                            ]
+                                            if overlay
+                                            else []
+                                        ),
                                     ],
                                 }
                             ],
@@ -350,6 +385,16 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
                                     },
                                 },
                                 {"name": "cache", "emptyDir": {"sizeLimit": "32Gi"}},
+                                *(
+                                    [
+                                        {
+                                            "name": "workdir",
+                                            "emptyDir": {"sizeLimit": "64Mi"},
+                                        }
+                                    ]
+                                    if overlay
+                                    else []
+                                ),
                             ],
                         },
                     },

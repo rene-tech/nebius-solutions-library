@@ -1,0 +1,134 @@
+{
+  "schema": "fs2.nebius.ai/proteina-complexa-ptxas-promotion/v1",
+  "owner_task": "fs2-complexa-final-h100-qualification-r20260903",
+  "checked_at": "2026-09-03T13:49:30Z",
+  "base_commit": "90428fadca2fcc456b852d09625e1a482ed653f1",
+  "target": {
+    "tag": "54058860d43444c7289873f77d3e50b5b02348cd-ptxas-v1",
+    "digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+    "tag_digest_verified": true,
+    "source_revision_label": "54058860d43444c7289873f77d3e50b5b02348cd",
+    "supersedes_catalog_digest": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8"
+  },
+  "prior_failure": {
+    "job": "fs2-complexa-forward-ptxas-v1-20260903d",
+    "pod": "fs2-complexa-forward-ptxas-v1-20260903d-zf77h",
+    "observed_at": "2026-09-03T03:16:20Z",
+    "raw_log": "complexa-forward-ptxas-v1-20260903d.txt",
+    "messages": [
+      ".env_example not found. Cannot initialize .env.",
+      "Make sure you are in the project root directory."
+    ],
+    "classification": "harness-working-directory-failure-before-inference",
+    "ptxas_implicated": false,
+    "resolution": "invoke /opt/venv/bin/python -m proteinfoundation.generate through the shell-free runtime entrypoint and bind the source assets into its scratch working directory"
+  },
+  "ptxas_kernel_proof": {
+    "job": "fs2-cx-f4-ptxas-kernel-p3",
+    "job_uid": "ba4b2bc4-dc15-4d43-afe4-267eb8bd64a7",
+    "pod": "fs2-cx-f4-ptxas-kernel-p3-4n2l2",
+    "pod_uid": "a356e489-fee7-41a1-91af-8d779c9d745d",
+    "node_name_sha256": "sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+    "capacity_source": "capacity-block",
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "compute_capability": "9.0",
+    "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+    "started_at": "2026-09-03T13:49:12Z",
+    "finished_at": "2026-09-03T13:49:15Z",
+    "exit_code": 0,
+    "path_prefix": "/usr/local/cuda-12.6/bin:/opt/venv/bin",
+    "which_ptxas": "/usr/local/cuda-12.6/bin/ptxas",
+    "canonical_ptxas_realpath": "/usr/local/cuda-12.6/bin/ptxas",
+    "version": "Cuda compilation tools, release 12.6, V12.6.85",
+    "jax_version": "0.4.29",
+    "jax_devices": [
+      "cuda:0"
+    ],
+    "xla_kernel_compile": "passed",
+    "kernel": "jnp.sin(jnp.arange(4096, dtype=jnp.float32)).sum().block_until_ready()",
+    "kernel_result": 0.4767186641693115,
+    "kernel_seconds": 1.349924
+  },
+  "semantic_qualification": {
+    "image_cache_level": "image-local",
+    "artifact_cache_level": "artifact-local public generations",
+    "gpu_snapshot": {
+      "captured": false,
+      "restored": false
+    },
+    "execution_plan_sha256": "7ac8d3dca672e7db121559aad5acb368ba08281f4d6a7f694b098705c08327ac",
+    "submission_input_sha256": "850505c65fd1ce179882bcfe74343c0fc019f26c4ae926d31a986b9c097515cf",
+    "live_harness_adjustments": [
+      "the output claim was the task-owned fs2-cxq-promotion-out-r20260903 PVC",
+      "the scheduler-visible hostname selector pinned the Jobs to the otherwise-free H100 node so the unrelated Qwen workload stayed untouched",
+      "a 64 MiB emptyDir at /opt/fs2/complexa/workdir and a shell-free Python init container created assets -> /opt/fs2/source/assets; render_plan.py now emits this binding for ConfigMap-overlay mode"
+    ],
+    "variants": [
+      {
+        "variant": "protein",
+        "job": "fs2-cxq-promote-p1-protein",
+        "job_uid": "f1379e17-7851-44c3-8545-deccf0314986",
+        "pod_uid": "827ef8e8-a218-4066-890b-19da4eab0fe8",
+        "checkpoint_generation": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+        "upstream_exit_code": 0,
+        "terminal_state": "PASS",
+        "schedule_to_semantic_complete_seconds": 53.0,
+        "model_load_seconds": 8.743,
+        "compute_seconds": 12.407,
+        "structures": 1,
+        "result_sha256": "c61e99a3bfa6c01fb47e39da64bfefd3184d1ebd865d58ca2ec580a967744c40"
+      },
+      {
+        "variant": "ligand",
+        "job": "fs2-cxq-promote-p1-ligand",
+        "job_uid": "16cbe4b7-2ea4-4a8a-8e50-2a5e89e547b0",
+        "pod_uid": "e9fcc668-5769-441e-8b4f-46200bed59ff",
+        "checkpoint_generation": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+        "upstream_exit_code": 0,
+        "terminal_state": "PASS",
+        "schedule_to_semantic_complete_seconds": 57.0,
+        "model_load_seconds": 12.829,
+        "compute_seconds": 14.121,
+        "structures": 2,
+        "ligand": "OQO",
+        "result_sha256": "108909def2aa57d7ae7f0d416ee40f802dbfbb280adeee30332f5cd9bb8e7333"
+      },
+      {
+        "variant": "ame",
+        "job": "fs2-cxq-promote-p1-ame",
+        "job_uid": "74532202-3d92-42d5-b5d7-bb33a59b46bf",
+        "pod_uid": "933d6073-8a11-40f1-b4ef-95eb94ffac97",
+        "checkpoint_generation": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+        "upstream_exit_code": 0,
+        "terminal_state": "PASS",
+        "schedule_to_semantic_complete_seconds": 55.0,
+        "model_load_seconds": 11.914,
+        "compute_seconds": 13.586,
+        "structures": 2,
+        "ligand": "BCA",
+        "result_sha256": "752b6a638c71274718dd71651dcdc5a1090bb1211cc3a38b3c791c6f18e1cbc5"
+      }
+    ],
+    "validator": {
+      "job": "fs2-cxq-promote-p1-validator",
+      "job_uid": "d597385c-4777-47a1-84ee-ab2528d21bfc",
+      "pod_uid": "0739ad0d-f53a-463e-9769-53196d5bc8ad",
+      "image_id": "docker.io/library/python@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534",
+      "exit_code": 0,
+      "all_variants_passed": true,
+      "independence": "the validator never imports the runtime entrypoint and re-derives CUDA and structural facts from upstream.log and the produced PDB files"
+    }
+  },
+  "cluster": {
+    "context": "k8s-inference-h100",
+    "project": "project-e00rene",
+    "region": "eu-north1",
+    "namespace": "fs2-academic-poc"
+  },
+  "cleanup": {
+    "state": "complete",
+    "completed_at": "2026-09-03T13:57:36Z",
+    "scope": "only task-owned Jobs, Pods, ConfigMaps and the output PVC",
+    "evidence": "cleanup.json"
+  }
+}

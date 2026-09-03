@@ -1,40 +1,49 @@
 {
   "schema": "fs2.nebius.ai/oci-registry-provenance-verification/v1",
-  "checked_at": "2026-09-03T06:24:12Z",
+  "checked_at": "2026-09-03T13:49:30Z",
   "image": {
-    "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd-batch-v1",
-    "index_digest": "sha256:d36fc264c8a02774f1820ac8c9e4efad8aecb5cd1ee5b72f975de64beced3e23",
+    "tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd-ptxas-v1",
+    "digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+    "media_type": "application/vnd.docker.distribution.manifest.v2+json",
+    "config_digest": "sha256:b455d68551fec946c4d56f3d12adf80a5e0e89118a4526ed0dc6d61944d7d462",
     "platform": "linux/amd64",
-    "platform_manifest_digest": "sha256:75eb31a22b8566e3a3016fceee173cd3705145ee34acbe6edb1ffedce0cb035f",
-    "attestation_manifest_digest": "sha256:e8b3265bc60e5edd93ed6843bd913d60bcdabab657d37b627d631bef4a9b6082"
+    "layers": 10
   },
-  "slsa": {
-    "build_type": "https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md",
-    "vcs": {
-      "source": "https://github.com/rene-tech/nebius-solutions-library.git",
-      "revision": "cb8d6bea1bd15ae4cd68f588e718c14333acbac2",
-      "context": "k8s-inference/models/cancer-immunotherapy/runtime-images",
-      "dockerfile": "k8s-inference/models/cancer-immunotherapy/runtime-images/proteina-complexa"
+  "oci_config": {
+    "created": "2026-08-27T22:37:20Z",
+    "working_directory": "/work",
+    "labels": {
+      "org.opencontainers.image.source": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+      "org.opencontainers.image.revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+      "org.opencontainers.image.licenses": "Apache-2.0",
+      "ai.nebius.fs2.runtime.kind": "scientific-batch",
+      "ai.nebius.fs2.runtime.cuda": "12.6",
+      "ai.nebius.fs2.runtime.pytorch": "2.7.0+cu126",
+      "ai.nebius.fs2.runtime.weights": "external"
     },
-    "source": {
-      "repository": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
-      "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
-      "archive_sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b"
-    },
-    "started_at": "2026-09-03T05:50:44.897139737Z",
-    "finished_at": "2026-09-03T05:55:30.162685105Z",
-    "invocation_id": "xvqdvbsq1gqy6n0lwggq1nkir"
+    "cuda_home": "/usr/local/cuda-12.6",
+    "path_prefix": "/usr/local/cuda-12.6/bin:/opt/venv/bin"
   },
+  "source_equivalence": {
+    "repository": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+    "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+    "archive_sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b",
+    "files_compared": 632,
+    "files_equal": 632,
+    "evidence": "source-equivalence.json"
+  },
+  "registry_referrers": [],
   "verification": {
-    "tag_digest_matches_index": true,
-    "attestation_is_attached_to_platform_manifest": true,
-    "vcs_revision_exists_in_this_branch": true,
-    "build_inputs_unchanged_since_vcs_revision": true,
+    "tag_digest_matches": true,
+    "source_revision_label_matches": true,
+    "source_tree_matches_pinned_archive": true,
+    "slsa_attestation_claimed": false,
+    "note": "oras discover returned zero referrers. Provenance is limited to the immutable digest, OCI source label and independently recorded source-tree equivalence; no attached SLSA statement is claimed.",
     "commands": [
       "crane digest <tag>",
-      "crane manifest <tag>",
-      "docker buildx imagetools inspect <tag> --format {{json .Provenance}}",
-      "git diff --exit-code cb8d6bea -- Dockerfile runtime_entrypoint.py requirements.lock"
+      "crane manifest <digest>",
+      "crane config <digest>",
+      "oras discover --format json <digest>"
     ]
   }
 }

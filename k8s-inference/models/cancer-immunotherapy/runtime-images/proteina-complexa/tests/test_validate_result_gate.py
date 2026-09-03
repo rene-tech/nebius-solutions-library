@@ -707,7 +707,9 @@ class DigestVerificationDefaultTests(unittest.TestCase):
             plan = json.loads(destination.read_text(encoding="utf-8"))
         found = set()
         for item in plan["manifests"]:
-            for value in (item.get("data") or {}).values():
+            for key, value in (item.get("data") or {}).items():
+                if not key.startswith("request-"):
+                    continue
                 if "verify_content_digests" in value:
                     found.add(json.loads(value)["verify_content_digests"])
         return found
@@ -727,7 +729,9 @@ class DigestVerificationDefaultTests(unittest.TestCase):
         )
         found = set()
         for item in plan["manifests"]:
-            for value in (item.get("data") or {}).values():
+            for key, value in (item.get("data") or {}).items():
+                if not key.startswith("request-"):
+                    continue
                 if "verify_content_digests" in value:
                     found.add(json.loads(value)["verify_content_digests"])
         self.assertEqual({True}, found)
@@ -816,9 +820,9 @@ class PublicExportHygieneTests(unittest.TestCase):
                    for item in RECEIPT_VARIANTS.values()}
         for variant, digest in digests.items():
             self.assertRegex(digest, r"^sha256:[0-9a-f]{64}$", variant)
-        # protein and AME shared one node; ligand ran on the other.
-        self.assertEqual(digests["protein"], digests["ame"])
-        self.assertNotEqual(digests["protein"], digests["ligand"])
+        # The promotion deliberately pinned every variant to the same otherwise
+        # free H100 node so it could not disturb the unrelated tenant workload.
+        self.assertEqual(1, len(set(digests.values())))
 
     def test_the_generators_no_longer_emit_plain_identities(self) -> None:
         for name in ("qualification/submit_plan.py", "qualification/assemble_evidence.py"):

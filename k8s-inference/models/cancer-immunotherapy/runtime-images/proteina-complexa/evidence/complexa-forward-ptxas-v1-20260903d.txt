@@ -1,0 +1,7 @@
+2026-09-03T03:16:20Z .env_example not found. Cannot initialize .env.
+2026-09-03T03:16:20Z Make sure you are in the project root directory.
+
+Source: retained Loki stream for pod
+fs2-complexa-forward-ptxas-v1-20260903d-zf77h in fs2-academic-poc.
+Interpretation: the upstream console wrapper was launched from the wrong working
+directory and exited before inference. This is not a ptxas or model failure.

@@ -56,8 +56,8 @@
     "rosettafold3-checkpoint"
   ],
   "runtime_artifact_mount_root": "/opt/fs2/artifacts",
-  "runtime_image_digest": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+  "runtime_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
   "artifact_manifest_digest": null,
-  "h100_qualification_receipt": null,
+  "h100_qualification_receipt": "sha256:380441981a4170c8f2427a47ef4b25898f0ab14e33cc5efe7fdd65ebc1b45c4b",
   "fast_start_qualification_receipt": null
 }
