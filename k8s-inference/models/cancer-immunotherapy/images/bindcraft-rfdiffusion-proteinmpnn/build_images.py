@@ -182,13 +182,10 @@ def smoke_commands(image_id: str, reference: str) -> list[list[str]]:
     common = ["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none"]
     commands = [common + [reference, "--fs2-image-smoke"]]
     cli = {
-        # FreeBindCraft's interactive wrapper has no --help path; compile its
-        # exact upstream entry script without entering the prompt loop.
         "freebindcraft-open-fallback": [
-            "python",
-            "-c",
-            "compile(open('/opt/freebindcraft/docker_cli.py').read(), "
-            "'/opt/freebindcraft/docker_cli.py', 'exec')",
+            "/opt/fs2/bin/freebindcraft-batch",
+            "run-trajectory",
+            "--help",
         ],
         "proteinmpnn": ["python", "/opt/proteinmpnn/protein_mpnn_run.py", "--help"],
     }.get(image_id)

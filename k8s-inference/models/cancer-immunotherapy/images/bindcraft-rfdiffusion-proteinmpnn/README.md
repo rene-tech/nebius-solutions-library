@@ -23,8 +23,11 @@ The native BindCraft and RFdiffusion images consume the corrected batch
 interfaces directly from repository commit
 `3475ce0ee8efdf2d3ccbcc65651ab11fe7cb34fe` through a read-only BuildKit
 additional build context. BindCraft contains that commit's
-`bindcraft-batch` executable. RFdiffusion contains its `rfdiffusion-batch`
-executable and a task-owned typed runner that verifies
+`bindcraft-batch` executable. The distinct open fallback contains the same
+commit's `freebindcraft-batch` executable and an image-owned typed runner that
+requires both PyRosetta-forbidden flags and emits the adapter's exact output
+contract from real OpenMM and FreeSASA results. RFdiffusion contains its
+`rfdiffusion-batch` executable and a task-owned typed runner that verifies
 the external Base checkpoint, translates only the adapter's typed contigs,
 hotspots, diffusion steps, and seed, and then calls the pinned upstream CLI.
 No raw caller-supplied Hydra override is accepted by this path.
@@ -57,8 +60,10 @@ request fields or init gates.
 
 FreeBindCraft remains a different repository, image name, identity label, and
 catalog relationship. It is not presented as native BindCraft equivalence.
-Its optional FreeSASA metric engine is not included; the upstream open
-Biopython fallback is used, while OpenMM and PDBFixer are pinned in the image.
+FreeSASA 2.2.1 is built from its SHA-pinned source distribution and is required
+at runtime. OpenMM 8.2.0's CUDA 12 conda package, its matching GNU runtime
+libraries, and PDBFixer are pinned in the image. The wrapper rejects an
+environment in which PyRosetta becomes importable.
 
 ## Build and publish
 
@@ -121,6 +126,21 @@ cgroup memory was 11,520,126,976 bytes and sampled GPU memory was 7,241 MiB;
 no cgroup OOM or memory-limit event occurred with the 96 GiB request / 128 GiB
 limit. Temporary Pods were deleted after evidence capture. No model service was
 deployed.
+
+The explicitly non-equivalent FreeBindCraft lane then ran the same bounded
+PDL1 target through its real `/opt/fs2/bin/freebindcraft-batch` `run-trajectory`
+and `aggregate` operations. The full path completed 140 design iterations,
+soluble ProteinMPNN sequence generation, two-model AF2 validation, a real
+OpenMM CUDA energy evaluation, FreeSASA interface scoring, atomic aggregation,
+and independent `freebindcraft-v1-0-5` output validation. One candidate passed
+with iPTM 0.67, mean pLDDT 0.80, buried SASA 1,802.15 Å², shape
+complementarity 0.66, and OpenMM energy -27,405.941865 kJ/mol. Peak cgroup
+memory was 11,523,444,736 bytes and sampled GPU memory was 8,304 MiB, with no
+OOM event. The accepted `r9` digest is
+`sha256:6d44aba5780c2b74985db037045e06e732f4e867795d33a6313c5faa95bd9e30`.
+The rejected `r7` and `r8` canaries exposed, respectively, an unenforced
+trajectory bound/DAlphaBall mode problem and a CPU-only OpenMM package; neither
+is semantic acceptance evidence.
 
 After the Terraform H100 node roll, the same three requested digest references
 were pulled again through the approved cluster registry path and exercised in
