@@ -302,6 +302,31 @@ Corrected in the evidence and the lock:
 `qualification/render_plan.py` additionally refuses an image reference that is
 not digest-pinned, which previously would have defeated the lock silently.
 
+Separately, this directory is part of the public export, and
+`tests/test_public_export.py` bars opaque Nebius resource IDs and developer home
+paths from it. The candidate published 23 such references: instance, cluster and
+tenant IDs across five evidence documents and the lock, plus an operator home
+path in the run receipt and in the evidence generator. Every one is now the
+SHA-256 of the identity rather than the identity, which the receipt design
+already carried alongside the plain name, so nothing is lost: protein and AME
+still visibly share a node and ligand still visibly used the other. The plain
+names live in the task card. Both generators stop emitting them, and
+`PublicExportHygieneTests` re-asserts the rule next to the files. The export test
+still fails repository-wide on two RFdiffusion instance IDs owned by another
+task, which were failing before this branch and are deliberately untouched.
+
+One deferred finding is wider than the image. The `{bytes, crc32, path}` row
+shape is also `fs2-flat-tree-inventory/v1`, the algorithm that *names* every
+published public generation on the reference-data plane, so a generation
+directory name is a SHA-256 over CRC32 checksums rather than over content. Two
+distinct 64-byte payloads with identical length and CRC32 produce the identical
+generation name; that was reproduced here. It does not make the published trees
+wrong -- all five were recomputed from the bytes on disk and each reproduced its
+name -- but the name is strong against corruption and weak against construction.
+A real per-file SHA-256 anchor for all five generations is published by
+`fs2-live-scientific-evidence-fable-gate-r20260903`. Repairing the algorithm
+belongs to the localization adapter owner.
+
 Two limitations are worth stating plainly. The raw run artifacts were reclaimed
 with the task PVC before this review, so the corrected gate could not be re-run
 against the original PDBs; it is proven instead against fixtures rebuilt from

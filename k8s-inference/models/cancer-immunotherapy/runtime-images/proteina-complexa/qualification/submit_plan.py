@@ -100,7 +100,10 @@ def collect(namespace: str, job_name: str, variant: str) -> dict[str, Any]:
         raw = _json("get", "node", node_name)
         labels = raw["metadata"]["labels"]
         node = {
-            "resource_id": node_name,
+            # The plain instance name is an opaque Nebius resource ID and is
+            # barred from the public export by tests/test_public_export.py.
+            # The digest keeps the discriminating power -- two runs on the same
+            # node still show the same value -- without publishing the name.
             "name_sha256": _hashed(node_name),
             "gpu_name": labels.get("nebius.com/gpu-name"),
             "accelerator_class": labels.get("accelerator.fs2.nebius/class"),

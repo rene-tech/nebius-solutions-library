@@ -48,8 +48,8 @@
       "owner_task_selector_matches": 0,
       "fs2_cxq_residue": "none",
       "h100_nodes_ready": [
-        "computeinstance-e00m0hsph76ajt9sdb",
-        "computeinstance-e00p3acr87k9k4mckj"
+        "sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
+        "sha256:ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
       ],
       "preserved_workloads_confirmed": {
         "qwen3-8b-b300-hot-h100-reserved-8x": "1/1 ready, as the cleanup evidence states",
@@ -116,6 +116,16 @@
       "impact": "++ckpt_path=.../complexa-ame with ++ckpt_name=complexa.ckpt qualified as the protein variant while reading AME artifacts.",
       "fix": "The argv must name this variant's own complexa-<variant> directory and no other's.",
       "regression_test": "CheckpointDirectoryTests"
+    },
+    {
+      "id": "B5",
+      "file": "evidence/*.json, image-lock.json, qualification/submit_plan.py, qualification/assemble_evidence.py",
+      "defect": "This directory is part of the public export, and tests/test_public_export.py bars opaque Nebius resource IDs and developer home paths from it. The candidate published 23 violations from this directory: instance, cluster and tenant IDs across five evidence documents and the lock, plus a hardcoded operator home path in the run receipt and in the evidence generator.",
+      "found_via": "Flagged by the peer gate fs2-live-scientific-evidence-fable-gate-r20260903, which hit the same rule on its own branch, then reproduced here by running the export test against this branch. My own added review record contributed two of the 23.",
+      "impact": "The candidate cannot pass the repository's own public-export gate. The test was already failing on main for two unrelated RFdiffusion hits, so the candidate would not have been the first failure, but it multiplied it.",
+      "fix": "Every opaque ID is replaced by its SHA-256, which the receipt design already used alongside the plain name, so no discriminating power is lost: protein and AME still visibly share a node and ligand still visibly used the other. The kubeconfig path is replaced by a pointer to the task card, which now carries the plain names. Both generators stop emitting the plain identities.",
+      "residual": "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-run-receipt.json still publishes two instance IDs. That file belongs to the RFdiffusion task and was deliberately not touched here. The export test stays red until its owner clears it.",
+      "regression_test": "PublicExportHygieneTests, four tests, asserted over the whole tracked tree"
     }
   ],
   "overclaims_corrected": [
@@ -190,7 +200,8 @@
         "verified_by_this_reviewer": "Constructed two distinct 64-byte payloads with identical length and identical CRC32 (0x54092d47) and different SHA-256, in milliseconds, by Gaussian elimination over GF(2).",
         "consequence": "The docstring's claim that the inventory 'cannot be forged' is false. With verify_content_digests off, an equal-length substituted checkpoint passes generation and marker verification and is then unpickled by torch.load on the GPU.",
         "partial_mitigation_applied_here": "The plan now requests digest verification by default and the gate fails closed without it, so the practical path is closed for plans rendered from this tree. The inventory itself still needs a content hash.",
-        "suggested_fix": "Replace crc32 with a truncated SHA-256 in the inventory row."
+        "suggested_fix": "Replace crc32 with a truncated SHA-256 in the inventory row.",
+        "scope_correction_2026_09_03": "This is broader than the in-image inventory. The same {bytes, crc32, path} row shape is fs2-flat-tree-inventory/v1 in components/control-plane/src/fs2_serve/scientific_batch/adapters/localization.py lines 174-175 and 194, which is the algorithm that NAMES every published public generation on the reference-data plane. The generation directory name is a SHA-256 over CRC32 checksums, not over content. Raised by the peer gate fs2-live-scientific-evidence-fable-gate-r20260903 and reproduced here: two distinct 64-byte payloads with identical length and CRC32 0fae237f produce the byte-identical v1 row and therefore the byte-identical generation name 39bac62d93edd4c48268d0697af750949d96bbde39ee6a7ee02fdea9f46f25df. This does not make the published trees wrong -- the peer recomputed all five from the bytes on disk on all four reference-data nodes and each reproduced its name -- but it means the name is strong against corruption and weak against construction, so it cannot prove the bytes to a reader who does not already trust the writer. The peer published a real per-file SHA-256 content anchor for all five generations at models/cancer-immunotherapy/artifact-localization/independent-gate/public-generation-content-anchor-20260903.json. Repairing the inventory algorithm itself belongs to the localization adapter owner, not to this review or to the image rebuild."
       },
       {
         "id": "E2",
@@ -269,15 +280,35 @@
     "Entrypoint findings E1 to E12 are recorded, not fixed, because the entrypoint is a build input of the published image."
   ],
   "test_evidence": {
-    "run_checks.sh": "PASS, exit 0, 119 tests, plus a shell-level re-proof that the two-atom counterexample is refused",
-    "tests/test_validate_result_gate.py": "PASS, 44 tests",
+    "run_checks.sh": "PASS, exit 0, 127 tests, plus a shell-level re-proof that the two-atom counterexample is refused",
+    "tests/test_validate_result_gate.py": "PASS, 48 tests",
     "tests/test_proteina_complexa_runtime.py": "PASS, 79 tests, unchanged",
     "control_plane_full_suite": "PASS, 789 passed, 35 skipped",
-    "control_plane_adapter_tests": "PASS, 17 passed (test_scientific_primary_adapters.py, test_scientific_batch_catalog_adapter.py)"
+    "control_plane_adapter_tests": "PASS, 17 passed (test_scientific_primary_adapters.py, test_scientific_batch_catalog_adapter.py)",
+    "tests/test_public_export.py": "Zero violations remain from this directory, down from 23. The test still fails overall on two pre-existing RFdiffusion instance IDs owned by another task."
   },
   "deployment": {
     "performed": false,
     "reason": "Nothing here is deployable. The change is confined to a host-side qualification harness, its tests and its evidence documents. No image was built or published, no Helm release, no Terraform apply, no cluster mutation, no GPU workload. B300 was not read or touched. The published image digest is unchanged and remains the one the three qualified runs used.",
     "shared_service_lineage": "Not applicable: no shared service is rolled by this branch."
+  },
+  "cross_review": {
+    "peer": "fs2-live-scientific-evidence-fable-gate-r20260903",
+    "peer_handoff": "data/handoffs/fs2-complexa-semantic-gate-counterexample-from-live-evidence-fable-gate-20260903.md",
+    "what_the_peer_found_that_this_review_confirmed": [
+      "the two-atom counterexample, reproduced here against the unmodified validator",
+      "the self-reported content-digest flag and the None-equals-None byte check",
+      "the unbacked contract-proving citation in image-lock.json",
+      "the total absence of executable coverage for validate_result.py",
+      "the public-export rule, which this review then found the candidate violates 23 times"
+    ],
+    "what_this_review_found_that_the_peer_had_not": [
+      "only the mean C-alpha step was bounded, so an alternating 1.0/6.6 A trace passed",
+      "the argv check was filename-deep, so a run could read one variant's checkpoints while qualifying as another -- a wrong scientific claim, not merely a weak gate",
+      "durations were accepted when negative",
+      "a single-variant verdict could be published as all_variants_passed",
+      "--image accepted a mutable tag, silently defeating digest pinning"
+    ],
+    "division_of_ownership": "The peer's branch touches no Proteina-Complexa runtime file and this branch touches no artifact-localization file. The CRC32 inventory repair belongs to the localization adapter owner; the entrypoint findings belong to whoever owns the next image rebuild."
   }
 }

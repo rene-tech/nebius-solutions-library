@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -757,6 +758,73 @@ class GeneratorAndEvidenceAgreeTests(unittest.TestCase):
         self.assertIsNotNone(match)
         emitted = ast.literal_eval("(" + match.group(1) + ")")
         self.assertEqual(QUALIFICATION["gate"]["judged_by"], emitted)
+
+
+class PublicExportHygieneTests(unittest.TestCase):
+    """This tree is part of the public export; opaque infra IDs are barred.
+
+    tests/test_public_export.py enforces this repository-wide. The candidate
+    published 23 violations from this directory alone -- instance, cluster and
+    tenant IDs, plus a developer home path -- so the rule is re-asserted here,
+    close to the files, where it fails fast for whoever edits them next. The
+    plain names live in the task card; the digests keep the discriminating
+    power without publishing the identity.
+    """
+
+    FORBIDDEN_ID = re.compile(
+        r"\b(?:project|tenant|mk8scluster|mk8snodegroup|vpcnetwork|vpcsubnet|"
+        r"computeinstance|serviceaccount|containerregistry)-e[0-9a-z]{15,}\b",
+        re.IGNORECASE,
+    )
+    DEVELOPER_HOME = re.compile(r"/home/[a-z][a-z0-9_-]*/")
+
+    def _tracked(self):
+        listed = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others",
+             "--exclude-standard", "--", "."],
+            capture_output=True, check=True,
+        )
+        for name in listed.stdout.decode().split("\0"):
+            if name and not name.endswith((".pyc", ".pdb")):
+                yield ROOT / name
+
+    def test_no_opaque_nebius_resource_id_is_published(self) -> None:
+        offenders = []
+        for path in self._tracked():
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, FileNotFoundError, IsADirectoryError):
+                continue
+            for match in self.FORBIDDEN_ID.finditer(text):
+                offenders.append(f"{path.name}: {match.group(0)}")
+        self.assertEqual([], offenders)
+
+    def test_no_developer_home_path_is_published(self) -> None:
+        offenders = []
+        for path in self._tracked():
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, FileNotFoundError, IsADirectoryError):
+                continue
+            for match in self.DEVELOPER_HOME.finditer(text):
+                offenders.append(f"{path.name}: {match.group(0)}")
+        self.assertEqual([], offenders)
+
+    def test_the_node_digests_still_discriminate(self) -> None:
+        """Redaction must not cost the evidence its discriminating power."""
+        digests = {item["variant"]: item["node"]["name_sha256"]
+                   for item in RECEIPT_VARIANTS.values()}
+        for variant, digest in digests.items():
+            self.assertRegex(digest, r"^sha256:[0-9a-f]{64}$", variant)
+        # protein and AME shared one node; ligand ran on the other.
+        self.assertEqual(digests["protein"], digests["ame"])
+        self.assertNotEqual(digests["protein"], digests["ligand"])
+
+    def test_the_generators_no_longer_emit_plain_identities(self) -> None:
+        for name in ("qualification/submit_plan.py", "qualification/assemble_evidence.py"):
+            source = (ROOT / name).read_text(encoding="utf-8")
+            self.assertNotRegex(source, self.FORBIDDEN_ID, name)
+            self.assertNotRegex(source, self.DEVELOPER_HOME, name)
 
 
 if __name__ == "__main__":

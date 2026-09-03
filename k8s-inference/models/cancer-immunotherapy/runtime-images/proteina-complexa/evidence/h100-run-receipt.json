@@ -22,13 +22,13 @@
   },
   "cluster": {
     "context": "k8s-inference-h100",
-    "tenant": "tenant-e00f3wdfzwfjgbcyfv",
     "parent_project": "project-e00rene",
     "region": "eu-north1",
-    "cluster_resource_id": "mk8scluster-e00j5z9te7x5dd9g6a",
     "namespace": "fs2-academic-poc",
-    "kubeconfig": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
-    "capacity_choice": "existing capacity-block H100 nodes; no new or preemptible capacity was created because the predecessor Jobs were already complete and this successor only collected their evidence"
+    "capacity_choice": "existing capacity-block H100 nodes; no new or preemptible capacity was created because the predecessor Jobs were already complete and this successor only collected their evidence",
+    "tenant_sha256": "sha256:dc08b68fb449f950eeff645e6ad8d94ef7ee74ff48b1fb7f0519aef2dd75d5bf",
+    "cluster_name_sha256": "sha256:5edaaf892bc9b5969ab5cd93b4b2beec36397d77991afe355085451f33cc0c18",
+    "kubeconfig_note": "the plain resource names are recorded in the task card, not in the public export; see tests/test_public_export.py"
   },
   "execution_plan": {
     "path": "qualification/generated-plan.json",
@@ -100,14 +100,14 @@
         "architecture_policy": "capability-driven; no device-name allowlist"
       },
       "node": {
-        "resource_id": "computeinstance-e00m0hsph76ajt9sdb",
         "name_sha256": "sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
         "gpu_name": "H100",
         "accelerator_class": "nvidia-h100-sxm5-80gb",
         "capacity_source": "capacity-block",
         "instance_type": "gpu-h100-sxm",
         "driver_version": "580.159.04-1ubuntu1",
-        "allocatable_gpu": "8"
+        "allocatable_gpu": "8",
+        "resource_name_sha256": "sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8"
       },
       "kubernetes_resources": {
         "job": "fs2-cxq-a1-protein",
@@ -191,7 +191,7 @@
         "events": [
           {
             "reason": "Scheduled",
-            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-a1-protein-v45gb to computeinstance-e00m0hsph76ajt9sdb"
+            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-a1-protein-v45gb to sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8"
           },
           {
             "reason": "Pulling",
@@ -310,14 +310,14 @@
         "architecture_policy": "capability-driven; no device-name allowlist"
       },
       "node": {
-        "resource_id": "computeinstance-e00p3acr87k9k4mckj",
         "name_sha256": "sha256:ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9",
         "gpu_name": "H100",
         "accelerator_class": "nvidia-h100-sxm5-80gb",
         "capacity_source": "capacity-block",
         "instance_type": "gpu-h100-sxm",
         "driver_version": "580.159.04-1ubuntu1",
-        "allocatable_gpu": "8"
+        "allocatable_gpu": "8",
+        "resource_name_sha256": "sha256:ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
       },
       "kubernetes_resources": {
         "job": "fs2-cxq-a1-ligand",
@@ -402,7 +402,7 @@
         "events": [
           {
             "reason": "Scheduled",
-            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-a1-ligand-p82rz to computeinstance-e00p3acr87k9k4mckj"
+            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-a1-ligand-p82rz to sha256:ba03959da8c5832d2ea3c00910dcdd0b67d5d92857bd59ab44c0c091bf6874d9"
           },
           {
             "reason": "Pulling",
@@ -527,14 +527,14 @@
         "architecture_policy": "capability-driven; no device-name allowlist"
       },
       "node": {
-        "resource_id": "computeinstance-e00m0hsph76ajt9sdb",
         "name_sha256": "sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8",
         "gpu_name": "H100",
         "accelerator_class": "nvidia-h100-sxm5-80gb",
         "capacity_source": "capacity-block",
         "instance_type": "gpu-h100-sxm",
         "driver_version": "580.159.04-1ubuntu1",
-        "allocatable_gpu": "8"
+        "allocatable_gpu": "8",
+        "resource_name_sha256": "sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8"
       },
       "kubernetes_resources": {
         "job": "fs2-cxq-a1-ame",
@@ -619,7 +619,7 @@
         "events": [
           {
             "reason": "Scheduled",
-            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-a1-ame-fzxcr to computeinstance-e00m0hsph76ajt9sdb"
+            "message": "Successfully assigned fs2-academic-poc/fs2-cxq-a1-ame-fzxcr to sha256:5e3ad019c6df4d8b74076b252b6e210c1cc5dd97a0b813262c5afa637d77e5e8"
           },
           {
             "reason": "Pulling",

@@ -320,7 +320,7 @@
         "visibility": "public",
         "node_requirement": "storage.fs2.nebius/reference-data=true",
         "owner_uid_gid": 1000,
-        "live_state": "verified on computeinstance-e00yq05c7pmqsy2grw on 2026-09-03; the in-generation marker digest and sixteen payload entries match the checked-in localization evidence"
+        "live_state": "verified on sha256:89d4e9197704f71277273877bbf6ce43fe6d64b192b831fe14003fa5c450efd6 on 2026-09-03; the in-generation marker digest and sixteen payload entries match the checked-in localization evidence"
       }
     },
     {

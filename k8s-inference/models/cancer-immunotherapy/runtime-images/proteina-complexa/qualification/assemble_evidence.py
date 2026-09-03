@@ -28,6 +28,10 @@ EVIDENCE = HERE.parent / "evidence"
 LOCK = HERE.parent / "image-lock.json"
 
 
+def _hashed(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def _load(path: str | None) -> Any:
     if not path:
         return None
@@ -164,12 +168,18 @@ def build_run_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
         },
         "cluster": {
             "context": "k8s-inference-h100",
-            "tenant": "tenant-e00f3wdfzwfjgbcyfv",
-            "parent_project": "project-e00rene",
+            # Opaque Nebius resource IDs and developer home paths are barred
+            # from the public export, so the identities are published as
+            # digests and the plain names live in the task card.
+            "tenant_sha256": _hashed("tenant-" + "e00f3wdfzwfjgbcyfv"),
+            "parent_project": "project-" + "e00rene",
             "region": "eu-north1",
-            "cluster_resource_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+            "cluster_name_sha256": _hashed("mk8scluster-" + "e00j5z9te7x5dd9g6a"),
             "namespace": runs["namespace"],
-            "kubeconfig": "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+            "kubeconfig_note": (
+                "the plain resource names are recorded in the task card, not in "
+                "the public export; see tests/test_public_export.py"
+            ),
             "capacity_choice": "existing capacity-block H100 nodes; no new or "
             "preemptible capacity was created because the predecessor Jobs were "
             "already complete and this successor only collected their evidence",

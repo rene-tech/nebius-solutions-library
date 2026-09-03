@@ -3,17 +3,17 @@
   "observed_at": "2026-09-03T06:22:00Z",
   "cluster": {
     "context": "k8s-inference-h100",
-    "resource_id": "mk8scluster-e00j5z9te7x5dd9g6a",
-    "tenant": "tenant-e00f3wdfzwfjgbcyfv",
     "project": "project-e00rene",
     "region": "eu-north1",
-    "namespace": "fs2-academic-poc"
+    "namespace": "fs2-academic-poc",
+    "resource_name_sha256": "sha256:5edaaf892bc9b5969ab5cd93b4b2beec36397d77991afe355085451f33cc0c18",
+    "tenant_sha256": "sha256:dc08b68fb449f950eeff645e6ad8d94ef7ee74ff48b1fb7f0519aef2dd75d5bf"
   },
   "observation": {
     "pod": "fs2-cxq-artifact-inspector",
-    "node": "computeinstance-e00yq05c7pmqsy2grw",
     "host_root": "/mnt/fs2-reference-data/data",
-    "read_only": true
+    "read_only": true,
+    "node_name_sha256": "sha256:89d4e9197704f71277273877bbf6ce43fe6d64b192b831fe14003fa5c450efd6"
   },
   "artifacts": [
     {
