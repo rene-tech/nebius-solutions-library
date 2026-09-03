@@ -656,3 +656,55 @@ def test_gpu_resident_is_idempotent() -> None:
             runtime_container_name="vllm",
         )
     assert pod_spec["readinessGates"] == [{"conditionType": "fast-start.fs2.nebius/promoted"}]
+
+
+def test_the_holder_reads_the_payload_as_the_runtime_does() -> None:
+    """The holder must carry the runtime's identity, not its own.
+
+    A retained payload on a shared filesystem is owned by the runtime's user and
+    its directories are not world-readable. A holder that ran as a different
+    identity, or as root with all capabilities dropped, would be denied exactly
+    the files it is supposed to hold resident. This was observed live before it
+    was fixed: the payload directory is mode 0750 owned by uid 1000, and an
+    otherwise correct Pod running as root with `drop: [ALL]` could not traverse
+    it.
+    """
+
+    runtime_identity = {
+        "runAsUser": 1000,
+        "runAsGroup": 1000,
+        "runAsNonRoot": True,
+        "fsGroup": 1000,
+        "seccompProfile": {"type": "RuntimeDefault"},
+    }
+    manifests = residency_holder_manifests(
+        namespace="fs2-models",
+        name="fsm-hostmem-qwen3-8b",
+        model_ref="qwen3-8b",
+        qualification=_host_memory(),
+        image=QWEN_IMAGE,
+        node_selector={"kubernetes.io/hostname": "node"},
+        tolerations=[],
+        labels={},
+        annotations={},
+        pod_security_context=runtime_identity,
+    )
+    pod = manifests[1]["spec"]["template"]["spec"]
+    assert pod["securityContext"] == runtime_identity
+    # Locking still needs the capability, and a non-root user can hold it.
+    assert pod["containers"][0]["securityContext"]["capabilities"]["add"] == ["IPC_LOCK"]
+
+
+def test_a_holder_without_a_runtime_identity_declares_none() -> None:
+    manifests = residency_holder_manifests(
+        namespace="fs2-models",
+        name="fsm-hostmem-qwen3-8b",
+        model_ref="qwen3-8b",
+        qualification=_host_memory(),
+        image=QWEN_IMAGE,
+        node_selector={"kubernetes.io/hostname": "node"},
+        tolerations=[],
+        labels={},
+        annotations={},
+    )
+    assert "securityContext" not in manifests[1]["spec"]["template"]["spec"]

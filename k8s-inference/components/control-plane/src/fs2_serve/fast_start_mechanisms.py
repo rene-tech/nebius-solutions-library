@@ -892,6 +892,7 @@ def residency_holder_manifests(
     tolerations: Sequence[Mapping[str, Any]],
     labels: Mapping[str, str],
     annotations: Mapping[str, str],
+    pod_security_context: Mapping[str, Any] | None = None,
     owner_references: Sequence[Mapping[str, Any]] = (),
     replicas: int = 1,
 ) -> list[dict[str, Any]]:
@@ -901,6 +902,11 @@ def residency_holder_manifests(
     limit are both the declared ``reservedBytes``, so the node RAM the
     mechanism consumes is scheduled, visible and attributable instead of being
     an incidental page-cache effect that another workload can evict.
+
+    ``pod_security_context`` must be the runtime's own, because the holder has
+    to read exactly the bytes the runtime reads.  A retained payload on a shared
+    filesystem is owned by the runtime's user, and a holder that ran as a
+    different identity would be denied the very files it is supposed to hold.
     """
 
     if qualification.residency_mode == "runtime-sleep-offload":
@@ -953,6 +959,7 @@ def residency_holder_manifests(
                 "spec": {
                     "nodeSelector": dict(node_selector),
                     "tolerations": [dict(item) for item in tolerations],
+                    **({"securityContext": dict(pod_security_context)} if pod_security_context else {}),
                     "containers": [
                         {
                             "name": "residency-agent",
