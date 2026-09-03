@@ -9,13 +9,13 @@
     "repository_note": "The concrete registry account path is a deployment binding supplied at deploy time and is deliberately not committed. The immutable digest is the authoritative identity.",
     "region": "eu-north1",
     "platform": "linux/amd64",
-    "tag": null,
-    "digest": null,
-    "digest_state": "unpublished",
+    "tag": "3.0.4-85c4d205-r6",
+    "digest": "sha256:0cde199e8473a2d069c896c4f8d67a58b31e00bfb87c3660aed154693699e03e",
+    "digest_state": "published",
     "digest_note": "This is the authoritative identity; consume the image by digest. Do not substitute sha256:eaea560ce2ddba8d828371d1cba01da954d9a68ff5e77ba4d43b36b107141887 or sha256:bead2e68627c1aa7d5fa80243b1164a18160f48cf3a1867090d72ff2b9270e37, which are stock upstream images retained only as historical semantic evidence and are not this runtime.",
     "gpu_family": "agnostic",
     "gpu_requirement": "Any NVIDIA GPU of compute capability 8.0 or later. Compute capability 8.0+ is required by the default Triton and cuDNN flash-attention kernels; --flash-attention xla removes that requirement. No node name, GPU model or H100-specific selector is baked into the image or into any reusable contract.",
-    "published_at": null,
+    "published_at": "2026-09-03T04:21:00Z",
     "superseded": [
       {
         "tag": "3.0.4-85c4d205",
@@ -25,14 +25,21 @@
       {
         "tag": "3.0.4-85c4d205-r3",
         "digest": "sha256:2c357d97309bf5691ac67a7465672580d16af4431577732361dc2ad9c5dbd72c",
-        "reason": "Emitted a PASS receipt before upstream exited, missed a whole-root reference mount, and allowed stage-critical flags through --extra-arg. Must not be deployed."
+        "reason": "PASS receipt before upstream exited, whole-root reference mount undetected, stage-critical flags reachable through --extra-arg. Must not be deployed."
       },
       {
         "tag": "3.0.4-85c4d205-r4",
         "digest": "sha256:561ce3b70fbb6e5d397b320ee013c85671fc01bbc03772bf8f845d7b02a464cf",
-        "reason": "Used a denylist for extra arguments, which Abseil --flagfile can bypass, and a handoff index carrying absolute producer paths. Passed H100 semantics but must not be deployed."
+        "reason": "Extra-argument denylist bypassable through Abseil --flagfile, and a handoff carrying absolute producer paths. Must not be deployed."
+      },
+      {
+        "tag": "3.0.4-85c4d205-r5",
+        "digest": "sha256:d8cf266e972e4eea9ef63723be834550b669431ef618a8975354100146fa0440",
+        "reason": "Runtime semantics were accepted, but its SLSA attestation named commit 2ddba5fe, which was amended away, so its provenance pointed at source that no longer matched the image. Must not be deployed."
       }
-    ]
+    ],
+    "source_revision": "12d40c8f0dac03bceb8d795ad769a2f0bb73140e",
+    "provenance_note": "The SLSA attestation records vcs:revision 12d40c8f0dac03bceb8d795ad769a2f0bb73140e, the commit this image was built from. The build fails if those ever disagree."
   },
   "entrypoint": {
     "command": [
@@ -263,15 +270,16 @@
     "rule": "No L2 or higher level and no GPU snapshot may be claimed for this runtime without measured evidence produced by the fast-start qualification task."
   },
   "readiness": {
-    "state": "not-ready",
+    "state": "runtime-qualified",
     "blocking": [
-      "runtime image published for this exact source revision",
-      "real H100 semantic acceptance recorded against that published digest",
-      "reference-data worker publishes the AlphaFold 3 bundle and its terminal receipt",
+      "reference-data worker publishes the AlphaFold 3 bundle and generates its terminal receipt for a real CPU data stage",
       "controller route and submission wiring landed by their owning tasks"
     ],
-    "rule": "This model is not servable. The runtime image for this revision has not been published yet; its digest, lock and hardware acceptance are recorded in the evidence commit that follows this source commit.",
-    "completed": []
+    "rule": "The runtime is qualified on H100. AlphaFold 3 as a platform model is still not servable until the reference bundle and the controller route land.",
+    "completed": [
+      "runtime image built from a clean committed source revision, with SPDX and SLSA provenance whose vcs:revision equals that commit, proven free of licensed and reference-database payload by a layer walk, and published to the project registry by immutable digest",
+      "real H100 semantic acceptance on the exact published digest: parameter identity verified, 405 parameter arrays loaded on cuda:0, and three no-data-pipeline inferences completed with exit code 0, two of them driven from a relocated packaged handoff"
+    ]
   },
   "command_io_contract": {
     "document": "contracts/af3-command-io-contract.json",
