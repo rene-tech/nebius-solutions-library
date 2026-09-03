@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import functools
 import hashlib
 import json
@@ -143,6 +144,115 @@ def _decode_configuration_json(value: object, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RuntimeError(f"stored {label} is not an object")
     return cast(dict[str, Any], value)
+
+
+def _upgrade_legacy_model_deployment_status(value: dict[str, Any]) -> dict[str, Any]:
+    """Retain pre-identity fast-start paths without letting them qualify.
+
+    Status observations written before runtime evidence identities became
+    mandatory contain otherwise useful measurements but cannot prove that
+    they match the current runtime.  Move those paths to ``retainedPaths`` at
+    the persistence boundary.  Unrelated malformed data is deliberately left
+    untouched so the strict status decoder still rejects it.
+    """
+
+    fast_start = value.get("fast_start", value.get("fastStart"))
+    if not isinstance(fast_start, dict):
+        return value
+    pools = fast_start.get("pools")
+    if not isinstance(pools, list):
+        return value
+
+    needs_upgrade = False
+    for pool in pools:
+        if not isinstance(pool, dict):
+            continue
+        paths = pool.get("paths")
+        if not isinstance(paths, list):
+            continue
+        if any(
+            isinstance(path, dict)
+            and "identity_digest" not in path
+            and "identityDigest" not in path
+            for path in paths
+        ):
+            needs_upgrade = True
+            break
+    if not needs_upgrade:
+        return value
+
+    upgraded = copy.deepcopy(value)
+    upgraded_fast_start = upgraded.get("fast_start", upgraded.get("fastStart"))
+    assert isinstance(upgraded_fast_start, dict)
+    upgraded_pools = upgraded_fast_start.get("pools")
+    assert isinstance(upgraded_pools, list)
+    changed = False
+
+    for pool in upgraded_pools:
+        if not isinstance(pool, dict):
+            continue
+        paths = pool.get("paths")
+        if not isinstance(paths, list):
+            continue
+        retained_key = "retained_paths" if "retained_paths" in pool else "retainedPaths"
+        existing_retained = pool.get(retained_key)
+        if existing_retained is not None and not isinstance(existing_retained, list):
+            # Do not conceal an unrelated corrupt retained-path value.
+            continue
+
+        active_paths: list[object] = []
+        legacy_paths: list[dict[str, Any]] = []
+        for path in paths:
+            if (
+                not isinstance(path, dict)
+                or "identity_digest" in path
+                or "identityDigest" in path
+            ):
+                active_paths.append(path)
+                continue
+
+            retained: dict[str, Any] = {
+                "identityState": "LegacyUnbound",
+                "reason": "LegacyIdentityUnbound",
+                "mismatches": [{"code": "LegacyUnbound", "field": "$.identity"}],
+            }
+            for snake_name, camel_name in (
+                ("mechanism", "mechanism"),
+                ("compatibility_tuple_digest", "compatibilityTupleDigest"),
+                ("receipt_digests", "receiptDigests"),
+                ("model_start", "modelStart"),
+                ("capacity_wait", "capacityWait"),
+                ("end_to_end", "endToEnd"),
+            ):
+                if snake_name in path:
+                    retained[camel_name] = path[snake_name]
+                elif camel_name in path:
+                    retained[camel_name] = path[camel_name]
+            pool_ref = pool.get("pool_ref", pool.get("poolRef"))
+            if pool_ref is not None:
+                retained["observedPoolRef"] = pool_ref
+            legacy_paths.append(retained)
+
+        if not legacy_paths:
+            continue
+        changed = True
+        pool["paths"] = active_paths
+        if isinstance(existing_retained, list):
+            pool[retained_key] = [*existing_retained, *legacy_paths]
+        else:
+            pool[retained_key] = legacy_paths
+        if not active_paths:
+            for field_name in (
+                "selected_mechanism",
+                "selectedMechanism",
+                "selected_compatibility_tuple_digest",
+                "selectedCompatibilityTupleDigest",
+                "selected_identity_digest",
+                "selectedIdentityDigest",
+            ):
+                pool.pop(field_name, None)
+
+    return upgraded if changed else value
 
 
 def retry_serialization(method: Any) -> Any:
@@ -616,6 +726,7 @@ class PostgresStore:
 
     @staticmethod
     def _model_deployment_status(row: asyncpg.Record) -> ModelDeploymentStatusObservation:
+        raw_status = _decode_configuration_json(row["status"], "model deployment status")
         return ModelDeploymentStatusObservation(
             observation_id=row["observation_id"],
             source_uid=row["source_uid"],
@@ -625,7 +736,7 @@ class PostgresStore:
             tenant_id=row["tenant_id"],
             revision=row["revision"],
             status=ModelDeploymentObservedStatus.model_validate(
-                _decode_configuration_json(row["status"], "model deployment status")
+                _upgrade_legacy_model_deployment_status(raw_status)
             ),
             observed_at=row["observed_at"],
         )
