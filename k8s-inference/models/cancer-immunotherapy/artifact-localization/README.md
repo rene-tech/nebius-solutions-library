@@ -162,45 +162,41 @@ Two properties of the academic claim decide how a staging job must be written:
   `fsGroup` here would recursively rewrite the ownership of PyRosetta and
   AlphaFold 3.
 
-`--fs-group` therefore defaults to unset and belongs only to a claim the
-workload owns outright.
+`--fs-group` is therefore refused on a claim-backed run, and the supplemental
+group is applied by default rather than left to the operator to remember.
 
 ## Running it
 
-Stage into a regional shared volume, then prove the trees on the node that will
-use them:
+Each plane has its own owner, and the renderer defaults to the right one rather
+than making the operator remember it.
+
+Public artifacts stage onto the host plane. The rendered Job mounts a `hostPath`,
+tells the localizer which plane it is writing to, and runs as `1000:1000`, which
+owns `/mnt/fs2-reference-data/data`. Only labelled nodes mount that root, so a
+render without the label is refused rather than scheduled somewhere the
+directory is absent:
 
 ```bash
 python render_localization_jobs.py stage \
   --artifact-id boltzgen-inference-molecules --artifact-id alphafold2-params \
   --namespace fs2-models --run-id "${RUN_ID}" \
   --image "${REGISTRY}/boltzgen@sha256:..." --python /opt/venv/bin/python \
-  --claim "${CLAIM}" --config-map "${CONFIG_MAP}" \
+  --config-map "${CONFIG_MAP}" --claim "${ACADEMIC_CLAIM}" \
+  --plane host-path --host-root /mnt/fs2-reference-data/data \
   --tree-prefix scientific-localization/public \
-  --run-as-user 65532 --run-as-group 65532 --supplemental-group 65532 \
-  --node-selector storage.fs2.nebius/shared-cache=true \
-  --node-selector capacity.fs2.nebius/pool=system | kubectl apply -f -
+  --node-selector storage.fs2.nebius/reference-data=true | kubectl apply -f -
 
 python render_localization_jobs.py qualify \
   --artifact-id boltzgen-inference-molecules \
   --namespace fs2-models --run-id "${RUN_ID}" --model-id boltzgen \
   --image "${REGISTRY}/boltzgen@sha256:..." --python /opt/venv/bin/python \
-  --claim "${CLAIM}" --config-map "${PROBE_CONFIG_MAP}" --queue inference-models \
+  --config-map "${PROBE_CONFIG_MAP}" --claim "${ACADEMIC_CLAIM}" --queue inference-models \
+  --plane host-path --tree-prefix scientific-localization/public \
+  --node-selector storage.fs2.nebius/reference-data=true \
   --probe-file probes/boltzgen_moldir_probe.py \
   --probe=/opt/venv/bin/python \
   --probe=/opt/fs2-localization/fs2_localization/boltzgen_moldir_probe.py \
   --probe=--moldir --probe=/opt/fs2/artifacts/boltzgen-inference-molecules | kubectl apply -f -
-```
-
-Public artifacts stage onto the host plane, so the rendered Job mounts a
-`hostPath` and tells the localizer which plane it is writing to:
-
-```bash
-python render_localization_jobs.py stage \
-  --artifact-id boltzgen-inference-molecules \
-  --plane host-path --host-root /mnt/fs2-reference-data/data \
-  --node-selector storage.fs2.nebius/reference-data=true \
-  ... | kubectl apply -f -
 ```
 
 A tree another plane installed is promoted rather than staged. The Job mounts
@@ -217,6 +213,25 @@ python render_localization_jobs.py promote \
   --config-map "${CONFIG_MAP}" --image "${REGISTRY}/bindcraft@sha256:..." \
   --node-selector storage.fs2.nebius/shared-cache=true | kubectl apply -f -
 ```
+
+Ownership is a property of a volume, not a rule about claims, so the renderer
+defaults it for exactly one claim and refuses to guess for any other.
+
+- `fs2-academic-poc/academic-assets-runtime-rwx` joins GID 65532 as a
+  supplemental group by default, because that claim's root is setgid and
+  group-writable by it, and `--fs-group` is refused there outright: Kubernetes
+  applies fsGroup to the whole volume rather than the sub-path a pod mounts, so
+  on a claim that also holds PyRosetta and AlphaFold 3 it would recursively
+  rewrite their ownership.
+- Any other claim must be told what it needs, with `--supplemental-group` to
+  join the group that owns it or `--fs-group` if the workload owns the volume
+  outright. Applying the academic claim's GID to a customer PVC would either
+  fail to write or write files that volume's owner never asked for.
+
+No prefix is mounted as a `subPath`. The prefix is carried in the paths the tool
+writes and created by the init container, because on the first run for a new
+prefix the directory does not exist yet and a `subPath` that does not exist
+cannot be mounted — mounting one would deadlock the run that exists to create it.
 
 ## What admission pins
 

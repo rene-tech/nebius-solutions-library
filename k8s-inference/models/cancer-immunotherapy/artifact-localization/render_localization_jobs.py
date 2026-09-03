@@ -68,7 +68,7 @@ DIGEST_DIR = "sha256"
 # The marker is written inside the generation and travels with it, so there is
 # exactly one authority for what a mount contains and no separate path to mount.
 RUNTIME_MARKER_NAME = ".fs2-runtime-tree.json"
-RECEIPT_DIR = f"{TREE_ROOT}/.receipts"
+RECEIPTS_DIR = ".receipts"
 # A qualification pod reads the shared volume and must not write to it: it runs
 # as the runtime image's own account, which is a guest in the claim's group, and
 # its receipt is evidence about one node rather than shared artifact state.
@@ -80,6 +80,23 @@ LABEL_PREFIX = "fs2-serve.nebius.ai"
 # a property of the volume, not of this tool: a claim shared with other tenants'
 # assets is group-owned and setgid, and writing to it means joining that group.
 DEFAULT_RUNTIME_UID = 10001
+# The public model-artifact host root is owned by 1000:1000. The academic claim
+# is a different volume with a different owner, and using its 65532 here would
+# write a tree the public plane's own account cannot read.
+PUBLIC_PLANE_UID = 1000
+# One specific claim, whose ownership is a property of that volume rather than a
+# rule about claims in general. Its root is setgid and group-writable by 65532,
+# so a writer joins that group and must not set fsGroup: Kubernetes applies
+# fsGroup to the whole volume rather than the sub-path a pod mounts, and this one
+# also holds PyRosetta and AlphaFold 3. Any other claim gets no implicit
+# ownership from this tool, because guessing wrong on a customer volume either
+# fails to write or rewrites somebody else's files.
+ACADEMIC_NAMESPACE = "fs2-academic-poc"
+ACADEMIC_CLAIM = "academic-assets-runtime-rwx"
+ACADEMIC_ASSET_GID = 65532
+# Only nodes carrying this label mount the public host root, so a Job that omits
+# it can be scheduled somewhere the directory simply is not there.
+REFERENCE_DATA_NODE_LABEL = "storage.fs2.nebius/reference-data"
 
 
 def pod_security_context(*, uid: int, gid: int, supplemental: tuple[int, ...], fs_group: int | None) -> dict[str, Any]:
@@ -222,7 +239,12 @@ def _verifier_volumes(
 
     ``tree_prefix`` keeps these trees inside their own subtree of a volume that
     already holds other assets, so a shared volume never becomes a shared
-    namespace.
+    namespace. It is carried in the paths this tool writes, not as a ``subPath``:
+    a subPath that does not exist yet cannot be mounted, and on the very first
+    run of a new prefix it never does, so mounting one would deadlock the run
+    that was supposed to create it. The owning root is mounted instead and every
+    path below is prefixed, which also keeps a hostPath plane — where nothing
+    creates a missing subPath for us — working the same way as a claim.
     """
 
     volumes = [
@@ -230,15 +252,18 @@ def _verifier_volumes(
         tree_volume(plane),
         {"name": "scratch", "emptyDir": {}},
     ]
-    tree_mount: dict[str, Any] = {"name": "trees", "mountPath": TREE_ROOT}
-    if tree_prefix:
-        tree_mount["subPath"] = tree_prefix
     mounts = [
         {"name": "verifier", "mountPath": f"{PACKAGE_MOUNT}/{PACKAGE_NAME}", "readOnly": True},
-        tree_mount,
+        {"name": "trees", "mountPath": TREE_ROOT},
         {"name": "scratch", "mountPath": "/scratch"},
     ]
     return volumes, mounts
+
+
+def tree_path(tree_prefix: str, *parts: str) -> str:
+    """An in-container path under the mounted volume root."""
+
+    return "/".join([TREE_ROOT, *(part for part in (tree_prefix, *parts) if part)])
 
 
 def stage_job(
@@ -258,6 +283,7 @@ def stage_job(
     tree_prefix: str = "",
 ) -> dict[str, Any]:
     volumes, mounts = _verifier_volumes(config_map, plane, tree_prefix)
+    receipts = tree_path(tree_prefix, RECEIPTS_DIR)
     steps: list[dict[str, Any]] = []
     # Two artifacts can share one upstream archive; fetch it once and let the
     # later step localize from the copy already on disk.
@@ -295,14 +321,14 @@ def stage_job(
                     # rewritten afterwards. The marker is written inside the
                     # generation, so no second path is passed or mounted.
                     "--artifact-root",
-                    f"{TREE_ROOT}/{GENERATIONS_DIR}/{artifact_id}",
+                    tree_path(tree_prefix, GENERATIONS_DIR, artifact_id),
                     "--sub-path",
                     sub_path,
                     *plane_localizer_arguments(plane, namespace),
                     "--visibility",
                     artifact.get("visibility", "public"),
                     "--receipt",
-                    f"{RECEIPT_DIR}/{artifact_id}.stage.json",
+                    tree_path(tree_prefix, RECEIPTS_DIR, f"{artifact_id}.stage.json"),
                 ],
                 "env": [
                     {"name": "PYTHONPATH", "value": PACKAGE_MOUNT},
@@ -322,8 +348,10 @@ def stage_job(
             "-c",
             # Group-writable so another member of the claim's group can add a
             # receipt later without needing the account that staged first.
-            f"import os; os.makedirs({RECEIPT_DIR!r}, mode=0o775, exist_ok=True); "
-            f"os.chmod({RECEIPT_DIR!r}, 0o775)",
+            # The prefix is created here, by the run that owns it, because a
+            # volume subPath that does not exist yet cannot be mounted.
+            f"import os; os.makedirs({receipts!r}, mode=0o775, exist_ok=True); "
+            f"os.chmod({receipts!r}, 0o775)",
         ],
         "volumeMounts": mounts,
         "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}},
@@ -335,8 +363,8 @@ def stage_job(
             python,
             "-c",
             "import json,os,sys;"
-            f"paths=sorted(os.listdir({RECEIPT_DIR!r}));"
-            f"docs=[json.load(open(os.path.join({RECEIPT_DIR!r},p))) for p in paths];"
+            f"paths=sorted(os.listdir({receipts!r}));"
+            f"docs=[json.load(open(os.path.join({receipts!r},p))) for p in paths];"
             "print(json.dumps(docs, indent=2, sort_keys=True));"
             "sys.exit(0 if docs and all(d['state']=='verified' for d in docs) else 1)",
         ],
@@ -752,6 +780,7 @@ def promote_job(
         raise SystemExit(f"{artifact_id} is staged from its archive, not promoted from an installed tree")
     generation = artifact["tree"]["inventory_sha256"]
     sub_path = generation_sub_path(tree_prefix, artifact_id, generation)
+    receipts = tree_path(tree_prefix, RECEIPTS_DIR)
     volumes = [
         {"name": "verifier", "configMap": {"name": config_map}},
         {"name": "source", "persistentVolumeClaim": {"claimName": source_claim, "readOnly": True}},
@@ -766,7 +795,7 @@ def promote_job(
             "subPath": artifact["source_sub_path"],
             "readOnly": True,
         },
-        {"name": "trees", "mountPath": TREE_ROOT, "subPath": tree_prefix},
+        {"name": "trees", "mountPath": TREE_ROOT},
         {"name": "scratch", "mountPath": "/scratch"},
     ]
     command = [
@@ -781,14 +810,14 @@ def promote_job(
         "--promote-from",
         "/source",
         "--artifact-root",
-        f"{TREE_ROOT}/{GENERATIONS_DIR}/{artifact_id}",
+        tree_path(tree_prefix, GENERATIONS_DIR, artifact_id),
         "--sub-path",
         sub_path,
         *plane_localizer_arguments(plane, namespace),
         "--visibility",
         artifact.get("visibility", "tenant-private"),
         "--receipt",
-        f"{RECEIPT_DIR}/{artifact_id}.promote.json",
+        tree_path(tree_prefix, RECEIPTS_DIR, f"{artifact_id}.promote.json"),
     ]
     return {
         "apiVersion": "batch/v1",
@@ -813,8 +842,8 @@ def promote_job(
                             "command": [
                                 python,
                                 "-c",
-                                f"import os; os.makedirs({RECEIPT_DIR!r}, mode=0o775, exist_ok=True); "
-                                f"os.chmod({RECEIPT_DIR!r}, 0o775)",
+                                f"import os; os.makedirs({receipts!r}, mode=0o775, exist_ok=True); "
+                                f"os.chmod({receipts!r}, 0o775)",
                             ],
                             "volumeMounts": mounts,
                             "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}},
@@ -879,7 +908,10 @@ def inventory_job(
     mounts = [
         {"name": "verifier", "mountPath": f"{PACKAGE_MOUNT}/{PACKAGE_NAME}", "readOnly": True},
         {"name": "source", "mountPath": "/source", "subPath": source_sub_path, "readOnly": True},
-        {"name": "markers", "mountPath": "/markers", "subPath": marker_prefix},
+        # Mounted at its own root, not at marker_prefix: on the first run that
+        # prefix does not exist, and a subPath that does not exist cannot be
+        # mounted, so mounting one would deadlock the run meant to create it.
+        {"name": "markers", "mountPath": "/markers"},
     ]
     command = [
         python,
@@ -901,7 +933,7 @@ def inventory_job(
         "--algorithm",
         algorithm,
         "--marker",
-        f"/markers/{artifact_id}.json",
+        f"/markers/{marker_prefix}/{artifact_id}.json" if marker_prefix else f"/markers/{artifact_id}.json",
     ]
     if expect_bytes is not None:
         command += ["--expect-bytes", str(expect_bytes)]
@@ -923,6 +955,20 @@ def inventory_job(
                     "nodeSelector": node_selector,
                     "tolerations": tolerations,
                     "securityContext": security_context,
+                    "initContainers": [
+                        {
+                            "name": "markers",
+                            "image": image,
+                            "command": [
+                                python,
+                                "-c",
+                                f"import os; os.makedirs({'/markers/' + marker_prefix if marker_prefix else '/markers'!r}, "
+                                f"mode=0o775, exist_ok=True)",
+                            ],
+                            "volumeMounts": mounts,
+                            "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}},
+                        }
+                    ],
                     "containers": [
                         {
                             "name": "inventory",
@@ -1047,8 +1093,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--marker-prefix", default="", help="inventory: where this tool writes its marker")
     parser.add_argument("--expect-bytes", type=int, help="inventory: fail unless the tree holds exactly this many")
     parser.add_argument("--cross-reference", action="append", default=[], metavar="KEY=VALUE")
-    parser.add_argument("--run-as-user", type=int, default=DEFAULT_RUNTIME_UID)
-    parser.add_argument("--run-as-group", type=int, default=DEFAULT_RUNTIME_UID)
+    parser.add_argument("--run-as-user", type=int, help=f"defaults to {PUBLIC_PLANE_UID} on the public host plane")
+    parser.add_argument("--run-as-group", type=int, help=f"defaults to {PUBLIC_PLANE_UID} on the public host plane")
     parser.add_argument("--supplemental-group", action="append", type=int, default=[])
     parser.add_argument(
         "--fs-group",
@@ -1068,15 +1114,49 @@ def main(argv: list[str] | None = None) -> int:
     # the licensed tree lives in a namespaced claim.
     if options.plane == "host-path":
         plane: dict[str, Any] = {"kind": "host-path", "host_root": options.host_root}
+        if options.mode in {"stage", "promote", "qualify"}:
+            selected = dict(item.split("=", 1) for item in options.node_selector)
+            if selected.get(REFERENCE_DATA_NODE_LABEL) != "true":
+                raise SystemExit(
+                    f"the public host plane is mounted only on nodes labelled "
+                    f"{REFERENCE_DATA_NODE_LABEL}=true; add --node-selector {REFERENCE_DATA_NODE_LABEL}=true"
+                )
     else:
         if not options.claim:
             raise SystemExit("a claim-backed plane requires --claim")
         plane = {"kind": "persistent-volume-claim", "claim": options.claim}
 
+    # A volume's owner is a property of the volume, not of this tool. The public
+    # host root is owned by 1000:1000; the academic claim is group-writable by
+    # 65532, which a writer joins as a supplemental group.
+    host_plane = options.plane == "host-path"
+    default_uid = PUBLIC_PLANE_UID if host_plane else DEFAULT_RUNTIME_UID
+    run_as_user = options.run_as_user if options.run_as_user is not None else default_uid
+    run_as_group = options.run_as_group if options.run_as_group is not None else default_uid
+    supplemental = list(options.supplemental_group)
+    academic_claim = (
+        not host_plane and options.namespace == ACADEMIC_NAMESPACE and options.claim == ACADEMIC_CLAIM
+    )
+    if academic_claim:
+        if not supplemental:
+            supplemental = [ACADEMIC_ASSET_GID]
+        if options.fs_group is not None:
+            raise SystemExit(
+                f"fsGroup rewrites ownership of the whole {ACADEMIC_CLAIM} claim, not the sub-path this "
+                "run mounts, and that claim also holds another tenant's assets; join the group with "
+                f"--supplemental-group {ACADEMIC_ASSET_GID} instead"
+            )
+    elif not host_plane and not supplemental and options.fs_group is None:
+        raise SystemExit(
+            "a claim's ownership is a property of that volume, and this tool will not guess it. "
+            "Pass --supplemental-group to join the group that owns the claim, or --fs-group if the "
+            "workload owns the volume outright"
+        )
+
     security_context_early = pod_security_context(
-        uid=options.run_as_user,
-        gid=options.run_as_group,
-        supplemental=tuple(options.supplemental_group),
+        uid=run_as_user,
+        gid=run_as_group,
+        supplemental=tuple(supplemental),
         fs_group=options.fs_group,
     )
     if options.mode == "inventory":
@@ -1098,7 +1178,7 @@ def main(argv: list[str] | None = None) -> int:
                         image=options.image,
                         python=options.python,
                         config_map=options.config_map,
-                        plane=plane,
+                        claim=options.claim,
                         source_sub_path=options.source_sub_path,
                         marker_prefix=options.marker_prefix,
                         expect_bytes=options.expect_bytes,
@@ -1159,9 +1239,9 @@ def main(argv: list[str] | None = None) -> int:
     if "@sha256:" not in options.image:
         raise SystemExit("--image must be an immutable digest reference")
     security_context = pod_security_context(
-        uid=options.run_as_user,
-        gid=options.run_as_group,
-        supplemental=tuple(options.supplemental_group),
+        uid=run_as_user,
+        gid=run_as_group,
+        supplemental=tuple(supplemental),
         fs_group=options.fs_group,
     )
     node_selector = dict(item.split("=", 1) for item in options.node_selector)

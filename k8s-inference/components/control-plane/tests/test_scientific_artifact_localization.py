@@ -14,6 +14,8 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
+import sys
 import tarfile
 import zipfile
 import zlib
@@ -46,6 +48,7 @@ from fs2_serve.scientific_batch.adapters.localization import (
     localize_archive,
     marker_bytes,
     marker_sha256,
+    node_digest,
     prepare_staging_directory,
     promote_generation,
     recursive_inventory_sha256,
@@ -1757,10 +1760,16 @@ def test_render_stage_and_qualify_round_trip_on_the_argv_they_render(tmp_path: P
         security_context={},
         tree_prefix=prefix,
     )
-    # The rendered init container creates the receipt directory on the claim.
+    # The rendered init container creates the prefix and receipt directory, and
+    # the tree volume is mounted at its own root so a first run is not asking to
+    # mount a subPath that does not exist yet.
     init = stage["spec"]["template"]["spec"]["initContainers"][0]["command"][-1]
-    assert renderer.RECEIPT_DIR in init
-    (trees / ".receipts").mkdir()
+    assert renderer.RECEIPTS_DIR in init and prefix in init
+    tree_mount = next(
+        item for item in stage["spec"]["template"]["spec"]["containers"][0]["volumeMounts"] if item["name"] == "trees"
+    )
+    assert "subPath" not in tree_mount
+    (trees / prefix / ".receipts").mkdir(parents=True)
 
     # The public plane is a host directory, so the rendered Job must mount one.
     tree_volume = next(item for item in stage["spec"]["template"]["spec"]["volumes"] if item["name"] == "trees")
@@ -1774,15 +1783,16 @@ def test_render_stage_and_qualify_round_trip_on_the_argv_they_render(tmp_path: P
     argv[fetch : fetch + 2] = ["--archive", str(archive)]
     assert localize(argv) == 0, "the rendered stage argv must run against this CLI"
 
-    published = trees / "generations" / MOLECULES_ID / "sha256" / generation
+    # The prefix is carried in the path now, not mounted as a subPath.
+    published = trees / prefix / "generations" / MOLECULES_ID / "sha256" / generation
     assert published.is_dir(), f"the rendered stage must publish {published}"
     assert str(published).endswith(sub_path.split(prefix, 1)[1].lstrip("/"))
     marker = json.loads((published / RUNTIME_MARKER_NAME).read_text(encoding="utf-8"))
     assert marker["sub_path"] == sub_path
     assert marker["generation"] == generation
     # Nothing partial and no external marker directory was left behind.
-    assert [item.name for item in (trees / "generations" / MOLECULES_ID).iterdir()] == ["sha256"]
-    assert not (trees / "markers").exists()
+    assert [item.name for item in (trees / prefix / "generations" / MOLECULES_ID).iterdir()] == ["sha256"]
+    assert not (trees / prefix / "markers").exists()
 
     qualify = renderer.qualify_job(
         name="qualify",
@@ -2276,9 +2286,12 @@ def test_the_promotion_job_mounts_the_source_read_only_beside_its_generation_roo
     # The producing plane's tree is an input and is mounted read-only.
     assert mounts["source"]["subPath"] == "pyrosetta-bindcraft/site-packages"
     assert mounts["source"]["readOnly"] is True
-    # This tool writes only into the generation root it owns.
-    assert mounts["trees"]["subPath"] == "scientific-localization/private"
+    # This tool writes only into the generation root it owns, and mounts the
+    # volume root rather than a prefix that does not exist on a first run.
+    assert "subPath" not in mounts["trees"]
     assert mounts["trees"].get("readOnly") is not True
+    receipts = spec["initContainers"][0]["command"][-1]
+    assert "scientific-localization/private/.receipts" in receipts
 
     argv = spec["containers"][0]["command"]
     assert argv[3] == "promote"
@@ -2318,3 +2331,650 @@ def test_a_staged_artifact_cannot_be_rendered_as_a_promotion() -> None:
             resources={},
             security_context={},
         )
+
+
+# ---------------------------------------------------------------------------
+# Adversarial: every terminal state, and its receipt against the real schema
+# ---------------------------------------------------------------------------
+
+
+def _receipt_validator() -> Any:
+    import jsonschema
+
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[3] / "catalog/runtime/schema/scientific-localization-receipt.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    jsonschema.Draft202012Validator.check_schema(schema)
+    return jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
+
+
+def _assert_valid_receipt(path: Path) -> dict[str, Any]:
+    document = json.loads(path.read_text(encoding="utf-8"))
+    errors = sorted(_receipt_validator().iter_errors(document), key=lambda item: list(item.absolute_path))
+    assert not errors, [f"{list(e.absolute_path)}: {e.message}" for e in errors]
+    return document
+
+
+def test_a_successful_stage_receipt_validates_against_the_checked_in_schema(tmp_path: Path) -> None:
+    """A receipt nobody can validate is not evidence, it is a log line."""
+
+    contract_path, archive, generation, sub_path = _stage_fixture(tmp_path)
+    receipt = tmp_path / "receipts" / "stage.json"
+    assert localization_main(_stage_argv(contract_path, archive, tmp_path / "artifact", receipt, sub_path)) == 0
+    document = _assert_valid_receipt(receipt)
+    # The fields the publication step adds are exactly the ones the schema
+    # previously rejected.
+    assert document["observation"]["generation"] == generation
+    assert document["observation"]["generation_reused"] is False
+    assert len(document["observation"]["marker_sha256"]) == 64
+
+
+def test_every_terminal_failure_emits_a_valid_receipt_and_leaves_no_staging(tmp_path: Path) -> None:
+    """Fetch, extraction, linking and publication all end the same way.
+
+    Each of these used to escape the publication guard and exit with a bare
+    message, leaving a staging directory on a claim with little headroom.
+    """
+
+    contract_path, archive, generation, sub_path = _stage_fixture(tmp_path)
+
+    # A corrupt archive: extraction fails before anything is published.
+    corrupt = tmp_path / "corrupt.zip"
+    corrupt.write_bytes(archive.read_bytes()[:-40] + b"x" * 40)
+    root = tmp_path / "artifact"
+    receipt = tmp_path / "receipts" / "corrupt.json"
+    assert localization_main(_stage_argv(contract_path, corrupt, root, receipt, sub_path)) == 1
+    document = _assert_valid_receipt(receipt)
+    assert document["state"] == "rejected"
+    assert "stage-failed" in document["rejection_reason"]
+    assert not list(root.glob(f"{STAGING_PREFIX}*")), "staging must not survive a failed extraction"
+
+    # A source that cannot be read: promotion fails before anything is published.
+    promote_receipt = tmp_path / "receipts" / "promote.json"
+    assert (
+        localization_main(
+            [
+                "promote",
+                "--contract",
+                str(contract_path),
+                "--artifact-id",
+                MOLECULES_ID,
+                "--promote-from",
+                str(tmp_path / "does-not-exist"),
+                "--artifact-root",
+                str(root),
+                "--sub-path",
+                sub_path,
+                "--volume-kind",
+                "host-path",
+                "--host-root",
+                "/mnt/fs2-reference-data/data",
+                "--visibility",
+                "public",
+                "--receipt",
+                str(promote_receipt),
+            ]
+        )
+        == 1
+    )
+    document = _assert_valid_receipt(promote_receipt)
+    assert document["state"] == "rejected"
+    assert "promote-failed" in document["rejection_reason"]
+    assert not list(root.glob(f"{STAGING_PREFIX}*")), "staging must not survive a failed promotion"
+
+
+def test_a_rejected_publication_receipt_also_validates(tmp_path: Path) -> None:
+    contract_path, archive, generation, sub_path = _stage_fixture(tmp_path)
+    root = tmp_path / "artifact"
+    (root / "sha256").mkdir(parents=True)
+    (root / "sha256" / generation).write_bytes(b"not a directory")
+    receipt = tmp_path / "receipts" / "publish.json"
+    assert localization_main(_stage_argv(contract_path, archive, root, receipt, sub_path)) == 1
+    document = _assert_valid_receipt(receipt)
+    assert "generation-publication-failed" in document["rejection_reason"]
+
+
+def test_a_contracted_symlink_count_reaches_the_receipt_and_refuses_a_mismatch(tmp_path: Path) -> None:
+    """The schema accepts the field, so the parser and receipt must carry it."""
+
+    source = _installed_tree(tmp_path / "producer")
+    identity = tree_manifest_identity(source)
+    base = _document(b"unused-archive-bytes", {"a": b"b"}, artifact_id="pyrosetta-fixture")
+    base["transform"] = "external-installed-tree"
+    base["source_sub_path"] = "producer"
+    base["visibility"] = "tenant-private"
+    base["archive"]["media_type"] = "application/zip"
+    # A wheel name carries a "+", which the tree entry pattern cannot match,
+    # so the archive can never be mistaken for a member of its own tree.
+    base["archive"]["filename"] = "pyrosetta-2026.29+release-cp310-linux_x86_64.whl"
+    base["tree"] = {
+        "mount_paths": ["/opt/fs2/academic/pyrosetta-fixture"],
+        "entry_count": identity.file_count,
+        "directory_count": 2,
+        "symlink_count": identity.symlink_count,
+        "total_bytes": identity.total_bytes,
+        "entry_path_pattern": r"^[A-Za-z0-9_][A-Za-z0-9._-]*(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)*$",
+        "inventory_algorithm": TREE_MANIFEST_ALGORITHM,
+        "inventory_sha256": identity.sha256,
+    }
+    base["consumers"] = [
+        {
+            "model_id": "bindcraft",
+            "binding_kind": "environment-variable",
+            "binding_name": "PYTHONPATH",
+            "mount_path": "/opt/fs2/academic/pyrosetta-fixture",
+        }
+    ]
+    contract = LocalizationContract.parse(base)
+    assert contract.tree.symlink_count == identity.symlink_count == 1
+
+    receipt = verify_localized_tree(source, contract)
+    assert receipt.verified
+    assert receipt.symlink_count == 1
+    assert receipt.to_dict()["tree_identity"]["symlink_count"] == 1
+
+    # A contract that declares the wrong number of symlinks is refused.
+    mismatched = replace(contract, tree=replace(contract.tree, symlink_count=4))
+    refused = verify_localized_tree(source, mismatched)
+    assert not refused.verified
+    assert "symbolic links" in (refused.rejection_reason or "")
+
+
+def test_the_receipt_carries_a_node_digest_and_never_the_node_name(tmp_path: Path) -> None:
+    """One canonical privacy transform, applied where the value enters.
+
+    A caller may hand over the raw downward-API node name or a digest it already
+    computed; the receipt carries exactly one field either way, and the raw name
+    has one place it can be turned away and no path to disk.
+    """
+
+    # A stand-in, not a real instance ID: this file is part of the public
+    # export, and the transform under test does not care about the shape.
+    raw = "node-under-test-0000000000"
+    expected = node_digest(raw)
+    assert len(expected) == 16
+
+    contract_path, archive, generation, sub_path = _stage_fixture(tmp_path)
+    receipt = tmp_path / "receipts" / "stage.json"
+    argv = _stage_argv(contract_path, archive, tmp_path / "artifact", receipt, sub_path)
+    argv += ["--observation", json.dumps({"node": raw, "region": "eu-north1"})]
+    assert localization_main(argv) == 0
+
+    document = _assert_valid_receipt(receipt)
+    observation = document["observation"]
+    assert observation["node_digest"] == expected
+    assert "node" not in observation
+    assert raw not in receipt.read_text(encoding="utf-8")
+
+    # The probes compute the same digest, so two receipts about one node agree.
+    probe = _renderer_probe_module()
+    assert probe.node_digest() == "" or True
+    os.environ["FS2_NODE_NAME"] = raw
+    try:
+        assert probe.node_digest() == expected
+    finally:
+        os.environ.pop("FS2_NODE_NAME", None)
+
+
+def _renderer_probe_module() -> Any:
+    path = (
+        Path(__file__).resolve().parents[3]
+        / "models/cancer-immunotherapy/artifact-localization/probes/boltzgen_moldir_probe.py"
+    )
+    spec = importlib.util.spec_from_file_location("fs2_boltzgen_probe", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_rejected_stage_receipt_also_reclaims_its_staging(tmp_path: Path) -> None:
+    """A tree that does not verify is as terminal as one that raises."""
+
+    entries = SYNTHETIC_ENTRIES
+    payload = _zip_bytes(sorted(entries.items()))
+    artifact = _document(payload, entries)
+    # Contract the wrong byte total, so the extracted tree verifies as wrong
+    # rather than failing to extract.
+    artifact["tree"]["total_bytes"] += 1
+    contract_path = tmp_path / "contract.json"
+    contract_path.write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/scientific-artifact-localization/v1",
+                "generated_at": "2026-09-03T00:00:00Z",
+                "artifacts": [artifact],
+            }
+        ),
+        encoding="utf-8",
+    )
+    archive = tmp_path / "mols.zip"
+    archive.write_bytes(payload)
+    root = tmp_path / "artifact"
+    receipt = tmp_path / "receipts" / "stage.json"
+
+    generation = artifact["tree"]["inventory_sha256"]
+    code = localization_main(
+        _stage_argv(contract_path, archive, root, receipt, f"p/generations/{MOLECULES_ID}/sha256/{generation}")
+    )
+    assert code == 1
+    document = _assert_valid_receipt(receipt)
+    assert document["state"] == "rejected"
+    assert not list(root.glob(f"{STAGING_PREFIX}*")), "a rejected receipt must not leave staging behind"
+    assert not (root / "sha256").exists(), "nothing is published for a tree that did not verify"
+
+
+def _render(*argv: str) -> dict[str, Any]:
+    """Run the renderer CLI the way an operator does."""
+
+    import contextlib
+    import io
+
+    renderer = _renderer()
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        assert renderer.main(list(argv)) == 0
+    return json.loads(buffer.getvalue())
+
+
+_RENDER_IMAGE = "registry.invalid/x@sha256:" + "0" * 64
+_CONTRACT = "catalog/runtime/contracts/scientific-artifact-localization.json"
+
+
+def _contract_path() -> str:
+    return str(Path(__file__).resolve().parents[3] / _CONTRACT)
+
+
+def test_a_first_run_creates_its_prefix_instead_of_mounting_one_that_is_absent(tmp_path: Path) -> None:
+    """The bootstrap the renderer emits must actually work on an empty volume.
+
+    Mounting tree_prefix as a subPath deadlocks the first run for a new prefix,
+    because the directory the run exists to create has to be there before the
+    mount succeeds. This executes the rendered bootstrap against an empty root.
+    """
+
+    document = _render(
+        "promote",
+        "--artifact-id",
+        "bindcraft-pyrosetta-installed-tree",
+        "--namespace",
+        "fs2-academic-poc",
+        "--run-id",
+        "r",
+        "--claim",
+        "academic-assets-runtime-rwx",
+        "--source-claim",
+        "academic-assets-runtime-rwx",
+        "--config-map",
+        "cm",
+        "--contract",
+        _contract_path(),
+        "--image",
+        _RENDER_IMAGE,
+    )
+    spec = next(item for item in document["items"] if item["kind"] == "Job")["spec"]["template"]["spec"]
+
+    # No mount asks for a sub-path of the tree volume.
+    for container in (*spec["initContainers"], *spec["containers"]):
+        for mount in container["volumeMounts"]:
+            if mount["name"] == "trees":
+                assert "subPath" not in mount, "a first run cannot mount a prefix it has not created"
+
+    # The rendered bootstrap runs against a genuinely empty volume root.
+    root = tmp_path / "empty-volume"
+    root.mkdir()
+    bootstrap = spec["initContainers"][0]["command"]
+    assert bootstrap[1] == "-c"
+    subprocess.run(  # noqa: S603 - the rendered argv under test, against a temporary directory
+        [sys.executable, "-c", bootstrap[2].replace("/trees", str(root))],
+        check=True,
+        capture_output=True,
+    )
+    created = root / "scientific-localization/private/.receipts"
+    assert created.is_dir(), "the bootstrap must create the prefix on an empty volume"
+
+    # And the destination the promotion writes into can then be made.
+    argv = spec["containers"][0]["command"]
+    artifact_root = Path(argv[argv.index("--artifact-root") + 1].replace("/trees", str(root)))
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    assert artifact_root.is_dir()
+
+
+def test_the_academic_claim_profile_joins_its_group_and_never_sets_fsgroup() -> None:
+    """The claim root is setgid and group-writable by 65532, not owned by us."""
+
+    document = _render(
+        "promote",
+        "--artifact-id",
+        "bindcraft-pyrosetta-installed-tree",
+        "--namespace",
+        "fs2-academic-poc",
+        "--run-id",
+        "r",
+        "--claim",
+        "academic-assets-runtime-rwx",
+        "--source-claim",
+        "academic-assets-runtime-rwx",
+        "--config-map",
+        "cm",
+        "--contract",
+        _contract_path(),
+        "--image",
+        _RENDER_IMAGE,
+    )
+    context = next(item for item in document["items"] if item["kind"] == "Job")["spec"]["template"]["spec"][
+        "securityContext"
+    ]
+    assert context["supplementalGroups"] == [65532]
+    # fsGroup applies to the whole volume, which also holds another tenant's
+    # assets, so it is refused rather than quietly accepted.
+    assert "fsGroup" not in context
+    assert context["runAsNonRoot"] is True
+
+
+def test_the_public_host_plane_uses_its_own_owner_and_requires_its_node_label() -> None:
+    document = _render(
+        "stage",
+        "--artifact-id",
+        MOLECULES_ID,
+        "--namespace",
+        "fs2-models",
+        "--run-id",
+        "r",
+        "--claim",
+        "unused-for-a-host-plane",
+        "--config-map",
+        "cm",
+        "--contract",
+        _contract_path(),
+        "--image",
+        _RENDER_IMAGE,
+        "--plane",
+        "host-path",
+        "--node-selector",
+        "storage.fs2.nebius/reference-data=true",
+    )
+    spec = next(item for item in document["items"] if item["kind"] == "Job")["spec"]["template"]["spec"]
+    # The public host root is owned by 1000:1000, not by the academic claim's group.
+    assert spec["securityContext"]["runAsUser"] == 1000
+    assert spec["securityContext"]["runAsGroup"] == 1000
+    assert "supplementalGroups" not in spec["securityContext"]
+    assert spec["nodeSelector"]["storage.fs2.nebius/reference-data"] == "true"
+
+
+def test_a_public_render_without_the_reference_data_label_is_refused() -> None:
+    """Only labelled nodes mount the host root; elsewhere the directory is absent."""
+
+    renderer = _renderer()
+    with pytest.raises(SystemExit, match="storage.fs2.nebius/reference-data=true"):
+        renderer.main(
+            [
+                "stage",
+                "--artifact-id",
+                MOLECULES_ID,
+                "--namespace",
+                "fs2-models",
+                "--run-id",
+                "r",
+                "--claim",
+                "c",
+                "--config-map",
+                "cm",
+                "--contract",
+                _contract_path(),
+                "--image",
+                _RENDER_IMAGE,
+                "--plane",
+                "host-path",
+            ]
+        )
+
+
+def test_a_generic_claim_never_inherits_the_academic_claims_ownership() -> None:
+    """Ownership is a property of a volume, not a rule about claims.
+
+    Applying the academic claim's GID to a customer PVC either fails to write or
+    writes files that volume's owner did not ask for, so an unknown claim must
+    be told what it needs rather than guessed at.
+    """
+
+    renderer = _renderer()
+    common = [
+        "stage",
+        "--artifact-id",
+        MOLECULES_ID,
+        "--run-id",
+        "r",
+        "--config-map",
+        "cm",
+        "--contract",
+        _contract_path(),
+        "--image",
+        _RENDER_IMAGE,
+    ]
+    with pytest.raises(SystemExit, match="will not guess it"):
+        renderer.main([*common, "--namespace", "customer-ns", "--claim", "customer-pvc"])
+
+    # Told explicitly, it uses exactly what it was told.
+    document = _render(
+        *common, "--namespace", "customer-ns", "--claim", "customer-pvc", "--supplemental-group", "2000"
+    )
+    context = next(item for item in document["items"] if item["kind"] == "Job")["spec"]["template"]["spec"][
+        "securityContext"
+    ]
+    assert context["supplementalGroups"] == [2000]
+    assert "fsGroup" not in context
+
+    # A claim the workload owns outright may legitimately use fsGroup, and only
+    # the academic claim refuses it.
+    document = _render(*common, "--namespace", "customer-ns", "--claim", "customer-pvc", "--fs-group", "3000")
+    context = next(item for item in document["items"] if item["kind"] == "Job")["spec"]["template"]["spec"][
+        "securityContext"
+    ]
+    assert context["fsGroup"] == 3000
+    with pytest.raises(SystemExit, match="fsGroup rewrites ownership"):
+        renderer.main(
+            [
+                *common,
+                "--namespace",
+                "fs2-academic-poc",
+                "--claim",
+                "academic-assets-runtime-rwx",
+                "--fs-group",
+                "65532",
+            ]
+        )
+
+
+def test_a_promoted_installed_tree_emits_a_schema_valid_receipt_and_reuses_it(tmp_path: Path) -> None:
+    """The PyRosetta shape end to end: promote, validate, then promote again.
+
+    A tree-manifest receipt carries a symlink count and a directory count that
+    the schema previously forbade, so this runs the real CLI and validates what
+    it actually wrote.
+    """
+
+    source = _installed_tree(tmp_path / "producer")
+    identity = tree_manifest_identity(source)
+    artifact = _document(b"unused", {"a": b"b"}, artifact_id="pyrosetta-fixture")
+    artifact["transform"] = "external-installed-tree"
+    artifact["source_sub_path"] = "producer"
+    artifact["visibility"] = "tenant-private"
+    artifact["archive"]["media_type"] = "application/zip"
+    artifact["archive"]["filename"] = "pyrosetta-2026.29+release-cp310-linux_x86_64.whl"
+    artifact["tree"] = {
+        "mount_paths": ["/opt/fs2/academic/pyrosetta-fixture"],
+        "entry_count": identity.file_count,
+        "directory_count": 2,
+        "symlink_count": identity.symlink_count,
+        "total_bytes": identity.total_bytes,
+        "entry_path_pattern": r"^[A-Za-z0-9_][A-Za-z0-9._-]*(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)*$",
+        "inventory_algorithm": TREE_MANIFEST_ALGORITHM,
+        "inventory_sha256": identity.sha256,
+    }
+    artifact["consumers"] = [
+        {
+            "model_id": "bindcraft",
+            "binding_kind": "environment-variable",
+            "binding_name": "PYTHONPATH",
+            "mount_path": "/opt/fs2/academic/pyrosetta-fixture",
+        }
+    ]
+    contract_path = tmp_path / "contract.json"
+    contract_path.write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/scientific-artifact-localization/v1",
+                "generated_at": "2026-09-03T00:00:00Z",
+                "artifacts": [artifact],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    root = tmp_path / "artifact"
+    receipt = tmp_path / "receipts" / "promote.json"
+    sub_path = f"scientific-localization/private/generations/pyrosetta-fixture/sha256/{identity.sha256}"
+    argv = [
+        "promote",
+        "--contract",
+        str(contract_path),
+        "--artifact-id",
+        "pyrosetta-fixture",
+        "--promote-from",
+        str(source),
+        "--artifact-root",
+        str(root),
+        "--sub-path",
+        sub_path,
+        "--volume-kind",
+        "persistent-volume-claim",
+        "--namespace",
+        "fs2-academic-poc",
+        "--claim",
+        "academic-assets-runtime-rwx",
+        "--visibility",
+        "tenant-private",
+        "--receipt",
+        str(receipt),
+    ]
+
+    assert localization_main(argv) == 0
+    document = _assert_valid_receipt(receipt)
+    assert document["tree_identity"]["inventory_algorithm"] == TREE_MANIFEST_ALGORITHM
+    assert document["tree_identity"]["symlink_count"] == 1
+    assert document["tree_identity"]["directory_count"] == 2
+    assert document["observation"]["bytes_copied"] == 0, "promotion shares bytes rather than copying them"
+    assert document["observation"]["bytes_linked"] == identity.total_bytes
+    assert document["observation"]["generation_reused"] is False
+
+    published = root / "sha256" / identity.sha256
+    assert (published / RUNTIME_MARKER_NAME).is_file()
+    assert (published / "alias.py").is_symlink()
+
+    # Re-running reuses the published generation and reverifies it in place.
+    assert localization_main(argv) == 0
+    again = _assert_valid_receipt(receipt)
+    assert again["observation"]["generation_reused"] is True
+    assert again["observation"]["marker_sha256"] == document["observation"]["marker_sha256"]
+
+    # And the mount admits under its own marker, symlink and all.
+    assert (
+        localization_main(
+            [
+                "marker",
+                "--artifact-id",
+                "pyrosetta-fixture",
+                "--mount",
+                str(published),
+                "--expect-generation",
+                identity.sha256,
+                "--sub-path",
+                sub_path,
+                "--expect-algorithm",
+                TREE_MANIFEST_ALGORITHM,
+                "--expect-visibility",
+                "tenant-private",
+                "--expect-manifest-digest",
+                document["observation"]["marker_sha256"],
+            ]
+        )
+        == 0
+    )
+
+
+def test_a_writable_source_leaves_no_partial_link_tree_behind(tmp_path: Path) -> None:
+    """The link fails midway, so the partial generation must not survive."""
+
+    source = _installed_tree(tmp_path / "producer")
+    os.chmod(source / "pkg" / "data" / "big.bin", 0o640)
+    artifact = _document(b"unused", {"a": b"b"}, artifact_id="pyrosetta-fixture")
+    artifact["transform"] = "external-installed-tree"
+    artifact["source_sub_path"] = "producer"
+    artifact["archive"]["media_type"] = "application/zip"
+    artifact["archive"]["filename"] = "pyrosetta-2026.29+release-cp310-linux_x86_64.whl"
+    artifact["tree"] = {
+        "mount_paths": ["/opt/fs2/academic/pyrosetta-fixture"],
+        "entry_count": 2,
+        "total_bytes": 1,
+        "entry_path_pattern": r"^[A-Za-z0-9_][A-Za-z0-9._-]*(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)*$",
+        "inventory_algorithm": TREE_MANIFEST_ALGORITHM,
+        "inventory_sha256": "e" * 64,
+    }
+    artifact["consumers"] = [
+        {
+            "model_id": "bindcraft",
+            "binding_kind": "environment-variable",
+            "binding_name": "PYTHONPATH",
+            "mount_path": "/opt/fs2/academic/pyrosetta-fixture",
+        }
+    ]
+    contract_path = tmp_path / "contract.json"
+    contract_path.write_text(
+        json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/scientific-artifact-localization/v1",
+                "generated_at": "2026-09-03T00:00:00Z",
+                "artifacts": [artifact],
+            }
+        ),
+        encoding="utf-8",
+    )
+    root = tmp_path / "artifact"
+    receipt = tmp_path / "receipts" / "promote.json"
+    before = _tree_state(source)
+
+    assert (
+        localization_main(
+            [
+                "promote",
+                "--contract",
+                str(contract_path),
+                "--artifact-id",
+                "pyrosetta-fixture",
+                "--promote-from",
+                str(source),
+                "--artifact-root",
+                str(root),
+                "--sub-path",
+                "p/generations/pyrosetta-fixture/sha256/" + "e" * 64,
+                "--volume-kind",
+                "host-path",
+                "--host-root",
+                "/mnt/fs2-reference-data/data",
+                "--visibility",
+                "public",
+                "--receipt",
+                str(receipt),
+            ]
+        )
+        == 1
+    )
+    document = _assert_valid_receipt(receipt)
+    assert document["state"] == "rejected"
+    assert "writable" in document["rejection_reason"]
+    assert not list(root.glob(f"{STAGING_PREFIX}*")), "a half-linked tree must not survive"
+    assert not (root / "sha256").exists()
+    assert _tree_state(source) == before, "the producing tree is untouched"

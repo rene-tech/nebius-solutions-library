@@ -62,6 +62,7 @@ RECURSIVE_INVENTORY_ALGORITHM = "fs2-tree-inventory/v2"
 TREE_MANIFEST_ALGORITHM = "fs2-tree-manifest/v1"
 INVENTORY_ALGORITHMS = (TREE_INVENTORY_ALGORITHM, RECURSIVE_INVENTORY_ALGORITHM, TREE_MANIFEST_ALGORITHM)
 _GENERATION = re.compile(r"^[0-9a-f]{64}$")
+_NODE_DIGEST = re.compile(r"^[0-9a-f]{16}$")
 # A generation is published under <artifact_id>/sha256/<tree digest>, so the
 # algorithm that produced the name is part of the path and a future digest can
 # be introduced beside this one rather than over it.
@@ -391,6 +392,7 @@ class TreeIdentity:
     generated_entries: tuple[GeneratedEntry, ...] = ()
     inventory_algorithm: str = TREE_INVENTORY_ALGORITHM
     directory_count: int = 0
+    symlink_count: int | None = None
 
     @classmethod
     def parse(cls, value: object) -> TreeIdentity:
@@ -406,7 +408,15 @@ class TreeIdentity:
                     "inventory_sha256",
                 }
             ),
-            optional=frozenset({"complete_entry_digests", "generated_entries", "directory_count", "probe_entries"}),
+            optional=frozenset(
+                {
+                    "complete_entry_digests",
+                    "generated_entries",
+                    "directory_count",
+                    "symlink_count",
+                    "probe_entries",
+                }
+            ),
             label="localization tree",
         )
         algorithm = item["inventory_algorithm"]
@@ -418,6 +428,13 @@ class TreeIdentity:
             raise ArtifactLocalizationError("tree directory_count must be a non-negative integer")
         if directory_count and algorithm == TREE_INVENTORY_ALGORITHM:
             raise ArtifactLocalizationError(f"{TREE_INVENTORY_ALGORITHM} describes a flat tree with no directories")
+        symlink_count = item.get("symlink_count")
+        if symlink_count is not None and (
+            isinstance(symlink_count, bool) or not isinstance(symlink_count, int) or symlink_count < 0
+        ):
+            raise ArtifactLocalizationError("tree symlink_count must be a non-negative integer")
+        if symlink_count and algorithm != TREE_MANIFEST_ALGORITHM:
+            raise ArtifactLocalizationError(f"only {TREE_MANIFEST_ALGORITHM} describes symbolic links")
         raw_mounts = item["mount_paths"]
         if not isinstance(raw_mounts, list) or not 1 <= len(raw_mounts) <= 8:
             raise ArtifactLocalizationError("tree mount_paths must contain 1..8 absolute paths")
@@ -504,6 +521,7 @@ class TreeIdentity:
             generated_entries=tuple(sorted(generated, key=lambda entry: entry.path)),
             inventory_algorithm=algorithm,
             directory_count=directory_count,
+            symlink_count=symlink_count,
         )
 
     @property
@@ -741,6 +759,7 @@ class LocalizationReceipt:
     observation: Mapping[str, object] | None = None
     inventory_algorithm: str = TREE_INVENTORY_ALGORITHM
     directory_count: int = 0
+    symlink_count: int | None = None
 
     @property
     def archive_sha256(self) -> str:
@@ -766,8 +785,11 @@ class LocalizationReceipt:
                 "probe_entries_verified": self.probe_entries_verified,
             },
         }
+        identity = cast(dict[str, object], value["tree_identity"])
         if self.directory_count:
-            cast(dict[str, object], value["tree_identity"])["directory_count"] = self.directory_count
+            identity["directory_count"] = self.directory_count
+        if self.symlink_count is not None:
+            identity["symlink_count"] = self.symlink_count
         if self.runtime_bindings:
             value["runtime_bindings"] = [
                 {
@@ -939,6 +961,16 @@ def verify_localized_tree(
                 total_bytes=observed.total_bytes,
                 observation=observation,
             )
+        if tree.symlink_count is not None and observed.symlink_count != tree.symlink_count:
+            return _rejected(
+                contract,
+                f"unexpected-tree-content: {observed.symlink_count} symbolic links do not match the "
+                f"contracted {tree.symlink_count}",
+                now=moment,
+                entry_count=observed.file_count,
+                total_bytes=observed.total_bytes,
+                observation=observation,
+            )
         if observed.sha256 != tree.inventory_sha256:
             return _rejected(
                 contract,
@@ -966,6 +998,7 @@ def verify_localized_tree(
             observation=observation,
             inventory_algorithm=TREE_MANIFEST_ALGORITHM,
             directory_count=tree.directory_count,
+            symlink_count=observed.symlink_count,
         )
 
     try:
@@ -1401,6 +1434,7 @@ __all__ = [
     "localize_archive",
     "marker_bytes",
     "marker_sha256",
+    "node_digest",
     "prepare_staging_directory",
     "promote_generation",
     "recursive_inventory_bytes",
@@ -2266,17 +2300,46 @@ def _cli_source(value: str | None) -> Mapping[str, object] | None:
     return parsed
 
 
+def node_digest(node: str) -> str:
+    """Correlate receipts by node without recording the node's identity.
+
+    On this platform the downward API's ``spec.nodeName`` is an opaque provider
+    resource ID, and these receipts are checked into a public repository. A
+    truncated SHA-256 still answers the only question the field is asked, which
+    is whether two receipts came from the same machine.
+    """
+
+    return hashlib.sha256(node.encode("utf-8")).hexdigest()[:16] if node else ""
+
+
 def _cli_observation(value: str | None) -> Mapping[str, object] | None:
+    """Parse the caller's observation and apply the one privacy transform.
+
+    A caller may pass the raw ``node`` it read from the downward API, or a
+    ``node_digest`` it already computed. Either way the receipt carries exactly
+    one field, ``node_digest``, digested here rather than by each caller, so a
+    raw node name has one place it can be turned away and no path to disk.
+    """
+
     if not value:
         return None
     parsed = json.loads(value)
     if not isinstance(parsed, dict):
         raise ArtifactLocalizationError("observation must be a JSON object")
-    allowed = {"cluster_context", "namespace", "node", "region", "duration_seconds"}
+    allowed = {"cluster_context", "namespace", "node", "node_digest", "region", "duration_seconds"}
     unknown = sorted(set(parsed) - allowed)
     if unknown:
         raise ArtifactLocalizationError(f"observation contains unknown fields {unknown}")
-    return parsed
+    observation = dict(parsed)
+    raw = observation.pop("node", None)
+    if raw is not None:
+        if not isinstance(raw, str):
+            raise ArtifactLocalizationError("observation node must be a string")
+        observation["node_digest"] = node_digest(raw)
+    existing = observation.get("node_digest")
+    if existing is not None and (not isinstance(existing, str) or _NODE_DIGEST.fullmatch(existing) is None):
+        raise ArtifactLocalizationError("observation node_digest must be 16 lowercase hex characters")
+    return observation
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -2378,6 +2441,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit(f"no localization contract is registered for {options.artifact_id}")
     observation = dict(_cli_observation(options.observation) or {})
 
+    # Anything this run creates under the artifact root, so a failure at any
+    # point can reclaim exactly what it owns and nothing else.
+    owned_staging: Path | None = None
     try:
         if options.mode == "stage":
             archive = options.archive
@@ -2391,6 +2457,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # filesystem and an interrupted run leaves only a reclaimable
                 # temporary directory, never a partial final tree.
                 staging = prepare_staging_directory(options.artifact_root)
+                owned_staging = staging
                 staging.rmdir()
                 options.mount = staging
             receipt = localize_archive(archive, options.mount, contract, observation=observation or None)
@@ -2399,6 +2466,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             # an immutable content-addressed name without a second copy, then
             # verify the result before anything is published.
             staging = prepare_staging_directory(options.artifact_root)
+            owned_staging = staging
             linked = link_tree_into(options.promote_from, staging)
             options.mount = staging
             observation["files_linked"] = linked.files_linked
@@ -2411,8 +2479,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 verify_probes=not options.skip_probes,
                 observation=observation or None,
             )
-            if not receipt.verified:
-                _remove_tree(staging)
         else:
             receipt = verify_localized_tree(
                 options.mount,
@@ -2420,9 +2486,31 @@ def main(argv: Sequence[str] | None = None) -> int:
                 verify_probes=not options.skip_probes,
                 observation=observation or None,
             )
-    except ArtifactLocalizationError as error:
-        print(f"{options.artifact_id}: {error}")
-        return 1
+    except (ArtifactLocalizationError, OSError) as error:
+        # Fetching, staging, linking and extraction all fail here, and each is a
+        # terminal state of this run. Emitting the same receipt every other
+        # outcome emits is what lets a caller tell a refusal from a dead
+        # container, and the staging this run created is reclaimed rather than
+        # left occupying a claim with little headroom.
+        if owned_staging is not None:
+            _remove_tree(owned_staging)
+        observation["duration_seconds"] = round(time.monotonic() - started, 3)
+        return _emit_receipt(
+            _rejected(
+                contract,
+                f"{options.mode}-failed: {error}",
+                now=datetime.now(tz=_UTC),
+                observation=observation,
+            ),
+            options.receipt,
+        )
+
+    if owned_staging is not None and not receipt.verified:
+        # A tree that did not verify is never published, so the staging this run
+        # created is reclaimed here rather than left occupying the claim. Both
+        # modes reach this: a rejected receipt is as terminal as an exception.
+        _remove_tree(owned_staging)
+        owned_staging = None
 
     if options.mode in {"stage", "promote"} and options.artifact_root is not None and receipt.verified:
         generation = receipt.tree_inventory_sha256
@@ -2432,6 +2520,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             generation=generation,
             entry_count=receipt.entry_count,
             directory_count=receipt.directory_count,
+            symlink_count=receipt.symlink_count,
             total_bytes=receipt.total_bytes,
             inventory_algorithm=contract.tree.inventory_algorithm,
             sub_path=sub_path,
@@ -2514,6 +2603,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             observation=observation,
             inventory_algorithm=receipt.inventory_algorithm,
             directory_count=receipt.directory_count,
+            symlink_count=receipt.symlink_count,
         ),
         options.receipt,
     )
