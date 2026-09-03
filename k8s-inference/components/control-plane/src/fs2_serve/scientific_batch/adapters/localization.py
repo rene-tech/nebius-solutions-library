@@ -1,17 +1,21 @@
-"""Digest-bound localization of compressed runtime artifacts into usable trees.
+"""Digest-bound localization of upstream runtime artifacts into usable trees.
 
-A scientific runtime consumes a *directory*. Upstream publishes an *archive*.
-This module keeps those two identities separate and independently verifiable:
+A scientific runtime consumes a *directory*. Upstream publishes either an
+archive to expand or one uncompressed file to place. This module keeps source
+provenance and runtime identity separate and independently verifiable:
 
-* ``ArchiveProvenance`` records where bytes came from (filename, size, SHA-256,
-  source URI, upstream revision, license). It never qualifies a runtime mount.
+* ``SourceProvenance`` records where bytes came from (kind, filename, media
+  type, size, SHA-256, source URI, upstream revision, license). It never
+  qualifies a runtime mount by itself. An archive is absent after extraction;
+  a raw file is the runtime content and is present by design.
 * ``TreeIdentity`` records what the runtime will actually read, as a digest
   computed from the localized filesystem. It is reproducible from the mount
-  alone, with no reference to the archive that produced it.
+  alone, with no reference to the location that supplied it.
 
-``verify_localized_tree`` is the adapter preflight. It fails closed when a mount
-still holds its source archive, when the tree is partial, when it is a different
-tree, or when its identity digest does not match the contract.
+``verify_localized_tree`` is the adapter preflight. It fails closed when an
+archive-backed mount still holds its source archive, when a raw-file mount holds
+anything but its contracted file, when a tree is partial or different, or when
+its identity digest does not match the contract.
 """
 
 from __future__ import annotations
@@ -60,7 +64,16 @@ RECURSIVE_INVENTORY_ALGORITHM = "fs2-tree-inventory/v2"
 # therefore reproduces the producer's algorithm exactly rather than replacing
 # it, and a cross-contract test holds the two implementations together.
 TREE_MANIFEST_ALGORITHM = "fs2-tree-manifest/v1"
-INVENTORY_ALGORITHMS = (TREE_INVENTORY_ALGORITHM, RECURSIVE_INVENTORY_ALGORITHM, TREE_MANIFEST_ALGORITHM)
+# A one-file tree is bound by the file's SHA-256, byte count, and immutable
+# filename. CRC-32 is useful as one row in a large inventory, but is not a
+# sufficient identity for a half-gigabyte checkpoint by itself.
+RAW_FILE_ALGORITHM = "fs2-raw-file/v1"
+INVENTORY_ALGORITHMS = (
+    TREE_INVENTORY_ALGORITHM,
+    RECURSIVE_INVENTORY_ALGORITHM,
+    TREE_MANIFEST_ALGORITHM,
+    RAW_FILE_ALGORITHM,
+)
 _GENERATION = re.compile(r"^[0-9a-f]{64}$")
 _NODE_DIGEST = re.compile(r"^[0-9a-f]{16}$")
 # A generation is published under <artifact_id>/sha256/<tree digest>, so the
@@ -99,10 +112,10 @@ _SCAN_HEADROOM_BYTES = 1024 * 1024
 
 _ARTIFACT_ID = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
 _ENTRY_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,254}$")
-# An archive filename is a label recorded as provenance, never a member name this
-# tool writes into a tree, so it admits the "+" a PEP 440 local version puts in a
-# wheel name. Extracted entries keep the stricter name rule.
-_ARCHIVE_FILENAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._+-]{0,254}$")
+# A source filename is a provenance label. Archive labels admit the "+" a PEP
+# 440 local version puts in a wheel name; raw-file labels use the stricter tree
+# entry rule because that exact name is published into the runtime mount.
+_SOURCE_FILENAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._+-]{0,254}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _BINDING_NAME = re.compile(r"^(?:--[a-z][a-z0-9-]{0,62}|[A-Z][A-Z0-9_]{1,63})$")
 _ABSOLUTE_PATH = re.compile(r"^/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*$")
@@ -113,12 +126,16 @@ _PACKAGE_PATH = re.compile(r"^[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*$")
 # plane put it; this contract only says how to recognize it and who reads it. Its
 # archive is provenance for how the tree came to be, never something we expand.
 EXTERNAL_TRANSFORM = "external-installed-tree"
-_TRANSFORMS = frozenset({"safe-extract-zip", "safe-extract-tar", "safe-extract-tar-gz", EXTERNAL_TRANSFORM})
+RAW_FILE_TRANSFORM = "verified-copy"
+_TRANSFORMS = frozenset(
+    {"safe-extract-zip", "safe-extract-tar", "safe-extract-tar-gz", EXTERNAL_TRANSFORM, RAW_FILE_TRANSFORM}
+)
 _MEDIA_TYPES = {
     "safe-extract-zip": "application/zip",
     "safe-extract-tar": "application/x-tar",
     "safe-extract-tar-gz": "application/gzip",
     EXTERNAL_TRANSFORM: "application/zip",
+    RAW_FILE_TRANSFORM: "application/octet-stream",
 }
 _MEMBER_PREFIX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*/$")
 
@@ -220,11 +237,39 @@ def recursive_inventory_bytes(entries: Iterable[TreeEntry]) -> bytes:
     return (json.dumps(rows, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
 
 
+def raw_file_inventory_bytes(filename: str, size_bytes: int, sha256: str) -> bytes:
+    """Serialize one immutable raw file into its versioned tree identity.
+
+    The filename and size are semantic inputs, not hints: two equally sized
+    checkpoints, or the same bytes published under a different runtime name,
+    are different generations. The content digest is SHA-256 rather than the
+    CRC-32 used for rows in the legacy flat-tree inventory.
+    """
+
+    if _ENTRY_NAME.fullmatch(filename) is None:
+        raise ArtifactLocalizationError("raw file filename must be a safe flat name")
+    if isinstance(size_bytes, bool) or not isinstance(size_bytes, int) or not 1 <= size_bytes <= MAX_TREE_BYTES:
+        raise ArtifactLocalizationError("raw file byte size is outside the bound")
+    if _SHA256.fullmatch(sha256) is None:
+        raise ArtifactLocalizationError("raw file sha256 must be a lowercase SHA-256")
+    document = {
+        "algorithm": RAW_FILE_ALGORITHM,
+        "entry": {"bytes": size_bytes, "path": filename, "sha256": sha256},
+    }
+    return (json.dumps(document, separators=(",", ":"), sort_keys=True) + "\n").encode("utf-8")
+
+
+def raw_file_inventory_sha256(filename: str, size_bytes: int, sha256: str) -> str:
+    return hashlib.sha256(raw_file_inventory_bytes(filename, size_bytes, sha256)).hexdigest()
+
+
 def inventory_bytes(entries: Iterable[TreeEntry], algorithm: str) -> bytes:
     if algorithm == TREE_INVENTORY_ALGORITHM:
         return tree_inventory_bytes(entries)
     if algorithm == RECURSIVE_INVENTORY_ALGORITHM:
         return recursive_inventory_bytes(entries)
+    if algorithm == RAW_FILE_ALGORITHM:
+        raise ArtifactLocalizationError("raw-file inventory requires the file's SHA-256")
     raise ArtifactLocalizationError("tree inventory algorithm is unsupported")
 
 
@@ -246,9 +291,10 @@ def inventory_sha256(entries: Iterable[TreeEntry], algorithm: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class ArchiveProvenance:
-    """Immutable upstream identity of the compressed object."""
+class SourceProvenance:
+    """Immutable upstream identity of an archive or uncompressed file."""
 
+    kind: str
     filename: str
     media_type: str
     size_bytes: int
@@ -259,32 +305,35 @@ class ArchiveProvenance:
     member_prefix: str | None = None
 
     @classmethod
-    def parse(cls, value: object) -> ArchiveProvenance:
+    def parse(cls, value: object, *, kind: str) -> SourceProvenance:
+        if kind not in {"archive", "file"}:
+            raise ArtifactLocalizationError("localization source kind is unsupported")
         item = strict_object(
             value,
             required=frozenset(
                 {"filename", "media_type", "bytes", "sha256", "source_uri", "source_revision", "license_id"}
             ),
-            optional=frozenset({"verified_at", "member_prefix"}),
-            label="localization archive",
+            optional=frozenset({"verified_at", "member_prefix"}) if kind == "archive" else frozenset({"verified_at"}),
+            label=f"localization {kind}",
         )
         filename = item["filename"]
-        if not isinstance(filename, str) or _ARCHIVE_FILENAME.fullmatch(filename) is None:
-            raise ArtifactLocalizationError("archive filename must be a safe flat name")
+        matcher = _SOURCE_FILENAME if kind == "archive" else _ENTRY_NAME
+        if not isinstance(filename, str) or matcher.fullmatch(filename) is None:
+            raise ArtifactLocalizationError(f"{kind} filename must be a safe flat name")
         media_type = item["media_type"]
         if media_type not in set(_MEDIA_TYPES.values()):
-            raise ArtifactLocalizationError("archive media type is unsupported")
+            raise ArtifactLocalizationError(f"{kind} media type is unsupported")
         size_bytes = item["bytes"]
         if isinstance(size_bytes, bool) or not isinstance(size_bytes, int) or not 1 <= size_bytes <= MAX_TREE_BYTES:
-            raise ArtifactLocalizationError("archive byte size is outside the bound")
+            raise ArtifactLocalizationError(f"{kind} byte size is outside the bound")
         digest = item["sha256"]
         if not isinstance(digest, str) or _SHA256.fullmatch(digest) is None:
-            raise ArtifactLocalizationError("archive sha256 must be a lowercase SHA-256")
+            raise ArtifactLocalizationError(f"{kind} sha256 must be a lowercase SHA-256")
         strings = {}
         for key, maximum in (("source_uri", 1024), ("source_revision", 128), ("license_id", 64)):
             raw = item[key]
             if not isinstance(raw, str) or not 1 <= len(raw) <= maximum:
-                raise ArtifactLocalizationError(f"archive {key} is invalid")
+                raise ArtifactLocalizationError(f"{kind} {key} is invalid")
             strings[key] = raw
         member_prefix = item.get("member_prefix")
         if member_prefix is not None and (
@@ -294,6 +343,7 @@ class ArchiveProvenance:
         ):
             raise ArtifactLocalizationError("archive member_prefix must be a safe relative directory prefix")
         return cls(
+            kind=kind,
             filename=filename,
             media_type=cast(str, media_type),
             size_bytes=size_bytes,
@@ -305,7 +355,7 @@ class ArchiveProvenance:
         )
 
     def to_receipt(self, *, present_in_mount: bool) -> dict[str, object]:
-        return {
+        value: dict[str, object] = {
             "filename": self.filename,
             "bytes": self.size_bytes,
             "sha256": self.sha256,
@@ -314,6 +364,14 @@ class ArchiveProvenance:
             "license_id": self.license_id,
             "present_in_mount": present_in_mount,
         }
+        if self.kind == "file":
+            value["media_type"] = self.media_type
+        return value
+
+
+# Compatibility name for archive-only callers. New code should use
+# SourceProvenance and inspect ``kind`` rather than assuming extraction.
+ArchiveProvenance = SourceProvenance
 
 
 @dataclass(frozen=True, slots=True)
@@ -467,13 +525,14 @@ class TreeIdentity:
             raise ArtifactLocalizationError("tree inventory_sha256 must be a lowercase SHA-256")
         # A probe subset makes a cheap spot check possible for an algorithm whose
         # digest is a CRC-32 inventory. fs2-tree-manifest/v1 already binds every
-        # file by SHA-256, so a subset of the same digests would add nothing and
-        # is not required.
-        fully_bound = algorithm == TREE_MANIFEST_ALGORITHM
-        if not fully_bound and "probe_entries" not in item:
+        # file by SHA-256, so a subset of the same digests would add nothing. A
+        # raw-file identity is itself made from its one probe and therefore
+        # requires exactly that complete entry.
+        manifest_bound = algorithm == TREE_MANIFEST_ALGORITHM
+        if not manifest_bound and "probe_entries" not in item:
             raise ArtifactLocalizationError("tree probe_entries must contain 1..64 items")
         raw_probes = item.get("probe_entries", [])
-        lower_bound = 0 if fully_bound else 1
+        lower_bound = 0 if manifest_bound else 1
         if not isinstance(raw_probes, list) or not lower_bound <= len(raw_probes) <= 64:
             raise ArtifactLocalizationError("tree probe_entries must contain 1..64 items")
         probes: list[ProbeEntry] = []
@@ -508,8 +567,19 @@ class TreeIdentity:
         complete = item.get("complete_entry_digests", False)
         if not isinstance(complete, bool):
             raise ArtifactLocalizationError("tree complete_entry_digests must be a boolean")
-        if complete and not fully_bound and len(probes) != entry_count:
+        if complete and not manifest_bound and len(probes) != entry_count:
             raise ArtifactLocalizationError("a complete-digest tree must bind every entry")
+        if algorithm == RAW_FILE_ALGORITHM and (
+            entry_count != 1
+            or directory_count != 0
+            or symlink_count not in {None, 0}
+            or len(probes) != 1
+            or not complete
+            or generated
+        ):
+            raise ArtifactLocalizationError(
+                "a raw-file tree must bind exactly one regular file, no directories, symlinks, or generated entries"
+            )
         return cls(
             mount_paths=mount_paths,
             entry_count=entry_count,
@@ -527,6 +597,10 @@ class TreeIdentity:
     @property
     def is_recursive(self) -> bool:
         return self.inventory_algorithm == RECURSIVE_INVENTORY_ALGORITHM
+
+    @property
+    def is_raw_file(self) -> bool:
+        return self.inventory_algorithm == RAW_FILE_ALGORITHM
 
     @property
     def entry_matcher(self) -> re.Pattern[str]:
@@ -589,11 +663,11 @@ class RuntimeBinding:
 
 @dataclass(frozen=True, slots=True)
 class LocalizationContract:
-    """One archive bound to the exact extracted tree a runtime consumes."""
+    """One upstream source bound to the exact tree a runtime consumes."""
 
     artifact_id: str
     transform: str
-    archive: ArchiveProvenance
+    source: SourceProvenance
     tree: TreeIdentity
     consumers: tuple[RuntimeBinding, ...]
     visibility: str = "public"
@@ -605,8 +679,12 @@ class LocalizationContract:
             raise ArtifactLocalizationError("localization artifact_id is invalid")
         if self.transform not in _TRANSFORMS:
             raise ArtifactLocalizationError("localization transform is unsupported")
-        if self.archive.media_type != _MEDIA_TYPES[self.transform]:
-            raise ArtifactLocalizationError("localization transform does not match the archive media type")
+        if self.source.media_type != _MEDIA_TYPES[self.transform]:
+            raise ArtifactLocalizationError("localization transform does not match the source media type")
+        if (self.transform == RAW_FILE_TRANSFORM) != (self.source.kind == "file"):
+            raise ArtifactLocalizationError(
+                "verified-copy requires file provenance and every other transform requires archive provenance"
+            )
         for candidate in self.tree.mount_paths:
             if ".." in PurePosixPath(candidate).parts:
                 raise ArtifactLocalizationError("localized tree mount paths must not traverse")
@@ -619,9 +697,27 @@ class LocalizationContract:
             raise ArtifactLocalizationError(
                 "a mount under the runtime artifact root must be this artifact's own directory"
             )
-        if self.archive.sha256 == self.tree.inventory_sha256:
-            raise ArtifactLocalizationError("archive provenance and extracted-tree identity must be distinct digests")
-        if self.tree.entry_matcher.fullmatch(self.archive.filename) is not None:
+        if self.source.sha256 == self.tree.inventory_sha256:
+            raise ArtifactLocalizationError("source provenance and runtime-tree identity must be distinct digests")
+        if self.raw_file:
+            probe = self.tree.probe_entries[0]
+            if (
+                self.tree.inventory_algorithm != RAW_FILE_ALGORITHM
+                or probe.path != self.source.filename
+                or probe.size_bytes != self.source.size_bytes
+                or probe.sha256 != self.source.sha256
+                or self.tree.total_bytes != self.source.size_bytes
+                or self.tree.entry_matcher.fullmatch(self.source.filename) is None
+            ):
+                raise ArtifactLocalizationError(
+                    "raw-file tree identity must exactly bind the source filename, bytes, SHA-256, and entry pattern"
+                )
+            expected = raw_file_inventory_sha256(self.source.filename, self.source.size_bytes, self.source.sha256)
+            if self.tree.inventory_sha256 != expected:
+                raise ArtifactLocalizationError(
+                    "raw-file tree inventory digest does not match its exact source identity"
+                )
+        elif self.tree.entry_matcher.fullmatch(self.source.filename) is not None:
             raise ArtifactLocalizationError("the source archive must not satisfy the localized tree entry pattern")
         if not self.consumers:
             raise ArtifactLocalizationError("a localization contract requires at least one consumer")
@@ -641,8 +737,8 @@ class LocalizationContract:
     def parse(cls, value: object) -> LocalizationContract:
         item = strict_object(
             value,
-            required=frozenset({"artifact_id", "transform", "archive", "tree", "consumers"}),
-            optional=frozenset({"notes", "visibility", "artifact_kind", "source_sub_path"}),
+            required=frozenset({"artifact_id", "transform", "tree", "consumers"}),
+            optional=frozenset({"archive", "file", "notes", "visibility", "artifact_kind", "source_sub_path"}),
             label="localization artifact",
         )
         raw_consumers = item["consumers"]
@@ -668,10 +764,14 @@ class LocalizationContract:
             raise ArtifactLocalizationError(f"a {EXTERNAL_TRANSFORM} artifact must declare its source_sub_path")
         if transform != EXTERNAL_TRANSFORM and source_sub_path:
             raise ArtifactLocalizationError("only an externally installed tree has a fixed source_sub_path")
+        provenance_fields = [name for name in ("archive", "file") if name in item]
+        if len(provenance_fields) != 1:
+            raise ArtifactLocalizationError("localization artifact must declare exactly one of archive or file")
+        source_kind = provenance_fields[0]
         return cls(
             artifact_id=artifact_id,
             transform=transform,
-            archive=ArchiveProvenance.parse(item["archive"]),
+            source=SourceProvenance.parse(item[source_kind], kind=source_kind),
             tree=TreeIdentity.parse(item["tree"]),
             consumers=tuple(RuntimeBinding.parse(raw) for raw in raw_consumers),
             visibility=visibility,
@@ -684,6 +784,24 @@ class LocalizationContract:
         """True when another plane owns these bytes and this tool only reads them."""
 
         return self.transform == EXTERNAL_TRANSFORM
+
+    @property
+    def raw_file(self) -> bool:
+        return self.transform == RAW_FILE_TRANSFORM
+
+    @property
+    def archive(self) -> SourceProvenance:
+        """Archive provenance for legacy archive-only callers."""
+
+        if self.source.kind != "archive":
+            raise ArtifactLocalizationError(f"{self.artifact_id} has file provenance, not archive provenance")
+        return self.source
+
+    @property
+    def file(self) -> SourceProvenance:
+        if self.source.kind != "file":
+            raise ArtifactLocalizationError(f"{self.artifact_id} has archive provenance, not file provenance")
+        return self.source
 
     def binding_for(self, model_id: str) -> RuntimeBinding:
         matches = [item for item in self.consumers if item.model_id == model_id]
@@ -734,9 +852,10 @@ def load_localization_contracts_from_path(path: Path) -> dict[str, LocalizationC
 class LocalizationReceipt:
     """Non-secret evidence about one runtime mount.
 
-    ``archive_sha256`` and ``tree_inventory_sha256`` are deliberately separate
-    fields: the first says where the bytes came from, the second says what the
-    runtime will read. A caller must never substitute one for the other.
+    ``source.sha256`` and ``tree_inventory_sha256`` are deliberately separate
+    fields: the first says which bytes arrived, while the second binds their
+    runtime filename and tree shape as well. A caller must never substitute one
+    for the other.
 
     Only a verified receipt asserts a tree identity. On a rejected receipt the
     tree fields carry what was observed where verification reached them, and
@@ -748,8 +867,8 @@ class LocalizationReceipt:
     mount_path: str
     state: str
     observed_at: datetime
-    archive: ArchiveProvenance
-    archive_present_in_mount: bool
+    source: SourceProvenance
+    source_present_in_mount: bool
     entry_count: int
     total_bytes: int
     tree_inventory_sha256: str
@@ -763,7 +882,15 @@ class LocalizationReceipt:
 
     @property
     def archive_sha256(self) -> str:
-        return self.archive.sha256
+        """Compatibility projection used by archive-backed runtime bindings."""
+
+        return self.source.sha256
+
+    @property
+    def archive_present_in_mount(self) -> bool:
+        """Compatibility projection for archive-only receipt consumers."""
+
+        return self.source_present_in_mount
 
     @property
     def verified(self) -> bool:
@@ -776,7 +903,6 @@ class LocalizationReceipt:
             "observed_at": self.observed_at.astimezone(_UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "mount_path": self.mount_path,
             "state": self.state,
-            "archive_provenance": self.archive.to_receipt(present_in_mount=self.archive_present_in_mount),
             "tree_identity": {
                 "entry_count": self.entry_count,
                 "total_bytes": self.total_bytes,
@@ -785,6 +911,8 @@ class LocalizationReceipt:
                 "probe_entries_verified": self.probe_entries_verified,
             },
         }
+        provenance_key = "archive_provenance" if self.source.kind == "archive" else "file_provenance"
+        value[provenance_key] = self.source.to_receipt(present_in_mount=self.source_present_in_mount)
         identity = cast(dict[str, object], value["tree_identity"])
         if self.directory_count:
             identity["directory_count"] = self.directory_count
@@ -887,7 +1015,7 @@ def _rejected(
     reason: str,
     *,
     now: datetime,
-    archive_present: bool = False,
+    source_present: bool = False,
     entry_count: int = 0,
     total_bytes: int = 0,
     inventory: str = "0" * 64,
@@ -900,8 +1028,8 @@ def _rejected(
         mount_path=contract.tree.canonical_mount_path,
         state="rejected",
         observed_at=now,
-        archive=contract.archive,
-        archive_present_in_mount=archive_present,
+        source=contract.source,
+        source_present_in_mount=source_present,
         entry_count=entry_count,
         total_bytes=total_bytes,
         tree_inventory_sha256=inventory,
@@ -936,16 +1064,83 @@ def verify_localized_tree(
     except ArtifactLocalizationError as error:
         return _rejected(contract, f"unusable-runtime-mount: {error}", now=moment, observation=observation)
 
-    archive_candidate = resolved / contract.archive.filename
-    archive_present = archive_candidate.exists() or archive_candidate.is_symlink()
-    if archive_present:
+    source_candidate = resolved / contract.source.filename
+    source_present = source_candidate.exists() or source_candidate.is_symlink()
+    if contract.source.kind == "archive" and source_present:
         return _rejected(
             contract,
             "archive-present-in-runtime-mount: the mount holds "
-            f"{contract.archive.filename} instead of the extracted tree",
+            f"{contract.source.filename} instead of the extracted tree",
             now=moment,
-            archive_present=True,
+            source_present=True,
             observation=observation,
+        )
+
+    if tree.is_raw_file:
+        try:
+            members = [item for item in resolved.iterdir() if item.name != RUNTIME_MARKER_NAME]
+        except OSError as error:
+            return _rejected(contract, f"unsafe-tree-entry: {error}", now=moment, observation=observation)
+        if len(members) != 1 or members[0].name != contract.source.filename:
+            return _rejected(
+                contract,
+                f"unexpected-tree-content: raw-file mount must contain only {contract.source.filename}",
+                now=moment,
+                source_present=source_present,
+                entry_count=len(members),
+                observation=observation,
+            )
+        candidate = members[0]
+        if candidate.is_symlink() or not candidate.is_file():
+            return _rejected(
+                contract,
+                "unsafe-tree-entry: raw-file mount entry must be a regular file",
+                now=moment,
+                source_present=source_present,
+                observation=observation,
+            )
+        size = candidate.stat().st_size
+        if size != contract.source.size_bytes:
+            return _rejected(
+                contract,
+                f"unexpected-tree-content: raw file is {size} bytes and {contract.source.size_bytes} were expected",
+                now=moment,
+                source_present=True,
+                entry_count=1,
+                total_bytes=size,
+                observation=observation,
+            )
+        digest = _file_sha256(candidate)
+        inventory = raw_file_inventory_sha256(candidate.name, size, digest)
+        if digest != contract.source.sha256 or inventory != tree.inventory_sha256:
+            return _rejected(
+                contract,
+                "tree-identity-mismatch: raw file digest does not match the contract",
+                now=moment,
+                source_present=True,
+                entry_count=1,
+                total_bytes=size,
+                inventory=inventory,
+                observation=observation,
+            )
+        return LocalizationReceipt(
+            artifact_id=contract.artifact_id,
+            mount_path=tree.canonical_mount_path,
+            state="verified",
+            observed_at=moment,
+            source=contract.source,
+            source_present_in_mount=True,
+            entry_count=1,
+            total_bytes=size,
+            tree_inventory_sha256=inventory,
+            probe_entries_verified=1 if verify_probes else 0,
+            runtime_bindings=tuple(
+                (item.model_id, item.binding_kind, item.binding_name, item.mount_path) for item in contract.consumers
+            ),
+            observation=observation,
+            inventory_algorithm=RAW_FILE_ALGORITHM,
+            directory_count=0,
+            symlink_count=0,
         )
 
     if tree.inventory_algorithm == TREE_MANIFEST_ALGORITHM:
@@ -1004,8 +1199,8 @@ def verify_localized_tree(
             mount_path=tree.canonical_mount_path,
             state="verified",
             observed_at=moment,
-            archive=contract.archive,
-            archive_present_in_mount=False,
+            source=contract.source,
+            source_present_in_mount=False,
             entry_count=observed.file_count,
             total_bytes=observed.total_bytes,
             tree_inventory_sha256=observed.sha256,
@@ -1115,8 +1310,8 @@ def verify_localized_tree(
         mount_path=contract.tree.canonical_mount_path,
         state="verified",
         observed_at=moment,
-        archive=contract.archive,
-        archive_present_in_mount=False,
+        source=contract.source,
+        source_present_in_mount=False,
         entry_count=observed_files,
         total_bytes=observed_bytes,
         tree_inventory_sha256=inventory,
@@ -1135,8 +1330,8 @@ def verify_localized_tree(
 # ---------------------------------------------------------------------------
 
 
-def fetch_archive(destination: Path, contract: LocalizationContract, *, timeout_seconds: float = 900.0) -> Path:
-    """Download the contracted archive and prove its digest before anything reads it.
+def fetch_source(destination: Path, contract: LocalizationContract, *, timeout_seconds: float = 900.0) -> Path:
+    """Download the contracted source and prove its digest and size.
 
     Only the URI the contract declares is fetched, so a staging job cannot be
     pointed at a different object by its arguments.
@@ -1144,8 +1339,8 @@ def fetch_archive(destination: Path, contract: LocalizationContract, *, timeout_
 
     import urllib.request
 
-    if not contract.archive.source_uri.startswith("https://"):
-        raise ArtifactLocalizationError("archive source_uri must be https")
+    if not contract.source.source_uri.startswith("https://"):
+        raise ArtifactLocalizationError("source_uri must be https")
     destination.parent.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256()
     written = 0
@@ -1153,29 +1348,43 @@ def fetch_archive(destination: Path, contract: LocalizationContract, *, timeout_
     # pick up as if it were the contracted archive.
     destination.unlink(missing_ok=True)
     request = urllib.request.Request(  # noqa: S310 - scheme is checked above
-        contract.archive.source_uri,
+        contract.source.source_uri,
         headers={"User-Agent": "fs2-artifact-localization/1"},
     )
-    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
-        with destination.open("wb") as handle:
-            while True:
-                chunk = response.read(_READ_CHUNK)
-                if not chunk:
-                    break
-                written += len(chunk)
-                if written > contract.archive.size_bytes:
-                    raise ArtifactLocalizationError("archive download exceeded its contracted byte size")
-                digest.update(chunk)
-                handle.write(chunk)
-    if written != contract.archive.size_bytes or digest.hexdigest() != contract.archive.sha256:
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
+            with destination.open("wb") as handle:
+                while True:
+                    chunk = response.read(_READ_CHUNK)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > contract.source.size_bytes:
+                        raise ArtifactLocalizationError("source download exceeded its contracted byte size")
+                    digest.update(chunk)
+                    handle.write(chunk)
+    except (ArtifactLocalizationError, OSError):
         destination.unlink(missing_ok=True)
-        raise ArtifactLocalizationError("downloaded archive does not match its declared provenance")
+        raise
+    if written != contract.source.size_bytes or digest.hexdigest() != contract.source.sha256:
+        destination.unlink(missing_ok=True)
+        raise ArtifactLocalizationError("downloaded source does not match its declared provenance")
     return destination
+
+
+def fetch_archive(destination: Path, contract: LocalizationContract, *, timeout_seconds: float = 900.0) -> Path:
+    """Compatibility wrapper for archive-backed callers."""
+
+    if contract.source.kind != "archive":
+        raise ArtifactLocalizationError("fetch_archive requires archive provenance")
+    return fetch_source(destination, contract, timeout_seconds=timeout_seconds)
 
 
 def verify_archive(path: Path, contract: LocalizationContract) -> None:
     """Fail closed before extracting anything from an unexpected archive."""
 
+    if contract.source.kind != "archive":
+        raise ArtifactLocalizationError("verify_archive requires archive provenance")
     if path.is_symlink() or not path.is_file():
         raise ArtifactLocalizationError("source archive must be a regular file")
     size = path.stat().st_size
@@ -1186,6 +1395,22 @@ def verify_archive(path: Path, contract: LocalizationContract) -> None:
     digest = _file_sha256(path)
     if digest != contract.archive.sha256:
         raise ArtifactLocalizationError("source archive SHA-256 does not match its declared provenance")
+
+
+def verify_file(path: Path, contract: LocalizationContract) -> None:
+    """Fail closed unless a local raw file is the exact contracted object."""
+
+    if not contract.raw_file:
+        raise ArtifactLocalizationError("verify_file requires a verified-copy contract")
+    if path.is_symlink() or not path.is_file():
+        raise ArtifactLocalizationError("source file must be a regular file")
+    size = path.stat().st_size
+    if size != contract.source.size_bytes:
+        raise ArtifactLocalizationError(
+            f"source file is {size} bytes and the contract requires {contract.source.size_bytes}"
+        )
+    if _file_sha256(path) != contract.source.sha256:
+        raise ArtifactLocalizationError("source file SHA-256 does not match its declared provenance")
 
 
 def _selected_member_name(name: str, contract: LocalizationContract) -> str | None:
@@ -1419,8 +1644,57 @@ def localize_archive(
     return verify_localized_tree(resolved, contract, now=now, observation=observation)
 
 
+def localize_file(
+    source: Path,
+    destination: Path,
+    contract: LocalizationContract,
+    *,
+    now: datetime | None = None,
+    observation: Mapping[str, object] | None = None,
+) -> LocalizationReceipt:
+    """Copy one verified raw file into an empty private generation staging tree.
+
+    The destination filename comes from the contract, never from CLI input. The
+    copy is hashed as written, made read-only, then re-opened by the ordinary
+    verifier before the caller may publish the directory by atomic rename.
+    """
+
+    verify_file(source, contract)
+    destination.mkdir(parents=True, exist_ok=True)
+    resolved = _real_directory(destination, "localization destination")
+    if any(resolved.iterdir()):
+        raise ArtifactLocalizationError("localization destination must be empty before file placement")
+    if resolved == source.resolve(strict=True).parent:
+        raise ArtifactLocalizationError("localization destination must not contain the source file")
+    target = resolved / contract.source.filename
+    written = 0
+    digest = hashlib.sha256()
+    handle = _open_for_write(target)
+    try:
+        with source.open("rb") as reader, os.fdopen(handle, "wb") as writer:
+            while True:
+                chunk = reader.read(_READ_CHUNK)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > contract.source.size_bytes:
+                    raise ArtifactLocalizationError("raw file copy exceeded its contracted byte size")
+                digest.update(chunk)
+                writer.write(chunk)
+    except (OSError, ArtifactLocalizationError):
+        target.unlink(missing_ok=True)
+        raise
+    if written != contract.source.size_bytes or digest.hexdigest() != contract.source.sha256:
+        target.unlink(missing_ok=True)
+        raise ArtifactLocalizationError("localized raw file does not match its declared provenance")
+    measured = dict(observation or {})
+    measured.update({"files_linked": 0, "files_copied": 1, "bytes_linked": 0, "bytes_copied": written})
+    return verify_localized_tree(resolved, contract, now=now, observation=measured)
+
+
 __all__ = [
     "ArchiveProvenance",
+    "SourceProvenance",
     "ArtifactLocalizationError",
     "ScientificAdapterError",
     "LOCALIZATION_SCHEMA",
@@ -1428,6 +1702,8 @@ __all__ = [
     "LocalizationReceipt",
     "ProbeEntry",
     "RECEIPT_SCHEMA",
+    "RAW_FILE_ALGORITHM",
+    "RAW_FILE_TRANSFORM",
     "RuntimeBinding",
     "TREE_INVENTORY_ALGORITHM",
     "TreeBoundExceededError",
@@ -1450,6 +1726,7 @@ __all__ = [
     "load_localization_contracts",
     "load_localization_contracts_from_path",
     "localize_archive",
+    "localize_file",
     "marker_bytes",
     "marker_sha256",
     "node_digest",
@@ -1457,6 +1734,8 @@ __all__ = [
     "promote_generation",
     "recursive_inventory_bytes",
     "recursive_inventory_sha256",
+    "raw_file_inventory_bytes",
+    "raw_file_inventory_sha256",
     "scan_localized_tree",
     "scan_recursive_tree",
     "tree_counts",
@@ -1466,7 +1745,9 @@ __all__ = [
     "tree_inventory_sha256",
     "main",
     "fetch_archive",
+    "fetch_source",
     "verify_archive",
+    "verify_file",
     "verify_localized_tree",
 ]
 
@@ -1644,7 +1925,7 @@ def generation_marker(
     host_root: str = "",
     artifact_kind: str = "",
     directory_count: int = 0,
-    archive: ArchiveProvenance | None = None,
+    archive: SourceProvenance | None = None,
     generated_entries: tuple[GeneratedEntry, ...] = (),
     consumer_paths: tuple[str, ...] = (),
     source: Mapping[str, object] | None = None,
@@ -1720,6 +2001,14 @@ def generation_marker(
                 "license_id": archive.license_id,
             }
         )
+        if archive.kind == "file":
+            document.update(
+                {
+                    "source_kind": "file",
+                    "source_media_type": archive.media_type,
+                    "source_present_in_mount": True,
+                }
+            )
     elif source is not None:
         for key, value in source.items():
             document[key if key.startswith(("source_", "license")) else f"source_{key}"] = value
@@ -1945,6 +2234,8 @@ def load_generation_marker(path: Path) -> Mapping[str, object]:
                 "source_name",
                 "source_version",
                 "source_note",
+                "source_media_type",
+                "source_present_in_mount",
                 "license_id",
                 "cross_reference",
             }
@@ -1953,6 +2244,11 @@ def load_generation_marker(path: Path) -> Mapping[str, object]:
     )
     if document["schema"] != MARKER_SCHEMA:
         raise ArtifactLocalizationError("generation marker schema is unsupported")
+    if document.get("source_kind") == "file" and (
+        document.get("source_media_type") != "application/octet-stream"
+        or document.get("source_present_in_mount") is not True
+    ):
+        raise ArtifactLocalizationError("raw-file generation marker has invalid source semantics")
     return document
 
 
@@ -2470,11 +2766,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--maximum-entries", type=int, default=500_000)
     parser.add_argument("--maximum-bytes", type=int, default=64 * 1024 * 1024 * 1024)
-    parser.add_argument("--archive", type=Path, help="local source archive, for stage")
+    parser.add_argument("--archive", type=Path, help="local source archive, for an extraction stage")
     parser.add_argument(
         "--fetch-archive-to",
         type=Path,
         help="download the contract's declared archive URI here first, then stage from it",
+    )
+    parser.add_argument("--file", type=Path, help="local source file, for a verified-copy stage")
+    parser.add_argument(
+        "--fetch-file-to",
+        type=Path,
+        help="download the contract's declared raw file here first, then stage it",
     )
     parser.add_argument("--receipt", type=Path, help="write the receipt JSON here")
     parser.add_argument("--observation", help="JSON object of non-secret cluster observation fields")
@@ -2502,6 +2804,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     contract = contracts.get(options.artifact_id)
     if contract is None:
         raise SystemExit(f"no localization contract is registered for {options.artifact_id}")
+    if options.mode == "stage":
+        archive_input = options.archive is not None or options.fetch_archive_to is not None
+        file_input = options.file is not None or options.fetch_file_to is not None
+        if contract.raw_file and (archive_input or not file_input):
+            raise SystemExit("a verified-copy stage requires --file or --fetch-file-to, not archive input")
+        if not contract.raw_file and (file_input or not archive_input):
+            raise SystemExit("an archive-backed stage requires --archive or --fetch-archive-to")
     observation = dict(_cli_observation(options.observation) or {})
 
     # Anything this run creates under the artifact root, so a failure at any
@@ -2509,11 +2818,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     owned_staging: Path | None = None
     try:
         if options.mode == "stage":
-            archive = options.archive
-            if options.fetch_archive_to is not None:
-                archive = fetch_archive(options.fetch_archive_to, contract)
-            if archive is None:
-                raise SystemExit("stage requires --archive or --fetch-archive-to")
             if options.mount is None:
                 # Stage into a private temporary generation beside where it will
                 # be published, so the rename that commits it stays within one
@@ -2523,7 +2827,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 owned_staging = staging
                 staging.rmdir()
                 options.mount = staging
-            receipt = localize_archive(archive, options.mount, contract, observation=observation or None)
+            if contract.raw_file:
+                source = options.file
+                if options.fetch_file_to is not None:
+                    source = fetch_source(options.fetch_file_to, contract)
+                assert source is not None  # validated before staging is allocated
+                receipt = localize_file(source, options.mount, contract, observation=observation or None)
+                observation.update(receipt.observation or {})
+            else:
+                archive = options.archive
+                if options.fetch_archive_to is not None:
+                    archive = fetch_archive(options.fetch_archive_to, contract)
+                assert archive is not None  # validated before staging is allocated
+                receipt = localize_archive(archive, options.mount, contract, observation=observation or None)
         elif options.mode == "promote":
             # The bytes already exist somewhere this tool does not own. Give them
             # an immutable content-addressed name without a second copy, then
@@ -2599,7 +2915,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             claim=options.claim,
             host_root=options.host_root,
             visibility=options.visibility,
-            archive=contract.archive,
+            archive=contract.source,
             generated_entries=contract.tree.generated_entries,
             consumer_paths=contract.tree.mount_paths,
         )
@@ -2662,8 +2978,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             mount_path=receipt.mount_path,
             state=receipt.state,
             observed_at=receipt.observed_at,
-            archive=receipt.archive,
-            archive_present_in_mount=receipt.archive_present_in_mount,
+            source=receipt.source,
+            source_present_in_mount=receipt.source_present_in_mount,
             entry_count=receipt.entry_count,
             total_bytes=receipt.total_bytes,
             tree_inventory_sha256=receipt.tree_inventory_sha256,

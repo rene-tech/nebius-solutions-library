@@ -209,9 +209,9 @@
     }
   ],
   "artifact_delivery": {
-    "state": "localization-owned-elsewhere-not-claimed",
-    "model": "mixed-plane",
-    "detail": "Delivery is mixed-plane capable: qualification/render_job.py takes repeatable --plane and refuses to run with none, so the single-claim assumption is gone. But no plane binding is claimed for this checkpoint. The accepted localization foundation carries no rfdiffusion artifact, has published nothing to either plane, and cannot yet express a raw single-file object at all; that contract is being written by the owner named above. Until it is accepted this runtime reads a task-owned run input and says so.",
+    "state": "canonical-localized-generation-qualified",
+    "model": "public-host-plane",
+    "detail": "The shared localization contract stages Base_ckpt.pt as an immutable raw file without archive semantics. It verifies source SHA-256 and byte count, publishes generation 7f34c945...d4c03c atomically on the public reference-data host plane, pins marker abd2a812...3e4599, and mounts that exact generation read-only at the r12 runtime's --artifact-root. A live capacity-block H100 node admitted the marker, re-hashed all 483,616,107 bytes and deserialized the checkpoint with this image's PyTorch 2.3.0 runtime.",
     "planes": [
       {
         "name": "public",
@@ -230,25 +230,33 @@
       {
         "model_id": "rfdiffusion",
         "binding_kind": "argv-option",
-        "binding_name": "inference.ckpt_override_path",
-        "binding_value": "<artifact-root>/<plane>/<manifest relative path>"
+        "binding_name": "--artifact-root",
+        "binding_value": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint"
       }
     ],
     "canonical_entry": {
-      "present": false,
+      "present": true,
       "contract": "catalog/runtime/contracts/scientific-artifact-localization.json",
-      "contract_at": "origin/main 3a7ceb25",
-      "detail": "The accepted localization contract carries no rfdiffusion artifact. Its six entries are alphafold2-params, alphafold2-params-bindcraft, bindcraft-pyrosetta-installed-tree, boltzgen-inference-molecules and the two colabdesign-mpnn weight trees. Until an rfdiffusion entry exists, this runtime cannot bind a canonical generation and qualification reads a task-owned one."
+      "transform": "verified-copy",
+      "inventory_algorithm": "fs2-raw-file/v1",
+      "generation": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+      "marker_sha256": "abd2a8127d0bd1b3cbd51d5ffc14a3351f805e15f593c8224ee94de57e3e4599",
+      "sub_path": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+      "detail": "The one-file identity is intentionally separate from the eight-checkpoint rfdiffusion-checkpoints catalog identity. It contains exactly Base_ckpt.pt and its in-generation marker."
     },
-    "transitional_claim": "fs2-runtime-qualification-artifacts-r20260902",
+    "transitional_claim": "historical qualification only: fs2-runtime-qualification-artifacts-r20260902",
     "localization_owner": {
-      "task": "fs2-single-file-model-artifact-localization-r20260903",
+      "task": "fs2-single-file-localization-codex-successor-r20260903",
       "scope": "raw single-file artifact localization, including this checkpoint",
       "handoff_sent": "data/handoffs/fs2-rfdiffusion-base-ckpt-to-single-file-localization-20260903.md",
-      "this_runtime_claims": "No checkpoint localization and no qualified generation. This runtime publishes no generation, writes no .fs2-runtime-tree.json marker and emits no localization receipt. An earlier revision of qualification/stage_checkpoint.py did mimic the plane's marker schema; that was a task-local substitute for another task's contract and was removed rather than left to be mistaken for it."
+      "evidence": [
+        "../../artifact-localization/evidence/rfdiffusion-base-checkpoint-stage-20260903.json",
+        "../../artifact-localization/evidence/node-admit-rfdiffusion-base-checkpoint-h100-20260903.json",
+        "../../artifact-localization/evidence/rfdiffusion-checkpoint-probe-h100-20260903.json"
+      ]
     },
     "run_input_staging": {
-      "purpose": "retain an archival exact-byte verifier/helper for the historical qualification input; it is not wired to the current renderer or manifests",
+      "purpose": "archival exact-byte verifier for the historical r12 qualification input; canonical reruns use the shared localization generation",
       "is_localization": false,
       "tool": "qualification/stage_checkpoint.py",
       "path": "<root>/inputs/sha256/<object sha256>/Base_ckpt.pt",
@@ -256,14 +264,15 @@
       "verification": "sha256 and byte count both checked against the accepted catalog before use",
       "interim_claim": "fs2-runtime-qualification-artifacts-r20260902",
       "rerunnable": false,
-      "rerun_policy": "do not use this helper for a new qualification; wait for the accepted single-file localization contract and regenerate the renderer manifest from it",
-      "retires_when": "the single-file localization contract is accepted, at which point this helper and interim staging are deleted"
+      "rerun_policy": "do not use this helper for a new qualification; mount the canonical verified-copy generation instead",
+      "retired": true
     }
   },
   "mount_contract": {
-    "canonical_consumer_path": "/models/rfdiffusion-checkpoints",
-    "qualification_mount": "/opt/fs2/artifacts",
-    "conflict": "The artifact catalog's consumer layout binds rfdiffusion-checkpoints at /models/rfdiffusion-checkpoints, while the superseded r6/r7 images hard-coded FS2_ARTIFACT_ROOT=/models/rfdiffusion. This runtime resolves the conflict by not hard-coding either: the checkpoint is located through the input manifest's relative path under --artifact-root, so the same image works at any mount point the plane chooses."
+    "canonical_consumer_path": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+    "qualification_mount": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
+    "checkpoint_relative_path": "Base_ckpt.pt",
+    "detail": "The shared contract passes this exact directory as --artifact-root. The runtime resolves the manifest's Base_ckpt.pt beneath it and verifies its SHA-256 and byte count before use."
   },
   "qualification": {
     "state": "h100-semantic-qualified",
@@ -296,8 +305,8 @@
       "terminal_success_after_upstream": "the envelope reports succeeded only after marker verification",
       "determinism": "seed 8100 reproduced byte-identically across three independently built images and four nodes"
     },
-    "scope": "One design-backbone and one scaffold-motif run, each once. No throughput, contention, elasticity, multi-design fan-out or snapshot measurement, and no cold-start measurement for this digest: both runs landed on nodes that already held the layers. Checkpoint localization is explicitly out of scope and unqualified here.",
-    "localization_state": "not-claimed; owned by fs2-single-file-model-artifact-localization-r20260903"
+    "scope": "One design-backbone and one scaffold-motif run, each once. No throughput, contention, elasticity, multi-design fan-out or snapshot measurement, and no cold-start measurement for this digest: both runs landed on nodes that already held the layers. Those semantic runs used the historical qualification claim; localization qualification is separate and does not rewrite their artifact provenance.",
+    "localization_state": "canonical generation admitted and checkpoint deserialized on an H100 node; see artifact_delivery.localization_owner.evidence"
   },
   "upstream_contract_defects": [
     {
@@ -334,29 +343,6 @@
     }
   ],
   "follow_ups": [
-    {
-      "id": "align-rfdiffusion-with-the-localization-foundation",
-      "owner": "fs2-single-file-model-artifact-localization-r20260903, with this runtime as consumer",
-      "blocking": "blocks canonical delivery and route exposure, not this semantic qualification",
-      "detail": "Checkpoint localization is owned by the single-file localization task. This runtime supplied the exact object identity, licence, visibility and runtime argv binding, and will consume the accepted contract once it lands. Nothing here is qualified as a localized generation.",
-      "alignment_required": [
-        "Register an rfdiffusion artifact in catalog/runtime/contracts/scientific-artifact-localization.json; nothing can stage, promote or admit without an entry there.",
-        "Decide between the one-file rfdiffusion-base-checkpoint identity this runtime uses and the eight-file rfdiffusion-checkpoints identity in model-artifacts. Declaring both as separate identities is the sanctioned pattern, as alphafold2-params and alphafold2-params-bindcraft already do.",
-        "Leave visibility unset or public: RFdiffusion code and weights are BSD-3-Clause with entitlement_state not-required, so it belongs on the reference-data host plane reached by node label, never on a licence-scoped claim.",
-        "Move the prefix from this runtime's interim 'rfdiffusion' to 'scientific-localization/public', and stop using fs2-runtime-qualification-artifacts-r20260902, which is neither of the two planes.",
-        "Add probe_entries, which is mandatory for a flat-inventory tree, and an entry_path_pattern admitting .pt.",
-        "Use the shared single-file contract's canonical generation, marker and admission layout; the archival qualification helper deliberately produces none of these and must be retired rather than promoted."
-      ],
-      "renderer_note": "qualification/render_job.py currently mounts each plane at <artifact-root>/<plane-name> and takes --plane NAME=CLAIM[:SUBPATH]. That removes the single-claim assumption but is this runtime's own addressing, not the foundation's: the foundation mounts each artifact at its contract-declared mount_path with subPath <prefix>/generations/<id>/sha256/<digest>, from volume 'trees' (hostPath, public) or 'trees-private' (claim), and runs a fs2_localization.localization marker init container per artifact. Converting is deliberately deferred until an rfdiffusion contract entry exists, because the marker admission cannot be exercised against a contract that does not list the artifact, and rewriting the renderer now would desynchronise it from the evidence above without being testable."
-    },
-    {
-      "id": "localization-contract-cannot-express-a-single-object-artifact",
-      "owner": "scientific artifact localization owner",
-      "blocking": "blocks a canonical rfdiffusion localization entry, not this qualification",
-      "observed": "scientific-artifact-localization.schema.json requires every artifact to carry an `archive` object, its `transform` enum is safe-extract-zip | safe-extract-tar | safe-extract-tar-gz | external-installed-tree, and archive.media_type admits only application/zip, application/x-tar and application/gzip. The schema also documents `archive` as the provenance of 'the compressed object', and the receipt schema requires archive_provenance.present_in_mount to be false for a verified receipt.",
-      "why_it_matters": "RFdiffusion's Base_ckpt.pt is a single uncompressed object fetched directly from files.ipd.uw.edu. There is no archive, no extraction step, and the object itself is what lands in the mount. Every way of forcing it into the current shape requires stating something untrue: inventing an archive that was never fetched, or declaring present_in_mount false about a file that is present. This runtime therefore emits no localization receipt rather than a false one.",
-      "proposal": "Add a transform for a directly-fetched object (for example `verified-copy`) whose provenance block describes the object rather than an archive, and relax present_in_mount for that transform. All eight official RFdiffusion checkpoints, and any single-file weights artifact, need it."
-    },
     {
       "id": "preseed-igso3-schedule-cache-for-fast-start",
       "owner": "fast-start workstream",

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://fs2-serve.nebius.ai/schema/scientific-localization-receipt/v1",
   "title": "Scientific runtime artifact localization receipt",
-  "description": "Non-secret evidence that one runtime mount holds the exact extracted tree named by the localization contract. archive_sha256 records where the bytes came from; tree_inventory_sha256 records what the runtime will actually read. The two are separate fields and must never be equal.",
+  "description": "Non-secret evidence that one runtime mount holds the exact tree named by the localization contract. Archive provenance is absent from an extracted mount; file provenance is present when the source object is itself the runtime content. Source SHA-256 and tree inventory SHA-256 remain distinct identities.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -11,7 +11,6 @@
     "observed_at",
     "mount_path",
     "state",
-    "archive_provenance",
     "tree_identity"
   ],
   "properties": {
@@ -87,6 +86,56 @@
         }
       }
     },
+    "file_provenance": {
+      "description": "The exact uncompressed source file. Unlike an archive, this object is the runtime content and is present in a verified mount.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "media_type",
+        "bytes",
+        "sha256",
+        "source_uri",
+        "source_revision",
+        "license_id",
+        "present_in_mount"
+      ],
+      "properties": {
+        "filename": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]{0,254}$"
+        },
+        "media_type": {
+          "const": "application/octet-stream"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_uri": {
+          "type": "string",
+          "pattern": "^https://",
+          "maxLength": 1024
+        },
+        "source_revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "license_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "present_in_mount": {
+          "type": "boolean"
+        }
+      }
+    },
     "tree_identity": {
       "type": "object",
       "additionalProperties": false,
@@ -111,7 +160,8 @@
           "enum": [
             "fs2-flat-tree-inventory/v1",
             "fs2-tree-inventory/v2",
-            "fs2-tree-manifest/v1"
+            "fs2-tree-manifest/v1",
+            "fs2-raw-file/v1"
           ]
         },
         "inventory_sha256": {
@@ -273,5 +323,80 @@
         }
       }
     }
-  }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "archive_provenance"
+      ],
+      "not": {
+        "required": [
+          "file_provenance"
+        ]
+      }
+    },
+    {
+      "required": [
+        "file_provenance"
+      ],
+      "not": {
+        "required": [
+          "archive_provenance"
+        ]
+      }
+    }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "verified"
+          }
+        },
+        "required": [
+          "state",
+          "archive_provenance"
+        ]
+      },
+      "then": {
+        "properties": {
+          "archive_provenance": {
+            "required": [
+              "present_in_mount"
+            ],
+            "properties": {
+              "present_in_mount": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "verified"
+          }
+        },
+        "required": [
+          "state",
+          "file_provenance"
+        ]
+      },
+      "then": {
+        "properties": {
+          "file_provenance": {
+            "properties": {
+              "present_in_mount": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

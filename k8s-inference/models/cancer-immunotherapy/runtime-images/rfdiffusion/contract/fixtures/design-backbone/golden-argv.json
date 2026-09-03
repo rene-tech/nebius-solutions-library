@@ -17,7 +17,7 @@
     "--input-manifest",
     "/var/run/fs2/input-manifest.json",
     "--artifact-root",
-    "/opt/fs2/artifacts",
+    "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
     "--checkpoint-artifact-id",
     "artifact.rfdiffusion.base-ckpt",
     "--output",
@@ -34,8 +34,8 @@
   "required_artifacts": [
     {
       "artifact_id": "artifact.rfdiffusion.base-ckpt",
-      "relative_path": "public/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab/Base_ckpt.pt",
-      "resolved_container_path": "/opt/fs2/artifacts/public/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab/Base_ckpt.pt",
+      "relative_path": "Base_ckpt.pt",
+      "resolved_container_path": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint/Base_ckpt.pt",
       "sha256": "0fcf7d7c32b4848030aca3a051e6768de194616f96ba6c38186351a33bfc6eca",
       "size_bytes": 483616107
     }
@@ -45,7 +45,7 @@
     "python",
     "/opt/rfdiffusion/scripts/run_inference.py",
     "inference.output_prefix=/workspace/run/designs/design",
-    "inference.ckpt_override_path=/opt/fs2/artifacts/public/generations/rfdiffusion-base-checkpoint/sha256/5f1ecaf2056ba1d3bd973e38d5349b1e22034169aa3280ce1419ac9ded17ffab/Base_ckpt.pt",
+    "inference.ckpt_override_path=/opt/fs2/artifacts/rfdiffusion-base-checkpoint/Base_ckpt.pt",
     "inference.num_designs=1",
     "inference.design_startnum=8100",
     "inference.deterministic=True",

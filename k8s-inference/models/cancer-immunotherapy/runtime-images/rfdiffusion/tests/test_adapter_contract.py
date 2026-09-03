@@ -216,7 +216,7 @@ class ExecutedArgvMatchesGoldenTests(unittest.TestCase):
     def _normalise(self, argv: list[str], tmp: Path, artifact_root: Path) -> list[str]:
         """Map run-local paths onto the container paths the golden uses."""
         mapping = [
-            (str(artifact_root), "/opt/fs2/artifacts"),
+            (str(artifact_root), "/opt/fs2/artifacts/rfdiffusion-base-checkpoint"),
             (str(tmp / "scratch"), "/tmp/fs2-rfdiffusion"),
             (str(tmp / "out"), "/workspace/run"),
             (str(tmp / "upstream"), "/opt/rfdiffusion"),
