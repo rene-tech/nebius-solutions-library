@@ -4,8 +4,13 @@ locals {
     "app.kubernetes.io/part-of"    = "fs2-serve"
     "app.kubernetes.io/managed-by" = "terraform"
   }
-  tools_sha256          = filesha256("${path.module}/../reference_data.py")
-  tools_config_map      = "fs2-reference-data-tools-${substr(local.tools_sha256, 0, 12)}"
+  tools_sha256     = filesha256("${path.module}/../reference_data.py")
+  tools_config_map = "fs2-reference-data-tools-${substr(local.tools_sha256, 0, 12)}"
+  credentials_identity = substr(sha256(jsonencode({
+    access_key_id       = var.object_storage_access.access_key_id
+    secret_reference_id = var.object_storage_access.secret_reference_id
+  })), 0, 12)
+  credentials_secret    = "fs2-reference-data-object-storage-${local.credentials_identity}"
   source_catalog        = jsondecode(file("${path.module}/../source-catalog.json"))
   source_catalog_sha256 = filesha256("${path.module}/../source-catalog.json")
   selected_bundle       = local.source_catalog.bundles[var.pipeline.bundle_id]
@@ -104,7 +109,7 @@ locals {
             name = "AWS_ACCESS_KEY_ID"
             valueFrom = {
               secretKeyRef = {
-                name = "fs2-reference-data-object-storage"
+                name = local.credentials_secret
                 key  = "access-key-id"
               }
             }
@@ -113,7 +118,7 @@ locals {
             name = "AWS_SECRET_ACCESS_KEY"
             valueFrom = {
               secretKeyRef = {
-                name = "fs2-reference-data-object-storage"
+                name = local.credentials_secret
                 key  = "secret-access-key"
               }
             }
@@ -204,7 +209,6 @@ locals {
   object_endpoint     = "https://storage.${var.object_storage_region}.nebius.cloud"
   object_prefix       = "s3://${local.object_bucket_name}/reference-data"
   filesystem_file_uri = "file://${var.shared_filesystem_host_path}"
-  credentials_secret  = "fs2-reference-data-object-storage"
 }
 
 resource "terraform_data" "region_contract" {
@@ -212,6 +216,7 @@ resource "terraform_data" "region_contract" {
     cluster_region        = var.cluster_region
     object_storage_region = var.object_storage_region
     namespace             = var.namespace
+    object_storage_secret = local.credentials_secret
   }
   lifecycle {
     precondition {
@@ -282,7 +287,8 @@ resource "kubernetes_secret_v1" "object_storage" {
     namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
     labels    = local.common_labels
   }
-  type = "Opaque"
+  type      = "Opaque"
+  immutable = true
   data_wo = {
     "access-key-id"     = var.object_storage_access.access_key_id
     "secret-access-key" = ephemeral.nebius_mysterybox_v1_secret_payload_entry.object_storage.data.string_value

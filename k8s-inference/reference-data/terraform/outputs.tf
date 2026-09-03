@@ -17,6 +17,11 @@ output "storage_contract" {
   }
 }
 
+output "object_storage_secret_name" {
+  description = "Non-secret, immutable credential Secret name derived from the current access-key identity."
+  value       = local.credentials_secret
+}
+
 output "dynamic_configuration" {
   description = "Secret-free handoff for later root/control-plane integration."
   value = {
@@ -34,7 +39,7 @@ output "dynamic_configuration" {
     cluster_queue               = var.queue.cluster_queue
     resource_flavor             = var.queue.resource_flavor
     tools_config_map            = local.tools_config_map
-    object_storage_secret       = kubernetes_secret_v1.object_storage.metadata[0].name
+    object_storage_secret       = local.credentials_secret
     shared_filesystem_host_path = var.shared_filesystem_host_path
     public_msa_default          = false
     public_msa_opt_in_enabled   = var.allow_public_msa_opt_in

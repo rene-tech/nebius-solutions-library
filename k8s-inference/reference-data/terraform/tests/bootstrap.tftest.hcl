@@ -82,6 +82,36 @@ run "fresh_empty_volume_status_rollout_is_service_ready" {
   }
 }
 
+run "replacement_credential_identity_gets_a_new_immutable_secret_name" {
+  command = apply
+
+  plan_options {
+    target = [terraform_data.region_contract]
+  }
+
+  variables {
+    object_storage_access = {
+      access_key_id       = "replacement-access-key"
+      secret_reference_id = "replacement-secret"
+      revision            = 1
+    }
+  }
+
+  assert {
+    condition = (
+      terraform_data.region_contract.output.object_storage_secret == "fs2-reference-data-object-storage-${substr(sha256(jsonencode({
+        access_key_id       = "replacement-access-key"
+        secret_reference_id = "replacement-secret"
+      })), 0, 12)}" &&
+      terraform_data.region_contract.output.object_storage_secret != "fs2-reference-data-object-storage-${substr(sha256(jsonencode({
+        access_key_id       = "accesskey-test"
+        secret_reference_id = "secret-test"
+      })), 0, 12)}"
+    )
+    error_message = "Replacing a zero-based Nebius access key must select a new immutable Kubernetes Secret even when both provider resource versions are zero."
+  }
+}
+
 run "every_reference_policy_is_scoped_away_from_database_pods" {
   command = plan
 

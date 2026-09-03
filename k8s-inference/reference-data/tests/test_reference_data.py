@@ -554,6 +554,20 @@ class ReferenceDataContractTests(unittest.TestCase):
         self.assertIn("spec = local.pipeline_job_contract.spec", module)
         self.assertIn('"spec.template.metadata.labels",', module)
 
+    def test_object_storage_secret_rotates_with_immutable_key_identity(self) -> None:
+        module = (REFERENCE_DATA / "terraform" / "main.tf").read_text(encoding="utf-8")
+        identity = module.split("credentials_identity =", 1)[1].split(
+            "source_catalog", 1
+        )[0]
+        self.assertIn("var.object_storage_access.access_key_id", identity)
+        self.assertIn("var.object_storage_access.secret_reference_id", identity)
+        self.assertIn(
+            'credentials_secret    = "fs2-reference-data-object-storage-${local.credentials_identity}"',
+            module,
+        )
+        self.assertEqual(module.count("name = local.credentials_secret"), 2)
+        self.assertIn("immutable = true", module)
+
     def test_dedicated_worker_capacity_is_checked_before_workloads_exist(self) -> None:
         module = (REFERENCE_DATA / "terraform" / "main.tf").read_text(encoding="utf-8")
         variables = (REFERENCE_DATA / "terraform" / "variables.tf").read_text(
