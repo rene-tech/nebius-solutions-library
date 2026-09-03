@@ -159,26 +159,6 @@ class ScientificBatchController:
                     now=now,
                 )
             return
-        if record.execution_plan is not None and (
-            record.execution_plan.execution_map_sha256 is None or not record.execution_plan.stage_bindings
-        ):
-            # v7 rows predate frozen execution-map bindings. No scientific
-            # controller was enabled while v7 was current, so fail these rows
-            # deterministically and require a fresh submit instead of guessing
-            # mutable images/resources or crashing on an empty binding tuple.
-            stage = next((item for item in record.stages if item.status is StageStatus.ACTIVE), None)
-            if stage is None:
-                stage = next(item for item in record.stages if item.status is StageStatus.PENDING)
-            await self._fail_batch(
-                claim,
-                record,
-                stage,
-                FailureKind.INFRASTRUCTURE,
-                "CONTROLLER_STATE_UPGRADE_RETRY_REQUIRED",
-                [],
-                now=now,
-            )
-            return
         if record.cancel_requested:
             await self._cancel(claim, record, now=now)
             return
