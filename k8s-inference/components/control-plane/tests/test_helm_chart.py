@@ -1040,6 +1040,44 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     }
 
 
+def test_scientific_batch_can_start_fail_closed_with_only_the_internal_cpu_canary() -> None:
+    documents = render(
+        "--set",
+        "scientificBatch.enabled=true",
+        "--set",
+        "scientificBatch.writesEnabled=true",
+        "--set",
+        "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
+        "--set",
+        "scientificBatch.schedulingContractNamespace=fs2-system",
+        "--set",
+        "scientificBatch.schedulingContractSha256=" + "c" * 64,
+        "--set",
+        "scientificBatch.executionMapConfigMapName=scientific-execution-empty",
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set-string",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+        "--set-string",
+        "scientificArtifacts.egressCidrs[0]=192.0.2.20/32",
+    )
+
+    deployment = gateway_deployment(documents)
+    environment = {item["name"]: item for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
+    assert environment["FS2_SCIENTIFIC_BATCH_ENABLED"]["value"] == "true"
+    execution_map = next(
+        document
+        for document in documents
+        if document["kind"] == "ConfigMap"
+        and document.get("metadata", {}).get("labels", {}).get("app.kubernetes.io/component")
+        == "scientific-execution-map"
+    )
+    assert json.loads(execution_map["data"]["execution-map.json"]) == {
+        "models": [],
+        "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+    }
+
+
 def test_scientific_execution_map_has_one_helm_owner_and_no_terraform_writer() -> None:
     templates = CHART / "templates"
     helm_owners = [

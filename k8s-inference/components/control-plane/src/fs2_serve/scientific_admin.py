@@ -125,7 +125,7 @@ class ScientificArtifactAdminAdapter(Protocol):
 
 
 class ScientificModelAdminAdapter(Protocol):
-    async def list_models(self) -> ScientificModelSnapshot: ...
+    async def list_models(self, *, tenant_id: str | None = None) -> ScientificModelSnapshot: ...
 
 
 ScientificDataT = TypeVar(
@@ -394,11 +394,16 @@ class ScientificAdminReadService:
             )
         return self._envelope(context, detail, now=now, sources=sources)
 
-    async def model_list(self, context: AdminContext) -> AdminEnvelope[ScientificModelReadinessList]:
+    async def model_list(
+        self,
+        context: AdminContext,
+        *,
+        tenant_id: str | None = None,
+    ) -> AdminEnvelope[ScientificModelReadinessList]:
         now = self.clock().astimezone(UTC)
         try:
             snapshot = await asyncio.wait_for(
-                self.models.list_models(),
+                self.models.list_models(tenant_id=tenant_id),
                 timeout=self.adapter_timeout_seconds,
             )
         except asyncio.CancelledError:

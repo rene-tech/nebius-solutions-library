@@ -73,6 +73,7 @@ from .scientific_artifacts import (
     ScientificArtifactService,
 )
 from .scientific_batch.artifact_bridge import ArtifactServiceBridge, SignedArtifactContentReader
+from .scientific_batch.canary import run_internal_cpu_canary
 from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
 from .scientific_batch.companion import (
     WorkloadArtifactHttpClient,
@@ -347,8 +348,10 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         if settings.scientific_batch_scheduling_contract_sha256 is None:
             raise RuntimeError("scientific batch requires the Terraform scheduling-contract digest")
         scientific_profiles = ScientificProfileCatalog.load(settings.catalog_dir)
-        if not scientific_profiles.list():
-            raise RuntimeError("scientific batch is enabled without a runnable qualified profile")
+        # Zero public profiles is a valid fail-closed startup state.  The fixed
+        # CPU canary verifies packaged schemas and deterministic scientific
+        # plumbing without advertising or scheduling a pretend model.
+        run_internal_cpu_canary(scientific_profiles)
         scientific_repository = PostgresScientificBatchRepository(store.pool)
         scientific_capabilities = ScientificWorkloadCapabilityAuthority(store.hasher)
         artifact_content_reader = SignedArtifactContentReader(artifact_service)
@@ -474,6 +477,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         registry=registry,
         catalog_dir=settings.catalog_dir,
         artifact_service=artifact_service,
+        scientific_batches=scientific_batches,
         source_max_age_seconds=settings.admin_source_max_age_seconds,
         adapter_timeout_seconds=settings.admin_adapter_timeout_seconds,
     )

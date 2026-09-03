@@ -174,7 +174,8 @@ def _model() -> ScientificModelReadiness:
 
 
 class ModelAdapter:
-    async def list_models(self) -> ScientificModelSnapshot:
+    async def list_models(self, *, tenant_id: str | None = None) -> ScientificModelSnapshot:
+        del tenant_id
         return ScientificModelSnapshot(
             data=ScientificModelReadinessList(items=[_model()]),
             observed_at=NOW,
@@ -335,6 +336,7 @@ def test_production_factory_binds_postgres_controller_and_artifact_adapters() ->
         registry=cast(Any, object()),
         catalog_dir=Path(__file__).parents[3] / "catalog/runtime",
         artifact_service=None,
+        scientific_batches=None,
         source_max_age_seconds=90,
         adapter_timeout_seconds=2,
     )

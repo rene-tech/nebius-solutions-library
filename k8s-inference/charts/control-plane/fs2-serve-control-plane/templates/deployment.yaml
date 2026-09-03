@@ -145,9 +145,6 @@
 {{- if ne .Values.scientificBatch.schedulingContractSchema "fs2-serve.nebius.ai/kueue-scheduling/v1" }}
 {{- fail "scientificBatch requires the canonical Terraform scheduling-contract schema" }}
 {{- end }}
-{{- if eq (len .Values.scientificBatch.executionMap.models) 0 }}
-{{- fail "scientificBatch requires a generated schema-v3 execution map" }}
-{{- end }}
 {{- $academicAssets := .Values.academicAssets }}
 {{- $academicModels := 0 }}
 {{- range $model := .Values.scientificBatch.executionMap.models }}

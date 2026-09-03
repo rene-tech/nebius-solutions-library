@@ -1,5 +1,9 @@
 # Scientific batch controller
 
+See [Scientific profile discovery and startup canary](scientific-profile-discovery.md)
+for the fail-closed qualified-profile listing and zero-public-profile startup
+contract.
+
 The `fs2_serve.scientific_batch` package is the reusable state-machine core for
 staged scientific workloads and its production control-plane consumer. The
 state machine remains isolated behind repository and Kubernetes protocols;

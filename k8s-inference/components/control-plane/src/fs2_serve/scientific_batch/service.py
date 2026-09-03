@@ -67,6 +67,8 @@ class ScientificPlanFactory(Protocol):
 class ScientificExecutionBinding(Protocol):
     """Operator-owned binding kept outside the canonical public profile schema."""
 
+    execution_map_sha256: str
+
     def access_context(self, profile: ScientificWorkloadProfile, *, tenant_id: str) -> ArtifactAccessContext: ...
 
     def variant_id(self, model_id: str) -> str: ...
@@ -195,6 +197,32 @@ class ScientificEventPage(StrictModel):
     data: tuple[ScientificEventView, ...] = Field(max_length=1000)
 
 
+class ScientificProfileDiscovery(StrictModel):
+    """A profile that passed the same static gates required by submission."""
+
+    model_id: str
+    display_name: str
+    execution_mode: str
+    operations: tuple[str, ...]
+    service_classes: tuple[str, ...]
+    parameter_schema: str
+    source_repository: str
+    source_revision: str
+    variant_id: str
+    runtime_image_digest: str
+    execution_identity_sha256: str
+    access_profile: str
+    access_state: str
+    access_receipt_digest: str | None
+    h100_semantic_receipt_sha256: str
+    public_completion_receipt_sha256: str
+    scheduler_eligibility_receipt_sha256: str
+    execution_map_sha256: str
+    qualified_at: str
+    mcp_tool_name: str
+    mcp_description: str
+
+
 class ScientificBatchService:
     def __init__(
         self,
@@ -220,6 +248,108 @@ class ScientificBatchService:
     @staticmethod
     def _authorize(principal: Principal, scope: Scope, *, model_id: str | None = None) -> None:
         principal.require(scope, model_id=model_id)
+
+    def discovery_profiles(
+        self,
+        *,
+        tenant_id: str | None,
+        allowed_models: frozenset[str],
+        surface: str,
+    ) -> tuple[ScientificProfileDiscovery, ...]:
+        """Return only profiles with a complete tenant-specific admission path.
+
+        This is deliberately a fail-closed projection.  It performs no artifact
+        read or durable admission, but it verifies the exact runtime binding and
+        asks the authoritative scheduler to freeze every advertised service
+        class using the profile's minimum legal plan.
+        """
+
+        if tenant_id is None or surface not in {"admin", "mcp"}:
+            return ()
+        discovered: list[ScientificProfileDiscovery] = []
+        for profile in self.profiles.list():
+            if "*" not in allowed_models and profile.model_id not in allowed_models:
+                continue
+            if surface == "mcp" and not (profile.mcp_discoverable and profile.mcp_invocable):
+                continue
+            try:
+                qualification = profile.value["qualification"]
+                if self.execution_binding.execution_map_sha256 != (
+                    f"sha256:{qualification['execution_map_sha256']}"
+                ):
+                    raise ScientificProfileError("scientific qualification binds another execution map")
+                self.execution_binding.access_context(profile, tenant_id=tenant_id)
+                variant_id = self.execution_binding.variant_id(profile.model_id)
+                workload_namespace = self.execution_binding.workload_namespace(profile.model_id)
+                for stage in profile.value["workload"]["stages"]:
+                    self.execution_binding.collector_id(profile.model_id, str(stage["id"]))
+                plan = scientific_plan_from_catalog_profile(profile.value)
+                possible_attempts = sum(len(stage.workload_units) * stage.max_attempts for stage in plan.stages)
+                if possible_attempts > self.profiles.max_result_attempts:
+                    raise ScientificProfileError("scientific plan exceeds the public result attempt bound")
+                for service_class in profile.service_classes:
+                    self.scheduling.freeze(
+                        service_class=service_class,
+                        model_id=profile.model_id,
+                        tenant_id=tenant_id,
+                        profile=profile.value,
+                        plan=plan,
+                        workload_namespace=workload_namespace,
+                        captured_at=datetime(1970, 1, 1, tzinfo=UTC),
+                    )
+            except (
+                AttributeError,
+                CatalogProfileAdapterError,
+                KeyError,
+                SchedulingContractError,
+                ScientificProfileError,
+                TypeError,
+            ):
+                continue
+            discovered.append(
+                ScientificProfileDiscovery(
+                    model_id=profile.model_id,
+                    display_name=profile.display_name,
+                    execution_mode=profile.execution_mode,
+                    operations=profile.operations,
+                    service_classes=profile.service_classes,
+                    parameter_schema=profile.parameter_schema,
+                    source_repository=profile.source_repository,
+                    source_revision=profile.model_revision,
+                    variant_id=variant_id,
+                    runtime_image_digest=profile.runtime_image_digest,
+                    execution_identity_sha256=profile.execution_identity_sha256,
+                    access_profile=profile.access_profile,
+                    access_state=profile.access_state,
+                    access_receipt_digest=profile.access_receipt_digest,
+                    h100_semantic_receipt_sha256=str(qualification["h100_semantic_receipt_sha256"]),
+                    public_completion_receipt_sha256=str(qualification["public_completion_receipt_sha256"]),
+                    scheduler_eligibility_receipt_sha256=str(
+                        qualification["scheduler_eligibility_receipt_sha256"]
+                    ),
+                    execution_map_sha256=str(qualification["execution_map_sha256"]),
+                    qualified_at=str(qualification["qualified_at"]),
+                    mcp_tool_name=profile.mcp_tool_name,
+                    mcp_description=profile.mcp_description,
+                )
+            )
+        return tuple(discovered)
+
+    def discover(self, principal: Principal, *, surface: str) -> dict[str, Any]:
+        """Authorized public discovery used by MCP and equivalent callers."""
+
+        self._authorize(principal, Scope.CATALOG_READ)
+        if Scope.INFERENCE_INVOKE.value not in principal.scopes:
+            return {"object": "list", "data": []}
+        profiles = self.discovery_profiles(
+            tenant_id=principal.tenant_id,
+            allowed_models=frozenset(principal.models),
+            surface=surface,
+        )
+        return {
+            "object": "list",
+            "data": [profile.model_dump(mode="json") for profile in profiles],
+        }
 
     @staticmethod
     def _state_view(operation: OperationView, state: ScientificBatchState) -> dict[str, Any]:

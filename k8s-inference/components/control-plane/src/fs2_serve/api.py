@@ -1585,13 +1585,18 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         async def admin_scientific_models(
             identity: Annotated[OperatorPrincipal, Depends(operator)],
             params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+            tenant_id: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
         ) -> AdminEnvelope[ScientificModelReadinessList]:
-            await admin_access.authorize_global(
+            authorized_tenant = await admin_access.authorize(
                 identity,
                 OperatorRole.VIEWER,
                 action="scientific_model.list",
+                tenant_id=tenant_id,
             )
-            return await scientific_admin.model_list(selected_context(params))
+            return await scientific_admin.model_list(
+                selected_context(params),
+                tenant_id=authorized_tenant,
+            )
 
     @app.get(
         "/admin/api/v1/capacity",

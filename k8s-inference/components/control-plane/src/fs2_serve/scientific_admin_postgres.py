@@ -29,7 +29,11 @@ from .scientific_admin import (
     ScientificRunListSnapshot,
     ScientificRunQuery,
 )
-from .scientific_admin_catalog import ScientificCatalogFileAdapter, scientific_receipts_file
+from .scientific_admin_catalog import (
+    ScientificCatalogFileAdapter,
+    ScientificProfileDiscoveryAdapter,
+    scientific_receipts_file,
+)
 from .scientific_admin_models import (
     ScientificArtifact,
     ScientificArtifactDownload,
@@ -72,6 +76,7 @@ from .scientific_batch.models import (
     WorkloadKind,
 )
 from .scientific_batch.postgres_repository import PostgresScientificBatchRepository
+from .scientific_batch.service import ScientificBatchService
 from .scientific_run_result import ArtifactRef
 
 _PHASES = {
@@ -426,8 +431,8 @@ class PostgresScientificRunAdminAdapter:
         self.batches = batches
         self.models = models
 
-    async def _model_map(self) -> dict[str, ScientificModelReadiness]:
-        snapshot = await self.models.list_models()
+    async def _model_map(self, *, tenant_id: str | None) -> dict[str, ScientificModelReadiness]:
+        snapshot = await self.models.list_models(tenant_id=tenant_id)
         return {item.model_id: item for item in snapshot.data.items}
 
     @staticmethod
@@ -453,7 +458,7 @@ class PostgresScientificRunAdminAdapter:
         """
 
     async def list_runs(self, query: ScientificRunQuery) -> ScientificRunListSnapshot:
-        models = await self._model_map()
+        models = await self._model_map(tenant_id=query.tenant_id)
         args: list[object] = [query.from_at, query.to_at]
         clauses = ["operation.accepted_at >= $1", "operation.accepted_at < $2"]
 
@@ -551,7 +556,7 @@ class PostgresScientificRunAdminAdapter:
         if record is None:
             raise KeyError(operation_id)
         state = state_from_value(record["state"])
-        models = await self._model_map()
+        models = await self._model_map(tenant_id=tenant_id)
         try:
             model = models[state.model_id]
         except KeyError as error:
@@ -738,18 +743,20 @@ def postgres_scientific_admin_read_service(
     registry: Registry,
     catalog_dir: Path,
     artifact_service: ScientificArtifactControllerPort | None,
+    scientific_batches: ScientificBatchService | None,
     source_max_age_seconds: float,
     adapter_timeout_seconds: float,
 ) -> ScientificAdminReadService:
     """Build the production admin service over canonical durable sources."""
 
-    models = ScientificCatalogFileAdapter(
+    models = ScientificProfileDiscoveryAdapter(scientific_batches=scientific_batches)
+    run_models = ScientificCatalogFileAdapter(
         registry=registry,
         receipts_file=scientific_receipts_file(catalog_dir),
     )
     batches = PostgresScientificBatchRepository(pool)
     return ScientificAdminReadService(
-        runs=PostgresScientificRunAdminAdapter(pool=pool, batches=batches, models=models),
+        runs=PostgresScientificRunAdminAdapter(pool=pool, batches=batches, models=run_models),
         artifacts=PostgresScientificArtifactAdminAdapter(artifact_service),
         models=models,
         source_max_age_seconds=source_max_age_seconds,

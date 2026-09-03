@@ -40,6 +40,7 @@ from .store import NotFoundError
 
 CORE_TOOLS = {
     "list_models",
+    "list_scientific_models",
     "invoke_model",
     "get_operation",
     "get_operation_result",
@@ -335,6 +336,15 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             "data": [_model_view(model) for model in runtime.registry.allowed_for_principal(principal, surface="mcp")],
         }
 
+    async def list_scientific_models() -> dict[str, Any]:
+        """List only scientific profiles this exact caller can submit."""
+
+        principal = _principal()
+        if runtime.scientific_batches is None:
+            principal.require(Scope.CATALOG_READ)
+            return {"object": "list", "data": []}
+        return runtime.scientific_batches.discover(principal, surface="mcp")
+
     async def invoke_model(
         model_id: str,
         protocol: str,
@@ -532,6 +542,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
 
     for function in (
         list_models,
+        list_scientific_models,
         invoke_model,
         get_operation,
         get_operation_result,
