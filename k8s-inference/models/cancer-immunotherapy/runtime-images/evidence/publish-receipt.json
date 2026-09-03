@@ -1,0 +1,413 @@
+{
+  "checked_at": "2026-09-03T03:05:59.487945Z",
+  "images": [
+    {
+      "accelerator_runtime": {
+        "architecture_policy": "Official CUDA 12.6 runtime and PyTorch cu126 wheel; no device-name or H100-only admission check",
+        "cuda_abi": "12.6",
+        "framework": "pytorch",
+        "framework_version": "2.7.1+cu126"
+      },
+      "base": {
+        "builder": "nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04@sha256:50efab398f76258daa91ceebb33b6467e40217c67ea44fb5a2cebc6be7d9cce3",
+        "runtime": "nvidia/cuda:12.6.3-base-ubuntu24.04@sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e",
+        "substitution_for": "nvcr.io/nvidia/pytorch:24.08-py3",
+        "substitution_reason": "nvcr.io returned HTTP 403; use the user-approved public official NVIDIA CUDA base and a pinned CUDA PyTorch wheel"
+      },
+      "compatibility_overrides": [
+        {
+          "package": "cuequivariance, cuequivariance-torch, cuequivariance-ops-cu12, cuequivariance-ops-torch-cu12",
+          "reason": "Source-era CUDA package set; the post-source 0.11 kernel shim imports PyTorch FX APIs absent from pinned PyTorch 2.7.1",
+          "version": "0.10.0"
+        }
+      ],
+      "dependency_lock_sha256": "254df7d448411e63370034049763c654fc9bca132e8b711d14354b71ba1643e2",
+      "deployment": "not-performed",
+      "digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+      "id": "boltzgen",
+      "local_image_id": "sha256:e7f33739f36417d447a0871d4abdd8431f1f64f07baf3543b2c4073c207c08cd",
+      "local_smoke": {
+        "commands": [
+          [
+            "python",
+            "/opt/fs2/runtime_probe.py",
+            "--model",
+            "boltzgen"
+          ],
+          [
+            "boltzgen",
+            "--help"
+          ]
+        ],
+        "state": "passed"
+      },
+      "sbom": {
+        "format": "spdx-json",
+        "retained_path": "/home/tux/dashboard/data/worktrees/fs2-cancer-images-complexa-boltzgen-mosaic-r20260902/k8s-inference/models/cancer-immunotherapy/runtime-images/.runtime-image-artifacts/boltzgen.spdx.json",
+        "sha256": "f8a1202c8cdc78ea61c223b45d85c9cf8252ac35b1bec979e8ca8c18be238356"
+      },
+      "source": {
+        "archive_sha256": "475d7e71a75766c0eddffb6995002c1dbdc1f1197f091c1c42e1eaedc4746b07",
+        "archive_url": "https://codeload.github.com/HannesStark/boltzgen/tar.gz/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "license": "MIT",
+        "repository": "https://github.com/HannesStark/boltzgen",
+        "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "source_date_epoch": 1777645309
+      },
+      "supersedes": {
+        "digest": "sha256:e2bb0a15c7585916ed650e851903bfe55643141f6521e36cdcb382670c0d3c02",
+        "reason": "cueq-v2 added gcc but the first fused H100 forward proved Triton's runtime extension also requires Python.h; retain it for the portable no-kernel path and consume cueq-v3 for fused-kernel qualification."
+      },
+      "target_pre_push": {
+        "detail": "ling back on GET: HEAD https://cr.eu-north1.nebius.cloud/v2/e00akg9ndpx77eaexh/fs2-models/boltzgen/manifests/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v3: unexpected status code 404 Not Found (HEAD responses have no body, use GET for details)\nError: GET https://cr.eu-north1.nebius.cloud/v2/e00akg9ndpx77eaexh/fs2-models/boltzgen/manifests/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v3: MANIFEST_UNKNOWN: manifest unknown: Tag not found for manifest e00akg9ndpx77eaexh/fs2-models/boltzgen:null",
+        "digest": null,
+        "state": "absent"
+      },
+      "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen:31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v3",
+      "weight_policy": {
+        "embedded": false,
+        "external_root": "/opt/fs2/artifacts",
+        "notes": "BoltzGen and Boltz-2 checkpoints plus inference molecules are supplied by the L2 artifact cache; DOWNLOAD_WEIGHTS is never enabled; gcc and Python headers are the minimal runtime build inputs required by Triton JIT"
+      }
+    },
+    {
+      "accelerator_runtime": {
+        "architecture_policy": "CUDA wheel plus torch-scatter SASS for 7.5, 8.0, 8.6, 8.9 and 9.0, with 9.0 PTX forward compatibility",
+        "cuda_abi": "12.6",
+        "framework": "pytorch",
+        "framework_version": "2.7.0+cu126"
+      },
+      "base": {
+        "builder": "nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04@sha256:50efab398f76258daa91ceebb33b6467e40217c67ea44fb5a2cebc6be7d9cce3",
+        "runtime": "nvidia/cuda:12.6.3-base-ubuntu24.04@sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e",
+        "substitution_for": "nvcr.io/nvidia/pytorch:24.08-py3",
+        "substitution_reason": "nvcr.io returned HTTP 403; use the user-approved public official NVIDIA CUDA base and a pinned CUDA PyTorch wheel"
+      },
+      "compatibility_overrides": [
+        {
+          "package": "dm-haiku",
+          "reason": "ColabDesign on the source-pinned JAX 0.4.29 ABI",
+          "sha256": "7448a43a6486bff95253f84e18eacc607d9c1256592573117a9d1d23e2780706",
+          "version": "0.0.12"
+        }
+      ],
+      "dependency_lock_sha256": "0fb7e8443b5d46a20692e560e8834d6c78a53f31881492c0dcee740ecc2a71ed",
+      "deployment": "not-performed",
+      "digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+      "id": "proteina-complexa",
+      "local_image_id": "sha256:b455d68551fec946c4d56f3d12adf80a5e0e89118a4526ed0dc6d61944d7d462",
+      "local_smoke": {
+        "commands": [
+          [
+            "python",
+            "/opt/fs2/runtime_probe.py",
+            "--model",
+            "proteina-complexa"
+          ],
+          [
+            "complexa",
+            "--help"
+          ]
+        ],
+        "state": "passed"
+      },
+      "sbom": {
+        "format": "spdx-json",
+        "retained_path": "/home/tux/dashboard/data/worktrees/fs2-cancer-images-complexa-boltzgen-mosaic-r20260902/k8s-inference/models/cancer-immunotherapy/runtime-images/.runtime-image-artifacts/proteina-complexa.spdx.json",
+        "sha256": "2a522646c0b0f8260e5e1a5e528162d7a2a60b1f9835257e4bd88e3e90d9b614"
+      },
+      "source": {
+        "archive_sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b",
+        "archive_url": "https://codeload.github.com/NVIDIA-BioNeMo/Proteina-Complexa/tar.gz/54058860d43444c7289873f77d3e50b5b02348cd",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+        "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+        "source_date_epoch": 1787870240
+      },
+      "supersedes": null,
+      "target_pre_push": {
+        "detail": "//cr.eu-north1.nebius.cloud/v2/e00akg9ndpx77eaexh/fs2-models/proteina-complexa/manifests/54058860d43444c7289873f77d3e50b5b02348cd-ptxas-v1: unexpected status code 404 Not Found (HEAD responses have no body, use GET for details)\nError: GET https://cr.eu-north1.nebius.cloud/v2/e00akg9ndpx77eaexh/fs2-models/proteina-complexa/manifests/54058860d43444c7289873f77d3e50b5b02348cd-ptxas-v1: MANIFEST_UNKNOWN: manifest unknown: Tag not found for manifest e00akg9ndpx77eaexh/fs2-models/proteina-complexa:null",
+        "digest": null,
+        "state": "absent"
+      },
+      "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd-ptxas-v1",
+      "weight_policy": {
+        "embedded": false,
+        "external_root": "/opt/fs2/artifacts",
+        "notes": "Complexa, AlphaFold2, RoseTTAFold3, ProteinMPNN and other reward-model artifacts are supplied by the L2 artifact cache"
+      }
+    }
+  ],
+  "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
+  "schema": "fs2.nebius.ai/scientific-runtime-image-publish-receipt/v1",
+  "superseded_images": [
+    {
+      "accelerator_runtime": {
+        "architecture_policy": "Official CUDA 12.6 runtime and PyTorch cu126 wheel; no device-name or H100-only admission check",
+        "cuda_abi": "12.6",
+        "framework": "pytorch",
+        "framework_version": "2.7.1+cu126"
+      },
+      "base": {
+        "builder": "nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04@sha256:50efab398f76258daa91ceebb33b6467e40217c67ea44fb5a2cebc6be7d9cce3",
+        "runtime": "nvidia/cuda:12.6.3-base-ubuntu24.04@sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e",
+        "substitution_for": null,
+        "substitution_reason": null
+      },
+      "dependency_lock_sha256": "254df7d448411e63370034049763c654fc9bca132e8b711d14354b71ba1643e2",
+      "deployment": "not-performed",
+      "digest": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
+      "id": "boltzgen",
+      "local_image_id": "sha256:17d1e0e9151e6ad9313718d3a8db3bbdd2d5ed4e06c394423360984285722802",
+      "local_smoke": {
+        "commands": [
+          [
+            "python",
+            "/opt/fs2/runtime_probe.py",
+            "--model",
+            "boltzgen"
+          ],
+          [
+            "boltzgen",
+            "--help"
+          ]
+        ],
+        "state": "passed"
+      },
+      "sbom": {
+        "format": "spdx-json",
+        "retained_path": "/home/tux/dashboard/data/worktrees/fs2-cancer-images-complexa-boltzgen-mosaic-r20260902/k8s-inference/models/cancer-immunotherapy/runtime-images/.runtime-image-artifacts/boltzgen.spdx.json",
+        "sha256": "532b2219df95fa5cd928e05902f4ee5d9b3c6e2794ab257dbf0d22f84ec59c76"
+      },
+      "source": {
+        "archive_sha256": "475d7e71a75766c0eddffb6995002c1dbdc1f1197f091c1c42e1eaedc4746b07",
+        "archive_url": "https://codeload.github.com/HannesStark/boltzgen/tar.gz/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "license": "MIT",
+        "repository": "https://github.com/HannesStark/boltzgen",
+        "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "source_date_epoch": 1777645309
+      },
+      "target_pre_push": {
+        "detail": "st failed, falling back on GET: HEAD https://cr.eu-north1.nebius.cloud/v2/e00akg9ndpx77eaexh/fs2-models/boltzgen/manifests/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0: unexpected status code 404 Not Found (HEAD responses have no body, use GET for details)\nError: GET https://cr.eu-north1.nebius.cloud/v2/e00akg9ndpx77eaexh/fs2-models/boltzgen/manifests/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0: NAME_UNKNOWN: repository name not known to registry: Entity Folder not found for registry e00akg9ndpx77eaexh",
+        "digest": null,
+        "state": "absent"
+      },
+      "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen:31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+      "weight_policy": {
+        "embedded": false,
+        "external_root": "/opt/fs2/artifacts",
+        "notes": "BoltzGen and Boltz-2 checkpoints plus inference molecules are supplied by the L2 artifact cache; DOWNLOAD_WEIGHTS is never enabled"
+      }
+    },
+    {
+      "accelerator_runtime": {
+        "architecture_policy": "Official CUDA 12.6 runtime and PyTorch cu126 wheel; no device-name or H100-only admission check",
+        "cuda_abi": "12.6",
+        "framework": "pytorch",
+        "framework_version": "2.7.1+cu126"
+      },
+      "base": {
+        "builder": "nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04@sha256:50efab398f76258daa91ceebb33b6467e40217c67ea44fb5a2cebc6be7d9cce3",
+        "runtime": "nvidia/cuda:12.6.3-base-ubuntu24.04@sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e",
+        "substitution_for": "nvcr.io/nvidia/pytorch:24.08-py3",
+        "substitution_reason": "nvcr.io returned HTTP 403; use the user-approved public official NVIDIA CUDA base and a pinned CUDA PyTorch wheel"
+      },
+      "compatibility_overrides": [
+        {
+          "package": "cuequivariance, cuequivariance-torch, cuequivariance-ops-cu12, cuequivariance-ops-torch-cu12",
+          "reason": "Source-era CUDA package set; the post-source 0.11 kernel shim imports PyTorch FX APIs absent from pinned PyTorch 2.7.1",
+          "version": "0.10.0"
+        }
+      ],
+      "dependency_lock_sha256": "254df7d448411e63370034049763c654fc9bca132e8b711d14354b71ba1643e2",
+      "deployment": "not-performed",
+      "digest": "sha256:cd5342eac51aca5aa70a2ec8d8f8f22c089c997d546966b713349e684ca6f332",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:cd5342eac51aca5aa70a2ec8d8f8f22c089c997d546966b713349e684ca6f332",
+      "id": "boltzgen",
+      "local_image_id": "sha256:be469acd669c103611af225ccd8f2877ba7802d1ba34ab27d92e84fae57a2b6a",
+      "local_smoke": {
+        "commands": [
+          [
+            "python",
+            "/opt/fs2/runtime_probe.py",
+            "--model",
+            "boltzgen"
+          ],
+          [
+            "boltzgen",
+            "--help"
+          ]
+        ],
+        "state": "passed"
+      },
+      "sbom": {
+        "format": "spdx-json",
+        "retained_path": "/home/tux/dashboard/data/worktrees/fs2-cancer-images-complexa-boltzgen-mosaic-r20260902/k8s-inference/models/cancer-immunotherapy/runtime-images/.runtime-image-artifacts/boltzgen.spdx.json",
+        "sha256": "9f70c17292a82752b02e7b6b688091d97ae4913311bcfec2eaec851b502ba85c"
+      },
+      "source": {
+        "archive_sha256": "475d7e71a75766c0eddffb6995002c1dbdc1f1197f091c1c42e1eaedc4746b07",
+        "archive_url": "https://codeload.github.com/HannesStark/boltzgen/tar.gz/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "license": "MIT",
+        "repository": "https://github.com/HannesStark/boltzgen",
+        "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "source_date_epoch": 1777645309
+      },
+      "supersedes": {
+        "digest": "sha256:1cdc8e5f71d8e2d887c593cab858bc22ea7550cdadb5484eab25f35be5ba5544",
+        "reason": "The first immutable build resolved a post-source cuEquivariance 0.11 kernel shim that failed at the first H100 model forward; retain it as qualification-failed and consume cueq-v1."
+      },
+      "target_pre_push": {
+        "detail": "ling back on GET: HEAD https://cr.eu-north1.nebius.cloud/v2/e00akg9ndpx77eaexh/fs2-models/boltzgen/manifests/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v1: unexpected status code 404 Not Found (HEAD responses have no body, use GET for details)\nError: GET https://cr.eu-north1.nebius.cloud/v2/e00akg9ndpx77eaexh/fs2-models/boltzgen/manifests/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v1: MANIFEST_UNKNOWN: manifest unknown: Tag not found for manifest e00akg9ndpx77eaexh/fs2-models/boltzgen:null",
+        "digest": null,
+        "state": "absent"
+      },
+      "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen:31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v1",
+      "weight_policy": {
+        "embedded": false,
+        "external_root": "/opt/fs2/artifacts",
+        "notes": "BoltzGen and Boltz-2 checkpoints plus inference molecules are supplied by the L2 artifact cache; DOWNLOAD_WEIGHTS is never enabled"
+      }
+    },
+    {
+      "accelerator_runtime": {
+        "architecture_policy": "Official CUDA 12.6 runtime and PyTorch cu126 wheel; no device-name or H100-only admission check",
+        "cuda_abi": "12.6",
+        "framework": "pytorch",
+        "framework_version": "2.7.1+cu126"
+      },
+      "base": {
+        "builder": "nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04@sha256:50efab398f76258daa91ceebb33b6467e40217c67ea44fb5a2cebc6be7d9cce3",
+        "runtime": "nvidia/cuda:12.6.3-base-ubuntu24.04@sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e",
+        "substitution_for": "nvcr.io/nvidia/pytorch:24.08-py3",
+        "substitution_reason": "nvcr.io returned HTTP 403; use the user-approved public official NVIDIA CUDA base and a pinned CUDA PyTorch wheel"
+      },
+      "compatibility_overrides": [
+        {
+          "package": "cuequivariance, cuequivariance-torch, cuequivariance-ops-cu12, cuequivariance-ops-torch-cu12",
+          "reason": "Source-era CUDA package set; the post-source 0.11 kernel shim imports PyTorch FX APIs absent from pinned PyTorch 2.7.1",
+          "version": "0.10.0"
+        }
+      ],
+      "dependency_lock_sha256": "254df7d448411e63370034049763c654fc9bca132e8b711d14354b71ba1643e2",
+      "deployment": "not-performed",
+      "digest": "sha256:e2bb0a15c7585916ed650e851903bfe55643141f6521e36cdcb382670c0d3c02",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:e2bb0a15c7585916ed650e851903bfe55643141f6521e36cdcb382670c0d3c02",
+      "id": "boltzgen",
+      "local_image_id": "sha256:dd6c7e11633563315a98fc0e894dfee487ef469bbf959055bb0ca9b3a3208280",
+      "local_smoke": {
+        "commands": [
+          [
+            "python",
+            "/opt/fs2/runtime_probe.py",
+            "--model",
+            "boltzgen"
+          ],
+          [
+            "boltzgen",
+            "--help"
+          ]
+        ],
+        "state": "passed"
+      },
+      "sbom": {
+        "format": "spdx-json",
+        "retained_path": "/home/tux/dashboard/data/worktrees/fs2-cancer-images-complexa-boltzgen-mosaic-r20260902/k8s-inference/models/cancer-immunotherapy/runtime-images/.runtime-image-artifacts/boltzgen.spdx.json",
+        "sha256": "3363223c1b00ce0e102ce97be2f4a4f44f98af3af7bb75975bbf6aa728f2c2ae"
+      },
+      "source": {
+        "archive_sha256": "475d7e71a75766c0eddffb6995002c1dbdc1f1197f091c1c42e1eaedc4746b07",
+        "archive_url": "https://codeload.github.com/HannesStark/boltzgen/tar.gz/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "license": "MIT",
+        "repository": "https://github.com/HannesStark/boltzgen",
+        "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "source_date_epoch": 1777645309
+      },
+      "supersedes": {
+        "digest": "sha256:cd5342eac51aca5aa70a2ec8d8f8f22c089c997d546966b713349e684ca6f332",
+        "reason": "cueq-v1 fixed the dependency drift but reached Triton JIT without a runtime C compiler; retain it as qualification-failed and consume cueq-v2."
+      },
+      "target_pre_push": {
+        "detail": "ling back on GET: HEAD https://cr.eu-north1.nebius.cloud/v2/e00akg9ndpx77eaexh/fs2-models/boltzgen/manifests/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v2: unexpected status code 404 Not Found (HEAD responses have no body, use GET for details)\nError: GET https://cr.eu-north1.nebius.cloud/v2/e00akg9ndpx77eaexh/fs2-models/boltzgen/manifests/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v2: MANIFEST_UNKNOWN: manifest unknown: Tag not found for manifest e00akg9ndpx77eaexh/fs2-models/boltzgen:null",
+        "digest": null,
+        "state": "absent"
+      },
+      "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen:31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v2",
+      "weight_policy": {
+        "embedded": false,
+        "external_root": "/opt/fs2/artifacts",
+        "notes": "BoltzGen and Boltz-2 checkpoints plus inference molecules are supplied by the L2 artifact cache; DOWNLOAD_WEIGHTS is never enabled; gcc is the minimal runtime compiler required by Triton JIT"
+      }
+    },
+    {
+      "accelerator_runtime": {
+        "architecture_policy": "CUDA wheel plus torch-scatter SASS for 7.5, 8.0, 8.6, 8.9 and 9.0, with 9.0 PTX forward compatibility",
+        "cuda_abi": "12.6",
+        "framework": "pytorch",
+        "framework_version": "2.7.0+cu126"
+      },
+      "base": {
+        "builder": "nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04@sha256:50efab398f76258daa91ceebb33b6467e40217c67ea44fb5a2cebc6be7d9cce3",
+        "runtime": "nvidia/cuda:12.6.3-base-ubuntu24.04@sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e",
+        "substitution_for": "nvcr.io/nvidia/pytorch:24.08-py3",
+        "substitution_reason": "nvcr.io returned HTTP 403; use the user-approved public official NVIDIA CUDA base and a pinned CUDA PyTorch wheel"
+      },
+      "compatibility_overrides": [
+        {
+          "package": "dm-haiku",
+          "reason": "ColabDesign on the source-pinned JAX 0.4.29 ABI",
+          "sha256": "7448a43a6486bff95253f84e18eacc607d9c1256592573117a9d1d23e2780706",
+          "version": "0.0.12"
+        }
+      ],
+      "dependency_lock_sha256": "0fb7e8443b5d46a20692e560e8834d6c78a53f31881492c0dcee740ecc2a71ed",
+      "deployment": "not-performed",
+      "digest": "sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+      "digest_reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:d3f3c9bc5a2285b09932eb05a57ef73da3201bc69b77462420c0d42a0aaa91d8",
+      "id": "proteina-complexa",
+      "local_image_id": "sha256:0a656b6d1324809d99048d46c28623eff2584a1cf19e0de895330f5cd98c4141",
+      "local_smoke": {
+        "commands": [
+          [
+            "python",
+            "/opt/fs2/runtime_probe.py",
+            "--model",
+            "proteina-complexa"
+          ],
+          [
+            "complexa",
+            "--help"
+          ]
+        ],
+        "state": "passed"
+      },
+      "sbom": {
+        "format": "spdx-json",
+        "retained_path": "/home/tux/dashboard/data/worktrees/fs2-cancer-images-complexa-boltzgen-mosaic-r20260902/k8s-inference/models/cancer-immunotherapy/runtime-images/.runtime-image-artifacts/proteina-complexa.spdx.json",
+        "sha256": "c6635bb9c41055994a04d18de7d759e548f2b7987e90079b23b44e6c20df7e56"
+      },
+      "source": {
+        "archive_sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b",
+        "archive_url": "https://codeload.github.com/NVIDIA-BioNeMo/Proteina-Complexa/tar.gz/54058860d43444c7289873f77d3e50b5b02348cd",
+        "license": "Apache-2.0",
+        "repository": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+        "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+        "source_date_epoch": 1787870240
+      },
+      "target_pre_push": {
+        "detail": " back on GET: HEAD https://cr.eu-north1.nebius.cloud/v2/e00akg9ndpx77eaexh/fs2-models/proteina-complexa/manifests/54058860d43444c7289873f77d3e50b5b02348cd: unexpected status code 404 Not Found (HEAD responses have no body, use GET for details)\nError: GET https://cr.eu-north1.nebius.cloud/v2/e00akg9ndpx77eaexh/fs2-models/proteina-complexa/manifests/54058860d43444c7289873f77d3e50b5b02348cd: NAME_UNKNOWN: repository name not known to registry: Entity Folder not found for registry e00akg9ndpx77eaexh",
+        "digest": null,
+        "state": "absent"
+      },
+      "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd",
+      "weight_policy": {
+        "embedded": false,
+        "external_root": "/opt/fs2/artifacts",
+        "notes": "Complexa, AlphaFold2, RoseTTAFold3, ProteinMPNN and other reward-model artifacts are supplied by the L2 artifact cache"
+      }
+    }
+  ]
+}

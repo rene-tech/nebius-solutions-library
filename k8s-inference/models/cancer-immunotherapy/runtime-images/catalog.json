@@ -1,0 +1,109 @@
+{
+  "schema": "fs2.nebius.ai/scientific-runtime-image-catalog/v1",
+  "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
+  "images": [
+    {
+      "id": "proteina-complexa",
+      "source": {
+        "repository": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+        "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+        "archive_url": "https://codeload.github.com/NVIDIA-BioNeMo/Proteina-Complexa/tar.gz/54058860d43444c7289873f77d3e50b5b02348cd",
+        "archive_sha256": "4a9448653fe9ae4e9e46c3204ef0e3c6ac9563a4cc5626c7a11d8441c485fb3b",
+        "source_date_epoch": 1787870240,
+        "license": "Apache-2.0"
+      },
+      "base": {
+        "builder": "nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04@sha256:50efab398f76258daa91ceebb33b6467e40217c67ea44fb5a2cebc6be7d9cce3",
+        "runtime": "nvidia/cuda:12.6.3-base-ubuntu24.04@sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e",
+        "substitution_for": "nvcr.io/nvidia/pytorch:24.08-py3",
+        "substitution_reason": "nvcr.io returned HTTP 403; use the user-approved public official NVIDIA CUDA base and a pinned CUDA PyTorch wheel"
+      },
+      "python": "3.12",
+      "accelerator_runtime": {
+        "framework": "pytorch",
+        "framework_version": "2.7.0+cu126",
+        "cuda_abi": "12.6",
+        "architecture_policy": "CUDA wheel plus torch-scatter SASS for 7.5, 8.0, 8.6, 8.9 and 9.0, with 9.0 PTX forward compatibility"
+      },
+      "dependency_lock": {
+        "path": "proteina-complexa/requirements.lock",
+        "sha256": "0fb7e8443b5d46a20692e560e8834d6c78a53f31881492c0dcee740ecc2a71ed"
+      },
+      "compatibility_overrides": [
+        {
+          "package": "dm-haiku",
+          "version": "0.0.12",
+          "sha256": "7448a43a6486bff95253f84e18eacc607d9c1256592573117a9d1d23e2780706",
+          "reason": "ColabDesign on the source-pinned JAX 0.4.29 ABI"
+        }
+      ],
+      "build_context": ".",
+      "dockerfile": "proteina-complexa/Dockerfile",
+      "tag_suffix": "ptxas-v1",
+      "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa:54058860d43444c7289873f77d3e50b5b02348cd-ptxas-v1",
+      "weight_policy": {
+        "embedded": false,
+        "external_root": "/opt/fs2/artifacts",
+        "notes": "Complexa, AlphaFold2, RoseTTAFold3, ProteinMPNN and other reward-model artifacts are supplied by the L2 artifact cache"
+      },
+      "smoke": [
+        ["python", "/opt/fs2/runtime_probe.py", "--model", "proteina-complexa"],
+        ["complexa", "--help"]
+      ],
+      "gpu_smoke": ["python", "/opt/fs2/runtime_probe.py", "--model", "proteina-complexa", "--require-gpu"]
+    },
+    {
+      "id": "boltzgen",
+      "source": {
+        "repository": "https://github.com/HannesStark/boltzgen",
+        "revision": "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "archive_url": "https://codeload.github.com/HannesStark/boltzgen/tar.gz/31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0",
+        "archive_sha256": "475d7e71a75766c0eddffb6995002c1dbdc1f1197f091c1c42e1eaedc4746b07",
+        "source_date_epoch": 1777645309,
+        "license": "MIT"
+      },
+      "base": {
+        "builder": "nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04@sha256:50efab398f76258daa91ceebb33b6467e40217c67ea44fb5a2cebc6be7d9cce3",
+        "runtime": "nvidia/cuda:12.6.3-base-ubuntu24.04@sha256:c87e78933f4c16e3272123bf2f75537306596d0fbaa395a29696a22786e5ee0e",
+        "substitution_for": "nvcr.io/nvidia/pytorch:24.08-py3",
+        "substitution_reason": "nvcr.io returned HTTP 403; use the user-approved public official NVIDIA CUDA base and a pinned CUDA PyTorch wheel"
+      },
+      "python": "3.12",
+      "accelerator_runtime": {
+        "framework": "pytorch",
+        "framework_version": "2.7.1+cu126",
+        "cuda_abi": "12.6",
+        "architecture_policy": "Official CUDA 12.6 runtime and PyTorch cu126 wheel; no device-name or H100-only admission check"
+      },
+      "dependency_lock": {
+        "path": "boltzgen/requirements.lock",
+        "sha256": "254df7d448411e63370034049763c654fc9bca132e8b711d14354b71ba1643e2"
+      },
+      "compatibility_overrides": [
+        {
+          "package": "cuequivariance, cuequivariance-torch, cuequivariance-ops-cu12, cuequivariance-ops-torch-cu12",
+          "version": "0.10.0",
+          "reason": "Source-era CUDA package set; the post-source 0.11 kernel shim imports PyTorch FX APIs absent from pinned PyTorch 2.7.1"
+        }
+      ],
+      "build_context": ".",
+      "dockerfile": "boltzgen/Dockerfile",
+      "tag_suffix": "cueq-v3",
+      "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen:31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0-cueq-v3",
+      "supersedes": {
+        "digest": "sha256:e2bb0a15c7585916ed650e851903bfe55643141f6521e36cdcb382670c0d3c02",
+        "reason": "cueq-v2 added gcc but the first fused H100 forward proved Triton's runtime extension also requires Python.h; retain it for the portable no-kernel path and consume cueq-v3 for fused-kernel qualification."
+      },
+      "weight_policy": {
+        "embedded": false,
+        "external_root": "/opt/fs2/artifacts",
+        "notes": "BoltzGen and Boltz-2 checkpoints plus inference molecules are supplied by the L2 artifact cache; DOWNLOAD_WEIGHTS is never enabled; gcc and Python headers are the minimal runtime build inputs required by Triton JIT"
+      },
+      "smoke": [
+        ["python", "/opt/fs2/runtime_probe.py", "--model", "boltzgen"],
+        ["boltzgen", "--help"]
+      ],
+      "gpu_smoke": ["python", "/opt/fs2/runtime_probe.py", "--model", "boltzgen", "--require-gpu"]
+    }
+  ]
+}
