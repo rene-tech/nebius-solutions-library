@@ -2232,6 +2232,7 @@ class LegacyManifestRenderer:
                 scaler["metadata"]["ownerReferences"] = owner_references
             rendered.append(scaler)
 
+        primary_pod_security_context = primary_template["spec"]["template"]["spec"].get("securityContext")
         for pool_id, (residency, pool) in sorted(residency_holders.items()):
             assert context.residency_holder_image is not None
             rendered.extend(
@@ -2245,6 +2246,8 @@ class LegacyManifestRenderer:
                     tolerations=pool.tolerations,
                     labels=labels,
                     annotations=annotations,
+                    # The holder must read exactly the bytes the runtime reads.
+                    pod_security_context=primary_pod_security_context,
                     owner_references=owner_references,
                 )
             )
