@@ -29,14 +29,14 @@ variable "cluster_id" {
 }
 
 variable "kubernetes_version" {
-  description = "Managed Kubernetes version from deployment.cluster.kubernetes_version. JobSet v0.12.0's own end-to-end matrix covers Kubernetes 1.32-1.34; patch upgrades within those minors are accepted. No wider minor is claimed, because nothing upstream tests one."
+  description = "Managed Kubernetes version from deployment.cluster.kubernetes_version. JobSet v0.12.0's published end-to-end matrix covers Kubernetes 1.32-1.34; FS2 additionally qualifies the exact pinned release on Kind 1.35.0 and managed Kubernetes 1.35.6. Patch upgrades inside these minors are accepted; no wider minor is claimed."
   type        = string
   default     = "1.34"
 
   validation {
     condition = try(
       tonumber(split(".", trimprefix(var.kubernetes_version, "v"))[0]) == 1 &&
-      contains([32, 33, 34], tonumber(split(".", trimprefix(var.kubernetes_version, "v"))[1])) &&
+      contains([32, 33, 34, 35], tonumber(split(".", trimprefix(var.kubernetes_version, "v"))[1])) &&
       length(split(".", trimprefix(var.kubernetes_version, "v"))) >= 2 &&
       length(split(".", trimprefix(var.kubernetes_version, "v"))) <= 3 &&
       alltrue([
@@ -45,7 +45,7 @@ variable "kubernetes_version" {
       ]),
       false,
     )
-    error_message = "JobSet v0.12.0 requires a numeric Kubernetes 1.<minor>[.<patch>] version in its upstream-tested 1.32-1.34 minor set."
+    error_message = "JobSet v0.12.0 requires a numeric Kubernetes 1.<minor>[.<patch>] version in the upstream-tested 1.32-1.34 or FS2-qualified 1.35 set."
   }
 }
 

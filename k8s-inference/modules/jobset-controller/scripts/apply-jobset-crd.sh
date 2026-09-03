@@ -50,7 +50,12 @@ if [[ "${server_minor}" != "${FS2_JOBSET_KUBERNETES_MINOR}" ]]; then
 fi
 
 crd_file="${upgrade_dir}/jobset-crds.yaml"
-helm show crds "${chart_archive}" >"${crd_file}"
+crd_member="$(tar -tzf "${chart_archive}" | grep -E '^[^/]+/crds/jobset\.x-k8s\.io_jobsets\.yaml$')"
+[[ -n "${crd_member}" && "$(wc -l <<<"${crd_member}")" -eq 1 ]] || {
+  echo "verified JobSet chart must contain exactly one canonical JobSet CRD" >&2
+  exit 1
+}
+tar -xOzf "${chart_archive}" "${crd_member}" >"${crd_file}"
 
 grep -Fq 'name: jobsets.jobset.x-k8s.io' "${crd_file}"
 grep -Fq 'name: v1alpha2' "${crd_file}"
