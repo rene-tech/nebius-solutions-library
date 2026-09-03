@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
+from fs2_serve.access_models import OperatorPrincipalCreate, OperatorRole, PrincipalKind
 from fs2_serve.admin import AdminProblemError, AdminReadService
 from fs2_serve.admin_models import AdminContext, AdminSourceState
 from fs2_serve.admission import AdmissionService
-from fs2_serve.api import AppRuntime, create_app
+from fs2_serve.api import ADMIN_SESSION_COOKIE, AppRuntime, create_app
 from fs2_serve.auth import OperatorSessionService, PepperRing, TokenService
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.registry import Registry
@@ -405,6 +407,21 @@ async def test_detail_overlays_canonical_terminal_result_evidence() -> None:
     assert attempt.admitted_at == FIXED_NOW - timedelta(minutes=1)
 
 
+async def test_detail_keeps_controller_data_when_artifact_reader_is_not_configured() -> None:
+    service = ScientificAdminReadService(
+        runs=RunAdapter(),
+        models=ModelAdapter(),
+        clock=lambda: FIXED_NOW,
+    )
+
+    envelope = await service.run_detail(_context(), OPERATION_ID, tenant_id="tenant-oncology")
+
+    assert envelope.data.run.id == str(OPERATION_ID)
+    assert envelope.data.semantic_validation.status == "not-run"
+    assert envelope.meta.sources[-1].id == "scientific-artifacts"
+    assert envelope.meta.sources[-1].state is AdminSourceState.UNAVAILABLE
+
+
 async def test_controller_failure_returns_stable_problem_without_backend_detail() -> None:
     with pytest.raises(AdminProblemError) as caught:
         await _service(runs=FailingRunAdapter()).run_list(_context(), _query())
@@ -443,9 +460,61 @@ def test_authenticated_admin_routes_use_the_real_bff_service(registry, cipher, h
     )
     assert session.status_code == 200
 
+    assert client.get("/admin/api/v1/scientific-capabilities").status_code == 200
     run_list = client.get("/admin/api/v1/scientific-runs?limit=25&tenant_id=tenant-oncology")
     assert run_list.status_code == 200
     assert run_list.json()["data"]["items"][0]["id"] == str(OPERATION_ID)
     assert client.get(f"/admin/api/v1/scientific-runs/{OPERATION_ID}").status_code == 200
     assert client.get("/admin/api/v1/scientific-models").status_code == 200
     assert client.get("/admin/api/v1/scientific-runs?access_state=invented").status_code == 422
+
+
+def test_absent_run_reader_removes_only_run_routes(registry, cipher, hasher) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    runtime.scientific_admin = ScientificAdminReadService(models=ModelAdapter(), clock=lambda: FIXED_NOW)
+    client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
+    assert client.post("/admin/api/v1/session", headers={"authorization": f"Bearer {'a' * 32}"}).status_code == 200
+
+    capabilities = client.get("/admin/api/v1/scientific-capabilities")
+    assert capabilities.status_code == 200
+    assert capabilities.json()["data"]["model_readiness"]["available"] is True
+    assert capabilities.json()["data"]["run_history"]["available"] is False
+    assert client.get("/admin/api/v1/scientific-models").status_code == 200
+    assert client.get("/admin/api/v1/scientific-runs").status_code == 404
+
+
+def test_tenant_viewer_can_discover_authorized_models_and_read_runs(
+    registry,
+    cipher,
+    hasher,
+) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    assert isinstance(runtime.store, MemoryStore)
+    assert runtime.operator_sessions is not None
+    principal_id = uuid4()
+    asyncio.run(
+        runtime.store.create_operator_principal(
+            principal_id=principal_id,
+            request=OperatorPrincipalCreate(
+                subject="tenant-oncology-viewer",
+                display_name="Tenant oncology viewer",
+                kind=PrincipalKind.HUMAN,
+                role=OperatorRole.VIEWER,
+                tenant_id="tenant-oncology",
+            ),
+            actor="test-bootstrap",
+        )
+    )
+    cookie = asyncio.run(runtime.operator_sessions.issue(principal_id, actor="test-bootstrap")).cookie_value
+    headers = {"cookie": f"{ADMIN_SESSION_COOKIE}={cookie}"}
+    client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
+
+    capabilities = client.get("/admin/api/v1/scientific-capabilities", headers=headers)
+    run_list = client.get("/admin/api/v1/scientific-runs", headers=headers)
+
+    assert capabilities.status_code == 200
+    assert capabilities.json()["data"]["run_history"]["available"] is True
+    assert capabilities.json()["data"]["model_readiness"]["available"] is True
+    assert capabilities.json()["data"]["model_readiness"]["reason"] is None
+    assert run_list.status_code == 200
+    assert client.get("/admin/api/v1/scientific-models", headers=headers).status_code == 200

@@ -1,5 +1,22 @@
 locals {
-  acme_issuer_name = "fs2-serve-ip-acme-${var.acme_environment}"
+  acme_issuer_name      = "fs2-serve-ip-acme-${var.acme_environment}"
+  admin_model_namespace = "fs2-models"
+  # Read exactly the namespaces from the validated scheduling contract,
+  # including operator-defined and externally-owned scientific queues. The
+  # reference-data and batch owners can also place Pods outside that contract,
+  # so include their enabled execution namespaces explicitly. The model
+  # namespace is already covered by the base capacity-reader Role.
+  admin_scientific_namespaces = sort(distinct([
+    for namespace in concat(
+      [
+        for queue in values(module.kueue_scheduling.contract.local_queues) :
+        queue.metadata.namespace
+      ],
+      var.scientific_batch.enabled ? [var.scientific_batch.namespace] : [],
+      var.reference_data.enabled ? [var.reference_data.namespace] : [],
+    ) : namespace
+    if namespace != local.admin_model_namespace
+  ]))
   control_plane_overrides = {
     replicaCount = 2
     image = {
@@ -75,6 +92,11 @@ locals {
       capacity = {
         enabled            = true
         nodeScalerProvider = local.admin_configuration_enabled ? "nebius-managed-node-group-autoscaler" : ""
+        # Scientific lanes live outside the model namespace, so the admin
+        # capacity reader is told about exactly the ones this stage enables.
+        # Without them its queue and GPU-allocation projections silently omit
+        # the academic and reference-data workloads.
+        kueueExtraNamespaces = local.admin_scientific_namespaces
       }
       observability = {
         enabled       = true
@@ -192,6 +214,13 @@ resource "helm_release" "control_plane" {
     yamlencode(local.scientific_chart_overrides),
   ]
 
+  lifecycle {
+    precondition {
+      condition     = length(local.admin_scientific_namespaces) <= 32
+      error_message = "The admin capacity projection supports at most 32 distinct non-model queue namespaces; reduce or consolidate scheduling.local_queues, scientific_batch.namespace, and reference_data.namespace."
+    }
+  }
+
   depends_on = [
     kubernetes_manifest.model_deployment_crd,
     kubernetes_manifest.control_database,
@@ -212,5 +241,13 @@ resource "helm_release" "control_plane" {
     kubernetes_config_map_v1.model_controller_bundles,
     kubernetes_config_map_v1.scientific_scheduling_contract,
     kubernetes_manifest.model,
+    # The chart renders capacity-reader Roles in every scientific queue
+    # namespace. Order Helm after the owners that create those namespaces and
+    # their LocalQueues so an atomic install cannot race namespace creation.
+    module.academic_assets,
+    module.reference_data,
+    kubernetes_manifest.additional_local_queue,
+    kubernetes_manifest.general_cpu_local_queue,
+    kubernetes_manifest.model_local_queue,
   ]
 }

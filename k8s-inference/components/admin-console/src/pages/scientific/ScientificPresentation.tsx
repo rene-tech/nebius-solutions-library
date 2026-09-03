@@ -67,6 +67,18 @@ export function AccessGate({ access, compact = false }: { access: ScientificAcce
       <ScientificStatusChip state={access.state} label={`${access.profile} · ${access.state}`} reason={access.gate} />
       <span className="secondary-line scientific-secondary">{access.gate}</span>
       {access.receipt_digest ? <code className="scientific-digest" title={access.receipt_digest}>receipt {access.receipt_digest.slice(0, 15)}…</code> : null}
+      {access.authorization ? (
+        <span className="secondary-line scientific-secondary">
+          Use {access.authorization.use_authorization_status} · execution {access.authorization.execution_authorization_status}
+          {compact ? null : ` · ${access.authorization.asset_id}${access.authorization.asset_namespace ? ` in ${access.authorization.asset_namespace}` : ""}`}
+        </span>
+      ) : null}
+      {access.profile === "academic" ? (
+        <span className="secondary-line scientific-secondary">
+          {access.request_time_license_receipt_required ? "Request-time licence receipt required" : "No request-time licence receipt"}
+          {compact ? null : ` · ${access.formal_license_status} (advisory only)`}
+        </span>
+      ) : null}
       {access.alternative ? (
         <span className="scientific-alternative">
           Alternative: <strong>{access.alternative.display_name}</strong> — {access.alternative.reason}
@@ -85,6 +97,7 @@ export function FastStartTier({ observation }: { observation: ScientificFastStar
   );
 }
 
-export function shortDigest(value: string): string {
+export function shortDigest(value: string | null): string {
+  if (value === null) return "Unavailable";
   return value.length > 18 ? `${value.slice(0, 14)}…${value.slice(-4)}` : value;
 }

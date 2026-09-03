@@ -38,6 +38,7 @@ from fs2_serve.memory_store import MemoryStore
 from fs2_serve.models import AdmissionRequest, OperationStatus, RuntimeIdentity, Scope, TokenCreate
 from fs2_serve.registry import Registry
 from fs2_serve.runtime import StubRuntimeClient
+from fs2_serve.scientific_admin import ScientificAdminReadService
 from fs2_serve.settings import Settings
 from fs2_serve.telemetry import Metrics
 
@@ -765,6 +766,10 @@ def test_openapi_matches_typed_versioned_admin_contract(registry: Any, cipher: A
     runtime.model_deployment_preview = cast(Any, object())
     runtime.model_deployment_read = cast(Any, object())
     runtime.model_deployment_mutation = cast(Any, object())
+    runtime.scientific_admin = ScientificAdminReadService(
+        models=cast(Any, object()),
+        runs=cast(Any, object()),
+    )
     schema = create_app(runtime).openapi()
     contract = json.loads(
         (Path(__file__).resolve().parents[2] / "admin-console" / "contracts" / "admin-api-v1.json").read_text(

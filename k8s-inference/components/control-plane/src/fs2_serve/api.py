@@ -95,6 +95,7 @@ from .registry import OperationalModel, Registry, RegistryError
 from .route_revalidation import RouteRevalidator
 from .scientific_admin import ScientificAdminReadService, ScientificRunQuery
 from .scientific_admin_models import (
+    ScientificCapabilities,
     ScientificModelReadinessList,
     ScientificRunDetail,
     ScientificRunList,
@@ -1588,96 +1589,123 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         scientific_admin = runtime.scientific_admin
 
         @app.get(
-            "/admin/api/v1/scientific-runs",
-            response_model=AdminEnvelope[ScientificRunList],
+            "/admin/api/v1/scientific-capabilities",
+            response_model=AdminEnvelope[ScientificCapabilities],
             responses=admin_problem_responses,
         )
-        async def admin_scientific_runs(
+        async def admin_scientific_capabilities(
             identity: Annotated[OperatorPrincipal, Depends(operator)],
             params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
-            limit: Annotated[int, Query(ge=1, le=200)] = 100,
-            cursor: Annotated[str | None, Query(min_length=1, max_length=512)] = None,
-            tenant_id: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
-            model_id: Annotated[str | None, Query(min_length=1, max_length=MAX_MODEL_ID_LENGTH)] = None,
-            service_class: ScientificServiceClass | None = None,
-            access_state: Annotated[
-                str | None,
-                Query(pattern=r"^(not-required|unverified|verified|blocked)$"),
-            ] = None,
-            admission_state: Annotated[
-                str | None,
-                Query(pattern=r"^(pending|inadmissible|admitted|evicted|finished)$"),
-            ] = None,
-            run_status: Annotated[
-                str | None,
-                Query(pattern=r"^(waiting-for-access|queued|admitted|running|succeeded|failed|cancelling|cancelled)$"),
-            ] = None,
-        ) -> AdminEnvelope[ScientificRunList]:
-            authorized_tenant = await admin_access.authorize(
+        ) -> AdminEnvelope[ScientificCapabilities]:
+            await admin_access.authorize(
                 identity,
                 OperatorRole.VIEWER,
-                action="scientific_run.list",
-                tenant_id=tenant_id,
-            )
-            context = selected_context(params)
-            return await scientific_admin.run_list(
-                context,
-                ScientificRunQuery(
-                    from_at=context.from_at,
-                    to_at=context.to_at,
-                    limit=limit,
-                    cursor=cursor,
-                    tenant_id=authorized_tenant,
-                    model_id=model_id,
-                    service_class=service_class,
-                    access_state=access_state,
-                    admission_state=admission_state,
-                    run_status=run_status,
-                ),
-            )
-
-        @app.get(
-            "/admin/api/v1/scientific-runs/{run_id}",
-            response_model=AdminEnvelope[ScientificRunDetail],
-            responses=admin_problem_responses,
-        )
-        async def admin_scientific_run_detail(
-            run_id: UUID,
-            identity: Annotated[OperatorPrincipal, Depends(operator)],
-            params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
-        ) -> AdminEnvelope[ScientificRunDetail]:
-            authorized_tenant = await admin_access.authorize(
-                identity,
-                OperatorRole.VIEWER,
-                action="scientific_run.read",
+                action="scientific_capability.read",
                 tenant_id=identity.tenant_id,
             )
-            return await scientific_admin.run_detail(
-                selected_context(params),
-                run_id,
-                tenant_id=authorized_tenant,
+            return access_envelope(
+                scientific_admin.capabilities(),
+                params,
             )
 
-        @app.get(
-            "/admin/api/v1/scientific-models",
-            response_model=AdminEnvelope[ScientificModelReadinessList],
-            responses=admin_problem_responses,
-        )
-        async def admin_scientific_models(
-            identity: Annotated[OperatorPrincipal, Depends(operator)],
-            params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
-            tenant_id: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
-        ) -> AdminEnvelope[ScientificModelReadinessList]:
-            authorized_tenant = await admin_access.authorize(
-                identity,
-                OperatorRole.VIEWER,
-                action="scientific_model.list",
-                tenant_id=tenant_id,
+        # Run and artifact reporting exists only when a durable reader is
+        # configured. Leaving the routes unregistered keeps the advertised
+        # surface equal to what this build can actually answer.
+        if scientific_admin.runs is not None:
+
+            @app.get(
+                "/admin/api/v1/scientific-runs",
+                response_model=AdminEnvelope[ScientificRunList],
+                responses=admin_problem_responses,
             )
-            return await scientific_admin.model_list(
-                selected_context(params),
-                tenant_id=authorized_tenant,
+            async def admin_scientific_runs(
+                identity: Annotated[OperatorPrincipal, Depends(operator)],
+                params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+                limit: Annotated[int, Query(ge=1, le=200)] = 100,
+                cursor: Annotated[str | None, Query(min_length=1, max_length=512)] = None,
+                tenant_id: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
+                model_id: Annotated[str | None, Query(min_length=1, max_length=MAX_MODEL_ID_LENGTH)] = None,
+                service_class: ScientificServiceClass | None = None,
+                access_state: Annotated[
+                    str | None,
+                    Query(pattern=r"^(not-required|unverified|verified|blocked)$"),
+                ] = None,
+                admission_state: Annotated[
+                    str | None,
+                    Query(pattern=r"^(pending|inadmissible|admitted|evicted|finished)$"),
+                ] = None,
+                run_status: Annotated[
+                    str | None,
+                    Query(pattern=r"^(waiting-for-access|queued|admitted|running|succeeded|failed|cancelling|cancelled)$"),
+                ] = None,
+            ) -> AdminEnvelope[ScientificRunList]:
+                authorized_tenant = await admin_access.authorize(
+                    identity,
+                    OperatorRole.VIEWER,
+                    action="scientific_run.list",
+                    tenant_id=tenant_id,
+                )
+                context = selected_context(params)
+                return await scientific_admin.run_list(
+                    context,
+                    ScientificRunQuery(
+                        from_at=context.from_at,
+                        to_at=context.to_at,
+                        limit=limit,
+                        cursor=cursor,
+                        tenant_id=authorized_tenant,
+                        model_id=model_id,
+                        service_class=service_class,
+                        access_state=access_state,
+                        admission_state=admission_state,
+                        run_status=run_status,
+                    ),
+                )
+
+            @app.get(
+                "/admin/api/v1/scientific-runs/{run_id}",
+                response_model=AdminEnvelope[ScientificRunDetail],
+                responses=admin_problem_responses,
             )
+            async def admin_scientific_run_detail(
+                run_id: UUID,
+                identity: Annotated[OperatorPrincipal, Depends(operator)],
+                params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+            ) -> AdminEnvelope[ScientificRunDetail]:
+                authorized_tenant = await admin_access.authorize(
+                    identity,
+                    OperatorRole.VIEWER,
+                    action="scientific_run.read",
+                    tenant_id=identity.tenant_id,
+                )
+                return await scientific_admin.run_detail(
+                    selected_context(params),
+                    run_id,
+                    tenant_id=authorized_tenant,
+                )
+
+        if scientific_admin.models is not None:
+
+            @app.get(
+                "/admin/api/v1/scientific-models",
+                response_model=AdminEnvelope[ScientificModelReadinessList],
+                responses=admin_problem_responses,
+            )
+            async def admin_scientific_models(
+                identity: Annotated[OperatorPrincipal, Depends(operator)],
+                params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+                tenant_id: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
+            ) -> AdminEnvelope[ScientificModelReadinessList]:
+                authorized_tenant = await admin_access.authorize(
+                    identity,
+                    OperatorRole.VIEWER,
+                    action="scientific_model.list",
+                    tenant_id=tenant_id,
+                )
+                return await scientific_admin.model_list(
+                    selected_context(params),
+                    tenant_id=authorized_tenant,
+                )
 
     @app.get(
         "/admin/api/v1/capacity",

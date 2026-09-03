@@ -360,6 +360,30 @@
       "path": "/admin/api/v1/academic-assets",
       "success_status": 200,
       "data_schema": "AcademicAssetReadinessList"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/scientific-capabilities",
+      "success_status": 200,
+      "data_schema": "ScientificCapabilities"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/scientific-runs",
+      "success_status": 200,
+      "data_schema": "ScientificRunList"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/scientific-runs/{run_id}",
+      "success_status": 200,
+      "data_schema": "ScientificRunDetail"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/api/v1/scientific-models",
+      "success_status": 200,
+      "data_schema": "ScientificModelReadinessList"
     }
   ],
   "feature_gated_route_groups": [
@@ -408,6 +432,23 @@
         "/admin/api/v1/model-deployments/{name}:rollback",
         "/admin/api/v1/model-deployments/{name}:reconcile"
       ]
+    },
+    {
+      "id": "scientific-operations",
+      "enabled_when": "the scientific admin read service is configured",
+      "disabled_behavior": "routes are absent",
+      "paths": [
+        "/admin/api/v1/scientific-capabilities",
+        "/admin/api/v1/scientific-runs",
+        "/admin/api/v1/scientific-runs/{run_id}",
+        "/admin/api/v1/scientific-models"
+      ],
+      "source_states": {
+        "scientific-catalog": "global candidate evidence and authorization-filtered tenant discovery",
+        "scientific-controller": "durable PostgreSQL scientific batch controller reader",
+        "scientific-artifacts": "canonical artifact result service when configured"
+      },
+      "pending_producer_behavior": "The capabilities response marks an unavailable producer and its data route is absent. The console does not call or advertise that route."
     }
   ],
   "feature_disabled_problem_routes": [

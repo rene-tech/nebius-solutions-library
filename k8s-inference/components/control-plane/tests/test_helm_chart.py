@@ -3153,3 +3153,64 @@ def test_object_storage_egress_is_opt_in_and_scoped_to_tls() -> None:
     ]
     assert len(rules) == 1
     assert rules[0]["ports"] == [{"port": 443, "protocol": "TCP"}]
+
+def test_extra_kueue_namespaces_grant_least_privilege_capacity_reads() -> None:
+    """Scientific lanes need queue and pod allocation visibility only."""
+
+    documents = render(
+        "--set",
+        "adminReadAdapters.capacity.enabled=true",
+        "--set",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+        "--set",
+        "adminReadAdapters.capacity.kueueExtraNamespaces={fs2-academic-poc,fs2-reference-data}",
+    )
+    roles = {
+        document["metadata"]["namespace"]: document
+        for document in documents
+        if document["kind"] == "Role" and document["metadata"]["name"].endswith("-admin-capacity-reader-queues")
+    }
+    assert set(roles) == {"fs2-academic-poc", "fs2-reference-data"}
+    for role in roles.values():
+        assert role["rules"] == [
+            {
+                "apiGroups": [""],
+                "resources": ["pods"],
+                "verbs": ["list"],
+            },
+            {
+                "apiGroups": ["kueue.x-k8s.io"],
+                "resources": ["localqueues", "workloads"],
+                "verbs": ["list"],
+            },
+        ]
+
+    bindings = {
+        document["metadata"]["namespace"]
+        for document in documents
+        if document["kind"] == "RoleBinding" and document["metadata"]["name"].endswith("-admin-capacity-reader-queues")
+    }
+    assert bindings == {"fs2-academic-poc", "fs2-reference-data"}
+
+    deployment = gateway_deployment(documents)
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    environment = {item["name"]: item.get("value") for item in container["env"]}
+    assert environment["FS2_ADMIN_KUEUE_EXTRA_NAMESPACES"] == '["fs2-academic-poc","fs2-reference-data"]'
+
+
+def test_extra_kueue_namespace_must_not_repeat_the_model_namespace() -> None:
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
+        render_command(
+            "--set",
+            "adminReadAdapters.capacity.enabled=true",
+            "--set",
+            "networkPolicy.kubernetesApiCidrs[0]=192.0.2.10/32",
+            "--set",
+            "adminReadAdapters.capacity.kueueExtraNamespaces={fs2-models}",
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "must not repeat modelNamespace" in result.stderr

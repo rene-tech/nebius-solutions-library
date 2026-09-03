@@ -57,6 +57,7 @@ import type {
   AcademicAssetReadinessList,
   ScientificAccessState,
   ScientificAdmissionState,
+  ScientificCapabilities,
   ScientificModelReadinessList,
   ScientificRunDetail,
   ScientificRunList,
@@ -292,6 +293,8 @@ export const adminApi = {
       undefined,
       signal,
     ),
+  scientificCapabilities: (context: URLSearchParams, signal?: AbortSignal) =>
+    request<ScientificCapabilities>("/scientific-capabilities", context, undefined, signal),
   scientificRuns: (context: URLSearchParams, filters: ScientificRunQuery = {}, signal?: AbortSignal) =>
     request<ScientificRunList>("/scientific-runs", context, {
       limit: boundedLimit(filters.limit, 200, 100),

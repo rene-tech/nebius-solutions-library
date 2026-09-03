@@ -17,6 +17,7 @@ import {
   ScientificStatusChip,
   shortDigest,
 } from "./ScientificPresentation";
+import { useScientificCapabilities } from "./useScientificCapabilities";
 
 const runStates = ["waiting-for-access", "queued", "admitted", "running", "succeeded", "failed", "cancelling", "cancelled"] as const satisfies readonly ScientificRunState[];
 const serviceClasses = ["presentation", "interactive", "customer-batch", "bulk-backfill"] as const satisfies readonly ScientificServiceClass[];
@@ -34,6 +35,10 @@ export function ScientificRunsPage() {
   const { session } = useSession();
   const [searchParams, setSearchParams] = useSearchParams();
   const context = sharedContextParams(searchParams);
+  const capabilitiesQuery = useScientificCapabilities(context);
+  const capabilities = capabilitiesQuery.data?.data;
+  const runsAvailable = capabilities?.run_history.available === true;
+  const modelsAvailable = capabilities?.model_readiness.available === true;
   const fixedTenant = session.principal.tenant_id ?? undefined;
   const rawStatus = searchParams.get("run_status");
   const rawServiceClass = searchParams.get("service_class");
@@ -70,10 +75,12 @@ export function ScientificRunsPage() {
       accessState,
       limit: 100,
     }, signal),
+    enabled: runsAvailable,
   });
   const modelsQuery = useQuery({
     queryKey: ["admin-scientific-models", context.toString()],
     queryFn: ({ signal }) => adminApi.scientificModels(context, signal),
+    enabled: modelsAvailable,
   });
 
   function update(key: string, value: string) {
@@ -107,6 +114,9 @@ export function ScientificRunsPage() {
           <div><span className="eyebrow">Runs</span><h2 id="scientific-run-list-title">Scientific run ledger</h2></div>
           <span className="section-heading__meta">{runs.length} runs on this page</span>
         </div>
+        {capabilitiesQuery.isPending ? (
+          <div className="state-panel state-panel--loading" role="status">Checking scientific run capability…</div>
+        ) : runsAvailable ? <>
         <div className="toolbar toolbar--wrap" aria-label="Scientific run filters">
           <label>Model<input maxLength={128} onChange={(event) => update("model", event.target.value)} placeholder="All models" value={modelId ?? ""} /></label>
           <label>Run status<select onChange={(event) => update("run_status", event.target.value)} value={status ?? ""}><option value="">All states</option>{runStates.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
@@ -115,7 +125,7 @@ export function ScientificRunsPage() {
           {fixedTenant ? <span className="quiet-chip">Tenant {fixedTenant}</span> : <label>Tenant<input maxLength={120} onChange={(event) => update("tenant", event.target.value)} placeholder="All tenants" value={tenantId ?? ""} /></label>}
         </div>
         {invalidFilter ? <div className="freshness-notice" role="status"><strong>Invalid filter ignored</strong><span>Use a published run, service-class, or access state and bounded model, tenant, or cursor value.</span></div> : null}
-        <DataBoundary data={runsQuery.data} error={runsQuery.error} pending={runsQuery.isPending} empty={!runsQuery.isPending && runs.length === 0}>
+        <DataBoundary data={runsQuery.data} error={runsQuery.error} pending={runsQuery.isPending} empty={!runsQuery.isPending && runs.length === 0} loadingLabel="Loading scientific runs…" emptyLabel="No scientific runs match the selected context.">
           {({ data }) => (
             <div className="page-stack">
               <div className="table-frame">
@@ -128,7 +138,7 @@ export function ScientificRunsPage() {
                     return (
                       <tr key={run.id}>
                         <th scope="row"><Link className="resource-link" to={{ pathname: `/admin/scientific-runs/${encodeURIComponent(run.id)}`, search: navigationParams.toString() }}>{run.display_name}</Link><span className="secondary-line">{run.id} · {run.operation}</span><span className="secondary-line">Submitted {formatTimestamp(run.submitted_at)}</span></th>
-                        <td><strong>{run.model.display_name}</strong><span className="secondary-line">{run.model.execution_mode} · {run.model.backend.backend_id}</span><code className="scientific-digest" title={run.model.backend.execution_identity_digest}>{shortDigest(run.model.backend.execution_identity_digest)}</code></td>
+                        <td><strong>{run.model.display_name}</strong><span className="secondary-line">{run.model.execution_mode} · {run.model.backend.backend_id}</span><code className="scientific-digest" title={run.model.backend.execution_identity_digest ?? undefined}>{shortDigest(run.model.backend.execution_identity_digest)}</code></td>
                         <td>{run.attribution.user_id}<span className="secondary-line">{run.attribution.principal_id} · key {run.attribution.api_key_prefix}</span><span className="secondary-line">{run.attribution.tenant_id}</span></td>
                         <td>{run.service_class.effective}<span className="secondary-line">requested {run.service_class.requested}</span>{run.service_class.requested !== run.service_class.effective ? <span className="scientific-decision">Policy changed class</span> : null}</td>
                         <td>{run.queue.tenant_queue}<span className="secondary-line">{run.queue.local_queue} → {run.queue.cluster_queue}</span><ScientificStatusChip state={run.queue.admission_state === "finished" ? "succeeded" : run.queue.admission_state === "inadmissible" ? "blocked" : run.queue.admission_state} label={run.queue.admission_state} reason={run.queue.admission_reason} /></td>
@@ -144,6 +154,12 @@ export function ScientificRunsPage() {
             </div>
           )}
         </DataBoundary>
+        </> : (
+          <div className="state-panel" role="status">
+            <strong>Scientific run history is not enabled</strong>
+            <span>{capabilities?.run_history.reason ?? capabilitiesQuery.error?.message ?? "No durable scientific run reader is configured."}</span>
+          </div>
+        )}
       </section>
 
       <section className="section-stack" aria-labelledby="scientific-model-readiness-title">
@@ -151,26 +167,41 @@ export function ScientificRunsPage() {
           <div><span className="eyebrow">Model-level contract</span><h2 id="scientific-model-readiness-title">Scientific model readiness</h2></div>
           <span className="section-heading__meta">{models.length} model backends</span>
         </div>
-        <DataBoundary data={modelsQuery.data} error={modelsQuery.error} pending={modelsQuery.isPending} empty={!modelsQuery.isPending && models.length === 0}>
+        {capabilitiesQuery.isPending ? (
+          <div className="state-panel state-panel--loading" role="status">Checking scientific model capability…</div>
+        ) : modelsAvailable ? <DataBoundary data={modelsQuery.data} error={modelsQuery.error} pending={modelsQuery.isPending} empty={!modelsQuery.isPending && models.length === 0} loadingLabel="Loading scientific model readiness…" emptyLabel="No scientific model readiness records are available.">
           {({ data }) => (
-            <div className="table-frame">
+            <div className="page-stack">
+              {data.projection_issues.length ? (
+                <div className="freshness-notice" role="status">
+                  <strong>{data.projection_issues.length} catalog projection issue{data.projection_issues.length === 1 ? "" : "s"}</strong>
+                  <span>Invalid evidence was isolated to its candidate; other model rows remain available.</span>
+                </div>
+              ) : null}
+              <div className="table-frame">
               <table className="resource-table resource-table--scientific-models">
                 <caption className="sr-only">Scientific model batch, hybrid, access, backend, and caching readiness</caption>
                 <thead><tr><th scope="col">Model</th><th scope="col">Readiness</th><th scope="col">Execution</th><th scope="col">Access gate</th><th scope="col">Backend identity</th><th scope="col">Exact caching state</th></tr></thead>
                 <tbody>{data.items.map((model) => (
-                  <tr key={model.model_id}>
-                    <th scope="row">{model.display_name}<span className="secondary-line">{model.model_id}</span></th>
-                    <td><ScientificStatusChip state={model.readiness} reason={model.readiness_reason} /><span className="secondary-line scientific-secondary">{model.readiness_reason}</span></td>
-                    <td>{model.execution_mode}<span className="secondary-line">Batch {model.batch_supported ? "supported" : "unsupported"} · Interactive {model.interactive_supported ? "supported" : "unsupported"}</span><span className="secondary-line scientific-secondary">{model.service_classes.join(", ")}</span></td>
+                  <tr key={model.candidate_id}>
+                    <th scope="row">{model.display_name}<span className="secondary-line">{model.model_id} · candidate {model.candidate_id}</span></th>
+                    <td><ScientificStatusChip state={model.readiness} reason={model.readiness_reason} /><span className="secondary-line scientific-secondary">{model.readiness_reason}</span>{model.missing_evidence.length ? <span className="secondary-line scientific-secondary">Missing {model.missing_evidence.join(", ")}</span> : null}</td>
+                    <td>{model.execution_mode ?? "Not published"}<span className="secondary-line">Batch {model.batch_supported ? "supported" : "unsupported"} · Interactive {model.interactive_supported === null ? "unknown" : model.interactive_supported ? "supported" : "unsupported"}</span><span className="secondary-line scientific-secondary">{model.service_classes.join(", ") || "No service classes published"}</span></td>
                     <td><AccessGate access={model.access} compact /></td>
-                    <td>{model.backend.backend_id}<span className="secondary-line">{model.backend.source_repository}@{model.backend.source_revision.slice(0, 10)}</span><code className="scientific-digest" title={model.backend.runtime_image_digest}>{shortDigest(model.backend.runtime_image_digest)}</code></td>
+                    <td>{model.backend.backend_id}<span className="secondary-line">{model.backend.source_repository}@{shortDigest(model.backend.source_revision)}</span><code className="scientific-digest" title={model.backend.runtime_image_digest ?? undefined}>{shortDigest(model.backend.runtime_image_digest)}</code></td>
                     <td><span className="scientific-tier scientific-tier--declared">{model.caching.exact_tier}</span><span className="secondary-line scientific-secondary">Image {model.caching.image} · artifacts {model.caching.artifacts} · references {model.caching.reference_data}</span><span className="secondary-line scientific-secondary">Checkpoint {model.caching.runtime_checkpoint} · GPU snapshot {model.caching.gpu_snapshot}</span><span className="secondary-line scientific-secondary">{model.caching.reason}</span></td>
                   </tr>
                 ))}</tbody>
               </table>
+              </div>
             </div>
           )}
-        </DataBoundary>
+        </DataBoundary> : (
+          <div className="state-panel" role="status">
+            <strong>Scientific model readiness is not enabled</strong>
+            <span>{capabilities?.model_readiness.reason ?? capabilitiesQuery.error?.message ?? "No scientific catalog reader is configured."}</span>
+          </div>
+        )}
       </section>
     </div>
   );

@@ -20,6 +20,8 @@ from .admin_models import (
 )
 from .scientific_admin_models import (
     ScientificArtifact,
+    ScientificCapabilities,
+    ScientificCapability,
     ScientificError,
     ScientificModelReadinessList,
     ScientificRunDetail,
@@ -31,6 +33,10 @@ from .scientific_admin_models import (
 
 class ScientificAdminSourceUnavailableError(RuntimeError):
     """A bounded source failure safe to turn into admin availability state."""
+
+
+SCIENTIFIC_RUNS_UNCONFIGURED = "no durable scientific batch controller reader is bound to this build"
+SCIENTIFIC_ARTIFACTS_UNCONFIGURED = "no scientific artifact result reader is bound to this build"
 
 
 class ScientificAdminQueryError(ValueError):
@@ -170,9 +176,9 @@ class ScientificAdminReadService:
     def __init__(
         self,
         *,
-        runs: ScientificRunAdminAdapter,
-        artifacts: ScientificArtifactAdminAdapter,
-        models: ScientificModelAdminAdapter,
+        models: ScientificModelAdminAdapter | None = None,
+        runs: ScientificRunAdminAdapter | None = None,
+        artifacts: ScientificArtifactAdminAdapter | None = None,
         source_max_age_seconds: float = 90,
         adapter_timeout_seconds: float = 2,
         clock: Callable[[], datetime] | None = None,
@@ -181,12 +187,52 @@ class ScientificAdminReadService:
             raise ValueError("scientific admin source age is outside the bound")
         if not 0.1 <= adapter_timeout_seconds <= 10:
             raise ValueError("scientific admin adapter timeout is outside the bound")
+        if artifacts is not None and runs is None:
+            raise ValueError("scientific artifact reporting requires a run reader")
         self.runs = runs
         self.artifacts = artifacts
         self.models = models
         self.source_max_age_seconds = source_max_age_seconds
         self.adapter_timeout_seconds = adapter_timeout_seconds
         self.clock = clock or (lambda: datetime.now(UTC))
+
+    def _require_runs(self) -> ScientificRunAdminAdapter:
+        if self.runs is None:
+            raise AdminProblemError(
+                503,
+                "scientific_runs_unavailable",
+                "scientific run reporting is not configured",
+            )
+        return self.runs
+
+    def capabilities(self, *, model_readiness_allowed: bool = True) -> ScientificCapabilities:
+        """Report which scientific surfaces this build can actually serve.
+
+        The console gates its navigation on this, so an operator is never sent
+        to a page whose producer does not exist.
+        """
+
+        model_available = self.models is not None and model_readiness_allowed
+        if self.models is None:
+            model_reason = "the scientific catalog reader is not configured"
+        elif not model_readiness_allowed:
+            model_reason = "scientific model readiness requires a global operator"
+        else:
+            model_reason = None
+        return ScientificCapabilities(
+            model_readiness=ScientificCapability(
+                available=model_available,
+                reason=model_reason,
+            ),
+            run_history=ScientificCapability(
+                available=self.runs is not None,
+                reason=None if self.runs is not None else SCIENTIFIC_RUNS_UNCONFIGURED,
+            ),
+            artifacts=ScientificCapability(
+                available=self.artifacts is not None,
+                reason=None if self.artifacts is not None else SCIENTIFIC_ARTIFACTS_UNCONFIGURED,
+            ),
+        )
 
     def _available_source(self, source_id: str, observed_at: datetime, now: datetime) -> AdminSource:
         age = max(0.0, (now - observed_at.astimezone(UTC)).total_seconds())
@@ -310,9 +356,10 @@ class ScientificAdminReadService:
         query: ScientificRunQuery,
     ) -> AdminEnvelope[ScientificRunList]:
         now = self.clock().astimezone(UTC)
+        runs = self._require_runs()
         try:
             snapshot = await asyncio.wait_for(
-                self.runs.list_runs(query),
+                runs.list_runs(query),
                 timeout=self.adapter_timeout_seconds,
             )
         except asyncio.CancelledError:
@@ -340,9 +387,10 @@ class ScientificAdminReadService:
         tenant_id: str | None,
     ) -> AdminEnvelope[ScientificRunDetail]:
         now = self.clock().astimezone(UTC)
+        runs = self._require_runs()
         try:
             run_snapshot = await asyncio.wait_for(
-                self.runs.get_run(operation_id, tenant_id=tenant_id),
+                runs.get_run(operation_id, tenant_id=tenant_id),
                 timeout=self.adapter_timeout_seconds,
             )
         except asyncio.CancelledError:
@@ -358,9 +406,20 @@ class ScientificAdminReadService:
 
         sources = [self._available_source("scientific-controller", run_snapshot.observed_at, now)]
         detail = run_snapshot.data
+        artifacts = self.artifacts
+        if artifacts is None:
+            sources.append(
+                _source(
+                    "scientific-artifacts",
+                    AdminSourceState.UNAVAILABLE,
+                    now=now,
+                    reason=SCIENTIFIC_ARTIFACTS_UNCONFIGURED,
+                )
+            )
+            return self._envelope(context, detail, now=now, sources=sources)
         try:
             artifact_snapshot = await asyncio.wait_for(
-                self.artifacts.for_operation(operation_id, tenant_id=detail.run.attribution.tenant_id),
+                artifacts.for_operation(operation_id, tenant_id=detail.run.attribution.tenant_id),
                 timeout=self.adapter_timeout_seconds,
             )
         except asyncio.CancelledError:
@@ -401,9 +460,16 @@ class ScientificAdminReadService:
         tenant_id: str | None = None,
     ) -> AdminEnvelope[ScientificModelReadinessList]:
         now = self.clock().astimezone(UTC)
+        models = self.models
+        if models is None:
+            raise AdminProblemError(
+                503,
+                "scientific_catalog_unavailable",
+                "scientific model readiness is not configured",
+            )
         try:
             snapshot = await asyncio.wait_for(
-                self.models.list_models(tenant_id=tenant_id),
+                models.list_models(tenant_id=tenant_id),
                 timeout=self.adapter_timeout_seconds,
             )
         except asyncio.CancelledError:

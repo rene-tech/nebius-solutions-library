@@ -1,0 +1,13 @@
+{
+  "schema": "fs2-serve.nebius.ai/model-variants/v1",
+  "comment": "Admin-owned projection fixture; maps the candidate receipt identity onto its serving lane.",
+  "fallback_candidates": {
+    "rfdiffusion-upstream": {
+      "lane_id": "rfdiffusion",
+      "profile_variants": {
+        "portable": "rfdiffusion-upstream-portable",
+        "blackwell": "rfdiffusion-upstream-blackwell"
+      }
+    }
+  }
+}

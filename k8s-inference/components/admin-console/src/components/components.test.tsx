@@ -56,6 +56,27 @@ describe("status and missing-data semantics", () => {
     expect(screen.getByText("durable result")).toBeInTheDocument();
   });
 
+  it("does not hide a partial-source warning behind an empty result", () => {
+    const envelope: AdminEnvelope<{ items: never[] }> = {
+      meta: {
+        ...meta,
+        sources: [{ id: "scientific-controller", state: "unavailable", observed_at: null, age_seconds: null, reason: "repository unavailable" }],
+      },
+      data: { items: [] },
+    };
+    render(
+      <DataBoundary
+        data={envelope}
+        error={null}
+        pending={false}
+        empty
+        emptyLabel="No scientific runs were returned."
+      >{() => null}</DataBoundary>,
+    );
+    expect(screen.getByText("Partial data")).toBeInTheDocument();
+    expect(screen.getByText("No scientific runs were returned.")).toBeInTheDocument();
+  });
+
   it("provides the shared loading, error and empty states used by every data route", () => {
     const { rerender } = render(
       <DataBoundary<{ value: string }> data={undefined} error={null} pending>{() => null}</DataBoundary>,

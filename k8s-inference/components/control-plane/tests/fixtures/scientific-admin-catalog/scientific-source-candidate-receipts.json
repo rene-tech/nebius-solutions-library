@@ -1,0 +1,34 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-source-candidate-receipts/v1",
+  "comment": "Admin-owned projection fixture. Identities are synthetic and must never be read as published artifacts.",
+  "receipts": [
+    {
+      "model_id": "alphafold3",
+      "upstream_name": "AlphaFold 3",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "access_profile": "academic",
+      "source": {
+        "kind": "git",
+        "repository": "google-deepmind/alphafold3",
+        "revision": "1111111111111111111111111111111111111111"
+      },
+      "notes": "Native AlphaFold 3 candidate used to exercise the academic projection."
+    },
+    {
+      "model_id": "rfdiffusion-upstream",
+      "upstream_name": "RFdiffusion",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "access_profile": "standard",
+      "source": {
+        "kind": "git",
+        "repository": "RosettaCommons/RFdiffusion",
+        "revision": "4444444444444444444444444444444444444444"
+      },
+      "notes": "Open-licence candidate; no restricted academic asset is required."
+    }
+  ]
+}

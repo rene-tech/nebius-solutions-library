@@ -98,7 +98,9 @@ backend-integrated console routes, but it is not evidence of a live rollout.
 Record the deployed image digest, endpoint, cluster context, and browser
 acceptance separately.
 
-The fixture-backed scientific run and model-readiness projection is documented
-in [`docs/SCIENTIFIC-OPERATIONS-UI.md`](docs/SCIENTIFIC-OPERATIONS-UI.md). Its
-three read routes are provisional until backend integration; production builds
-fail closed and never ship fixture middleware.
+The scientific run and model-readiness projection is documented in
+[`docs/SCIENTIFIC-OPERATIONS-UI.md`](docs/SCIENTIFIC-OPERATIONS-UI.md). The
+production control plane always registers the authenticated capability route;
+model and run data routes are registered only when their real readers are
+bound. Fixtures remain limited to component tests and the explicit local Vite
+demo mode; production builds fail closed and never use them as fallback.

@@ -87,6 +87,46 @@ subjects:
     name: {{ $serviceAccount }}
     namespace: {{ .Release.Namespace }}
 ---
+{{- range $namespace := .Values.adminReadAdapters.capacity.kueueExtraNamespaces }}
+{{- if eq $namespace $.Values.adminReadAdapters.capacity.modelNamespace }}
+{{- fail "adminReadAdapters.capacity.kueueExtraNamespaces must not repeat modelNamespace" }}
+{{- end }}
+# A scientific lane contributes queue state and GPU allocation, so this grants
+# list on its queues, workloads and Pods, and nothing else in that namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-queues
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "fs2-serve.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: admin-capacity-reader
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list"]
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources: ["localqueues", "workloads"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-queues
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "fs2-serve.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: admin-capacity-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}-queues
+subjects:
+  - kind: ServiceAccount
+    name: {{ $serviceAccount }}
+    namespace: {{ $.Release.Namespace }}
+---
+{{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

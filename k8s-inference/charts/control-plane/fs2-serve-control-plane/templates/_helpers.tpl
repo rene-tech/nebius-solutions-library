@@ -276,6 +276,10 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.adminReadAdapters.capacity.modelNamespace | quote }}
 - name: FS2_ADMIN_KUBERNETES_SYSTEM_NAMESPACE
   value: {{ .Values.adminReadAdapters.capacity.systemNamespace | quote }}
+{{- with .Values.adminReadAdapters.capacity.kueueExtraNamespaces }}
+- name: FS2_ADMIN_KUEUE_EXTRA_NAMESPACES
+  value: {{ toJson . | quote }}
+{{- end }}
 - name: FS2_ADMIN_KUEUE_API_VERSION
   value: {{ .Values.adminReadAdapters.capacity.kueueApiVersion | quote }}
 - name: FS2_ADMIN_KUBERNETES_CACHE_TTL_SECONDS

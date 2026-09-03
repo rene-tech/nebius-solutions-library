@@ -32,6 +32,7 @@ function prepareLiveApi() {
   vi.spyOn(adminApi, "model").mockResolvedValue(fixture("/admin/api/v1/models/qwen3-8b"));
   vi.spyOn(adminApi, "operations").mockResolvedValue(fixture("/admin/api/v1/operations"));
   vi.spyOn(adminApi, "operation").mockResolvedValue(fixture("/admin/api/v1/operations/10f61fc4-4211-4bb8-a058-b11a8c078520"));
+  vi.spyOn(adminApi, "scientificCapabilities").mockResolvedValue(fixture("/admin/api/v1/scientific-capabilities"));
   vi.spyOn(adminApi, "scientificRuns").mockResolvedValue(fixture("/admin/api/v1/scientific-runs"));
   vi.spyOn(adminApi, "scientificRun").mockResolvedValue(fixture("/admin/api/v1/scientific-runs/run-rfdiffusion-0001"));
   vi.spyOn(adminApi, "scientificModels").mockResolvedValue(fixture("/admin/api/v1/scientific-models"));

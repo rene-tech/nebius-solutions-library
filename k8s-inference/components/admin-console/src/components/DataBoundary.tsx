@@ -7,12 +7,22 @@ interface Props<T> {
   error: Error | null;
   pending: boolean;
   empty?: boolean;
+  loadingLabel?: string;
+  emptyLabel?: string;
   children: (value: AdminEnvelope<T>) => ReactNode;
 }
 
-export function DataBoundary<T>({ data, error, pending, empty, children }: Props<T>) {
+export function DataBoundary<T>({
+  data,
+  error,
+  pending,
+  empty,
+  loadingLabel = "Loading current fleet data…",
+  emptyLabel = "No resources match the selected context.",
+  children,
+}: Props<T>) {
   if (pending) {
-    return <div className="state-panel state-panel--loading" role="status">Loading current fleet data…</div>;
+    return <div className="state-panel state-panel--loading" role="status">{loadingLabel}</div>;
   }
   if (error) {
     const apiError = error instanceof AdminApiError ? error : null;
@@ -41,22 +51,19 @@ export function DataBoundary<T>({ data, error, pending, empty, children }: Props
   if (!data) {
     return <div className="state-panel" role="status">No response was published.</div>;
   }
-  if (empty) {
-    return <div className="state-panel">No resources match the selected context.</div>;
-  }
-
   const impaired = data.meta.sources.filter((source) => source.state !== "available");
+  const sourceNotice = impaired.length || data.meta.warnings.length ? (
+    <div className="freshness-notice" role="status">
+      <strong>{impaired.some((source) => source.state === "unavailable") ? "Partial data" : "Stale data"}</strong>
+      <span>
+        {[...impaired.map((source) => `${source.id}: ${source.reason ?? source.state}`), ...data.meta.warnings.map((warning) => warning.message)].join(" · ")}
+      </span>
+    </div>
+  ) : null;
   return (
     <>
-      {impaired.length || data.meta.warnings.length ? (
-        <div className="freshness-notice" role="status">
-          <strong>{impaired.some((source) => source.state === "unavailable") ? "Partial data" : "Stale data"}</strong>
-          <span>
-            {[...impaired.map((source) => `${source.id}: ${source.reason ?? source.state}`), ...data.meta.warnings.map((warning) => warning.message)].join(" · ")}
-          </span>
-        </div>
-      ) : null}
-      {children(data)}
+      {sourceNotice}
+      {empty ? <div className="state-panel">{emptyLabel}</div> : children(data)}
     </>
   );
 }

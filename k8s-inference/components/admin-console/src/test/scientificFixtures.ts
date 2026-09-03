@@ -1,6 +1,7 @@
 import type {
   ScientificAccessGate,
   ScientificBackendIdentity,
+  ScientificCapabilities,
   ScientificEvidenceMeasurement,
   ScientificModelReadiness,
   ScientificModelReadinessList,
@@ -42,15 +43,29 @@ const standardAccess: ScientificAccessGate = {
   state: "not-required",
   gate: "No restricted academic asset is required by this backend.",
   receipt_digest: null,
+  request_time_license_receipt_required: false,
+  authorization: null,
+  formal_license_status: "not-applicable",
   credentials_exposed: false,
   alternative: null,
 };
 
 const alphaFoldAccess: ScientificAccessGate = {
   profile: "academic",
-  state: "blocked",
-  gate: "Native AlphaFold3 requires a verified, non-secret academic asset receipt before admission.",
+  state: "verified",
+  gate: "Deployment-bound academic use is Granted and execution is Authorized; no request-time licence receipt is required. Formal acceptance is advisory and is not an admission gate.",
   receipt_digest: null,
+  request_time_license_receipt_required: false,
+  authorization: {
+    asset_id: "alphafold3",
+    backend_id: "alphafold3-native",
+    license_id: "AlphaFold-3-Model-Parameters-Terms-of-Use-2024-11-09",
+    use_authorization_status: "Granted",
+    execution_authorization_status: "Authorized",
+    serving_admission: "AdmittedNoPerRequestLicenseReceipt",
+    asset_namespace: "fs2-academic-poc",
+  },
+  formal_license_status: "FormalAcceptancePending",
   credentials_exposed: false,
   alternative: {
     model_id: "openfold3",
@@ -63,8 +78,19 @@ const alphaFoldAccess: ScientificAccessGate = {
 const bindCraftAccess: ScientificAccessGate = {
   profile: "academic",
   state: "verified",
-  gate: "Native BindCraft requires a verified PyRosetta academic asset receipt before admission.",
-  receipt_digest: digest("b"),
+  gate: "Deployment-bound academic use is Granted and execution is Authorized; no request-time licence receipt is required. Formal acceptance is advisory and is not an admission gate.",
+  receipt_digest: null,
+  request_time_license_receipt_required: false,
+  authorization: {
+    asset_id: "pyrosetta-bindcraft",
+    backend_id: "bindcraft-native-pyrosetta",
+    license_id: "Rosetta-and-PyRosetta-Non-Commercial-License-Chain",
+    use_authorization_status: "Granted",
+    execution_authorization_status: "Authorized",
+    serving_admission: "AdmittedNoPerRequestLicenseReceipt",
+    asset_namespace: "fs2-academic-poc",
+  },
+  formal_license_status: "FormalAcceptancePending",
   credentials_exposed: false,
   alternative: {
     model_id: "bindcraft-open",
@@ -98,14 +124,14 @@ const stageCounts = (values: Partial<Record<ScientificStageState, number>>): Rec
   ...values,
 });
 
-const noGpuAccounting = {
+const pendingGpuAccounting = {
   gpu_count: 0,
   capacity_type: "unknown" as const,
-  allocated: unavailable("gpu-seconds", "lifecycle-ledger", "No GPU was allocated while the access gate was blocked."),
-  active: unavailable("gpu-seconds", "lifecycle-ledger", "No GPU was allocated while the access gate was blocked."),
-  idle_total: unavailable("gpu-seconds", "lifecycle-ledger", "No GPU was allocated while the access gate was blocked."),
+  allocated: unavailable("gpu-seconds", "lifecycle-ledger", "No GPU allocation boundary has been observed."),
+  active: unavailable("gpu-seconds", "lifecycle-ledger", "No GPU active-compute interval has been observed."),
+  idle_total: unavailable("gpu-seconds", "lifecycle-ledger", "No GPU allocation boundary has been observed."),
   idle_by_cause: [],
-  grace_drain: unavailable("gpu-seconds", "lifecycle-ledger", "No GPU was allocated while the access gate was blocked."),
+  grace_drain: unavailable("gpu-seconds", "lifecycle-ledger", "No GPU grace or drain interval has been observed."),
   reconciliation_delta: unavailable("gpu-seconds", "lifecycle-ledger", "There is no GPU lifecycle to reconcile."),
 };
 
@@ -183,12 +209,12 @@ export const completedScientificRun: ScientificRunSummary = {
   },
 };
 
-const blockedAlphaFoldRun: ScientificRunSummary = {
+const pendingAlphaFoldRun: ScientificRunSummary = {
   id: "run-alphafold3-0007",
   batch_id: "batch-neoantigen-0014",
   display_name: "Neoantigen complex ranking",
   operation: "predict-complex",
-  status: "waiting-for-access",
+  status: "queued",
   submitted_at: "2026-08-30T08:22:19Z",
   completed_at: null,
   attribution: {
@@ -198,7 +224,7 @@ const blockedAlphaFoldRun: ScientificRunSummary = {
     api_key_prefix: "fs2_pat_a81e",
   },
   model: {
-    model_id: "alphafold3-native",
+    model_id: "alphafold3",
     display_name: "AlphaFold3 (native)",
     execution_mode: "scientific-batch",
     backend: backend("alphafold3", "google-deepmind/alphafold3", "3"),
@@ -207,35 +233,31 @@ const blockedAlphaFoldRun: ScientificRunSummary = {
   service_class: {
     requested: "interactive",
     effective: "interactive",
-    reason: "The class is reserved but admission cannot begin until access is verified.",
+    reason: "The validated request was frozen into the scheduling snapshot.",
     policy_revision: digest("2"),
   },
   queue: {
     tenant_queue: "tenant-oncology",
-    model_lane: "alphafold3-native",
-    local_queue: "scientific-runs",
+    model_lane: "alphafold3",
+    local_queue: "academic-scientific",
     cluster_queue: "inference-accelerators",
     workload_priority_class: "scientific-interactive",
     priority_value: 800,
-    admission_state: "inadmissible",
-    admission_reason: "Academic asset receipt is absent; no Kubernetes workload has been created.",
+    admission_state: "pending",
+    admission_reason: "Deployment-bound academic access is authorized; runtime capacity admission is pending.",
     admitted_at: null,
-    queue_position: unavailable("count", "batch-controller-ledger", "Access-blocked runs are not placed in the capacity queue."),
+    queue_position: unavailable("count", "batch-controller-ledger", "Queue position is not measured by the controller."),
   },
   fast_start: {
     tier: "not-observed",
     evidence: "unavailable",
     observed_at: null,
     runtime_identity_digest: null,
-    reason: "Fast start is not observed because the access gate prevented admission.",
+    reason: "No exact fast-start tier has been observed for this queued runtime identity.",
   },
   stage_counts: stageCounts({ pending: 3 }),
-  gpu_accounting: noGpuAccounting,
-  error: {
-    code: "ACADEMIC_ASSET_RECEIPT_REQUIRED",
-    message: "A verified native AlphaFold3 academic asset receipt is required before admission.",
-    retryable: false,
-  },
+  gpu_accounting: pendingGpuAccounting,
+  error: null,
   cancellation: {
     state: "not-requested",
     requested_at: null,
@@ -262,7 +284,7 @@ const cancelledBindCraftRun: ScientificRunSummary = {
     api_key_prefix: "fs2_pat_f414",
   },
   model: {
-    model_id: "bindcraft-native",
+    model_id: "bindcraft",
     display_name: "BindCraft (native PyRosetta)",
     execution_mode: "hybrid",
     backend: backend("bindcraft", "martinpacesa/BindCraft", "4"),
@@ -320,7 +342,7 @@ const cancelledBindCraftRun: ScientificRunSummary = {
 };
 
 export const scientificRunListFixture: ScientificRunList = {
-  items: [completedScientificRun, blockedAlphaFoldRun, cancelledBindCraftRun],
+  items: [completedScientificRun, pendingAlphaFoldRun, cancelledBindCraftRun],
   next_cursor: null,
 };
 
@@ -356,9 +378,13 @@ export const scientificRunDetailFixture: ScientificRunDetail = {
         completed_at: "2026-08-30T07:55:19Z",
         workload_uid: "fixture-workload-validate",
         job_uid: "fixture-job-validate",
-        pod_uids: ["fixture-pod-validate"],
-        node_uids: ["fixture-node-cpu"],
-        gpu_uuids: [],
+        pod_count: 1,
+        node_count: 1,
+        gpu_count: 0,
+        admitted_at: "2026-08-30T07:55:13Z",
+        resolved_pool_id: null,
+        admitted_resource_flavor: null,
+        accelerator_resource_name: null,
         checkpoint_input_artifact_id: null,
         checkpoint_output_artifact_id: null,
         error: null,
@@ -382,9 +408,13 @@ export const scientificRunDetailFixture: ScientificRunDetail = {
           completed_at: "2026-08-30T08:01:31Z",
           workload_uid: "fixture-workload-diffuse-1",
           job_uid: "fixture-job-diffuse-1",
-          pod_uids: ["fixture-pod-diffuse-1"],
-          node_uids: ["fixture-node-h100-preemptible-a"],
-          gpu_uuids: ["GPU-fixture-a"],
+          pod_count: 1,
+          node_count: 1,
+          gpu_count: 1,
+          admitted_at: "2026-08-30T07:56:08Z",
+          resolved_pool_id: "h100-preemptible",
+          admitted_resource_flavor: "inference-h100-1x",
+          accelerator_resource_name: "nvidia.com/gpu",
           checkpoint_input_artifact_id: null,
           checkpoint_output_artifact_id: null,
           error: { code: "PREEMPTED", message: "Preemptible capacity was reclaimed.", retryable: true },
@@ -397,9 +427,13 @@ export const scientificRunDetailFixture: ScientificRunDetail = {
           completed_at: "2026-08-30T08:19:20Z",
           workload_uid: "fixture-workload-diffuse-2",
           job_uid: "fixture-job-diffuse-2",
-          pod_uids: ["fixture-pod-diffuse-2"],
-          node_uids: ["fixture-node-h100-preemptible-b"],
-          gpu_uuids: ["GPU-fixture-b"],
+          pod_count: 1,
+          node_count: 1,
+          gpu_count: 1,
+          admitted_at: "2026-08-30T08:02:14Z",
+          resolved_pool_id: "h100-capacity-block",
+          admitted_resource_flavor: "inference-h100-reserved-8x",
+          accelerator_resource_name: "nvidia.com/gpu",
           checkpoint_input_artifact_id: null,
           checkpoint_output_artifact_id: "artifact-rfdiffusion-structures",
           error: null,
@@ -423,9 +457,13 @@ export const scientificRunDetailFixture: ScientificRunDetail = {
         completed_at: "2026-08-30T08:19:43Z",
         workload_uid: "fixture-workload-semantic",
         job_uid: "fixture-job-semantic",
-        pod_uids: ["fixture-pod-semantic"],
-        node_uids: ["fixture-node-cpu"],
-        gpu_uuids: [],
+        pod_count: 1,
+        node_count: 1,
+        gpu_count: 0,
+        admitted_at: "2026-08-30T08:19:21Z",
+        resolved_pool_id: null,
+        admitted_resource_flavor: null,
+        accelerator_resource_name: null,
         checkpoint_input_artifact_id: "artifact-rfdiffusion-structures",
         checkpoint_output_artifact_id: "artifact-semantic-receipt",
         error: null,
@@ -497,6 +535,7 @@ function readiness(seed: ReadinessSeed): ScientificModelReadiness {
   const state = seed.readiness ?? (access.state === "blocked" ? "blocked" : "candidate");
   return {
     model_id: seed.modelId,
+    candidate_id: seed.modelId,
     display_name: seed.displayName,
     readiness: state,
     readiness_reason: state === "blocked"
@@ -504,6 +543,15 @@ function readiness(seed: ReadinessSeed): ScientificModelReadiness {
       : state === "qualified"
         ? "Runtime, semantic validator, and H100 execution evidence are qualified."
         : "The model contract is present; live semantic qualification is still pending.",
+    workload_profile: "published",
+    missing_evidence: [],
+    qualification: {
+      state: state === "qualified" ? "qualified" : "evidence-absent",
+      reason: state === "qualified" ? "The exact execution identity is qualified." : "Live qualification is pending.",
+      serving_lane_id: null,
+      compared: ["model_revision", "runtime_image_digest", "runtime_kind"],
+      mismatched: [],
+    },
     execution_mode: seed.mode,
     batch_supported: true,
     interactive_supported: seed.interactive ?? seed.mode === "hybrid",
@@ -531,11 +579,18 @@ export const scientificModelReadinessFixture: ScientificModelReadinessList = {
     readiness({ modelId: "proteina-complexa", displayName: "Proteina-Complexa", repository: "Labs22/Proteina-Complexa", character: "8", mode: "scientific-batch" }),
     readiness({ modelId: "boltzgen", displayName: "BoltzGen", repository: "jwohlwend/boltzgen", character: "9", mode: "hybrid", interactive: true }),
     readiness({ modelId: "mosaic", displayName: "mosaic", repository: "mosaic-model/mosaic", character: "a", mode: "scientific-batch" }),
-    readiness({ modelId: "bindcraft-native", displayName: "BindCraft (native PyRosetta)", repository: "martinpacesa/BindCraft", character: "b", mode: "hybrid", access: bindCraftAccess, tier: "container-image-local" }),
+    readiness({ modelId: "bindcraft", displayName: "BindCraft (native PyRosetta)", repository: "martinpacesa/BindCraft", character: "b", mode: "scientific-batch", access: bindCraftAccess, tier: "container-image-local", interactive: true }),
     readiness({ modelId: "rfdiffusion", displayName: "RFdiffusion", repository: "RosettaCommons/RFdiffusion", character: "c", mode: "scientific-batch", readiness: "qualified", tier: "model-artifact-local" }),
     readiness({ modelId: "esmfold2-fast", displayName: "ESMFold2 / Fast", repository: "facebookresearch/esm", character: "d", mode: "hybrid", interactive: true }),
     readiness({ modelId: "protenix-v2", displayName: "Protenix v2", repository: "bytedance/Protenix", character: "e", mode: "scientific-batch" }),
-    readiness({ modelId: "alphafold3-native", displayName: "AlphaFold3 (native)", repository: "google-deepmind/alphafold3", character: "f", mode: "scientific-batch", access: alphaFoldAccess }),
+    readiness({ modelId: "alphafold3", displayName: "AlphaFold3 (native)", repository: "google-deepmind/alphafold3", character: "f", mode: "scientific-batch", access: alphaFoldAccess, interactive: true }),
     readiness({ modelId: "openfold3", displayName: "OpenFold3 (explicit alternative)", repository: "aqlaboratory/openfold-3", character: "0", mode: "hybrid", interactive: true }),
   ],
+  projection_issues: [],
+};
+
+export const scientificCapabilitiesFixture: ScientificCapabilities = {
+  model_readiness: { available: true, reason: null },
+  run_history: { available: true, reason: null },
+  artifacts: { available: true, reason: null },
 };
