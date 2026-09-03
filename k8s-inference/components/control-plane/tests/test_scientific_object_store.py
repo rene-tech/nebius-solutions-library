@@ -146,6 +146,76 @@ async def test_streaming_verification_refuses_an_object_over_the_ceiling(object_
     await object_store.delete(key)
 
 
+async def test_inline_write_and_stream_round_trip_on_a_real_gateway(object_store) -> None:
+    """The gateway byte path must work against a real S3 implementation.
+
+    ``put_object`` writes without any presigned handle and reports what the
+    gateway actually stored; ``stream_object`` returns the same bytes in
+    chunks, which is what the public content route hands to a customer.
+    """
+
+    payload = b"".join(f"ATOM  {index:5d}  CA  ALA A\n".encode() for index in range(20000))
+    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    key = key_for(digest, direction="input")
+    stored = await object_store.put_object(
+        storage_key=key, payload=payload, media_type="chemical/x-pdb", compression=None
+    )
+    assert stored.digest == digest
+    assert stored.size_bytes == len(payload)
+    assert stored.media_type == "chemical/x-pdb"
+    assert stored.storage_key == key
+
+    chunks = [chunk async for chunk in object_store.stream_object(key, max_bytes=len(payload))]
+    assert b"".join(chunks) == payload
+    # A 64 KiB chunk size against a 640 KB object must really be chunked.
+    assert len(chunks) > 1
+    assert all(chunk for chunk in chunks)
+    await object_store.delete(key)
+
+
+async def test_inline_write_reports_the_encoding_it_persisted(object_store) -> None:
+    payload = b"\x1f\x8b" + b"compressed" * 32
+    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    key = key_for(digest)
+    stored = await object_store.put_object(
+        storage_key=key,
+        payload=payload,
+        media_type="application/json",
+        compression=ArtifactCompression.GZIP,
+    )
+    assert stored.compression is ArtifactCompression.GZIP
+    assert b"".join([chunk async for chunk in object_store.stream_object(key)]) == payload
+    await object_store.delete(key)
+
+
+async def test_inline_write_refuses_an_object_over_the_ceiling(object_store) -> None:
+    store = S3ArtifactObjectStore(store_config(max_stream_bytes=1024))
+    try:
+        with pytest.raises(ArtifactPolicyError):
+            await store.put_object(
+                storage_key=key_for("sha256:" + "0" * 64),
+                payload=b"y" * 1025,
+                media_type="application/json",
+                compression=None,
+            )
+    finally:
+        await store.close()
+
+
+async def test_streaming_an_absent_object_is_not_found(object_store) -> None:
+    with pytest.raises(ArtifactNotFoundError):
+        [chunk async for chunk in object_store.stream_object(key_for("sha256:" + "1" * 64))]
+
+
+async def test_streaming_stops_at_the_requested_bound(object_store) -> None:
+    payload = b"z" * (192 * 1024)
+    key = key_for("sha256:" + hashlib.sha256(payload).hexdigest())
+    await object_store.put_object(storage_key=key, payload=payload, media_type="application/json", compression=None)
+    with pytest.raises(ArtifactVerificationError):
+        [chunk async for chunk in object_store.stream_object(key, max_bytes=len(payload) - 1)]
+    await object_store.delete(key)
+
+
 async def test_compression_is_signed_and_reported(object_store) -> None:
     payload = b"\x1f\x8b" + b"compressed-body"
     digest = "sha256:" + hashlib.sha256(payload).hexdigest()
@@ -235,6 +305,7 @@ async def test_the_production_wiring_runs_the_whole_lifecycle_on_real_infrastruc
         KueueAdmission,
         ManifestEntryDraft,
         OpenStageAttempt,
+        PostgresArtifactRepository,
         RunResultDraft,
     )
     from fs2_serve.settings import Settings
@@ -275,7 +346,10 @@ async def test_the_production_wiring_runs_the_whole_lifecycle_on_real_infrastruc
     async with store.pool.acquire() as connection:
         await connection.execute(TRUNCATE)
 
-    service = _artifact_service(settings, store)
+    # ``build_runtime`` builds the repository over the pool and passes *that*;
+    # handing the store itself in would only fail once a repository method is
+    # first called, which is exactly what used to happen here.
+    service = _artifact_service(settings, PostgresArtifactRepository(store.pool))
     assert service is not None
     try:
         await asyncio.to_thread(service._store._client.create_bucket, Bucket=BUCKET)

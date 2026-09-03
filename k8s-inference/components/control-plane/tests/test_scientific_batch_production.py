@@ -162,11 +162,13 @@ def profile_value() -> dict[str, object]:
     }
 
 
-def profile_catalog() -> ScientificProfileCatalog:
+def profile_catalog_for(model_id: str) -> ScientificProfileCatalog:
+    """The canonical profile fixture under one caller-chosen model identity."""
+
     def load(name: str) -> Draft202012Validator:
         return Draft202012Validator(json.loads((CATALOG_ROOT / "schema" / name).read_text()))
 
-    profile = ScientificWorkloadProfile(MappingProxyType(profile_value()))
+    profile = ScientificWorkloadProfile(MappingProxyType({**profile_value(), "model_id": model_id}))
     return ScientificProfileCatalog(
         profiles={profile.model_id: profile},
         validators={
@@ -178,6 +180,10 @@ def profile_catalog() -> ScientificProfileCatalog:
             ),
         },
     )
+
+
+def profile_catalog() -> ScientificProfileCatalog:
+    return profile_catalog_for("protein-design")
 
 
 def scheduling() -> SchedulingContractResolver:
@@ -608,6 +614,7 @@ async def test_customer_upload_is_idempotent_verified_downloadable_and_never_wor
     runtime.scientific_input_uploads = ScientificInputUploadService(
         store=runtime.store,
         artifacts=upload_port,
+        profiles=profile_catalog(),
     )
     issued = await runtime.tokens.issue(
         TokenCreate(

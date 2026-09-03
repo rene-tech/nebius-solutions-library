@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from pydantic import BaseModel, ConfigDict, Field
@@ -103,8 +103,10 @@ from .scientific_admin_models import (
 from .scientific_artifact_routes import scientific_artifact_router
 from .scientific_artifacts import (
     ArtifactConflictError,
+    ArtifactContentTooLargeError,
     ArtifactNotFoundError,
     ArtifactPolicyError,
+    ArtifactVerificationError,
     ScientificArtifactControllerPort,
 )
 from .scientific_batch.artifact_bridge import SignedArtifactContentReader
@@ -122,6 +124,7 @@ from .scientific_batch.workload_routes import WorkloadBatchRepository, scientifi
 from .scientific_input_uploads import (
     ScientificInputUpload,
     ScientificInputUploadFinalizeRequest,
+    ScientificInputUploadReceipt,
     ScientificInputUploadRequest,
     ScientificInputUploadService,
 )
@@ -704,6 +707,18 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     async def artifact_policy(_: Request, __: ArtifactPolicyError) -> JSONResponse:
         return _error(422, "artifact_policy_rejected", "scientific artifact policy rejected the request")
 
+    @app.exception_handler(ArtifactVerificationError)
+    async def artifact_verification(_: Request, __: ArtifactVerificationError) -> JSONResponse:
+        return _error(
+            422,
+            "artifact_verification_failed",
+            "scientific artifact bytes differ from the declared identity",
+        )
+
+    @app.exception_handler(ArtifactContentTooLargeError)
+    async def artifact_content_too_large(_: Request, __: ArtifactContentTooLargeError) -> JSONResponse:
+        return _error(413, "artifact_content_too_large", "scientific artifact exceeds the inline gateway ceiling")
+
     @app.exception_handler(KeyError)
     async def key_error(_: Request, __: KeyError) -> JSONResponse:
         return _error(404, "not_found", "model or operation was not found")
@@ -1016,14 +1031,12 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         identity: Annotated[Principal, Depends(principal)],
         idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     ) -> Response:
-        if runtime.scientific_input_uploads is None or runtime.scientific_batches is None:
+        if runtime.scientific_input_uploads is None:
             return _error(503, "scientific_artifact_upload_unavailable", "scientific input upload is disabled")
         if idempotency_key is None:
             raise HTTPException(status_code=400, detail="Idempotency-Key is required")
         if not MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH:
             raise HTTPException(status_code=400, detail="Idempotency-Key length is invalid")
-        # A public upload may target only a profile this deployment can submit.
-        runtime.scientific_batches.profiles.get(request.model_id)
         result = await runtime.scientific_input_uploads.begin(
             principal=identity,
             request=request,
@@ -1036,6 +1049,44 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 "cache-control": "no-store",
                 "location": f"/v1/operations/{result.operation_id}",
                 "x-fs2-operation-id": str(result.operation_id),
+            },
+        )
+
+    @app.put(
+        "/v1/scientific-artifacts/uploads/{upload_id}/content",
+        response_model=ScientificInputUploadReceipt,
+    )
+    async def scientific_input_upload_content(
+        upload_id: UUID,
+        request: Request,
+        identity: Annotated[Principal, Depends(principal)],
+        operation_id: Annotated[UUID, Query()],
+        content_type: Annotated[str | None, Header()] = None,
+        content_length: Annotated[int | None, Header(ge=0)] = None,
+    ) -> Response:
+        """Accept the artifact bytes themselves, so no object store is needed.
+
+        The edge already bounds the body, and the artifact service matches the
+        bytes against the reserved digest, size and media type before any
+        object is written. A body that disagrees is rejected and stores nothing.
+        """
+
+        if runtime.scientific_input_uploads is None:
+            return _error(503, "scientific_artifact_upload_unavailable", "scientific input upload is disabled")
+        receipt = await runtime.scientific_input_uploads.store_content(
+            principal=identity,
+            operation_id=operation_id,
+            upload_id=upload_id,
+            content=await request.body(),
+            declared_media_type=content_type,
+            declared_size_bytes=content_length,
+        )
+        return JSONResponse(
+            receipt.model_dump(mode="json"),
+            headers={
+                "cache-control": "no-store",
+                "location": f"/v1/scientific-artifacts/uploads/{upload_id}:finalize",
+                "x-fs2-artifact-sha256": receipt.sha256,
             },
         )
 
@@ -1153,6 +1204,36 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             },
             headers={"cache-control": "no-store"},
         )
+
+    @app.get("/v1/artifacts/{artifact_id}/content")
+    async def scientific_artifact_content(
+        artifact_id: UUID,
+        identity: Annotated[Principal, Depends(principal)],
+    ) -> Response:
+        """Stream one artifact's exact bytes to the tenant that owns them.
+
+        ``content-encoding`` is deliberately not set for a compressed artifact.
+        The response body is the addressed object itself, so the client's own
+        SHA-256 of what it received must equal ``x-fs2-artifact-sha256``; an
+        encoding header would invite transparent decompression and break that.
+        """
+
+        identity.require(Scope.OPERATIONS_RESULT)
+        if runtime.artifact_service is None:
+            return _error(404, "artifact_not_found", "scientific artifact was not found")
+        stream = await runtime.artifact_service.open_content(artifact_id, tenant_id=identity.tenant_id)
+        artifact = stream.artifact
+        headers = {
+            "cache-control": "no-store",
+            "content-length": str(artifact.size_bytes),
+            "content-disposition": f'attachment; filename="{artifact.artifact_id}"',
+            "x-fs2-artifact-id": str(artifact.artifact_id),
+            "x-fs2-artifact-sha256": artifact.digest.removeprefix("sha256:"),
+            "x-fs2-artifact-size-bytes": str(artifact.size_bytes),
+        }
+        if artifact.compression is not None:
+            headers["x-fs2-artifact-compression"] = artifact.compression.value
+        return StreamingResponse(stream.chunks, media_type=artifact.media_type, headers=headers)
 
     @app.post("/v1/operations/{operation_id}:acknowledge")
     async def operation_acknowledge(

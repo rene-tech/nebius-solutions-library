@@ -90,6 +90,44 @@ The deadline is stamped from the same wall clock the SDK signs with, because
 `generate_presigned_url` accepts a duration rather than a deadline; anchoring it
 anywhere else would advertise an expiry the gateway does not enforce.
 
+## Bytes through the gateway itself
+
+A presigned handle only helps a caller that can reach object storage. An
+external customer usually cannot: the object store sits behind its own
+endpoint, and in a private deployment nothing but the public gateway is
+routable. So the same bytes also move through the API.
+
+`PUT /v1/scientific-artifacts/uploads/{upload_id}/content?operation_id={id}`
+takes the artifact bytes as the request body. The upload must already be
+reserved, and the reservation is what the bytes are judged against: the
+service measures the body and compares its SHA-256, length, media type and
+content encoding with the immutable upload intent **before** any object is
+created. A body that disagrees is rejected with `422` and stores nothing, so a
+mismatched upload can never be finalized. The adapter then re-measures the
+object it actually persisted, so a store that rewrote or re-typed the body is
+caught at write time rather than surfacing later as a puzzling finalize
+failure. A finalized content address is write-once and answers `409`.
+
+`GET /v1/artifacts/{artifact_id}/content` streams one artifact's exact bytes to
+the tenant that owns it, in bounded chunks, so a large result is never
+buffered. The response carries `x-fs2-artifact-sha256`, `x-fs2-artifact-id` and
+`x-fs2-artifact-size-bytes`, and the body is the addressed object itself: the
+SHA-256 the client computes over what it received must equal that header.
+`content-encoding` is deliberately **not** set for a compressed artifact,
+because transparent decompression by an HTTP client would break exactly that
+equality; compression is reported as `x-fs2-artifact-compression` instead.
+
+The inline path is bounded, and that bound is honest rather than implicit. The
+begin response returns `max_content_bytes` alongside `content_path`, so a client
+discovers both where to write and how much it may write. An object above the
+ceiling is refused with `413` and must use the presigned handle, which stays
+available and unchanged. The ceiling can never exceed `max_request_bytes` or
+the artifact ceiling; configuration that tries to is rejected at startup.
+
+Nothing about this path relaxes the tenant boundary. The upload is resolved
+through the caller's own tenant, and a foreign tenant receives `404` on the
+reservation, on the bytes and on finalization alike.
+
 ## Retention
 
 Retention only ever applies to an operation that has already published its
@@ -119,6 +157,7 @@ absent credentials.
 | `scientificArtifacts.addressingStyle` | `FS2_ARTIFACT_STORE_ADDRESSING_STYLE` | `path` or `virtual` |
 | `scientificArtifacts.handleTtlSeconds` | `FS2_ARTIFACT_HANDLE_TTL_SECONDS` | 30 to 900 |
 | `scientificArtifacts.maxBytes` | `FS2_ARTIFACT_MAX_BYTES` | |
+| `scientificArtifacts.inlineContentMaxBytes` | `FS2_ARTIFACT_INLINE_CONTENT_MAX_BYTES` | Gateway byte ceiling; at most `max_request_bytes` |
 | `scientificArtifacts.retentionSeconds` | `FS2_ARTIFACT_RETENTION_SECONDS` | |
 | `scientificArtifacts.mediaTypes` | `FS2_ARTIFACT_MEDIA_TYPES` | Exact allowlist |
 | `secrets.artifactStore` | `FS2_ARTIFACT_STORE_CREDENTIALS_FILE` | Mounted `0400`, never an env value |
@@ -148,10 +187,34 @@ artifacts use the standard access profile but remain tenant-scoped; “public”
 the internal access-admission vocabulary does not mean anonymous access.
 
 `GET /v1/artifacts/{artifact_id}/download` requires `operations.result` and
-returns a fresh short-lived handle. MCP exposes the same operations as
-`begin_scientific_artifact_upload`, `finalize_scientific_artifact_upload`, and
-`download_scientific_artifact`. Handles are the only bearer material returned
-by these methods and remain excluded from persistence and logs.
+returns a fresh short-lived handle. Handles are the only bearer material
+returned by these methods and remain excluded from persistence and logs.
+
+Customer input staging depends on the artifact plane and the declared profile
+set, not on the batch controller. An input may therefore be staged for a
+profile whose runtime is not GPU-qualified yet, but never for a model this
+deployment does not declare at all: an unknown `model_id` is refused. Only
+submission requires a runnable profile.
+
+MCP carries the whole flow, not a subset of it, so an MCP client needs no
+object-store access either:
+
+| MCP tool | HTTP equivalent |
+| --- | --- |
+| `begin_scientific_artifact_upload` | `POST /v1/scientific-artifacts/uploads` |
+| `put_scientific_artifact_bytes` | `PUT /v1/scientific-artifacts/uploads/{id}/content` |
+| `finalize_scientific_artifact_upload` | `POST /v1/scientific-artifacts/uploads/{id}:finalize` |
+| `submit_scientific_run` | `POST /v1/models/{model_id}:submit` |
+| `get_scientific_status` | `GET /v1/operations/{id}` |
+| `get_scientific_result` | `GET /v1/operations/{id}/result` |
+| `get_scientific_artifact` | `GET /v1/artifacts/{id}` |
+| `read_scientific_artifact_bytes` | `GET /v1/artifacts/{id}/content` |
+| `download_scientific_artifact` | `GET /v1/artifacts/{id}/download` |
+
+The two byte tools carry base64 and enforce the same inline ceiling, rejecting
+an over-large payload on its encoded length before decoding it. They apply the
+identical digest, size, media-type and tenant checks as the HTTP routes,
+because they call the same service.
 
 The controller surface stays under `/internal/scientific-artifacts`. It takes
 the tenant from the verified bearer principal; no request body can choose one.
@@ -162,7 +225,9 @@ so the surface leaks no existence.
 | Route | Scope |
 | --- | --- |
 | `POST /v1/scientific-artifacts/uploads` | `inference.invoke` and model policy |
+| `PUT /v1/scientific-artifacts/uploads/{id}/content` | `inference.invoke` and owning principal |
 | `POST /v1/scientific-artifacts/uploads/{id}:finalize` | `inference.invoke` and owning principal |
+| `GET /v1/artifacts/{id}/content` | `operations.result` and tenant boundary |
 | `GET /v1/artifacts/{id}/download` | `operations.result` and tenant boundary |
 | `POST /attempts` | `artifacts.write` |
 | `POST /attempts/{id}:close` | `artifacts.write` |
@@ -186,6 +251,9 @@ a second copy of that state.
 ## Testing
 
 ```bash
+# The public gateway-only byte flow, tenant isolation and MCP parity
+uv run pytest -q tests/test_scientific_artifact_public_bytes.py
+
 # Contract, fencing, privacy and retention, plus real PostgreSQL
 FS2_TEST_DATABASE_URL=postgresql://... uv run pytest -q tests/test_scientific_artifacts.py
 

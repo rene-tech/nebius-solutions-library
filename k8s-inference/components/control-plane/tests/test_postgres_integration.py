@@ -18,6 +18,7 @@ from conftest import CONTROL_ROOT
 from fastapi import FastAPI
 from scientific_batch_fakes import FakeScientificBatchCluster
 from test_scientific_artifacts import ALLOWED_MEDIA_TYPES, FakeObjectStore, digest
+from test_scientific_batch_production import profile_catalog_for
 
 from fs2_serve.access import AdminAccessService
 from fs2_serve.access_models import (
@@ -3157,7 +3158,13 @@ async def test_customer_input_upload_is_verified_and_terminal_in_postgres(
         allowed_media_types=ALLOWED_MEDIA_TYPES,
         clock=lambda: datetime.now(UTC),
     )
-    uploads = ScientificInputUploadService(store=postgres_store, artifacts=artifact_service)
+    # The upload surface accepts only a declared scientific profile, so the
+    # catalog here names exactly the model this token is allowed to target.
+    uploads = ScientificInputUploadService(
+        store=postgres_store,
+        artifacts=artifact_service,
+        profiles=profile_catalog_for("qwen3-8b"),
+    )
     payload = b">target\nMKT"
     begun = await uploads.begin(
         principal=principal,
