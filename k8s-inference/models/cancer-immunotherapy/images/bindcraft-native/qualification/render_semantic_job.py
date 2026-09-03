@@ -471,15 +471,12 @@ def job(args: argparse.Namespace, handoff: dict[str, Any], config_name: str) -> 
         "readOnlyRootFilesystem": True,
         "capabilities": {"drop": ["ALL"]},
     }
-    workspace_prepare_script = f"""\
-import os
-from pathlib import Path
-
-run = Path({str('/workspace/runs/' + args.run_id)!r})
-run.mkdir(parents=True, exist_ok=True)
-os.chown(run, 10001, 10001)
-run.chmod(0o770)
-"""
+    workspace_prepare_script = (
+        "from pathlib import Path\n\n"
+        f"run = Path({str('/workspace/runs/' + args.run_id)!r})\n"
+        "run.mkdir(parents=True, exist_ok=True)\n"
+        "run.chmod(0o777)\n"
+    )
     pod_spec: dict[str, Any] = {
         "restartPolicy": "Never",
         "automountServiceAccountToken": False,
@@ -510,11 +507,11 @@ run.chmod(0o770)
         # then reads regular, read-only files without weakening that gate.
         "initContainers": [
             {
-                # The direct acceptance owns this empty workspace claim. Prepare
-                # only its run directory as root instead of setting fsGroup on
-                # the Pod: fsGroup would also recursively mutate the mounted
-                # academic model claim, the exact failure this workload must
-                # not reintroduce.
+                # The mounted-filesystem provisioner owns the new volume as
+                # nobody:nogroup and root is squashed. Prepare only this task's
+                # run directory as that unprivileged owner. Do not set fsGroup
+                # on the Pod: it would also recursively mutate the academic
+                # model claim, the exact failure this must not reintroduce.
                 "name": "prepare-workspace",
                 "image": args.image,
                 "imagePullPolicy": "IfNotPresent",
@@ -524,7 +521,7 @@ run.chmod(0o770)
                     "limits": {"cpu": "1", "memory": "256Mi"},
                 },
                 "securityContext": {
-                    **security, "runAsNonRoot": False, "runAsUser": 0, "runAsGroup": 0,
+                    **security, "runAsNonRoot": True, "runAsUser": 65534, "runAsGroup": 65534,
                 },
                 "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
             },

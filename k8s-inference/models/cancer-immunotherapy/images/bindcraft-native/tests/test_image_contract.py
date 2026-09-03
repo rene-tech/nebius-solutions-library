@@ -1401,12 +1401,14 @@ class SemanticJobRenderTests(unittest.TestCase):
             spec = job["spec"]["template"]["spec"]
             prepare = spec["initContainers"][0]
             self.assertEqual(prepare["name"], "prepare-workspace")
-            self.assertEqual(prepare["securityContext"]["runAsUser"], 0)
+            self.assertEqual(prepare["securityContext"]["runAsUser"], 65534)
+            self.assertTrue(prepare["securityContext"]["runAsNonRoot"])
             self.assertEqual(
                 prepare["volumeMounts"], [{"name": "workspace", "mountPath": "/workspace"}]
             )
             self.assertNotIn("fsGroup", spec["securityContext"])
             self.assertIn("/workspace/runs/r17acceptance", prepare["command"][2])
+            self.assertNotIn("chown", prepare["command"][2])
 
     def test_rendered_admission_matches_the_mount_paths_and_handoff_identities(self) -> None:
         with tempfile.TemporaryDirectory() as name:
