@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -32,7 +33,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
 
     def test_all_scientific_schemas_are_valid_draft_2020_12(self) -> None:
         schemas = sorted(SCHEMA_ROOT.glob("scientific-*.schema.json"))
-        self.assertEqual(8, len(schemas))
+        self.assertEqual(10, len(schemas))
         for schema_path in schemas:
             with self.subTest(schema=schema_path.name):
                 Draft202012Validator.check_schema(self.load(schema_path))
@@ -283,6 +284,154 @@ class ScientificWorkloadContractTests(unittest.TestCase):
                 self.assertEqual(
                     [], list(self.validator(schema_name).iter_errors(request["parameters"]))
                 )
+
+    def test_artifact_localization_contract_matches_its_schema(self) -> None:
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        self.assert_valid("scientific-artifact-localization.schema.json", contract)
+        artifacts = {item["artifact_id"]: item for item in contract["artifacts"]}
+        self.assertEqual(
+            {
+                "boltzgen-inference-molecules",
+                "alphafold2-params",
+                "colabdesign-mpnn-weights-vanilla",
+                "colabdesign-mpnn-weights-soluble",
+            },
+            set(artifacts),
+        )
+
+    def test_archive_provenance_never_doubles_as_extracted_tree_identity(self) -> None:
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        for artifact in contract["artifacts"]:
+            with self.subTest(artifact=artifact["artifact_id"]):
+                archive = artifact["archive"]
+                tree = artifact["tree"]
+                self.assertNotEqual(archive["sha256"], tree["inventory_sha256"])
+                self.assertNotEqual(archive["bytes"], tree["total_bytes"])
+                for mount in tree["mount_paths"]:
+                    # A mount under the runtime artifact root must be this
+                    # artifact's own directory; an installed-package tree lives
+                    # where the package is installed instead.
+                    if mount.startswith("/opt/fs2/artifacts/"):
+                        self.assertEqual(
+                            "/opt/fs2/artifacts/" + artifact["artifact_id"], mount
+                        )
+                # A runtime mount is a directory of content, so the archive name
+                # must never be something the tree could legitimately contain.
+                self.assertIsNone(
+                    re.compile(tree["entry_path_pattern"]).fullmatch(archive["filename"])
+                )
+
+    def test_localization_contract_rejects_a_tree_holding_its_own_archive(self) -> None:
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        validator = self.validator("scientific-artifact-localization.schema.json")
+        for index, artifact in enumerate(contract["artifacts"]):
+            with self.subTest(artifact=artifact["artifact_id"]):
+                candidate = copy.deepcopy(contract)
+                candidate["artifacts"][index]["tree"]["mount_paths"] = ["relative/path"]
+                self.assertTrue(list(validator.iter_errors(candidate)))
+
+    def test_localized_runtime_bindings_name_the_expected_model_surface(self) -> None:
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        observed = {
+            (artifact["artifact_id"], consumer["model_id"], consumer["binding_name"])
+            for artifact in contract["artifacts"]
+            for consumer in artifact["consumers"]
+        }
+        for artifact in contract["artifacts"]:
+            declared = set(artifact["tree"]["mount_paths"])
+            read = {consumer["mount_path"] for consumer in artifact["consumers"]}
+            # One verified identity may serve several consumer paths, but every
+            # declared path must have a reader and every reader a declared path.
+            self.assertEqual(declared, read, artifact["artifact_id"])
+        self.assertEqual(
+            {
+                ("boltzgen-inference-molecules", "boltzgen", "--moldir"),
+                ("alphafold2-params", "proteina-complexa", "AF2_DIR"),
+                (
+                    "colabdesign-mpnn-weights-vanilla",
+                    "bindcraft",
+                    "colabdesign.mpnn.weights",
+                ),
+                (
+                    "colabdesign-mpnn-weights-soluble",
+                    "bindcraft",
+                    "colabdesign.mpnn.weights_soluble",
+                ),
+            },
+            observed,
+        )
+
+    def test_vanilla_and_soluble_mpnn_are_two_distinct_verified_identities(self) -> None:
+        """One mount cannot serve both ColabDesign MPNN directories.
+
+        ColabDesign picks the directory by import, so the two trees are read from
+        two installed package paths and their contents genuinely differ.
+        """
+
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        trees = {
+            artifact["artifact_id"]: artifact["tree"]
+            for artifact in contract["artifacts"]
+            if artifact["artifact_id"].startswith("colabdesign-mpnn-weights-")
+        }
+        vanilla = trees["colabdesign-mpnn-weights-vanilla"]
+        soluble = trees["colabdesign-mpnn-weights-soluble"]
+        self.assertNotEqual(vanilla["inventory_sha256"], soluble["inventory_sha256"])
+        self.assertNotEqual(vanilla["total_bytes"], soluble["total_bytes"])
+        self.assertNotEqual(vanilla["mount_paths"], soluble["mount_paths"])
+        self.assertTrue(vanilla["mount_paths"][0].endswith("/colabdesign/mpnn/weights"))
+        self.assertTrue(
+            soluble["mount_paths"][0].endswith("/colabdesign/mpnn/weights_soluble")
+        )
+        vanilla_digests = {entry["sha256"] for entry in vanilla["probe_entries"]}
+        soluble_digests = {entry["sha256"] for entry in soluble["probe_entries"]}
+        # Only the shared one-byte package marker may coincide.
+        self.assertEqual(1, len(vanilla_digests & soluble_digests))
+
+    def test_localized_subtrees_declare_the_prefix_they_are_lifted_from(self) -> None:
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        for artifact in contract["artifacts"]:
+            prefix = artifact["archive"].get("member_prefix")
+            with self.subTest(artifact=artifact["artifact_id"]):
+                if artifact["artifact_id"].startswith("colabdesign-mpnn-weights-"):
+                    self.assertIsNotNone(prefix)
+                    self.assertTrue(prefix.endswith("/"))
+                    self.assertIn(artifact["archive"]["source_revision"], prefix)
+                else:
+                    self.assertIsNone(prefix)
+
+    def test_localization_receipt_example_validates_and_separates_identities(self) -> None:
+        contract = self.load(CONTRACT_ROOT / "scientific-artifact-localization.json")
+        artifact = contract["artifacts"][0]
+        receipt = {
+            "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+            "artifact_id": artifact["artifact_id"],
+            "observed_at": "2026-09-03T02:00:00Z",
+            "mount_path": artifact["tree"]["mount_paths"][0],
+            "state": "verified",
+            "archive_provenance": {
+                "filename": artifact["archive"]["filename"],
+                "bytes": artifact["archive"]["bytes"],
+                "sha256": artifact["archive"]["sha256"],
+                "source_uri": artifact["archive"]["source_uri"],
+                "source_revision": artifact["archive"]["source_revision"],
+                "license_id": artifact["archive"]["license_id"],
+                "present_in_mount": False,
+            },
+            "tree_identity": {
+                "entry_count": artifact["tree"]["entry_count"],
+                "total_bytes": artifact["tree"]["total_bytes"],
+                "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+                "inventory_sha256": artifact["tree"]["inventory_sha256"],
+                "probe_entries_verified": len(artifact["tree"]["probe_entries"]),
+            },
+        }
+        self.assert_valid("scientific-localization-receipt.schema.json", receipt)
+        validator = self.validator("scientific-localization-receipt.schema.json")
+        for field in ("archive_provenance", "tree_identity"):
+            candidate = copy.deepcopy(receipt)
+            del candidate[field]
+            self.assertTrue(list(validator.iter_errors(candidate)))
 
 
 if __name__ == "__main__":

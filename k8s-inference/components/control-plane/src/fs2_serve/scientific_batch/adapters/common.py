@@ -22,6 +22,12 @@ from typing import cast
 from ..catalog_adapter import ScientificStageExpansion, scientific_plan_from_catalog_profile
 from ..models import AdapterExecutionPlan, ServiceClass, StageInvocation
 
+# Re-exported so every adapter keeps importing these from one place; the
+# definitions live in the dependency-free primitives module because the same
+# localization code also runs inside a model runtime image.
+from .primitives import ScientificAdapterError as ScientificAdapterError
+from .primitives import strict_object as strict_object
+
 RUN_REQUEST_SCHEMA = "fs2-serve.nebius.ai/scientific-run-request/v1"
 ARTIFACT_MANIFEST_SCHEMA = "fs2-serve.nebius.ai/scientific-artifact-manifest/v1"
 
@@ -40,9 +46,13 @@ _RECIPE_SHARED_PATHS = (
     "components/control-plane/src/fs2_serve/scientific_batch/protocols.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/__init__.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/common.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/adapters/primitives.py",
     "components/control-plane/src/fs2_serve/scientific_batch/adapters/materialization.py",
+    "components/control-plane/src/fs2_serve/scientific_batch/adapters/localization.py",
     "catalog/runtime/schema/scientific-run-request.schema.json",
     "catalog/runtime/schema/scientific-run-result.schema.json",
+    "catalog/runtime/schema/scientific-artifact-localization.schema.json",
+    "catalog/runtime/contracts/scientific-artifact-localization.json",
 )
 _RECIPE_MODEL_PATHS = {
     "boltzgen": (
@@ -58,33 +68,6 @@ _RECIPE_MODEL_PATHS = {
         "models/structure/batch-adapters/proteina-complexa/contract.json",
     ),
 }
-
-
-class ScientificAdapterError(ValueError):
-    """A public request or resolved artifact violates the adapter contract."""
-
-
-def strict_object(
-    value: object,
-    *,
-    required: frozenset[str],
-    optional: frozenset[str] = frozenset(),
-    label: str,
-) -> Mapping[str, object]:
-    if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
-        raise ScientificAdapterError(f"{label} must be an object")
-    item = cast(Mapping[str, object], value)
-    fields = set(item)
-    missing = sorted(required - fields)
-    unknown = sorted(fields - required - optional)
-    if missing or unknown:
-        details = []
-        if missing:
-            details.append(f"missing {missing}")
-        if unknown:
-            details.append(f"unknown {unknown}")
-        raise ScientificAdapterError(f"{label} fields are invalid: {', '.join(details)}")
-    return item
 
 
 def load_json_request(payload: str | bytes) -> Mapping[str, object]:

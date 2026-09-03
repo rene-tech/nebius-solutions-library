@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/scientific-localization-receipt/v1",
+  "title": "Scientific runtime artifact localization receipt",
+  "description": "Non-secret evidence that one runtime mount holds the exact extracted tree named by the localization contract. archive_sha256 records where the bytes came from; tree_inventory_sha256 records what the runtime will actually read. The two are separate fields and must never be equal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "artifact_id",
+    "observed_at",
+    "mount_path",
+    "state",
+    "archive_provenance",
+    "tree_identity"
+  ],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/scientific-localization-receipt/v1"},
+    "artifact_id": {"type": "string", "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$", "maxLength": 63},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "mount_path": {"type": "string", "pattern": "^/[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$"},
+    "state": {"enum": ["verified", "rejected"]},
+    "rejection_reason": {"type": "string", "maxLength": 512},
+    "archive_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "bytes", "sha256", "source_uri", "source_revision", "license_id"],
+      "properties": {
+        "filename": {"type": "string", "minLength": 1, "maxLength": 255},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_uri": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "source_revision": {"type": "string", "minLength": 1, "maxLength": 128},
+        "license_id": {"type": "string", "minLength": 1, "maxLength": 64},
+        "present_in_mount": {
+          "description": "Always false for a verified receipt: a runtime mount that still contains its source archive is not an extracted tree.",
+          "type": "boolean"
+        }
+      }
+    },
+    "tree_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry_count", "total_bytes", "inventory_algorithm", "inventory_sha256"],
+      "properties": {
+        "entry_count": {"type": "integer", "minimum": 0},
+        "total_bytes": {"type": "integer", "minimum": 0},
+        "inventory_algorithm": {"const": "fs2-flat-tree-inventory/v1"},
+        "inventory_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "probe_entries_verified": {"type": "integer", "minimum": 0, "maximum": 64}
+      }
+    },
+    "runtime_bindings": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["model_id", "binding_kind", "binding_name", "binding_value"],
+        "properties": {
+          "model_id": {"type": "string", "maxLength": 63},
+          "binding_kind": {"enum": ["argv-option", "environment-variable", "installed-package-path"]},
+          "binding_name": {"type": "string", "maxLength": 128},
+          "binding_value": {"type": "string", "maxLength": 256}
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cluster_context": {"type": "string", "maxLength": 128},
+        "namespace": {"type": "string", "maxLength": 128},
+        "node": {"type": "string", "maxLength": 253},
+        "region": {"type": "string", "maxLength": 64},
+        "duration_seconds": {"type": "number", "minimum": 0}
+      }
+    }
+  }
+}

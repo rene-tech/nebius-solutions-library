@@ -11,7 +11,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..models import AdapterExecutionPlan, ArtifactMaterialization, MaterializationMode, StageInvocation
+from ..models import (
+    AdapterExecutionPlan,
+    ArtifactMaterialization,
+    MaterializationMode,
+    RuntimeTreeBinding,
+    StageInvocation,
+)
 from .common import (
     ArtifactLoader,
     CollectedOutput,
@@ -45,6 +51,29 @@ MAX_OUTPUT_BYTES = 2 * 1024 * 1024 * 1024
 
 AF2_ARTIFACT_ID = "alphafold2-params"
 RF3_ARTIFACT_ID = "rosettafold3-checkpoint"
+
+# AlphaFold2 parameters are published as one 5,587,968,000-byte tar and consumed
+# as a directory of parameter files. ColabDesign resolves
+# ``AF2_DIR/params/params_<model>.npz`` and then ``AF2_DIR/params_<model>.npz``,
+# and upstream ``download_startup.sh`` expands the archive flat into AF2_DIR, so
+# the canonical localized tree is the flat sixteen-entry set. The archive digest
+# below is provenance only and never qualifies the mount; the inventory digest is
+# the identity of the tree AF2_DIR points at.
+AF2_ARCHIVE_SHA256 = "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3"
+AF2_TREE_INVENTORY_SHA256 = "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4"
+AF2_TREE_ENTRY_COUNT = 16
+
+
+def af2_tree_binding() -> RuntimeTreeBinding:
+    """Bind the extracted AlphaFold2 parameter tree that AF2_DIR must name."""
+
+    return RuntimeTreeBinding(
+        artifact_id=AF2_ARTIFACT_ID,
+        mount_path=model_root(AF2_ARTIFACT_ID),
+        archive_sha256=AF2_ARCHIVE_SHA256,
+        tree_inventory_sha256=AF2_TREE_INVENTORY_SHA256,
+        entry_count=AF2_TREE_ENTRY_COUNT,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,7 +176,7 @@ def _environment(parameters: ProteinaParameters, stage_id: str, workspace: str) 
     ]
     runtime_artifacts = _stage_runtime_artifacts(parameters, stage_id)
     if AF2_ARTIFACT_ID in runtime_artifacts:
-        values.append(("AF2_DIR", model_root(AF2_ARTIFACT_ID)))
+        values.append(("AF2_DIR", af2_tree_binding().mount_path))
     if RF3_ARTIFACT_ID in runtime_artifacts:
         values.extend(
             (
@@ -209,6 +238,14 @@ def _stage_runtime_artifacts(parameters: ProteinaParameters, stage_id: str) -> t
     return ()
 
 
+def _stage_runtime_trees(parameters: ProteinaParameters, stage_id: str) -> tuple[RuntimeTreeBinding, ...]:
+    """Every stage that mounts AlphaFold2 carries the exact tree it must contain."""
+
+    if AF2_ARTIFACT_ID in _stage_runtime_artifacts(parameters, stage_id):
+        return (af2_tree_binding(),)
+    return ()
+
+
 def compile_run(profile: Mapping[str, object], request_value: object, *, operation_id: str) -> AdapterExecutionPlan:
     """Compile a canonical request into the canonical four-stage controller plan."""
 
@@ -249,6 +286,7 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
                     ),
                 ),
                 runtime_artifacts=_stage_runtime_artifacts(parameters, stage_id),
+                runtime_trees=_stage_runtime_trees(parameters, stage_id),
             )
         )
         previous = output
@@ -262,9 +300,7 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
         invocations=tuple(invocations),
         required_model_artifacts=tuple(
             dict.fromkeys(
-                artifact_id
-                for stage_id in stage_ids
-                for artifact_id in _stage_runtime_artifacts(parameters, stage_id)
+                artifact_id for stage_id in stage_ids for artifact_id in _stage_runtime_artifacts(parameters, stage_id)
             )
         ),
     )

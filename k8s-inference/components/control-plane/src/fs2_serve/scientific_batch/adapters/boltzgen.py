@@ -8,7 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..catalog_adapter import ScientificStageExpansion
-from ..models import AdapterExecutionPlan, ArtifactMaterialization, MaterializationMode, StageInvocation
+from ..models import (
+    AdapterExecutionPlan,
+    ArtifactMaterialization,
+    MaterializationMode,
+    RuntimeTreeBinding,
+    StageInvocation,
+)
 from .common import (
     ArtifactLoader,
     CollectedOutput,
@@ -42,6 +48,13 @@ PARAMETER_SCHEMA = "fs2-serve.nebius.ai/boltzgen-parameters/v1"
 WEIGHTS_ARTIFACT_ID = "boltzgen-checkpoints"
 WEIGHTS_REVISION = "c1be29e1f82ffcc72264f64b993c43fb4e0d17f0"
 MOLECULES_ARTIFACT_ID = "boltzgen-inference-molecules"
+# The molecule dictionary is published as one zip and consumed as a directory.
+# The archive digest is provenance only; the inventory digest is the identity of
+# the extracted tree that `--moldir` actually reads. They are deliberately two
+# separate constants and `RuntimeTreeBinding` rejects them being equal.
+MOLECULES_ARCHIVE_SHA256 = "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53"
+MOLECULES_TREE_INVENTORY_SHA256 = "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
+MOLECULES_TREE_ENTRY_COUNT = 45_227
 CHECKPOINTS = (
     "boltzgen1_diverse.ckpt",
     "boltzgen1_adherence.ckpt",
@@ -126,6 +139,18 @@ def _request(value: object) -> tuple[PublicRunRequest, BoltzGenParameters]:
     return request, BoltzGenParameters.parse(request.parameters)
 
 
+def molecules_tree_binding() -> RuntimeTreeBinding:
+    """Bind the extracted 45,227-entry molecule tree that `--moldir` consumes."""
+
+    return RuntimeTreeBinding(
+        artifact_id=MOLECULES_ARTIFACT_ID,
+        mount_path=model_root(MOLECULES_ARTIFACT_ID),
+        archive_sha256=MOLECULES_ARCHIVE_SHA256,
+        tree_inventory_sha256=MOLECULES_TREE_INVENTORY_SHA256,
+        entry_count=MOLECULES_TREE_ENTRY_COUNT,
+    )
+
+
 GPU_STAGES = ("configure", "design", "inverse-folding", "folding", "design-folding", "affinity")
 FINAL_STAGES = ("analysis", "filtering")
 RUNTIME_ARTIFACT_STAGES = frozenset(GPU_STAGES)
@@ -179,7 +204,7 @@ def _configure_argv(parameters: BoltzGenParameters, batch: DesignBatch, operatio
         "--affinity_checkpoint",
         weights["boltz2_aff.ckpt"],
         "--moldir",
-        model_root(MOLECULES_ARTIFACT_ID),
+        molecules_tree_binding().mount_path,
         "--steps",
         *selected,
     ]
@@ -280,10 +305,9 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
                     produces=output,
                     materializations=(materialization,),
                     runtime_artifacts=(
-                        (WEIGHTS_ARTIFACT_ID, MOLECULES_ARTIFACT_ID)
-                        if stage_id in RUNTIME_ARTIFACT_STAGES
-                        else ()
+                        (WEIGHTS_ARTIFACT_ID, MOLECULES_ARTIFACT_ID) if stage_id in RUNTIME_ARTIFACT_STAGES else ()
                     ),
+                    runtime_trees=((molecules_tree_binding(),) if stage_id in RUNTIME_ARTIFACT_STAGES else ()),
                 )
             )
             prior_artifacts[batch.shard_id] = output

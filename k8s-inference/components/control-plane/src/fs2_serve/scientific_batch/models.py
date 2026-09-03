@@ -22,7 +22,9 @@ _DIGEST_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
 _ARTIFACT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _SENSITIVE_KEY_RE = re.compile(r"(?:token|secret|password|credential|private[_-]?key)", re.IGNORECASE)
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CONTROLLER_MOUNT_ROOT = PurePosixPath("/mnt/fs2-scientific")
+_RUNTIME_ARTIFACT_ROOT = PurePosixPath("/opt/fs2/artifacts")
 
 
 class BatchStatus(StrEnum):
@@ -298,6 +300,41 @@ class ArtifactMaterialization:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeTreeBinding:
+    """One runtime artifact that must be an extracted tree, not an archive.
+
+    Archive provenance and extracted-tree identity are carried as two separate
+    digests. ``archive_sha256`` says where the bytes came from and never
+    qualifies a mount; ``tree_inventory_sha256`` is computed from the localized
+    filesystem and is what a stage preflight verifies. Making them equal is
+    rejected here so no caller can collapse the two identities by accident.
+    """
+
+    artifact_id: str
+    mount_path: str
+    archive_sha256: str
+    tree_inventory_sha256: str
+    entry_count: int
+
+    def __post_init__(self) -> None:
+        if _ARTIFACT_ID_RE.fullmatch(self.artifact_id) is None:
+            raise ValueError("runtime tree binding artifact_id must be a logical artifact ID")
+        path = PurePosixPath(self.mount_path)
+        if not path.is_absolute() or ".." in path.parts or any(part in {"", "."} for part in path.parts[1:]):
+            raise ValueError("runtime tree binding mount_path must be a safe absolute path")
+        for digest, label in (
+            (self.archive_sha256, "archive_sha256"),
+            (self.tree_inventory_sha256, "tree_inventory_sha256"),
+        ):
+            if _SHA256_RE.fullmatch(digest) is None:
+                raise ValueError(f"runtime tree binding {label} must be a lowercase SHA-256")
+        if self.archive_sha256 == self.tree_inventory_sha256:
+            raise ValueError("archive provenance and extracted-tree identity must be distinct digests")
+        if not 1 <= self.entry_count <= 1_048_576:
+            raise ValueError("runtime tree binding entry_count is outside the bound")
+
+
+@dataclass(frozen=True, slots=True)
 class StageInvocation:
     """Immutable exec-form workload payload attached to a controller stage."""
 
@@ -310,6 +347,7 @@ class StageInvocation:
     produces: str
     materializations: tuple[ArtifactMaterialization, ...] = ()
     runtime_artifacts: tuple[str, ...] = ()
+    runtime_trees: tuple[RuntimeTreeBinding, ...] = ()
 
     def __post_init__(self) -> None:
         _check_name(self.stage_id, "stage_id")
@@ -337,6 +375,14 @@ class StageInvocation:
         materialized = tuple(item.artifact_id for item in self.materializations)
         if len(set(materialized)) != len(materialized) or not set(materialized).issubset(self.consumes):
             raise ValueError("materializations must uniquely reference consumed logical artifacts")
+        bound = tuple(item.artifact_id for item in self.runtime_trees)
+        if len(set(bound)) != len(bound) or not set(bound).issubset(self.runtime_artifacts):
+            raise ValueError("runtime tree bindings must uniquely reference mounted runtime artifacts")
+
+    def names_tree_path(self, binding: RuntimeTreeBinding) -> bool:
+        """Whether this stage passes the localized tree path to the model itself."""
+
+        return binding.mount_path in self.argv or any(value == binding.mount_path for _key, value in self.environment)
 
 
 @dataclass(frozen=True, slots=True)
@@ -368,6 +414,28 @@ class AdapterExecutionPlan:
         observed = {artifact_id for invocation in self.invocations for artifact_id in invocation.runtime_artifacts}
         if observed != set(self.required_model_artifacts):
             raise ValueError("stage runtime artifacts must exactly cover the execution plan requirements")
+        bindings: dict[str, RuntimeTreeBinding] = {}
+        for invocation in self.invocations:
+            for tree in invocation.runtime_trees:
+                existing = bindings.setdefault(tree.artifact_id, tree)
+                if existing != tree:
+                    raise ValueError("one runtime artifact cannot carry two different tree identities in a plan")
+        for artifact_id, binding in bindings.items():
+            for invocation in self.invocations:
+                if artifact_id in invocation.runtime_artifacts and not any(
+                    tree.artifact_id == artifact_id for tree in invocation.runtime_trees
+                ):
+                    raise ValueError("every stage mounting a localized artifact must carry its tree binding")
+            # A campaign can persist the path in its own configuration, so only
+            # the plan as a whole has to hand the localized tree to the model.
+            if not any(invocation.names_tree_path(binding) for invocation in self.invocations):
+                raise ValueError("a bound runtime tree must be reachable through some stage argv or environment")
+
+    @property
+    def localized_tree_artifacts(self) -> tuple[str, ...]:
+        """Runtime artifacts whose mount must be a verified extracted tree."""
+
+        return tuple(sorted({tree.artifact_id for invocation in self.invocations for tree in invocation.runtime_trees}))
 
     def invocation(self, stage_id: str, shard_id: str | None) -> StageInvocation:
         key = (stage_id, shard_id or "gang")
