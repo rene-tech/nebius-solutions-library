@@ -22,6 +22,15 @@ The image resolves the checkpoint and any target structure *through the manifest
 relative paths*, so the adapter chooses the mount point, not the image. It never
 hard-codes `/models/rfdiffusion` or `/models/rfdiffusion-checkpoints`.
 
+**Delivery is mixed-plane.** Each plane is mounted read-only at
+`<artifact-root>/<plane-name>`, and manifest paths begin with the plane name, so one
+run can draw the checkpoint from a public plane and another artifact from a
+licence-restricted plane without either plane hosting the other's bytes.
+`render_job.py` takes repeatable `--plane NAME=CLAIM[:SUBPATH]` and refuses to run
+with none, so a single-claim default cannot be inherited by accident. RFdiffusion
+itself needs only the `public` plane: its code and weights are BSD-3-Clause and the
+1UBQ target is public PDB data, so this runtime never mounts a restricted plane.
+
 ## Fixtures
 
 Each directory under `fixtures/` is a complete, runnable example:

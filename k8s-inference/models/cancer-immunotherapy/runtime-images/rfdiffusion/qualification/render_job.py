@@ -7,6 +7,14 @@ the same renderer targets any GPU family the platform exposes. H100 is only the
 default value of ``--accelerator-class``.
 
 The image is always consumed by immutable digest; a mutable tag is refused.
+
+Artifact delivery is mixed-plane. Each ``--plane NAME=CLAIM[:SUBPATH]`` becomes its
+own read-only mount at ``<artifact-root>/NAME``, so a request may draw the checkpoint
+from one plane and a target structure from another without either plane having to
+host the other's bytes. Manifest paths are then relative to the artifact root and
+begin with the plane name, which is what lets the same image bind a public plane and
+a licence-restricted plane in one run. One shared claim mounted at a task-owned
+subPath is the older single-plane shape and is not assumed here.
 """
 
 from __future__ import annotations
@@ -36,6 +44,19 @@ def _image(reference: str) -> str:
     return reference
 
 
+def parse_plane(spec: str) -> tuple[str, str, str]:
+    """``NAME=CLAIM[:SUBPATH]`` -> (name, claim, sub_path)."""
+    if "=" not in spec:
+        raise SystemExit(f"--plane must be NAME=CLAIM[:SUBPATH], got {spec!r}")
+    name, _, remainder = spec.partition("=")
+    claim, _, sub_path = remainder.partition(":")
+    if not name or not claim:
+        raise SystemExit(f"--plane must name both a plane and a claim, got {spec!r}")
+    if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", name):
+        raise SystemExit(f"plane name must be a DNS label, got {name!r}")
+    return name, claim, sub_path
+
+
 def render(
     *,
     name: str,
@@ -43,8 +64,8 @@ def render(
     image: str,
     accelerator_class: str,
     local_queue: str,
-    artifact_claim: str,
-    artifact_sub_path: str,
+    planes: list[tuple[str, str, str]],
+    run_claim: str,
     run_sub_path: str,
     request_config_map: str,
     cache_level: str,
@@ -68,7 +89,28 @@ def render(
         "fs2.nebius.ai/source-tag": LOCK["source"]["tag"],
         "fs2.nebius.ai/checkpoint-sha256": LOCK["external_artifacts"][0]["sha256"],
         "fs2.nebius.ai/artifact-generation": LOCK["artifact_delivery"]["generation"]["generation"],
+        "fs2.nebius.ai/artifact-planes": ",".join(p[0] for p in planes),
     }
+
+    artifact_mounts = []
+    plane_volumes = []
+    seen_claims: dict[str, str] = {}
+    for index, (plane_name, claim, sub_path) in enumerate(planes):
+        volume_name = seen_claims.get(claim)
+        if volume_name is None:
+            volume_name = f"plane-{index}"
+            seen_claims[claim] = volume_name
+            plane_volumes.append(
+                {"name": volume_name, "persistentVolumeClaim": {"claimName": claim}}
+            )
+        mount = {
+            "name": volume_name,
+            "mountPath": f"{ARTIFACT_MOUNT}/{plane_name}",
+            "readOnly": True,
+        }
+        if sub_path:
+            mount["subPath"] = sub_path
+        artifact_mounts.append(mount)
 
     command = [
         "python", "/opt/fs2/runtime_entrypoint.py", "run",
@@ -125,13 +167,8 @@ def render(
                             },
                             "volumeMounts": [
                                 {"name": "request", "mountPath": REQUEST_MOUNT, "readOnly": True},
-                                {
-                                    "name": "artifacts",
-                                    "mountPath": ARTIFACT_MOUNT,
-                                    "subPath": artifact_sub_path,
-                                    "readOnly": True,
-                                },
-                                {"name": "artifacts", "mountPath": WORKSPACE_MOUNT, "subPath": run_sub_path},
+                                *artifact_mounts,
+                                {"name": "workspace", "mountPath": WORKSPACE_MOUNT, "subPath": run_sub_path},
                                 {"name": "tmp", "mountPath": "/tmp"},
                             ],
                         }
@@ -141,7 +178,8 @@ def render(
                         # readOnly belongs on the mount, never on the claim: a read-only
                         # claim marks the whole CSI attachment read-only and the
                         # workspace mount would lose write access with it.
-                        {"name": "artifacts", "persistentVolumeClaim": {"claimName": artifact_claim}},
+                        *plane_volumes,
+                        {"name": "workspace", "persistentVolumeClaim": {"claimName": run_claim}},
                         {"name": "tmp", "emptyDir": {"sizeLimit": "16Gi"}},
                     ],
                 },
@@ -158,8 +196,14 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--runtime-image", required=True, help="repository@sha256:...")
     parser.add_argument("--accelerator-class", default="nvidia-h100-sxm5-80gb")
     parser.add_argument("--local-queue", default="", help="empty runs the Job unqueued")
-    parser.add_argument("--artifact-claim", default=LOCK["artifact_delivery"]["transitional_claim"])
-    parser.add_argument("--artifact-sub-path", default=generation["sub_path"])
+    parser.add_argument(
+        "--plane",
+        action="append",
+        default=[],
+        metavar="NAME=CLAIM[:SUBPATH]",
+        help="read-only artifact plane mounted at <artifact-root>/NAME; repeatable",
+    )
+    parser.add_argument("--run-claim", default=LOCK["artifact_delivery"]["transitional_claim"])
     parser.add_argument("--run-sub-path", default="rfdiffusion/runs")
     parser.add_argument("--request-config-map", required=True)
     parser.add_argument("--checkpoint-artifact-id", default="artifact.rfdiffusion.base-ckpt")
@@ -169,14 +213,19 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--output", default="-")
     args = parser.parse_args(argv)
 
+    if not args.plane:
+        raise SystemExit(
+            "at least one --plane NAME=CLAIM[:SUBPATH] is required; artifact delivery "
+            "is mixed-plane and no default single claim is assumed"
+        )
     job = render(
         name=args.name,
         namespace=args.namespace,
         image=_image(args.runtime_image),
         accelerator_class=args.accelerator_class,
         local_queue=args.local_queue,
-        artifact_claim=args.artifact_claim,
-        artifact_sub_path=args.artifact_sub_path,
+        planes=[parse_plane(spec) for spec in args.plane],
+        run_claim=args.run_claim,
         run_sub_path=args.run_sub_path,
         request_config_map=args.request_config_map,
         cache_level=args.cache_level,

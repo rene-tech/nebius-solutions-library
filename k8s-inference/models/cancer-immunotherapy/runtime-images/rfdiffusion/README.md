@@ -54,6 +54,21 @@ Both prior images are refused as a basis, for provenance rather than for behavio
   checkpoint, before any diffusion. r9 passes the override and the end-to-end
   `main()` argv tests now pin it.
 
+- **r9** (`sha256:c63e8229…`) was genuinely H100-qualified for `design-backbone` on two
+  nodes and produced a byte-identical structure to r6 for the same seed. Superseded so a
+  single digest could carry both operations, and to close a file-descriptor leak on the
+  upstream stdout pipe.
+- **r10** (`sha256:89eae6d0…`) succeeded on `design-backbone` and its `scaffold-motif`
+  run produced a *correct* design — all 12 motif identities preserved, upstream
+  reporting ~0.19 Å sampled motif RMSD — which the wrapper then wrongly rejected at
+  47.956 Å. The validator compared raw coordinates, and RFdiffusion recentres its
+  designs. Re-measured on those exact bytes the offset is a 47.96 Å translation with
+  1.0° of rotation and the superposed CA RMSD is **0.1129 Å**. The failed receipt is
+  kept at `evidence/superseded/`.
+- **r11** (`sha256:1c0dce76…`) carries the superposition fix but was built before the
+  scientific artifact localization foundation landed on main, so it predates the
+  delivery semantics this runtime must consume.
+
 `build_rfdiffusion.py` makes the r6/r7 provenance failures structurally impossible:
 it refuses a dirty tree, and after pushing it reads the SLSA provenance back out of
 the registry and fails unless the recorded VCS revision equals the commit the build

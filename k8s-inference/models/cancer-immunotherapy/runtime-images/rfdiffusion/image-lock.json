@@ -24,8 +24,8 @@
     "platform": "linux/amd64",
     "registry": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models",
     "repository": "rfdiffusion",
-    "tag_suffix": "-cuda121-r11",
-    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r11",
+    "tag_suffix": "-cuda121-r12",
+    "target_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion:9273ef67335acaf91df0150473a274759229cdf6-cuda121-r12",
     "dockerfile": "Dockerfile",
     "build_context": ".",
     "python": "3.10.14",
@@ -62,6 +62,12 @@
     "published_reference": null,
     "attestation_predicate_types": null,
     "supersedes": [
+      {
+        "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r11",
+        "digest": "sha256:1c0dce764297a605dda24883256d7d540b28e7b8766628d7e6ed49ee8e25698f",
+        "deployable": false,
+        "reason": "Carries the motif superposition fix and is correctly attested (SLSA names clean commit 4885ece8), but was built before the scientific artifact localization foundation landed on main at 3a7ceb25. Superseded so the qualified candidate is built from source that already contains the accepted foundation. Its runtime inputs are byte-identical to r12's; only the source the provenance names differs."
+      },
       {
         "tag": "9273ef67335acaf91df0150473a274759229cdf6-cuda121-r10",
         "digest": "sha256:89eae6d0f7b21fea4fdf7b0d0ba0fd4661324bc6e55d810d12ab1357c519084b",
@@ -200,9 +206,37 @@
     }
   ],
   "artifact_delivery": {
-    "state": "catalog-accepted-localization-pending",
-    "canonical_plane": "partially-available",
-    "detail": "The rfdiffusion-checkpoints catalog entry is now accepted on main (commit 9d48fe0e) and this runtime's checkpoint identity matches it exactly: 0fcf7d7c..., 483616107 bytes, from the files.ipd.uw.edu URL the catalog names. What is still pending is live content-addressed localization and promotion onto the shared plane: nothing has published an RFdiffusion generation there yet. Qualification therefore reads a task-owned generation on the shared qualification claim, staged with the localization plane's own inventory algorithm and marker schema so it is portable without restaging. Because the runtime resolves artifacts by sha256 through the input manifest's relative paths, no image change is needed when the canonical plane publishes.",
+    "state": "catalog-accepted-localization-entry-absent",
+    "model": "mixed-plane",
+    "detail": "Delivery is mixed-plane, not one shared claim at a task-owned subPath. Each plane is mounted read-only at <artifact-root>/<plane-name> and the input manifest's relative paths begin with the plane name, so a request can draw the checkpoint from a public plane and a target structure from another plane without either hosting the other's bytes. qualification/render_job.py takes repeatable --plane NAME=CLAIM[:SUBPATH] and refuses to run with no plane, so no single-claim default can be inherited by accident.",
+    "planes": [
+      {
+        "name": "public",
+        "contains": [
+          "rfdiffusion-base-checkpoint",
+          "rfdiffusion-motif-target-1ubq"
+        ],
+        "licence_class": "public-redistributable",
+        "licences": [
+          "BSD-3-Clause"
+        ],
+        "rationale": "RFdiffusion code and weights are both BSD-3-Clause and the 1UBQ target is public PDB data, so this runtime needs no licence-restricted plane and never mounts one."
+      }
+    ],
+    "runtime_bindings": [
+      {
+        "model_id": "rfdiffusion",
+        "binding_kind": "argv-option",
+        "binding_name": "inference.ckpt_override_path",
+        "binding_value": "<artifact-root>/<plane>/<manifest relative path>"
+      }
+    ],
+    "canonical_entry": {
+      "present": false,
+      "contract": "catalog/runtime/contracts/scientific-artifact-localization.json",
+      "contract_at": "origin/main 3a7ceb25",
+      "detail": "The accepted localization contract carries no rfdiffusion artifact. Its six entries are alphafold2-params, alphafold2-params-bindcraft, bindcraft-pyrosetta-installed-tree, boltzgen-inference-molecules and the two colabdesign-mpnn weight trees. Until an rfdiffusion entry exists, this runtime cannot bind a canonical generation and qualification reads a task-owned one."
+    },
     "transitional_claim": "fs2-runtime-qualification-artifacts-r20260902",
     "generation": {
       "artifact_id": "rfdiffusion-base-checkpoint",
@@ -265,6 +299,14 @@
     }
   ],
   "follow_ups": [
+    {
+      "id": "localization-contract-cannot-express-a-single-object-artifact",
+      "owner": "scientific artifact localization owner",
+      "blocking": "blocks a canonical rfdiffusion localization entry, not this qualification",
+      "observed": "scientific-artifact-localization.schema.json requires every artifact to carry an `archive` object, its `transform` enum is safe-extract-zip | safe-extract-tar | safe-extract-tar-gz | external-installed-tree, and archive.media_type admits only application/zip, application/x-tar and application/gzip. The schema also documents `archive` as the provenance of 'the compressed object', and the receipt schema requires archive_provenance.present_in_mount to be false for a verified receipt.",
+      "why_it_matters": "RFdiffusion's Base_ckpt.pt is a single uncompressed object fetched directly from files.ipd.uw.edu. There is no archive, no extraction step, and the object itself is what lands in the mount. Every way of forcing it into the current shape requires stating something untrue: inventing an archive that was never fetched, or declaring present_in_mount false about a file that is present. This runtime therefore emits no localization receipt rather than a false one.",
+      "proposal": "Add a transform for a directly-fetched object (for example `verified-copy`) whose provenance block describes the object rather than an archive, and relax present_in_mount for that transform. All eight official RFdiffusion checkpoints, and any single-file weights artifact, need it."
+    },
     {
       "id": "preseed-igso3-schedule-cache-for-fast-start",
       "owner": "fast-start workstream",
