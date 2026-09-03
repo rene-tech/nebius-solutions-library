@@ -39,6 +39,20 @@ deployment = {
       boot_disk         = { type = "NETWORK_SSD", size_gib = 2048 }
       local_nvme        = true
       local_nvme_mode   = "kubelet-ephemeral"
+      # Illustrative plan fixture below the preset's nominal 192 vCPU / 2768
+      # GB. fixture:utf8 names the exact bytes hashed by payload_sha256; it does
+      # not claim a live measurement. Replace the capacity and the complete
+      # evidence record with the target pool's observed allocatable before use.
+      schedulable_capacity = {
+        cpu_millicores = 188000
+        memory_mib     = 2801664
+        evidence = {
+          pool_id        = "b300-8x-local"
+          source         = "fixture:utf8:b300-8x-local"
+          captured_at    = "2026-09-03T06:00:00Z"
+          payload_sha256 = "cda74692d5d53669c7f4236dcb6cda4bd31a1f832b52e8ee6c0bc00a10d3a480"
+        }
+      }
     }
     "h100-1x" = {
       platform          = "gpu-h100-sxm"
@@ -51,6 +65,80 @@ deployment = {
       max_nodes         = 1
       driver            = { mode = "managed", preset = "cuda13.0" }
       local_nvme        = false
+      schedulable_capacity = {
+        cpu_millicores = 14000
+        memory_mib     = 194560
+        evidence = {
+          pool_id        = "h100-1x"
+          source         = "fixture:utf8:h100-1x"
+          captured_at    = "2026-09-03T06:00:00Z"
+          payload_sha256 = "0aa8d5cb40e63d1c6321af4a4bb4addb1e2a8af6a4868dfd369939c6e7efb784"
+        }
+      }
+    }
+  }
+
+  # A small elastic general CPU pool for scientific preprocessing and
+  # aggregation. It scales from zero, is preemptible, and is a separate owner
+  # from the reference pool below: its own taint, ResourceFlavor and
+  # ClusterQueue, and no reference-data filesystem.
+  cpu_pools = {
+    "general-cpu-8x" = {
+      platform      = "cpu-d3"
+      preset        = "8vcpu-32gb"
+      capacity_type = "preemptible"
+      autoscaling   = { min_nodes = 0, max_nodes = 4 }
+      schedulable_capacity = {
+        cpu_millicores        = 7000
+        memory_mib            = 28672
+        ephemeral_storage_mib = 114688
+      }
+      boot_disk = { type = "NETWORK_SSD", size_gib = 160 }
+    }
+  }
+
+  scheduling = {
+    general_cpu = {
+      cluster_queue = "general-cpu"
+      local_queue   = "general-cpu"
+      # One execution namespace, named exactly. v1 binds a class to a single
+      # namespace because a consumer keys LocalQueues by bare name and cannot
+      # represent the same name twice.
+      namespace = "fs2-models"
+    }
+    # A CPU pool and the reference-data plane both budget cpu and memory, and
+    # Kueue drops core requests before admission until this is set. Without it
+    # every cpu/memory quota in the cluster is inert, so the facade refuses the
+    # combination rather than shipping a quota nothing enforces. This is the
+    # measured aggregate schedulable capacity of the pools backing Kueue.
+    # Count cpu and memory in Kueue admission, coupled to each accelerator
+    # pool: each pool's budget is the measured per-node capacity declared
+    # above times its maximum node count. The general CPU pool is not part of
+    # it; its ClusterQueue is external, with its own flavor and quota.
+    budget_core_resources = true
+  }
+
+  storage = {
+    reference_data = {
+      enabled   = true
+      namespace = "fs2-reference-data"
+      # Separate from the general pool above, and large enough that one
+      # AlphaFold 3 raw-input pod (16 CPU / 64 GiB) fits on a single node. The
+      # bulk stager stays at 6 CPU / 24 GiB and is unaffected.
+      cpu_pool = {
+        platform   = "cpu-d3"
+        preset     = "32vcpu-128gb"
+        node_count = 1
+        schedulable_capacity = {
+          cpu_millicores        = 30000
+          memory_mib            = 122880
+          ephemeral_storage_mib = 114688
+        }
+      }
+      queue = {
+        nominal_cpu    = "16"
+        nominal_memory = "64Gi"
+      }
     }
   }
 

@@ -280,6 +280,21 @@ output "scheduling_contract" {
   value       = module.kueue_scheduling.contract
 }
 
+output "general_cpu_class_contribution" {
+  description = "The canonical general-cpu CPU stage class this deployment contributes to the scheduling contract, its digest, and the ownership facts for the queues the general lane created. The scheduling workstream assembles and publishes; this is the exact entry it merges."
+  value = {
+    cpu_classes_schema  = module.general_cpu_scheduling.contract.cpu_classes_schema
+    cpu_classes         = module.general_cpu_scheduling.contract.cpu_classes
+    cpu_class_digests   = module.general_cpu_scheduling.contract.cpu_class_digests
+    external_lane_facts = module.general_cpu_scheduling.contract.external_lane_facts
+  }
+}
+
+output "general_cpu_contract" {
+  description = "General CPU lane: rendered classes, capacity, elasticity and the consumed scheduling ConfigMap handoff with the exact raw-byte digest the controller must verify."
+  value       = terraform_data.general_cpu_contract.output
+}
+
 output "reference_data_contract" {
   description = "Same-region storage, private preprocessing and optional official staging-pipeline contract."
   value       = try(terraform_data.reference_data_contract[0].output, null)
@@ -331,6 +346,17 @@ output "reference_data_status" {
   } : null
 }
 
+output "scheduling_contract_ref" {
+  description = "Immutable ConfigMap handoff and revision for the controller/admin owners; this scheduling slice does not mount or consume it."
+  value = {
+    schema          = module.kueue_scheduling.contract.schema
+    config_map_name = kubernetes_config_map_v1.scientific_scheduling_contract.metadata[0].name
+    namespace       = kubernetes_config_map_v1.scientific_scheduling_contract.metadata[0].namespace
+    key             = local.scheduling_contract_key
+    sha256          = local.scheduling_contract_sha256
+  }
+}
+
 output "managed_resource_count" {
   description = "Expected concrete managed-address count for exact plan review."
   value = (
@@ -353,17 +379,31 @@ output "managed_resource_count" {
     + (var.model_express.enabled ? 1 : 0)
     + (local.modelexpress_managed ? 2 : 0)
     + (local.modelexpress_nvcr_required ? 1 : 0)
-    # The scheduling module owns one validation resource. Stable queue/WPC
-    # addresses remain in the base count; only the cohort and additive policy
-    # objects increase the concrete address total.
-    + 1
+    # Scheduling owns three validation resources (pool units, academic lane
+    # ownership, policy contract) plus the immutable policy ConfigMap. Each
+    # additive LocalQueue also has a replacement trigger for its immutable
+    # namespace/ClusterQueue binding. Stable queue/WPC addresses remain in the
+    # base count; only the cohort and additive policy objects increase the
+    # concrete address total.
+    + 4
+    + (module.kueue_scheduling.contract.core_resource_flavor == null ? 0 : 1)
     + (module.kueue_scheduling.contract.cohort == null ? 0 : 1)
     + (length(module.kueue_scheduling.contract.cluster_queues) - 1)
-    + (length(module.kueue_scheduling.contract.local_queues) - 1)
+    + (
+      length(module.kueue_scheduling.contract.local_queues)
+      -length(module.kueue_scheduling.contract.external_local_queue_names)
+      -1
+    ) * 2
     + length(setsubtract(
       toset(keys(module.kueue_scheduling.contract.workload_priority_classes)),
       toset(keys(var.model_controller.priority_classes)),
     ))
+    # The general CPU lane: its own validation resource plus, when enabled, one
+    # ResourceFlavor, one ClusterQueue and one LocalQueue per tenant namespace.
+    + 2
+    + (module.general_cpu_scheduling.contract.enabled ? (
+      2 + length(module.general_cpu_scheduling.contract.manifests.local_queues)
+    ) : 0)
     + (var.reference_data.enabled ? (
       12
       + (var.reference_data.network.allow_public_source_staging ? 1 : 0)

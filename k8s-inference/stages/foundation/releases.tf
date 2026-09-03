@@ -100,12 +100,50 @@ resource "helm_release" "envoy_gateway" {
   depends_on = [terraform_data.cluster_contract]
 }
 
+data "external" "kueue_chart" {
+  program = ["${path.module}/../../modules/jobset-controller/scripts/materialize-chart.sh"]
+
+  query = {
+    chart_ref      = local.kueue_release.chart_ref
+    chart_digest   = local.kueue_release.chart_digest
+    archive_sha256 = local.kueue_release.chart_archive_sha256
+    chart_name     = "kueue"
+    run_root       = local.normalized_run_root
+  }
+}
+
+resource "terraform_data" "kueue_release_verified" {
+  input = local.kueue_release
+
+  triggers_replace = {
+    chart_digest         = local.kueue_release.chart_digest
+    chart_archive_sha256 = local.kueue_release.chart_archive_sha256
+    chart_archive        = local.kueue_chart_archive
+    image                = local.kueue_release.image
+    verifier_sha256      = filesha256("${path.module}/scripts/materialize-kueue-release.sh")
+  }
+
+  provisioner "local-exec" {
+    command = "\"${path.module}/scripts/materialize-kueue-release.sh\""
+    quiet   = true
+
+    environment = {
+      FS2_KUEUE_CHART_REF            = local.kueue_release.chart_ref
+      FS2_KUEUE_CHART_DIGEST         = local.kueue_release.chart_digest
+      FS2_KUEUE_CHART_ARCHIVE_SHA256 = local.kueue_release.chart_archive_sha256
+      FS2_KUEUE_IMAGE                = local.kueue_release.image
+      FS2_KUEUE_RUN_ROOT             = local.normalized_run_root
+      FS2_KUEUE_CHART_ARCHIVE        = local.kueue_chart_archive
+    }
+  }
+
+  depends_on = [terraform_data.cluster_contract]
+}
+
 resource "helm_release" "kueue" {
   name             = "fs2-${var.run_id}-kueue"
   namespace        = kubernetes_namespace_v1.platform["kueue-system"].metadata[0].name
-  repository       = "oci://registry.k8s.io/kueue/charts"
-  chart            = "kueue"
-  version          = local.chart_versions.kueue
+  chart            = local.kueue_chart_archive
   create_namespace = false
   atomic           = true
   cleanup_on_fail  = true
@@ -115,12 +153,79 @@ resource "helm_release" "kueue" {
   wait    = false
   timeout = 900
 
-  values = [file("${path.module}/values/kueue.yaml")]
+  values = [yamlencode(local.kueue_effective_values)]
+
+  lifecycle {
+    precondition {
+      condition = (
+        # registry/name:tag@sha256:hex has three colons, so the tag and digest
+        # are recovered the way the verifier does rather than by splitting on
+        # every colon.
+        local.kueue_values.controllerManager.manager.image.repository == local.kueue_image_repository &&
+        local.kueue_values.controllerManager.manager.image.tag == local.kueue_image_tag &&
+        local.kueue_values.controllerManager.nodeSelector["workload.fs2.nebius/system"] == "true"
+      )
+      error_message = "values/kueue.yaml must pin the same digest-qualified controller image and system node placement as the verified release."
+    }
+
+    precondition {
+      condition = alltrue([
+        for prefix in local.kueue_excluded_resource_prefixes : alltrue([
+          for resource_name in local.kueue_accelerator_resource_names :
+          !startswith(resource_name, prefix)
+        ])
+      ])
+      error_message = "A Kueue excluded resource prefix would also exclude an accelerator resource this deployment budgets; auxiliary device resources must be named so they cannot shadow accelerator accounting."
+    }
+
+    # The rendered exclusions must match the core-admission choice exactly, so
+    # the published contract's statement about what is enforced is always true.
+    precondition {
+      condition = (
+        contains(local.kueue_excluded_resource_prefixes, "ephemeral-storage") &&
+        (
+          var.kueue.budget_core_resources
+          ? alltrue([
+            for prefix in local.kueue_excluded_resource_prefixes : alltrue([
+              for core_name in local.kueue_core_resource_prefixes :
+              !startswith(core_name, prefix)
+            ])
+          ])
+          : length(setsubtract(
+            toset(local.kueue_core_resource_prefixes),
+            toset(local.kueue_excluded_resource_prefixes),
+          )) == 0
+        )
+      )
+      error_message = "The rendered Kueue exclusions must match the core-admission choice exactly. Kueue compares each prefix with a literal prefix match, so with core admission on no exclusion may be a prefix of cpu or memory (\"c\" and \"mem\" would silently exclude them), and with core admission off both must be excluded. ephemeral-storage stays excluded either way."
+    }
+  }
 
   # Kueue registers a Job admission webhook. Cert-manager's post-install
   # startup API check is itself a Job, so let that check finish before Kueue
   # can register its webhook and briefly make Job admission unavailable.
-  depends_on = [helm_release.cert_manager]
+  depends_on = [
+    helm_release.cert_manager,
+    module.jobset_controller,
+    terraform_data.kueue_release_verified,
+  ]
+}
+
+module "jobset_controller" {
+  count  = var.jobset.enabled ? 1 : 0
+  source = "../../modules/jobset-controller"
+
+  enabled            = true
+  run_id             = var.run_id
+  namespace          = kubernetes_namespace_v1.platform["jobset-system"].metadata[0].name
+  kubeconfig_path    = var.kubeconfig_path
+  kube_context       = var.kube_context
+  run_root           = var.run_root
+  cluster_id         = var.cluster_id
+  kubernetes_version = var.jobset.kubernetes_version
+  labels             = local.common_labels
+
+  depends_on = [kubernetes_namespace_v1.platform["jobset-system"]]
 }
 
 # KEDA is installed once by the foundation. Static workloads leave it dormant;

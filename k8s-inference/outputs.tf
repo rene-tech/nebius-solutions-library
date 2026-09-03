@@ -78,6 +78,48 @@ output "effective_configuration" {
       cluster_queue_names = sort(keys(var.deployment.scheduling.cluster_queues))
       local_queue_names   = sort(keys(var.deployment.scheduling.local_queues))
       service_classes     = sort(keys(var.deployment.scheduling.service_classes))
+      # The effective facts a reviewer needs before any stage runs.
+      academic_raw_data_stages = var.deployment.scheduling.academic_raw_data_stages
+      core_admission           = local.root_core_admission_enabled ? "pool-coupled" : "excluded-not-budgeted"
+      core_pool_capacity       = local.root_core_pool_capacity
+      cpu_stage_requests       = local.root_cpu_stage_requests
+      academic_cpu_local_queue = local.root_academic_cpu_lane_enabled ? local.root_academic_cpu_local_queue_name : null
+      reference_cluster_queue  = local.root_academic_cpu_lane_enabled ? local.root_reference_cluster_queue_name : null
+      # The order Kueue will try ResourceFlavors in, and the order each
+      # service class advertises. They must agree, and neither is meaningful
+      # unless a reviewer can read it before anything is created.
+      default_queue_pool_order      = local.root_scheduling_queue_pool_order[local.root_default_cluster_queue_name]
+      service_class_pool_preference = local.root_service_class_pool_preference
+      # Every pool's extended resource, so a mixed-resource eligible set is
+      # visible rather than inferred from a pool name.
+      # Kueue sums unnormalized quantity magnitudes, so the effective weights
+      # and the resources they may name are review facts, not internals.
+      budgeted_resource_names     = local.root_budgeted_resource_names
+      fair_share_resource_weights = var.deployment.scheduling.fair_share_resource_weights
+      pool_resource_names         = local.root_pool_resource_names
+      model_eligible_pools        = local.root_model_eligible_pool_ids
+    }
+    general_cpu = {
+      enabled           = local.general_cpu_enabled
+      pool_ids          = local.general_cpu_pool_ids
+      cluster_queue     = local.general_cpu_enabled ? local.general_cpu_lane.cluster_queue : null
+      local_queue       = local.general_cpu_enabled ? local.general_cpu_lane.local_queue : null
+      resource_flavor   = local.general_cpu_enabled ? local.general_cpu_lane.resource_flavor : null
+      namespace         = local.general_cpu_enabled ? local.general_cpu_namespace : null
+      lane_capacity     = local.general_cpu_lane_capacity
+      largest_node      = local.general_cpu_largest_node
+      elastic_pool_ids  = sort([for pool_id, bounds in local.general_cpu_pool_bounds : pool_id if bounds.elastic])
+      scale_from_zero   = sort([for pool_id, bounds in local.general_cpu_pool_bounds : pool_id if bounds.min_nodes == 0])
+      preemptible_pools = sort([for pool_id, pool in var.deployment.cpu_pools : pool_id if pool.capacity_type == "preemptible"])
+      # The two CPU lanes are separate owners with separate quotas. Neither
+      # borrows from nor lends to the other, and neither joins the accelerator
+      # cohort.
+      cohort = null
+      distinct_from_reference_data = (
+        !local.general_cpu_enabled ||
+        !var.deployment.storage.reference_data.enabled ||
+        local.general_cpu_lane.cluster_queue != var.deployment.storage.reference_data.queue.cluster_queue
+      )
     }
     dynamic_models = {
       enabled                                        = var.deployment.dynamic_models.enabled

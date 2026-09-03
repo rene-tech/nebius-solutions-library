@@ -1,0 +1,993 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schemas/scientific-scheduling-acceptance-evidence-v1.json",
+  "title": "FS2 scientific scheduling acceptance evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "run_id",
+    "source_commit",
+    "scheduling_contract_sha256",
+    "target",
+    "workload",
+    "timing",
+    "outcome",
+    "cleanup"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/scientific-scheduling-acceptance-evidence/v1"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 20
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "scheduling_contract_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "region",
+        "cluster_id",
+        "context",
+        "gpu_type",
+        "capacity_type"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cluster_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "context": {
+          "type": "string",
+          "minLength": 1
+        },
+        "gpu_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capacity_type": {
+          "enum": [
+            "regular",
+            "capacity-block",
+            "preemptible"
+          ]
+        }
+      }
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accelerator_count",
+        "accelerator_resource",
+        "attempt_id",
+        "cluster_queue",
+        "job",
+        "local_queue",
+        "model_id",
+        "namespace",
+        "operation_id",
+        "pool_id",
+        "priority_class",
+        "resource_flavor",
+        "resource_kind",
+        "scenario",
+        "service_class",
+        "stage_id",
+        "tenant_id",
+        "workload_id",
+        "workload_uid"
+      ],
+      "properties": {
+        "scenario": {
+          "enum": [
+            "priority-preemption",
+            "fair-sharing",
+            "partial-admission",
+            "quota-reclaim",
+            "preemptible-requeue",
+            "scale-zero"
+          ]
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "job": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workload_uid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "service_class": {
+          "enum": [
+            "platform-critical",
+            "presentation",
+            "interactive",
+            "customer-batch",
+            "bulk-backfill"
+          ]
+        },
+        "local_queue": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cluster_queue": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Requested ClusterQueue from the frozen scheduling snapshot."
+        },
+        "priority_class": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pool_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 63
+        },
+        "resource_flavor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 63,
+          "description": "Requested ResourceFlavor from the frozen snapshot's ordered pool preference, null for a CPU-only stage."
+        },
+        "accelerator_resource": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/qualified_resource_name"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Requested accelerator resource, null for a CPU-only stage."
+        },
+        "accelerator_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "tenant_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$",
+          "maxLength": 63
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "workload_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "stage_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 63
+        },
+        "cpu_class": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+          "maxLength": 63
+        },
+        "actual_cluster_queue": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 63
+        },
+        "actual_resource_flavor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 63,
+          "description": "The ResourceFlavor Kueue assigned for the primary scheduled resource: the accelerator for a GPU stage, cpu for a CPU stage. Every per-PodSet flavor map is preserved in reserved_pod_set_assignments."
+        },
+        "actual_pool_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 63,
+          "description": "The pool the stage actually ran on. A GPU attempt resolves it from the contract's resource_flavor_pool_ids at admission. A CPU attempt resolves it from cpu_classes.<class>.pool_resolution: a per-pool-flavor class names its single pool, so the pool is known at QuotaReserved just like a GPU attempt. Only a node-label-observation class, whose one ResourceFlavor spans several pools, cannot know it until a Pod is scheduled and the Node label is read; null is correct there and nowhere else. Required as a string from QuotaReserved onward in every other case, and always once timing.pod_scheduled_at is set."
+        },
+        "resource_kind": {
+          "enum": [
+            "gpu",
+            "cpu"
+          ]
+        },
+        "reserved_resource_usage": {
+          "type": "object",
+          "minProperties": 0,
+          "propertyNames": {
+            "$ref": "#/$defs/qualified_resource_name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/quantity"
+          },
+          "description": "Exact quantities Kueue reported in status.admission, including cpu and memory when core admission is on. Present from QuotaReserved onward and preserved after a reservation is lost, because the tuple is what was actually held."
+        },
+        "reserved_pod_set_assignments": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/pod_set_assignment"
+          },
+          "description": "status.admission.podSetAssignments exactly as Kueue reported them."
+        },
+        "pool_resolution_mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "per-pool-flavor",
+            "node-label-observation",
+            null
+          ],
+          "description": "The frozen pool_resolution.mode of the CPU stage class this attempt used, copied from the scheduling contract at freeze time. It decides whether the actual pool is knowable before a Pod is scheduled, so it is recorded rather than assumed. Null for a GPU attempt, whose pool comes from the accelerator flavor map."
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt_queued_at"
+      ],
+      "properties": {
+        "attempt_queued_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When THIS attempt entered the queue. Queue latency is measured from here to QuotaReserved and resets on requeue or preemption, so it is never taken from the Job's creation timestamp."
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "quota_reserved_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "admitted_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "pod_scheduled_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "queue_latency_seconds": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "quota_reserved_at minus attempt_queued_at for this attempt."
+        },
+        "preempted_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "requeued_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "reservation_lost_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "node_ready_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "description": "QuotaReserved and Admitted are separately observed Kueue conditions and are never collapsed. A pending attempt has neither, a reserved-only attempt has the first, and a lost reservation records when it went away."
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "observed_conditions",
+        "event_reasons",
+        "graceful_termination_observed",
+        "admission_state"
+      ],
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "observed_conditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "event_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "graceful_termination_observed": {
+          "type": "boolean"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "admission_state": {
+          "enum": [
+            "quota-reserved",
+            "admitted",
+            "reservation-lost",
+            "pending"
+          ]
+        }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "completed",
+        "jobs_remaining",
+        "workloads_remaining",
+        "temporary_nodes_remaining"
+      ],
+      "properties": {
+        "completed": {
+          "type": "boolean"
+        },
+        "jobs_remaining": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "workloads_remaining": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "temporary_nodes_remaining": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "properties": {
+              "admission_state": {
+                "enum": [
+                  "quota-reserved",
+                  "admitted",
+                  "reservation-lost"
+                ]
+              }
+            },
+            "required": [
+              "admission_state"
+            ]
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "timing": {
+            "required": [
+              "quota_reserved_at",
+              "queue_latency_seconds"
+            ],
+            "properties": {
+              "quota_reserved_at": {
+                "type": "string"
+              },
+              "queue_latency_seconds": {
+                "type": "number"
+              }
+            }
+          },
+          "workload": {
+            "required": [
+              "actual_cluster_queue",
+              "actual_pool_id",
+              "actual_resource_flavor",
+              "reserved_pod_set_assignments",
+              "reserved_resource_usage"
+            ],
+            "properties": {
+              "actual_cluster_queue": {
+                "type": "string"
+              },
+              "actual_resource_flavor": {
+                "type": "string"
+              },
+              "reserved_resource_usage": {
+                "minProperties": 1
+              },
+              "reserved_pod_set_assignments": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "properties": {
+              "admission_state": {
+                "const": "admitted"
+              }
+            },
+            "required": [
+              "admission_state"
+            ]
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "timing": {
+            "required": [
+              "admitted_at"
+            ],
+            "properties": {
+              "admitted_at": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "properties": {
+              "admission_state": {
+                "const": "quota-reserved"
+              }
+            },
+            "required": [
+              "admission_state"
+            ]
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "timing": {
+            "properties": {
+              "admitted_at": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "properties": {
+              "admission_state": {
+                "const": "pending"
+              }
+            },
+            "required": [
+              "admission_state"
+            ]
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "timing": {
+            "properties": {
+              "quota_reserved_at": {
+                "type": "null"
+              },
+              "admitted_at": {
+                "type": "null"
+              },
+              "queue_latency_seconds": {
+                "type": "null"
+              }
+            }
+          },
+          "workload": {
+            "properties": {
+              "actual_cluster_queue": {
+                "type": "null"
+              },
+              "actual_resource_flavor": {
+                "type": "null"
+              },
+              "actual_pool_id": {
+                "type": "null"
+              },
+              "reserved_resource_usage": {
+                "maxProperties": 0
+              },
+              "reserved_pod_set_assignments": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "properties": {
+              "admission_state": {
+                "const": "reservation-lost"
+              }
+            },
+            "required": [
+              "admission_state"
+            ]
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "timing": {
+            "required": [
+              "reservation_lost_at"
+            ],
+            "properties": {
+              "reservation_lost_at": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "resource_kind": {
+                "const": "gpu"
+              }
+            },
+            "required": [
+              "resource_kind"
+            ]
+          }
+        },
+        "required": [
+          "workload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "accelerator_count": {
+                "minimum": 1
+              },
+              "accelerator_resource": {
+                "$ref": "#/$defs/qualified_resource_name"
+              },
+              "pool_id": {
+                "type": "string"
+              },
+              "resource_flavor": {
+                "type": "string"
+              },
+              "cpu_class": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "resource_kind": {
+                "const": "cpu"
+              }
+            },
+            "required": [
+              "resource_kind"
+            ]
+          }
+        },
+        "required": [
+          "workload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "accelerator_count": {
+                "const": 0
+              },
+              "accelerator_resource": {
+                "type": "null"
+              },
+              "pool_id": {
+                "type": "null"
+              },
+              "resource_flavor": {
+                "type": "null"
+              },
+              "cpu_class": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cpu_class"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "timing": {
+            "properties": {
+              "pod_scheduled_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "pod_scheduled_at"
+            ]
+          }
+        },
+        "required": [
+          "timing"
+        ]
+      },
+      "then": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "actual_pool_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "actual_pool_id"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "properties": {
+              "admission_state": {
+                "enum": [
+                  "quota-reserved",
+                  "admitted",
+                  "reservation-lost"
+                ]
+              }
+            },
+            "required": [
+              "admission_state"
+            ]
+          },
+          "workload": {
+            "properties": {
+              "resource_kind": {
+                "const": "gpu"
+              }
+            },
+            "required": [
+              "resource_kind"
+            ]
+          }
+        },
+        "required": [
+          "outcome",
+          "workload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "actual_pool_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "actual_pool_id"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "properties": {
+              "admission_state": {
+                "enum": [
+                  "quota-reserved",
+                  "admitted",
+                  "reservation-lost"
+                ]
+              }
+            },
+            "required": [
+              "admission_state"
+            ]
+          },
+          "workload": {
+            "properties": {
+              "resource_kind": {
+                "const": "cpu"
+              },
+              "pool_resolution_mode": {
+                "const": "per-pool-flavor"
+              }
+            },
+            "required": [
+              "resource_kind",
+              "pool_resolution_mode"
+            ]
+          }
+        },
+        "required": [
+          "outcome",
+          "workload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "actual_pool_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "resource_kind": {
+                "const": "cpu"
+              }
+            },
+            "required": [
+              "resource_kind"
+            ]
+          }
+        },
+        "required": [
+          "workload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "pool_resolution_mode": {
+                "enum": [
+                  "per-pool-flavor",
+                  "node-label-observation"
+                ]
+              }
+            },
+            "required": [
+              "pool_resolution_mode"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "resource_kind": {
+                "const": "gpu"
+              }
+            },
+            "required": [
+              "resource_kind"
+            ]
+          }
+        },
+        "required": [
+          "workload"
+        ]
+      },
+      "then": {
+        "properties": {
+          "workload": {
+            "properties": {
+              "pool_resolution_mode": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "quantity": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?(n|u|m|k|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$|^(0|[1-9][0-9]*)(\\.[0-9]+)?[eE][+-]?(0|[1-9][0-9]*)$",
+      "description": "A nonnegative Kubernetes quantity in canonical serialized form, which is what the API server returns: apimachinery decimalSI (n, u, m, k, M, G, T, P, E), binarySI (Ki, Mi, Gi, Ti, Pi, Ei), or a decimal exponent. Input forms the parser also accepts but never emits, such as a leading plus, a leading zero, or a bare decimal point, are deliberately rejected because a receipt records what Kueue reported."
+    },
+    "qualified_resource_name": {
+      "type": "string",
+      "maxLength": 317,
+      "pattern": "^(?:(?=[^/]{1,253}/)[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$",
+      "description": "A Kubernetes ResourceName: an optional DNS-subdomain prefix of at most 253 characters, a slash, and a name of at most 63."
+    },
+    "pod_set_assignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "count",
+        "flavors",
+        "resource_usage"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "flavors": {
+          "type": "object",
+          "minProperties": 0,
+          "propertyNames": {
+            "$ref": "#/$defs/qualified_resource_name"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63
+          }
+        },
+        "resource_usage": {
+          "type": "object",
+          "minProperties": 0,
+          "propertyNames": {
+            "$ref": "#/$defs/qualified_resource_name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/quantity"
+          }
+        }
+      },
+      "description": "One entry of status.admission.podSetAssignments, preserved per PodSet rather than flattened."
+    }
+  }
+}

@@ -326,7 +326,7 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/profile_id"
+            "$ref": "#/$defs/pool_id"
           }
         },
         "required_node_labels": {
@@ -773,6 +773,11 @@
       "type": "string",
       "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$",
       "maxLength": 128
+    },
+    "pool_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$",
+      "maxLength": 63
     },
     "dns_label": {
       "type": "string",

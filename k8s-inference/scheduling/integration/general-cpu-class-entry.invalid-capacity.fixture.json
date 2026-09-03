@@ -1,0 +1,43 @@
+{
+  "fixture": "invalid fs2-serve.nebius.ai/cpu-stage-classes/v1 general-cpu entry",
+  "purpose": "A rejected entry, kept so the canonical gate is proven to reject and not merely to accept. Its memory quantity claims more than its own measured memory_mib, which would let a consumer size a Pod from one field and check it against the other.",
+  "violations": [
+    "schedulable_capacity.memory is 32768Mi while schedulable_capacity.memory_mib is 28672"
+  ],
+  "cpu_classes": {
+    "general-cpu": {
+      "local_queue": "general-cpu",
+      "cluster_queue": "general-cpu",
+      "namespace": "fs2-academic-poc",
+      "resource_flavor": "general-cpu",
+      "pool_resolution": {
+        "mode": "per-pool-flavor",
+        "pool_id": "general-cpu-8x"
+      },
+      "node_selector": {
+        "workload.fs2.nebius/general-cpu": "true",
+        "capacity.fs2.nebius/pool": "general-cpu",
+        "capacity.fs2.nebius/pool-id": "general-cpu-8x"
+      },
+      "tolerations": [
+        {
+          "key": "workload.fs2.nebius/general-cpu",
+          "operator": "Equal",
+          "value": "true",
+          "effect": "NoSchedule"
+        }
+      ],
+      "eligible_pool_ids": [
+        "general-cpu-8x"
+      ],
+      "schedulable_capacity": {
+        "cpu": "7000m",
+        "memory": "32768Mi",
+        "ephemeral_storage": "114688Mi",
+        "cpu_millicores": 7000,
+        "memory_mib": 28672,
+        "ephemeral_storage_mib": 114688
+      }
+    }
+  }
+}

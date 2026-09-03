@@ -62,6 +62,7 @@
   "$defs": {
     "id": {
       "type": "string",
+      "maxLength": 63,
       "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"
     },
     "nullableString": {"type": ["string", "null"]},
@@ -87,9 +88,33 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["mode", "resource_name"],
+          "allOf": [
+            {
+              "if": {"properties": {"mode": {"const": "extended-resource"}}, "required": ["mode"]},
+              "then": {
+                "properties": {
+                  "resource_name": {
+                    "maxLength": 317,
+                    "pattern": "^(?=[^/]{1,253}/[^/]{1,63}$)[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/[A-Za-z0-9](?:[-A-Za-z0-9_.]*[A-Za-z0-9])?$"
+                  }
+                }
+              }
+            },
+            {
+              "if": {"properties": {"mode": {"const": "dra"}}, "required": ["mode"]},
+              "then": {
+                "properties": {
+                  "resource_name": {
+                    "maxLength": 253,
+                    "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$"
+                  }
+                }
+              }
+            }
+          ],
           "properties": {
             "mode": {"enum": ["extended-resource", "dra"]},
-            "resource_name": {"type": "string", "minLength": 1}
+            "resource_name": {"type": "string", "minLength": 3, "maxLength": 317}
           }
         },
         "identity_source": {"type": "string", "pattern": "^https://"}
@@ -214,6 +239,7 @@
             },
             "tolerations": {
               "type": "array",
+              "maxItems": 8,
               "items": {
                 "type": "object",
                 "additionalProperties": false,

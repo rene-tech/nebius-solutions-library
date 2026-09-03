@@ -1,0 +1,294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/cpu-stage-classes/v1",
+  "title": "CPU stage placement classes",
+  "description": "Named placement classes for CPU-only scientific stages. Several Terraform owners contribute class entries; modules/kueue-scheduling is the sole assembler and emits the merged map as cpu_classes inside the content-addressed kueue-scheduling.json ConfigMap. There is one schema, one assembled document, and one key. A CPU stage receives no accelerator ResourceFlavor, so it inherits no node labels and no tolerations; on a tainted pool it would never schedule. Each class therefore carries its own queue identity, node routing, tolerations, per-node capacity, the cpu/memory ResourceFlavor its admissions report, the pools it may land on, and how the pool it actually landed on is determined. A class absent from the assembled map means that placement is not deployed, never that a stage may fall back to another class.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "cpu_classes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/cpu-stage-classes/v1"
+    },
+    "cpu_classes": {
+      "type": "object",
+      "description": "Class ID to placement. Keys are stable and stage-facing: a stage names the class it needs and a consumer freezes that class per stage rather than applying one global CPU placement. A class is bound to exactly one namespace, so a producer that runs the same lane in several namespaces contributes one class per namespace.",
+      "propertyNames": {
+        "$ref": "#/$defs/class_id"
+      },
+      "minProperties": 0,
+      "maxProperties": 16,
+      "additionalProperties": {
+        "$ref": "#/$defs/cpu_stage_class"
+      }
+    }
+  },
+  "$defs": {
+    "class_id": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
+      "description": "Two class IDs are defined by this version. 'reference-data' is the tainted pool that mounts the shared reference databases beside AlphaFold 3's raw data stage; the scheduling owner contributes it. 'general-cpu' is untainted general capacity for BindCraft's CPU stages and for collector or aggregation work; the general CPU pool owner contributes it. Any other ID is producer-defined and a consumer must treat it as unknown rather than as a synonym for either of these."
+    },
+    "dns_label": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$"
+    },
+    "quantity": {
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[+]?[0-9]+(?:\\.[0-9]+)?(?:[numkMGTPE]|Ki|Mi|Gi|Ti|Pi|Ei|[eE][+-]?[0-9]+)?$",
+      "description": "An apimachinery resource.Quantity exactly as the producer observed it on the Node, so a consumer can compare against a Pod request without a lossy round trip through an integer."
+    },
+    "cpu_stage_class": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_queue",
+        "cluster_queue",
+        "namespace",
+        "resource_flavor",
+        "node_selector",
+        "tolerations",
+        "schedulable_capacity",
+        "eligible_pool_ids",
+        "pool_resolution"
+      ],
+      "properties": {
+        "local_queue": {
+          "$ref": "#/$defs/dns_label",
+          "description": "LocalQueue a stage of this class is submitted to. Its identity is the (namespace, local_queue) pair: consumers that key LocalQueues by bare name cannot represent the same name in two namespaces, so the assembler refuses a name reused across classes."
+        },
+        "cluster_queue": {
+          "$ref": "#/$defs/dns_label",
+          "description": "ClusterQueue that admits it, which must admit this class's namespace. It may be owned by a different Terraform configuration than the one that contributes this class."
+        },
+        "namespace": {
+          "$ref": "#/$defs/dns_label",
+          "description": "The one namespace this class runs in. A licensed claim can only be mounted from its own namespace, so this is not always the model namespace."
+        },
+        "resource_flavor": {
+          "$ref": "#/$defs/dns_label",
+          "description": "ResourceFlavor a cpu/memory admission of this class reports in status.admission.podSetAssignments[*].flavors. The accelerator pool reverse map does not cover a core flavor, so this is the only key that maps an observed admission back to a class. It identifies the class, not the pool: see pool_resolution."
+        },
+        "eligible_pool_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "description": "Every pool a stage of this class may land on. This is the expected set, not the outcome. A consumer records it as expected_eligible_pool_ids and must never present it as the pool the stage actually ran on.",
+          "items": {
+            "$ref": "#/$defs/pool_id"
+          }
+        },
+        "pool_resolution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "description": "How the pool a stage actually landed on is determined. Kueue reports a ResourceFlavor, not a pool, so a class whose one flavor spans several pools cannot answer this from the admission alone.",
+          "properties": {
+            "mode": {
+              "enum": [
+                "per-pool-flavor",
+                "node-label-observation"
+              ],
+              "description": "'per-pool-flavor': the class has one eligible pool and its ResourceFlavor names that pool, so the admission determines it. 'node-label-observation': one flavor spans several pools, so the actual pool is only knowable after scheduling, by reading node_label_key from the assigned Node."
+            },
+            "pool_id": {
+              "$ref": "#/$defs/pool_id",
+              "description": "Required and equal to the single eligible pool when mode is per-pool-flavor. Forbidden otherwise, because an optional pool ID beside a multi-pool flavor reads as an assignment that was never made."
+            },
+            "node_label_key": {
+              "$ref": "#/$defs/qualified_name",
+              "description": "Required when mode is node-label-observation: the Node label carrying the pool ID, read from the Node the Pod was scheduled onto. Forbidden otherwise."
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "mode": {
+                    "const": "per-pool-flavor"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              },
+              "then": {
+                "required": [
+                  "pool_id"
+                ],
+                "not": {
+                  "required": [
+                    "node_label_key"
+                  ]
+                }
+              },
+              "else": {
+                "required": [
+                  "node_label_key"
+                ],
+                "not": {
+                  "required": [
+                    "pool_id"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "node_selector": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 16,
+          "description": "Node labels the stage Pod must carry to land on this class's capacity. Required and non-empty: no accelerator ResourceFlavor supplies them, so a class with no selector routes nowhere in particular.",
+          "propertyNames": {
+            "$ref": "#/$defs/qualified_name"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/label_value"
+          }
+        },
+        "tolerations": {
+          "type": "array",
+          "maxItems": 8,
+          "description": "Tolerations the stage Pod must carry. Required, and an empty array is the correct value for untainted capacity: stating no tolerations is different from omitting the field.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "operator",
+              "effect"
+            ],
+            "properties": {
+              "key": {
+                "$ref": "#/$defs/qualified_name"
+              },
+              "operator": {
+                "enum": [
+                  "Equal",
+                  "Exists"
+                ]
+              },
+              "value": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/label_value"
+                  },
+                  {
+                    "minLength": 1
+                  }
+                ]
+              },
+              "effect": {
+                "enum": [
+                  "NoSchedule",
+                  "PreferNoSchedule",
+                  "NoExecute"
+                ]
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "operator": {
+                      "const": "Equal"
+                    }
+                  },
+                  "required": [
+                    "operator"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "value"
+                  ]
+                },
+                "else": {
+                  "not": {
+                    "required": [
+                      "value"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "schedulable_capacity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cpu",
+            "memory",
+            "ephemeral_storage",
+            "cpu_millicores",
+            "memory_mib",
+            "ephemeral_storage_mib"
+          ],
+          "description": "Measured per-node allocatable capacity, not a preset's nominal size, in one canonical representation: cpu is exactly the millicore integer with an 'm' suffix, memory and ephemeral_storage are exactly the MiB integers with a 'Mi' suffix. The quantity and the integer are the same number in two spellings, so a consumer may read either and they can never disagree. The assembler rejects a mismatch. A stage whose largest Pod exceeds this can never be scheduled, so a renderer refuses the plan rather than queueing it forever. The smallest node in the class is the honest value when the class spans several pools.",
+          "properties": {
+            "cpu": {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^(0|[1-9][0-9]*)m$",
+              "description": "Exactly \"${cpu_millicores}m\"."
+            },
+            "memory": {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^(0|[1-9][0-9]*)Mi$",
+              "description": "Exactly \"${memory_mib}Mi\"."
+            },
+            "ephemeral_storage": {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^(0|[1-9][0-9]*)Mi$",
+              "description": "Exactly \"${ephemeral_storage_mib}Mi\"."
+            },
+            "cpu_millicores": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "memory_mib": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "ephemeral_storage_mib": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Zero means the pool advertises no ephemeral storage budget, which is different from a pool that advertises some."
+            }
+          }
+        }
+      }
+    },
+    "pool_id": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9](?:[-_a-z0-9.]{0,61}[a-z0-9])?$",
+      "description": "An accelerator-pool-contract pool ID. The same grammar the scheduling module accepts: a lowercase Kubernetes label value of at most 63 characters, so dots and underscores that appear in real pool IDs are legal. Deliberately wider than a DNS label, because pool IDs are label values, not object names."
+    },
+    "qualified_name": {
+      "type": "string",
+      "maxLength": 317,
+      "pattern": "^(?:(?=[^/]{1,253}/)[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/)?[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$",
+      "description": "A Kubernetes qualified name: an optional DNS-subdomain prefix of at most 253 characters, a slash, and a name of at most 63, so at most 317 in total. The lookahead bounds the prefix on its own; a total-length rule alone would accept a 254-character prefix beside a short name, which the API rejects."
+    },
+    "label_value": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$",
+      "description": "A Kubernetes label value."
+    }
+  }
+}

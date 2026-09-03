@@ -134,7 +134,7 @@ variable "accelerator_pool_contract" {
       can(regex("^[a-z0-9][a-z0-9_-]{0,63}$", var.accelerator_pool_contract.floor_profile)) &&
       length(trimspace(var.accelerator_pool_contract.target_region)) > 0 &&
       length(var.accelerator_pool_contract.pools) >= 1 &&
-      length(var.accelerator_pool_contract.pools) <= 128 &&
+      length(var.accelerator_pool_contract.pools) <= 32 &&
       (var.accelerator_pool_contract.profile == "custom" || contains(
         keys(jsondecode(file("${path.module}/../../catalog/profiles/accelerator-pool-profiles.json")).profiles),
         var.accelerator_pool_contract.profile,
@@ -145,7 +145,7 @@ variable "accelerator_pool_contract" {
       )),
       false,
     )
-    error_message = "accelerator_pool_contract must be a nonempty v2 contract with an exact source commit and bounded profile, floor, region, and pool identities."
+    error_message = "accelerator_pool_contract must be a 1-32 pool v2 contract with an exact source commit and bounded profile, floor, region, and pool identities."
   }
 
   validation {
@@ -185,7 +185,7 @@ variable "accelerator_pool_contract" {
       alltrue([
         for pool_id, pool in var.accelerator_pool_contract.pools :
         pool.id == pool_id &&
-        can(regex("^[a-z0-9][a-z0-9-]{1,126}[a-z0-9]$", pool_id)) &&
+        can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", pool_id)) &&
         (var.accelerator_pool_contract.profile == "custom" ? (
           pool.state == "customer-specified" &&
           pool.evidence.hardware_state == "live-preflight-required"
@@ -195,8 +195,14 @@ variable "accelerator_pool_contract" {
         )) &&
         pool.provider.name == "nebius" &&
         contains(["provider-managed", "gpu-operator"], pool.provider.driver.owner) &&
+        length(pool.accelerator_class) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", pool.accelerator_class)) &&
         pool.resource_api.mode == "extended-resource" &&
-        length(trimspace(pool.resource_api.resource_name)) > 0 &&
+        length(split("/", pool.resource_api.resource_name)) == 2 &&
+        length(split("/", pool.resource_api.resource_name)[0]) <= 253 &&
+        length(split("/", pool.resource_api.resource_name)[1]) <= 63 &&
+        length(pool.resource_api.resource_name) <= 317 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*/[A-Za-z0-9](?:[-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$", pool.resource_api.resource_name)) &&
         floor(pool.node.gpus_per_node) == pool.node.gpus_per_node &&
         pool.node.gpus_per_node >= 1 &&
         (var.accelerator_pool_contract.profile == "custom" || (
@@ -219,6 +225,9 @@ variable "accelerator_pool_contract" {
         )) &&
         pool.scheduling.stable_node_labels["accelerator.fs2.nebius/pool-id"] == pool_id &&
         pool.scheduling.stable_node_labels["accelerator.fs2.nebius/class"] == pool.accelerator_class &&
+        length(pool.scheduling.resource_flavor_name) <= 63 &&
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", pool.scheduling.resource_flavor_name)) &&
+        length(pool.scheduling.tolerations) <= 8 &&
         length([
           for availability in pool.region_availability : availability
           if availability.region == var.accelerator_pool_contract.target_region &&
