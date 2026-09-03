@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import copy
+import json
+import os
+from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import pytest
 
+from fs2_serve import residency_agent
 from fs2_serve.fast_start_identity import mechanism_config_digest
 from fs2_serve.fast_start_mechanisms import (
     SELECTABLE_MECHANISMS,
@@ -19,7 +24,10 @@ from fs2_serve.fast_start_mechanisms import (
     RetainedCompileCache,
     WarmPageCacheReadAhead,
     assess_pool_mechanisms,
+    configure_host_memory_residency,
     configure_regional_cache,
+    parse_memory_quantity,
+    residency_holder_manifests,
     unavailable_mechanisms,
 )
 
@@ -387,3 +395,194 @@ def test_regional_cache_refuses_an_image_that_is_not_the_in_region_mirror() -> N
             runtime_image="cr.eu-north1.nebius.cloud/fs2-models/vllm-openai:latest",
             runtime_container_name="vllm",
         )
+
+
+def test_host_memory_residency_binds_the_runtime_to_a_node_that_already_holds_the_payload() -> None:
+    pod_spec, metadata = _conventional()
+    declaration = _host_memory()
+    configure_host_memory_residency(
+        pod_spec=pod_spec,
+        pod_metadata=metadata,
+        qualification=declaration,
+        runtime_image=QWEN_IMAGE,
+        model_ref="qwen3-8b",
+        runtime_container_name="vllm",
+    )
+    # Placement is explicit: the runtime may only land on the holder's node.
+    term = pod_spec["affinity"]["podAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"][0]
+    assert term["labelSelector"]["matchLabels"] == {"fast-start.fs2.nebius/host-memory-residency": "qwen3-8b"}
+    assert term["topologyKey"] == "kubernetes.io/hostname"
+    assert term["namespaces"] == ["fs2-models"]
+
+    # And it refuses to start unless this node's receipt proves the exact
+    # configuration, payload digest and byte count are resident.
+    verify = next(item for item in pod_spec["initContainers"] if item["name"] == "fs2-verify-host-memory-residency")
+    environment = {item["name"]: item.get("value") for item in verify["env"]}
+    assert environment["FS2_RESIDENCY_CONFIG_DIGEST"] == declaration.config_digest
+    assert environment["FS2_RESIDENCY_PAYLOAD_DIGEST"] == declaration.payload_digest
+    assert environment["FS2_RESIDENCY_BYTES"] == str(declaration.payload_bytes)
+    assert environment["FS2_RESIDENCY_RECEIPT"] == "/residency/qwen3-8b/receipt.json"
+    node_ref = next(item for item in verify["env"] if item["name"] == "FS2_NODE_NAME")
+    assert node_ref["valueFrom"]["fieldRef"]["fieldPath"] == "spec.nodeName"
+    compile(verify["command"][2], "residency-verify", "exec")
+    assert metadata["annotations"]["fast-start.fs2.nebius/reserved-host-memory-bytes"] == "19327352832"
+
+
+def test_the_residency_holder_schedules_the_ram_it_costs() -> None:
+    declaration = _host_memory()
+    manifests = residency_holder_manifests(
+        namespace="fs2-models",
+        name="fsm-hostmem-qwen3-8b",
+        model_ref="qwen3-8b",
+        qualification=declaration,
+        image=QWEN_IMAGE,
+        node_selector={"kubernetes.io/hostname": "computeinstance-e00m0hsph76ajt9sdb"},
+        tolerations=[{"key": "dedicated", "operator": "Equal", "value": "fs2-inference", "effect": "NoSchedule"}],
+        labels={},
+        annotations={},
+    )
+    kinds = [item["kind"] for item in manifests]
+    assert kinds == ["ConfigMap", "Deployment"]
+    agent = manifests[0]["data"]["residency_agent.py"]
+    compile(agent, "residency-agent", "exec")
+
+    container = manifests[1]["spec"]["template"]["spec"]["containers"][0]
+    # Request and limit are both the declared reservation, so the node RAM this
+    # mechanism costs is scheduled and attributable, not incidental.
+    assert container["resources"]["requests"]["memory"] == "19327352832"
+    assert container["resources"]["limits"]["memory"] == "19327352832"
+    assert container["securityContext"]["capabilities"]["add"] == ["IPC_LOCK"]
+    assert (
+        manifests[1]["spec"]["template"]["metadata"]["labels"]["fast-start.fs2.nebius/host-memory-residency"]
+        == "qwen3-8b"
+    )
+    mounts = {item["name"]: item["mountPath"] for item in container["volumeMounts"]}
+    assert mounts == {"agent": "/agent", "payload": "/models", "receipt": "/residency"}
+
+
+def test_a_mapped_residency_holder_does_not_ask_for_the_lock_capability() -> None:
+    manifests = residency_holder_manifests(
+        namespace="fs2-models",
+        name="fsm-hostmem-qwen3-8b",
+        model_ref="qwen3-8b",
+        qualification=_host_memory(mode="mapped-payload-residency"),
+        image=QWEN_IMAGE,
+        node_selector={"kubernetes.io/hostname": "node"},
+        tolerations=[],
+        labels={},
+        annotations={},
+    )
+    capabilities = manifests[1]["spec"]["template"]["spec"]["containers"][0]["securityContext"]["capabilities"]
+    assert capabilities == {"drop": ["ALL"]}
+
+
+def test_sleep_offload_reserves_on_the_runtime_and_needs_no_holder() -> None:
+    pod_spec, metadata = _conventional()
+    declaration = _host_memory(mode="runtime-sleep-offload")
+    configure_host_memory_residency(
+        pod_spec=pod_spec,
+        pod_metadata=metadata,
+        qualification=declaration,
+        runtime_image=QWEN_IMAGE,
+        model_ref="qwen3-8b",
+        runtime_container_name="vllm",
+    )
+    # The engine holds its own offloaded weights, so there is no holder
+    # handshake, but the runtime's own memory must cover the reservation.
+    assert "initContainers" not in pod_spec
+    assert "affinity" not in pod_spec
+    container = pod_spec["containers"][0]
+    assert container["resources"]["requests"]["memory"] == "19327352832"
+    environment = {item["name"]: item["value"] for item in container["env"]}
+    assert environment["FS2_FAST_START_RESIDENCY_MODE"] == "runtime-sleep-offload"
+
+    with pytest.raises(FastStartMechanismError, match="held by the runtime"):
+        residency_holder_manifests(
+            namespace="fs2-models",
+            name="fsm-hostmem-qwen3-8b",
+            model_ref="qwen3-8b",
+            qualification=declaration,
+            image=QWEN_IMAGE,
+            node_selector={},
+            tolerations=[],
+            labels={},
+            annotations={},
+        )
+
+
+def test_an_existing_larger_runtime_memory_request_is_not_reduced() -> None:
+    pod_spec, metadata = _conventional()
+    pod_spec["containers"][0]["resources"] = {"requests": {"memory": "64Gi"}, "limits": {"memory": "160Gi"}}
+    configure_host_memory_residency(
+        pod_spec=pod_spec,
+        pod_metadata=metadata,
+        qualification=_host_memory(mode="runtime-sleep-offload"),
+        runtime_image=QWEN_IMAGE,
+        model_ref="qwen3-8b",
+        runtime_container_name="vllm",
+    )
+    assert pod_spec["containers"][0]["resources"]["requests"]["memory"] == "64Gi"
+    assert parse_memory_quantity("64Gi") == 68719476736
+    assert parse_memory_quantity("1000M") == 1000000000
+
+
+def test_the_residency_agent_holds_real_bytes_and_publishes_a_verifiable_receipt(tmp_path: Path) -> None:
+    """Exercise the packaged agent end to end against a real payload tree."""
+
+    payload_root = tmp_path / "payload"
+    payload_root.mkdir()
+    (payload_root / "shard-0.bin").write_bytes(b"a" * 8192)
+    (payload_root / "shard-1.bin").write_bytes(b"b" * 4096)
+    receipt_root = tmp_path / "residency"
+    environment = {
+        "FS2_RESIDENCY_MODEL_REF": "qwen3-8b",
+        # Locking needs CAP_IPC_LOCK, which a test process does not have; the
+        # mapped mode is the same code path minus the lock syscall.
+        "FS2_RESIDENCY_MODE": "mapped-payload-residency",
+        "FS2_RESIDENCY_PAYLOAD_ROOT": str(payload_root),
+        "FS2_RESIDENCY_PAYLOAD_DIGEST": "sha256:" + "5b" * 32,
+        "FS2_RESIDENCY_PAYLOAD_BYTES": "12288",
+        "FS2_RESIDENCY_RESERVED_BYTES": "16384",
+        "FS2_RESIDENCY_CONFIG_DIGEST": "sha256:" + "7c" * 32,
+        "FS2_RESIDENCY_RECEIPT_ROOT": str(receipt_root),
+        "FS2_RESIDENCY_REFRESH_SECONDS": "30",
+        "FS2_NODE_NAME": "computeinstance-e00m0hsph76ajt9sdb",
+    }
+    with mock.patch.dict(os.environ, environment, clear=False):
+        with mock.patch.object(residency_agent.time, "sleep", side_effect=StopIteration):
+            with pytest.raises(StopIteration):
+                residency_agent.hold()
+        receipt = json.loads((receipt_root / "qwen3-8b" / "receipt.json").read_text())
+        assert receipt["resident_bytes"] == 12288
+        assert receipt["resident_files"] == 2
+        assert receipt["residency_guaranteed"] is False
+        assert receipt["node_name"] == "computeinstance-e00m0hsph76ajt9sdb"
+        # The same receipt is what the readiness probe and the runtime's init
+        # container check, so the handshake is proved by one artefact.
+        assert residency_agent.check() == 0
+
+        stale = json.loads((receipt_root / "qwen3-8b" / "receipt.json").read_text())
+        stale["refreshed_at_epoch"] = 0.0
+        (receipt_root / "qwen3-8b" / "receipt.json").write_text(json.dumps(stale))
+        assert residency_agent.check() == 1
+
+
+def test_the_residency_agent_refuses_to_understate_what_it_holds(tmp_path: Path) -> None:
+    payload_root = tmp_path / "payload"
+    payload_root.mkdir()
+    (payload_root / "shard-0.bin").write_bytes(b"a" * 1024)
+    environment = {
+        "FS2_RESIDENCY_MODEL_REF": "qwen3-8b",
+        "FS2_RESIDENCY_MODE": "mapped-payload-residency",
+        "FS2_RESIDENCY_PAYLOAD_ROOT": str(payload_root),
+        "FS2_RESIDENCY_PAYLOAD_DIGEST": "sha256:" + "5b" * 32,
+        # The declaration claims more bytes than the tree actually holds.
+        "FS2_RESIDENCY_PAYLOAD_BYTES": "99999",
+        "FS2_RESIDENCY_RESERVED_BYTES": "200000",
+        "FS2_RESIDENCY_CONFIG_DIGEST": "sha256:" + "7c" * 32,
+        "FS2_RESIDENCY_RECEIPT_ROOT": str(tmp_path / "residency"),
+        "FS2_NODE_NAME": "node",
+    }
+    with mock.patch.dict(os.environ, environment, clear=False):
+        with pytest.raises(residency_agent.ResidencyError, match="of the declared"):
+            residency_agent.hold()

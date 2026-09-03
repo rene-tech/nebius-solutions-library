@@ -9,8 +9,10 @@ provide.
 Nothing here can raise a level.  A mechanism is operator detail; the level
 comes from evidence alone.
 
-The render adapters land one mechanism at a time.  ``regional-cache`` is
-first: it costs no reserved capacity, so it is the cheapest acceleration step.
+The render adapters land one mechanism at a time.  ``regional-cache`` costs no
+reserved capacity.  ``host-memory-residency`` trades an explicit host RAM
+reservation for start latency, so its price is scheduled and attributable
+rather than an incidental page-cache effect another workload can evict.
 """
 
 from __future__ import annotations
@@ -18,8 +20,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import Field, model_validator
@@ -43,6 +46,10 @@ SNAPSHOT_ELIGIBLE_LABEL = "snapshot.fs2.nebius/eligible"
 # Mechanism-owned Pod annotations.
 MECHANISM_ANNOTATION = "fast-start.fs2.nebius/mechanism"
 MECHANISM_CONFIG_DIGEST_ANNOTATION = "fast-start.fs2.nebius/mechanism-config-digest"
+MECHANISM_RESERVED_MEMORY_ANNOTATION = "fast-start.fs2.nebius/reserved-host-memory-bytes"
+HOST_MEMORY_RESIDENCY_LABEL = "fast-start.fs2.nebius/host-memory-residency"
+
+HOSTNAME_TOPOLOGY_KEY = "kubernetes.io/hostname"
 
 # A residency holder trades host RAM for start latency.  Refuse a declaration
 # that would quietly consume a large share of a shared node.
@@ -595,3 +602,403 @@ def configure_regional_cache(
             "fast-start.fs2.nebius/retained-compile-cache-abi": cache.abi,
         },
     )
+
+
+RESIDENCY_VERIFY_SCRIPT = r"""
+import json
+import os
+import sys
+import time
+
+path = os.environ["FS2_RESIDENCY_RECEIPT"]
+expected_digest = os.environ["FS2_RESIDENCY_CONFIG_DIGEST"]
+expected_payload = os.environ["FS2_RESIDENCY_PAYLOAD_DIGEST"]
+expected_bytes = int(os.environ["FS2_RESIDENCY_BYTES"])
+node = os.environ["FS2_NODE_NAME"]
+max_age = float(os.environ["FS2_RESIDENCY_MAX_AGE_SECONDS"])
+deadline = time.monotonic() + float(os.environ.get("FS2_RESIDENCY_WAIT_SECONDS", "120"))
+
+while True:
+    reason = None
+    try:
+        with open(path, "rb") as handle:
+            receipt = json.loads(handle.read(1 << 20).decode("utf-8"))
+    except (OSError, ValueError):
+        reason = "receipt_unavailable"
+        receipt = {}
+    if reason is None:
+        if receipt.get("schema") != "fs2-serve.nebius.ai/fast-start-host-memory-residency-receipt/v1":
+            reason = "receipt_schema_mismatch"
+        elif receipt.get("node_name") != node:
+            reason = "receipt_node_mismatch"
+        elif receipt.get("config_digest") != expected_digest:
+            reason = "receipt_config_mismatch"
+        elif receipt.get("payload_digest") != expected_payload:
+            reason = "receipt_payload_mismatch"
+        elif int(receipt.get("resident_bytes", -1)) < expected_bytes:
+            reason = "receipt_resident_bytes_short"
+        elif time.time() - float(receipt.get("refreshed_at_epoch", 0.0)) > max_age:
+            reason = "receipt_stale"
+    if reason is None:
+        json.dump(
+            {
+                "schema": "fs2-serve.nebius.ai/fast-start-host-memory-residency-admission/v1",
+                "node_name": node,
+                "config_digest": expected_digest,
+                "resident_bytes": int(receipt["resident_bytes"]),
+                "residency_mode": receipt.get("residency_mode"),
+                "admitted": True,
+            },
+            sys.stdout,
+        )
+        sys.stdout.write("\n")
+        sys.exit(0)
+    if time.monotonic() > deadline:
+        sys.stderr.write("host-memory residency not admitted: %s\n" % reason)
+        sys.exit(1)
+    time.sleep(2.0)
+"""
+
+
+def configure_host_memory_residency(
+    *,
+    pod_spec: dict[str, Any],
+    pod_metadata: dict[str, Any],
+    qualification: HostMemoryResidencyQualification,
+    runtime_image: str,
+    model_ref: str,
+    runtime_container_name: str | None = None,
+) -> None:
+    """Bind the runtime to a node that already holds the payload in host RAM.
+
+    Placement is explicit: required Pod affinity co-locates the runtime with the
+    residency holder on one node, and an init container refuses to start the
+    runtime unless the holder's receipt proves the exact configuration, payload
+    digest and reserved byte count are resident on *this* node.  The reserved
+    bytes are annotated on the Pod so the node RAM cost travels with the
+    workload.
+    """
+
+    if re.fullmatch(IMAGE_DIGEST_PATTERN, runtime_image) is None:
+        raise FastStartMechanismError("host-memory-residency requires a digest-pinned runtime image")
+    container = _container(pod_spec, runtime_container_name)
+    holder = qualification.holder
+    if qualification.residency_mode == "runtime-sleep-offload":
+        # The engine itself holds the offloaded weights, so the reservation is
+        # on the runtime container and there is no separate holder handshake.
+        resources = container.setdefault("resources", {})
+        if not isinstance(resources, dict):
+            raise FastStartMechanismError("rendered container resources must be an object")
+        for key in ("requests", "limits"):
+            quantities = resources.setdefault(key, {})
+            if not isinstance(quantities, dict):
+                raise FastStartMechanismError("rendered container resource quantities must be an object")
+            current = quantities.get("memory")
+            quantities["memory"] = _max_memory_quantity(current, qualification.reserved_bytes)
+        _set_env(
+            container,
+            {
+                "FS2_FAST_START_MECHANISM": FastStartMechanism.HOST_MEMORY_RESIDENCY.value,
+                "FS2_FAST_START_RESIDENCY_MODE": qualification.residency_mode,
+                "VLLM_SERVER_DEV_MODE": "1",
+            },
+        )
+    else:
+        affinity = pod_spec.setdefault("affinity", {})
+        if not isinstance(affinity, dict):
+            raise FastStartMechanismError("rendered Pod affinity must be an object")
+        pod_affinity = affinity.setdefault("podAffinity", {})
+        if not isinstance(pod_affinity, dict):
+            raise FastStartMechanismError("rendered Pod podAffinity must be an object")
+        required = pod_affinity.setdefault("requiredDuringSchedulingIgnoredDuringExecution", [])
+        if not isinstance(required, list):
+            raise FastStartMechanismError("rendered Pod affinity terms must be a list")
+        term = {
+            "labelSelector": {"matchLabels": {HOST_MEMORY_RESIDENCY_LABEL: model_ref}},
+            "namespaces": [holder.namespace],
+            "topologyKey": HOSTNAME_TOPOLOGY_KEY,
+        }
+        if term not in required:
+            required.append(term)
+
+        _replace_volume(
+            pod_spec,
+            {
+                "name": "residency-receipt",
+                "persistentVolumeClaim": {"claimName": holder.receipt_claim_name, "readOnly": True},
+            },
+        )
+        init_containers = pod_spec.setdefault("initContainers", [])
+        if not isinstance(init_containers, list):
+            raise FastStartMechanismError("rendered Pod initContainers must be a list")
+        init_containers[:] = [
+            item
+            for item in init_containers
+            if not (isinstance(item, dict) and item.get("name") == "fs2-verify-host-memory-residency")
+        ]
+        init_containers.append(
+            {
+                "name": "fs2-verify-host-memory-residency",
+                "image": runtime_image,
+                "command": ["python3", "-c", RESIDENCY_VERIFY_SCRIPT],
+                "env": [
+                    {
+                        "name": "FS2_RESIDENCY_RECEIPT",
+                        "value": f"{holder.receipt_mount_path.rstrip('/')}/{model_ref}/receipt.json",
+                    },
+                    {"name": "FS2_RESIDENCY_CONFIG_DIGEST", "value": qualification.config_digest},
+                    {"name": "FS2_RESIDENCY_PAYLOAD_DIGEST", "value": qualification.payload_digest},
+                    {"name": "FS2_RESIDENCY_BYTES", "value": str(qualification.payload_bytes)},
+                    {"name": "FS2_RESIDENCY_MAX_AGE_SECONDS", "value": str(qualification.receipt_max_age_seconds)},
+                    {"name": "FS2_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName"}}},
+                ],
+                "resources": {
+                    "requests": {"cpu": "100m", "memory": "128Mi"},
+                    "limits": {"cpu": "1", "memory": "256Mi"},
+                },
+                "securityContext": {
+                    "allowPrivilegeEscalation": False,
+                    "capabilities": {"drop": ["ALL"]},
+                },
+                "volumeMounts": [
+                    {
+                        "name": "residency-receipt",
+                        "mountPath": holder.receipt_mount_path,
+                        "readOnly": True,
+                    }
+                ],
+            }
+        )
+        _set_env(
+            container,
+            {
+                "FS2_FAST_START_MECHANISM": FastStartMechanism.HOST_MEMORY_RESIDENCY.value,
+                "FS2_FAST_START_RESIDENCY_MODE": qualification.residency_mode,
+            },
+        )
+
+    _annotate(
+        pod_metadata,
+        {
+            MECHANISM_ANNOTATION: FastStartMechanism.HOST_MEMORY_RESIDENCY.value,
+            MECHANISM_CONFIG_DIGEST_ANNOTATION: qualification.config_digest,
+            MECHANISM_RESERVED_MEMORY_ANNOTATION: str(qualification.reserved_bytes),
+            "fast-start.fs2.nebius/residency-mode": qualification.residency_mode,
+        },
+    )
+
+
+def _max_memory_quantity(current: object, reserved_bytes: int) -> str:
+    """Return a memory quantity at least ``reserved_bytes`` large."""
+
+    reserved = f"{reserved_bytes}"
+    if not isinstance(current, str) or not current:
+        return reserved
+    parsed = parse_memory_quantity(current)
+    return current if parsed >= reserved_bytes else reserved
+
+
+_MEMORY_SUFFIXES: dict[str, int] = {
+    "": 1,
+    "k": 1000,
+    "K": 1000,
+    "M": 1000**2,
+    "G": 1000**3,
+    "T": 1000**4,
+    "Ki": 1024,
+    "Mi": 1024**2,
+    "Gi": 1024**3,
+    "Ti": 1024**4,
+}
+
+
+def parse_memory_quantity(value: str) -> int:
+    """Parse the Kubernetes memory quantities this module renders and reads."""
+
+    match = re.fullmatch(r"(\d+)([EPTGMK]i?|[kmgt])?", value.strip())
+    if match is None:
+        raise FastStartMechanismError("unsupported Kubernetes memory quantity")
+    amount, suffix = match.group(1), match.group(2) or ""
+    if suffix not in _MEMORY_SUFFIXES:
+        raise FastStartMechanismError("unsupported Kubernetes memory quantity suffix")
+    return int(amount) * _MEMORY_SUFFIXES[suffix]
+
+
+RESIDENCY_AGENT_SCRIPT_NAME = "residency_agent.py"
+
+
+def residency_agent_script() -> str:
+    """Return the packaged residency agent as the holder's ConfigMap payload.
+
+    The agent ships inside this package rather than being supplied per model,
+    so onboarding a model needs a declaration and nothing else.
+    """
+
+    return (Path(__file__).with_name(RESIDENCY_AGENT_SCRIPT_NAME)).read_text(encoding="utf-8")
+
+
+def residency_holder_manifests(
+    *,
+    namespace: str,
+    name: str,
+    model_ref: str,
+    qualification: HostMemoryResidencyQualification,
+    image: str,
+    node_selector: Mapping[str, str],
+    tolerations: Sequence[Mapping[str, Any]],
+    labels: Mapping[str, str],
+    annotations: Mapping[str, str],
+    owner_references: Sequence[Mapping[str, Any]] = (),
+    replicas: int = 1,
+) -> list[dict[str, Any]]:
+    """Render the node-scoped host-memory residency holder.
+
+    The holder is the mechanism's explicit price tag: its memory request and
+    limit are both the declared ``reservedBytes``, so the node RAM the
+    mechanism consumes is scheduled, visible and attributable instead of being
+    an incidental page-cache effect that another workload can evict.
+    """
+
+    if qualification.residency_mode == "runtime-sleep-offload":
+        raise FastStartMechanismError("sleep-offload residency is held by the runtime, not by a holder")
+    if re.fullmatch(IMAGE_DIGEST_PATTERN, image) is None:
+        raise FastStartMechanismError("the residency holder requires a digest-pinned image")
+    reserved = str(qualification.reserved_bytes)
+    holder_labels = {**dict(labels), HOST_MEMORY_RESIDENCY_LABEL: model_ref}
+    holder_annotations = {
+        **dict(annotations),
+        MECHANISM_ANNOTATION: FastStartMechanism.HOST_MEMORY_RESIDENCY.value,
+        MECHANISM_CONFIG_DIGEST_ANNOTATION: qualification.config_digest,
+        MECHANISM_RESERVED_MEMORY_ANNOTATION: reserved,
+        "fast-start.fs2.nebius/residency-mode": qualification.residency_mode,
+    }
+    config_map: dict[str, Any] = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {
+            "name": f"{name}-agent",
+            "namespace": namespace,
+            "labels": dict(holder_labels),
+            "annotations": dict(holder_annotations),
+        },
+        "data": {RESIDENCY_AGENT_SCRIPT_NAME: residency_agent_script()},
+    }
+    locked = qualification.residency_mode == "locked-payload-residency"
+    security_context: dict[str, Any] = {
+        "allowPrivilegeEscalation": False,
+        "capabilities": {"drop": ["ALL"], "add": ["IPC_LOCK"]} if locked else {"drop": ["ALL"]},
+    }
+    deployment: dict[str, Any] = {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "labels": dict(holder_labels),
+            "annotations": dict(holder_annotations),
+        },
+        "spec": {
+            "replicas": replicas,
+            "selector": {"matchLabels": {HOST_MEMORY_RESIDENCY_LABEL: model_ref}},
+            "strategy": {"type": "Recreate"},
+            "template": {
+                "metadata": {
+                    "labels": dict(holder_labels),
+                    "annotations": dict(holder_annotations),
+                },
+                "spec": {
+                    "nodeSelector": dict(node_selector),
+                    "tolerations": [dict(item) for item in tolerations],
+                    "containers": [
+                        {
+                            "name": "residency-agent",
+                            "image": image,
+                            "command": ["python3", f"/agent/{RESIDENCY_AGENT_SCRIPT_NAME}"],
+                            "env": [
+                                {"name": "FS2_RESIDENCY_MODEL_REF", "value": model_ref},
+                                {"name": "FS2_RESIDENCY_MODE", "value": qualification.residency_mode},
+                                {
+                                    "name": "FS2_RESIDENCY_PAYLOAD_ROOT",
+                                    "value": qualification.payload_content_path,
+                                },
+                                {"name": "FS2_RESIDENCY_PAYLOAD_DIGEST", "value": qualification.payload_digest},
+                                {"name": "FS2_RESIDENCY_PAYLOAD_BYTES", "value": str(qualification.payload_bytes)},
+                                {"name": "FS2_RESIDENCY_RESERVED_BYTES", "value": reserved},
+                                {"name": "FS2_RESIDENCY_CONFIG_DIGEST", "value": qualification.config_digest},
+                                {
+                                    "name": "FS2_RESIDENCY_RECEIPT_ROOT",
+                                    "value": qualification.holder.receipt_mount_path,
+                                },
+                                {
+                                    "name": "FS2_RESIDENCY_REFRESH_SECONDS",
+                                    "value": str(max(5, qualification.receipt_max_age_seconds // 3)),
+                                },
+                                {"name": "FS2_NODE_NAME", "valueFrom": {"fieldRef": {"fieldPath": "spec.nodeName"}}},
+                            ],
+                            "resources": {
+                                "requests": {"cpu": "2", "memory": reserved},
+                                "limits": {"cpu": "8", "memory": reserved},
+                            },
+                            "securityContext": security_context,
+                            "readinessProbe": {
+                                "exec": {
+                                    "command": [
+                                        "python3",
+                                        f"/agent/{RESIDENCY_AGENT_SCRIPT_NAME}",
+                                        "--check",
+                                    ]
+                                },
+                                "initialDelaySeconds": 5,
+                                "periodSeconds": 10,
+                                "timeoutSeconds": 5,
+                                "failureThreshold": 3,
+                            },
+                            "volumeMounts": [
+                                {"name": "agent", "mountPath": "/agent", "readOnly": True},
+                                {
+                                    "name": "payload",
+                                    "mountPath": _payload_mount_root(qualification.payload_content_path),
+                                    "readOnly": True,
+                                },
+                                {"name": "receipt", "mountPath": qualification.holder.receipt_mount_path},
+                            ],
+                        }
+                    ],
+                    "volumes": [
+                        {"name": "agent", "configMap": {"name": f"{name}-agent", "defaultMode": 292}},
+                        {
+                            "name": "payload",
+                            "persistentVolumeClaim": {
+                                "claimName": qualification.payload_claim_name,
+                                "readOnly": True,
+                            },
+                        },
+                        {
+                            "name": "receipt",
+                            "persistentVolumeClaim": {"claimName": qualification.holder.receipt_claim_name},
+                        },
+                    ],
+                },
+            },
+        },
+    }
+    if owner_references:
+        references = [dict(item) for item in owner_references]
+        config_map["metadata"]["ownerReferences"] = references
+        deployment["metadata"]["ownerReferences"] = [dict(item) for item in references]
+    return [config_map, deployment]
+
+
+def _payload_mount_root(content_path: str) -> str:
+    """Return the mount root that must expose ``content_path``.
+
+    The retained payload claim is mounted at its top-level directory so the
+    content-addressed path inside it stays byte-identical to the conventional
+    render's path.  An identical path keeps the runtime's argv, and therefore
+    its runtime-contract digest, unchanged between mechanisms.
+    """
+
+    parts = [part for part in content_path.split("/") if part]
+    if not parts:
+        raise FastStartMechanismError("the retained payload content path is empty")
+    return f"/{parts[0]}"
