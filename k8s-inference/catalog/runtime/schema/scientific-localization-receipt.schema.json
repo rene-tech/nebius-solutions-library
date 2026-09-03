@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/scientific-localization-receipt/v1",
+  "title": "Scientific runtime artifact localization receipt",
+  "description": "Non-secret evidence that one runtime mount holds the exact extracted tree named by the localization contract. archive_sha256 records where the bytes came from; tree_inventory_sha256 records what the runtime will actually read. The two are separate fields and must never be equal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "artifact_id",
+    "observed_at",
+    "mount_path",
+    "state",
+    "archive_provenance",
+    "tree_identity"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/scientific-localization-receipt/v1"
+    },
+    "artifact_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "mount_path": {
+      "type": "string",
+      "pattern": "^/[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$"
+    },
+    "state": {
+      "enum": [
+        "verified",
+        "rejected"
+      ]
+    },
+    "rejection_reason": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "archive_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "bytes",
+        "sha256",
+        "source_uri",
+        "source_revision",
+        "license_id"
+      ],
+      "properties": {
+        "filename": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_uri": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "source_revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "license_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "present_in_mount": {
+          "description": "Always false for a verified receipt: a runtime mount that still contains its source archive is not an extracted tree.",
+          "type": "boolean"
+        }
+      }
+    },
+    "tree_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What was observed in the mount. On a rejected receipt these are the observed values where verification got far enough to compute them, and zeros otherwise; only a verified receipt asserts an identity.",
+      "required": [
+        "entry_count",
+        "total_bytes",
+        "inventory_algorithm",
+        "inventory_sha256"
+      ],
+      "properties": {
+        "entry_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inventory_algorithm": {
+          "description": "Which algorithm produced inventory_sha256. A receipt that did not name it could not be compared with the contract it claims to satisfy.",
+          "enum": [
+            "fs2-flat-tree-inventory/v1",
+            "fs2-tree-inventory/v2",
+            "fs2-tree-manifest/v1"
+          ]
+        },
+        "inventory_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "probe_entries_verified": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "directory_count": {
+          "description": "Descendant directories the tree contains, excluding the tree root. This is a count of directories, never of paths carrying a directory-like mode: an installed tree also holds executable regular files at 0550, and counting those as directories overstates it. Only a recursive algorithm describes directories; a flat tree has none.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "symlink_count": {
+          "description": "Symbolic links observed, or null when the algorithm does not describe them.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "inventory_algorithm": {
+                "const": "fs2-flat-tree-inventory/v1"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "directory_count": {
+                "const": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "inventory_algorithm": {
+                "not": {
+                  "const": "fs2-tree-manifest/v1"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "symlink_count": {
+                "enum": [
+                  0,
+                  null
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "runtime_bindings": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_id",
+          "binding_kind",
+          "binding_name",
+          "binding_value"
+        ],
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "maxLength": 63
+          },
+          "binding_kind": {
+            "enum": [
+              "argv-option",
+              "environment-variable",
+              "installed-package-path"
+            ]
+          },
+          "binding_name": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "binding_value": {
+            "type": "string",
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cluster_context": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "namespace": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "region": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "node_digest": {
+          "description": "Truncated SHA-256 of the node name. The raw name is an opaque provider resource ID and must not enter this repository's public export.",
+          "type": "string",
+          "pattern": "^([0-9a-f]{16})?$"
+        },
+        "generation": {
+          "description": "The generation this run published or reused.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "generation_sub_path": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "generation_reused": {
+          "description": "True when the target already existed and was reverified in place rather than published by this run.",
+          "type": "boolean"
+        },
+        "marker_sha256": {
+          "description": "SHA-256 of the exact bytes of the in-generation terminal marker.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "files_linked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files_copied": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes_linked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes_copied": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

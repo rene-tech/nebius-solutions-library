@@ -1,0 +1,510 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-localization/v1",
+  "generated_at": "2026-09-03T02:00:00Z",
+  "artifacts": [
+    {
+      "artifact_id": "alphafold2-params",
+      "transform": "safe-extract-tar",
+      "archive": {
+        "filename": "alphafold_params_2022-12-06.tar",
+        "media_type": "application/x-tar",
+        "bytes": 5587968000,
+        "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+        "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar",
+        "source_revision": "gcs-generation-1670353726160664",
+        "license_id": "CC-BY-4.0",
+        "verified_at": "2026-09-03T01:38:00Z"
+      },
+      "tree": {
+        "mount_paths": [
+          "/opt/fs2/artifacts/alphafold2-params"
+        ],
+        "entry_count": 16,
+        "total_bytes": 5587956571,
+        "entry_path_pattern": "^(LICENSE|params_model_[1-5](_ptm|_multimer_v3)?\\.npz)$",
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+        "complete_entry_digests": true,
+        "probe_entries": [
+          {
+            "path": "LICENSE",
+            "bytes": 18657,
+            "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+          },
+          {
+            "path": "params_model_1.npz",
+            "bytes": 373069562,
+            "sha256": "f95e453e6a290ddf317ba1c9698d53fa110cf007ea979b0eae43e6ad38b4e364"
+          },
+          {
+            "path": "params_model_1_multimer_v3.npz",
+            "bytes": 373043148,
+            "sha256": "611da8fc7478928f68de12e8b226260ef1f4ce62bcc29b008572e52f4f212959"
+          },
+          {
+            "path": "params_model_1_ptm.npz",
+            "bytes": 373103340,
+            "sha256": "5e564f79af5bcd54ccef6e2a6bb0ff01015d01650ebc41d4575e35f0de9ecc84"
+          },
+          {
+            "path": "params_model_2.npz",
+            "bytes": 373069562,
+            "sha256": "4da37ed3b71f08d935f913dfab0133977cd0d76ad37cd9333ff294d7fae43f87"
+          },
+          {
+            "path": "params_model_2_multimer_v3.npz",
+            "bytes": 373043148,
+            "sha256": "51362b0844382ae0f5720c59b81dd13a43eea40fbf9995dd2573bdab88865378"
+          },
+          {
+            "path": "params_model_2_ptm.npz",
+            "bytes": 373103340,
+            "sha256": "23645d9a82c4af2ed54cd48a7b3c1c2575dc6aa9fe931adb4d7203ca5f0dc398"
+          },
+          {
+            "path": "params_model_3.npz",
+            "bytes": 371712506,
+            "sha256": "3cc4584dc0b0d1bdd1f7af14bd0692d00df3aa0e738d0d1b314821ad7eee4ffe"
+          },
+          {
+            "path": "params_model_3_multimer_v3.npz",
+            "bytes": 373043148,
+            "sha256": "46d9bcad288edc7ad5a6362ee8e5f84307a69712e00e6c36b1ef9daf96ebc9ce"
+          },
+          {
+            "path": "params_model_3_ptm.npz",
+            "bytes": 371746284,
+            "sha256": "b53a724294cdd46a45d530b306bced8e429ffee74a4f9a2a897551b30966c415"
+          },
+          {
+            "path": "params_model_4.npz",
+            "bytes": 371712506,
+            "sha256": "b0a78b7e18661abc6097a905f48505004e6e3993c5dc41fb6820acf56e9c1d12"
+          },
+          {
+            "path": "params_model_4_multimer_v3.npz",
+            "bytes": 373043148,
+            "sha256": "59bdabd2d69c07fe26b37882d544acbd1b9f89f196828f4220da49e0610b572c"
+          },
+          {
+            "path": "params_model_4_ptm.npz",
+            "bytes": 371746284,
+            "sha256": "07d0e285ad1406ce3d91a2f6633a8ce9ee99155a53d24ee7783f8fd1e89f5d3a"
+          },
+          {
+            "path": "params_model_5.npz",
+            "bytes": 371712506,
+            "sha256": "5d261ec6e18ba87784541f5ce113570018b3338df61ae577661b6232358d47e7"
+          },
+          {
+            "path": "params_model_5_multimer_v3.npz",
+            "bytes": 373043148,
+            "sha256": "917742be5a105d6b80f13f1f13f20459f27ec3fdcd34ea088b359f4502d6177f"
+          },
+          {
+            "path": "params_model_5_ptm.npz",
+            "bytes": 371746284,
+            "sha256": "2f8d0bd193e7d6e837958ba92acdc3f02b23b61bf841fa043fc076ee0e1996a5"
+          }
+        ]
+      },
+      "consumers": [
+        {
+          "model_id": "proteina-complexa",
+          "binding_kind": "environment-variable",
+          "binding_name": "AF2_DIR",
+          "mount_path": "/opt/fs2/artifacts/alphafold2-params",
+          "stages": [
+            "generate",
+            "evaluate"
+          ]
+        }
+      ],
+      "notes": "ColabDesign resolves AF2_DIR/params/params_<model>.npz first and AF2_DIR/params_<model>.npz second, and upstream download_startup.sh extracts the archive flat into AF2_DIR. The canonical localized tree is therefore the flat sixteen-entry set; AF2_DIR must never name the tar. The archive is 11,429 bytes larger than the tree it contains because tar block padding and headers are not runtime content."
+    },
+    {
+      "artifact_id": "alphafold2-params-bindcraft",
+      "transform": "safe-extract-tar",
+      "archive": {
+        "filename": "alphafold_params_2022-12-06.tar",
+        "media_type": "application/x-tar",
+        "bytes": 5587968000,
+        "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+        "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar",
+        "source_revision": "gcs-generation-1670353726160664",
+        "license_id": "CC-BY-4.0",
+        "verified_at": "2026-09-03T01:38:00Z"
+      },
+      "tree": {
+        "mount_paths": [
+          "/models/alphafold2"
+        ],
+        "entry_count": 17,
+        "total_bytes": 5587959437,
+        "entry_path_pattern": "^(LICENSE|manifest\\.json|params_model_[1-5](_ptm|_multimer_v3)?\\.npz)$",
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+        "complete_entry_digests": false,
+        "generated_entries": [
+          {
+            "path": "manifest.json",
+            "bytes": 2866,
+            "sha256": "9d0b7e45378ed707cfc31585f3ae960282dc76f3e2c4f60b545b02dbc728423b",
+            "generator": "external-model-artifact-manifest/v1",
+            "generator_inputs": {
+              "artifact_kind": "bindcraft-af2-params",
+              "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
+            }
+          }
+        ],
+        "probe_entries": [
+          {
+            "path": "LICENSE",
+            "bytes": 18657,
+            "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+          },
+          {
+            "path": "params_model_1.npz",
+            "bytes": 373069562,
+            "sha256": "f95e453e6a290ddf317ba1c9698d53fa110cf007ea979b0eae43e6ad38b4e364"
+          },
+          {
+            "path": "params_model_1_multimer_v3.npz",
+            "bytes": 373043148,
+            "sha256": "611da8fc7478928f68de12e8b226260ef1f4ce62bcc29b008572e52f4f212959"
+          },
+          {
+            "path": "params_model_1_ptm.npz",
+            "bytes": 373103340,
+            "sha256": "5e564f79af5bcd54ccef6e2a6bb0ff01015d01650ebc41d4575e35f0de9ecc84"
+          },
+          {
+            "path": "params_model_2.npz",
+            "bytes": 373069562,
+            "sha256": "4da37ed3b71f08d935f913dfab0133977cd0d76ad37cd9333ff294d7fae43f87"
+          },
+          {
+            "path": "params_model_2_multimer_v3.npz",
+            "bytes": 373043148,
+            "sha256": "51362b0844382ae0f5720c59b81dd13a43eea40fbf9995dd2573bdab88865378"
+          },
+          {
+            "path": "params_model_2_ptm.npz",
+            "bytes": 373103340,
+            "sha256": "23645d9a82c4af2ed54cd48a7b3c1c2575dc6aa9fe931adb4d7203ca5f0dc398"
+          },
+          {
+            "path": "params_model_3.npz",
+            "bytes": 371712506,
+            "sha256": "3cc4584dc0b0d1bdd1f7af14bd0692d00df3aa0e738d0d1b314821ad7eee4ffe"
+          },
+          {
+            "path": "params_model_3_multimer_v3.npz",
+            "bytes": 373043148,
+            "sha256": "46d9bcad288edc7ad5a6362ee8e5f84307a69712e00e6c36b1ef9daf96ebc9ce"
+          },
+          {
+            "path": "params_model_3_ptm.npz",
+            "bytes": 371746284,
+            "sha256": "b53a724294cdd46a45d530b306bced8e429ffee74a4f9a2a897551b30966c415"
+          },
+          {
+            "path": "params_model_4.npz",
+            "bytes": 371712506,
+            "sha256": "b0a78b7e18661abc6097a905f48505004e6e3993c5dc41fb6820acf56e9c1d12"
+          },
+          {
+            "path": "params_model_4_multimer_v3.npz",
+            "bytes": 373043148,
+            "sha256": "59bdabd2d69c07fe26b37882d544acbd1b9f89f196828f4220da49e0610b572c"
+          },
+          {
+            "path": "params_model_4_ptm.npz",
+            "bytes": 371746284,
+            "sha256": "07d0e285ad1406ce3d91a2f6633a8ce9ee99155a53d24ee7783f8fd1e89f5d3a"
+          },
+          {
+            "path": "params_model_5.npz",
+            "bytes": 371712506,
+            "sha256": "5d261ec6e18ba87784541f5ce113570018b3338df61ae577661b6232358d47e7"
+          },
+          {
+            "path": "params_model_5_multimer_v3.npz",
+            "bytes": 373043148,
+            "sha256": "917742be5a105d6b80f13f1f13f20459f27ec3fdcd34ea088b359f4502d6177f"
+          },
+          {
+            "path": "params_model_5_ptm.npz",
+            "bytes": 371746284,
+            "sha256": "2f8d0bd193e7d6e837958ba92acdc3f02b23b61bf841fa043fc076ee0e1996a5"
+          }
+        ]
+      },
+      "consumers": [
+        {
+          "model_id": "bindcraft",
+          "binding_kind": "environment-variable",
+          "binding_name": "FS2_ARTIFACT_ROOT",
+          "mount_path": "/models/alphafold2"
+        }
+      ],
+      "notes": "The published BindCraft image admits its AlphaFold2 mount only through artifact_gate.verify_manifest, which reads FS2_ARTIFACT_MANIFEST at /models/alphafold2/manifest.json and requires artifact_kind 'bindcraft-af2-params' and source_revision 7cd4ace1b7407adf66a50dfefa47de2270f5e4a9. Upstream ships no such document, so the sixteen-file upstream tree does not run that image as-is. This is a deliberately separate identity from alphafold2-params: same archive provenance, seventeen-entry tree, its own inventory digest, and a manifest bound by its own digest so a drifting generator fails closed. Proteina-Complexa must keep reading the sixteen-entry tree, because ColabDesign globs *.npz and an extra document there is not part of that contract. Materializing a second copy rather than overlaying the manifest onto the sixteen-entry tree costs one extra parameter set on disk, and buys a mount whose whole content is one verifiable identity."
+    },
+    {
+      "artifact_id": "bindcraft-pyrosetta-installed-tree",
+      "transform": "external-installed-tree",
+      "visibility": "tenant-private",
+      "artifact_kind": "bindcraft-pyrosetta",
+      "source_sub_path": "pyrosetta-bindcraft/site-packages",
+      "archive": {
+        "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+        "media_type": "application/zip",
+        "bytes": 1667097173,
+        "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+        "source_uri": "https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/pyrosetta-2026.29%2Breleasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+        "source_revision": "2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64",
+        "license_id": "Rosetta-and-PyRosetta-Non-Commercial-License-Chain"
+      },
+      "tree": {
+        "mount_paths": [
+          "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+        ],
+        "entry_count": 8697,
+        "directory_count": 779,
+        "symlink_count": 0,
+        "total_bytes": 3287122494,
+        "entry_path_pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]*(?:/[A-Za-z0-9_][A-Za-z0-9._-]*)*$",
+        "inventory_algorithm": "fs2-tree-manifest/v1",
+        "inventory_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+        "complete_entry_digests": true
+      },
+      "consumers": [
+        {
+          "model_id": "bindcraft",
+          "binding_kind": "environment-variable",
+          "binding_name": "PYTHONPATH",
+          "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+        }
+      ],
+      "notes": "Installed and owned by the academic-assets plane, which identifies it with fs2-tree-manifest/v1: every file by SHA-256 and every symlink by target. This contract reuses that identity unchanged rather than measuring a second, weaker one, and never stages, copies or moves the bytes. The tree stays tenant-private at its installed sub-path under the licence chain; it is never mirrored into the public generations layout and never embedded in an image. The wheel is provenance for how the tree came to be, and is a different digest from the tree itself. directory_count is 779 descendant directories, excluding the tree root: an earlier revision recorded 796, which is the number of paths at mode 0550 and counts the 780 directories including the root plus 16 executable regular files. A mode statistic is not a directory count, and the two differ by exactly those files."
+    },
+    {
+      "artifact_id": "boltzgen-inference-molecules",
+      "transform": "safe-extract-zip",
+      "archive": {
+        "filename": "mols.zip",
+        "media_type": "application/zip",
+        "bytes": 391401102,
+        "sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+        "source_uri": "https://huggingface.co/datasets/boltzgen/inference-data/resolve/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip",
+        "source_revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+        "license_id": "MIT",
+        "verified_at": "2026-09-03T01:36:00Z"
+      },
+      "tree": {
+        "mount_paths": [
+          "/opt/fs2/artifacts/boltzgen-inference-molecules"
+        ],
+        "entry_count": 45227,
+        "total_bytes": 1820698819,
+        "entry_path_pattern": "^[A-Z0-9]{1,5}\\.pkl$",
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "complete_entry_digests": false,
+        "probe_entries": [
+          {
+            "path": "A1LV8.pkl",
+            "bytes": 41933,
+            "sha256": "0d47c0df76e58d1bcdf53f57925b67dd90ae494e29c627e69b400a01be0905ea"
+          },
+          {
+            "path": "ATP.pkl",
+            "bytes": 45746,
+            "sha256": "71dee21ceaafa9d6aa856891f91e880ce34d4369bfaf60cf57f11ded68b5c1f1"
+          },
+          {
+            "path": "CL.pkl",
+            "bytes": 432,
+            "sha256": "cfe8b76b4fe00b15c0712cc21bb794a3fa37e1dca952a588c4143c24d8ac5ca9"
+          },
+          {
+            "path": "GLC.pkl",
+            "bytes": 13060,
+            "sha256": "82c467ce89db573b5b316006184846b8eef77fd8c701011605c4ecedbad15286"
+          },
+          {
+            "path": "HEM.pkl",
+            "bytes": 78274,
+            "sha256": "889e54f75778fbd934ff347075b71e8fbd1db1d11fbec98d1db3e85142be0f4d"
+          },
+          {
+            "path": "HOH.pkl",
+            "bytes": 5125,
+            "sha256": "bc3baf2d499c9c692eae47f89b60272c9cae77df7e7d7609d860d8791e202978"
+          },
+          {
+            "path": "I.pkl",
+            "bytes": 28635,
+            "sha256": "39dd0e2ab178cc23a5d6e2003eb43c3082d0fb07adeba1dccf71f67af41c2fe0"
+          },
+          {
+            "path": "MG.pkl",
+            "bytes": 433,
+            "sha256": "fce685cb31077f9a5bfa853cc68c28902a8abdcb71a017c6ee582cff06749c0b"
+          },
+          {
+            "path": "NAD.pkl",
+            "bytes": 82211,
+            "sha256": "ad3066c4f3217e3f9b38a54ca7bfd1e66ae16d5323f7bca4e4dcb6c7f90df571"
+          },
+          {
+            "path": "ZN.pkl",
+            "bytes": 433,
+            "sha256": "a45060ff77217f96de4c6c666333bf3283a4cfc5fc4a2b437bf9c58df7c5af04"
+          }
+        ]
+      },
+      "consumers": [
+        {
+          "model_id": "boltzgen",
+          "binding_kind": "argv-option",
+          "binding_name": "--moldir",
+          "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+          "stages": [
+            "configure",
+            "design",
+            "inverse-folding",
+            "folding",
+            "design-folding",
+            "affinity"
+          ]
+        }
+      ],
+      "notes": "BoltzGen v0.3.2 reads one small-molecule dictionary directory; it never opens mols.zip. Chemical Component Dictionary codes are one to five characters, so the flat-root entry pattern is [A-Z0-9]{1,5}. A three-character-only pattern rejects 1,676 of the 45,227 real entries and must not be used."
+    },
+    {
+      "artifact_id": "colabdesign-mpnn-weights-soluble",
+      "transform": "safe-extract-tar-gz",
+      "archive": {
+        "filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+        "media_type": "application/gzip",
+        "bytes": 50276715,
+        "sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+        "source_uri": "https://github.com/sokrypton/ColabDesign/archive/e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+        "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+        "license_id": "Apache-2.0",
+        "verified_at": "2026-09-03T02:10:00Z",
+        "member_prefix": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72/colabdesign/mpnn/weights_soluble/"
+      },
+      "tree": {
+        "mount_paths": [
+          "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble"
+        ],
+        "entry_count": 5,
+        "total_bytes": 26601241,
+        "entry_path_pattern": "^(__init__\\.py|v_48_0(02|10|20|30)\\.pkl)$",
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+        "complete_entry_digests": true,
+        "probe_entries": [
+          {
+            "path": "__init__.py",
+            "bytes": 1,
+            "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+          },
+          {
+            "path": "v_48_002.pkl",
+            "bytes": 6650310,
+            "sha256": "71f50e774950063da724870cb9377020b54ed1630cb025a44dc3079fe1f5af82"
+          },
+          {
+            "path": "v_48_010.pkl",
+            "bytes": 6650310,
+            "sha256": "b54d7ddbfac98eedd4ee37c93515c91691abb681b59fa2717c178d31cd7dd18a"
+          },
+          {
+            "path": "v_48_020.pkl",
+            "bytes": 6650310,
+            "sha256": "f3f705752e625a173ac5ea4d2b2e46bd10ff13905a73bcc1ca2ecd3420b361e1"
+          },
+          {
+            "path": "v_48_030.pkl",
+            "bytes": 6650310,
+            "sha256": "36ee859552bca57676f7e1b4f094c5dea4d37534e0e27351fa7582ac14d0ab78"
+          }
+        ]
+      },
+      "consumers": [
+        {
+          "model_id": "bindcraft",
+          "binding_kind": "installed-package-path",
+          "binding_name": "colabdesign.mpnn.weights_soluble",
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble"
+        }
+      ],
+      "notes": "ColabDesign selects soluble weights with mk_mpnn_model(weights=\"soluble\"), which imports colabdesign.mpnn.weights_soluble. This tree exists only in the pinned GitHub revision: the published colabdesign 1.1.1 wheel and sdist (sha256 8f556fb5... and 382b77ae...) contain no weights_soluble entry at all, so a PyPI-installed ColabDesign cannot serve this path."
+    },
+    {
+      "artifact_id": "colabdesign-mpnn-weights-vanilla",
+      "transform": "safe-extract-tar-gz",
+      "archive": {
+        "filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+        "media_type": "application/gzip",
+        "bytes": 50276715,
+        "sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+        "source_uri": "https://github.com/sokrypton/ColabDesign/archive/e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+        "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+        "license_id": "Apache-2.0",
+        "verified_at": "2026-09-03T02:10:00Z",
+        "member_prefix": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72/colabdesign/mpnn/weights/"
+      },
+      "tree": {
+        "mount_paths": [
+          "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights"
+        ],
+        "entry_count": 5,
+        "total_bytes": 26602793,
+        "entry_path_pattern": "^(__init__\\.py|v_48_0(02|10|20|30)\\.pkl)$",
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+        "complete_entry_digests": true,
+        "probe_entries": [
+          {
+            "path": "__init__.py",
+            "bytes": 1,
+            "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+          },
+          {
+            "path": "v_48_002.pkl",
+            "bytes": 6650698,
+            "sha256": "cf9c5980389312d26e8d25699e3d1372a9563b81770b4ca04c02027dcceb27a2"
+          },
+          {
+            "path": "v_48_010.pkl",
+            "bytes": 6650698,
+            "sha256": "7020cb9bda0c5722c7ededcfd00f8546af1510c66a44fb7acaebcaa33c1479ea"
+          },
+          {
+            "path": "v_48_020.pkl",
+            "bytes": 6650698,
+            "sha256": "993194d9cbe9334f6c2c81bddeb1404ea831711bca8e38b591b4116060484ac3"
+          },
+          {
+            "path": "v_48_030.pkl",
+            "bytes": 6650698,
+            "sha256": "e6b7882f9ca25c24379c29aeb9b8e78e8bcffab5699a3521fd22c50713220697"
+          }
+        ]
+      },
+      "consumers": [
+        {
+          "model_id": "bindcraft",
+          "binding_kind": "installed-package-path",
+          "binding_name": "colabdesign.mpnn.weights",
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights"
+        }
+      ],
+      "notes": "ColabDesign selects vanilla weights with mk_mpnn_model(weights=\"original\"), which imports colabdesign.mpnn.weights and joblib-loads <model_name>.pkl beside its __init__.py. The BindCraft image deletes both weight directories after installing ColabDesign, so this tree is supplied at runtime. It is a different tree from the soluble one: every .pkl differs and each vanilla file is 6,650,698 bytes against 6,650,310 soluble. The catalog proteinmpnn-checkpoints artifact is NOT a substitute; those are torch .pt tensors under vanilla_model_weights/ and soluble_model_weights/, not joblib .pkl, and cannot be mounted here without a declared conversion."
+    }
+  ]
+}

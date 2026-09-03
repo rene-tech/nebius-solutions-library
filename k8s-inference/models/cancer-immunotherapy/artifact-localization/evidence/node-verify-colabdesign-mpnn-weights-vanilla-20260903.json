@@ -1,0 +1,34 @@
+{
+  "archive_provenance": {
+    "bytes": 50276715,
+    "filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+    "license_id": "Apache-2.0",
+    "present_in_mount": false,
+    "sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+    "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+    "source_uri": "https://github.com/sokrypton/ColabDesign/archive/e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz"
+  },
+  "artifact_id": "colabdesign-mpnn-weights-vanilla",
+  "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+  "observation": {
+    "duration_seconds": 0.09
+  },
+  "observed_at": "2026-09-03T03:02:15Z",
+  "runtime_bindings": [
+    {
+      "binding_kind": "installed-package-path",
+      "binding_name": "colabdesign.mpnn.weights",
+      "binding_value": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+      "model_id": "bindcraft"
+    }
+  ],
+  "schema": "fs2-serve.nebius.ai/scientific-localization-receipt/v1",
+  "state": "verified",
+  "tree_identity": {
+    "entry_count": 5,
+    "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+    "inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+    "probe_entries_verified": 5,
+    "total_bytes": 26602793
+  }
+}

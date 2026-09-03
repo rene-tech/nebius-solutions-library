@@ -1,0 +1,23 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+  "operation": "design-binders",
+  "service_class": "bulk-backfill",
+  "input_manifest": {
+    "artifact_id": "boltz.reusable.batch.02",
+    "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "size_bytes": 32768,
+    "media_type": "application/x-tar",
+    "compression": "zstd"
+  },
+  "parameters": {
+    "protocol": "protein-small_molecule",
+    "batches": [
+      {
+        "shard_id": "ligand-a",
+        "num_designs": 20,
+        "budget": 3,
+        "reuse_completed": true
+      }
+    ]
+  }
+}

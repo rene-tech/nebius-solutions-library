@@ -7,6 +7,7 @@ from typing import Protocol
 from uuid import UUID
 
 from .models import (
+    AdapterExecutionPlan,
     ArtifactCommit,
     BatchClaim,
     BatchEventDraft,
@@ -43,6 +44,7 @@ class ScientificBatchRepository(Protocol):
         tenant_id: str,
         plan: ScientificBatchPlan,
         scheduling: SchedulingSnapshot,
+        execution_plan: AdapterExecutionPlan | None = None,
     ) -> ScientificBatchState: ...
 
     async def claim_next(

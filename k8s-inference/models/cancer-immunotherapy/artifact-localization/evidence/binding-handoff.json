@@ -1,0 +1,599 @@
+{
+  "artifacts": [
+    {
+      "archive_provenance": {
+        "bytes": 5587968000,
+        "filename": "alphafold_params_2022-12-06.tar",
+        "license_id": "CC-BY-4.0",
+        "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+        "source_revision": "gcs-generation-1670353726160664"
+      },
+      "artifact_id": "alphafold2-params",
+      "consumers": [
+        {
+          "binding_kind": "environment-variable",
+          "binding_name": "AF2_DIR",
+          "model_id": "proteina-complexa",
+          "mount_path": "/opt/fs2/artifacts/alphafold2-params",
+          "stages": [
+            "generate",
+            "evaluate"
+          ]
+        }
+      ],
+      "externally_installed": false,
+      "generated_entries": [],
+      "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+      "marker": {
+        "document": {
+          "artifact_id": "alphafold2-params",
+          "artifact_kind": "alphafold2-params",
+          "claim": "",
+          "consumer_paths": [
+            "/opt/fs2/artifacts/alphafold2-params"
+          ],
+          "directory_count": 0,
+          "entry_count": 16,
+          "generation": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "generator_identity": [],
+          "host_root": "/mnt/fs2-reference-data/data",
+          "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+          "inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "license_id": "CC-BY-4.0",
+          "namespace": "",
+          "read_only": true,
+          "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1",
+          "source_bytes": 5587968000,
+          "source_filename": "alphafold_params_2022-12-06.tar",
+          "source_revision": "gcs-generation-1670353726160664",
+          "source_sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+          "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar",
+          "sub_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+          "symlink_count": null,
+          "total_bytes": 5587956571,
+          "visibility": "public",
+          "volume_kind": "host-path"
+        },
+        "in_generation": true,
+        "manifest_digest": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+        "path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4/.fs2-runtime-tree.json",
+        "relative_path": ".fs2-runtime-tree.json",
+        "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
+      },
+      "mounts": [
+        {
+          "mount_path": "/opt/fs2/artifacts/alphafold2-params",
+          "read_only": true
+        }
+      ],
+      "tree_identity": {
+        "directory_count": 0,
+        "entry_count": 16,
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+        "total_bytes": 5587956571
+      },
+      "visibility": "public",
+      "volume": {
+        "binding_state": "rendered",
+        "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "immutable": true,
+        "kind": "host-path",
+        "node_selector": {
+          "storage.fs2.nebius/reference-data": "true"
+        },
+        "plane": "reference-data-host",
+        "plane_state": "provisioned",
+        "read_only": true,
+        "sub_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4"
+      }
+    },
+    {
+      "archive_provenance": {
+        "bytes": 5587968000,
+        "filename": "alphafold_params_2022-12-06.tar",
+        "license_id": "CC-BY-4.0",
+        "sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+        "source_revision": "gcs-generation-1670353726160664"
+      },
+      "artifact_id": "alphafold2-params-bindcraft",
+      "consumers": [
+        {
+          "binding_kind": "environment-variable",
+          "binding_name": "FS2_ARTIFACT_ROOT",
+          "model_id": "bindcraft",
+          "mount_path": "/models/alphafold2"
+        }
+      ],
+      "externally_installed": false,
+      "generated_entries": [
+        {
+          "bytes": 2866,
+          "generator": "external-model-artifact-manifest/v1",
+          "generator_inputs": {
+            "artifact_kind": "bindcraft-af2-params",
+            "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
+          },
+          "path": "manifest.json",
+          "sha256": "9d0b7e45378ed707cfc31585f3ae960282dc76f3e2c4f60b545b02dbc728423b"
+        }
+      ],
+      "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+      "marker": {
+        "document": {
+          "artifact_id": "alphafold2-params-bindcraft",
+          "artifact_kind": "alphafold2-params-bindcraft",
+          "claim": "",
+          "consumer_paths": [
+            "/models/alphafold2"
+          ],
+          "directory_count": 0,
+          "entry_count": 17,
+          "generation": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "generator_identity": [
+            {
+              "generator": "external-model-artifact-manifest/v1",
+              "generator_inputs": {
+                "artifact_kind": "bindcraft-af2-params",
+                "source_revision": "7cd4ace1b7407adf66a50dfefa47de2270f5e4a9"
+              },
+              "path": "manifest.json",
+              "sha256": "9d0b7e45378ed707cfc31585f3ae960282dc76f3e2c4f60b545b02dbc728423b"
+            }
+          ],
+          "host_root": "/mnt/fs2-reference-data/data",
+          "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+          "inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "license_id": "CC-BY-4.0",
+          "namespace": "",
+          "read_only": true,
+          "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1",
+          "source_bytes": 5587968000,
+          "source_filename": "alphafold_params_2022-12-06.tar",
+          "source_revision": "gcs-generation-1670353726160664",
+          "source_sha256": "36d4b0220f3c735f3296d301152b738c9776d16981d054845a68a1370b26cfe3",
+          "source_uri": "https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar",
+          "sub_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+          "symlink_count": null,
+          "total_bytes": 5587959437,
+          "visibility": "public",
+          "volume_kind": "host-path"
+        },
+        "in_generation": true,
+        "manifest_digest": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+        "path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f/.fs2-runtime-tree.json",
+        "relative_path": ".fs2-runtime-tree.json",
+        "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
+      },
+      "mounts": [
+        {
+          "mount_path": "/models/alphafold2",
+          "read_only": true
+        }
+      ],
+      "tree_identity": {
+        "directory_count": 0,
+        "entry_count": 17,
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+        "total_bytes": 5587959437
+      },
+      "visibility": "public",
+      "volume": {
+        "binding_state": "rendered",
+        "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "immutable": true,
+        "kind": "host-path",
+        "node_selector": {
+          "storage.fs2.nebius/reference-data": "true"
+        },
+        "plane": "reference-data-host",
+        "plane_state": "provisioned",
+        "read_only": true,
+        "sub_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f"
+      }
+    },
+    {
+      "archive_provenance": {
+        "bytes": 1667097173,
+        "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+        "license_id": "Rosetta-and-PyRosetta-Non-Commercial-License-Chain",
+        "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+        "source_revision": "2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64"
+      },
+      "artifact_id": "bindcraft-pyrosetta-installed-tree",
+      "consumers": [
+        {
+          "binding_kind": "environment-variable",
+          "binding_name": "PYTHONPATH",
+          "model_id": "bindcraft",
+          "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+        }
+      ],
+      "externally_installed": true,
+      "generated_entries": [],
+      "generation": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+      "marker": {
+        "document": {
+          "artifact_id": "bindcraft-pyrosetta-installed-tree",
+          "artifact_kind": "bindcraft-pyrosetta",
+          "claim": "academic-assets-runtime-rwx",
+          "consumer_paths": [
+            "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+          ],
+          "directory_count": 779,
+          "entry_count": 8697,
+          "generation": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+          "generator_identity": [],
+          "host_root": "",
+          "inventory_algorithm": "fs2-tree-manifest/v1",
+          "inventory_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+          "license_id": "Rosetta-and-PyRosetta-Non-Commercial-License-Chain",
+          "namespace": "fs2-academic-poc",
+          "read_only": true,
+          "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1",
+          "source_bytes": 1667097173,
+          "source_filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+          "source_revision": "2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64",
+          "source_sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+          "source_uri": "https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/pyrosetta-2026.29%2Breleasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+          "sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+          "symlink_count": 0,
+          "total_bytes": 3287122494,
+          "visibility": "tenant-private",
+          "volume_kind": "persistent-volume-claim"
+        },
+        "in_generation": true,
+        "manifest_digest": "ee24f7445426b0536da9781bc57a9ef33e4e1e98a3434afae31cdd84e7b473d3",
+        "path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d/.fs2-runtime-tree.json",
+        "relative_path": ".fs2-runtime-tree.json",
+        "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
+      },
+      "mounts": [
+        {
+          "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
+          "read_only": true
+        }
+      ],
+      "promoted_from": {
+        "claim": "academic-assets-runtime-rwx",
+        "kind": "persistent-volume-claim",
+        "mutable": true,
+        "namespace": "fs2-academic-poc",
+        "owner": "academic-assets",
+        "runtime_bindable": false,
+        "sub_path": "pyrosetta-bindcraft/site-packages"
+      },
+      "tree_identity": {
+        "directory_count": 779,
+        "entry_count": 8697,
+        "inventory_algorithm": "fs2-tree-manifest/v1",
+        "inventory_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+        "total_bytes": 3287122494
+      },
+      "visibility": "tenant-private",
+      "volume": {
+        "binding_state": "rendered",
+        "claim": "academic-assets-runtime-rwx",
+        "immutable": true,
+        "kind": "persistent-volume-claim",
+        "namespace": "fs2-academic-poc",
+        "plane": "tenant-private-academic",
+        "plane_state": "provisioned",
+        "read_only": true,
+        "sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+      }
+    },
+    {
+      "archive_provenance": {
+        "bytes": 391401102,
+        "filename": "mols.zip",
+        "license_id": "MIT",
+        "sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+        "source_revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c"
+      },
+      "artifact_id": "boltzgen-inference-molecules",
+      "consumers": [
+        {
+          "binding_kind": "argv-option",
+          "binding_name": "--moldir",
+          "model_id": "boltzgen",
+          "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+          "stages": [
+            "configure",
+            "design",
+            "inverse-folding",
+            "folding",
+            "design-folding",
+            "affinity"
+          ]
+        }
+      ],
+      "externally_installed": false,
+      "generated_entries": [],
+      "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+      "marker": {
+        "document": {
+          "artifact_id": "boltzgen-inference-molecules",
+          "artifact_kind": "boltzgen-inference-molecules",
+          "claim": "",
+          "consumer_paths": [
+            "/opt/fs2/artifacts/boltzgen-inference-molecules"
+          ],
+          "directory_count": 0,
+          "entry_count": 45227,
+          "generation": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "generator_identity": [],
+          "host_root": "/mnt/fs2-reference-data/data",
+          "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+          "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "license_id": "MIT",
+          "namespace": "",
+          "read_only": true,
+          "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1",
+          "source_bytes": 391401102,
+          "source_filename": "mols.zip",
+          "source_revision": "c3d36fd276e9caf098c75d4113c6d5eb320b1a4c",
+          "source_sha256": "3d4f56ac4262e745bb3d09cfaa19099b1d01be208122d501667b952e45521e53",
+          "source_uri": "https://huggingface.co/datasets/boltzgen/inference-data/resolve/c3d36fd276e9caf098c75d4113c6d5eb320b1a4c/mols.zip",
+          "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+          "symlink_count": null,
+          "total_bytes": 1820698819,
+          "visibility": "public",
+          "volume_kind": "host-path"
+        },
+        "in_generation": true,
+        "manifest_digest": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+        "path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc/.fs2-runtime-tree.json",
+        "relative_path": ".fs2-runtime-tree.json",
+        "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
+      },
+      "mounts": [
+        {
+          "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+          "read_only": true
+        }
+      ],
+      "tree_identity": {
+        "directory_count": 0,
+        "entry_count": 45227,
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "total_bytes": 1820698819
+      },
+      "visibility": "public",
+      "volume": {
+        "binding_state": "rendered",
+        "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "immutable": true,
+        "kind": "host-path",
+        "node_selector": {
+          "storage.fs2.nebius/reference-data": "true"
+        },
+        "plane": "reference-data-host",
+        "plane_state": "provisioned",
+        "read_only": true,
+        "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
+      }
+    },
+    {
+      "archive_provenance": {
+        "bytes": 50276715,
+        "filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+        "license_id": "Apache-2.0",
+        "sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+        "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72"
+      },
+      "artifact_id": "colabdesign-mpnn-weights-soluble",
+      "consumers": [
+        {
+          "binding_kind": "installed-package-path",
+          "binding_name": "colabdesign.mpnn.weights_soluble",
+          "model_id": "bindcraft",
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble"
+        }
+      ],
+      "externally_installed": false,
+      "generated_entries": [],
+      "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+      "marker": {
+        "document": {
+          "artifact_id": "colabdesign-mpnn-weights-soluble",
+          "artifact_kind": "colabdesign-mpnn-weights-soluble",
+          "claim": "",
+          "consumer_paths": [
+            "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble"
+          ],
+          "directory_count": 0,
+          "entry_count": 5,
+          "generation": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "generator_identity": [],
+          "host_root": "/mnt/fs2-reference-data/data",
+          "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+          "inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "license_id": "Apache-2.0",
+          "namespace": "",
+          "read_only": true,
+          "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1",
+          "source_bytes": 50276715,
+          "source_filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+          "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+          "source_sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+          "source_uri": "https://github.com/sokrypton/ColabDesign/archive/e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+          "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+          "symlink_count": null,
+          "total_bytes": 26601241,
+          "visibility": "public",
+          "volume_kind": "host-path"
+        },
+        "in_generation": true,
+        "manifest_digest": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
+        "path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146/.fs2-runtime-tree.json",
+        "relative_path": ".fs2-runtime-tree.json",
+        "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
+      },
+      "mounts": [
+        {
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+          "read_only": true
+        }
+      ],
+      "tree_identity": {
+        "directory_count": 0,
+        "entry_count": 5,
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+        "total_bytes": 26601241
+      },
+      "visibility": "public",
+      "volume": {
+        "binding_state": "rendered",
+        "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "immutable": true,
+        "kind": "host-path",
+        "node_selector": {
+          "storage.fs2.nebius/reference-data": "true"
+        },
+        "plane": "reference-data-host",
+        "plane_state": "provisioned",
+        "read_only": true,
+        "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146"
+      }
+    },
+    {
+      "archive_provenance": {
+        "bytes": 50276715,
+        "filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+        "license_id": "Apache-2.0",
+        "sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+        "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72"
+      },
+      "artifact_id": "colabdesign-mpnn-weights-vanilla",
+      "consumers": [
+        {
+          "binding_kind": "installed-package-path",
+          "binding_name": "colabdesign.mpnn.weights",
+          "model_id": "bindcraft",
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights"
+        }
+      ],
+      "externally_installed": false,
+      "generated_entries": [],
+      "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+      "marker": {
+        "document": {
+          "artifact_id": "colabdesign-mpnn-weights-vanilla",
+          "artifact_kind": "colabdesign-mpnn-weights-vanilla",
+          "claim": "",
+          "consumer_paths": [
+            "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights"
+          ],
+          "directory_count": 0,
+          "entry_count": 5,
+          "generation": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "generator_identity": [],
+          "host_root": "/mnt/fs2-reference-data/data",
+          "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+          "inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "license_id": "Apache-2.0",
+          "namespace": "",
+          "read_only": true,
+          "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1",
+          "source_bytes": 50276715,
+          "source_filename": "ColabDesign-e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+          "source_revision": "e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+          "source_sha256": "26c948e5e577c65d5b3e908cc11eece435eb0f05729b1e227926d671c463d37f",
+          "source_uri": "https://github.com/sokrypton/ColabDesign/archive/e31a56fe1d9b4de25c8697f3a28b75892941cc72.tar.gz",
+          "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+          "symlink_count": null,
+          "total_bytes": 26602793,
+          "visibility": "public",
+          "volume_kind": "host-path"
+        },
+        "in_generation": true,
+        "manifest_digest": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
+        "path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f/.fs2-runtime-tree.json",
+        "relative_path": ".fs2-runtime-tree.json",
+        "schema": "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
+      },
+      "mounts": [
+        {
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+          "read_only": true
+        }
+      ],
+      "tree_identity": {
+        "directory_count": 0,
+        "entry_count": 5,
+        "inventory_algorithm": "fs2-flat-tree-inventory/v1",
+        "inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+        "total_bytes": 26602793
+      },
+      "visibility": "public",
+      "volume": {
+        "binding_state": "rendered",
+        "host_path": "/mnt/fs2-reference-data/data/scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+        "host_root": "/mnt/fs2-reference-data/data",
+        "immutable": true,
+        "kind": "host-path",
+        "node_selector": {
+          "storage.fs2.nebius/reference-data": "true"
+        },
+        "plane": "reference-data-host",
+        "plane_state": "provisioned",
+        "read_only": true,
+        "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f"
+      }
+    }
+  ],
+  "evidence": {
+    "generations_published": false,
+    "meaning": "Every path, identity and marker digest in this document is derived from the checked-in contract by the same code that writes a marker. None of it has been published yet: no promotion or staging Job has run for these paths, so nothing exists at any sub_path named here. plane_state describes the volume, which does exist; binding_state describes the generation, which does not. Treat this as the exact interface to build against, never as a report that the bytes are in place.",
+    "node_probes": [],
+    "promotes_to_next_state_when": "a terminal promotion receipt exists per artifact, at which point binding_state becomes 'promoted'; a node probe that admits the mount makes it 'qualified'.",
+    "promotion_receipts": [],
+    "pyrosetta_note": "The installed tree at the academic claim's pyrosetta-bindcraft/site-packages predates this work and is the promotion input. It is a mutable install path, not an immutable generation, and its existence is not evidence that the content-addressed generation named here has been published.",
+    "state": "rendered"
+  },
+  "models": {
+    "bindcraft": [
+      "alphafold2-params-bindcraft",
+      "bindcraft-pyrosetta-installed-tree",
+      "colabdesign-mpnn-weights-soluble",
+      "colabdesign-mpnn-weights-vanilla"
+    ],
+    "boltzgen": [
+      "boltzgen-inference-molecules"
+    ],
+    "proteina-complexa": [
+      "alphafold2-params"
+    ]
+  },
+  "note": "Every runtime binding is an immutable generation at <prefix>/generations/<artifact_id>/sha256/<tree digest>, so a consumer binds content rather than a mutable path. The marker named here lives inside that generation and is its single admission authority; manifest_digest is the SHA-256 of exactly the bytes of document. Storage authority is per artifact: public bytes belong on the dedicated public reference plane and a licensed tree only on the tenant-private academic claim.",
+  "schema": "fs2-serve.nebius.ai/scientific-localization-binding-handoff/v1",
+  "scope": "poc",
+  "volumes": {
+    "public": {
+      "binding_state": "rendered",
+      "host_root": "/mnt/fs2-reference-data/data",
+      "kind": "host-path",
+      "node_selector": {
+        "storage.fs2.nebius/reference-data": "true"
+      },
+      "plane": "reference-data-host",
+      "plane_state": "provisioned"
+    },
+    "tenant-private": {
+      "binding_state": "rendered",
+      "claim": "academic-assets-runtime-rwx",
+      "kind": "persistent-volume-claim",
+      "namespace": "fs2-academic-poc",
+      "plane": "tenant-private-academic",
+      "plane_state": "provisioned"
+    }
+  }
+}

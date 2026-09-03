@@ -7,6 +7,7 @@ from datetime import timedelta
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fs2_serve.scientific_batch.models import (
+    AdapterExecutionPlan,
     ArtifactCommit,
     BatchClaim,
     BatchEvent,
@@ -37,19 +38,26 @@ class FakeScientificBatchRepository:
         tenant_id: str,
         plan: ScientificBatchPlan,
         scheduling: SchedulingSnapshot,
+        execution_plan: AdapterExecutionPlan | None = None,
     ) -> ScientificBatchState:
         proposed = ScientificBatchState.admit(
             operation_id=operation_id,
             tenant_id=tenant_id,
             plan=plan,
             scheduling=scheduling,
+            execution_plan=execution_plan,
         )
         current = self.records.get(operation_id)
         if current is None:
             self.records[operation_id] = proposed
             self.events[operation_id] = []
             return proposed
-        if current.tenant_id != tenant_id or current.plan != plan or current.scheduling != scheduling:
+        if (
+            current.tenant_id != tenant_id
+            or current.plan != plan
+            or current.scheduling != scheduling
+            or current.execution_plan != execution_plan
+        ):
             raise BatchRepositoryConflictError("operation already has a different frozen batch admission")
         return current
 
@@ -97,6 +105,9 @@ class FakeScientificBatchRepository:
             or record.tenant_id != current.tenant_id
             or record.plan != current.plan
             or record.scheduling != current.scheduling
+            or record.execution_plan != current.execution_plan
+            or record.model_id != current.model_id
+            or record.variant_id != current.variant_id
         ):
             raise BatchRepositoryConflictError("immutable scientific-batch admission changed")
         ledger = self.events[claim.operation_id]

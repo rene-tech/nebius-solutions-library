@@ -24,6 +24,7 @@ uv sync --frozen --all-groups
 uv run ruff check src tests
 uv run ruff format --check src tests
 PYTHONPATH="../../catalog/runtime" uv run mypy src
+PYTHONPATH="src:../../catalog/runtime" uv run python scripts/refresh_scientific_recipes.py --check
 PYTHONPATH="src:../../catalog/runtime" uv run pytest -q
 
 cd "${repo_root}"
