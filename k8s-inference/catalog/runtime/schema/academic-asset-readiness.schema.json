@@ -1,0 +1,527 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/academic-asset-readiness/v1",
+  "title": "Catalog projection of licensed academic asset readiness",
+  "description": "Generated from the private academic asset state machine. Carries only non-secret identities: model and backend IDs, the tenant-private mount a runtime must attach, artifact digests, the pinned runtime image, and both readiness axes. Operational readiness and formal institutional licence acceptance are independent and neither may be inferred from the other.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generated_by",
+    "generation",
+    "runtime_path_state",
+    "formal_license_state",
+    "delivery",
+    "models",
+    "request_time_license_receipt_required",
+    "execution"
+  ],
+  "$defs": {
+    "modelId": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ociDigest": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/academic-asset-readiness/v1"
+    },
+    "generated_by": {
+      "const": "academic-assets/scripts/project_catalog_readiness.py"
+    },
+    "generation": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "runtime_path_state": {
+      "enum": [
+        "Blocked",
+        "Ready"
+      ]
+    },
+    "formal_license_state": {
+      "enum": [
+        "Pending",
+        "Recorded"
+      ],
+      "description": "Never implied by operational readiness."
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "namespace",
+        "claim",
+        "mount_root",
+        "general_shared_cache",
+        "world_readable"
+      ],
+      "properties": {
+        "mode": {
+          "const": "tenant-private-volume"
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "claim": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mount_root": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "general_shared_cache": {
+          "const": false
+        },
+        "world_readable": {
+          "const": false
+        }
+      }
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "asset_id",
+          "model_id",
+          "backend_id",
+          "display_name",
+          "access_profile",
+          "state",
+          "artifact_status",
+          "tenant_cache_status",
+          "runtime_status",
+          "deployment_status",
+          "semantic_status",
+          "use_authorization_status",
+          "execution_authorization_status",
+          "formal_license_status",
+          "license_id",
+          "artifact_sha256",
+          "runtime_image_digest",
+          "delivery",
+          "runtime_invocation",
+          "alternative",
+          "serving_admission",
+          "runtime_environment_digest",
+          "runtime_binding"
+        ],
+        "properties": {
+          "asset_id": {
+            "$ref": "#/$defs/modelId"
+          },
+          "model_id": {
+            "$ref": "#/$defs/modelId"
+          },
+          "backend_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "access_profile": {
+            "const": "academic"
+          },
+          "state": {
+            "enum": [
+              "UseAuthorizationMissing",
+              "MissingArtifact",
+              "MissingTenantCache",
+              "MissingRuntimeValidation",
+              "MissingDeployment",
+              "MissingSemanticReadiness",
+              "ImageRebuildPending",
+              "Ready",
+              "InvalidContract",
+              "InvalidTenantCacheReceipt",
+              "InvalidRuntimeReceipt",
+              "InvalidDeploymentReceipt",
+              "InvalidSemanticReceipt"
+            ]
+          },
+          "artifact_status": {
+            "enum": [
+              "MissingArtifact",
+              "ArtifactVerified"
+            ]
+          },
+          "tenant_cache_status": {
+            "enum": [
+              "MissingTenantCache",
+              "TenantCacheReady",
+              "InvalidEvidence"
+            ]
+          },
+          "runtime_status": {
+            "enum": [
+              "MissingRuntimeValidation",
+              "RuntimeSemanticPassedImageRebuildPending",
+              "RuntimeReady",
+              "InvalidEvidence"
+            ]
+          },
+          "deployment_status": {
+            "enum": [
+              "MissingDeployment",
+              "DeploymentReady",
+              "InvalidEvidence"
+            ]
+          },
+          "semantic_status": {
+            "enum": [
+              "MissingSemanticReadiness",
+              "SemanticReady",
+              "InvalidEvidence"
+            ]
+          },
+          "use_authorization_status": {
+            "enum": [
+              "Missing",
+              "Granted"
+            ]
+          },
+          "execution_authorization_status": {
+            "enum": [
+              "NotAuthorized",
+              "Authorized"
+            ]
+          },
+          "formal_license_status": {
+            "enum": [
+              "FormalAcceptancePending",
+              "FormalAcceptanceRecorded"
+            ]
+          },
+          "license_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "artifact_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "runtime_image_digest": {
+            "$ref": "#/$defs/ociDigest"
+          },
+          "delivery": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "mount_path",
+              "embed_in_image",
+              "asset_gid",
+              "consumer_access",
+              "install_relative_path"
+            ],
+            "properties": {
+              "mode": {
+                "const": "tenant-private-volume"
+              },
+              "mount_path": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "embed_in_image": {
+                "const": false
+              },
+              "asset_gid": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "consumer_access": {
+                "const": "supplemental-group"
+              },
+              "install_relative_path": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "runtime_invocation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "offline_validation_kind",
+              "model_dir",
+              "model_dir_flag",
+              "source_revision",
+              "image_repository",
+              "image_tag",
+              "image_role",
+              "image_is_final_wrapper"
+            ],
+            "properties": {
+              "offline_validation_kind": {
+                "enum": [
+                  "python-import",
+                  "zstd-stream-integrity",
+                  "official-parameter-loader"
+                ]
+              },
+              "model_dir": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^/"
+              },
+              "model_dir_flag": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_revision": {
+                "type": "string",
+                "minLength": 1
+              },
+              "image_repository": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "image_tag": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "image_role": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "historical-semantic-evidence",
+                  "final-runtime-wrapper",
+                  null
+                ]
+              },
+              "image_is_final_wrapper": {
+                "type": "boolean"
+              }
+            }
+          },
+          "alternative": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "model_id",
+              "relationship",
+              "reason"
+            ],
+            "properties": {
+              "model_id": {
+                "$ref": "#/$defs/modelId"
+              },
+              "relationship": {
+                "const": "independent-operational-alternative"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
+          },
+          "serving_admission": {
+            "enum": [
+              "PendingRuntimeReadiness",
+              "AdmittedNoPerRequestLicenseReceipt"
+            ]
+          },
+          "runtime_environment_digest": {
+            "$ref": "#/$defs/ociDigest",
+            "description": "Digest of the image that executed the runtime validation, which is not necessarily a published model runtime image."
+          },
+          "runtime_binding": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "artifact_id",
+              "source_sub_path",
+              "consumer_path",
+              "mechanism",
+              "read_only",
+              "duplicates_bytes",
+              "embeds_bytes",
+              "content_identity_kind",
+              "content_manifest_algorithm",
+              "content_digest_sha256",
+              "content_bytes",
+              "source_artifact",
+              "source_artifact_id"
+            ],
+            "description": "Canonical localizer: how a model runtime addresses this object. The same verified bytes are exposed by a subPath mount, never duplicated or embedded.",
+            "properties": {
+              "artifact_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "source_sub_path": {
+                "type": "string",
+                "pattern": "^[^/].*"
+              },
+              "consumer_path": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "mechanism": {
+                "enum": [
+                  "subpath-file-mount",
+                  "subpath-directory-mount"
+                ]
+              },
+              "read_only": {
+                "const": true
+              },
+              "duplicates_bytes": {
+                "const": false
+              },
+              "embeds_bytes": {
+                "const": false
+              },
+              "content_identity_kind": {
+                "enum": [
+                  "file-digest",
+                  "tree-manifest"
+                ]
+              },
+              "content_manifest_algorithm": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "content_digest_sha256": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "Identity of the object the consumer mounts. For an installed tree this is its observed manifest digest, never the digest of the archive it came from."
+              },
+              "content_bytes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "source_artifact": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": false,
+                "required": [
+                  "filename",
+                  "sha256",
+                  "size_bytes"
+                ],
+                "description": "The source artifact that produced the mounted object, kept separate from the mounted object's own identity.",
+                "properties": {
+                  "filename": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "size_bytes": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              },
+              "source_artifact_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The artifact that produced the mounted object. For an installed tree this is the archive, and it is deliberately a different ID from the mounted tree."
+              }
+            }
+          }
+        }
+      }
+    },
+    "request_time_license_receipt_required": {
+      "const": false,
+      "description": "Licence terms bind the one-time ingestion and deployment only; ordinary inference never requires a caller-supplied receipt."
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "namespace",
+        "claim_namespace",
+        "cross_namespace_mount",
+        "local_queue",
+        "service_account"
+      ],
+      "description": "Academic scientific work runs in the namespace holding the claim, because a claim cannot be mounted from another namespace.",
+      "properties": {
+        "mode": {
+          "const": "asset-namespace-bound"
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "claim_namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cross_namespace_mount": {
+          "const": false
+        },
+        "local_queue": {
+          "type": "string",
+          "minLength": 1
+        },
+        "service_account": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

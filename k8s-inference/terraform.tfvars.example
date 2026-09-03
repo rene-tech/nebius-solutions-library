@@ -313,3 +313,106 @@ deployment = {
     create_probe_job = false
   }
 }
+
+# Tenant-private delivery of licensed academic assets.
+#
+# Project and region come from deployment.target, so this block is portable.
+# institution_id stays null on purpose: the operational proof-of-concept path must
+# not invent institution metadata. The formal institutional licence acceptance is
+# tracked separately by academic-assets/scripts/academic_assets.py and is reported
+# as FormalAcceptancePending until a named representative supplies a real receipt.
+#
+# Licensed bytes are mounted read-only from the canonical claim and are never baked
+# into an image. A fresh deployment creates an empty claim from these inputs. When
+# reusing an already-populated claim, adopt it with
+# academic-assets/scripts/adopt-live-resources.sh so Terraform does not recreate it.
+academic_assets = {
+  enabled             = true
+  tenant_id           = "tenant-academic"
+  institution_id      = null
+  namespace           = "fs2-academic-poc"
+  runtime_pvc_name    = "academic-assets-runtime-rwx"
+  runtime_storage_gib = 128
+
+  # The portable default is disposable, so a fresh acceptance cluster tears down
+  # completely. Select "retained" explicitly only for a long-lived claim whose
+  # verified licensed bytes must outlive the cluster.
+  runtime_claim_lifecycle = "disposable"
+  storage_class       = "csi-mounted-fs-path-sc"
+  mount_root          = "/opt/fs2/academic"
+
+  # Consuming pods set securityContext.supplementalGroups = [asset_gid] to read the
+  # licensed bytes. The bytes stay group-readable only, never world-readable.
+  asset_gid = 65532
+
+  # A claim is mountable only from its own namespace, so academic scientific Jobs
+  # run in the namespace above rather than the default model namespace, with their
+  # queue and permissions provisioned there.
+  execution = {
+    enabled         = true
+    local_queue     = "academic-scientific"
+    cluster_queue   = "inference-accelerators"
+    service_account            = "fs2-academic-runner"
+    controller_service_account = "fs2-serve-control-plane-runtime"
+  }
+
+  # Optional qualification-only isolation; ordinary inference never depends on it.
+  deny_egress_during_offline_validation = false
+
+  # Migration-only, never runtime-mountable. Fresh deployments leave this disabled.
+  legacy_quarantine = {
+    enabled  = false
+    retain   = false
+    pvc_name = "cancer-immunotherapy-academic-assets-rwx-v1"
+  }
+
+  assets = {
+    alphafold3 = {
+      model_id      = "alphafold3"
+      relative_path = "alphafold3/af3.bin.zst"
+
+      # Model onboarding addresses the parameters as artifact alphafold3-parameters
+      # at /models/af3.bin.zst. The same bytes are localized there by subPath.
+      # A single file is identified by its own digest.
+      runtime_binding = {
+        artifact_id                = "alphafold3-parameters"
+        source_sub_path            = "alphafold3/af3.bin.zst"
+        consumer_path              = "/models/af3.bin.zst"
+        mechanism                  = "subpath-file-mount"
+        content_identity_kind      = "file-digest"
+        content_manifest_algorithm = null
+        content_digest_sha256      = "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff"
+        size_bytes                 = 1020545840
+        source_artifact = {
+          filename   = "af3.bin.zst"
+          sha256     = "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff"
+          size_bytes = 1020545840
+        }
+      }
+    }
+    pyrosetta-bindcraft = {
+      model_id              = "bindcraft"
+      relative_path         = "pyrosetta-bindcraft/pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl"
+      install_relative_path = "pyrosetta-bindcraft/site-packages"
+
+      # The consumer reads the preinstalled tree, not the wheel, so the tree carries
+      # its own manifest identity observed at install time. The wheel stays recorded
+      # separately as the source artifact that produced it.
+      runtime_binding = {
+        artifact_id                = "bindcraft-pyrosetta-installed-tree"
+        source_sub_path            = "pyrosetta-bindcraft/site-packages"
+        consumer_path              = "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+        mechanism                  = "subpath-directory-mount"
+        content_identity_kind      = "tree-manifest"
+        content_manifest_algorithm = "fs2-tree-manifest/v1"
+        content_digest_sha256      = "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+        size_bytes                 = 3287122494
+        source_artifact = {
+          filename   = "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl"
+          sha256     = "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242"
+          size_bytes = 1667097173
+        }
+      }
+    }
+  }
+}

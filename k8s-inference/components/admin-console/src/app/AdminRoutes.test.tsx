@@ -9,6 +9,7 @@ import { ModelsPage } from "../pages/ModelsPage";
 import { OperationDetailPage } from "../pages/OperationDetailPage";
 import { OperationsPage } from "../pages/OperationsPage";
 import { OverviewPage } from "../pages/OverviewPage";
+import { AcademicAssetsPage } from "../pages/academic/AcademicAssetsPage";
 import { AccessPage } from "../pages/access/AccessPage";
 import { AuditPage } from "../pages/audit/AuditPage";
 import { CapacityPage } from "../pages/capacity/CapacityPage";
@@ -34,6 +35,7 @@ function prepareLiveApi() {
   vi.spyOn(adminApi, "scientificRuns").mockResolvedValue(fixture("/admin/api/v1/scientific-runs"));
   vi.spyOn(adminApi, "scientificRun").mockResolvedValue(fixture("/admin/api/v1/scientific-runs/run-rfdiffusion-0001"));
   vi.spyOn(adminApi, "scientificModels").mockResolvedValue(fixture("/admin/api/v1/scientific-models"));
+  vi.spyOn(adminApi, "academicAssets").mockResolvedValue(fixture("/admin/api/v1/academic-assets"));
   vi.spyOn(adminApi, "principals").mockResolvedValue(fixture("/admin/api/v1/principals"));
   vi.spyOn(adminApi, "keys").mockResolvedValue(fixture("/admin/api/v1/keys"));
   vi.spyOn(adminApi, "audit").mockResolvedValue(fixture("/admin/api/v1/audit"));
@@ -64,6 +66,7 @@ describe("live-shaped admin route responses", () => {
     ["operation detail", "/admin/operations/10f61fc4-4211-4bb8-a058-b11a8c078520", "/admin/operations/:operationId", <OperationDetailPage />, "Usage evidence"],
     ["scientific runs", "/admin/scientific-runs", "/admin/scientific-runs", <ScientificRunsPage />, "Scientific run ledger"],
     ["scientific run detail", "/admin/scientific-runs/run-rfdiffusion-0001", "/admin/scientific-runs/:runId", <ScientificRunDetailPage />, "Stages and attempts"],
+    ["academic assets", "/admin/academic-assets", "/admin/academic-assets", <AcademicAssetsPage />, "Licensed academic asset readiness"],
     ["access", "/admin/access", "/admin/access", <AccessPage />, "Scoped API keys"],
     ["capacity", "/admin/capacity", "/admin/capacity", <CapacityPage />, "Capacity, queues and elastic supply"],
     ["observability", "/admin/observability", "/admin/observability", <ObservabilityPage />, "Health, signals and verified tools"],

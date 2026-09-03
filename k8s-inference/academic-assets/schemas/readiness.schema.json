@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/academic-assets-readiness/v3",
+  "title": "Non-secret academic asset platform readiness projection",
+  "description": "Two independent axes. The operational axis (use authorization, artifact, tenant cache, runtime validation) decides whether the academic proof-of-concept path may run. The formal axis records whether a named representative has bound a specific institution under the licensor's terms, and is never inferred from the operational axis.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generation",
+    "state",
+    "runtime_path_state",
+    "formal_license_state",
+    "assets",
+    "fallbacks"
+  ],
+  "$defs": {
+    "modelId": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ociDigest": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/academic-assets-readiness/v3"
+    },
+    "generation": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "state": {
+      "enum": [
+        "Blocked",
+        "Ready"
+      ],
+      "description": "Ready only when every asset has reached full deployment and semantic readiness."
+    },
+    "runtime_path_state": {
+      "enum": [
+        "Blocked",
+        "Ready"
+      ],
+      "description": "Ready only when every asset's runtime status is RuntimeReady. An asset awaiting an image rebuild does not make the runtime path ready."
+    },
+    "formal_license_state": {
+      "enum": [
+        "Pending",
+        "Recorded"
+      ],
+      "description": "Independent of operational readiness. Pending means no named representative has bound an institution yet."
+    },
+    "assets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "asset_id",
+          "model_id",
+          "backend_id",
+          "display_name",
+          "state",
+          "serving_admission",
+          "use_authorization_status",
+          "execution_authorization_status",
+          "formal_license_status",
+          "artifact_status",
+          "tenant_cache_status",
+          "install_status",
+          "runtime_status",
+          "deployment_status",
+          "semantic_status",
+          "delivery_mode",
+          "embed_in_image",
+          "artifact_sha256",
+          "runtime_image_digest",
+          "runtime_environment_digest",
+          "authorization_receipt_sha256",
+          "acceptance_receipt_sha256",
+          "binding_content_identity_kind",
+          "binding_content_digest_sha256",
+          "binding_content_bytes"
+        ],
+        "properties": {
+          "asset_id": {
+            "$ref": "#/$defs/modelId"
+          },
+          "model_id": {
+            "$ref": "#/$defs/modelId"
+          },
+          "backend_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "state": {
+            "enum": [
+              "UseAuthorizationMissing",
+              "MissingArtifact",
+              "MissingTenantCache",
+              "MissingInstall",
+              "MissingRuntimeValidation",
+              "MissingDeployment",
+              "MissingSemanticReadiness",
+              "ImageRebuildPending",
+              "Ready",
+              "InvalidContract",
+              "InvalidTenantCacheReceipt",
+              "InvalidInstallReceipt",
+              "InvalidRuntimeReceipt",
+              "InvalidDeploymentReceipt",
+              "InvalidSemanticReceipt"
+            ]
+          },
+          "serving_admission": {
+            "enum": [
+              "PendingRuntimeReadiness",
+              "AdmittedNoPerRequestLicenseReceipt"
+            ],
+            "description": "Whether ordinary inference may proceed. Licence terms bind the one-time ingestion and deployment; they are never a per-request admission gate, so an authorized, runtime-ready asset is admitted without a caller-supplied receipt."
+          },
+          "use_authorization_status": {
+            "enum": [
+              "Missing",
+              "Granted"
+            ]
+          },
+          "execution_authorization_status": {
+            "enum": [
+              "NotAuthorized",
+              "Authorized"
+            ],
+            "description": "Whether the platform owner authorized running real tenant scientific predictions with this asset, as opposed to merely staging and validating it."
+          },
+          "formal_license_status": {
+            "enum": [
+              "FormalAcceptancePending",
+              "FormalAcceptanceRecorded"
+            ]
+          },
+          "artifact_status": {
+            "enum": [
+              "MissingArtifact",
+              "ArtifactVerified"
+            ]
+          },
+          "tenant_cache_status": {
+            "enum": [
+              "MissingTenantCache",
+              "TenantCacheReady",
+              "InvalidEvidence"
+            ]
+          },
+          "install_status": {
+            "enum": [
+              "MissingInstall",
+              "InstallReady",
+              "NotApplicable",
+              "InvalidEvidence"
+            ],
+            "description": "Reproducible installed tree on the tenant-private volume. NotApplicable when the asset is consumed directly rather than installed."
+          },
+          "runtime_status": {
+            "enum": [
+              "MissingRuntimeValidation",
+              "RuntimeSemanticPassedImageRebuildPending",
+              "RuntimeReady",
+              "InvalidEvidence"
+            ],
+            "description": "RuntimeSemanticPassedImageRebuildPending means the runtime proof passed against the mounted assets but the runtime image's packaged identity disagrees with its pinned tag, so the test must be repeated against the rebuilt image before the runtime counts as ready."
+          },
+          "deployment_status": {
+            "enum": [
+              "MissingDeployment",
+              "DeploymentReady",
+              "InvalidEvidence"
+            ]
+          },
+          "semantic_status": {
+            "enum": [
+              "MissingSemanticReadiness",
+              "SemanticReady",
+              "InvalidEvidence"
+            ]
+          },
+          "delivery_mode": {
+            "const": "tenant-private-volume",
+            "description": "Licensed bytes are mounted from a tenant-private volume, never baked into an image."
+          },
+          "embed_in_image": {
+            "const": false
+          },
+          "artifact_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "runtime_image_digest": {
+            "$ref": "#/$defs/ociDigest",
+            "description": "Digest of the published runtime image for this model. Null until such an image exists; the image that merely ran a validation is reported as runtime_environment_digest instead."
+          },
+          "runtime_environment_digest": {
+            "$ref": "#/$defs/ociDigest",
+            "description": "Digest of the container image that executed the runtime validation. Not a published model runtime image."
+          },
+          "authorization_receipt_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "acceptance_receipt_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "binding_content_identity_kind": {
+            "enum": [
+              "file-digest",
+              "tree-manifest"
+            ]
+          },
+          "binding_content_digest_sha256": {
+            "$ref": "#/$defs/sha256",
+            "description": "Identity of what the consumer actually mounts. For a tree this is the observed manifest digest, never the source archive digest."
+          },
+          "binding_content_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "fallbacks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_id",
+          "state",
+          "aliases",
+          "does_not_satisfy"
+        ],
+        "properties": {
+          "model_id": {
+            "$ref": "#/$defs/modelId"
+          },
+          "state": {
+            "const": "IndependentAlternative"
+          },
+          "aliases": {
+            "const": []
+          },
+          "does_not_satisfy": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/modelId"
+            }
+          }
+        }
+      }
+    }
+  }
+}

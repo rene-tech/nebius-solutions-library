@@ -1,0 +1,140 @@
+{
+  "_public_export_note": "Registry account paths and Kubernetes object UUIDs are redacted. Image digests, timestamps, resource requests and results are retained as the evidence.",
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\"},\"name\":\"academic-assets-stage-v1\",\"namespace\":\"fs2-academic-poc\"},\"spec\":{\"backoffLimit\":2,\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\"}},\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"args\":[\"import hashlib, os, pathlib, urllib.request\\nPINNED = {\\n  \\\"alphafold3\\\": (\\\"af3.bin.zst\\\",\\n    \\\"https://storage.googleapis.com/alphafold3/af3.bin.zst\\\",\\n    1020545840,\\n    \\\"74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff\\\"),\\n  \\\"pyrosetta-bindcraft\\\": (\\\"pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl\\\",\\n    \\\"https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/pyrosetta-2026.29%2Breleasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl\\\",\\n    1667097173,\\n    \\\"4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242\\\"),\\n}\\nroot = pathlib.Path(os.environ[\\\"RUNTIME_ROOT\\\"])\\nfailed = []\\nfor asset, (name, url, size, digest) in PINNED.items():\\n    d = root / asset\\n    d.mkdir(parents=True, exist_ok=True)\\n    final = d / name\\n    if final.exists():\\n        h = hashlib.sha256(); n = 0\\n        with final.open(\\\"rb\\\") as fh:\\n            for chunk in iter(lambda: fh.read(8 \\u003c\\u003c 20), b\\\"\\\"):\\n                h.update(chunk); n += len(chunk)\\n        if n == size and h.hexdigest() == digest:\\n            print(f\\\"{asset}: already staged bytes={n} sha256={h.hexdigest()}\\\", flush=True)\\n            continue\\n        print(f\\\"{asset}: existing copy failed verification; restaging\\\", flush=True)\\n        final.unlink()\\n    tmp = d / (name + \\\".partial\\\")\\n    h = hashlib.sha256(); n = 0\\n    req = urllib.request.Request(url, headers={\\\"User-Agent\\\": \\\"fs2-academic-assets/1.0\\\"})\\n    with urllib.request.urlopen(req, timeout=120) as resp, tmp.open(\\\"wb\\\") as out:\\n        for chunk in iter(lambda: resp.read(8 \\u003c\\u003c 20), b\\\"\\\"):\\n            h.update(chunk); n += len(chunk); out.write(chunk)\\n        out.flush(); os.fsync(out.fileno())\\n    actual = h.hexdigest()\\n    if n != size or actual != digest:\\n        tmp.unlink(missing_ok=True)\\n        print(f\\\"{asset}: REJECTED bytes={n} expected={size} sha256={actual} expected={digest}\\\", flush=True)\\n        failed.append(asset); continue\\n    os.chmod(tmp, 0o440); tmp.rename(final)\\n    print(f\\\"{asset}: staged bytes={n} sha256={actual} verified=true\\\", flush=True)\\nif failed:\\n    raise SystemExit(\\\"fail-closed: \\\" + \\\",\\\".join(failed))\\nprint(\\\"ALL_ASSETS_VERIFIED\\\", flush=True)\\n\"],\"command\":[\"python\",\"-u\",\"-c\"],\"env\":[{\"name\":\"RUNTIME_ROOT\",\"value\":\"/runtime\"}],\"image\":\"docker.io/library/python:3.10-slim\",\"name\":\"stage\",\"resources\":{\"limits\":{\"cpu\":\"4\",\"memory\":\"4Gi\"},\"requests\":{\"cpu\":\"1\",\"memory\":\"1Gi\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"readOnlyRootFilesystem\":true},\"volumeMounts\":[{\"mountPath\":\"/runtime\",\"name\":\"runtime\"}]}],\"enableServiceLinks\":false,\"restartPolicy\":\"Never\",\"securityContext\":{\"fsGroup\":65532,\"fsGroupChangePolicy\":\"OnRootMismatch\",\"runAsGroup\":65532,\"runAsNonRoot\":true,\"runAsUser\":65532,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"volumes\":[{\"name\":\"runtime\",\"persistentVolumeClaim\":{\"claimName\":\"academic-assets-runtime-rwx\"}}]}}}}\n"
+    },
+    "creationTimestamp": "2026-09-02T21:47:29Z",
+    "labels": {
+      "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion"
+    },
+    "name": "academic-assets-stage-v1",
+    "namespace": "fs2-academic-poc",
+    "uid": "00000000-0000-0000-0000-000000000000"
+  },
+  "spec": {
+    "backoffLimit": 2,
+    "completionMode": "NonIndexed",
+    "completions": 1,
+    "manualSelector": false,
+    "parallelism": 1,
+    "podReplacementPolicy": "TerminatingOrFailed",
+    "selector": {
+      "matchLabels": {
+        "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "suspend": false,
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion",
+          "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000",
+          "batch.kubernetes.io/job-name": "academic-assets-stage-v1",
+          "controller-uid": "00000000-0000-0000-0000-000000000000",
+          "job-name": "academic-assets-stage-v1"
+        }
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "containers": [
+          {
+            "args": [
+              "import hashlib, os, pathlib, urllib.request\nPINNED = {\n  \"alphafold3\": (\"af3.bin.zst\",\n    \"https://storage.googleapis.com/alphafold3/af3.bin.zst\",\n    1020545840,\n    \"74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff\"),\n  \"pyrosetta-bindcraft\": (\"pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl\",\n    \"https://west.rosettacommons.org/pyrosetta/quarterly/release.cxx11thread.serialization/pyrosetta-2026.29%2Breleasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl\",\n    1667097173,\n    \"4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242\"),\n}\nroot = pathlib.Path(os.environ[\"RUNTIME_ROOT\"])\nfailed = []\nfor asset, (name, url, size, digest) in PINNED.items():\n    d = root / asset\n    d.mkdir(parents=True, exist_ok=True)\n    final = d / name\n    if final.exists():\n        h = hashlib.sha256(); n = 0\n        with final.open(\"rb\") as fh:\n            for chunk in iter(lambda: fh.read(8 << 20), b\"\"):\n                h.update(chunk); n += len(chunk)\n        if n == size and h.hexdigest() == digest:\n            print(f\"{asset}: already staged bytes={n} sha256={h.hexdigest()}\", flush=True)\n            continue\n        print(f\"{asset}: existing copy failed verification; restaging\", flush=True)\n        final.unlink()\n    tmp = d / (name + \".partial\")\n    h = hashlib.sha256(); n = 0\n    req = urllib.request.Request(url, headers={\"User-Agent\": \"fs2-academic-assets/1.0\"})\n    with urllib.request.urlopen(req, timeout=120) as resp, tmp.open(\"wb\") as out:\n        for chunk in iter(lambda: resp.read(8 << 20), b\"\"):\n            h.update(chunk); n += len(chunk); out.write(chunk)\n        out.flush(); os.fsync(out.fileno())\n    actual = h.hexdigest()\n    if n != size or actual != digest:\n        tmp.unlink(missing_ok=True)\n        print(f\"{asset}: REJECTED bytes={n} expected={size} sha256={actual} expected={digest}\", flush=True)\n        failed.append(asset); continue\n    os.chmod(tmp, 0o440); tmp.rename(final)\n    print(f\"{asset}: staged bytes={n} sha256={actual} verified=true\", flush=True)\nif failed:\n    raise SystemExit(\"fail-closed: \" + \",\".join(failed))\nprint(\"ALL_ASSETS_VERIFIED\", flush=True)\n"
+            ],
+            "command": [
+              "python",
+              "-u",
+              "-c"
+            ],
+            "env": [
+              {
+                "name": "RUNTIME_ROOT",
+                "value": "/runtime"
+              }
+            ],
+            "image": "docker.io/library/python:3.10-slim",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "stage",
+            "resources": {
+              "limits": {
+                "cpu": "4",
+                "memory": "4Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "1Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/runtime",
+                "name": "runtime"
+              }
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": false,
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {
+          "fsGroup": 65532,
+          "fsGroupChangePolicy": "OnRootMismatch",
+          "runAsGroup": 65532,
+          "runAsNonRoot": true,
+          "runAsUser": 65532,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "terminationGracePeriodSeconds": 30,
+        "volumes": [
+          {
+            "name": "runtime",
+            "persistentVolumeClaim": {
+              "claimName": "academic-assets-runtime-rwx"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": "2026-09-02T21:50:39Z",
+        "lastTransitionTime": "2026-09-02T21:50:39Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "SuccessCriteriaMet"
+      },
+      {
+        "lastProbeTime": "2026-09-02T21:50:39Z",
+        "lastTransitionTime": "2026-09-02T21:50:39Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "Complete"
+      }
+    ],
+    "ready": 0,
+    "succeeded": 1,
+    "terminating": 0,
+    "uncountedTerminatedPods": {}
+  }
+}

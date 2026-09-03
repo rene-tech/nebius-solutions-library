@@ -11,6 +11,7 @@ const navigation = [
   ["Live model config", "/admin/model-deployments", "LC"],
   ["Operations", "/admin/operations", "OP"],
   ["Scientific runs", "/admin/scientific-runs", "SR"],
+  ["Academic assets", "/admin/academic-assets", "AA"],
   ["Users & API keys", "/admin/access", "AK"],
   ["Capacity & queues", "/admin/capacity", "CQ"],
   ["Observability", "/admin/observability", "OB"],
@@ -24,6 +25,7 @@ function titleFor(pathname: string) {
   if (/^\/admin\/models\/[^/]+/.test(pathname)) return "Model detail";
   if (/^\/admin\/operations\/[^/]+/.test(pathname)) return "Operation detail";
   if (/^\/admin\/scientific-runs\/[^/]+/.test(pathname)) return "Scientific run detail";
+  if (/^\/admin\/academic-assets/.test(pathname)) return "Academic assets";
   return navigation.find(([, path]) => path === pathname)?.[0] ?? "FS2 Serve";
 }
 

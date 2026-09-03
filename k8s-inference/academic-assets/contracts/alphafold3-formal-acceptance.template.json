@@ -1,0 +1,46 @@
+{
+  "_template": "Copy this file outside the repository, replace every REPLACE_ value with real institutional evidence, and pass it with --alphafold3-acceptance. It intentionally fails validation while any REPLACE_ marker remains. Never commit a completed receipt.",
+  "schema": "fs2-serve.nebius.ai/academic-license-acceptance/v3",
+  "asset_id": "alphafold3",
+  "status": "accepted-by-authorized-representative",
+  "accepted_at": "REPLACE_RFC3339_UTC_TIMESTAMP",
+  "tenant": {
+    "tenant_id": "tenant-academic",
+    "institution_id": "REPLACE_INSTITUTION_IDENTIFIER",
+    "institution_name": "REPLACE_INSTITUTION_LEGAL_NAME"
+  },
+  "actor": {
+    "actor_id": "REPLACE_REPRESENTATIVE_IDENTIFIER",
+    "display_name": "REPLACE_REPRESENTATIVE_NAME",
+    "role": "authorized-organization-representative"
+  },
+  "signature": {
+    "type": "signed-attestation-document",
+    "sha256": "REPLACE_64_HEX_DIGEST_OF_THE_SIGNED_ATTESTATION"
+  },
+  "scope": "academic-noncommercial",
+  "distribution_scope": "tenant-institution-only",
+  "terms": [
+    {
+      "document_id": "alphafold3-weights-terms-2024-11-09@c0f97eda2f1f482fd94d3a38bece18c7069b4a5c",
+      "sha256": "41adf62ff5eabc58831c828793988537948663c139f8b87d8d413851b150b6e5"
+    },
+    {
+      "document_id": "alphafold3-prohibited-use-policy-2024-11-09@c0f97eda2f1f482fd94d3a38bece18c7069b4a5c",
+      "sha256": "4992aebdc29bc7a9260bed6373bad05bb5a7e1b783451cd170163dd259f46c45"
+    }
+  ],
+  "accepted_terms_sha256": "REPLACE_64_HEX_DIGEST_OF_THE_ACCEPTED_TERMS_BUNDLE",
+  "entitlements": [
+    {
+      "entitlement_id": "google-af3-organization-parameter-access",
+      "issuer": "Google DeepMind",
+      "evidence_sha256": "REPLACE_64_HEX_DIGEST_OF_THE_GOOGLE_ACCESS_RECEIPT"
+    }
+  ],
+  "source_claims": {
+    "received_directly_from_licensor": true,
+    "source": "google-direct-download",
+    "object_generation": "1780568696389861"
+  }
+}

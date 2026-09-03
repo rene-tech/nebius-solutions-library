@@ -1,0 +1,170 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "name": "ACADEMIC_TREE_INSTALLER",
+    "namespace": "fs2-academic-poc",
+    "labels": {
+      "app.kubernetes.io/name": "academic-tree-installer",
+      "app.kubernetes.io/part-of": "fs2-serve",
+      "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion"
+    }
+  },
+  "spec": {
+    "backoffLimit": 1,
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion",
+          "fs2.nebius.ai/offline-validation": "true"
+        }
+      },
+      "spec": {
+        "restartPolicy": "Never",
+        "automountServiceAccountToken": false,
+        "enableServiceLinks": false,
+        "initContainers": [
+          {
+            "name": "prepare-root",
+            "image": "IMAGE",
+            "command": [
+              "python3",
+              "/opt/installer/install_tree.py",
+              "prepare",
+              "--root",
+              "/runtime",
+              "--gid",
+              "ASSET_GID",
+              "--asset-dir",
+              "ASSET_DIR",
+              "--asset-dir-mode",
+              "ASSET_DIR_MODE"
+            ],
+            "securityContext": {
+              "runAsUser": 0,
+              "runAsGroup": 0,
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ],
+                "add": [
+                  "CHOWN",
+                  "FOWNER"
+                ]
+              }
+            },
+            "resources": {
+              "requests": {
+                "cpu": "100m",
+                "memory": "128Mi"
+              },
+              "limits": {
+                "cpu": "500m",
+                "memory": "512Mi"
+              }
+            },
+            "volumeMounts": [
+              {
+                "name": "runtime",
+                "mountPath": "/runtime"
+              },
+              {
+                "name": "installer",
+                "mountPath": "/opt/installer",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "containers": [
+          {
+            "name": "install",
+            "image": "IMAGE",
+            "command": [
+              "sh",
+              "-c",
+              "INSTALL_COMMAND"
+            ],
+            "env": [
+              {
+                "name": "HOME",
+                "value": "/scratch"
+              },
+              {
+                "name": "TMPDIR",
+                "value": "/scratch"
+              },
+              {
+                "name": "PIP_NO_CACHE_DIR",
+                "value": "1"
+              }
+            ],
+            "securityContext": {
+              "runAsUser": 65532,
+              "runAsGroup": "ASSET_GID_NUMBER",
+              "runAsNonRoot": true,
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "resources": {
+              "requests": {
+                "cpu": "1",
+                "memory": "4Gi"
+              },
+              "limits": {
+                "cpu": "4",
+                "memory": "12Gi"
+              }
+            },
+            "volumeMounts": [
+              {
+                "name": "runtime",
+                "mountPath": "/runtime"
+              },
+              {
+                "name": "installer",
+                "mountPath": "/opt/installer",
+                "readOnly": true
+              },
+              {
+                "name": "scratch",
+                "mountPath": "/scratch"
+              }
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "name": "runtime",
+            "persistentVolumeClaim": {
+              "claimName": "academic-assets-runtime-rwx"
+            }
+          },
+          {
+            "name": "installer",
+            "configMap": {
+              "name": "academic-tree-installer",
+              "defaultMode": 365
+            }
+          },
+          {
+            "name": "scratch",
+            "emptyDir": {
+              "sizeLimit": "16Gi"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -332,3 +332,13 @@ output "managed_resource_count" {
 output "sensitive_state_notice" {
   value = "Generated admin, MCP/inference, Grafana, database, and cryptographic bootstrap material is stored in the run-owned local workloads state; keep the run root mode 0700/state files mode 0600 and destroy it after acceptance."
 }
+
+output "academic_assets" {
+  description = "Tenant-private academic asset delivery: identities a runtime needs to mount the exact licensed assets."
+  value       = module.academic_assets.academic_assets
+}
+
+output "academic_assets_managed_addresses" {
+  description = "Terraform addresses of the selected academic claims, for adopting already-populated storage."
+  value       = module.academic_assets.managed_addresses
+}

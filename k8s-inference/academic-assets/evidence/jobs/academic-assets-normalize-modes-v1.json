@@ -1,0 +1,131 @@
+{
+  "_public_export_note": "Registry account paths and Kubernetes object UUIDs are redacted. Image digests, timestamps, resource requests and results are retained as the evidence.",
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\"},\"name\":\"academic-assets-normalize-modes-v1\",\"namespace\":\"fs2-academic-poc\"},\"spec\":{\"backoffLimit\":1,\"template\":{\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"args\":[\"import os, stat, sys\\nFILE_MODE, DIR_MODE = 0o440, 0o550\\nroots = [\\\"/runtime/alphafold3\\\", \\\"/runtime/pyrosetta-bindcraft\\\"]\\nchanged = failed = 0\\nfor root in roots:\\n    for dirpath, dirnames, filenames in os.walk(root, topdown=False):\\n        for name in filenames:\\n            p = os.path.join(dirpath, name)\\n            try:\\n                st = os.lstat(p)\\n                if stat.S_ISLNK(st.st_mode):\\n                    continue\\n                want = DIR_MODE if stat.S_IMODE(st.st_mode) \\u0026 0o111 else FILE_MODE\\n                if stat.S_IMODE(st.st_mode) != want:\\n                    os.chmod(p, want); changed += 1\\n            except OSError as e:\\n                failed += 1; print(\\\"file-error %s %s\\\" % (p, e), flush=True)\\n        try:\\n            if stat.S_IMODE(os.lstat(dirpath).st_mode) != DIR_MODE:\\n                os.chmod(dirpath, DIR_MODE); changed += 1\\n        except OSError as e:\\n            failed += 1; print(\\\"dir-error %s %s\\\" % (dirpath, e), flush=True)\\n    try:\\n        if stat.S_IMODE(os.lstat(root).st_mode) != DIR_MODE:\\n            os.chmod(root, DIR_MODE); changed += 1\\n    except OSError as e:\\n        failed += 1; print(\\\"root-error %s %s\\\" % (root, e), flush=True)\\nprint(\\\"paths_changed=%d failures=%d\\\" % (changed, failed), flush=True)\\n# Verify: nothing world-accessible, nothing group-writable.\\nbad = []\\nfor root in roots:\\n    for dirpath, _, filenames in os.walk(root):\\n        for p in [dirpath] + [os.path.join(dirpath, n) for n in filenames]:\\n            m = stat.S_IMODE(os.lstat(p).st_mode)\\n            if m \\u0026 0o007 or m \\u0026 0o022:\\n                bad.append((p, oct(m)))\\nprint(\\\"violations=%d\\\" % len(bad), flush=True)\\nfor p, m in bad[:10]:\\n    print(\\\"violation %s %s\\\" % (p, m), flush=True)\\nif bad or failed:\\n    sys.exit(\\\"fail-closed: mode normalisation incomplete\\\")\\nprint(\\\"MODES_NORMALISED\\\", flush=True)\\n\"],\"command\":[\"python\",\"-u\",\"-c\"],\"image\":\"docker.io/library/python:3.10-slim\",\"name\":\"normalize\",\"resources\":{\"limits\":{\"cpu\":\"4\",\"memory\":\"2Gi\"},\"requests\":{\"cpu\":\"1\",\"memory\":\"512Mi\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"readOnlyRootFilesystem\":true},\"volumeMounts\":[{\"mountPath\":\"/runtime\",\"name\":\"runtime\"}]}],\"enableServiceLinks\":false,\"restartPolicy\":\"Never\",\"securityContext\":{\"runAsGroup\":65532,\"runAsNonRoot\":true,\"runAsUser\":65532,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"volumes\":[{\"name\":\"runtime\",\"persistentVolumeClaim\":{\"claimName\":\"academic-assets-runtime-rwx\"}}]}}}}\n"
+    },
+    "creationTimestamp": "2026-09-02T22:38:29Z",
+    "labels": {
+      "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion"
+    },
+    "name": "academic-assets-normalize-modes-v1",
+    "namespace": "fs2-academic-poc",
+    "uid": "00000000-0000-0000-0000-000000000000"
+  },
+  "spec": {
+    "backoffLimit": 1,
+    "completionMode": "NonIndexed",
+    "completions": 1,
+    "manualSelector": false,
+    "parallelism": 1,
+    "podReplacementPolicy": "TerminatingOrFailed",
+    "selector": {
+      "matchLabels": {
+        "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "suspend": false,
+    "template": {
+      "metadata": {
+        "labels": {
+          "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000",
+          "batch.kubernetes.io/job-name": "academic-assets-normalize-modes-v1",
+          "controller-uid": "00000000-0000-0000-0000-000000000000",
+          "job-name": "academic-assets-normalize-modes-v1"
+        }
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "containers": [
+          {
+            "args": [
+              "import os, stat, sys\nFILE_MODE, DIR_MODE = 0o440, 0o550\nroots = [\"/runtime/alphafold3\", \"/runtime/pyrosetta-bindcraft\"]\nchanged = failed = 0\nfor root in roots:\n    for dirpath, dirnames, filenames in os.walk(root, topdown=False):\n        for name in filenames:\n            p = os.path.join(dirpath, name)\n            try:\n                st = os.lstat(p)\n                if stat.S_ISLNK(st.st_mode):\n                    continue\n                want = DIR_MODE if stat.S_IMODE(st.st_mode) & 0o111 else FILE_MODE\n                if stat.S_IMODE(st.st_mode) != want:\n                    os.chmod(p, want); changed += 1\n            except OSError as e:\n                failed += 1; print(\"file-error %s %s\" % (p, e), flush=True)\n        try:\n            if stat.S_IMODE(os.lstat(dirpath).st_mode) != DIR_MODE:\n                os.chmod(dirpath, DIR_MODE); changed += 1\n        except OSError as e:\n            failed += 1; print(\"dir-error %s %s\" % (dirpath, e), flush=True)\n    try:\n        if stat.S_IMODE(os.lstat(root).st_mode) != DIR_MODE:\n            os.chmod(root, DIR_MODE); changed += 1\n    except OSError as e:\n        failed += 1; print(\"root-error %s %s\" % (root, e), flush=True)\nprint(\"paths_changed=%d failures=%d\" % (changed, failed), flush=True)\n# Verify: nothing world-accessible, nothing group-writable.\nbad = []\nfor root in roots:\n    for dirpath, _, filenames in os.walk(root):\n        for p in [dirpath] + [os.path.join(dirpath, n) for n in filenames]:\n            m = stat.S_IMODE(os.lstat(p).st_mode)\n            if m & 0o007 or m & 0o022:\n                bad.append((p, oct(m)))\nprint(\"violations=%d\" % len(bad), flush=True)\nfor p, m in bad[:10]:\n    print(\"violation %s %s\" % (p, m), flush=True)\nif bad or failed:\n    sys.exit(\"fail-closed: mode normalisation incomplete\")\nprint(\"MODES_NORMALISED\", flush=True)\n"
+            ],
+            "command": [
+              "python",
+              "-u",
+              "-c"
+            ],
+            "image": "docker.io/library/python:3.10-slim",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "normalize",
+            "resources": {
+              "limits": {
+                "cpu": "4",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "512Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/runtime",
+                "name": "runtime"
+              }
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": false,
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {
+          "runAsGroup": 65532,
+          "runAsNonRoot": true,
+          "runAsUser": 65532,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "terminationGracePeriodSeconds": 30,
+        "volumes": [
+          {
+            "name": "runtime",
+            "persistentVolumeClaim": {
+              "claimName": "academic-assets-runtime-rwx"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": "2026-09-02T22:38:41Z",
+        "lastTransitionTime": "2026-09-02T22:38:41Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "SuccessCriteriaMet"
+      },
+      {
+        "lastProbeTime": "2026-09-02T22:38:41Z",
+        "lastTransitionTime": "2026-09-02T22:38:41Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "Complete"
+      }
+    ],
+    "ready": 0,
+    "succeeded": 1,
+    "terminating": 0,
+    "uncountedTerminatedPods": {}
+  }
+}

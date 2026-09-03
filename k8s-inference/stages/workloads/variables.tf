@@ -1025,3 +1025,112 @@ variable "run_acceptance_job" {
   type        = bool
   default     = false
 }
+
+variable "academic_assets" {
+  description = <<-EOT
+    Normalized tenant-private academic asset delivery contract emitted by the root facade
+    and passed straight through to modules/academic-assets, which owns the invariants and
+    the retained/disposable claim lifecycle.
+  EOT
+  type = object({
+    enabled        = bool
+    project_id     = string
+    region         = string
+    tenant_id      = string
+    institution_id = optional(string, null)
+    namespace      = string
+    runtime_claim = object({
+      name          = string
+      storage_gib   = number
+      storage_class = string
+      access_mode   = string
+      lifecycle     = optional(string, "disposable")
+    })
+    legacy_quarantine_claim = object({
+      enabled     = bool
+      namespace   = string
+      name        = string
+      storage_gib = number
+      retain      = bool
+    })
+    delivery = object({
+      mode                    = string
+      mount_root              = string
+      asset_gid               = number
+      consumer_access         = string
+      world_readable          = bool
+      embed_licensed_bytes    = bool
+      general_shared_cache    = bool
+      deny_egress_on_validate = bool
+    })
+    execution = optional(object({
+      enabled                    = optional(bool, true)
+      local_queue                = optional(string, "academic-scientific")
+      cluster_queue              = optional(string, "inference-accelerators")
+      service_account            = optional(string, "fs2-academic-runner")
+      controller_namespace       = optional(string, "fs2-system")
+      controller_service_account = optional(string, "fs2-serve-control-plane-runtime")
+    }), {})
+
+    assets = map(object({
+      model_id              = string
+      relative_path         = string
+      install_relative_path = optional(string, null)
+      read_only             = optional(bool, true)
+      runtime_binding = optional(object({
+        artifact_id                = string
+        source_sub_path            = string
+        consumer_path              = string
+        mechanism                  = string
+        content_identity_kind      = optional(string, "file-digest")
+        content_manifest_algorithm = optional(string, null)
+        content_digest_sha256      = optional(string, null)
+        size_bytes                 = optional(number, null)
+        source_artifact = optional(object({
+          filename   = string
+          sha256     = string
+          size_bytes = number
+        }), null)
+      }), null)
+    }))
+    readiness_manifest_sha256 = optional(string, null)
+  })
+  nullable = false
+
+  # Opt-in, and disposable when opted in, matching the root facade. A default keeps
+  # the stage usable by callers and tests that do not exercise academic assets.
+  default = {
+    enabled        = false
+    project_id     = ""
+    region         = ""
+    tenant_id      = "tenant-academic"
+    institution_id = null
+    namespace      = "fs2-academic-poc"
+    runtime_claim = {
+      name          = "academic-assets-runtime-rwx"
+      storage_gib   = 128
+      storage_class = "csi-mounted-fs-path-sc"
+      access_mode   = "ReadWriteMany"
+      lifecycle     = "disposable"
+    }
+    legacy_quarantine_claim = {
+      enabled     = false
+      namespace   = "fs2-models"
+      name        = "cancer-immunotherapy-academic-assets-rwx-v1"
+      storage_gib = 128
+      retain      = false
+    }
+    delivery = {
+      mode                    = "tenant-private-volume"
+      mount_root              = "/opt/fs2/academic"
+      asset_gid               = 65532
+      consumer_access         = "supplemental-group"
+      world_readable          = false
+      embed_licensed_bytes    = false
+      general_shared_cache    = false
+      deny_egress_on_validate = true
+    }
+    assets                    = {}
+    readiness_manifest_sha256 = null
+  }
+}

@@ -12,6 +12,7 @@ import uvicorn
 from fastapi import FastAPI
 from fs2_serve_catalog.loader import load_catalog
 
+from .academic_assets import CatalogAcademicAssetAdminAdapter
 from .admin import (
     AdminContextConfig,
     AdminReadService,
@@ -275,6 +276,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         max_response_bytes=settings.max_response_bytes,
         federation=federation,
     )
+
     async def refresh_routes() -> bool:
         if not await route_revalidator.refresh():
             return False
@@ -308,6 +310,10 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         settings,
         initial_configuration=initial_configuration,
     )
+    # The academic readiness projection is generated into the delivered catalog, so
+    # the operator endpoint reports observed state instead of falling back to the
+    # unavailable adapter. It fails closed on its own if the projection is absent.
+    academic_assets = CatalogAcademicAssetAdminAdapter(settings.catalog_dir)
     admin_read = AdminReadService(
         registry=registry,
         store=store,
@@ -315,6 +321,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         prometheus=prometheus,
         capacity=capacity,
         observability=observability,
+        academic_assets=academic_assets,
         contexts=contexts,
         source_max_age_seconds=settings.admin_source_max_age_seconds,
         adapter_timeout_seconds=settings.admin_adapter_timeout_seconds,

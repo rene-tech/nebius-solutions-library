@@ -1,0 +1,47 @@
+{
+  "schema": "fs2-serve.nebius.ai/academic-use-authorization/v1",
+  "asset_id": "pyrosetta-bindcraft",
+  "status": "granted",
+  "granted_at": "2026-09-02T21:55:00Z",
+  "granted_by_role": "platform-owner",
+  "authorization_id": "fs2-cancer-immunotherapy-academic-poc-2026-09-02",
+  "tenant_id": "tenant-academic",
+  "scope": "academic-noncommercial",
+  "provenance": "Explicit platform-owner instruction recorded in Agent Task Deck task fs2-cancer-immunotherapy-academic-assets-ingestion-r20260902 on 2026-09-02, confirming this proof of concept is academic and authorizing PyRosetta and AlphaFold 3 installation, operation and tenant prediction execution on the the target project H100 cluster.",
+  "supersedes_formal_acceptance": false,
+  "permitted_operations": [
+    "verify-artifact",
+    "stage-tenant-private-volume",
+    "install-to-tenant-private-volume",
+    "validate-runtime",
+    "execute-scientific-prediction"
+  ],
+  "use_class": "academic-non-commercial",
+  "non_exportable": true,
+  "licence_references": [
+    {
+      "document_id": "pyrosetta-noncommercial-license",
+      "url": "https://github.com/RosettaCommons/rosetta/blob/main/LICENSE.PyRosetta.md",
+      "pinned_revision": "de92a3c0dea8a010d372a22025e3e50bd4e2f33f",
+      "version": "PyRosetta Software Non-Commercial License",
+      "sha256": "41de5b13b7ddb64fab2dda1cb45581b9d4c1ee6be7bd3ad90f562288bcdcffa1",
+      "verified_at": "2026-09-02T23:30:00Z",
+      "basis": "Academic and non-commercial downloads are governed by this licence; https://www.pyrosetta.org/downloads is the official distribution point and quarterly persistent wheels began in January 2026."
+    },
+    {
+      "document_id": "rosetta-noncommercial-license",
+      "url": "https://github.com/RosettaCommons/rosetta/blob/main/LICENSE.md",
+      "pinned_revision": "de92a3c0dea8a010d372a22025e3e50bd4e2f33f",
+      "version": "Rosetta Software Non-Commercial License",
+      "sha256": "8cc2e394ee31761ac27a9ebee4fe2a567758e17cadc1ed0318c54e9cfe0d5214",
+      "verified_at": "2026-09-02T23:30:00Z",
+      "basis": "PyRosetta is licensed only to entities that already hold Rosetta rights, so both documents apply."
+    }
+  ],
+  "artifact_reference": {
+    "filename": "pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl",
+    "version": "2026.29+releasequarterly.80a0635615",
+    "sha256": "4383d8d1a14fd3aff52983de936908791cc77bc6ac418e3bc53bb963a42c5242",
+    "source_url": "https://www.pyrosetta.org/downloads"
+  }
+}

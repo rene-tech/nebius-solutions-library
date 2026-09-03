@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/academic-assets-revocation/v1",
+  "title": "Revoked academic asset generation tombstone",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generation", "manifest_sha256", "revoked_at", "reason"],
+  "properties": {
+    "schema": {"const": "fs2-serve.nebius.ai/academic-assets-revocation/v1"},
+    "generation": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"},
+    "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "revoked_at": {"type": "string", "format": "date-time"},
+    "reason": {
+      "enum": ["invalid-license-acceptance-attribution", "license-terminated"]
+    }
+  }
+}

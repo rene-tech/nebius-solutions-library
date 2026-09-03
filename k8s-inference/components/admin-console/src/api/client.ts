@@ -54,6 +54,7 @@ import type {
   ModelDeploymentValidationPreview,
 } from "./modelDeploymentTypes";
 import type {
+  AcademicAssetReadinessList,
   ScientificAccessState,
   ScientificAdmissionState,
   ScientificModelReadinessList,
@@ -311,6 +312,8 @@ export const adminApi = {
     ),
   scientificModels: (context: URLSearchParams, signal?: AbortSignal) =>
     request<ScientificModelReadinessList>("/scientific-models", context, undefined, signal),
+  academicAssets: (context: URLSearchParams, signal?: AbortSignal) =>
+    request<AcademicAssetReadinessList>("/academic-assets", context, {}, signal),
   capacity: (context: URLSearchParams, signal?: AbortSignal) =>
     request<AdminCapacity>("/capacity", context, undefined, signal),
   observability: (

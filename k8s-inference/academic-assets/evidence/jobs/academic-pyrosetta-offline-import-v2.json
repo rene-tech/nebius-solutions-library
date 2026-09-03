@@ -1,0 +1,162 @@
+{
+  "_public_export_note": "Registry account paths and Kubernetes object UUIDs are redacted. Image digests, timestamps, resource requests and results are retained as the evidence.",
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\"},\"name\":\"academic-pyrosetta-offline-import-v2\",\"namespace\":\"fs2-academic-poc\"},\"spec\":{\"backoffLimit\":0,\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\",\"fs2.nebius.ai/offline-validation\":\"true\"}},\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"args\":[\"import hashlib, json, os, platform, socket, stat, sys\\nblocked=[]\\nfor host,port in ((\\\"1.1.1.1\\\",443),(\\\"8.8.8.8\\\",53)):\\n    try:\\n        socket.create_connection((host,port),timeout=6).close(); blocked.append(False)\\n    except OSError: blocked.append(True)\\nprint(\\\"network_disabled=%s\\\"%str(all(blocked)).lower(), flush=True)\\nif not all(blocked): sys.exit(\\\"fail-closed: egress reachable\\\")\\nprint(\\\"running_uid=%d running_gid=%d groups=%s\\\"%(os.getuid(),os.getgid(),sorted(os.getgroups())), flush=True)\\nwhl=\\\"/runtime/pyrosetta-bindcraft/pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl\\\"\\nm=stat.S_IMODE(os.lstat(whl).st_mode)\\nprint(\\\"wheel_mode=0%o world_readable=%s group_writable=%s\\\"%(m, bool(m\\u00260o004), bool(m\\u00260o020)), flush=True)\\nif m \\u0026 0o007 or m \\u0026 0o022: sys.exit(\\\"fail-closed: licensed bytes are world or group writable\\\")\\nimport importlib.metadata as md, pyrosetta\\nv=md.version(\\\"pyrosetta\\\")\\nprint(\\\"installed_distribution_version=%s\\\"%v, flush=True)\\nprint(\\\"import_origin=%s\\\"%pyrosetta.__file__, flush=True)\\nprint(\\\"python_version=%s\\\"%platform.python_version(), flush=True)\\npyrosetta.init(\\\"-mute all\\\")\\npose=pyrosetta.pose_from_sequence(\\\"AAAAAAAAAA\\\")\\nscore=pyrosetta.get_score_function()(pose)\\nprint(\\\"pose_residues=%d\\\"%pose.total_residue(), flush=True)\\nprint(\\\"scorefxn_value=%.6f\\\"%score, flush=True)\\nev={\\\"asset_id\\\":\\\"pyrosetta-bindcraft\\\",\\\"installed_distribution_version\\\":v,\\n    \\\"python_version\\\":platform.python_version(),\\\"network_disabled\\\":True,\\n    \\\"pose_residues\\\":pose.total_residue(),\\\"wheel_mode\\\":\\\"0%o\\\"%m}\\nprint(\\\"evidence_digest=%s\\\"%hashlib.sha256(json.dumps(ev,sort_keys=True,separators=(\\\",\\\",\\\":\\\")).encode()).hexdigest(), flush=True)\\nprint(\\\"OFFLINE_IMPORT_PASSED\\\", flush=True)\\n\"],\"command\":[\"python\",\"-u\",\"-c\"],\"env\":[{\"name\":\"HOME\",\"value\":\"/scratch\"},{\"name\":\"TMPDIR\",\"value\":\"/scratch\"},{\"name\":\"PYTHONPATH\",\"value\":\"/runtime/pyrosetta-bindcraft/site-packages\"}],\"image\":\"docker.io/library/python:3.10-slim\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"validate\",\"resources\":{\"limits\":{\"cpu\":\"4\",\"memory\":\"12Gi\"},\"requests\":{\"cpu\":\"1\",\"memory\":\"4Gi\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"readOnlyRootFilesystem\":true},\"volumeMounts\":[{\"mountPath\":\"/runtime\",\"name\":\"runtime\",\"readOnly\":true},{\"mountPath\":\"/scratch\",\"name\":\"scratch\"}]}],\"enableServiceLinks\":false,\"restartPolicy\":\"Never\",\"securityContext\":{\"runAsGroup\":12345,\"runAsNonRoot\":true,\"runAsUser\":12345,\"seccompProfile\":{\"type\":\"RuntimeDefault\"},\"supplementalGroups\":[65532]},\"volumes\":[{\"name\":\"runtime\",\"persistentVolumeClaim\":{\"claimName\":\"academic-assets-runtime-rwx\",\"readOnly\":true}},{\"emptyDir\":{\"sizeLimit\":\"4Gi\"},\"name\":\"scratch\"}]}}}}\n"
+    },
+    "creationTimestamp": "2026-09-02T22:40:27Z",
+    "labels": {
+      "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion"
+    },
+    "name": "academic-pyrosetta-offline-import-v2",
+    "namespace": "fs2-academic-poc",
+    "uid": "00000000-0000-0000-0000-000000000000"
+  },
+  "spec": {
+    "backoffLimit": 0,
+    "completionMode": "NonIndexed",
+    "completions": 1,
+    "manualSelector": false,
+    "parallelism": 1,
+    "podReplacementPolicy": "TerminatingOrFailed",
+    "selector": {
+      "matchLabels": {
+        "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "suspend": false,
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion",
+          "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000",
+          "batch.kubernetes.io/job-name": "academic-pyrosetta-offline-import-v2",
+          "controller-uid": "00000000-0000-0000-0000-000000000000",
+          "fs2.nebius.ai/offline-validation": "true",
+          "job-name": "academic-pyrosetta-offline-import-v2"
+        }
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "containers": [
+          {
+            "args": [
+              "import hashlib, json, os, platform, socket, stat, sys\nblocked=[]\nfor host,port in ((\"1.1.1.1\",443),(\"8.8.8.8\",53)):\n    try:\n        socket.create_connection((host,port),timeout=6).close(); blocked.append(False)\n    except OSError: blocked.append(True)\nprint(\"network_disabled=%s\"%str(all(blocked)).lower(), flush=True)\nif not all(blocked): sys.exit(\"fail-closed: egress reachable\")\nprint(\"running_uid=%d running_gid=%d groups=%s\"%(os.getuid(),os.getgid(),sorted(os.getgroups())), flush=True)\nwhl=\"/runtime/pyrosetta-bindcraft/pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl\"\nm=stat.S_IMODE(os.lstat(whl).st_mode)\nprint(\"wheel_mode=0%o world_readable=%s group_writable=%s\"%(m, bool(m&0o004), bool(m&0o020)), flush=True)\nif m & 0o007 or m & 0o022: sys.exit(\"fail-closed: licensed bytes are world or group writable\")\nimport importlib.metadata as md, pyrosetta\nv=md.version(\"pyrosetta\")\nprint(\"installed_distribution_version=%s\"%v, flush=True)\nprint(\"import_origin=%s\"%pyrosetta.__file__, flush=True)\nprint(\"python_version=%s\"%platform.python_version(), flush=True)\npyrosetta.init(\"-mute all\")\npose=pyrosetta.pose_from_sequence(\"AAAAAAAAAA\")\nscore=pyrosetta.get_score_function()(pose)\nprint(\"pose_residues=%d\"%pose.total_residue(), flush=True)\nprint(\"scorefxn_value=%.6f\"%score, flush=True)\nev={\"asset_id\":\"pyrosetta-bindcraft\",\"installed_distribution_version\":v,\n    \"python_version\":platform.python_version(),\"network_disabled\":True,\n    \"pose_residues\":pose.total_residue(),\"wheel_mode\":\"0%o\"%m}\nprint(\"evidence_digest=%s\"%hashlib.sha256(json.dumps(ev,sort_keys=True,separators=(\",\",\":\")).encode()).hexdigest(), flush=True)\nprint(\"OFFLINE_IMPORT_PASSED\", flush=True)\n"
+            ],
+            "command": [
+              "python",
+              "-u",
+              "-c"
+            ],
+            "env": [
+              {
+                "name": "HOME",
+                "value": "/scratch"
+              },
+              {
+                "name": "TMPDIR",
+                "value": "/scratch"
+              },
+              {
+                "name": "PYTHONPATH",
+                "value": "/runtime/pyrosetta-bindcraft/site-packages"
+              }
+            ],
+            "image": "docker.io/library/python:3.10-slim",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "validate",
+            "resources": {
+              "limits": {
+                "cpu": "4",
+                "memory": "12Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "4Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/runtime",
+                "name": "runtime",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/scratch",
+                "name": "scratch"
+              }
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": false,
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {
+          "runAsGroup": 12345,
+          "runAsNonRoot": true,
+          "runAsUser": 12345,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          },
+          "supplementalGroups": [
+            65532
+          ]
+        },
+        "terminationGracePeriodSeconds": 30,
+        "volumes": [
+          {
+            "name": "runtime",
+            "persistentVolumeClaim": {
+              "claimName": "academic-assets-runtime-rwx",
+              "readOnly": true
+            }
+          },
+          {
+            "emptyDir": {
+              "sizeLimit": "4Gi"
+            },
+            "name": "scratch"
+          }
+        ]
+      }
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": "2026-09-02T22:41:34Z",
+        "lastTransitionTime": "2026-09-02T22:41:34Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "SuccessCriteriaMet"
+      },
+      {
+        "lastProbeTime": "2026-09-02T22:41:34Z",
+        "lastTransitionTime": "2026-09-02T22:41:34Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "Complete"
+      }
+    ],
+    "ready": 0,
+    "succeeded": 1,
+    "terminating": 0,
+    "uncountedTerminatedPods": {}
+  }
+}

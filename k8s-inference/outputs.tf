@@ -87,3 +87,33 @@ output "effective_configuration" {
     registry_policy = local.deployment_contract.artifact_delivery
   }
 }
+
+output "academic_assets" {
+  description = "Portable non-secret academic asset delivery contract: identity, tenant binding, and canonical volume."
+  value = {
+    enabled        = local.academic_assets_contract.enabled
+    project_id     = local.academic_assets_contract.project_id
+    region         = local.academic_assets_contract.region
+    tenant_id      = local.academic_assets_contract.tenant_id
+    institution_id = local.academic_assets_contract.institution_id
+    canonical_volume = {
+      namespace     = local.academic_assets_contract.namespace
+      claim         = local.academic_assets_contract.runtime_claim.name
+      storage_gib   = local.academic_assets_contract.runtime_claim.storage_gib
+      storage_class = local.academic_assets_contract.runtime_claim.storage_class
+      lifecycle     = local.academic_assets_contract.runtime_claim.lifecycle
+      mount_root    = local.academic_assets_contract.delivery.mount_root
+    }
+    retained_quarantine_volume = {
+      enabled   = local.academic_assets_contract.legacy_quarantine_claim.enabled
+      namespace = local.academic_assets_contract.legacy_quarantine_claim.namespace
+      claim     = local.academic_assets_contract.legacy_quarantine_claim.name
+      retained  = local.academic_assets_contract.legacy_quarantine_claim.retain
+      mountable = false
+    }
+    embeds_licensed_bytes     = local.academic_assets_contract.delivery.embed_licensed_bytes
+    general_shared_cache      = local.academic_assets_contract.delivery.general_shared_cache
+    readiness_manifest_sha256 = local.academic_assets_contract.readiness_manifest_sha256
+    model_ids                 = sort([for key, asset in local.academic_assets_contract.assets : asset.model_id])
+  }
+}

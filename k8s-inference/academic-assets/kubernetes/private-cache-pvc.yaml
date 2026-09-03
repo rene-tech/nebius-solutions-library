@@ -1,0 +1,30 @@
+# Canonical tenant-private runtime claim for licensed academic assets.
+#
+# Terraform owns this object in stages/workloads/academic_assets.tf; this manifest
+# exists so the shape is reviewable next to the ingestion scripts and so an operator
+# can adopt an already-populated claim rather than recreating it. Adopt with
+# academic-assets/scripts/adopt-live-resources.sh.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: academic-assets-runtime-rwx
+  namespace: fs2-academic-poc
+  labels:
+    app.kubernetes.io/name: academic-assets
+    app.kubernetes.io/part-of: fs2-serve
+    app.kubernetes.io/managed-by: terraform
+    fs2.nebius.ai/tenant-id: tenant-academic
+    fs2.nebius.ai/academic-runtime: "true"
+  annotations:
+    fs2.nebius.ai/data-classification: licensed-academic-nonredistributable
+    fs2.nebius.ai/region: eu-north1
+    fs2.nebius.ai/general-shared-cache: "false"
+    fs2.nebius.ai/delivery-mode: tenant-private-volume
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 128Gi
+  storageClassName: csi-mounted-fs-path-sc
+  volumeMode: Filesystem

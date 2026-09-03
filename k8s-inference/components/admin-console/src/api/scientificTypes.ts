@@ -273,3 +273,49 @@ export interface ScientificModelReadiness {
 export interface ScientificModelReadinessList {
   items: ScientificModelReadiness[];
 }
+
+export type AcademicAssetState =
+  | "UseAuthorizationMissing" | "MissingArtifact" | "MissingTenantCache"
+  | "MissingRuntimeValidation" | "MissingDeployment" | "MissingSemanticReadiness"
+  | "ImageRebuildPending" | "Ready" | "InvalidContract" | "InvalidTenantCacheReceipt"
+  | "InvalidRuntimeReceipt" | "InvalidDeploymentReceipt" | "InvalidSemanticReceipt";
+
+export interface AcademicAssetReadiness {
+  asset_id: string;
+  model_id: string;
+  backend_id: string;
+  display_name: string;
+  state: AcademicAssetState;
+  serving_admission: "PendingRuntimeReadiness" | "AdmittedNoPerRequestLicenseReceipt";
+  use_authorization_status: "Missing" | "Granted";
+  execution_authorization_status: "NotAuthorized" | "Authorized";
+  formal_license_status: "FormalAcceptancePending" | "FormalAcceptanceRecorded";
+  artifact_status: "MissingArtifact" | "ArtifactVerified";
+  tenant_cache_status: "MissingTenantCache" | "TenantCacheReady" | "InvalidEvidence";
+  runtime_status:
+    | "MissingRuntimeValidation"
+    | "RuntimeReady"
+    | "RuntimeSemanticPassedImageRebuildPending"
+    | "InvalidEvidence";
+  deployment_status: "MissingDeployment" | "DeploymentReady" | "InvalidEvidence";
+  semantic_status: "MissingSemanticReadiness" | "SemanticReady" | "InvalidEvidence";
+  delivery_mode: "tenant-private-volume";
+  embed_in_image: false;
+  mount_path: string;
+  artifact_sha256: string | null;
+  runtime_image_digest: string | null;
+  runtime_environment_digest: string | null;
+  authorization_receipt_sha256: string | null;
+  acceptance_receipt_sha256: string | null;
+  alternative: { model_id: string; reason: string } | null;
+}
+
+export interface AcademicAssetReadinessList {
+  tenant_id: string;
+  institution_id: string | null;
+  runtime_path_state: "Blocked" | "Ready";
+  formal_license_state: "Pending" | "Recorded";
+  request_time_license_receipt_required: false;
+  delivery: { namespace: string; claim: string; mount_root: string; general_shared_cache: false };
+  items: AcademicAssetReadiness[];
+}

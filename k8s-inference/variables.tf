@@ -1071,3 +1071,152 @@ variable "deployment" {
     error_message = "Secret environment-variable references must be uppercase shell variable names."
   }
 }
+variable "academic_assets" {
+  description = <<-EOT
+    Tenant-private delivery of licensed academic assets (AlphaFold 3 parameters and the
+    BindCraft PyRosetta prerequisite). Licensed bytes are mounted from a tenant-private
+    volume and are never embedded in an image or placed in a general shared cache.
+
+    Project and region are inherited from deployment.target, so this block stays portable
+    across projects and regions. institution_id is intentionally nullable: the operational
+    proof-of-concept path must not require invented institution metadata, and the formal
+    institutional licence acceptance is tracked separately from this infrastructure.
+  EOT
+  type = object({
+    enabled             = optional(bool, false)
+    tenant_id           = optional(string, "tenant-academic")
+    institution_id      = optional(string, null)
+    namespace           = optional(string, "fs2-academic-poc")
+    runtime_pvc_name    = optional(string, "academic-assets-runtime-rwx")
+    runtime_storage_gib = optional(number, 128)
+
+    # retained    the claim holds licensed bytes that must survive; Terraform refuses
+    #             to destroy or replace it.
+    # disposable  the claim belongs to a throwaway acceptance environment and must
+    #             tear down cleanly with the rest of it.
+    runtime_claim_lifecycle = optional(string, "disposable")
+    storage_class           = optional(string, "csi-mounted-fs-path-sc")
+    access_mode             = optional(string, "ReadWriteMany")
+    mount_root              = optional(string, "/opt/fs2/academic")
+
+    # Licensed bytes are staged under this shared non-root group and read through a
+    # supplemental group, so a runtime image running as its own uid can read them
+    # without the bytes ever becoming world-readable.
+    asset_gid                             = optional(number, 65532)
+    deny_egress_during_offline_validation = optional(bool, false)
+
+    # Optional migration binding for a historical quarantine claim created before
+    # the canonical volume. Fresh deployments leave it disabled; retention is an
+    # explicit operator choice rather than a default guardrail.
+    legacy_quarantine = optional(object({
+      enabled     = optional(bool, false)
+      namespace   = optional(string, "fs2-models")
+      pvc_name    = optional(string, "cancer-immunotherapy-academic-assets-rwx-v1")
+      storage_gib = optional(number, 128)
+      retain      = optional(bool, false)
+    }), {})
+
+    # Non-secret readiness digest emitted by academic-assets/scripts/academic_assets.py.
+    readiness_manifest_sha256 = optional(string, null)
+
+    execution = optional(object({
+      enabled                    = optional(bool, true)
+      local_queue                = optional(string, "academic-scientific")
+      cluster_queue              = optional(string, "inference-accelerators")
+      service_account            = optional(string, "fs2-academic-runner")
+      controller_namespace       = optional(string, "fs2-system")
+      controller_service_account = optional(string, "fs2-serve-control-plane-runtime")
+    }), {})
+
+    assets = optional(map(object({
+      model_id              = string
+      relative_path         = string
+      install_relative_path = optional(string, null)
+      read_only             = optional(bool, true)
+
+      # How model onboarding addresses this object. Declared here so the rendered
+      # mount is the contracted one rather than a path derived from the asset key.
+      runtime_binding = optional(object({
+        artifact_id                = string
+        source_sub_path            = string
+        consumer_path              = string
+        mechanism                  = string
+        content_identity_kind      = optional(string, "file-digest")
+        content_manifest_algorithm = optional(string, null)
+        content_digest_sha256      = optional(string, null)
+        size_bytes                 = optional(number, null)
+        source_artifact = optional(object({
+          filename   = string
+          sha256     = string
+          size_bytes = number
+        }), null)
+      }), null)
+    })), {})
+  })
+  default = {}
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9._-]{2,127}$", var.academic_assets.tenant_id))
+    error_message = "academic_assets.tenant_id must be a lowercase DNS-safe tenant identifier."
+  }
+
+  validation {
+    condition = alltrue([
+      can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", var.academic_assets.namespace)),
+      can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", var.academic_assets.runtime_pvc_name)),
+    ])
+    error_message = "academic_assets namespace and runtime_pvc_name must be DNS labels."
+  }
+
+  validation {
+    condition = (
+      var.academic_assets.namespace != var.academic_assets.legacy_quarantine.namespace ||
+      var.academic_assets.runtime_pvc_name != var.academic_assets.legacy_quarantine.pvc_name
+    )
+    error_message = "The canonical runtime claim must be distinct from the historical quarantine claim."
+  }
+
+  validation {
+    condition = (
+      startswith(var.academic_assets.mount_root, "/") &&
+      !strcontains(var.academic_assets.mount_root, "..")
+    )
+    error_message = "academic_assets.mount_root must be an absolute path without parent traversal."
+  }
+
+  validation {
+    condition     = var.academic_assets.runtime_storage_gib >= 16
+    error_message = "The academic runtime volume needs at least 16 GiB for the pinned parameters, wheel and installed tree."
+  }
+
+  validation {
+    condition     = contains(["retained", "disposable"], var.academic_assets.runtime_claim_lifecycle)
+    error_message = "academic_assets.runtime_claim_lifecycle must be \"retained\" or \"disposable\"."
+  }
+
+  validation {
+    condition     = var.academic_assets.asset_gid > 0 && var.academic_assets.asset_gid < 65536
+    error_message = "academic_assets.asset_gid must be a non-root group id below 65536."
+  }
+
+  validation {
+    condition     = var.academic_assets.access_mode == "ReadWriteMany"
+    error_message = "Licensed academic assets are shared read-only across runtime pods and require ReadWriteMany."
+  }
+
+  validation {
+    condition = alltrue([
+      for key, asset in var.academic_assets.assets :
+      !startswith(asset.relative_path, "/") && !strcontains(asset.relative_path, "..")
+    ])
+    error_message = "Every academic asset relative_path must be a safe relative path inside the tenant volume."
+  }
+
+  validation {
+    condition = (
+      var.academic_assets.readiness_manifest_sha256 == null ||
+      can(regex("^[0-9a-f]{64}$", var.academic_assets.readiness_manifest_sha256))
+    )
+    error_message = "academic_assets.readiness_manifest_sha256 must be a lowercase SHA-256 digest."
+  }
+}

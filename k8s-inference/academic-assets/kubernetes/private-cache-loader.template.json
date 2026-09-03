@@ -1,0 +1,138 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "ACADEMIC_ASSET_LOADER_NAME",
+    "namespace": "fs2-academic-poc",
+    "labels": {
+      "app.kubernetes.io/name": "academic-asset-loader",
+      "app.kubernetes.io/part-of": "fs2-serve",
+      "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion"
+    }
+  },
+  "spec": {
+    "automountServiceAccountToken": false,
+    "enableServiceLinks": false,
+    "restartPolicy": "Never",
+    "securityContext": {
+      "runAsGroup": 65532,
+      "runAsNonRoot": true,
+      "runAsUser": 65532,
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "containers": [
+      {
+        "name": "loader",
+        "image": "docker.io/library/python:3.10-slim",
+        "imagePullPolicy": "IfNotPresent",
+        "command": [
+          "python3",
+          "-c",
+          "import time; time.sleep(3600)"
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "50m",
+            "memory": "64Mi"
+          },
+          "limits": {
+            "cpu": "250m",
+            "memory": "256Mi"
+          }
+        },
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          },
+          "readOnlyRootFilesystem": true
+        },
+        "volumeMounts": [
+          {
+            "name": "private-cache",
+            "mountPath": "/private-cache"
+          },
+          {
+            "name": "installer",
+            "mountPath": "/opt/installer",
+            "readOnly": true
+          }
+        ]
+      }
+    ],
+    "volumes": [
+      {
+        "name": "private-cache",
+        "persistentVolumeClaim": {
+          "claimName": "academic-assets-runtime-rwx"
+        }
+      },
+      {
+        "name": "installer",
+        "configMap": {
+          "name": "academic-tree-installer",
+          "defaultMode": 365
+        }
+      }
+    ],
+    "initContainers": [
+      {
+        "name": "prepare-root",
+        "image": "docker.io/library/python:3.10-slim",
+        "command": [
+          "python3",
+          "/opt/installer/install_tree.py",
+          "prepare",
+          "--root",
+          "/private-cache",
+          "--gid",
+          "ASSET_GID",
+          "--asset-dir",
+          "ASSET_DIR",
+          "--asset-dir-mode",
+          "ASSET_DIR_MODE"
+        ],
+        "securityContext": {
+          "runAsUser": 0,
+          "runAsGroup": 0,
+          "allowPrivilegeEscalation": false,
+          "readOnlyRootFilesystem": true,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ],
+            "add": [
+              "CHOWN",
+              "FOWNER"
+            ]
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "500m",
+            "memory": "512Mi"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "private-cache",
+            "mountPath": "/private-cache"
+          },
+          {
+            "name": "installer",
+            "mountPath": "/opt/installer",
+            "readOnly": true
+          }
+        ]
+      }
+    ]
+  }
+}

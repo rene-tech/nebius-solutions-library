@@ -1,0 +1,225 @@
+{
+  "_public_export_note": "Registry account paths and Kubernetes object UUIDs are redacted. Image digests, timestamps, resource requests and results are retained as the evidence.",
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{},\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\",\"app.kubernetes.io/name\":\"academic-tree-installer\",\"app.kubernetes.io/part-of\":\"fs2-serve\"},\"name\":\"academic-tree-installer-pyrosetta-bindcraft-4383d8d1\",\"namespace\":\"fs2-academic-poc\"},\"spec\":{\"backoffLimit\":1,\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/managed-by\":\"fs2-academic-assets-ingestion\",\"fs2.nebius.ai/offline-validation\":\"true\"}},\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"command\":[\"sh\",\"-c\",\"set -e\\npython3 /opt/installer/install_tree.py install   --wheel /runtime/pyrosetta-bindcraft/pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl   --destination /runtime/pyrosetta-bindcraft/site-packages   --file-mode 0440 --directory-mode 0550 --gid 65532\\necho INSTALL_RESULT_BEGIN\\npython3 /opt/installer/install_tree.py verify   --tree /runtime/pyrosetta-bindcraft/site-packages   --distribution pyrosetta --version 2026.29+releasequarterly.80a0635615   --file-mode 0440 --directory-mode 0550 --gid 65532\"],\"env\":[{\"name\":\"HOME\",\"value\":\"/scratch\"},{\"name\":\"TMPDIR\",\"value\":\"/scratch\"},{\"name\":\"PIP_NO_CACHE_DIR\",\"value\":\"1\"}],\"image\":\"docker.io/library/python:3.10-slim\",\"name\":\"install\",\"resources\":{\"limits\":{\"cpu\":\"4\",\"memory\":\"12Gi\"},\"requests\":{\"cpu\":\"1\",\"memory\":\"4Gi\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]},\"readOnlyRootFilesystem\":true,\"runAsGroup\":65532,\"runAsNonRoot\":true,\"runAsUser\":65532,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"volumeMounts\":[{\"mountPath\":\"/runtime\",\"name\":\"runtime\"},{\"mountPath\":\"/opt/installer\",\"name\":\"installer\",\"readOnly\":true},{\"mountPath\":\"/scratch\",\"name\":\"scratch\"}]}],\"enableServiceLinks\":false,\"initContainers\":[{\"command\":[\"python3\",\"/opt/installer/install_tree.py\",\"prepare\",\"--root\",\"/runtime\",\"--gid\",\"65532\",\"--asset-dir\",\"pyrosetta-bindcraft\",\"--asset-dir-mode\",\"0750\"],\"image\":\"docker.io/library/python:3.10-slim\",\"name\":\"prepare-root\",\"resources\":{\"limits\":{\"cpu\":\"500m\",\"memory\":\"512Mi\"},\"requests\":{\"cpu\":\"100m\",\"memory\":\"128Mi\"}},\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"add\":[\"CHOWN\",\"FOWNER\"],\"drop\":[\"ALL\"]},\"readOnlyRootFilesystem\":true,\"runAsGroup\":0,\"runAsUser\":0},\"volumeMounts\":[{\"mountPath\":\"/runtime\",\"name\":\"runtime\"},{\"mountPath\":\"/opt/installer\",\"name\":\"installer\",\"readOnly\":true}]}],\"restartPolicy\":\"Never\",\"volumes\":[{\"name\":\"runtime\",\"persistentVolumeClaim\":{\"claimName\":\"academic-assets-runtime-rwx\"}},{\"configMap\":{\"defaultMode\":365,\"name\":\"academic-tree-installer\"},\"name\":\"installer\"},{\"emptyDir\":{\"sizeLimit\":\"16Gi\"},\"name\":\"scratch\"}]}}}}\n"
+    },
+    "creationTimestamp": "2026-09-02T22:55:53Z",
+    "labels": {
+      "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion",
+      "app.kubernetes.io/name": "academic-tree-installer",
+      "app.kubernetes.io/part-of": "fs2-serve"
+    },
+    "name": "academic-tree-installer-pyrosetta-bindcraft-4383d8d1",
+    "namespace": "fs2-academic-poc",
+    "uid": "00000000-0000-0000-0000-000000000000"
+  },
+  "spec": {
+    "backoffLimit": 1,
+    "completionMode": "NonIndexed",
+    "completions": 1,
+    "manualSelector": false,
+    "parallelism": 1,
+    "podReplacementPolicy": "TerminatingOrFailed",
+    "selector": {
+      "matchLabels": {
+        "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "suspend": false,
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/managed-by": "fs2-academic-assets-ingestion",
+          "batch.kubernetes.io/controller-uid": "00000000-0000-0000-0000-000000000000",
+          "batch.kubernetes.io/job-name": "academic-tree-installer-pyrosetta-bindcraft-4383d8d1",
+          "controller-uid": "00000000-0000-0000-0000-000000000000",
+          "fs2.nebius.ai/offline-validation": "true",
+          "job-name": "academic-tree-installer-pyrosetta-bindcraft-4383d8d1"
+        }
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "containers": [
+          {
+            "command": [
+              "sh",
+              "-c",
+              "set -e\npython3 /opt/installer/install_tree.py install   --wheel /runtime/pyrosetta-bindcraft/pyrosetta-2026.29+releasequarterly.80a0635615-cp310-cp310-linux_x86_64.whl   --destination /runtime/pyrosetta-bindcraft/site-packages   --file-mode 0440 --directory-mode 0550 --gid 65532\necho INSTALL_RESULT_BEGIN\npython3 /opt/installer/install_tree.py verify   --tree /runtime/pyrosetta-bindcraft/site-packages   --distribution pyrosetta --version 2026.29+releasequarterly.80a0635615   --file-mode 0440 --directory-mode 0550 --gid 65532"
+            ],
+            "env": [
+              {
+                "name": "HOME",
+                "value": "/scratch"
+              },
+              {
+                "name": "TMPDIR",
+                "value": "/scratch"
+              },
+              {
+                "name": "PIP_NO_CACHE_DIR",
+                "value": "1"
+              }
+            ],
+            "image": "docker.io/library/python:3.10-slim",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "install",
+            "resources": {
+              "limits": {
+                "cpu": "4",
+                "memory": "12Gi"
+              },
+              "requests": {
+                "cpu": "1",
+                "memory": "4Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true,
+              "runAsGroup": 65532,
+              "runAsNonRoot": true,
+              "runAsUser": 65532,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/runtime",
+                "name": "runtime"
+              },
+              {
+                "mountPath": "/opt/installer",
+                "name": "installer",
+                "readOnly": true
+              },
+              {
+                "mountPath": "/scratch",
+                "name": "scratch"
+              }
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": false,
+        "initContainers": [
+          {
+            "command": [
+              "python3",
+              "/opt/installer/install_tree.py",
+              "prepare",
+              "--root",
+              "/runtime",
+              "--gid",
+              "65532",
+              "--asset-dir",
+              "pyrosetta-bindcraft",
+              "--asset-dir-mode",
+              "0750"
+            ],
+            "image": "docker.io/library/python:3.10-slim",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "prepare-root",
+            "resources": {
+              "limits": {
+                "cpu": "500m",
+                "memory": "512Mi"
+              },
+              "requests": {
+                "cpu": "100m",
+                "memory": "128Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "add": [
+                  "CHOWN",
+                  "FOWNER"
+                ],
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true,
+              "runAsGroup": 0,
+              "runAsUser": 0
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/runtime",
+                "name": "runtime"
+              },
+              {
+                "mountPath": "/opt/installer",
+                "name": "installer",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {},
+        "terminationGracePeriodSeconds": 30,
+        "volumes": [
+          {
+            "name": "runtime",
+            "persistentVolumeClaim": {
+              "claimName": "academic-assets-runtime-rwx"
+            }
+          },
+          {
+            "configMap": {
+              "defaultMode": 365,
+              "name": "academic-tree-installer"
+            },
+            "name": "installer"
+          },
+          {
+            "emptyDir": {
+              "sizeLimit": "16Gi"
+            },
+            "name": "scratch"
+          }
+        ]
+      }
+    }
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": "2026-09-02T22:58:54Z",
+        "lastTransitionTime": "2026-09-02T22:58:54Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "SuccessCriteriaMet"
+      },
+      {
+        "lastProbeTime": "2026-09-02T22:58:54Z",
+        "lastTransitionTime": "2026-09-02T22:58:54Z",
+        "message": "Reached expected number of succeeded pods",
+        "reason": "CompletionsReached",
+        "status": "True",
+        "type": "Complete"
+      }
+    ],
+    "ready": 0,
+    "succeeded": 1,
+    "terminating": 0,
+    "uncountedTerminatedPods": {}
+  }
+}
