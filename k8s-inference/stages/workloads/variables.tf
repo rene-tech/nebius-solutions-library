@@ -220,6 +220,158 @@ variable "reference_data" {
   }
 }
 
+variable "scientific_artifacts" {
+  description = "Root-derived scientific result store bound to the exact infrastructure bucket contract and MysteryBox access handoff. The S3 secret itself is never a variable."
+  type = object({
+    enabled               = bool
+    handle_ttl_seconds    = number
+    max_artifact_bytes    = number
+    retention_days        = number
+    egress_cidrs          = list(string)
+    media_types           = list(string)
+    credential_generation = number
+    storage_contract = optional(object({
+      schema     = string
+      project_id = string
+      region     = string
+      object_storage = object({
+        id                = string
+        name              = string
+        endpoint          = string
+        max_size_gib      = number
+        versioning_policy = string
+        storage_class     = string
+        addressing_style  = string
+        verify_tls        = bool
+      })
+      writer = object({
+        service_account_id = string
+        group_id           = string
+        role               = string
+        paths              = list(string)
+        secret_delivery    = string
+      })
+      layout = object({
+        root             = string
+        tenant_prefix    = string
+        operation_prefix = string
+        object_key       = string
+        object_uri       = string
+      })
+      retention = object({
+        artifact_retention_days                = number
+        abort_incomplete_multipart_upload_days = number
+        noncurrent_version_expiration_days     = number
+        expired_object_delete_marker           = bool
+        current_object_expiration              = string
+        lifecycle_rule_ids                     = list(string)
+      })
+      lifecycle = object({
+        retention_mode     = string
+        destroy_status     = string
+        destroy_completion = string
+        adoption_status    = string
+        retained_ids = optional(object({
+          bucket = string
+        }))
+      })
+    }))
+    # Only the key's non-secret identifiers. The secret value is resolved
+    # ephemerally at apply time and is never held in a variable, in state, in a
+    # plan or in a Helm value.
+    object_storage_access = optional(object({
+      key_id              = string
+      access_key_id       = string
+      secret_reference_id = string
+      resource_version    = number
+    }))
+  })
+  default = {
+    enabled               = false
+    handle_ttl_seconds    = 600
+    max_artifact_bytes    = 1099511627776
+    retention_days        = 90
+    egress_cidrs          = []
+    media_types           = []
+    credential_generation = 1
+    storage_contract      = null
+    object_storage_access = null
+  }
+
+  validation {
+    condition = try(
+      !var.scientific_artifacts.enabled || (
+        var.scientific_artifacts.storage_contract.schema == "fs2-serve.nebius.ai/scientific-artifact-storage/v1" &&
+        var.scientific_artifacts.storage_contract.project_id == nonsensitive(var.project_id) &&
+        var.scientific_artifacts.storage_contract.region == var.target_contract.region &&
+        var.scientific_artifacts.storage_contract.object_storage.versioning_policy == "ENABLED" &&
+        var.scientific_artifacts.storage_contract.object_storage.endpoint == "https://storage.${var.target_contract.region}.nebius.cloud" &&
+        var.scientific_artifacts.storage_contract.writer.role == "storage.object-editor" &&
+        join(",", var.scientific_artifacts.storage_contract.writer.paths) == "scientific/v1/*" &&
+        var.scientific_artifacts.storage_contract.writer.secret_delivery == "MYSTERY_BOX" &&
+        var.scientific_artifacts.storage_contract.layout.root == "scientific/v1" &&
+        var.scientific_artifacts.storage_contract.retention.current_object_expiration == "application-owned" &&
+        var.scientific_artifacts.storage_contract.retention.abort_incomplete_multipart_upload_days == 1 &&
+        var.scientific_artifacts.storage_contract.retention.noncurrent_version_expiration_days == 1 &&
+        var.scientific_artifacts.storage_contract.retention.expired_object_delete_marker
+      ),
+      false,
+    )
+    error_message = "enabled scientific_artifacts requires the exact same-project/same-region infrastructure bucket contract: versioned storage, a MysteryBox key scoped to storage.object-editor on scientific/v1/*, and storage-side lifecycle that never expires a current object."
+  }
+
+  validation {
+    condition = try(
+      !var.scientific_artifacts.enabled || (
+        length(var.scientific_artifacts.object_storage_access.access_key_id) >= 8 &&
+        can(regex("^[A-Za-z0-9_-]+$", var.scientific_artifacts.object_storage_access.access_key_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.scientific_artifacts.object_storage_access.secret_reference_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.scientific_artifacts.object_storage_access.key_id)) &&
+        var.scientific_artifacts.object_storage_access.resource_version >= 0 &&
+        floor(var.scientific_artifacts.credential_generation) == var.scientific_artifacts.credential_generation &&
+        var.scientific_artifacts.credential_generation >= 1 &&
+        var.scientific_artifacts.credential_generation <= 1000 &&
+        length(var.scientific_artifacts.media_types) > 0 &&
+        length(var.scientific_artifacts.egress_cidrs) > 0 &&
+        alltrue([
+          for cidr in var.scientific_artifacts.egress_cidrs :
+          can(cidrhost(cidr, 0)) && (endswith(cidr, "/32") || endswith(cidr, "/128"))
+        ]) &&
+        var.scientific_artifacts.handle_ttl_seconds >= 30 &&
+        var.scientific_artifacts.handle_ttl_seconds <= 900 &&
+        var.scientific_artifacts.max_artifact_bytes >= 1024 &&
+        var.scientific_artifacts.max_artifact_bytes <= 1099511627776 &&
+        var.scientific_artifacts.retention_days >= 1 &&
+        var.scientific_artifacts.retention_days <= 3650
+      ),
+      false,
+    )
+    error_message = "enabled scientific_artifacts requires the MysteryBox access handoff, at least one approved media type, at least one exact /32 or /128 object-storage egress address, and bounded handle TTL, artifact size and retention."
+  }
+}
+
+variable "scientific_batch" {
+  description = "Staged scientific batch gates. Batch execution requires the artifact store; Kubernetes writes require batch."
+  type = object({
+    enabled        = bool
+    writes_enabled = bool
+    namespace      = string
+  })
+  default = {
+    enabled        = false
+    writes_enabled = false
+    namespace      = "fs2-models"
+  }
+
+  validation {
+    condition = (
+      (!var.scientific_batch.writes_enabled || var.scientific_batch.enabled) &&
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.scientific_batch.namespace))
+    )
+    error_message = "scientific_batch.writes_enabled requires scientific_batch.enabled and a DNS-label namespace."
+  }
+}
+
 variable "kubeconfig_path" {
   description = "Exact run-owned kubeconfig; must equal <run_root>/kubeconfig."
   type        = string

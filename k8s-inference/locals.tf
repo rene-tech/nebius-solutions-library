@@ -50,6 +50,11 @@ locals {
     "${var.deployment.name}-${local.run_id}-reference-data",
   )
 
+  scientific_artifacts_bucket_name = coalesce(
+    var.deployment.storage.scientific_artifacts.object_storage.bucket_name,
+    "${var.deployment.name}-${local.run_id}-scientific-artifacts",
+  )
+
   selected_model_ids = sort(tolist(
     var.deployment.models.selection == "profile" ?
     toset(local.selected_model_profile.canonical_routes) :
@@ -273,6 +278,17 @@ locals {
         max_size_gib = var.deployment.storage.reference_data.object_storage.max_size_gib
       }
     }
+    scientific_artifacts = {
+      enabled = var.deployment.storage.scientific_artifacts.enabled
+      lifecycle = {
+        retention_mode = var.deployment.storage.scientific_artifacts.lifecycle.retention_mode
+      }
+      object_storage = {
+        bucket_name  = local.scientific_artifacts_bucket_name
+        max_size_gib = var.deployment.storage.scientific_artifacts.object_storage.max_size_gib
+      }
+      retention_days = var.deployment.storage.scientific_artifacts.retention_days
+    }
     public_edge_mode         = var.deployment.edge.mode
     public_edge_source_cidrs = sort(tolist(var.deployment.edge.source_cidrs))
     port_forward_local_ports = var.deployment.edge.port_forward_ports
@@ -343,6 +359,20 @@ locals {
       status     = var.deployment.storage.reference_data.status
       pipeline   = var.deployment.storage.reference_data.pipeline
       preprocess = var.deployment.storage.reference_data.preprocess
+    }
+    scientific_artifacts = {
+      enabled               = var.deployment.storage.scientific_artifacts.enabled
+      handle_ttl_seconds    = var.deployment.storage.scientific_artifacts.handle_ttl_seconds
+      max_artifact_bytes    = var.deployment.storage.scientific_artifacts.max_artifact_bytes
+      retention_days        = var.deployment.storage.scientific_artifacts.retention_days
+      egress_cidrs          = sort(tolist(var.deployment.storage.scientific_artifacts.egress_cidrs))
+      media_types           = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
+      credential_generation = var.deployment.storage.scientific_artifacts.credential_generation
+    }
+    scientific_batch = {
+      enabled        = var.deployment.scientific_batch.enabled
+      writes_enabled = var.deployment.scientific_batch.writes_enabled
+      namespace      = var.deployment.scientific_batch.namespace
     }
     academic_assets = local.academic_assets_contract
     model_express = {

@@ -289,6 +289,70 @@ deployment = {
   # forbid_deletion=true. That opt-in blocks full-stack destroy and exports
   # exact retained IDs for adoption; it is never inferred from environment.
 
+  # Dedicated same-region result store for the staged scientific batch
+  # controller. It is a separate bucket, service account, group and S3 key from
+  # the reference-data plane above, so results and immutable public inputs are
+  # never rotated or destroyed together and neither key can reach the other's
+  # objects. The writer holds storage.object-editor on scientific/v1/* only.
+  #
+  # Deployable on its own: nothing below requires scientific_batch, and both
+  # batch gates stay false until the controller successors are integrated.
+  #
+  # The S3 secret is delivered through Nebius MysteryBox. Terraform propagates
+  # only the access-key ID, an opaque secret reference and a revision, and the
+  # workloads stage resolves the secret ephemerally into the write-only
+  # fs2-system/fs2-serve-artifact-store Secret. Workers never receive a static
+  # credential; they get short-lived signed handles from the control plane.
+  # storage = {
+  #   scientific_artifacts = {
+  #     enabled = true
+  #     # Disposable is the portable default and is deletable only while the
+  #     # versioned bucket is empty. "retain" blocks a full-stack destroy and
+  #     # exports the bucket ID for explicit adoption.
+  #     lifecycle = {
+  #       retention_mode = "disposable"
+  #     }
+  #     object_storage = {
+  #       # Omit bucket_name for the deterministic deployment/run-derived name.
+  #       max_size_gib = 4096
+  #     }
+  #     # How long the application keeps a committed artifact. Storage-side
+  #     # rules only reclaim aborted uploads, superseded versions and expired
+  #     # delete markers; deleting a live result stays an application decision.
+  #     retention_days = 90
+  #     # One signed upload or download handle's lifetime, 30-900 seconds.
+  #     handle_ttl_seconds = 600
+  #     max_artifact_bytes = 1099511627776
+  #     # Exact object-storage addresses, /32 or /128 only, that the control
+  #     # plane may reach on 443 to issue handles and stream a stored object
+  #     # back for digest verification. A subnet-wide entry is rejected.
+  #     egress_cidrs = ["203.0.113.10/32"]
+  #     # Bump to force a credential rewrite and a control-plane rollout even
+  #     # when the cloud key is unchanged. Replacing the key rotates it too,
+  #     # because the rollout identity also covers the key's own identifiers.
+  #     credential_generation = 1
+  #     media_types = [
+  #       "application/gzip",
+  #       "application/json",
+  #       "application/octet-stream",
+  #       "application/vnd.fs2.scientific-manifest+json",
+  #       "application/vnd.fs2.scientific-validation+json",
+  #       "chemical/x-cif",
+  #       "chemical/x-pdb",
+  #       "text/plain",
+  #       "text/x-fasta",
+  #     ]
+  #   }
+  # }
+
+  # Staged scientific batch execution. enabled requires
+  # storage.scientific_artifacts.enabled, and writes_enabled requires enabled.
+  # scientific_batch = {
+  #   enabled        = false
+  #   writes_enabled = false
+  #   namespace      = "fs2-models"
+  # }
+
   # By default the wrapper copies every selected digest-pinned application and
   # model image into the registry created beside this cluster. Workloads then
   # pull only from that regional registry. Set mode = "direct-source" only when

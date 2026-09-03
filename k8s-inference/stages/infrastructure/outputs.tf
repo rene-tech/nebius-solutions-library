@@ -105,7 +105,7 @@ output "accelerator_pool_contract_sha256" {
 }
 
 output "owned_resource_ids" {
-  description = "Terraform-owned resources expected absent after a supervised disposable destroy. Retained reference storage is deliberately excluded and reported by reference_data_lifecycle."
+  description = "Terraform-owned resources expected absent after a supervised disposable destroy. Retained reference and scientific-artifact storage is deliberately excluded and reported by reference_data_lifecycle and scientific_artifacts_lifecycle."
   value = {
     registry                  = nebius_registry_v1_registry.images.id
     shared_cache              = nebius_compute_v1_filesystem.cache.id
@@ -114,8 +114,15 @@ output "owned_resource_ids" {
     reference_data_writer_sa  = try(nebius_iam_v1_service_account.reference_data[0].id, null)
     reference_data_access_key = try(nebius_iam_v2_access_key.reference_data[0].id, null)
     reference_data_cpu_pool   = try(nebius_mk8s_v1_node_group.reference_data[0].id, null)
-    nodepull_sa               = nebius_iam_v1_service_account.nodepull.id
-    target_reader_group       = nebius_iam_v1_group.target_registry_readers.id
+    scientific_artifacts_bucket = (
+      var.scientific_artifacts.enabled && var.scientific_artifacts.lifecycle.retention_mode == "disposable" ?
+      local.scientific_artifacts_bucket_id : null
+    )
+    scientific_artifacts_writer_sa  = try(nebius_iam_v1_service_account.scientific_artifacts[0].id, null)
+    scientific_artifacts_group      = try(nebius_iam_v1_group.scientific_artifacts_writers[0].id, null)
+    scientific_artifacts_access_key = try(nebius_iam_v2_access_key.scientific_artifacts[0].id, null)
+    nodepull_sa                     = nebius_iam_v1_service_account.nodepull.id
+    target_reader_group             = nebius_iam_v1_group.target_registry_readers.id
     external_reader_groups = {
       for registry_id, group in nebius_iam_v1_group.external_registry_readers : registry_id => group.id
     }
@@ -285,4 +292,92 @@ output "infrastructure_contract" {
 output "kubeconfig_command" {
   description = "Run only with KUBECONFIG pointing at the run-scoped mode-0600 file."
   value       = "nebius mk8s cluster get-credentials --id ${nebius_mk8s_v1_cluster.validation.id} --external --force --context-name ${local.resource_name}"
+}
+
+output "scientific_artifacts_storage_contract" {
+  description = "Dedicated same-region versioned result store: bucket identity, canonical object layout, writer scope and storage-side lifecycle. Contains no credential material."
+  value = var.scientific_artifacts.enabled ? {
+    schema     = "fs2-serve.nebius.ai/scientific-artifact-storage/v1"
+    project_id = nonsensitive(var.project_id)
+    region     = local.selected_target.region
+    object_storage = {
+      id                = local.scientific_artifacts_bucket_id
+      name              = local.scientific_artifacts_bucket_name
+      endpoint          = local.scientific_artifacts_endpoint
+      max_size_gib      = var.scientific_artifacts.object_storage.max_size_gib
+      versioning_policy = "ENABLED"
+      storage_class     = "STANDARD"
+      addressing_style  = "path"
+      verify_tls        = true
+    }
+    writer = {
+      service_account_id = nebius_iam_v1_service_account.scientific_artifacts[0].id
+      group_id           = nebius_iam_v1_group.scientific_artifacts_writers[0].id
+      role               = local.scientific_artifacts_writer_role
+      paths              = [local.scientific_artifacts_path_scope]
+      secret_delivery    = "MYSTERY_BOX"
+    }
+    layout = {
+      root             = local.scientific_artifacts_root
+      tenant_prefix    = "${local.scientific_artifacts_root}/tenants/<tenant>"
+      operation_prefix = "${local.scientific_artifacts_root}/tenants/<tenant>/operations/<operation>"
+      object_key       = "${local.scientific_artifacts_root}/tenants/<tenant>/operations/<operation>/stages/<stage>/shards/<shard>/attempts/<attempt>/<input|output>/sha256/<digest>"
+      object_uri       = "s3://${local.scientific_artifacts_bucket_name}/${local.scientific_artifacts_root}/tenants/<tenant>/operations/<operation>/stages/<stage>/shards/<shard>/attempts/<attempt>/<input|output>/sha256/<digest>"
+    }
+    retention = {
+      artifact_retention_days = var.scientific_artifacts.retention_days
+      # Storage-side hygiene only; deleting a current object stays an
+      # application decision made against the durable result record.
+      abort_incomplete_multipart_upload_days = 1
+      noncurrent_version_expiration_days     = 1
+      expired_object_delete_marker           = true
+      current_object_expiration              = "application-owned"
+      lifecycle_rule_ids                     = [for rule in local.scientific_artifacts_lifecycle_rules : rule.id]
+    }
+    lifecycle = {
+      retention_mode = var.scientific_artifacts.lifecycle.retention_mode
+      destroy_status = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? "blocked-retained" : "eligible-only-while-bucket-empty"
+      destroy_completion = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? (
+        "full-stack-destroy-incomplete-infrastructure-retained"
+      ) : "full-only-when-versioned-bucket-empty"
+      adoption_status = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? "ids-exported-for-explicit-state-adoption" : "not-applicable"
+      retained_ids = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? {
+        bucket = local.scientific_artifacts_bucket_id
+      } : null
+    }
+  } : null
+}
+
+output "scientific_artifacts_lifecycle" {
+  description = "Truthful retention/adoption contract for the result store. Retained results block a full-stack destroy; disposable results are deletable only while the versioned bucket is empty."
+  value = var.scientific_artifacts.enabled ? {
+    retention_mode = var.scientific_artifacts.lifecycle.retention_mode
+    status         = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? "managed-retained" : "managed-disposable-empty"
+    destroy_status = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? "blocked-retained" : "eligible-only-while-bucket-empty"
+    destroy_completion = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? (
+      "full-stack-destroy-incomplete-infrastructure-retained"
+    ) : "full-only-when-versioned-bucket-empty"
+    adoption_status = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? "ids-exported-for-explicit-state-adoption" : "not-applicable"
+    resource_ids = {
+      bucket          = local.scientific_artifacts_bucket_id
+      service_account = nebius_iam_v1_service_account.scientific_artifacts[0].id
+      group           = nebius_iam_v1_group.scientific_artifacts_writers[0].id
+      access_key      = nebius_iam_v2_access_key.scientific_artifacts[0].id
+    }
+  } : null
+}
+
+output "scientific_artifacts_object_storage_access" {
+  description = "Sensitive handoff containing only the key's non-secret identifiers: its resource ID, S3 access-key ID, MysteryBox reference and cloud resource version. The secret value never enters infrastructure state, a plan file, generated tfvars or any output."
+  sensitive   = true
+  value = var.scientific_artifacts.enabled ? {
+    # The resource ID is the only identifier that is guaranteed to change when
+    # the key is replaced. resource_version restarts at zero on a new key, so a
+    # revision derived from it alone would silently repeat after a rotation and
+    # leave the stale secret mounted.
+    key_id              = nebius_iam_v2_access_key.scientific_artifacts[0].id
+    access_key_id       = nebius_iam_v2_access_key.scientific_artifacts[0].status.aws_access_key_id
+    secret_reference_id = nebius_iam_v2_access_key.scientific_artifacts[0].status.secret_reference_id
+    resource_version    = nebius_iam_v2_access_key.scientific_artifacts[0].resource_version
+  } : null
 }

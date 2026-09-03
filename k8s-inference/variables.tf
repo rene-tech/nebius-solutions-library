@@ -316,6 +316,59 @@ variable "deployment" {
           threads                 = optional(number, 16)
         }), {})
       }), {})
+
+      # Dedicated result store for the staged scientific batch controller. It is
+      # a separate bucket, identity and key from reference_data above: results
+      # and immutable public inputs have different retention and different blast
+      # radius, so neither store is ever widened to serve the other.
+      scientific_artifacts = optional(object({
+        enabled = optional(bool, false)
+        lifecycle = optional(object({
+          retention_mode = optional(string, "disposable")
+        }), {})
+        object_storage = optional(object({
+          # Derived from the deployment name and run id when left null.
+          bucket_name  = optional(string)
+          max_size_gib = optional(number, 4096)
+        }), {})
+        # How long the application keeps a committed artifact. Storage-side
+        # rules never expire a current object; deletion stays an application
+        # decision made against the durable result record.
+        retention_days = optional(number, 90)
+        # Lifetime of one signed upload or download handle. Workers receive
+        # these handles and never a static S3 credential.
+        handle_ttl_seconds = optional(number, 600)
+        max_artifact_bytes = optional(number, 1099511627776)
+        # Exact object-storage addresses, /32 or /128 only, that the control
+        # plane may reach on 443 to issue handles and stream a stored object
+        # back for digest verification.
+        egress_cidrs = optional(set(string), [])
+        # Operator-driven rotation. Bumping this rewrites the credential Secret
+        # and moves the control plane's rollout annotation even when the cloud
+        # key itself is unchanged. Replacing the key rotates it too, because the
+        # rollout identity also covers the key's own non-secret identifiers.
+        credential_generation = optional(number, 1)
+        media_types = optional(set(string), [
+          "application/gzip",
+          "application/json",
+          "application/octet-stream",
+          "application/vnd.fs2.scientific-manifest+json",
+          "application/vnd.fs2.scientific-validation+json",
+          "chemical/x-cif",
+          "chemical/x-pdb",
+          "text/plain",
+          "text/x-fasta",
+        ])
+      }), {})
+    }), {})
+
+    # Staged scientific batch execution. Both gates stay false until the
+    # controller successors are integrated; the result store above is
+    # independently deployable while they are.
+    scientific_batch = optional(object({
+      enabled        = optional(bool, false)
+      writes_enabled = optional(bool, false)
+      namespace      = optional(string, "fs2-models")
     }), {})
 
     artifacts = optional(object({
@@ -741,6 +794,70 @@ variable "deployment" {
       false,
     )
     error_message = "storage.reference_data.pipeline requires the exact official AlphaFold3 bundle, public-source staging opt-in, a digest-pinned image, and bounded CPU-only retry resources."
+  }
+
+  validation {
+    condition = try(
+      !var.deployment.storage.scientific_artifacts.enabled || (
+        contains(["retain", "disposable"], var.deployment.storage.scientific_artifacts.lifecycle.retention_mode) &&
+        (
+          var.deployment.storage.scientific_artifacts.object_storage.bucket_name == null ||
+          can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.deployment.storage.scientific_artifacts.object_storage.bucket_name))
+        ) &&
+        floor(var.deployment.storage.scientific_artifacts.object_storage.max_size_gib) == var.deployment.storage.scientific_artifacts.object_storage.max_size_gib &&
+        var.deployment.storage.scientific_artifacts.object_storage.max_size_gib >= 16 &&
+        var.deployment.storage.scientific_artifacts.object_storage.max_size_gib <= 65536 &&
+        floor(var.deployment.storage.scientific_artifacts.retention_days) == var.deployment.storage.scientific_artifacts.retention_days &&
+        var.deployment.storage.scientific_artifacts.retention_days >= 1 &&
+        var.deployment.storage.scientific_artifacts.retention_days <= 3650 &&
+        floor(var.deployment.storage.scientific_artifacts.handle_ttl_seconds) == var.deployment.storage.scientific_artifacts.handle_ttl_seconds &&
+        var.deployment.storage.scientific_artifacts.handle_ttl_seconds >= 30 &&
+        var.deployment.storage.scientific_artifacts.handle_ttl_seconds <= 900 &&
+        floor(var.deployment.storage.scientific_artifacts.max_artifact_bytes) == var.deployment.storage.scientific_artifacts.max_artifact_bytes &&
+        var.deployment.storage.scientific_artifacts.max_artifact_bytes >= 1024 &&
+        var.deployment.storage.scientific_artifacts.max_artifact_bytes <= 1099511627776
+      ),
+      false,
+    )
+    error_message = "enabled storage.scientific_artifacts requires an explicit retain or disposable lifecycle, an optional valid bucket name, 16-65536 whole GiB of capacity, a 1-3650 day application retention window, a 30-900 second signed-handle lifetime and a 1 KiB-1 TiB maximum artifact size."
+  }
+
+  validation {
+    condition = try(
+      !var.deployment.storage.scientific_artifacts.enabled || (
+        length(var.deployment.storage.scientific_artifacts.media_types) > 0 &&
+        alltrue([
+          for media_type in var.deployment.storage.scientific_artifacts.media_types :
+          can(regex("^[a-z0-9][a-z0-9.+-]*/[A-Za-z0-9][A-Za-z0-9.+_-]*$", media_type)) && length(media_type) <= 128
+        ]) &&
+        # alltrue over an empty collection is true, so the allowlist needs its
+        # own length check or an enabled store would get no egress at all.
+        length(var.deployment.storage.scientific_artifacts.egress_cidrs) > 0 &&
+        alltrue([
+          for cidr in var.deployment.storage.scientific_artifacts.egress_cidrs :
+          can(cidrhost(cidr, 0)) && (endswith(cidr, "/32") || endswith(cidr, "/128"))
+        ]) &&
+        floor(var.deployment.storage.scientific_artifacts.credential_generation) == var.deployment.storage.scientific_artifacts.credential_generation &&
+        var.deployment.storage.scientific_artifacts.credential_generation >= 1 &&
+        var.deployment.storage.scientific_artifacts.credential_generation <= 1000
+      ),
+      false,
+    )
+    error_message = "enabled storage.scientific_artifacts requires at least one exact approved media type, at least one exact /32 or /128 object-storage egress address, and a whole credential_generation between 1 and 1000; an empty, subnet-wide or malformed allowlist is never accepted."
+  }
+
+  validation {
+    condition = try(
+      (
+        !var.deployment.scientific_batch.enabled ||
+        var.deployment.storage.scientific_artifacts.enabled
+        ) && (
+        !var.deployment.scientific_batch.writes_enabled ||
+        var.deployment.scientific_batch.enabled
+      ) && can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.deployment.scientific_batch.namespace)),
+      false,
+    )
+    error_message = "scientific_batch.enabled requires storage.scientific_artifacts.enabled, scientific_batch.writes_enabled requires scientific_batch.enabled, and the batch namespace must be a DNS label."
   }
 
   validation {

@@ -423,6 +423,49 @@ variable "reference_data" {
   }
 }
 
+variable "scientific_artifacts" {
+  description = "Dedicated same-region versioned object store for scientific result artifacts. It is a distinct bucket, identity and key from the reference-data plane and is disposable unless retention is explicitly requested."
+  type = object({
+    enabled = bool
+    lifecycle = object({
+      retention_mode = string
+    })
+    object_storage = object({
+      bucket_name  = string
+      max_size_gib = number
+    })
+    retention_days = number
+  })
+  default = {
+    enabled = false
+    lifecycle = {
+      retention_mode = "disposable"
+    }
+    object_storage = {
+      bucket_name  = "disabled-scientific-artifacts.invalid"
+      max_size_gib = 4096
+    }
+    retention_days = 90
+  }
+
+  validation {
+    condition = try(
+      !var.scientific_artifacts.enabled || (
+        contains(["retain", "disposable"], var.scientific_artifacts.lifecycle.retention_mode) &&
+        can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.scientific_artifacts.object_storage.bucket_name)) &&
+        floor(var.scientific_artifacts.object_storage.max_size_gib) == var.scientific_artifacts.object_storage.max_size_gib &&
+        var.scientific_artifacts.object_storage.max_size_gib >= 16 &&
+        var.scientific_artifacts.object_storage.max_size_gib <= 65536 &&
+        floor(var.scientific_artifacts.retention_days) == var.scientific_artifacts.retention_days &&
+        var.scientific_artifacts.retention_days >= 1 &&
+        var.scientific_artifacts.retention_days <= 3650
+      ),
+      false,
+    )
+    error_message = "enabled scientific_artifacts requires an explicit retain or disposable lifecycle, a valid globally unique bucket name, 16-65536 whole GiB of capacity and a 1-3650 day application retention window."
+  }
+}
+
 variable "capacity_profile" {
   description = "Reviewed capacity envelope. full_catalog supports every canonical route plus the second MSA backend without HCL edits."
   type        = string

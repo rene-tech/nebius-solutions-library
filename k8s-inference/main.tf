@@ -124,6 +124,23 @@ resource "terraform_data" "deployment_contract" {
     }
 
     precondition {
+      condition = (
+        !var.deployment.storage.scientific_artifacts.enabled ||
+        can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", local.scientific_artifacts_bucket_name))
+      )
+      error_message = "The effective scientific-artifact bucket name must be a globally valid 3-63 character object-storage name; set deployment.storage.scientific_artifacts.object_storage.bucket_name explicitly when the derived name is too long."
+    }
+
+    precondition {
+      condition = (
+        !var.deployment.storage.scientific_artifacts.enabled ||
+        !var.deployment.storage.reference_data.enabled ||
+        local.scientific_artifacts_bucket_name != local.reference_data_bucket_name
+      )
+      error_message = "The scientific result store must use a bucket distinct from the reference-data plane; the reference-data bucket and key are never reused or widened for results."
+    }
+
+    precondition {
       condition = !var.deployment.storage.reference_data.enabled || (
         (!var.deployment.storage.reference_data.pipeline.enabled || (
           local.reference_data_pipeline_cpu_millicores <= var.deployment.storage.reference_data.cpu_pool.schedulable_capacity.cpu_millicores &&

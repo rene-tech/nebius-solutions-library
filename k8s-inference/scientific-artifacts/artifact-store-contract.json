@@ -1,0 +1,122 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-artifact-store-contract/v1",
+  "description": "The exact seam between the Terraform-provisioned scientific result store and the control-plane chart that consumes it. Terraform owns everything under `terraform`; the control-plane chart owns the value declarations and templates named under `chart`. A key that one side emits and the other does not declare leaves the store silently unconfigured, so both halves are asserted against this file.",
+  "object_layout": {
+    "root": "scientific/v1",
+    "tenant_prefix": "scientific/v1/tenants/<tenant>/",
+    "operation_prefix": "scientific/v1/tenants/<tenant>/operations/<operation>/",
+    "object_key": "scientific/v1/tenants/<tenant>/operations/<operation>/stages/<stage>/shards/<shard>/attempts/<attempt>/<input|output>/sha256/<digest>",
+    "segments": [
+      "tenant",
+      "operation",
+      "stage",
+      "shard",
+      "attempt",
+      "direction",
+      "digest"
+    ],
+    "bounds": {
+      "max_shard": 1023,
+      "max_attempt": 10
+    }
+  },
+  "storage": {
+    "versioning_policy": "ENABLED",
+    "storage_class": "STANDARD",
+    "addressing_style": "path",
+    "verify_tls": true,
+    "writer_role": "storage.object-editor",
+    "writer_paths": [
+      "scientific/v1/*"
+    ],
+    "secret_delivery": "MYSTERY_BOX",
+    "lifecycle_rule_ids": [
+      "abort-incomplete-multipart-uploads",
+      "expire-noncurrent-versions",
+      "remove-expired-delete-markers"
+    ],
+    "abort_incomplete_multipart_upload_days": 1,
+    "noncurrent_version_expiration_days": 1,
+    "expired_object_delete_marker": true,
+    "current_object_expiration": "application-owned"
+  },
+  "credential": {
+    "namespace": "fs2-system",
+    "secret_name": "fs2-serve-artifact-store",
+    "secret_key": "credentials.json",
+    "document_fields": [
+      "access_key_id",
+      "secret_access_key"
+    ],
+    "write_only": true,
+    "rotation_annotation": "fs2.nebius.ai/artifact-store-credential-revision",
+    "propagated_fields": [
+      "access_key_id",
+      "key_id",
+      "resource_version",
+      "secret_reference_id"
+    ],
+    "forbidden_fields": [
+      "aws_secret_access_key",
+      "secret_access_key",
+      "secret_key",
+      "secret_value"
+    ],
+    "rotation_annotations": [
+      "fs2.nebius.ai/artifact-store-credential-generation",
+      "fs2.nebius.ai/artifact-store-credential-revision"
+    ],
+    "rollout_identity": "credential_generation * 2^24 + first 24 bits of sha256(key_id|access_key_id|secret_reference_id|resource_version). The cloud key's resource_version restarts at zero when the key is replaced, so it cannot carry rotation on its own."
+  },
+  "chart": {
+    "scientificArtifacts": [
+      "addressingStyle",
+      "bucket",
+      "egressCidrs",
+      "enabled",
+      "endpoint",
+      "handleTtlSeconds",
+      "maxBytes",
+      "mediaTypes",
+      "region",
+      "retentionSeconds",
+      "verifyTls"
+    ],
+    "scientificBatch": [
+      "enabled",
+      "namespace",
+      "writesEnabled"
+    ],
+    "secrets.artifactStore": [
+      "key",
+      "name"
+    ],
+    "networkPolicy": [
+      "artifactStoreCidrs"
+    ],
+    "podAnnotations": [
+      "fs2.nebius.ai/artifact-store-credential-revision"
+    ],
+    "forbidden_values": [
+      "artifactService"
+    ]
+  },
+  "control_plane_environment": [
+    "FS2_ARTIFACT_HANDLE_TTL_SECONDS",
+    "FS2_ARTIFACT_MAX_BYTES",
+    "FS2_ARTIFACT_MEDIA_TYPES",
+    "FS2_ARTIFACT_RETENTION_SECONDS",
+    "FS2_ARTIFACT_STORE_ADDRESSING_STYLE",
+    "FS2_ARTIFACT_STORE_BUCKET",
+    "FS2_ARTIFACT_STORE_CREDENTIALS_FILE",
+    "FS2_ARTIFACT_STORE_ENDPOINT",
+    "FS2_ARTIFACT_STORE_REGION",
+    "FS2_ARTIFACT_STORE_VERIFY_TLS",
+    "FS2_SCIENTIFIC_ARTIFACTS_ENABLED"
+  ],
+  "gates": {
+    "scientific_batch.enabled": "storage.scientific_artifacts.enabled",
+    "scientific_batch.writes_enabled": "scientific_batch.enabled",
+    "storage_independently_deployable": true
+  }
+}

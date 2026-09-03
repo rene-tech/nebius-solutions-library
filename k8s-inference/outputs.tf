@@ -44,6 +44,35 @@ output "effective_configuration" {
         if pool.reference_data_filesystem
       ])
     }
+    scientific_artifacts = {
+      enabled        = var.deployment.storage.scientific_artifacts.enabled
+      region         = var.deployment.target.region
+      bucket_name    = local.scientific_artifacts_bucket_name
+      max_size_gib   = var.deployment.storage.scientific_artifacts.object_storage.max_size_gib
+      retention_mode = var.deployment.storage.scientific_artifacts.lifecycle.retention_mode
+      destroy_completion = (
+        var.deployment.storage.scientific_artifacts.lifecycle.retention_mode == "retain" ?
+        "full-stack-destroy-incomplete-infrastructure-retained" :
+        "full-only-when-versioned-bucket-empty"
+      )
+      adoption_required       = var.deployment.storage.scientific_artifacts.lifecycle.retention_mode == "retain"
+      distinct_from_reference = local.scientific_artifacts_bucket_name != local.reference_data_bucket_name
+      artifact_retention_days = var.deployment.storage.scientific_artifacts.retention_days
+      handle_ttl_seconds      = var.deployment.storage.scientific_artifacts.handle_ttl_seconds
+      max_artifact_bytes      = var.deployment.storage.scientific_artifacts.max_artifact_bytes
+      media_types             = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
+      egress_cidrs            = sort(tolist(var.deployment.storage.scientific_artifacts.egress_cidrs))
+      secret_delivery         = "MYSTERY_BOX"
+      credential_generation   = var.deployment.storage.scientific_artifacts.credential_generation
+      credential_secret       = "fs2-system/fs2-serve-artifact-store"
+      object_key              = "scientific/v1/tenants/<tenant>/operations/<operation>/stages/<stage>/shards/<shard>/attempts/<attempt>/<input|output>/sha256/<digest>"
+    }
+    scientific_batch = {
+      enabled                 = var.deployment.scientific_batch.enabled
+      writes_enabled          = var.deployment.scientific_batch.writes_enabled
+      namespace               = var.deployment.scientific_batch.namespace
+      artifact_store_required = true
+    }
     scheduling = {
       cohort_name         = var.deployment.scheduling.cohort.enabled ? var.deployment.scheduling.cohort.name : null
       cluster_queue_names = sort(keys(var.deployment.scheduling.cluster_queues))

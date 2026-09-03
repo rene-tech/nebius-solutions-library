@@ -127,6 +127,36 @@ def clean_environment() -> dict[str, str]:
     }
 
 
+# Write-only Secret arguments (`data_wo`) are a Terraform 1.11 feature. On an
+# older binary they are silently unknown attributes, which would put credential
+# material back into state, so the whole flow refuses to run below 1.11.
+MINIMUM_TERRAFORM_VERSION = (1, 11, 0)
+
+
+def require_terraform_version(terraform: str) -> tuple[int, int, int]:
+    """Fail closed unless the binary supports write-only resource arguments."""
+
+    result = subprocess.run(
+        [terraform, "version", "-json"],
+        capture_output=True,
+        text=True,
+        env=clean_environment(),
+    )
+    if result.returncode != 0:
+        raise DeploymentError(f"cannot determine the Terraform version using {terraform!r}")
+    try:
+        raw = json.loads(result.stdout)["terraform_version"]
+        version = tuple(int(part) for part in raw.split("-")[0].split(".")[:3])
+    except (KeyError, ValueError, json.JSONDecodeError) as error:
+        raise DeploymentError("Terraform reported an unreadable version") from error
+    if len(version) != 3 or version < MINIMUM_TERRAFORM_VERSION:
+        wanted = ".".join(str(part) for part in MINIMUM_TERRAFORM_VERSION)
+        raise DeploymentError(
+            f"Terraform {raw} is too old; write-only Secret data requires {wanted} or newer"
+        )
+    return version  # type: ignore[return-value]
+
+
 def terraform_environment(run_root: Path, stage: str) -> dict[str, str]:
     environment = clean_environment()
     data_directory = run_root / "terraform-data" / stage
@@ -1509,6 +1539,40 @@ def infrastructure_outputs(
         if reference_data_enabled
         else None
     )
+    scientific_artifacts_enabled = (
+        contract.get("stages", {})
+        .get("infrastructure", {})
+        .get("scientific_artifacts", {})
+        .get("enabled")
+        is True
+    )
+    scientific_artifacts_storage = (
+        terraform_optional_json_output(
+            terraform, INFRA_ROOT, "scientific_artifacts_storage_contract", environment
+        )
+        if scientific_artifacts_enabled
+        else None
+    )
+    # Carries only the access-key ID, the opaque MysteryBox reference and a
+    # revision. The S3 secret is resolved ephemerally inside the workloads
+    # apply and never reaches this process, a tfvars file or a receipt.
+    scientific_artifacts_access = (
+        terraform_optional_json_output(
+            terraform,
+            INFRA_ROOT,
+            "scientific_artifacts_object_storage_access",
+            environment,
+        )
+        if scientific_artifacts_enabled
+        else None
+    )
+    scientific_artifacts_lifecycle = (
+        terraform_optional_json_output(
+            terraform, INFRA_ROOT, "scientific_artifacts_lifecycle", environment
+        )
+        if scientific_artifacts_enabled
+        else None
+    )
     return {
         "run_root": str(run_root.resolve()),
         "nebius_profile": nebius_profile,
@@ -1533,6 +1597,9 @@ def infrastructure_outputs(
         "reference_data_storage_contract": reference_data_storage,
         "reference_data_object_storage_access": reference_data_access,
         "reference_data_lifecycle": reference_data_lifecycle,
+        "scientific_artifacts_storage_contract": scientific_artifacts_storage,
+        "scientific_artifacts_object_storage_access": scientific_artifacts_access,
+        "scientific_artifacts_lifecycle": scientific_artifacts_lifecycle,
     }
 
 
@@ -1579,6 +1646,51 @@ def write_downstream_variables(
             "storage_contract": storage_contract if enabled else None,
             "object_storage_access": object_access if enabled else None,
         }
+    scientific_artifacts = workloads.get("scientific_artifacts")
+    if isinstance(scientific_artifacts, Mapping):
+        enabled = scientific_artifacts.get("enabled") is True
+        storage_contract = dynamic.get("scientific_artifacts_storage_contract")
+        object_access = dynamic.get("scientific_artifacts_object_storage_access")
+        if enabled and (
+            not isinstance(storage_contract, Mapping)
+            or not isinstance(object_access, Mapping)
+        ):
+            raise DeploymentError(
+                "an enabled scientific artifact store requires complete infrastructure "
+                "bucket and object-access outputs"
+            )
+        if enabled and set(object_access) != {
+            "key_id",
+            "access_key_id",
+            "secret_reference_id",
+            "resource_version",
+        }:
+            raise DeploymentError(
+                "the scientific artifact access handoff must contain exactly the key's "
+                "non-secret identifiers: resource ID, access-key ID, MysteryBox reference "
+                "and cloud resource version"
+            )
+        workloads["scientific_artifacts"] = {
+            **scientific_artifacts,
+            "storage_contract": storage_contract if enabled else None,
+            "object_storage_access": object_access if enabled else None,
+        }
+    scientific_batch = workloads.get("scientific_batch")
+    if isinstance(scientific_batch, Mapping):
+        artifacts_enabled = (
+            isinstance(scientific_artifacts, Mapping)
+            and scientific_artifacts.get("enabled") is True
+        )
+        if scientific_batch.get("enabled") is True and not artifacts_enabled:
+            raise DeploymentError(
+                "staged scientific batch execution requires the dedicated artifact store"
+            )
+        if scientific_batch.get("writes_enabled") is True and not (
+            scientific_batch.get("enabled") is True
+        ):
+            raise DeploymentError(
+                "scientific batch Kubernetes writes require the batch controller gate"
+            )
     admin_contract = contract.get("admin_configuration", {})
     if isinstance(admin_contract, Mapping) and admin_contract.get("enabled") is True:
         configuration, configuration_sha256, scaling = derived_admin_configuration(
@@ -1743,6 +1855,27 @@ def workload_endpoint_outputs(
         if reference_enabled
         else None
     )
+    scientific_enabled = (
+        contract.get("stages", {})
+        .get("workloads", {})
+        .get("scientific_artifacts", {})
+        .get("enabled")
+        is True
+    )
+    outputs["scientific_artifacts"] = (
+        terraform_optional_json_output(
+            terraform, WORKLOADS_ROOT, "scientific_artifacts_status", environment
+        )
+        if scientific_enabled
+        else None
+    )
+    outputs["scientific_artifacts_contract"] = (
+        terraform_optional_json_output(
+            terraform, WORKLOADS_ROOT, "scientific_artifacts_contract", environment
+        )
+        if scientific_enabled
+        else None
+    )
     return outputs
 
 
@@ -1878,6 +2011,35 @@ def workload_access_bundle(
             raise DeploymentError("the workloads access bundle is missing or malformed")
     elif reference_data_contract is not None:
         raise DeploymentError("the workloads access bundle is missing or malformed")
+
+    scientific_artifacts = bundle.get("scientific_artifacts")
+    if scientific_artifacts is not None:
+        if not isinstance(scientific_artifacts, dict) or not has_non_empty_strings(
+            scientific_artifacts,
+            ("bucket_id", "bucket_name", "endpoint", "object_key", "writer_role"),
+        ):
+            raise DeploymentError("the workloads access bundle is missing or malformed")
+        lifecycle = scientific_artifacts.get("lifecycle")
+        if (
+            not isinstance(lifecycle, dict)
+            or lifecycle.get("retention_mode") not in {"retain", "disposable"}
+            or scientific_artifacts.get("writer_role") != "storage.object-editor"
+            or scientific_artifacts.get("credential_secret")
+            != "fs2-system/fs2-serve-artifact-store"
+            or not isinstance(scientific_artifacts.get("credential_revision"), int)
+            or scientific_artifacts["credential_revision"] < 1
+            or not isinstance(scientific_artifacts.get("batch_enabled"), bool)
+        ):
+            raise DeploymentError("the workloads access bundle is missing or malformed")
+        # The bundle is the operator's copy of every live credential, so an S3
+        # secret leaking into it would be the worst possible regression.
+        if any(
+            key in scientific_artifacts
+            for key in ("secret_access_key", "secret_key", "credentials")
+        ):
+            raise DeploymentError(
+                "the scientific artifact bundle must never carry object-storage secret material"
+            )
     return bundle
 
 
@@ -2103,12 +2265,24 @@ def destroy_stack(
         .get("infrastructure", {})
         .get("reference_data", {})
     )
-    retained_mode = (
+    scientific_infrastructure = (
+        contract.get("stages", {})
+        .get("infrastructure", {})
+        .get("scientific_artifacts", {})
+    )
+    reference_retained = (
         isinstance(reference_infrastructure, Mapping)
         and reference_infrastructure.get("enabled") is True
         and reference_infrastructure.get("lifecycle", {}).get("retention_mode")
         == "retain"
     )
+    scientific_retained = (
+        isinstance(scientific_infrastructure, Mapping)
+        and scientific_infrastructure.get("enabled") is True
+        and scientific_infrastructure.get("lifecycle", {}).get("retention_mode")
+        == "retain"
+    )
+    retained_mode = reference_retained or scientific_retained
     resources = {
         stage: state_has_resources(args.terraform, run_root, stage, contract)
         for stage in ("infrastructure", "foundation", "workloads")
@@ -2139,14 +2313,32 @@ def destroy_stack(
             nebius_profile=args.nebius_profile,
             kubectl=args.kubectl,
         )
-        if not isinstance(dynamic.get("reference_data_storage_contract"), Mapping):
+        if reference_retained and not isinstance(
+            dynamic.get("reference_data_storage_contract"), Mapping
+        ):
             raise DeploymentError(
                 "retained reference infrastructure is missing its non-secret storage "
                 "contract; no resource was changed"
             )
-        if not isinstance(dynamic.get("reference_data_lifecycle"), Mapping):
+        if reference_retained and not isinstance(
+            dynamic.get("reference_data_lifecycle"), Mapping
+        ):
             raise DeploymentError(
                 "retained reference infrastructure is missing its lifecycle output; "
+                "no resource was changed"
+            )
+        if scientific_retained and not isinstance(
+            dynamic.get("scientific_artifacts_storage_contract"), Mapping
+        ):
+            raise DeploymentError(
+                "retained scientific artifact storage is missing its non-secret bucket "
+                "contract; no resource was changed"
+            )
+        if scientific_retained and not isinstance(
+            dynamic.get("scientific_artifacts_lifecycle"), Mapping
+        ):
+            raise DeploymentError(
+                "retained scientific artifact storage is missing its lifecycle output; "
                 "no resource was changed"
             )
     if resources["foundation"] or resources["workloads"]:
@@ -2176,6 +2368,8 @@ def destroy_stack(
     retained_workload_outputs: dict[str, Any] = {
         "reference_data": None,
         "reference_data_contract": None,
+        "scientific_artifacts": None,
+        "scientific_artifacts_contract": None,
     }
     if (
         retain_infrastructure
@@ -2214,8 +2408,8 @@ def destroy_stack(
 
     if retain_infrastructure:
         assert dynamic is not None
-        storage = dynamic["reference_data_storage_contract"]
-        lifecycle = dynamic["reference_data_lifecycle"]
+        storage = dynamic.get("reference_data_storage_contract")
+        lifecycle = dynamic.get("reference_data_lifecycle")
         applied_status = retained_workload_outputs.get("reference_data")
         applied_contract = retained_workload_outputs.get("reference_data_contract")
         last_applied_status_service = (
@@ -2233,7 +2427,7 @@ def destroy_stack(
             if isinstance(applied_contract, Mapping)
             else None
         )
-        reference_data = {
+        reference_data = None if not reference_retained else {
             "lifecycle": lifecycle,
             "filesystem_id": storage.get("filesystem", {}).get("id"),
             "bucket_id": storage.get("object_storage", {}).get("id"),
@@ -2246,12 +2440,31 @@ def destroy_stack(
                 "pipeline": last_applied_pipeline,
             },
         }
-        reference_data_contract = {
+        reference_data_contract = None if not reference_retained else {
             "storage": storage,
             "plane": None,
             "last_applied_plane": last_applied_plane,
         }
-        receipt_path = run_root / "reference-data-retention.json"
+        scientific_storage = dynamic.get("scientific_artifacts_storage_contract")
+        scientific_lifecycle = dynamic.get("scientific_artifacts_lifecycle")
+        scientific_artifacts = None if not scientific_retained else {
+            "lifecycle": scientific_lifecycle,
+            "bucket_id": (scientific_storage or {}).get("object_storage", {}).get("id"),
+            "bucket_name": (scientific_storage or {})
+            .get("object_storage", {})
+            .get("name"),
+            "object_key": (scientific_storage or {}).get("layout", {}).get("object_key"),
+            "last_applied": retained_workload_outputs.get("scientific_artifacts"),
+        }
+        scientific_artifacts_contract = None if not scientific_retained else {
+            "storage": scientific_storage,
+        }
+        adoption_lifecycle = lifecycle if reference_retained else scientific_lifecycle
+        receipt_path = run_root / (
+            "reference-data-retention.json"
+            if reference_retained
+            else "scientific-artifacts-retention.json"
+        )
         result = {
             "schema": "fs2-serve.nebius.ai/destroy-result/v1",
             "status": "infrastructure-retained",
@@ -2260,12 +2473,14 @@ def destroy_stack(
             "retained_stages": ["infrastructure"],
             "reference_data": reference_data,
             "reference_data_contract": reference_data_contract,
+            "scientific_artifacts": scientific_artifacts,
+            "scientific_artifacts_contract": scientific_artifacts_contract,
             "adoption": {
                 "required_before_full_destroy": True,
-                "status": lifecycle.get("adoption_status"),
+                "status": (adoption_lifecycle or {}).get("adoption_status"),
                 "receipt_path": str(receipt_path),
                 "next_step": (
-                    "adopt or migrate the retained filesystem and bucket into a "
+                    "adopt or migrate every retained filesystem and bucket into a "
                     "separate durable Terraform state before destroying infrastructure"
                 ),
             },
@@ -2284,6 +2499,8 @@ def destroy_stack(
                 "retained_stages": [],
                 "reference_data": None,
                 "reference_data_contract": None,
+                "scientific_artifacts": None,
+                "scientific_artifacts_contract": None,
                 "evidence_root": str(run_root),
             },
             indent=2,
@@ -2300,6 +2517,7 @@ def status_stack(
     workloads_ready = False
     infrastructure_reference_data: Any | None = None
     infrastructure_reference_data_contract: Any | None = None
+    infrastructure_scientific_artifacts: Any | None = None
     for stage in ("infrastructure", "foundation", "workloads"):
         state, _, _ = stage_paths(run_root, stage)
         if not state.exists():
@@ -2357,6 +2575,51 @@ def status_stack(
                     "storage": storage,
                     "plane": None,
                 }
+        if (
+            stage == "infrastructure"
+            and complete
+            and contract.get("stages", {})
+            .get("infrastructure", {})
+            .get("scientific_artifacts", {})
+            .get("enabled")
+            is True
+        ):
+            artifact_storage = terraform_optional_json_output(
+                args.terraform,
+                INFRA_ROOT,
+                "scientific_artifacts_storage_contract",
+                environment,
+            )
+            if isinstance(artifact_storage, Mapping):
+                artifact_lifecycle = terraform_optional_json_output(
+                    args.terraform,
+                    INFRA_ROOT,
+                    "scientific_artifacts_lifecycle",
+                    environment,
+                )
+                infrastructure_scientific_artifacts = {
+                    "lifecycle": (
+                        artifact_lifecycle
+                        if isinstance(artifact_lifecycle, Mapping)
+                        else artifact_storage.get("lifecycle")
+                    ),
+                    "bucket_id": artifact_storage.get("object_storage", {}).get("id"),
+                    "bucket_name": artifact_storage.get("object_storage", {}).get(
+                        "name"
+                    ),
+                    "endpoint": artifact_storage.get("object_storage", {}).get(
+                        "endpoint"
+                    ),
+                    "region": artifact_storage.get("region"),
+                    "object_key": artifact_storage.get("layout", {}).get("object_key"),
+                    "writer_role": artifact_storage.get("writer", {}).get("role"),
+                    "writer_paths": artifact_storage.get("writer", {}).get("paths"),
+                    "secret_delivery": artifact_storage.get("writer", {}).get(
+                        "secret_delivery"
+                    ),
+                    "retention": artifact_storage.get("retention"),
+                    "credential_secret": "fs2-system/fs2-serve-artifact-store",
+                }
     endpoints = (
         workload_endpoint_outputs(args.terraform, run_root, contract)
         if workloads_ready
@@ -2367,6 +2630,8 @@ def status_stack(
             "grafana_url": None,
             "reference_data": None,
             "reference_data_contract": None,
+            "scientific_artifacts": None,
+            "scientific_artifacts_contract": None,
         }
     )
     # A previously applied workloads state can remain otherwise complete while the
@@ -2386,6 +2651,14 @@ def status_stack(
         endpoints["reference_data_contract"] = (
             infrastructure_reference_data_contract
         )
+    # The store can be provisioned and correct while the batch workloads that
+    # consume it are still gated off. Report the live bucket identity rather
+    # than pretending the feature is absent.
+    if (
+        endpoints.get("scientific_artifacts") is None
+        and infrastructure_scientific_artifacts is not None
+    ):
+        endpoints["scientific_artifacts"] = infrastructure_scientific_artifacts
     print(
         json.dumps(
             {"run_root": str(run_root), "stages": stages, **endpoints},
@@ -2566,6 +2839,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     os.umask(0o077)
     args = parse_args(argv)
+    require_terraform_version(args.terraform)
     variable_file = args.var_file.expanduser().resolve()
     if not variable_file.is_file():
         raise DeploymentError(

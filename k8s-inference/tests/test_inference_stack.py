@@ -976,6 +976,8 @@ class InferenceStackTests(unittest.TestCase):
             "grafana_url": "https://192.0.2.11/admin/observability/grafana",
             "reference_data": None,
             "reference_data_contract": None,
+            "scientific_artifacts": None,
+            "scientific_artifacts_contract": None,
         }
 
         def fake_endpoint_output(_terraform, _root, name, _environment):
@@ -1038,6 +1040,8 @@ class InferenceStackTests(unittest.TestCase):
             "inference_base_url": "https://192.0.2.11/v1",
             "reference_data": None,
             "reference_data_contract": None,
+            "scientific_artifacts": None,
+            "scientific_artifacts_contract": None,
         }
         with (
             mock.patch.object(STACK, "stage_environment", return_value={}),

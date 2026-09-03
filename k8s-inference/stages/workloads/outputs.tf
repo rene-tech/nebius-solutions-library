@@ -145,6 +145,20 @@ output "access_bundle" {
       pipeline       = module.reference_data[0].dynamic_configuration.pipeline
     } : null
     reference_data_contract = var.reference_data.enabled ? terraform_data.reference_data_contract[0].output : null
+    # Identity and scope only. The bundle deliberately never carries the S3
+    # secret: the control plane reads it from its own mounted Secret and hands
+    # workers short-lived signed handles instead.
+    scientific_artifacts = var.scientific_artifacts.enabled ? {
+      lifecycle           = var.scientific_artifacts.storage_contract.lifecycle
+      bucket_id           = var.scientific_artifacts.storage_contract.object_storage.id
+      bucket_name         = var.scientific_artifacts.storage_contract.object_storage.name
+      endpoint            = var.scientific_artifacts.storage_contract.object_storage.endpoint
+      object_key          = var.scientific_artifacts.storage_contract.layout.object_key
+      writer_role         = var.scientific_artifacts.storage_contract.writer.role
+      credential_secret   = "fs2-system/${local.scientific_artifacts_secret_name}"
+      credential_revision = local.scientific_artifacts_revision
+      batch_enabled       = var.scientific_batch.enabled
+    } : null
   }
 }
 
@@ -269,6 +283,38 @@ output "scheduling_contract" {
 output "reference_data_contract" {
   description = "Same-region storage, private preprocessing and optional official staging-pipeline contract."
   value       = try(terraform_data.reference_data_contract[0].output, null)
+}
+
+output "scientific_artifacts_contract" {
+  description = "Non-secret projection of the scientific result store: bucket identity, canonical object key, credential Secret reference, rotation revision, the exact control-plane chart values and the batch gates."
+  value       = terraform_data.scientific_artifacts_contract.output
+}
+
+output "scientific_artifacts_status" {
+  description = "Non-secret result-store state for inference-stack status: bucket identity, retention, writer scope and credential revision."
+  value = var.scientific_artifacts.enabled ? {
+    bucket_id           = var.scientific_artifacts.storage_contract.object_storage.id
+    bucket_name         = var.scientific_artifacts.storage_contract.object_storage.name
+    endpoint            = var.scientific_artifacts.storage_contract.object_storage.endpoint
+    region              = var.scientific_artifacts.storage_contract.region
+    object_key          = var.scientific_artifacts.storage_contract.layout.object_key
+    writer_role         = var.scientific_artifacts.storage_contract.writer.role
+    writer_paths        = var.scientific_artifacts.storage_contract.writer.paths
+    secret_delivery     = var.scientific_artifacts.storage_contract.writer.secret_delivery
+    lifecycle           = var.scientific_artifacts.storage_contract.lifecycle
+    retention           = var.scientific_artifacts.storage_contract.retention
+    credential_secret   = "fs2-system/${local.scientific_artifacts_secret_name}"
+    credential_key      = local.scientific_artifacts_secret_key
+    credential_revision = local.scientific_artifacts_revision
+    handle_ttl_seconds  = var.scientific_artifacts.handle_ttl_seconds
+    max_artifact_bytes  = var.scientific_artifacts.max_artifact_bytes
+    media_types         = sort(var.scientific_artifacts.media_types)
+    batch = {
+      enabled        = var.scientific_batch.enabled
+      writes_enabled = var.scientific_batch.writes_enabled
+      namespace      = var.scientific_batch.namespace
+    }
+  } : null
 }
 
 output "reference_data_status" {

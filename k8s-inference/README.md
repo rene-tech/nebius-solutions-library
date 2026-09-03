@@ -101,7 +101,7 @@ the operator instead of changing limits or broad project roles.
 
 ## Quick start
 
-Prerequisites are Terraform 1.10 or newer (but older than 2.0), `kubectl`, `jq`,
+Prerequisites are Terraform 1.11 or newer (but older than 2.0), `kubectl`, `jq`,
 [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane),
 Git, and authenticated Nebius CLI access to the target project. Authentication is
 runtime context, not desired state, so select it with `NEBIUS_PROFILE` or
@@ -326,6 +326,8 @@ The top-level variable is `deployment`:
 | `dynamic_models` | Optional live controller gate, exclusive workload owner, and initial model IDs. Internal envelope and renderer JSON is derived, not customer-authored. |
 | `scheduling` | Optional GPU-neutral Kueue Cohort, queue floors, borrowing/preemption, fair-sharing weights, model lanes, and five customer service classes. |
 | `storage.shared_cache` | Optional shared model-cache size/type/block-size override. |
+| `storage.scientific_artifacts` | Optional dedicated same-region versioned result store: lifecycle, derived or explicit bucket name, capacity, application retention days, signed-handle TTL, maximum artifact size, object-storage egress CIDRs and the approved media types. Separate bucket, identity and key from `storage.reference_data`. |
+| `scientific_batch` | Staged scientific batch gates. `enabled` requires `storage.scientific_artifacts.enabled`; `writes_enabled` requires `enabled`. |
 | `artifacts.external_registry_ids` | Same-tenant registries whose immutable images need run-scoped node-pull viewer access. Terraform creates a project-scoped reader group beside each registry, including registries in another project or region. |
 | `artifacts.registry_policy` | Defaults to `regional-mirror`; optional prefix controls the target repository namespace. `direct-source` is an explicit opt-out that leaves runtime pulls pointed at upstream registries. |
 | `edge` | `internal-only` or bounded public ingress configuration, including an optional per-cluster loopback port tuple. |
@@ -339,6 +341,50 @@ For another project, add `project_name`, `network.network_name`,
 `system_update_strategy`. The infrastructure stage verifies those facts through
 the provider. Custom accelerator pools additionally go through the live
 platform and Managed Kubernetes compatibility preflight.
+
+### Scientific result artifact store
+
+`storage.scientific_artifacts` provisions a dedicated same-region versioned
+bucket, a dedicated service account and group, a bucket policy granting only
+`storage.object-editor` on `scientific/v1/*`, and an S3 access key delivered
+exclusively through Nebius MysteryBox. It is a separate store from
+`storage.reference_data`: results and immutable public science inputs never
+share a bucket, a policy, a key or a retention decision, and the facade refuses
+a configuration in which the two bucket names collide.
+
+Committed artifacts are addressed as
+
+```
+scientific/v1/tenants/<tenant>/operations/<operation>/stages/<stage>/shards/<shard>/attempts/<attempt>/<input|output>/sha256/<digest>
+```
+
+so tenant prefixes are disjoint and a retry that reproduces identical bytes
+writes the identical key.
+
+Terraform propagates only the access-key ID, an opaque MysteryBox reference and
+a revision. The workloads stage resolves the secret ephemerally and writes it
+with the provider's write-only argument into `fs2-system/fs2-serve-artifact-store`
+under `credentials.json`; the secret is absent from state, plans, generated
+tfvars, Helm values, outputs and receipts. A rotated key moves the revision,
+which rewrites the Secret and the non-secret
+`fs2.nebius.ai/artifact-store-credential-revision` pod annotation so the control
+plane restarts. Workers receive short-lived signed handles, never a static
+credential.
+
+Storage-side lifecycle rules abort incomplete multipart uploads and expire
+noncurrent versions after one day and remove expired delete markers. Nothing
+expires a current object: `retention_days` reaches the control plane as an
+application retention window instead.
+
+`egress_cidrs` accepts only exact `/32` or `/128` object-storage addresses, so
+the allowlist opens the control plane's default-deny egress no wider than the
+endpoint it must reach.
+
+The store is independently deployable. `scientific_batch` stays false until the
+batch controller successors are integrated, and enabling the store neither
+requires nor enables academic execution. See
+[scientific-artifacts/README.md](scientific-artifacts/README.md) for the layout
+module, the chart seam and the live signed-handle smoke test.
 
 ### Live model ownership and bootstrap
 
@@ -544,6 +590,12 @@ same non-secret receipt is written to
 move the protected filesystem and versioned bucket to a separately owned durable
 state before attempting infrastructure teardown. The wrapper never reports a
 complete destroy while those protected resources remain.
+
+`storage.scientific_artifacts.lifecycle.retention_mode` behaves the same way and
+is reported independently. Retained results also hold the infrastructure stage
+back, and the receipt is written to
+`<run-root>/scientific-artifacts-retention.json` when the result store is the
+only retained storage.
 
 ## Acceptance checks
 

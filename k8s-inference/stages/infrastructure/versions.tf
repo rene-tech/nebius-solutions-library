@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.10.0, < 2.0.0"
+  required_version = ">= 1.11.0, < 2.0.0"
 
   # Every lifecycle supplies a run-scoped path with -backend-config. The
   # retained fs2-serve backend is never opened by this root.
